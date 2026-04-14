@@ -1,0 +1,27 @@
+{
+  "defaultProfile": "workspace",
+  "defaultMode": "ask",
+  "enabledTools": ["filesystem", "shell", "network"],
+  "provider": "openai",
+  "model": "gpt-5.1-mini",
+  "offline": false,
+  "profiles": {
+    "workspace": {
+      "description": "Default interactive workspace profile.",
+      "mode": "ask"
+    },
+    "safe-review": {
+      "description": "Read-focused review mode with approval gates and limited tools.",
+      "mode": "safe",
+      "enabledTools": ["filesystem", "git"]
+    },
+    "local-model": {
+      "description": "Prefer a local OpenAI-compatible backend for experimentation.",
+      "provider": "openai-compatible",
+      "model": "local-model"
+    }
+  },
+  "compatibility": {
+    "discoverGithubCustomizations": false
+  }
+}

@@ -1,0 +1,391 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Inspect",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli/main.ts",
+      "args": ["inspect"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "CLI",
+        "order": 1
+      }
+    },
+    {
+      "name": "Config",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli/main.ts",
+      "args": ["config"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "CLI",
+        "order": 2
+      }
+    },
+    {
+      "name": "Tools",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli/main.ts",
+      "args": ["tools"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "CLI",
+        "order": 3
+      }
+    },
+    {
+      "name": "Profiles",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli/main.ts",
+      "args": ["profiles"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "CLI",
+        "order": 4
+      }
+    },
+    {
+      "name": "Run Task",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli/main.ts",
+      "args": ["run", "${input:machdochTask}"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "CLI",
+        "order": 5
+      }
+    },
+    {
+      "name": "Run Task (Safe)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli/main.ts",
+      "args": [
+        "run",
+        "${input:machdochTask}",
+        "--mode",
+        "safe"
+      ],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "CLI",
+        "order": 6
+      }
+    },
+    {
+      "name": "Run Task (Ask)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli/main.ts",
+      "args": ["run", "${input:machdochTask}", "--mode", "ask"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "CLI",
+        "order": 7
+      }
+    },
+    {
+      "name": "Run Task (Auto)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli/main.ts",
+      "args": ["run", "${input:machdochTask}", "--mode", "auto"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "CLI",
+        "order": 8
+      }
+    },
+    {
+      "name": "Run Task (JSON)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli/main.ts",
+      "args": ["run", "${input:machdochTask}", "--json"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "CLI",
+        "order": 9
+      }
+    },
+    {
+      "name": "Inspect (JSON)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli/main.ts",
+      "args": ["inspect", "--json"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "CLI",
+        "order": 10
+      }
+    },
+    {
+      "name": "Config (JSON)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli/main.ts",
+      "args": ["config", "--json"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "CLI",
+        "order": 11
+      }
+    },
+    {
+      "name": "All Tests",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "program": "${workspaceFolder}/node_modules/vitest/vitest.mjs",
+      "args": ["run"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "autoAttachChildProcesses": true,
+      "presentation": {
+        "group": "Test",
+        "order": 1
+      }
+    },
+    {
+      "name": "Coverage",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "program": "${workspaceFolder}/node_modules/vitest/vitest.mjs",
+      "args": ["run", "--coverage"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "autoAttachChildProcesses": true,
+      "presentation": {
+        "group": "Test",
+        "order": 2
+      }
+    },
+    {
+      "name": "Watch Tests",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "program": "${workspaceFolder}/node_modules/vitest/vitest.mjs",
+      "args": [],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "autoAttachChildProcesses": true,
+      "presentation": {
+        "group": "Test",
+        "order": 3
+      }
+    },
+    {
+      "name": "Typecheck",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "program": "${workspaceFolder}/node_modules/typescript/lib/tsc.js",
+      "args": ["--noEmit", "-p", "${workspaceFolder}/tsconfig.json"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "Test",
+        "order": 4
+      }
+    },
+    {
+      "name": "Start Desktop App",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "program": "${workspaceFolder}/node_modules/@tauri-apps/cli/tauri.js",
+      "args": ["dev"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "autoAttachChildProcesses": true,
+      "presentation": {
+        "group": "UI",
+        "order": 1
+      }
+    },
+    {
+      "name": "Build Desktop App",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "program": "${workspaceFolder}/node_modules/@tauri-apps/cli/tauri.js",
+      "args": ["build"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "autoAttachChildProcesses": true,
+      "presentation": {
+        "group": "UI",
+        "order": 2
+      }
+    },
+    {
+      "name": "Start UI (Browser)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "program": "${workspaceFolder}/node_modules/vite/bin/vite.js",
+      "args": [
+        "--config",
+        "${workspaceFolder}/vite.ui.config.ts",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "4173"
+      ],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "serverReadyAction": {
+        "pattern": "http://127\\.0\\.0\\.1:4173",
+        "uriFormat": "http://127.0.0.1:4173",
+        "action": "openExternally"
+      },
+      "presentation": {
+        "group": "UI",
+        "order": 3
+      }
+    },
+    {
+      "name": "UI Tests",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "program": "${workspaceFolder}/node_modules/vitest/vitest.mjs",
+      "args": ["run", "--config", "${workspaceFolder}/vitest.ui.config.ts"],
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "autoAttachChildProcesses": true,
+      "presentation": {
+        "group": "UI",
+        "order": 4
+      }
+    },
+    {
+      "name": "UI Typecheck",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "node",
+      "program": "${workspaceFolder}/node_modules/typescript/lib/tsc.js",
+      "args": ["--noEmit", "-p", "${workspaceFolder}/tsconfig.ui.json"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "UI",
+        "order": 5
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "CLI Overview",
+      "configurations": ["Inspect", "Tools", "Profiles"],
+      "presentation": {
+        "group": "CLI",
+        "order": 12
+      }
+    },
+    {
+      "name": "Test Suite",
+      "configurations": ["Typecheck", "All Tests"],
+      "presentation": {
+        "group": "Test",
+        "order": 5
+      }
+    },
+    {
+      "name": "UI Checks",
+      "configurations": ["UI Typecheck", "UI Tests"],
+      "presentation": {
+        "group": "UI",
+        "order": 6
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "machdochTask",
+      "type": "promptString",
+      "description": "Task to preview with machdoch",
+      "default": "scan this workspace and explain the setup"
+    }
+  ]
+}

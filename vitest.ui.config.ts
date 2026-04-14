@@ -1,0 +1,26 @@
+import { fileURLToPath, URL } from "node:url";
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    include: ["src/tauri/ui/**/*.test.ts", "src/tauri/ui/**/*.test.tsx"],
+    passWithNoTests: true,
+    restoreMocks: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text"],
+      include: ["src/tauri/ui/**/*.ts", "src/tauri/ui/**/*.tsx"],
+      exclude: [
+        "src/tauri/ui/**/*.test.ts",
+        "src/tauri/ui/**/*.test.tsx"
+      ]
+    }
+  }
+});

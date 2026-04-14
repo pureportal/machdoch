@@ -1,0 +1,489 @@
+import type {
+  ResolvedPromptInvocation,
+  ResolvedToolPolicy,
+  TaskCustomizationMatch,
+  TaskExecutionResult,
+  TaskExecutionStatus,
+  TaskRunPreview,
+  ToolDefinition,
+  ToolName,
+} from "../../../core/types.js";
+
+const filesystemTool: ToolDefinition = {
+  name: "filesystem",
+  title: "Filesystem",
+  description: "Read files and directories from the workspace.",
+  riskLevel: "low",
+  keywords: ["file", "directory", "inspect"],
+};
+
+const shellTool: ToolDefinition = {
+  name: "shell",
+  title: "Shell",
+  description: "Run terminal commands.",
+  riskLevel: "high",
+  keywords: ["command", "terminal", "run"],
+};
+
+const networkTool: ToolDefinition = {
+  name: "network",
+  title: "Network",
+  description: "Fetch external resources when allowed.",
+  riskLevel: "medium",
+  keywords: ["fetch", "api", "web"],
+};
+
+const WORKSPACE_INSPECTION_ACTIONS = [
+  "describe",
+  "explain",
+  "inspect",
+  "scan",
+  "show",
+  "summarize",
+  "summary",
+];
+
+const WORKSPACE_INSPECTION_TARGETS = [
+  "config",
+  "configuration",
+  "project",
+  "repo",
+  "repository",
+  "setup",
+  "structure",
+  "workspace",
+];
+
+const DEFAULT_WORKSPACE_ROOT = "C:/Development/machdoch";
+const DEFAULT_PREVIEW_TASK = "debug the failing task runner tests";
+const DEFAULT_EXECUTION_TASK = "scan this workspace and explain the setup";
+
+interface FixtureModelContext {
+  provider?: string;
+  model?: string;
+}
+
+const EXPLICIT_INSPECTION_TARGET_PATTERN =
+  /\b(show|inspect|read|list)\b\s+(?:(['"`])(.+?)\2|\((.+?)\)|([^\s]+))/i;
+
+const createToolPolicy = (
+  tool: ToolDefinition,
+  decision: ResolvedToolPolicy["decision"],
+  reason: string,
+): ResolvedToolPolicy => ({
+  tool,
+  enabled: decision !== "blocked",
+  decision,
+  reason,
+});
+
+const normalizeTask = (task: string, fallback: string): string => {
+  const trimmed = task.trim();
+
+  return trimmed.length > 0 ? trimmed : fallback;
+};
+
+const createTokenSet = (value: string): Set<string> => {
+  return new Set(
+    value
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((part) => part.length > 0),
+  );
+};
+
+const createWorkspaceLabel = (workspacePath: string): string => {
+  const normalized = workspacePath.replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
+
+  return parts.at(-1) ?? workspacePath;
+};
+
+const extractInspectionTarget = (task: string): string | undefined => {
+  const match = task.match(EXPLICIT_INSPECTION_TARGET_PATTERN);
+  const rawTarget = match?.[3] ?? match?.[4] ?? match?.[5];
+  const normalizedTarget = rawTarget?.trim();
+
+  return normalizedTarget && normalizedTarget.length > 0
+    ? normalizedTarget
+    : undefined;
+};
+
+const inferSuggestedTools = (task: string): ToolName[] => {
+  const tokens = createTokenSet(task);
+  const suggestedTools: ToolName[] = ["filesystem"];
+
+  if (
+    ["build", "command", "debug", "fix", "install", "run", "test"].some(
+      (token) => tokens.has(token),
+    )
+  ) {
+    suggestedTools.push("shell");
+  }
+
+  if (
+    ["api", "fetch", "network", "remote", "web", "website"].some((token) =>
+      tokens.has(token),
+    )
+  ) {
+    suggestedTools.push("network");
+  }
+
+  return Array.from(new Set(suggestedTools));
+};
+
+const createToolPolicies = (tools: ToolName[]): ResolvedToolPolicy[] => {
+  return tools.flatMap((tool) => {
+    switch (tool) {
+      case "filesystem":
+        return [
+          createToolPolicy(
+            filesystemTool,
+            "allow",
+            "Read-only inspection is safe in the current desktop scaffold.",
+          ),
+        ];
+      case "shell":
+        return [
+          createToolPolicy(
+            shellTool,
+            "ask",
+            "Shell commands should stay approval-gated until the desktop shell can show a full audit trail.",
+          ),
+        ];
+      case "network":
+        return [
+          createToolPolicy(
+            networkTool,
+            "ask",
+            "External fetches can have side effects and should remain approval-gated.",
+          ),
+        ];
+      default:
+        return [];
+    }
+  });
+};
+
+const supportsWorkspaceInspection = (task: string): boolean => {
+  const tokens = createTokenSet(task);
+  const hasAction = WORKSPACE_INSPECTION_ACTIONS.some((token) =>
+    tokens.has(token),
+  );
+  const hasTarget = WORKSPACE_INSPECTION_TARGETS.some((token) =>
+    tokens.has(token),
+  );
+
+  return hasAction && hasTarget;
+};
+
+export const supportsMockExecution = (task: string): boolean => {
+  return (
+    supportsWorkspaceInspection(task) || extractInspectionTarget(task) !== undefined
+  );
+};
+
+const createInvokedPrompt = (
+  task: string,
+): ResolvedPromptInvocation | undefined => {
+  const trimmedTask = task.trim();
+
+  if (!trimmedTask.startsWith("/")) {
+    return undefined;
+  }
+
+  const commandText = trimmedTask.slice(1).trim();
+  const [name = "task", ...rest] = commandText.split(/\s+/);
+  const argumentsText = rest.join(" ").trim();
+  const hasArguments = argumentsText.length > 0;
+
+  return {
+    path: `.machdoch/prompts/${name}.prompt.md`,
+    name,
+    description: "Desktop scaffold prompt preview.",
+    agent: "🟨 JavaScript & TypeScript Expert",
+    model: "gpt-5.4",
+    argumentHint: "Provide the prompt arguments inline.",
+    inputs: ["task"],
+    tools: ["filesystem", "shell"],
+    body: "Resolve the prompt input and stage the smallest safe next action.",
+    arguments: argumentsText,
+    expectedInputs: ["task"],
+    inputValues: hasArguments ? { task: argumentsText } : {},
+    missingInputs: hasArguments ? [] : ["task"],
+    resolvedBody: hasArguments
+      ? argumentsText
+      : "Provide the required task input before execution.",
+  };
+};
+
+const createApplicableInstructions = (
+  task: string,
+): TaskCustomizationMatch[] => {
+  const tokens = createTokenSet(task);
+  const instructions: TaskCustomizationMatch[] = [
+    {
+      kind: "always-on",
+      name: "Workspace defaults",
+      path: ".machdoch/instructions.md",
+      priority: 20,
+      body: "Keep changes small, verify the result, and surface approval boundaries clearly.",
+      reason: "Always-on workspace instruction.",
+    },
+  ];
+
+  if (
+    ["build", "debug", "test", "typescript"].some((token) => tokens.has(token))
+  ) {
+    instructions.push({
+      kind: "conditional",
+      name: "TypeScript testing rules",
+      path: ".machdoch/instructions/testing.instructions.md",
+      priority: 70,
+      body: "Prefer behavior-focused tests and verify only the smallest relevant scope.",
+      reason: "Matched task terms: build, debug, test, or typescript.",
+    });
+  }
+
+  if (["auth", "permission", "security", "token"].some((token) => tokens.has(token))) {
+    instructions.push({
+      kind: "conditional",
+      name: "Security guardrails",
+      path: ".machdoch/instructions/security.instructions.md",
+      priority: 80,
+      body: "Keep privileged actions behind explicit approval and avoid leaking secrets into logs.",
+      reason: "Matched task terms: auth, permission, security, or token.",
+    });
+  }
+
+  return instructions;
+};
+
+const createPreviewWarnings = (
+  toolPolicies: ResolvedToolPolicy[],
+  invokedPrompt?: ResolvedPromptInvocation,
+): string[] => {
+  const warnings: string[] = [];
+
+  if (toolPolicies.some((policy) => policy.decision === "ask")) {
+    warnings.push(
+      "Some likely tools remain approval-gated, so the desktop shell would pause before running them.",
+    );
+  }
+
+  if (invokedPrompt?.missingInputs.length) {
+    warnings.push(
+      `The prompt \`/${invokedPrompt.name}\` still expects input(s): ${invokedPrompt.missingInputs.join(", ")}.`,
+    );
+  }
+
+  return warnings;
+};
+
+const createPreviewNotes = (
+  instructions: TaskCustomizationMatch[],
+  context?: FixtureModelContext,
+  invokedPrompt?: ResolvedPromptInvocation,
+): string[] => {
+  return [
+    ...(context?.provider || context?.model
+      ? [
+          `Selected runtime: ${(context?.provider ?? "provider").toUpperCase()} · ${context?.model ?? "auto"}.`,
+        ]
+      : []),
+    ...(invokedPrompt?.model
+      ? [`The prompt prefers model \`${invokedPrompt.model}\`.`]
+      : []),
+    `${instructions.length} instruction(s) appear relevant to this task.`,
+    "The desktop shell currently renders representative task states while the live executor is still being wired in.",
+  ];
+};
+
+export const createPreviewFixture = (
+  task = DEFAULT_PREVIEW_TASK,
+  context: FixtureModelContext = {},
+): TaskRunPreview => {
+  const normalizedTask = normalizeTask(task, DEFAULT_PREVIEW_TASK);
+  const suggestedTools = inferSuggestedTools(normalizedTask);
+  const toolPolicies = createToolPolicies(suggestedTools);
+  const invokedPrompt = createInvokedPrompt(normalizedTask);
+  const applicableInstructions = createApplicableInstructions(normalizedTask);
+
+  return {
+    task: normalizedTask,
+    mode: "ask",
+    summary: invokedPrompt
+      ? "This staged preview resolved a direct prompt invocation, mapped it through the current tool policies, and highlighted any missing input before execution."
+      : "This staged preview maps the request to likely tools, approval checkpoints, and next steps before a live run begins.",
+    suggestedTools,
+    blockedTools: [],
+    toolPolicies,
+    ...(invokedPrompt ? { invokedPrompt } : {}),
+    applicableInstructions,
+    suggestedPrompts: [],
+    suggestedSkills: [],
+    warnings: createPreviewWarnings(toolPolicies, invokedPrompt),
+    notes: createPreviewNotes(applicableInstructions, context, invokedPrompt),
+    steps: [
+      {
+        title: "Load workspace context",
+        description:
+          "Read the active workspace folder, customization hints, and effective safety mode before doing anything risky.",
+      },
+      {
+        title: invokedPrompt ? "Resolve the prompt" : "Clarify the target",
+        description: invokedPrompt
+          ? `Resolve \`/${invokedPrompt.name}\` and confirm whether more input is required before execution.`
+          : `Interpret the goal \`${normalizedTask}\` and keep the first action as small and observable as possible.`,
+      },
+      {
+        title: "Check approvals",
+        description:
+          "Pause for shell or network access and keep every potentially state-changing action inspectable.",
+      },
+      {
+        title: "Verify the result",
+        description:
+          "Surface what ran, what changed, and anything still blocked so the user can decide the next step quickly.",
+      },
+    ],
+    customizationCounts: {
+      instructions: applicableInstructions.length,
+      prompts: 1,
+      skills: 1,
+    },
+  };
+};
+
+const createUnsupportedExecutionSections = (
+  task: string,
+  workspacePath: string,
+  context: FixtureModelContext,
+): TaskExecutionResult["outputSections"] => {
+  return [
+    {
+      title: "Task context",
+      lines: [
+        `task: ${task}`,
+        `workspace: ${workspacePath}`,
+        `suggested tools: ${inferSuggestedTools(task).join(", ")}`,
+        ...(context.provider ? [`provider: ${context.provider}`] : []),
+        ...(context.model ? [`model: ${context.model}`] : []),
+      ],
+    },
+    {
+      title: "Execution status",
+      lines: [
+        "result: preview only",
+        "current executor coverage: read-only workspace summaries, file previews, and directory listings.",
+        "next step: keep the task in preview mode until the desktop shell is wired to the shared core executor.",
+      ],
+    },
+  ];
+};
+
+const createExecutedExecutionSections = (
+  task: string,
+  workspacePath: string,
+  context: FixtureModelContext,
+): TaskExecutionResult["outputSections"] => {
+  const workspaceLabel = createWorkspaceLabel(workspacePath);
+  const explicitTarget = extractInspectionTarget(task);
+
+  if (explicitTarget) {
+    return [
+      {
+        title: "Task context",
+        lines: [
+          `task: ${task}`,
+          `effective task: ${task}`,
+          "suggested tools: filesystem",
+        ],
+      },
+      {
+        title: "Execution mapping",
+        lines: [
+          `workspace: ${workspacePath}`,
+          `requested target: ${explicitTarget}`,
+          ...(context.provider ? [`provider: ${context.provider}`] : []),
+          ...(context.model ? [`model: ${context.model}`] : []),
+          `matched executor: ${task.toLowerCase().includes("list") ? "read-only directory listing" : "read-only file preview"}`,
+        ],
+      },
+      {
+        title: "Representative output",
+        lines: task.toLowerCase().includes("list")
+          ? ["dir: core", "file: main.ts", "file: README.md"]
+          : [
+              "1: # machdoch",
+              "2: Representative content rendered for the current desktop shell scaffold.",
+              "3: Live filesystem output will come from the shared core executor.",
+            ],
+      },
+    ];
+  }
+
+  return [
+    {
+      title: "Task context",
+      lines: [
+        `task: ${task}`,
+        `effective task: ${task}`,
+        "suggested tools: filesystem, shell",
+      ],
+    },
+    {
+      title: "Workspace context",
+      lines: [
+        `root: ${workspacePath}`,
+        `workspace label: ${workspaceLabel}`,
+        "mode: ask",
+        "execution surface: deterministic read-only scaffold",
+          ...(context.provider ? [`provider: ${context.provider}`] : []),
+          ...(context.model ? [`model: ${context.model}`] : []),
+      ],
+    },
+    {
+      title: "Project signals",
+      lines: [
+        "desktop renderer: task panel ready",
+        "timeline sidebar: active",
+        "shared core handoff: pending live wiring",
+      ],
+    },
+  ];
+};
+
+export const createMockExecutionFixture = (
+  task = DEFAULT_EXECUTION_TASK,
+  workspacePath = DEFAULT_WORKSPACE_ROOT,
+  context: FixtureModelContext = {},
+): TaskExecutionResult => {
+  const normalizedTask = normalizeTask(task, DEFAULT_EXECUTION_TASK);
+  const status: TaskExecutionStatus = supportsMockExecution(normalizedTask)
+    ? "executed"
+    : "unsupported";
+
+  return {
+    task: normalizedTask,
+    mode: "ask",
+    status,
+    summary:
+      status === "executed"
+        ? "This request matches a read-only execution path that already exists in the shared core, so the desktop shell can render a representative result shape."
+        : "This task stays in preview mode because the deterministic executor only covers read-only workspace and explicit file or directory inspection flows today.",
+    executedTools: status === "executed" ? ["filesystem"] : [],
+    reason:
+      status === "executed"
+        ? "Representative data only until the desktop shell is connected to the shared core executor."
+        : "Broader task types still fall back to preview mode in the current desktop scaffold.",
+    outputSections:
+      status === "executed"
+        ? createExecutedExecutionSections(normalizedTask, workspacePath, context)
+        : createUnsupportedExecutionSections(normalizedTask, workspacePath, context),
+  };
+};
+
+export const previewFixture: TaskRunPreview = createPreviewFixture();
+
+export const executionFixture: TaskExecutionResult = createMockExecutionFixture();

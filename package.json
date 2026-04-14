@@ -1,0 +1,63 @@
+{
+  "name": "machdoch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first OS AI agent for CLI and desktop.",
+  "type": "module",
+  "bin": {
+    "machdoch": "./dist/cli/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:ui": "vite build --config vite.ui.config.ts",
+    "lint": "eslint src vite.ui.config.ts vitest.config.ts vitest.ui.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:ui": "tsc -p tsconfig.ui.json --noEmit",
+    "dev": "tsx src/cli/main.ts",
+    "dev:ui": "vite --config vite.ui.config.ts",
+    "inspect": "tsx src/cli/main.ts inspect",
+    "preview:ui": "vite preview --config vite.ui.config.ts",
+    "start": "node dist/cli/main.js",
+    "tauri:build": "tauri build",
+    "tauri:dev": "tauri dev",
+    "test": "vitest run",
+    "test:ui": "vitest run --config vitest.ui.config.ts",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "engines": {
+    "node": ">=20.10"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.2.2",
+    "@tauri-apps/cli": "^2.10.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "^4.1.4",
+    "eslint": "^10.2.0",
+    "globals": "^17.5.0",
+    "jsdom": "^29.0.2",
+    "tailwindcss": "^4.2.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.58.2",
+    "vite": "^8.0.8",
+    "vitest": "^4.1.4"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-dialog": "^2.7.0",
+    "@tauri-apps/plugin-store": "^2.4.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.8.0",
+    "radix-ui": "^1.4.3",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "tailwind-merge": "^3.5.0"
+  }
+}

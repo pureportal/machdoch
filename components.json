@@ -1,0 +1,20 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/tauri/ui/styles.css",
+    "baseColor": "zinc",
+    "cssVariables": false,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@/tauri/ui/components",
+    "ui": "@/tauri/ui/components/ui",
+    "utils": "@/tauri/ui/lib/utils",
+    "lib": "@/tauri/ui/lib",
+    "hooks": "@/tauri/ui/hooks"
+  }
+}
