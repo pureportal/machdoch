@@ -1,10 +1,10 @@
 import { createSession } from "../../chat-session.model.ts";
+import type { RuntimeSnapshot } from "../../runtime";
 import {
   createConversationContextFromSession,
   getEffectiveSessionMode,
   getWorkspaceLabel,
 } from "./session-shell.ts";
-import type { RuntimeSnapshot } from "../../runtime";
 
 const createRuntimeSnapshot = (
   overrides: Partial<RuntimeSnapshot> = {},
@@ -32,13 +32,13 @@ const createRuntimeSnapshot = (
 describe("session shell helpers", () => {
   it("uses the session override before the workspace default mode", () => {
     expect(
-      getEffectiveSessionMode(
-        "auto",
-        createRuntimeSnapshot({ mode: "safe" }),
-      ),
+      getEffectiveSessionMode("auto", createRuntimeSnapshot({ mode: "safe" })),
     ).toBe("auto");
     expect(
-      getEffectiveSessionMode(undefined, createRuntimeSnapshot({ mode: "safe" })),
+      getEffectiveSessionMode(
+        undefined,
+        createRuntimeSnapshot({ mode: "safe" }),
+      ),
     ).toBe("safe");
     expect(getEffectiveSessionMode(undefined, null)).toBe("ask");
   });

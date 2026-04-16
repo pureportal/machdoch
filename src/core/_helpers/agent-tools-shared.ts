@@ -1,5 +1,6 @@
-import { readdir } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { lstat, readdir, realpath, stat } from "node:fs/promises";
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import type {
   AgentModelToolResult,
   AgentModelToolSpec,
@@ -63,7 +64,7 @@ export const normalizeWorkspacePath = (value: string): string => {
   const normalized = value
     .replace(/\\/g, "/")
     .replace(/^\.\//u, "")
-    .replace(/^\/+/u, "")
+    .replace(/^\/+ /u, "")
     .replace(/\/+/gu, "/")
     .replace(/\/$/u, "");
 
@@ -82,27 +83,70 @@ export const isPathInsideWorkspace = (
   );
 };
 
-export const resolveWorkspaceTarget = (
+const resolvePathWithinExistingTree = async (
+  absolutePath: string,
+): Promise<string> => {
+  if (existsSync(absolutePath)) {
+    return realpath(absolutePath);
+  }
+
+  const missingSegments: string[] = [];
+  let currentPath = absolutePath;
+
+  while (!existsSync(currentPath)) {
+    const parentPath = dirname(currentPath);
+
+    if (parentPath === currentPath) {
+      return absolutePath;
+    }
+
+    missingSegments.unshift(basename(currentPath));
+    currentPath = parentPath;
+  }
+
+  const resolvedBasePath = await realpath(currentPath);
+
+  return missingSegments.reduce(
+    (path, segment) => resolve(path, segment),
+    resolvedBasePath,
+  );
+};
+
+export const resolveWorkspaceTarget = async (
   workspaceRoot: string,
   requestedPath: string,
-): WorkspaceTarget => {
-  const resolvedPath = isAbsolute(requestedPath)
+): Promise<WorkspaceTarget> => {
+  const unresolvedPath = isAbsolute(requestedPath)
     ? resolve(requestedPath)
     : resolve(workspaceRoot, requestedPath);
-  const insideWorkspace = isPathInsideWorkspace(workspaceRoot, resolvedPath);
 
-  return {
-    requestedPath,
-    resolvedPath,
-    insideWorkspace,
-    ...(insideWorkspace
-      ? {
-          workspacePath: normalizeWorkspacePath(
-            relative(workspaceRoot, resolvedPath),
-          ),
-        }
-      : {}),
-  };
+  try {
+    const resolvedWorkspaceRoot = await realpath(workspaceRoot);
+    const resolvedPath = await resolvePathWithinExistingTree(unresolvedPath);
+    const insideWorkspace = isPathInsideWorkspace(
+      resolvedWorkspaceRoot,
+      resolvedPath,
+    );
+
+    return {
+      requestedPath,
+      resolvedPath,
+      insideWorkspace,
+      ...(insideWorkspace
+        ? {
+            workspacePath: normalizeWorkspacePath(
+              relative(resolvedWorkspaceRoot, resolvedPath),
+            ),
+          }
+        : {}),
+    };
+  } catch {
+    return {
+      requestedPath,
+      resolvedPath: unresolvedPath,
+      insideWorkspace: false,
+    };
+  }
 };
 
 export const isBinaryBuffer = (buffer: Buffer): boolean => {
@@ -172,24 +216,93 @@ export const stripHtmlToText = (html: string): string => {
 };
 
 export const createSearchScope = async (
+  workspaceRoot: string,
   directoryPath: string,
   files: string[],
+  visitedDirectories: Set<string> = new Set(),
+  seenFiles: Set<string> = new Set(),
 ): Promise<string[]> => {
-  const entries = await readdir(directoryPath, { withFileTypes: true });
+  const directoryTarget = await resolveWorkspaceTarget(
+    workspaceRoot,
+    directoryPath,
+  );
+
+  if (!directoryTarget.insideWorkspace) {
+    return files;
+  }
+
+  if (visitedDirectories.has(directoryTarget.resolvedPath)) {
+    return files;
+  }
+
+  visitedDirectories.add(directoryTarget.resolvedPath);
+
+  const entries = await readdir(directoryTarget.resolvedPath, {
+    withFileTypes: true,
+  });
 
   for (const entry of entries) {
-    const fullPath = resolve(directoryPath, entry.name);
-
-    if (entry.isDirectory()) {
-      if (IGNORED_SEARCH_DIRECTORIES.has(entry.name)) {
-        continue;
-      }
-
-      await createSearchScope(fullPath, files);
+    if (entry.isDirectory() && IGNORED_SEARCH_DIRECTORIES.has(entry.name)) {
       continue;
     }
 
-    files.push(fullPath);
+    const fullPath = resolve(directoryTarget.resolvedPath, entry.name);
+    const target = await resolveWorkspaceTarget(workspaceRoot, fullPath);
+
+    if (!target.insideWorkspace) {
+      continue;
+    }
+
+    if (entry.isDirectory()) {
+      await createSearchScope(
+        workspaceRoot,
+        target.resolvedPath,
+        files,
+        visitedDirectories,
+        seenFiles,
+      );
+      continue;
+    }
+
+    if (entry.isSymbolicLink()) {
+      try {
+        const targetStats = await stat(target.resolvedPath);
+
+        if (targetStats.isDirectory()) {
+          await createSearchScope(
+            workspaceRoot,
+            target.resolvedPath,
+            files,
+            visitedDirectories,
+            seenFiles,
+          );
+          continue;
+        }
+
+        if (!targetStats.isFile()) {
+          continue;
+        }
+      } catch {
+        continue;
+      }
+    } else {
+      try {
+        const targetStats = await lstat(target.resolvedPath);
+
+        if (!targetStats.isFile()) {
+          continue;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (seenFiles.has(target.resolvedPath)) {
+      continue;
+    }
+
+    seenFiles.add(target.resolvedPath);
+    files.push(target.resolvedPath);
   }
 
   return files;

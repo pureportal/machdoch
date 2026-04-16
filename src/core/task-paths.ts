@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { createTokenSet } from "./text.js";
 
 const PATH_INSPECTION_ACTIONS = [
@@ -185,6 +185,70 @@ const isPathInsideWorkspace = (
   );
 };
 
+const resolvePathWithinExistingTree = (absolutePath: string): string => {
+  if (existsSync(absolutePath)) {
+    return realpathSync.native(absolutePath);
+  }
+
+  const missingSegments: string[] = [];
+  let currentPath = absolutePath;
+
+  while (!existsSync(currentPath)) {
+    const parentPath = dirname(currentPath);
+
+    if (parentPath === currentPath) {
+      return absolutePath;
+    }
+
+    missingSegments.unshift(basename(currentPath));
+    currentPath = parentPath;
+  }
+
+  const resolvedBasePath = realpathSync.native(currentPath);
+
+  return missingSegments.reduce(
+    (path, segment) => resolve(path, segment),
+    resolvedBasePath,
+  );
+};
+
+const resolveWorkspacePathReference = (
+  workspaceRoot: string,
+  candidate: string,
+): TaskPathReference => {
+  const unresolvedPath = isAbsolute(candidate)
+    ? resolve(candidate)
+    : resolve(workspaceRoot, candidate);
+
+  try {
+    const resolvedWorkspaceRoot = realpathSync.native(workspaceRoot);
+    const resolvedPath = resolvePathWithinExistingTree(unresolvedPath);
+    const insideWorkspace = isPathInsideWorkspace(
+      resolvedWorkspaceRoot,
+      resolvedPath,
+    );
+
+    return {
+      requestedPath: candidate,
+      resolvedPath,
+      insideWorkspace,
+      ...(insideWorkspace
+        ? {
+            workspacePath: normalizeRelativePath(
+              relative(resolvedWorkspaceRoot, resolvedPath),
+            ),
+          }
+        : {}),
+    };
+  } catch {
+    return {
+      requestedPath: candidate,
+      resolvedPath: unresolvedPath,
+      insideWorkspace: false,
+    };
+  }
+};
+
 const createSegmentMatcher = (patternSegment: string): RegExp => {
   let output = "^";
 
@@ -327,11 +391,8 @@ export const extractTaskPathReferences = (
       continue;
     }
 
-    const resolvedPath = isAbsolute(candidate)
-      ? resolve(candidate)
-      : resolve(workspaceRoot, candidate);
-    const insideWorkspace = isPathInsideWorkspace(workspaceRoot, resolvedPath);
-    const dedupeKey = `${resolvedPath.toLowerCase()}::${candidate.toLowerCase()}`;
+    const reference = resolveWorkspacePathReference(workspaceRoot, candidate);
+    const dedupeKey = `${reference.resolvedPath.toLowerCase()}::${candidate.toLowerCase()}`;
 
     if (seen.has(dedupeKey)) {
       continue;
@@ -339,18 +400,7 @@ export const extractTaskPathReferences = (
 
     seen.add(dedupeKey);
 
-    references.push({
-      requestedPath: candidate,
-      resolvedPath,
-      insideWorkspace,
-      ...(insideWorkspace
-        ? {
-            workspacePath: normalizeRelativePath(
-              relative(workspaceRoot, resolvedPath),
-            ),
-          }
-        : {}),
-    });
+    references.push(reference);
   }
 
   return references;
@@ -454,22 +504,10 @@ export const resolveDeterministicCreateFileTarget = (
     return undefined;
   }
 
-  const resolvedPath = isAbsolute(candidate)
-    ? resolve(candidate)
-    : resolve(workspaceRoot, candidate);
-  const insideWorkspace = isPathInsideWorkspace(workspaceRoot, resolvedPath);
-
   return {
-    requestedPath: candidate,
-    resolvedPath,
-    insideWorkspace,
+    ...resolveWorkspacePathReference(workspaceRoot, candidate),
     inferredPath:
       explicitPathReference === undefined && namedPathCandidate === undefined,
-    ...(insideWorkspace
-      ? {
-          workspacePath: normalizeRelativePath(relative(workspaceRoot, resolvedPath)),
-        }
-      : {}),
   };
 };
 

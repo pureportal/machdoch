@@ -1,8 +1,8 @@
+import { normalizeOptionalString } from "../common/_helpers/normalize-optional-string.js";
 import type {
   ConversationMemoryEntry,
   ConversationMemoryScope,
 } from "./types.js";
-import { normalizeOptionalString } from "../common/_helpers/normalize-optional-string.js";
 
 export const MAX_SESSION_MEMORY_ENTRIES = 24;
 export const MAX_GLOBAL_MEMORY_ENTRIES = 40;

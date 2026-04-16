@@ -137,60 +137,60 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
         .filter((session): session is ChatSessionRecord => {
           return Boolean(
             session &&
-              typeof session === "object" &&
-              typeof (session as ChatSessionRecord).id === "string",
+            typeof session === "object" &&
+            typeof (session as ChatSessionRecord).id === "string",
           );
         })
-          .map((session) => {
-            const provider = isRuntimeProvider(session.provider)
-              ? session.provider
-              : DEFAULT_PROVIDER;
-            const preserveModel = provider === session.provider;
-            const mode = isRunMode(session.mode) ? session.mode : undefined;
+        .map((session) => {
+          const provider = isRuntimeProvider(session.provider)
+            ? session.provider
+            : DEFAULT_PROVIDER;
+          const preserveModel = provider === session.provider;
+          const mode = isRunMode(session.mode) ? session.mode : undefined;
 
-            return createSession({
-              ...session,
-              provider,
-              ...(mode ? { mode } : {}),
-              model:
-                preserveModel &&
-                typeof session.model === "string" &&
-                session.model.trim().length > 0
-                  ? session.model
-                  : undefined,
-              draft: typeof session.draft === "string" ? session.draft : "",
-              workspace:
-                typeof session.workspace === "string" ? session.workspace : null,
-              manualTitle:
-                typeof session.manualTitle === "string"
-                  ? session.manualTitle
-                  : undefined,
-              messages: Array.isArray(session.messages) ? session.messages : [],
-              promptHistory: Array.isArray(session.promptHistory)
-                ? session.promptHistory.filter(
-                    (entry): entry is string => typeof entry === "string",
-                  )
-                : [],
-              sessionMemoryEnabled: session.sessionMemoryEnabled !== false,
-              useGlobalMemory: session.useGlobalMemory !== false,
-              sessionMemory: normalizeConversationMemoryEntries(
-                session.sessionMemory,
-                "session",
-              ),
-              createdAt:
-                typeof session.createdAt === "number"
-                  ? session.createdAt
-                  : undefined,
-              updatedAt:
-                typeof session.updatedAt === "number"
-                  ? session.updatedAt
-                  : undefined,
-              archivedAt:
-                typeof session.archivedAt === "number"
-                  ? session.archivedAt
-                  : undefined,
-            });
-          })
+          return createSession({
+            ...session,
+            provider,
+            ...(mode ? { mode } : {}),
+            model:
+              preserveModel &&
+              typeof session.model === "string" &&
+              session.model.trim().length > 0
+                ? session.model
+                : undefined,
+            draft: typeof session.draft === "string" ? session.draft : "",
+            workspace:
+              typeof session.workspace === "string" ? session.workspace : null,
+            manualTitle:
+              typeof session.manualTitle === "string"
+                ? session.manualTitle
+                : undefined,
+            messages: Array.isArray(session.messages) ? session.messages : [],
+            promptHistory: Array.isArray(session.promptHistory)
+              ? session.promptHistory.filter(
+                  (entry): entry is string => typeof entry === "string",
+                )
+              : [],
+            sessionMemoryEnabled: session.sessionMemoryEnabled !== false,
+            useGlobalMemory: session.useGlobalMemory !== false,
+            sessionMemory: normalizeConversationMemoryEntries(
+              session.sessionMemory,
+              "session",
+            ),
+            createdAt:
+              typeof session.createdAt === "number"
+                ? session.createdAt
+                : undefined,
+            updatedAt:
+              typeof session.updatedAt === "number"
+                ? session.updatedAt
+                : undefined,
+            archivedAt:
+              typeof session.archivedAt === "number"
+                ? session.archivedAt
+                : undefined,
+          });
+        })
     : [];
 
   const normalizedSessions = sessions.length > 0 ? sessions : fallback.sessions;
@@ -254,9 +254,9 @@ const getMessageTimestamp = (
 const getLatestUserTaskId = (messages: ChatSessionMessage[]): string | null => {
   let latestTask: { taskId: string; timestamp: number } | null = null;
 
-  messages.forEach((message, index) => {
+  for (const [index, message] of messages.entries()) {
     if (message.role !== "user") {
-      return;
+      continue;
     }
 
     const timestamp = getMessageTimestamp(message, index);
@@ -265,7 +265,7 @@ const getLatestUserTaskId = (messages: ChatSessionMessage[]): string | null => {
     if (!latestTask || timestamp >= latestTask.timestamp) {
       latestTask = { taskId, timestamp };
     }
-  });
+  }
 
   return latestTask?.taskId ?? null;
 };

@@ -18,10 +18,7 @@ import {
   type ChatSessionRecord,
   type SessionOverviewStatus,
 } from "../../chat-session.model";
-import {
-  getProviderLabel,
-  type CatalogModelStage,
-} from "../../model-catalog";
+import { getProviderLabel, type CatalogModelStage } from "../../model-catalog";
 import {
   USER_WEB_SEARCH_PROVIDER_ORDER,
   type RuntimeSnapshot,
@@ -58,7 +55,11 @@ export const MODEL_STAGE_CLASSES: Record<CatalogModelStage, string> = {
   open: "border-violet-500/20 bg-violet-500/10 text-violet-200",
 };
 
-export const RUN_MODE_ORDER = ["safe", "ask", "auto"] as const satisfies ReadonlyArray<RunMode>;
+export const RUN_MODE_ORDER = [
+  "safe",
+  "ask",
+  "auto",
+] as const satisfies ReadonlyArray<RunMode>;
 
 export const RUN_MODE_META = {
   safe: {
@@ -70,8 +71,7 @@ export const RUN_MODE_META = {
     selectedClassName:
       "border-emerald-500/30 bg-emerald-500/10 text-emerald-100",
     iconClassName: "text-emerald-300",
-    badgeClassName:
-      "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
+    badgeClassName: "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
   },
   ask: {
     label: "Ask mode",
@@ -79,11 +79,9 @@ export const RUN_MODE_META = {
     icon: MessageSquare,
     triggerClassName:
       "border-amber-500/20 bg-amber-500/10 text-amber-100 hover:bg-amber-500/15 hover:text-white",
-    selectedClassName:
-      "border-amber-500/30 bg-amber-500/10 text-amber-100",
+    selectedClassName: "border-amber-500/30 bg-amber-500/10 text-amber-100",
     iconClassName: "text-amber-300",
-    badgeClassName:
-      "border-amber-500/20 bg-amber-500/10 text-amber-200",
+    badgeClassName: "border-amber-500/20 bg-amber-500/10 text-amber-200",
   },
   auto: {
     label: "Autopilot",
@@ -92,11 +90,9 @@ export const RUN_MODE_META = {
     icon: WandSparkles,
     triggerClassName:
       "border-violet-500/20 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
-    selectedClassName:
-      "border-violet-500/30 bg-violet-500/10 text-violet-100",
+    selectedClassName: "border-violet-500/30 bg-violet-500/10 text-violet-100",
     iconClassName: "text-violet-300",
-    badgeClassName:
-      "border-violet-500/20 bg-violet-500/10 text-violet-200",
+    badgeClassName: "border-violet-500/20 bg-violet-500/10 text-violet-200",
   },
 } satisfies Record<
   RunMode,

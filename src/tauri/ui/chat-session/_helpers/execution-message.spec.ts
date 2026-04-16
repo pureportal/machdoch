@@ -24,7 +24,9 @@ const createExecution = (
     ...(overrides.reason ? { reason: overrides.reason } : {}),
     ...(overrides.response ? { response: overrides.response } : {}),
     ...(overrides.autopilot ? { autopilot: overrides.autopilot } : {}),
-    ...(overrides.memoryUpdates ? { memoryUpdates: overrides.memoryUpdates } : {}),
+    ...(overrides.memoryUpdates
+      ? { memoryUpdates: overrides.memoryUpdates }
+      : {}),
   };
 };
 
@@ -32,7 +34,10 @@ describe("execution-message helpers", () => {
   it("creates a fallback execution markdown string from status and summary", () => {
     expect(
       createFallbackExecutionMarkdown(
-        createExecution({ status: "approval-required", summary: "Needs approval." }),
+        createExecution({
+          status: "approval-required",
+          summary: "Needs approval.",
+        }),
       ),
     ).toBe("**Approval required.** Needs approval.");
   });

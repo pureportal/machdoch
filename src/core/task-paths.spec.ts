@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   extractExplicitInspectionPathReference,
   extractTaskPathReferences,
   matchesWorkspaceGlob,
+  resolveDeterministicCreateFileTarget,
 } from "./task-paths.ts";
 
 const workspacesToClean: string[] = [];
@@ -13,6 +14,17 @@ const createWorkspace = async (): Promise<string> => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-paths-"));
   workspacesToClean.push(workspaceRoot);
   return workspaceRoot;
+};
+
+const createDirectoryLink = async (
+  targetPath: string,
+  linkPath: string,
+): Promise<void> => {
+  await symlink(
+    targetPath,
+    linkPath,
+    process.platform === "win32" ? "junction" : "dir",
+  );
 };
 
 afterEach(async () => {
@@ -81,7 +93,7 @@ describe("extractTaskPathReferences", () => {
     expect(references).toEqual([
       {
         requestedPath: "../secret.txt",
-        resolvedPath: join(workspaceRoot, "..", "secret.txt"),
+        resolvedPath: resolve(workspaceRoot, "..", "secret.txt"),
         insideWorkspace: false,
       },
       {
@@ -89,6 +101,31 @@ describe("extractTaskPathReferences", () => {
         resolvedPath: join(workspaceRoot, "docs"),
         insideWorkspace: true,
         workspacePath: "docs",
+      },
+    ]);
+  });
+
+  it("treats symlinked paths that escape the workspace as outside-workspace references", async () => {
+    const workspaceRoot = await createWorkspace();
+    const externalRoot = await createWorkspace();
+
+    await mkdir(join(externalRoot, "shared"), { recursive: true });
+    await writeFile(join(externalRoot, "shared", "secret.txt"), "classified\n");
+    await createDirectoryLink(
+      join(externalRoot, "shared"),
+      join(workspaceRoot, "linked-shared"),
+    );
+
+    const references = extractTaskPathReferences(
+      "read linked-shared/secret.txt",
+      workspaceRoot,
+    );
+
+    expect(references).toEqual([
+      {
+        requestedPath: "linked-shared/secret.txt",
+        resolvedPath: join(externalRoot, "shared", "secret.txt"),
+        insideWorkspace: false,
       },
     ]);
   });
@@ -131,5 +168,30 @@ describe("matchesWorkspaceGlob", () => {
     );
     expect(matchesWorkspaceGlob("src/core/config.ts", "src/*.ts")).toBe(false);
     expect(matchesWorkspaceGlob("README.md", "src/**/*.ts")).toBe(false);
+  });
+});
+
+describe("resolveDeterministicCreateFileTarget", () => {
+  it("marks inferred create targets under symlinked directories as outside the workspace", async () => {
+    const workspaceRoot = await createWorkspace();
+    const externalRoot = await createWorkspace();
+
+    await mkdir(join(externalRoot, "shared"), { recursive: true });
+    await createDirectoryLink(
+      join(externalRoot, "shared"),
+      join(workspaceRoot, "linked-shared"),
+    );
+
+    expect(
+      resolveDeterministicCreateFileTarget(
+        'create "linked-shared/new.txt"',
+        workspaceRoot,
+      ),
+    ).toEqual({
+      requestedPath: "linked-shared/new.txt",
+      resolvedPath: join(externalRoot, "shared", "new.txt"),
+      insideWorkspace: false,
+      inferredPath: false,
+    });
   });
 });

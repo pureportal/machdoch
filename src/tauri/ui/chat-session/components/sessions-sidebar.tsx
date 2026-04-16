@@ -7,6 +7,14 @@ import {
   isSessionArchived,
   type ChatSessionRecord,
 } from "../../chat-session.model";
+import { Button } from "../../components/ui/button";
+import { ScrollArea } from "../../components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "../../components/ui/tooltip";
+import { cn } from "../../lib/utils";
 import {
   SESSION_SCOPE_FILTERS,
   SESSION_STATUS_FILTERS,
@@ -16,14 +24,6 @@ import {
   type SessionScopeFilter,
   type SessionStatusFilter,
 } from "../_helpers/session-shell.ts";
-import { Button } from "../../components/ui/button";
-import { ScrollArea } from "../../components/ui/scroll-area";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "../../components/ui/tooltip";
-import { cn } from "../../lib/utils";
 
 export interface SessionsSidebarProps {
   totalSessions: number;
@@ -209,10 +209,7 @@ export const SessionsSidebar = ({
                           )}
                         >
                           <SessionStatusIcon
-                            className={cn(
-                              "h-4 w-4",
-                              statusMeta.iconClassName,
-                            )}
+                            className={cn("h-4 w-4", statusMeta.iconClassName)}
                           />
                         </div>
                       </TooltipTrigger>

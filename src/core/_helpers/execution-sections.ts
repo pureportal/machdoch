@@ -171,7 +171,9 @@ export const createDirectoryPreviewSection = async (
   };
 };
 
-const listTopLevelEntries = async (workspaceRoot: string): Promise<string[]> => {
+const listTopLevelEntries = async (
+  workspaceRoot: string,
+): Promise<string[]> => {
   const entries = await readdir(workspaceRoot, { withFileTypes: true });
   const ordered = entries.sort((left, right) => {
     const leftKind = left.isDirectory() ? 0 : 1;
@@ -184,10 +186,12 @@ const listTopLevelEntries = async (workspaceRoot: string): Promise<string[]> => 
     return sortEntryNames(left.name, right.name);
   });
 
-  const visibleEntries = ordered.slice(0, MAX_TOP_LEVEL_ENTRIES).map((entry) => {
-    const kind = entry.isDirectory() ? "dir" : "file";
-    return `${kind}: ${entry.name}`;
-  });
+  const visibleEntries = ordered
+    .slice(0, MAX_TOP_LEVEL_ENTRIES)
+    .map((entry) => {
+      const kind = entry.isDirectory() ? "dir" : "file";
+      return `${kind}: ${entry.name}`;
+    });
 
   if (ordered.length > MAX_TOP_LEVEL_ENTRIES) {
     visibleEntries.push(

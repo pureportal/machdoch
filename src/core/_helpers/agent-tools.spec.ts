@@ -1,6 +1,6 @@
 /// <reference types="vitest/globals" />
-import { resolveActionDecision } from "./agent-tools.ts";
 import type { RuntimeConfig } from "../types.js";
+import { resolveActionDecision } from "./agent-tools.ts";
 
 const createRuntimeConfig = (
   overrides: Partial<RuntimeConfig> = {},

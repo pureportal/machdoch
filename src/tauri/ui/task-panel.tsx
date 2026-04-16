@@ -65,7 +65,10 @@ export const TaskPanel = ({ source }: TaskPanelProps): JSX.Element => {
             </CardDescription>
           </div>
 
-          <ul aria-label="Task state badges" className="m-0 flex flex-wrap gap-2 p-0 list-none">
+          <ul
+            aria-label="Task state badges"
+            className="m-0 flex flex-wrap gap-2 p-0 list-none"
+          >
             {model.badges.map((badge) => {
               return (
                 <li key={`${badge.label}-${badge.tone}`}>

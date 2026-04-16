@@ -1,8 +1,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { executeWebSearch, getConfiguredWebSearchProvider } from "../web-search.js";
 import type { RuntimeConfig } from "../types.js";
-import { compactTraceText, createTextSection, limitText } from "./runtime-text.js";
+import {
+  executeWebSearch,
+  getConfiguredWebSearchProvider,
+} from "../web-search.js";
 import {
   SHELL_TIMEOUT_MS,
   coerceInteger,
@@ -11,6 +13,11 @@ import {
   stripHtmlToText,
   type AgentToolDefinition,
 } from "./agent-tools-shared.js";
+import {
+  compactTraceText,
+  createTextSection,
+  limitText,
+} from "./runtime-text.js";
 
 const execFileAsync = promisify(execFile);
 

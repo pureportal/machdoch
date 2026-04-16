@@ -2,21 +2,21 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, relative } from "node:path";
 import { sortEntryNames } from "../../common/_helpers/sort-entry-names.js";
-import { createTextSection, limitText } from "./runtime-text.js";
 import {
-  MAX_DIRECTORY_ENTRIES,
-  MAX_SEARCH_RESULTS,
-  MAX_TEXT_FILE_BYTES,
   coerceBoolean,
   coerceInteger,
   coerceString,
   createSearchScope,
   createToolErrorResult,
   isBinaryBuffer,
+  MAX_DIRECTORY_ENTRIES,
+  MAX_SEARCH_RESULTS,
+  MAX_TEXT_FILE_BYTES,
   normalizeWorkspacePath,
   resolveWorkspaceTarget,
   type AgentToolDefinition,
 } from "./agent-tools-shared.js";
+import { createTextSection, limitText } from "./runtime-text.js";
 
 export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
   return [
@@ -58,7 +58,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
           );
         }
 
-        const target = resolveWorkspaceTarget(
+        const target = await resolveWorkspaceTarget(
           context.workspaceRoot,
           requestedPath,
         );
@@ -189,7 +189,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
           );
         }
 
-        const target = resolveWorkspaceTarget(
+        const target = await resolveWorkspaceTarget(
           context.workspaceRoot,
           requestedPath,
         );
@@ -344,7 +344,11 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
           );
         }
 
-        const files = await createSearchScope(context.workspaceRoot, []);
+        const files = await createSearchScope(
+          context.workspaceRoot,
+          context.workspaceRoot,
+          [],
+        );
         const results: string[] = [];
 
         for (const filePath of files) {
@@ -449,7 +453,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
           );
         }
 
-        const target = resolveWorkspaceTarget(
+        const target = await resolveWorkspaceTarget(
           context.workspaceRoot,
           requestedPath,
         );
@@ -554,7 +558,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
           );
         }
 
-        const target = resolveWorkspaceTarget(
+        const target = await resolveWorkspaceTarget(
           context.workspaceRoot,
           requestedPath,
         );

@@ -31,9 +31,7 @@ import { StatusBadge } from "../../common/_components/status-badge";
 import { Avatar } from "./components/ui/avatar";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
-import {
-  Dialog,
-} from "./components/ui/dialog";
+import { Dialog } from "./components/ui/dialog";
 import { Textarea } from "./components/ui/textarea";
 
 import {
@@ -55,6 +53,34 @@ import {
   type ChatSessionRecord,
   type ShellPersistedState,
 } from "./chat-session.model";
+import {
+  createExecutionThinkingTrace,
+  getExecutionMessageContent,
+  getRenderedMessageContent,
+} from "./chat-session/_helpers/execution-message.tsx";
+import {
+  createConversationContextFromSession,
+  createEmptyUserMemorySettings,
+  createEmptyWebSearchSettings,
+  formatSavedFactCount,
+  getEffectiveSessionMode,
+  getWebSearchProviderLabel,
+  getWorkspaceLabel,
+  MODEL_STAGE_CLASSES,
+  MODEL_STAGE_LABELS,
+  removeSessionArchiveFlag,
+  removeSessionModeOverride,
+  RUN_MODE_META,
+  RUN_MODE_ORDER,
+  type SessionScopeFilter,
+  type SessionStatusFilter,
+  type SettingsSection,
+} from "./chat-session/_helpers/session-shell.ts";
+import { ExecutionInsightRow } from "./chat-session/components/execution-insight-row";
+import { MemoryShortcutButton } from "./chat-session/components/memory-shortcut-button";
+import { MessageMarkdown } from "./chat-session/components/message-markdown";
+import { SessionsSidebar } from "./chat-session/components/sessions-sidebar";
+import { SettingsDialog } from "./chat-session/components/settings-dialog";
 import { Input } from "./components/ui/input";
 import {
   Popover,
@@ -69,34 +95,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./components/ui/tooltip";
-import { ExecutionInsightRow } from "./chat-session/components/execution-insight-row";
-import { MemoryShortcutButton } from "./chat-session/components/memory-shortcut-button";
-import { MessageMarkdown } from "./chat-session/components/message-markdown";
-import { SessionsSidebar } from "./chat-session/components/sessions-sidebar";
-import { SettingsDialog } from "./chat-session/components/settings-dialog";
-import {
-  createExecutionThinkingTrace,
-  getExecutionMessageContent,
-  getRenderedMessageContent,
-} from "./chat-session/_helpers/execution-message.tsx";
-import {
-  MODEL_STAGE_CLASSES,
-  MODEL_STAGE_LABELS,
-  RUN_MODE_META,
-  RUN_MODE_ORDER,
-  createConversationContextFromSession,
-  createEmptyUserMemorySettings,
-  createEmptyWebSearchSettings,
-  formatSavedFactCount,
-  getEffectiveSessionMode,
-  getWebSearchProviderLabel,
-  getWorkspaceLabel,
-  removeSessionArchiveFlag,
-  removeSessionModeOverride,
-  type SessionScopeFilter,
-  type SessionStatusFilter,
-  type SettingsSection,
-} from "./chat-session/_helpers/session-shell.ts";
 import { loadShellState, saveShellState } from "./lib/shell-store";
 import { cn } from "./lib/utils";
 import {
@@ -1987,7 +1985,8 @@ export const ChatSession = (): JSX.Element => {
                                 {RUN_MODE_ORDER.map((mode) => {
                                   const meta = RUN_MODE_META[mode];
                                   const ModeIcon = meta.icon;
-                                  const isSelected = activeSession.mode === mode;
+                                  const isSelected =
+                                    activeSession.mode === mode;
 
                                   return (
                                     <button

@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import { StatusBadge } from "../../../../common/_components/status-badge";
-import { Button } from "../../components/ui/button";
 import type { TaskExecutionResult } from "../../../../core/types.js";
+import { Button } from "../../components/ui/button";
 import { getRelatedFileButtonLabel } from "../_helpers/execution-message.tsx";
 
 export interface ExecutionInsightRowProps {

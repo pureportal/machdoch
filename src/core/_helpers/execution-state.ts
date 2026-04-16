@@ -1,0 +1,231 @@
+import type {
+  ResolvedTaskContext,
+  ResolvedToolPolicy,
+  RuntimeConfig,
+  TaskExecutionOptions,
+  TaskExecutionProgress,
+  TaskExecutionResult,
+  TaskExecutionSection,
+  TaskExecutionState,
+  ToolName,
+} from "../types.js";
+import type { ReadOnlyInspectionTarget } from "../task-inspection.js";
+import type {
+  CreateFilePathReference,
+  TaskPathReference,
+} from "../task-paths.js";
+
+export interface TaskExecutionRuntime {
+  taskContext: ResolvedTaskContext | undefined;
+  contextSections: TaskExecutionSection[];
+  explicitPathReference: TaskPathReference | undefined;
+  createFileTarget: CreateFilePathReference | undefined;
+  inspectionTarget: ReadOnlyInspectionTarget | undefined;
+  filesystemPolicy: ResolvedToolPolicy | undefined;
+  pendingResult: TaskExecutionResult | undefined;
+  executedTools: ToolName[];
+}
+
+export const createExecutionResult = (
+  base: Omit<TaskExecutionResult, "reason">,
+  reason?: string,
+): TaskExecutionResult => {
+  return {
+    ...base,
+    ...(reason ? { reason } : {}),
+  };
+};
+
+export const createInvariantViolationResult = (
+  task: string,
+  config: RuntimeConfig,
+  runtime: TaskExecutionRuntime,
+  summary: string,
+  reason: string,
+): TaskExecutionResult => {
+  return createExecutionResult(
+    {
+      task,
+      mode: config.mode,
+      status: "blocked",
+      summary,
+      executedTools: runtime.executedTools,
+      outputSections: runtime.contextSections,
+    },
+    reason,
+  );
+};
+
+const isTerminalExecutionState = (state: TaskExecutionState): boolean => {
+  return (
+    state === "completed" ||
+    state === "approval-required" ||
+    state === "blocked" ||
+    state === "unsupported" ||
+    state === "cancelled"
+  );
+};
+
+const createProgressSnapshot = (
+  task: string,
+  config: RuntimeConfig,
+  state: TaskExecutionState,
+  message: string,
+  runtime: TaskExecutionRuntime,
+  result?: TaskExecutionResult,
+): TaskExecutionProgress => {
+  return {
+    task,
+    mode: config.mode,
+    state,
+    message,
+    executedTools:
+      result?.executedTools ??
+      runtime.pendingResult?.executedTools ??
+      runtime.executedTools,
+    outputSections:
+      result?.outputSections ??
+      runtime.pendingResult?.outputSections ??
+      runtime.contextSections,
+    cancellable: !isTerminalExecutionState(state),
+    ...(result?.reason ? { reason: result.reason } : {}),
+  };
+};
+
+export const emitExecutionState = async (
+  task: string,
+  config: RuntimeConfig,
+  state: TaskExecutionState,
+  message: string,
+  runtime: TaskExecutionRuntime,
+  options: TaskExecutionOptions,
+  result?: TaskExecutionResult,
+): Promise<void> => {
+  await options.onStateChange?.(
+    createProgressSnapshot(task, config, state, message, runtime, result),
+  );
+};
+
+const getCancellationReason = (signal: AbortSignal | undefined): string => {
+  const reason = signal?.reason;
+
+  if (reason instanceof Error && reason.message.trim().length > 0) {
+    return reason.message;
+  }
+
+  if (typeof reason === "string" && reason.trim().length > 0) {
+    return reason;
+  }
+
+  return "Execution cancelled by user.";
+};
+
+const createCancellationSection = (
+  state: TaskExecutionState,
+  message: string,
+): TaskExecutionSection => {
+  return {
+    title: "Cancellation",
+    lines: [`state: ${state}`, `message: ${message}`],
+  };
+};
+
+const createCancelledResult = (
+  task: string,
+  config: RuntimeConfig,
+  state: TaskExecutionState,
+  message: string,
+  runtime: TaskExecutionRuntime,
+  signal: AbortSignal | undefined,
+): TaskExecutionResult => {
+  const baseSections =
+    runtime.pendingResult?.outputSections.length &&
+    runtime.pendingResult.outputSections.length > 0
+      ? runtime.pendingResult.outputSections
+      : runtime.contextSections;
+
+  return createExecutionResult(
+    {
+      task,
+      mode: config.mode,
+      status: "cancelled",
+      summary: "Execution was cancelled before the task completed.",
+      executedTools:
+        runtime.pendingResult?.executedTools ?? runtime.executedTools,
+      outputSections: [
+        ...baseSections,
+        createCancellationSection(state, message),
+      ],
+    },
+    getCancellationReason(signal),
+  );
+};
+
+export const maybeReturnCancelledResult = async (
+  task: string,
+  config: RuntimeConfig,
+  state: TaskExecutionState,
+  message: string,
+  runtime: TaskExecutionRuntime,
+  options: TaskExecutionOptions,
+): Promise<TaskExecutionResult | undefined> => {
+  if (!options.signal?.aborted) {
+    return undefined;
+  }
+
+  const result = createCancelledResult(
+    task,
+    config,
+    state,
+    message,
+    runtime,
+    options.signal,
+  );
+
+  await emitExecutionState(
+    task,
+    config,
+    "cancelled",
+    result.summary,
+    runtime,
+    options,
+    result,
+  );
+
+  return result;
+};
+
+export const emitTerminalResult = async (
+  task: string,
+  config: RuntimeConfig,
+  state: TaskExecutionState,
+  message: string,
+  runtime: TaskExecutionRuntime,
+  options: TaskExecutionOptions,
+  result: TaskExecutionResult,
+): Promise<TaskExecutionResult> => {
+  runtime.pendingResult = result;
+  runtime.executedTools = result.executedTools;
+
+  await emitExecutionState(
+    task,
+    config,
+    state,
+    message,
+    runtime,
+    options,
+    result,
+  );
+
+  return result;
+};
+
+export const verifyExecutedResult = (
+  result: TaskExecutionResult,
+): string | undefined => {
+  if (result.outputSections.length === 0) {
+    return "The executor completed without producing any observable output sections.";
+  }
+
+  return undefined;
+};

@@ -1,4 +1,16 @@
 import type { JSX } from "react";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import {
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "../../components/ui/dialog";
+import { Input } from "../../components/ui/input";
+import { ScrollArea } from "../../components/ui/scroll-area";
+import { Separator } from "../../components/ui/separator";
+import { cn } from "../../lib/utils";
 import { getProviderLabel } from "../../model-catalog";
 import {
   USER_API_KEY_PROVIDER_ORDER,
@@ -13,18 +25,6 @@ import {
   getWebSearchProviderLabel,
   type SettingsSection,
 } from "../_helpers/session-shell.ts";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import {
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "../../components/ui/dialog";
-import { Input } from "../../components/ui/input";
-import { ScrollArea } from "../../components/ui/scroll-area";
-import { Separator } from "../../components/ui/separator";
-import { cn } from "../../lib/utils";
 
 export interface SettingsStatusMessage {
   tone: "success" | "error";
@@ -162,7 +162,9 @@ export const SettingsDialog = ({
                     onClick={() => {
                       void providerSetup.onSave();
                     }}
-                    disabled={!providerSetup.keyValue.trim() || providerSetup.saving}
+                    disabled={
+                      !providerSetup.keyValue.trim() || providerSetup.saving
+                    }
                     className="h-11 rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500 disabled:opacity-50"
                   >
                     {providerSetup.saving ? "Saving…" : "Save key"}
@@ -208,7 +210,9 @@ export const SettingsDialog = ({
                           type="button"
                           variant="outline"
                           onClick={() => {
-                            void webSearchSetup.onActiveProviderChange(provider);
+                            void webSearchSetup.onActiveProviderChange(
+                              provider,
+                            );
                           }}
                           disabled={webSearchSetup.saving}
                           className={cn(
@@ -236,7 +240,9 @@ export const SettingsDialog = ({
                         key={provider}
                         type="button"
                         variant="outline"
-                        onClick={() => webSearchSetup.onProviderChange(provider)}
+                        onClick={() =>
+                          webSearchSetup.onProviderChange(provider)
+                        }
                         className={cn(
                           "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
                           webSearchSetup.provider === provider &&
@@ -272,7 +278,9 @@ export const SettingsDialog = ({
                     onClick={() => {
                       void webSearchSetup.onSave();
                     }}
-                    disabled={!webSearchSetup.keyValue.trim() || webSearchSetup.saving}
+                    disabled={
+                      !webSearchSetup.keyValue.trim() || webSearchSetup.saving
+                    }
                     className="h-11 rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500 disabled:opacity-50"
                   >
                     {webSearchSetup.saving ? "Saving…" : "Save key"}

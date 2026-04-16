@@ -42,8 +42,10 @@ const STATUS_BADGE_STYLES: Record<
   },
 };
 
-export interface StatusBadgeProps
-  extends Omit<ComponentProps<typeof Badge>, "variant"> {
+export interface StatusBadgeProps extends Omit<
+  ComponentProps<typeof Badge>,
+  "variant"
+> {
   tone?: StatusBadgeTone;
   children: ReactNode;
   variant?: BadgeVariant;

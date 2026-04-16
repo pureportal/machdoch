@@ -5,13 +5,13 @@ import {
   mergeConversationMemoryEntries,
   rememberConversationMemoryEntry,
 } from "../memory.js";
-import { compactTraceText } from "./runtime-text.js";
 import {
   coerceString,
   createToolErrorResult,
   type AgentToolDefinition,
   type ConversationMemoryRuntime,
 } from "./agent-tools-shared.js";
+import { compactTraceText } from "./runtime-text.js";
 
 export const createMemoryToolDefinitions = (
   memory: ConversationMemoryRuntime,

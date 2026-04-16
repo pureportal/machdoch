@@ -1,3 +1,13 @@
+import {
+  createToolDefinitions,
+  executeToolCall,
+  type ApprovalPause,
+} from "./_helpers/agent-tools.js";
+import {
+  prepareConversationPromptContext,
+  type PreparedConversationPromptContext,
+} from "./_helpers/conversation-prompt-context.js";
+import { createProviderAdapter } from "./_helpers/provider-adapters.js";
 import type {
   AgentModelAdapter,
   AgentModelToolResult,
@@ -17,16 +27,6 @@ import type {
   TaskExecutionState,
   ToolName,
 } from "./types.js";
-import {
-  createToolDefinitions,
-  executeToolCall,
-  type ApprovalPause,
-} from "./_helpers/agent-tools.js";
-import {
-  prepareConversationPromptContext,
-  type PreparedConversationPromptContext,
-} from "./_helpers/conversation-prompt-context.js";
-import { createProviderAdapter } from "./_helpers/provider-adapters.js";
 
 const MAX_EXECUTOR_TURNS = 16;
 const MAX_AUTOPILOT_EXECUTOR_ITERATIONS = 4;
@@ -739,7 +739,6 @@ const createAutopilotMonitorUserPrompt = (
     "<decision_rule>Return `continue` if any user requirement appears incomplete, unverified, or contradicted by the evidence. Return `complete` only when the evidence shows the task is done as requested.</decision_rule>",
   ].join("\n\n");
 };
-
 
 const finalizeExecutedResult = (
   task: string,

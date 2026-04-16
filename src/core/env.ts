@@ -4,15 +4,15 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { normalizeOptionalString } from "../common/_helpers/normalize-optional-string.js";
 import {
-    MAX_GLOBAL_MEMORY_ENTRIES,
-    normalizeConversationMemoryEntries,
-    rememberConversationMemoryEntry,
+  MAX_GLOBAL_MEMORY_ENTRIES,
+  normalizeConversationMemoryEntries,
+  rememberConversationMemoryEntry,
 } from "./memory.js";
 import type {
-    ConversationMemoryEntry,
-    ProviderAvailability,
-    WebSearchProvider,
-    WebSearchProviderAvailability,
+  ConversationMemoryEntry,
+  ProviderAvailability,
+  WebSearchProvider,
+  WebSearchProviderAvailability,
 } from "./types.js";
 
 const PLACEHOLDER_TOKENS = ["YOUR_", "CHANGE_ME", "PLACEHOLDER"];
