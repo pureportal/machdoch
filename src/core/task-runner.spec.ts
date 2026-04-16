@@ -24,6 +24,13 @@ const createConfig = (enabledTools: ToolName[]): RuntimeConfig => {
       discoverGithubCustomizations: false,
     },
     providerAvailability,
+    webSearch: {
+      activeProvider: "none",
+      providerAvailability: [
+        { provider: "perplexity", configured: false },
+        { provider: "tavily", configured: false },
+      ],
+    },
     availableProfiles: [],
   };
 };
@@ -209,6 +216,31 @@ describe("previewTaskRun", () => {
       ),
     ).toBe(true);
     expect(preview.notes).toContain("No instruction files were discovered.");
+  });
+
+  it("warns when a task needs web search but the active provider keeps it hidden", () => {
+    const preview = previewTaskRun(
+      "search the web for recent Tauri updater guidance",
+      {
+        ...createConfig(["network"]),
+        webSearch: {
+          activeProvider: "none",
+          providerAvailability: [
+            { provider: "perplexity", configured: false },
+            { provider: "tavily", configured: false },
+          ],
+        },
+      },
+      createEmptyCustomizations(),
+    );
+
+    expect(
+      preview.warnings.some((warning) =>
+        warning.includes(
+          "Web search is currently hidden from the executor because the active web-search provider is set to `none`.",
+        ),
+      ),
+    ).toBe(true);
   });
 
   it("supports prompt: invocations, deduplicates suggested tools, and notes the prompt model", () => {

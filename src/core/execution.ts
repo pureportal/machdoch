@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, join, relative } from "node:path";
+import { maybeExecuteModelDrivenTask } from "./agent-runtime.js";
 import { resolveToolPolicies } from "./policy.js";
 import { resolveTaskContext } from "./task-context.js";
 import {
@@ -9,6 +10,8 @@ import {
 } from "./task-inspection.js";
 import {
   extractExplicitInspectionPathReference,
+  resolveDeterministicCreateFileTarget,
+  type CreateFilePathReference,
   type TaskPathReference,
 } from "./task-paths.js";
 import type {
@@ -40,6 +43,7 @@ interface TaskExecutionRuntime {
   taskContext: ResolvedTaskContext | undefined;
   contextSections: TaskExecutionSection[];
   explicitPathReference: TaskPathReference | undefined;
+  createFileTarget: CreateFilePathReference | undefined;
   inspectionTarget: ReadOnlyInspectionTarget | undefined;
   filesystemPolicy: ResolvedToolPolicy | undefined;
   pendingResult: TaskExecutionResult | undefined;
@@ -285,6 +289,164 @@ const getInspectionLabel = (
   }
 };
 
+const createFileWriteLabel = (): string => {
+  return "workspace file creation";
+};
+
+const toTitleCase = (value: string): string => {
+  return value
+    .split(/[^A-Za-z0-9]+/u)
+    .filter((segment) => segment.length > 0)
+    .map((segment) => `${segment[0]?.toUpperCase() ?? ""}${segment.slice(1)}`)
+    .join(" ");
+};
+
+const createInitialFileContent = (
+  task: string,
+  fileTarget: CreateFilePathReference,
+): string => {
+  const fileName = fileTarget.workspacePath ?? fileTarget.requestedPath;
+  const extension = extname(fileName).toLowerCase();
+  const baseName = basename(fileName, extension);
+  const normalizedTask = task.toLowerCase();
+  const humanTitle = toTitleCase(baseName) || "Untitled";
+
+  if (normalizedTask.includes("empty file")) {
+    return "";
+  }
+
+  switch (extension) {
+    case ".json": {
+      return '{\n  "createdBy": "machdoch"\n}\n';
+    }
+
+    case ".md": {
+      return `# ${humanTitle}\n\nCreated by machdoch.\n`;
+    }
+
+    case ".ts":
+    case ".js":
+    case ".mjs":
+    case ".cjs": {
+      return "export {};\n";
+    }
+
+    case ".html": {
+      return [
+        "<!doctype html>",
+        '<html lang="en">',
+        "  <head>",
+        '    <meta charset="utf-8" />',
+        `    <title>${humanTitle}</title>`,
+        "  </head>",
+        "  <body>",
+        "  </body>",
+        "</html>",
+        "",
+      ].join("\n");
+    }
+
+    case ".css": {
+      return "/* Created by machdoch */\n";
+    }
+
+    case ".yaml":
+    case ".yml": {
+      return "createdBy: machdoch\n";
+    }
+
+    case ".toml": {
+      return 'created_by = "machdoch"\n';
+    }
+
+    default: {
+      return normalizedTask.includes("test file")
+        ? "This is a test file created by machdoch.\n"
+        : "Created by machdoch.\n";
+    }
+  }
+};
+
+const createFileTargetSection = (
+  fileTarget: CreateFilePathReference,
+): TaskExecutionSection => {
+  return {
+    title: "File target",
+    lines: [
+      `requested: ${fileTarget.requestedPath}`,
+      `workspace path: ${fileTarget.workspacePath ?? "outside workspace"}`,
+      `path source: ${fileTarget.inferredPath ? "inferred default" : "explicit request"}`,
+    ],
+  };
+};
+
+const executeCreateFileTarget = async (
+  task: string,
+  config: RuntimeConfig,
+  contextSections: TaskExecutionSection[],
+  fileTarget: CreateFilePathReference,
+): Promise<TaskExecutionResult> => {
+  if (!fileTarget.insideWorkspace) {
+    return createExecutionResult(
+      {
+        task,
+        mode: config.mode,
+        status: "blocked",
+        summary:
+          "The requested file target is outside the workspace boundary, so the runtime refused to create it.",
+        executedTools: [],
+        outputSections: contextSections,
+      },
+      `Refusing to create \`${fileTarget.requestedPath}\` because it resolves outside ${config.workspaceRoot}.`,
+    );
+  }
+
+  if (existsSync(fileTarget.resolvedPath)) {
+    const existingStats = await stat(fileTarget.resolvedPath);
+
+    return createExecutionResult(
+      {
+        task,
+        mode: config.mode,
+        status: "blocked",
+        summary: existingStats.isDirectory()
+          ? "The requested target already exists as a directory, so the runtime refused to replace it with a file."
+          : "The requested file already exists, so the runtime refused to overwrite it during a create-file task.",
+        executedTools: [],
+        outputSections: [
+          ...contextSections,
+          createFileTargetSection(fileTarget),
+        ],
+      },
+      `The path \`${fileTarget.requestedPath}\` already exists inside the workspace.`,
+    );
+  }
+
+  const content = createInitialFileContent(task, fileTarget);
+
+  await mkdir(dirname(fileTarget.resolvedPath), { recursive: true });
+  await writeFile(fileTarget.resolvedPath, content, "utf8");
+
+  return createExecutionResult({
+    task,
+    mode: config.mode,
+    status: "executed",
+    summary:
+      "Executed a deterministic workspace file creation and returned a preview of the created content.",
+    executedTools: ["filesystem"],
+    outputSections: [
+      ...contextSections,
+      createFileTargetSection(fileTarget),
+      content.length > 0
+        ? createFilePreviewSection(content)
+        : {
+            title: "File preview",
+            lines: ["Empty file created."],
+          },
+    ],
+  });
+};
+
 const createFilePreviewSection = (content: string): TaskExecutionSection => {
   const normalizedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const allLines = normalizedContent.split("\n");
@@ -455,6 +617,13 @@ const createProjectSignalSection = async (
 const createRuntimeConfigSection = (
   config: RuntimeConfig,
 ): TaskExecutionSection => {
+  const activeWebSearchConfigured =
+    config.webSearch.activeProvider !== "none" &&
+    config.webSearch.providerAvailability.some(
+      (entry) =>
+        entry.provider === config.webSearch.activeProvider && entry.configured,
+    );
+
   return {
     title: "Runtime config",
     lines: [
@@ -467,6 +636,8 @@ const createRuntimeConfigSection = (
       `model: ${config.model}`,
       `offline: ${config.offline ? "true" : "false"}`,
       `enabled tools: ${formatCommaSeparatedValues(config.enabledTools)}`,
+      `web search provider: ${config.webSearch.activeProvider}`,
+      `web search status: ${activeWebSearchConfigured ? "available" : "hidden"}`,
       `github compatibility discovery: ${config.compatibility.discoverGithubCustomizations ? "enabled" : "disabled"}`,
     ],
   };
@@ -951,6 +1122,13 @@ const executeInspectionTarget = async (
 
     case "workspace":
     case undefined: {
+      const activeWebSearchConfigured =
+        config.webSearch.activeProvider !== "none" &&
+        config.webSearch.providerAvailability.some(
+          (entry) =>
+            entry.provider === config.webSearch.activeProvider &&
+            entry.configured,
+        );
       const outputSections: TaskExecutionSection[] = [
         ...contextSections,
         {
@@ -963,6 +1141,8 @@ const executeInspectionTarget = async (
             `model: ${config.model}`,
             `offline: ${config.offline ? "true" : "false"}`,
             `enabled tools: ${config.enabledTools.join(", ")}`,
+            `web search provider: ${config.webSearch.activeProvider}`,
+            `web search status: ${activeWebSearchConfigured ? "available" : "hidden"}`,
           ],
         },
         {
@@ -1003,6 +1183,7 @@ const runTaskExecutionStateMachine = async (
     taskContext: undefined,
     contextSections: [],
     explicitPathReference: undefined,
+    createFileTarget: undefined,
     inspectionTarget: undefined,
     filesystemPolicy: undefined,
     pendingResult: undefined,
@@ -1098,6 +1279,10 @@ const runTaskExecutionStateMachine = async (
           taskContext.effectiveTask,
           config.workspaceRoot,
         );
+        runtime.createFileTarget = resolveDeterministicCreateFileTarget(
+          taskContext.effectiveTask,
+          config.workspaceRoot,
+        );
         runtime.inspectionTarget = resolveReadOnlyInspectionTarget(
           taskContext.effectiveTask,
         );
@@ -1109,7 +1294,55 @@ const runTaskExecutionStateMachine = async (
       }
 
       case "checking-policies": {
-        if (!runtime.explicitPathReference && !runtime.inspectionTarget) {
+        if (runtime.taskContext) {
+          const modelDrivenResult = await maybeExecuteModelDrivenTask({
+            task,
+            config,
+            taskContext: runtime.taskContext,
+            contextSections: runtime.contextSections,
+            ...(options.conversationContext
+              ? { conversationContext: options.conversationContext }
+              : {}),
+            ...(options.modelAdapter
+              ? { modelAdapter: options.modelAdapter }
+              : {}),
+            ...(options.monitorModelAdapter
+              ? { monitorModelAdapter: options.monitorModelAdapter }
+              : {}),
+            ...(options.onStateChange
+              ? { onStateChange: options.onStateChange }
+              : {}),
+          });
+
+          if (modelDrivenResult) {
+            const terminalState: TaskExecutionState =
+              modelDrivenResult.status === "executed"
+                ? "completed"
+                : modelDrivenResult.status === "approval-required"
+                  ? "approval-required"
+                  : modelDrivenResult.status === "unsupported"
+                    ? "unsupported"
+                    : modelDrivenResult.status === "cancelled"
+                      ? "cancelled"
+                      : "blocked";
+
+            return emitTerminalResult(
+              task,
+              config,
+              terminalState,
+              modelDrivenResult.summary,
+              runtime,
+              options,
+              modelDrivenResult,
+            );
+          }
+        }
+
+        if (
+          !runtime.explicitPathReference &&
+          !runtime.createFileTarget &&
+          !runtime.inspectionTarget
+        ) {
           return emitTerminalResult(
             task,
             config,
@@ -1174,9 +1407,11 @@ const runTaskExecutionStateMachine = async (
                 task,
                 mode: config.mode,
                 status: "approval-required",
-                summary: runtime.explicitPathReference
-                  ? "This task can be executed as a read-only filesystem inspection, but the current mode still requires explicit approval first."
-                  : `This task can be executed as a read-only ${getInspectionLabel(runtime.inspectionTarget ?? "workspace")}, but the current mode still requires explicit approval first.`,
+                summary: runtime.createFileTarget
+                  ? `This task can be executed as a deterministic ${createFileWriteLabel()}, but the current mode still requires explicit approval first.`
+                  : runtime.explicitPathReference
+                    ? "This task can be executed as a read-only filesystem inspection, but the current mode still requires explicit approval first."
+                    : `This task can be executed as a read-only ${getInspectionLabel(runtime.inspectionTarget ?? "workspace")}, but the current mode still requires explicit approval first.`,
                 executedTools: [],
                 outputSections: runtime.contextSections,
               },
@@ -1186,27 +1421,36 @@ const runTaskExecutionStateMachine = async (
         }
 
         state = "executing";
-        message = runtime.explicitPathReference
-          ? "Execute the explicit filesystem inspection target."
-          : `Execute the read-only ${getInspectionLabel(runtime.inspectionTarget ?? "workspace")}.`;
+        message = runtime.createFileTarget
+          ? "Execute the deterministic workspace file creation."
+          : runtime.explicitPathReference
+            ? "Execute the explicit filesystem inspection target."
+            : `Execute the read-only ${getInspectionLabel(runtime.inspectionTarget ?? "workspace")}.`;
         break;
       }
 
       case "executing": {
-        runtime.pendingResult = runtime.explicitPathReference
-          ? await executeExplicitInspectionPath(
+        runtime.pendingResult = runtime.createFileTarget
+          ? await executeCreateFileTarget(
               task,
               config,
               runtime.contextSections,
-              runtime.explicitPathReference,
+              runtime.createFileTarget,
             )
-          : await executeInspectionTarget(
-              task,
-              config,
-              customizations,
-              runtime.contextSections,
-              runtime.inspectionTarget,
-            );
+          : runtime.explicitPathReference
+            ? await executeExplicitInspectionPath(
+                task,
+                config,
+                runtime.contextSections,
+                runtime.explicitPathReference,
+              )
+            : await executeInspectionTarget(
+                task,
+                config,
+                customizations,
+                runtime.contextSections,
+                runtime.inspectionTarget,
+              );
         runtime.executedTools = runtime.pendingResult.executedTools;
 
         const cancelledAfterExecution = await maybeReturnCancelledResult(

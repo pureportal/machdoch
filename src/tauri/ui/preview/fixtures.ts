@@ -1,6 +1,7 @@
 import type {
   ResolvedPromptInvocation,
   ResolvedToolPolicy,
+  RunMode,
   TaskCustomizationMatch,
   TaskExecutionResult,
   TaskExecutionStatus,
@@ -59,6 +60,7 @@ const DEFAULT_PREVIEW_TASK = "debug the failing task runner tests";
 const DEFAULT_EXECUTION_TASK = "scan this workspace and explain the setup";
 
 interface FixtureModelContext {
+  mode?: RunMode;
   provider?: string;
   model?: string;
 }
@@ -179,7 +181,8 @@ const supportsWorkspaceInspection = (task: string): boolean => {
 
 export const supportsMockExecution = (task: string): boolean => {
   return (
-    supportsWorkspaceInspection(task) || extractInspectionTarget(task) !== undefined
+    supportsWorkspaceInspection(task) ||
+    extractInspectionTarget(task) !== undefined
   );
 };
 
@@ -245,7 +248,11 @@ const createApplicableInstructions = (
     });
   }
 
-  if (["auth", "permission", "security", "token"].some((token) => tokens.has(token))) {
+  if (
+    ["auth", "permission", "security", "token"].some((token) =>
+      tokens.has(token),
+    )
+  ) {
     instructions.push({
       kind: "conditional",
       name: "Security guardrails",
@@ -311,7 +318,7 @@ export const createPreviewFixture = (
 
   return {
     task: normalizedTask,
-    mode: "ask",
+    mode: context.mode ?? "ask",
     summary: invokedPrompt
       ? "This staged preview resolved a direct prompt invocation, mapped it through the current tool policies, and highlighted any missing input before execution."
       : "This staged preview maps the request to likely tools, approval checkpoints, and next steps before a live run begins.",
@@ -437,21 +444,72 @@ const createExecutedExecutionSections = (
       lines: [
         `root: ${workspacePath}`,
         `workspace label: ${workspaceLabel}`,
-        "mode: ask",
+        `mode: ${context.mode ?? "ask"}`,
         "execution surface: deterministic read-only scaffold",
-          ...(context.provider ? [`provider: ${context.provider}`] : []),
-          ...(context.model ? [`model: ${context.model}`] : []),
+        ...(context.provider ? [`provider: ${context.provider}`] : []),
+        ...(context.model ? [`model: ${context.model}`] : []),
       ],
     },
     {
       title: "Project signals",
       lines: [
         "desktop renderer: task panel ready",
-        "timeline sidebar: active",
+        "session rail: active",
         "shared core handoff: pending live wiring",
       ],
     },
   ];
+};
+
+const createExecutedExecutionResponse = (
+  workspacePath: string,
+): NonNullable<TaskExecutionResult["response"]> => {
+  const workspaceLabel = createWorkspaceLabel(workspacePath);
+
+  return {
+    markdown: [
+      "**Workspace scan complete.**",
+      "",
+      `- Active workspace: \`${workspaceLabel}\``,
+      "- Captured the key runtime signals in the compact execution summary",
+    ].join("\n"),
+    highlights: [
+      "Resolved the workspace label and deterministic execution surface.",
+      "Kept the execution feedback compact and easy to scan.",
+    ],
+    relatedFiles: [
+      {
+        path: "src/tauri/ui/chat-session-shell.tsx",
+        description:
+          "Desktop chat shell message rendering and compact feedback layout.",
+      },
+    ],
+    verification: [
+      "Confirmed the mock workspace label and runtime markers in the execution output.",
+    ],
+    followUps: [],
+  };
+};
+
+const createUnsupportedExecutionResponse = (): NonNullable<
+  TaskExecutionResult["response"]
+> => {
+  return {
+    markdown: [
+      "**Preview only.**",
+      "",
+      "- This request goes beyond the current deterministic mock executor",
+      "- The preview below still shows the likely tools, approvals, and next move",
+    ].join("\n"),
+    highlights: [
+      "The shell kept the result explicit instead of pretending the task already ran.",
+    ],
+    relatedFiles: [],
+    verification: [],
+    followUps: [
+      "Run the task against the live shared executor for a real workspace result.",
+    ],
+  };
 };
 
 export const createMockExecutionFixture = (
@@ -466,7 +524,7 @@ export const createMockExecutionFixture = (
 
   return {
     task: normalizedTask,
-    mode: "ask",
+    mode: context.mode ?? "ask",
     status,
     summary:
       status === "executed"
@@ -477,13 +535,26 @@ export const createMockExecutionFixture = (
       status === "executed"
         ? "Representative data only until the desktop shell is connected to the shared core executor."
         : "Broader task types still fall back to preview mode in the current desktop scaffold.",
+    response:
+      status === "executed"
+        ? createExecutedExecutionResponse(workspacePath)
+        : createUnsupportedExecutionResponse(),
     outputSections:
       status === "executed"
-        ? createExecutedExecutionSections(normalizedTask, workspacePath, context)
-        : createUnsupportedExecutionSections(normalizedTask, workspacePath, context),
+        ? createExecutedExecutionSections(
+            normalizedTask,
+            workspacePath,
+            context,
+          )
+        : createUnsupportedExecutionSections(
+            normalizedTask,
+            workspacePath,
+            context,
+          ),
   };
 };
 
 export const previewFixture: TaskRunPreview = createPreviewFixture();
 
-export const executionFixture: TaskExecutionResult = createMockExecutionFixture();
+export const executionFixture: TaskExecutionResult =
+  createMockExecutionFixture();

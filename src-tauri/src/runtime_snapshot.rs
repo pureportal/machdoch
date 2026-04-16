@@ -3,28 +3,29 @@ use std::{
     env,
     fs,
     path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_MODEL: &str = "gpt-5.4-mini";
-const DEFAULT_TOOLS: [&str; 2] = ["filesystem", "shell"];
 const PLACEHOLDER_TOKENS: [&str; 3] = ["YOUR_", "CHANGE_ME", "PLACEHOLDER"];
-const USER_CONFIG_FILE_NAME: &str = "user-config.json";
-const VALID_TOOLS: [&str; 6] = [
-    "filesystem",
-    "shell",
-    "network",
-    "browser",
-    "git",
-    "packages",
+const KNOWN_SAMPLE_SECRET_VALUES: [&str; 5] = [
+    "sk-user-config",
+    "sk-live",
+    "pplx-live",
+    "tvly-live",
+    "tavily-live",
 ];
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RuntimeCompatibilitySnapshot {
-    discover_github_customizations: bool,
-}
+const DEFAULT_TOOLS: [&str; 2] = ["filesystem", "shell"];
+const VALID_TOOLS: [&str; 6] = ["filesystem", "shell", "network", "browser", "git", "packages"];
+const VALID_MODEL_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
+const USER_CONFIG_FILE_NAME: &str = "user-config.json";
+const USER_API_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
+const USER_WEB_SEARCH_PROVIDERS: [&str; 2] = ["perplexity", "tavily"];
+const VALID_WEB_SEARCH_PROVIDERS: [&str; 3] = ["none", "perplexity", "tavily"];
+const MAX_GLOBAL_MEMORY_ENTRIES: usize = 40;
+const MAX_MEMORY_CONTENT_LENGTH: usize = 280;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,8 +39,15 @@ pub struct RuntimeSnapshot {
     provider: String,
     model: String,
     offline: bool,
-    compatibility: RuntimeCompatibilitySnapshot,
+    compatibility: RuntimeCompatibilityConfig,
     provider_availability: Vec<ProviderAvailability>,
+    web_search: RuntimeWebSearchConfig,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeCompatibilityConfig {
+    discover_github_customizations: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -54,6 +62,35 @@ pub struct RuntimeProfileSummary {
 pub struct ProviderAvailability {
     provider: String,
     configured: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebSearchProviderAvailability {
+    provider: String,
+    configured: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeWebSearchConfig {
+    active_provider: String,
+    provider_availability: Vec<WebSearchProviderAvailability>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserWebSearchSettings {
+    active_provider: String,
+    api_keys: HashMap<String, String>,
+    provider_availability: Vec<WebSearchProviderAvailability>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserMemorySettings {
+    global_enabled: bool,
+    entries: Vec<UserMemoryEntry>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -72,12 +109,6 @@ struct WorkspaceConfigFile {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-struct WorkspaceCompatibilityConfig {
-    discover_github_customizations: Option<bool>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
 struct WorkspaceProfileConfig {
     description: Option<String>,
     mode: Option<String>,
@@ -88,11 +119,47 @@ struct WorkspaceProfileConfig {
     compatibility: Option<WorkspaceCompatibilityConfig>,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceCompatibilityConfig {
+    discover_github_customizations: Option<bool>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct UserConfigFile {
     #[serde(default)]
     api_keys: HashMap<String, String>,
+    #[serde(default)]
+    web_search: UserWebSearchConfigFile,
+    #[serde(default)]
+    memory: UserMemoryConfigFile,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct UserWebSearchConfigFile {
+    active_provider: Option<String>,
+    #[serde(default)]
+    api_keys: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct UserMemoryConfigFile {
+    global_enabled: Option<bool>,
+    #[serde(default)]
+    entries: Vec<UserMemoryEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserMemoryEntry {
+    id: String,
+    scope: String,
+    content: String,
+    created_at: u64,
+    updated_at: u64,
 }
 
 fn normalize_optional_string(value: Option<&str>) -> Option<String> {
@@ -105,76 +172,246 @@ fn normalize_optional_string(value: Option<&str>) -> Option<String> {
     Some(trimmed.to_string())
 }
 
-fn is_supported_provider(provider: &str) -> bool {
-    matches!(provider.trim(), "openai" | "anthropic" | "google")
-}
+fn strip_wrapping_quotes(value: &str) -> String {
+    let trimmed = value.trim();
 
-fn resolve_user_config_dir() -> Result<PathBuf, String> {
-    if let Some(override_dir) = normalize_optional_string(
-        env::var("MACHDOCH_USER_CONFIG_DIR").ok().as_deref(),
-    ) {
-        return Ok(PathBuf::from(override_dir));
-    }
+    if trimmed.len() >= 2 {
+        let starts_with_single = trimmed.starts_with('\'') && trimmed.ends_with('\'');
+        let starts_with_double = trimmed.starts_with('"') && trimmed.ends_with('"');
 
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(app_data) = env::var_os("APPDATA") {
-            return Ok(PathBuf::from(app_data).join("machdoch"));
+        if starts_with_single || starts_with_double {
+            return trimmed[1..trimmed.len() - 1].to_string();
         }
-
-        let home = env::var_os("USERPROFILE")
-            .or_else(|| env::var_os("HOME"))
-            .ok_or_else(|| "Could not determine a user config directory.".to_string())?;
-
-        return Ok(PathBuf::from(home)
-            .join("AppData")
-            .join("Roaming")
-            .join("machdoch"));
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        let home = env::var_os("HOME")
-            .ok_or_else(|| "Could not determine a user config directory.".to_string())?;
+    trimmed.to_string()
+}
 
-        return Ok(PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("machdoch"));
+fn create_timestamp_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn normalize_memory_content(value: &str) -> Option<String> {
+    let collapsed = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = collapsed.trim();
+
+    if trimmed.is_empty() {
+        return None;
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        if let Some(config_home) = env::var_os("XDG_CONFIG_HOME") {
-            return Ok(PathBuf::from(config_home).join("machdoch"));
+    if trimmed.len() <= MAX_MEMORY_CONTENT_LENGTH {
+        return Some(trimmed.to_string());
+    }
+
+    let end = MAX_MEMORY_CONTENT_LENGTH.saturating_sub(1);
+    let prefix = trimmed.chars().take(end).collect::<String>();
+    Some(format!("{}…", prefix))
+}
+
+fn normalize_user_memory_entries(entries: &[UserMemoryEntry], scope: &str) -> Vec<UserMemoryEntry> {
+    let mut merged = HashMap::<String, UserMemoryEntry>::new();
+
+    for (index, entry) in entries.iter().enumerate() {
+        let Some(content) = normalize_memory_content(&entry.content) else {
+            continue;
+        };
+
+        let created_at = if entry.created_at == 0 {
+            create_timestamp_millis()
+        } else {
+            entry.created_at
+        };
+        let updated_at = if entry.updated_at == 0 {
+            created_at
+        } else {
+            entry.updated_at
+        };
+        let normalized_entry = UserMemoryEntry {
+            id: normalize_optional_string(Some(entry.id.as_str()))
+                .unwrap_or_else(|| format!("global-memory-{}-{}", updated_at, index)),
+            scope: scope.to_string(),
+            content: content.clone(),
+            created_at,
+            updated_at,
+        };
+        let key = content.to_lowercase();
+
+        match merged.get(&key) {
+            Some(existing) if existing.updated_at >= normalized_entry.updated_at => {}
+            _ => {
+                merged.insert(key, normalized_entry);
+            }
         }
-
-        let home = env::var_os("HOME")
-            .ok_or_else(|| "Could not determine a user config directory.".to_string())?;
-
-        return Ok(PathBuf::from(home).join(".config").join("machdoch"));
     }
+
+    let mut normalized = merged.into_values().collect::<Vec<_>>();
+    normalized.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+    normalized.truncate(MAX_GLOBAL_MEMORY_ENTRIES);
+    normalized
 }
 
-fn get_user_config_path() -> Result<PathBuf, String> {
-    Ok(resolve_user_config_dir()?.join(USER_CONFIG_FILE_NAME))
-}
-
-fn load_runtime_env() -> HashMap<String, String> {
+fn parse_dotenv_file(path: &Path) -> Result<HashMap<String, String>, String> {
     let mut values = HashMap::new();
+    let content = fs::read_to_string(path)
+        .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
 
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        let Some(separator_index) = trimmed.find('=') else {
+            continue;
+        };
+
+        let key = trimmed[..separator_index].trim();
+        let value = strip_wrapping_quotes(&trimmed[separator_index + 1..]);
+
+        values.insert(key.to_string(), value);
+    }
+
+    Ok(values)
+}
+
+fn apply_process_env_overrides(values: &mut HashMap<String, String>) {
     for key in [
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_API_KEY",
+        "PERPLEXITY_API_KEY",
+        "TAVILY_API_KEY",
         "MACHDOCH_MODEL",
         "MACHDOCH_MODE",
         "MACHDOCH_PROFILE",
         "MACHDOCH_OFFLINE",
+        "MACHDOCH_WEB_SEARCH_PROVIDER",
     ] {
         if let Ok(value) = env::var(key) {
             values.insert(key.to_string(), value);
         }
     }
+}
 
-    values
+fn get_user_config_directory() -> Result<PathBuf, String> {
+    if let Some(override_directory) =
+        normalize_optional_string(env::var("MACHDOCH_USER_CONFIG_DIR").ok().as_deref())
+    {
+        return Ok(PathBuf::from(override_directory));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let base_directory = env::var("APPDATA")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| {
+                env::var("USERPROFILE")
+                    .ok()
+                    .map(|path| PathBuf::from(path).join("AppData").join("Roaming"))
+            })
+            .ok_or_else(|| {
+                "Unable to determine the Windows roaming config directory.".to_string()
+            })?;
+
+        return Ok(base_directory.join("machdoch"));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let home_directory = env::var("HOME")
+            .ok()
+            .map(PathBuf::from)
+            .ok_or_else(|| "Unable to determine the macOS home directory.".to_string())?;
+
+        return Ok(home_directory
+            .join("Library")
+            .join("Application Support")
+            .join("machdoch"));
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        let base_directory = env::var("XDG_CONFIG_HOME")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| env::var("HOME").ok().map(|path| PathBuf::from(path).join(".config")))
+            .ok_or_else(|| "Unable to determine the XDG config directory.".to_string())?;
+
+        Ok(base_directory.join("machdoch"))
+    }
+}
+
+fn get_user_config_path() -> Result<PathBuf, String> {
+    Ok(get_user_config_directory()?.join(USER_CONFIG_FILE_NAME))
+}
+
+pub(crate) fn get_default_workspace_root() -> Result<PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return env::var("USERPROFILE")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| {
+                let drive = normalize_optional_string(env::var("HOMEDRIVE").ok().as_deref())?;
+                let path = normalize_optional_string(env::var("HOMEPATH").ok().as_deref())?;
+
+                Some(PathBuf::from(format!("{drive}{path}")))
+            })
+            .or_else(|| env::var("HOME").ok().map(PathBuf::from))
+            .ok_or_else(|| {
+                "Unable to determine the Windows home directory for the default workspace."
+                    .to_string()
+            });
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        env::var("HOME").ok().map(PathBuf::from).ok_or_else(|| {
+            "Unable to determine the home directory for the default workspace.".to_string()
+        })
+    }
+}
+
+pub(crate) fn resolve_workspace_root_path(workspace_root: &str) -> Result<PathBuf, String> {
+    let candidate_workspace_path = normalize_optional_string(Some(workspace_root))
+        .map(PathBuf::from)
+        .map(Ok)
+        .unwrap_or_else(get_default_workspace_root)?;
+
+    if !candidate_workspace_path.exists() || !candidate_workspace_path.is_dir() {
+        return Err(format!(
+            "Workspace `{}` does not exist or is not a directory.",
+            candidate_workspace_path.display()
+        ));
+    }
+
+    candidate_workspace_path.canonicalize().map_err(|error| {
+        format!(
+            "Unable to resolve workspace `{}`: {error}",
+            candidate_workspace_path.display()
+        )
+    })
+}
+
+fn is_user_api_provider(value: &str) -> bool {
+    USER_API_PROVIDERS.contains(&value)
+}
+
+fn is_user_web_search_provider(value: &str) -> bool {
+    USER_WEB_SEARCH_PROVIDERS.contains(&value)
+}
+
+fn is_valid_model_provider(value: &str) -> bool {
+    VALID_MODEL_PROVIDERS.contains(&value)
+}
+
+fn is_valid_web_search_provider(value: &str) -> bool {
+    VALID_WEB_SEARCH_PROVIDERS.contains(&value)
 }
 
 fn load_user_config_file() -> Result<(UserConfigFile, PathBuf), String> {
@@ -192,6 +429,23 @@ fn load_user_config_file() -> Result<(UserConfigFile, PathBuf), String> {
     Ok((parsed, config_path))
 }
 
+fn write_user_config_file(config: &UserConfigFile, config_path: &Path) -> Result<(), String> {
+    if let Some(config_directory) = config_path.parent() {
+        fs::create_dir_all(config_directory).map_err(|error| {
+            format!(
+                "Failed to create {}: {error}",
+                config_directory.display()
+            )
+        })?;
+    }
+
+    let serialized = serde_json::to_string_pretty(config)
+        .map_err(|error| format!("Failed to serialize user config: {error}"))?;
+
+    fs::write(config_path, format!("{serialized}\n"))
+        .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))
+}
+
 fn load_user_api_keys() -> Result<HashMap<String, String>, String> {
     let (config, _) = load_user_config_file()?;
 
@@ -202,13 +456,97 @@ fn load_user_api_keys() -> Result<HashMap<String, String>, String> {
             let normalized_provider = normalize_optional_string(Some(provider.as_str()))?;
             let normalized_value = normalize_optional_string(Some(value.as_str()))?;
 
-            if !is_supported_provider(&normalized_provider) {
-                return None;
+            if is_user_api_provider(&normalized_provider)
+                && has_configured_value(Some(normalized_value.as_str()))
+            {
+                Some((normalized_provider, normalized_value))
+            } else {
+                None
             }
-
-            Some((normalized_provider, normalized_value))
         })
         .collect())
+}
+
+fn load_user_web_search_api_keys() -> Result<HashMap<String, String>, String> {
+    let (config, _) = load_user_config_file()?;
+
+    Ok(config
+        .web_search
+        .api_keys
+        .into_iter()
+        .filter_map(|(provider, value)| {
+            let normalized_provider = normalize_optional_string(Some(provider.as_str()))?;
+            let normalized_value = normalize_optional_string(Some(value.as_str()))?;
+
+            if is_user_web_search_provider(&normalized_provider)
+                && has_configured_value(Some(normalized_value.as_str()))
+            {
+                Some((normalized_provider, normalized_value))
+            } else {
+                None
+            }
+        })
+        .collect())
+}
+
+fn merge_user_api_keys_into_env(values: &mut HashMap<String, String>) -> Result<(), String> {
+    let api_keys = load_user_api_keys()?;
+
+    if let Some(value) = api_keys.get("openai") {
+        values.insert("OPENAI_API_KEY".to_string(), value.clone());
+    }
+
+    if let Some(value) = api_keys.get("anthropic") {
+        values.insert("ANTHROPIC_API_KEY".to_string(), value.clone());
+    }
+
+    if let Some(value) = api_keys.get("google") {
+        values.insert("GOOGLE_API_KEY".to_string(), value.clone());
+    }
+
+    Ok(())
+}
+
+fn merge_user_web_search_api_keys_into_env(
+    values: &mut HashMap<String, String>,
+) -> Result<(), String> {
+    let api_keys = load_user_web_search_api_keys()?;
+
+    if let Some(value) = api_keys.get("perplexity") {
+        values.insert("PERPLEXITY_API_KEY".to_string(), value.clone());
+    }
+
+    if let Some(value) = api_keys.get("tavily") {
+        values.insert("TAVILY_API_KEY".to_string(), value.clone());
+    }
+
+    Ok(())
+}
+
+fn load_global_env() -> Result<HashMap<String, String>, String> {
+    let mut values = HashMap::new();
+    merge_user_api_keys_into_env(&mut values)?;
+    merge_user_web_search_api_keys_into_env(&mut values)?;
+    apply_process_env_overrides(&mut values);
+    Ok(values)
+}
+
+fn load_workspace_env(workspace_root: &Path) -> Result<HashMap<String, String>, String> {
+    let env_path = workspace_root.join(".env");
+    let mut values = HashMap::new();
+
+    merge_user_api_keys_into_env(&mut values)?;
+    merge_user_web_search_api_keys_into_env(&mut values)?;
+
+    if env_path.exists() {
+        for (key, value) in parse_dotenv_file(&env_path)? {
+            values.insert(key, value);
+        }
+    }
+
+    apply_process_env_overrides(&mut values);
+
+    Ok(values)
 }
 
 fn load_workspace_config(
@@ -237,113 +575,45 @@ fn has_configured_value(value: Option<&str>) -> bool {
         return false;
     }
 
+    if KNOWN_SAMPLE_SECRET_VALUES.contains(&value) {
+        return false;
+    }
+
     !PLACEHOLDER_TOKENS
         .iter()
         .any(|token| value.contains(token))
 }
 
-fn get_provider_availability(api_keys: &HashMap<String, String>) -> Vec<ProviderAvailability> {
+fn get_provider_availability(env: &HashMap<String, String>) -> Vec<ProviderAvailability> {
     vec![
         ProviderAvailability {
             provider: "openai".to_string(),
-            configured: has_configured_value(api_keys.get("openai").map(String::as_str)),
+            configured: has_configured_value(env.get("OPENAI_API_KEY").map(String::as_str)),
         },
         ProviderAvailability {
             provider: "anthropic".to_string(),
-            configured: has_configured_value(api_keys.get("anthropic").map(String::as_str)),
+            configured: has_configured_value(env.get("ANTHROPIC_API_KEY").map(String::as_str)),
         },
         ProviderAvailability {
             provider: "google".to_string(),
-            configured: has_configured_value(api_keys.get("google").map(String::as_str)),
+            configured: has_configured_value(env.get("GOOGLE_API_KEY").map(String::as_str)),
         },
     ]
 }
 
-fn normalize_tools(tools: Option<&Vec<String>>) -> Vec<String> {
-    let Some(tools) = tools else {
-        return DEFAULT_TOOLS
-            .iter()
-            .map(|tool| (*tool).to_string())
-            .collect();
-    };
-
-    let mut normalized = Vec::new();
-
-    for tool in tools {
-        let trimmed = tool.trim();
-
-        if trimmed.is_empty() || normalized.iter().any(|entry| entry == trimmed) {
-            continue;
-        }
-
-        if VALID_TOOLS.iter().any(|candidate| candidate == &trimmed) {
-            normalized.push(trimmed.to_string());
-        }
-    }
-
-    if normalized.is_empty() {
-        DEFAULT_TOOLS
-            .iter()
-            .map(|tool| (*tool).to_string())
-            .collect()
-    } else {
-        normalized
-    }
-}
-
-fn resolve_compatibility(
-    config: &WorkspaceConfigFile,
-    profile: Option<&WorkspaceProfileConfig>,
-) -> RuntimeCompatibilitySnapshot {
-    RuntimeCompatibilitySnapshot {
-        discover_github_customizations: profile
-            .and_then(|entry| entry.compatibility.as_ref())
-            .and_then(|entry| entry.discover_github_customizations)
-            .or(config
-                .compatibility
-                .as_ref()
-                .and_then(|entry| entry.discover_github_customizations))
-            .unwrap_or(false),
-    }
-}
-
-#[tauri::command]
-pub async fn get_global_provider_availability() -> Result<Vec<ProviderAvailability>, String> {
-    Ok(get_provider_availability(&load_user_api_keys()?))
-}
-
-#[tauri::command]
-pub async fn set_user_api_key(
-    provider: String,
-    api_key: String,
-) -> Result<Vec<ProviderAvailability>, String> {
-    let normalized_provider = normalize_optional_string(Some(provider.as_str()))
-        .ok_or_else(|| "Expected a provider name.".to_string())?;
-    let normalized_api_key = normalize_optional_string(Some(api_key.as_str()))
-        .ok_or_else(|| "Expected a non-empty API key.".to_string())?;
-
-    if !is_supported_provider(&normalized_provider) {
-        return Err("Expected provider to be one of openai, anthropic, or google.".to_string());
-    }
-
-    let (mut config, config_path) = load_user_config_file()?;
-
-    if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("Failed to create {}: {error}", parent.display()))?;
-    }
-
-    config
-        .api_keys
-        .insert(normalized_provider, normalized_api_key);
-
-    let serialized = serde_json::to_string_pretty(&config)
-        .map_err(|error| format!("Failed to serialize {}: {error}", config_path.display()))?;
-
-    fs::write(&config_path, format!("{serialized}\n"))
-        .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))?;
-
-    Ok(get_provider_availability(&load_user_api_keys()?))
+fn get_web_search_provider_availability(
+    env: &HashMap<String, String>,
+) -> Vec<WebSearchProviderAvailability> {
+    vec![
+        WebSearchProviderAvailability {
+            provider: "perplexity".to_string(),
+            configured: has_configured_value(env.get("PERPLEXITY_API_KEY").map(String::as_str)),
+        },
+        WebSearchProviderAvailability {
+            provider: "tavily".to_string(),
+            configured: has_configured_value(env.get("TAVILY_API_KEY").map(String::as_str)),
+        },
+    ]
 }
 
 fn resolve_provider(
@@ -351,7 +621,9 @@ fn resolve_provider(
     availability: &[ProviderAvailability],
 ) -> String {
     if let Some(provider) = normalize_optional_string(configured_provider) {
-        return provider;
+        if is_valid_model_provider(&provider) {
+            return provider;
+        }
     }
 
     availability
@@ -359,6 +631,23 @@ fn resolve_provider(
         .find(|entry| entry.configured)
         .map(|entry| entry.provider.clone())
         .unwrap_or_else(|| "unconfigured".to_string())
+}
+
+fn resolve_web_search_active_provider(
+    configured_provider: Option<&str>,
+    env: &HashMap<String, String>,
+) -> String {
+    if let Some(provider) = normalize_optional_string(
+        env.get("MACHDOCH_WEB_SEARCH_PROVIDER")
+            .map(String::as_str)
+            .or(configured_provider),
+    ) {
+        if is_valid_web_search_provider(&provider) {
+            return provider;
+        }
+    }
+
+    "none".to_string()
 }
 
 fn is_valid_mode(value: Option<&str>) -> bool {
@@ -403,28 +692,267 @@ fn resolve_profile<'a>(
     Ok((Some(requested_profile), Some(profile)))
 }
 
-#[tauri::command]
-pub async fn get_runtime_snapshot(workspace_root: String) -> Result<RuntimeSnapshot, String> {
-    let workspace_path = PathBuf::from(&workspace_root);
+fn normalize_tools(tools: Option<&Vec<String>>) -> Vec<String> {
+    let mut normalized = Vec::new();
 
-    if !workspace_path.exists() || !workspace_path.is_dir() {
-        return Err(format!(
-            "Workspace `{}` does not exist or is not a directory.",
-            workspace_root
-        ));
+    if let Some(tools) = tools {
+        for tool in tools {
+            let Some(tool) = normalize_optional_string(Some(tool.as_str())) else {
+                continue;
+            };
+
+            if VALID_TOOLS.contains(&tool.as_str())
+                && !normalized.iter().any(|entry| entry == &tool)
+            {
+                normalized.push(tool);
+            }
+        }
     }
 
-    let env = load_runtime_env();
-    let user_api_keys = load_user_api_keys()?;
-    let (config, workspace_config_path) = load_workspace_config(&workspace_path)?;
-    let (active_profile, profile) = resolve_profile(&config, &env)?;
-    let provider_availability = get_provider_availability(&user_api_keys);
-    let enabled_tools = normalize_tools(
+    if normalized.is_empty() {
+        return DEFAULT_TOOLS
+            .iter()
+            .map(|tool| tool.to_string())
+            .collect();
+    }
+
+    normalized
+}
+
+fn resolve_enabled_tools(
+    config: &WorkspaceConfigFile,
+    profile: Option<&WorkspaceProfileConfig>,
+) -> Vec<String> {
+    normalize_tools(
         profile
             .and_then(|entry| entry.enabled_tools.as_ref())
             .or(config.enabled_tools.as_ref()),
+    )
+}
+
+fn resolve_compatibility(
+    config: &WorkspaceConfigFile,
+    profile: Option<&WorkspaceProfileConfig>,
+) -> RuntimeCompatibilityConfig {
+    RuntimeCompatibilityConfig {
+        discover_github_customizations: profile
+            .and_then(|entry| entry.compatibility.as_ref())
+            .and_then(|entry| entry.discover_github_customizations)
+            .or(config
+                .compatibility
+                .as_ref()
+                .and_then(|entry| entry.discover_github_customizations))
+            .unwrap_or(false),
+    }
+}
+
+fn save_user_api_key(provider: &str, api_key: &str) -> Result<PathBuf, String> {
+    let normalized_provider = normalize_optional_string(Some(provider)).ok_or_else(|| {
+        "Expected provider to be one of openai, anthropic, or google.".to_string()
+    })?;
+    let normalized_api_key = normalize_optional_string(Some(api_key))
+        .ok_or_else(|| "Expected a non-empty API key.".to_string())?;
+
+    if !is_user_api_provider(&normalized_provider) {
+        return Err("Expected provider to be one of openai, anthropic, or google.".to_string());
+    }
+
+    let (mut config, config_path) = load_user_config_file()?;
+
+    if let Some(config_directory) = config_path.parent() {
+        fs::create_dir_all(config_directory).map_err(|error| {
+            format!(
+                "Failed to create {}: {error}",
+                config_directory.display()
+            )
+        })?;
+    }
+
+    config
+        .api_keys
+        .insert(normalized_provider, normalized_api_key);
+
+    let serialized = serde_json::to_string_pretty(&config)
+        .map_err(|error| format!("Failed to serialize user config: {error}"))?;
+
+    fs::write(&config_path, format!("{serialized}\n"))
+        .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))?;
+
+    Ok(config_path)
+}
+
+fn load_user_web_search_settings() -> Result<UserWebSearchSettings, String> {
+    let (config, _) = load_user_config_file()?;
+    let env = load_global_env()?;
+
+    Ok(UserWebSearchSettings {
+        active_provider: resolve_web_search_active_provider(
+            config.web_search.active_provider.as_deref(),
+            &env,
+        ),
+        api_keys: load_user_web_search_api_keys()?,
+        provider_availability: get_web_search_provider_availability(&env),
+    })
+}
+
+fn load_user_memory_settings() -> Result<UserMemorySettings, String> {
+    let (config, _) = load_user_config_file()?;
+
+    Ok(UserMemorySettings {
+        global_enabled: config.memory.global_enabled.unwrap_or(false),
+        entries: normalize_user_memory_entries(&config.memory.entries, "global"),
+    })
+}
+
+fn save_user_web_search_api_key_value(provider: &str, api_key: &str) -> Result<PathBuf, String> {
+    let normalized_provider = normalize_optional_string(Some(provider)).ok_or_else(|| {
+        "Expected provider to be one of perplexity or tavily.".to_string()
+    })?;
+    let normalized_api_key = normalize_optional_string(Some(api_key))
+        .ok_or_else(|| "Expected a non-empty API key.".to_string())?;
+
+    if !is_user_web_search_provider(&normalized_provider) {
+        return Err("Expected provider to be one of perplexity or tavily.".to_string());
+    }
+
+    let (mut config, config_path) = load_user_config_file()?;
+
+    if let Some(config_directory) = config_path.parent() {
+        fs::create_dir_all(config_directory).map_err(|error| {
+            format!(
+                "Failed to create {}: {error}",
+                config_directory.display()
+            )
+        })?;
+    }
+
+    config
+        .web_search
+        .api_keys
+        .insert(normalized_provider, normalized_api_key);
+
+    let serialized = serde_json::to_string_pretty(&config)
+        .map_err(|error| format!("Failed to serialize user config: {error}"))?;
+
+    fs::write(&config_path, format!("{serialized}\n"))
+        .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))?;
+
+    Ok(config_path)
+}
+
+fn save_user_web_search_active_provider_value(provider: &str) -> Result<PathBuf, String> {
+    let normalized_provider = normalize_optional_string(Some(provider))
+        .ok_or_else(|| "Expected provider to be one of none, perplexity, or tavily.".to_string())?;
+
+    if !is_valid_web_search_provider(&normalized_provider) {
+        return Err("Expected provider to be one of none, perplexity, or tavily.".to_string());
+    }
+
+    let (mut config, config_path) = load_user_config_file()?;
+
+    if let Some(config_directory) = config_path.parent() {
+        fs::create_dir_all(config_directory).map_err(|error| {
+            format!(
+                "Failed to create {}: {error}",
+                config_directory.display()
+            )
+        })?;
+    }
+
+    config.web_search.active_provider = Some(normalized_provider);
+
+    let serialized = serde_json::to_string_pretty(&config)
+        .map_err(|error| format!("Failed to serialize user config: {error}"))?;
+
+    fs::write(&config_path, format!("{serialized}\n"))
+        .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))?;
+
+    Ok(config_path)
+}
+
+fn save_user_global_memory_enabled_value(enabled: bool) -> Result<PathBuf, String> {
+    let (mut config, config_path) = load_user_config_file()?;
+
+    config.memory.global_enabled = Some(enabled);
+    config.memory.entries = normalize_user_memory_entries(&config.memory.entries, "global");
+
+    write_user_config_file(&config, &config_path)?;
+
+    Ok(config_path)
+}
+
+#[tauri::command]
+pub async fn get_global_provider_availability() -> Result<Vec<ProviderAvailability>, String> {
+    let env = load_global_env()?;
+    Ok(get_provider_availability(&env))
+}
+
+#[tauri::command]
+pub async fn get_user_provider_api_keys() -> Result<HashMap<String, String>, String> {
+    load_user_api_keys()
+}
+
+#[tauri::command]
+pub async fn save_user_provider_api_key(
+    provider: String,
+    api_key: String,
+) -> Result<Vec<ProviderAvailability>, String> {
+    save_user_api_key(&provider, &api_key)?;
+
+    let env = load_global_env()?;
+    Ok(get_provider_availability(&env))
+}
+
+#[tauri::command]
+pub async fn get_user_web_search_settings() -> Result<UserWebSearchSettings, String> {
+    load_user_web_search_settings()
+}
+
+#[tauri::command]
+pub async fn get_user_memory_settings() -> Result<UserMemorySettings, String> {
+    load_user_memory_settings()
+}
+
+#[tauri::command]
+pub async fn save_user_web_search_api_key(
+    provider: String,
+    api_key: String,
+) -> Result<UserWebSearchSettings, String> {
+    save_user_web_search_api_key_value(&provider, &api_key)?;
+    load_user_web_search_settings()
+}
+
+#[tauri::command]
+pub async fn save_user_web_search_active_provider(
+    provider: String,
+) -> Result<UserWebSearchSettings, String> {
+    save_user_web_search_active_provider_value(&provider)?;
+    load_user_web_search_settings()
+}
+
+#[tauri::command]
+pub async fn save_user_global_memory_enabled(
+    enabled: bool,
+) -> Result<UserMemorySettings, String> {
+    save_user_global_memory_enabled_value(enabled)?;
+    load_user_memory_settings()
+}
+
+#[tauri::command]
+pub async fn get_runtime_snapshot(workspace_root: String) -> Result<RuntimeSnapshot, String> {
+    let workspace_path = resolve_workspace_root_path(&workspace_root)?;
+    let resolved_workspace_root = workspace_path.display().to_string();
+
+    let env = load_workspace_env(&workspace_path)?;
+    let (config, workspace_config_path) = load_workspace_config(&workspace_path)?;
+    let (user_config, _) = load_user_config_file()?;
+    let (active_profile, profile) = resolve_profile(&config, &env)?;
+    let provider_availability = get_provider_availability(&env);
+    let web_search_provider_availability = get_web_search_provider_availability(&env);
+    let web_search_active_provider = resolve_web_search_active_provider(
+        user_config.web_search.active_provider.as_deref(),
+        &env,
     );
-    let compatibility = resolve_compatibility(&config, profile);
 
     let mode = if is_valid_mode(env.get("MACHDOCH_MODE").map(String::as_str)) {
         env.get("MACHDOCH_MODE")
@@ -464,26 +992,27 @@ pub async fn get_runtime_snapshot(workspace_root: String) -> Result<RuntimeSnaps
     )
     .unwrap_or_else(|| DEFAULT_MODEL.to_string());
 
-    let offline = match env.get("MACHDOCH_OFFLINE").map(String::as_str) {
-        Some("true") => true,
-        Some("false") => false,
-        _ => profile
+    let offline = matches!(env.get("MACHDOCH_OFFLINE").map(String::as_str), Some("true"))
+        || profile
             .and_then(|entry| entry.offline)
             .or(config.offline)
-            .unwrap_or(false),
-    };
+            .unwrap_or(false);
 
     Ok(RuntimeSnapshot {
-        workspace_root,
+        workspace_root: resolved_workspace_root,
         workspace_config_path,
         active_profile,
         available_profiles: get_available_profiles(&config.profiles),
         mode,
-        enabled_tools,
+        enabled_tools: resolve_enabled_tools(&config, profile),
         provider,
         model,
         offline,
-        compatibility,
+        compatibility: resolve_compatibility(&config, profile),
         provider_availability,
+        web_search: RuntimeWebSearchConfig {
+            active_provider: web_search_active_provider,
+            provider_availability: web_search_provider_availability,
+        },
     })
 }

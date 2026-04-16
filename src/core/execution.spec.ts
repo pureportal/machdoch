@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createTaskExecutionController, executeTask } from "./execution.ts";
+import { executeTask } from "./execution.ts";
 import type {
   CustomizationDiscoveryResult,
   ProviderAvailability,
@@ -42,6 +42,13 @@ const createConfig = (
       discoverGithubCustomizations: false,
     },
     providerAvailability,
+    webSearch: {
+      activeProvider: "none",
+      providerAvailability: [
+        { provider: "perplexity", configured: false },
+        { provider: "tavily", configured: false },
+      ],
+    },
   };
 };
 
@@ -111,71 +118,6 @@ describe("executeTask", () => {
     expect(result.outputSections[3]?.lines).toContain(
       "package.json: present (machdoch)",
     );
-  });
-
-  it("runs through a real execution state machine before returning a successful result", async () => {
-    const workspaceRoot = await createWorkspace();
-
-    await writeFile(join(workspaceRoot, "README.md"), "# Example\n");
-
-    const observedStates: string[] = [];
-
-    const result = await executeTask(
-      "show README.md",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
-      emptyCustomizations(workspaceRoot),
-      {
-        onStateChange: (progress) => {
-          observedStates.push(progress.state);
-        },
-      },
-    );
-
-    expect(result.status).toBe("executed");
-    expect(observedStates).toEqual([
-      "starting",
-      "resolving-context",
-      "checking-inputs",
-      "checking-policies",
-      "executing",
-      "verifying",
-      "completed",
-    ]);
-  });
-
-  it("supports cancelling the execution loop midway through the controller", async () => {
-    const workspaceRoot = await createWorkspace();
-
-    await writeFile(join(workspaceRoot, "README.md"), "# Example\n");
-
-    const observedStates: string[] = [];
-    const controller = createTaskExecutionController(
-      "show README.md",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
-      emptyCustomizations(workspaceRoot),
-      {
-        onStateChange: (progress) => {
-          observedStates.push(progress.state);
-
-          if (progress.state === "checking-policies") {
-            controller?.cancel("User cancelled the task.");
-          }
-        },
-      },
-    );
-
-    const result = await controller.execute();
-
-    expect(result.status).toBe("cancelled");
-    expect(result.reason).toContain("User cancelled the task.");
-    expect(result.outputSections.at(-1)?.title).toBe("Cancellation");
-    expect(observedStates).toEqual([
-      "starting",
-      "resolving-context",
-      "checking-inputs",
-      "checking-policies",
-      "cancelled",
-    ]);
   });
 
   it("executes a safe runtime-config inspection instead of falling back to a generic workspace summary", async () => {

@@ -3,7 +3,7 @@ export type RuntimeProvider =
   | "anthropic"
   | "google";
 
-export type CatalogProviderId = RuntimeProvider;
+export type CatalogProviderId = RuntimeProvider | "xai" | "mistral";
 
 export type CatalogModelStage = "stable" | "preview" | "specialized" | "open";
 
@@ -34,6 +34,8 @@ export const PROVIDER_LABELS: Record<CatalogProviderId, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
   google: "Google",
+  xai: "xAI",
+  mistral: "Mistral",
 };
 
 export const FRONTIER_PROVIDER_CATALOG: CatalogProvider[] = [
@@ -158,10 +160,65 @@ export const FRONTIER_PROVIDER_CATALOG: CatalogProvider[] = [
       },
     ],
   },
+  {
+    id: "xai",
+    label: "xAI",
+    docsUrl: "https://docs.x.ai/developers/models",
+    supportedInApp: false,
+    note:
+      "xAI’s current flagship docs page centers on Grok 4.20 and emphasizes tool-enabled, high-speed agentic workflows.",
+    models: [
+      {
+        id: "grok-4.20",
+        label: "Grok 4.20",
+        stage: "stable",
+        description: "Newest xAI flagship model with reasoning, structured outputs, and tool support.",
+        bestFor: "Agentic search, tool orchestration, and large-context analysis.",
+      },
+    ],
+  },
+  {
+    id: "mistral",
+    label: "Mistral",
+    docsUrl: "https://docs.mistral.ai/getting-started/models/",
+    supportedInApp: false,
+    note:
+      "Mistral’s 2026 model lineup spans generalist, reasoning, coding, and audio-specialist families, with several strong open models.",
+    models: [
+      {
+        id: "mistral-large-3",
+        label: "Mistral Large 3",
+        stage: "open",
+        description: "Open-weight state-of-the-art general-purpose multimodal model.",
+        bestFor: "High-quality general reasoning with deployment flexibility.",
+      },
+      {
+        id: "mistral-medium-3.1",
+        label: "Mistral Medium 3.1",
+        stage: "stable",
+        description: "Frontier-class multimodal generalist model.",
+        bestFor: "Balanced premium reasoning and multimodal workflows.",
+      },
+      {
+        id: "mistral-small-4",
+        label: "Mistral Small 4",
+        stage: "open",
+        description: "Efficient hybrid model unifying instruct, reasoning, and coding.",
+        bestFor: "Fast local inference and lightweight coding assistants.",
+      },
+      {
+        id: "devstral-2",
+        label: "Devstral 2",
+        stage: "open",
+        description: "Frontier code agents model for software engineering tasks.",
+        bestFor: "Code agents and task-oriented engineering flows.",
+      },
+    ],
+  },
 ];
 
 export const getProviderLabel = (provider: CatalogProviderId): string => {
-  return PROVIDER_LABELS[provider] || String(provider);
+  return PROVIDER_LABELS[provider];
 };
 
 export const getCatalogModelsForProvider = (

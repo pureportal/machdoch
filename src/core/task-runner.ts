@@ -7,13 +7,20 @@ import {
 import type {
   CustomizationDiscoveryResult,
   DiscoveredPrompt,
+  ResolvedPromptInvocation,
   RuntimeConfig,
   TaskPlanStep,
   TaskRunPreview,
   TaskSuggestion,
-  ResolvedPromptInvocation,
   ToolName,
 } from "./types.js";
+
+const WEB_SEARCH_TASK_PATTERN =
+  /(?:search|research|look up|lookup|find).*(?:web|internet|online)|(?:web|internet|online).*(?:search|research|look up|lookup|find)|\b(perplexity|tavily)\b/i;
+
+const taskLikelyNeedsWebSearch = (task: string): boolean => {
+  return WEB_SEARCH_TASK_PATTERN.test(task);
+};
 
 /**
  * Formats a short explanation for the terms that matched a suggestion.
@@ -126,7 +133,7 @@ const createPlanSteps = (
       ? "Do not execute actions automatically. Pause for explicit confirmation before any state-changing step."
       : config.mode === "ask"
         ? "Request approval before risky actions, especially shell execution, writes, package installs, and elevated access."
-        : "Proceed automatically only within the configured tool and policy boundaries.";
+        : "Proceed automatically only within the configured tool and policy boundaries, then run a separate validator pass before declaring the task complete.";
 
   return [
     {
@@ -189,15 +196,33 @@ export const previewTaskRun = (
   const selectedProvider = config.providerAvailability.find(
     (entry) => entry.provider === config.provider,
   );
+  const activeWebSearchConfigured =
+    config.webSearch.activeProvider !== "none" &&
+    config.webSearch.providerAvailability.some(
+      (entry) =>
+        entry.provider === config.webSearch.activeProvider && entry.configured,
+    );
 
   if (config.provider === "unconfigured") {
     warnings.push(
-      "No model provider is configured yet. The CLI can still preview plans, but real model-driven execution is not wired up yet.",
+      "No model provider is configured yet. Machdoch can still stage previews and deterministic local actions, but the full model-driven agent loop needs a configured provider.",
     );
   } else if (!selectedProvider?.configured && !config.offline) {
     warnings.push(
-      `The selected provider \`${config.provider}\` does not look configured yet. Save an API key in the Machdoch user config before wiring in live model calls.`,
+      `The selected provider \`${config.provider}\` does not look configured yet. Save the required credentials before expecting live model-driven execution.`,
     );
+  }
+
+  if (taskLikelyNeedsWebSearch(taskContext.taskContextText)) {
+    if (config.webSearch.activeProvider === "none") {
+      warnings.push(
+        "Web search is currently hidden from the executor because the active web-search provider is set to `none`.",
+      );
+    } else if (!activeWebSearchConfigured) {
+      warnings.push(
+        `Web search is currently hidden from the executor because the active web-search provider \`${config.webSearch.activeProvider}\` is not configured yet.`,
+      );
+    }
   }
 
   if (taskContext.blockedTools.length > 0) {
@@ -212,7 +237,10 @@ export const previewTaskRun = (
     );
   }
 
-  if (taskContext.invokedPrompt && taskContext.invokedPrompt.missingInputs.length > 0) {
+  if (
+    taskContext.invokedPrompt &&
+    taskContext.invokedPrompt.missingInputs.length > 0
+  ) {
     warnings.push(
       `The prompt \`/${taskContext.invokedPrompt.name}\` still expects input(s) ${taskContext.invokedPrompt.missingInputs.join(", ")}. Provide them as \`name=value\` arguments, or use a single freeform argument when only one input remains unresolved.`,
     );
@@ -221,6 +249,12 @@ export const previewTaskRun = (
   if (taskContext.approvalRequiredTools.length > 0) {
     notes.push(
       `These relevant tools would require approval in ${config.mode} mode: ${taskContext.approvalRequiredTools.join(", ")}.`,
+    );
+  }
+
+  if (config.mode === "auto") {
+    notes.push(
+      "Autopilot mode uses a separate validator pass after each claimed completion and can require another executor iteration when evidence is incomplete.",
     );
   }
 
@@ -267,7 +301,9 @@ export const previewTaskRun = (
     suggestedTools: taskContext.suggestedTools,
     blockedTools: taskContext.blockedTools,
     toolPolicies: taskContext.toolPolicies,
-    ...(taskContext.invokedPrompt ? { invokedPrompt: taskContext.invokedPrompt } : {}),
+    ...(taskContext.invokedPrompt
+      ? { invokedPrompt: taskContext.invokedPrompt }
+      : {}),
     applicableInstructions: taskContext.applicableInstructions,
     suggestedPrompts,
     suggestedSkills,

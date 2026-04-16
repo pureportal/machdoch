@@ -76,13 +76,3 @@
 
     --color-sidebar-ring: var(--sidebar-ring);
 }
-
-@layer base {
-  button,
-  [role="button"] {
-    cursor: pointer;
-  }
-  button:disabled {
-    cursor: not-allowed;
-  }
-}

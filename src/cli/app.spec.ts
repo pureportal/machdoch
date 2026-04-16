@@ -77,7 +77,7 @@ describe("parseCliArgs", () => {
     });
   });
 
-  it("supports quick run invocations with explicit task and model flags", () => {
+  it("supports quick one-shot invocations with explicit task and model flags", () => {
     expect(
       parseCliArgs(
         [
@@ -94,8 +94,103 @@ describe("parseCliArgs", () => {
     ).toEqual({
       command: "run",
       task: "create a dockerfile for nginx",
-      mode: "auto",
       model: "gpt-4.5",
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
+  it("parses session and global memory overrides for run and chat flows", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--session-memory",
+          "off",
+          "--global-memory",
+          "off",
+          "run",
+          "summarize",
+          "changes",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "run",
+      task: "summarize changes",
+      sessionMemoryEnabled: false,
+      globalMemoryEnabled: false,
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(["--global-memory", "on", "--model", "gpt-4.5"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "chat",
+      globalMemoryEnabled: true,
+      model: "gpt-4.5",
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
+  it("parses persistent global-memory updates", () => {
+    expect(
+      parseCliArgs(["--set-global-memory", "on"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "set-global-memory",
+      setGlobalMemoryEnabled: true,
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
+  it("allows quick invocations to keep an explicit runtime mode", () => {
+    expect(
+      parseCliArgs(["--quick", "--mode", "safe", "show", "README.md"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "run",
+      task: "show README.md",
+      mode: "safe",
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
+  it("parses explicit runtime provider overrides for shared execution", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--runtime-provider",
+          "anthropic",
+          "--model",
+          "claude-sonnet-4-20250514",
+          "run",
+          "inspect",
+          "config",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "run",
+      task: "inspect config",
+      runtimeProvider: "anthropic",
+      model: "claude-sonnet-4-20250514",
       json: false,
       verbose: false,
       workspaceRoot: "C:/workspace",
@@ -159,10 +254,12 @@ describe("parseCliArgs", () => {
     ).toThrow("Expected a task after `machdoch run`.");
 
     expect(() =>
-      parseCliArgs(["--quick", "--mode", "safe", "show README.md"], {
+      parseCliArgs(["--quick", "--model", "gpt-4.5"], {
         currentWorkingDirectory: "C:/workspace",
       }),
-    ).toThrow("--quick cannot be combined with a non-auto --mode value.");
+    ).toThrow(
+      "--quick can only be used with a task provided via --task or positional task text.",
+    );
 
     expect(() =>
       parseCliArgs(["--set-api", "--provider", "xai", "--key", "sk-live"], {
@@ -170,6 +267,31 @@ describe("parseCliArgs", () => {
       }),
     ).toThrow(
       "Expected --provider to be followed by openai, anthropic, or google.",
+    );
+
+    expect(() =>
+      parseCliArgs(["--runtime-provider", "xai", "run", "show", "README.md"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow(
+      "Expected --runtime-provider to be followed by openai, anthropic, or google.",
+    );
+
+    expect(() =>
+      parseCliArgs(["--session-memory", "maybe", "run", "inspect", "config"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("Expected --session-memory to be followed by on or off.");
+
+    expect(() =>
+      parseCliArgs(
+        ["--global-memory", "sometimes", "run", "inspect", "config"],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toThrow(
+      "Expected --global-memory to be followed by inherit, on, or off.",
     );
   });
 

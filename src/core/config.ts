@@ -1,7 +1,11 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { getUserProviderAvailability, loadProcessEnv } from "./env.js";
+import {
+  hasConfiguredValue,
+  loadUserWebSearchSettings,
+  loadWorkspaceEnv,
+} from "./env.js";
 import type {
   ModelProvider,
   ProviderAvailability,
@@ -9,6 +13,8 @@ import type {
   RuntimeConfig,
   RuntimeProfileSummary,
   ToolName,
+  WebSearchProvider,
+  WebSearchProviderAvailability,
   WorkspaceConfigFile,
   WorkspaceProfileConfig,
 } from "./types.js";
@@ -25,6 +31,18 @@ const VALID_TOOLS: ToolName[] = [
 
 const DEFAULT_TOOLS: ToolName[] = ["filesystem", "shell"];
 const DEFAULT_MODEL = "gpt-5.4-mini";
+const WORKSPACE_CONFIG_DIRECTORY = ".machdoch";
+const WORKSPACE_CONFIG_FILE_NAME = "config.json";
+const VALID_MODEL_PROVIDERS: Exclude<ModelProvider, "unconfigured">[] = [
+  "openai",
+  "anthropic",
+  "google",
+];
+const VALID_WEB_SEARCH_PROVIDERS: WebSearchProvider[] = [
+  "none",
+  "perplexity",
+  "tavily",
+];
 
 /**
  * Trims a string and collapses empty input to `undefined`.
@@ -46,6 +64,17 @@ const normalizeOptionalString = (
  */
 const isRunMode = (value: string | undefined): value is RunMode => {
   return value !== undefined && VALID_MODES.includes(value as RunMode);
+};
+
+const isModelProvider = (
+  value: string | undefined,
+): value is Exclude<ModelProvider, "unconfigured"> => {
+  return (
+    value !== undefined &&
+    VALID_MODEL_PROVIDERS.includes(
+      value as Exclude<ModelProvider, "unconfigured">,
+    )
+  );
 };
 
 /**
@@ -70,7 +99,11 @@ const normalizeTools = (tools: unknown): ToolName[] => {
 const loadWorkspaceConfigFile = async (
   workspaceRoot: string,
 ): Promise<{ config: WorkspaceConfigFile; path?: string }> => {
-  const configPath = join(workspaceRoot, ".machdoch", "config.json");
+  const configPath = join(
+    workspaceRoot,
+    WORKSPACE_CONFIG_DIRECTORY,
+    WORKSPACE_CONFIG_FILE_NAME,
+  );
 
   if (!existsSync(configPath)) {
     return { config: {} };
@@ -83,6 +116,43 @@ const loadWorkspaceConfigFile = async (
     config,
     path: configPath,
   };
+};
+
+/**
+ * Persists the workspace default model into `.machdoch/config.json`, creating
+ * the config file when needed.
+ */
+export const saveWorkspaceDefaultModel = async (
+  workspaceRoot: string,
+  model: string,
+): Promise<string> => {
+  const normalizedModel = normalizeOptionalString(model);
+
+  if (!normalizedModel) {
+    throw new Error("Expected --default-model to be followed by a model name.");
+  }
+
+  const configDirectory = join(workspaceRoot, WORKSPACE_CONFIG_DIRECTORY);
+  const configPath = join(configDirectory, WORKSPACE_CONFIG_FILE_NAME);
+  const existingConfig = existsSync(configPath)
+    ? (JSON.parse(await readFile(configPath, "utf8")) as WorkspaceConfigFile)
+    : {};
+
+  await mkdir(configDirectory, { recursive: true });
+  await writeFile(
+    configPath,
+    `${JSON.stringify(
+      {
+        ...existingConfig,
+        model: normalizedModel,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  return configPath;
 };
 
 /**
@@ -162,6 +232,40 @@ const mergeProfileIntoConfig = (
 /**
  * Builds provider availability flags from the loaded environment values.
  */
+const getProviderAvailability = (
+  env: Record<string, string>,
+): ProviderAvailability[] => {
+  return [
+    {
+      provider: "openai",
+      configured: hasConfiguredValue(env.OPENAI_API_KEY),
+    },
+    {
+      provider: "anthropic",
+      configured: hasConfiguredValue(env.ANTHROPIC_API_KEY),
+    },
+    {
+      provider: "google",
+      configured: hasConfiguredValue(env.GOOGLE_API_KEY),
+    },
+  ];
+};
+
+const getWebSearchProviderAvailability = (
+  env: Record<string, string>,
+): WebSearchProviderAvailability[] => {
+  return [
+    {
+      provider: "perplexity",
+      configured: hasConfiguredValue(env.PERPLEXITY_API_KEY),
+    },
+    {
+      provider: "tavily",
+      configured: hasConfiguredValue(env.TAVILY_API_KEY),
+    },
+  ];
+};
+
 /**
  * Chooses the effective provider, preferring an explicit config override.
  */
@@ -169,20 +273,29 @@ const resolveProvider = (
   configuredProvider: WorkspaceConfigFile["provider"],
   availability: ProviderAvailability[],
 ): ModelProvider => {
-  if (configuredProvider) {
+  if (isModelProvider(configuredProvider)) {
     return configuredProvider;
   }
 
   const configuredEntry = availability.find((entry) => entry.configured);
-  if (!configuredEntry) {
-    if (process.env.NODE_ENV !== "test") {
-      console.warn(
-        "No provider API keys are configured in the Machdoch user config file. " +
-          "Use the desktop provider setup or `machdoch --set-api --provider <name> --key <value>`.",
-      );
-    }
-  }
+
   return configuredEntry?.provider ?? "unconfigured";
+};
+
+const resolveWebSearchActiveProvider = (
+  configuredProvider: WebSearchProvider,
+  env: Record<string, string>,
+): WebSearchProvider => {
+  const envOverride = normalizeOptionalString(env.MACHDOCH_WEB_SEARCH_PROVIDER);
+
+  if (
+    envOverride &&
+    VALID_WEB_SEARCH_PROVIDERS.includes(envOverride as WebSearchProvider)
+  ) {
+    return envOverride as WebSearchProvider;
+  }
+
+  return configuredProvider;
 };
 
 /**
@@ -195,8 +308,10 @@ export const loadRuntimeConfig = async (
   overrideMode?: RunMode,
   overrideProfile?: string,
   overrideModel?: string,
+  overrideProvider?: Exclude<ModelProvider, "unconfigured">,
 ): Promise<RuntimeConfig> => {
-  const env = loadProcessEnv();
+  const env = await loadWorkspaceEnv(workspaceRoot);
+  const userWebSearchSettings = await loadUserWebSearchSettings();
   const { config, path } = await loadWorkspaceConfigFile(workspaceRoot);
   const availableProfiles = getAvailableProfiles(config.profiles);
   const { activeProfile, profile } = resolveProfile(
@@ -205,14 +320,15 @@ export const loadRuntimeConfig = async (
     overrideProfile,
   );
   const effectiveConfig = mergeProfileIntoConfig(config, profile);
-  const providerAvailability = await getUserProviderAvailability();
+  const providerAvailability = getProviderAvailability(env);
+  const webSearchProviderAvailability = getWebSearchProviderAvailability(env);
   const modeFromEnv = isRunMode(env.MACHDOCH_MODE)
     ? env.MACHDOCH_MODE
     : undefined;
   const mode =
     overrideMode ?? modeFromEnv ?? effectiveConfig.defaultMode ?? "ask";
   const provider = resolveProvider(
-    effectiveConfig.provider,
+    overrideProvider ?? effectiveConfig.provider,
     providerAvailability,
   );
   const model =
@@ -238,39 +354,12 @@ export const loadRuntimeConfig = async (
         effectiveConfig.compatibility?.discoverGithubCustomizations ?? false,
     },
     providerAvailability,
+    webSearch: {
+      activeProvider: resolveWebSearchActiveProvider(
+        userWebSearchSettings.activeProvider,
+        env,
+      ),
+      providerAvailability: webSearchProviderAvailability,
+    },
   };
-};
-
-/**
- * Persists the workspace default model to `.machdoch/config.json`.
- */
-export const saveWorkspaceDefaultModel = async (
-  workspaceRoot: string,
-  model: string,
-): Promise<string> => {
-  const normalizedModel = normalizeOptionalString(model);
-
-  if (!normalizedModel) {
-    throw new Error("Expected a non-empty model name.");
-  }
-
-  const configDirectory = join(workspaceRoot, ".machdoch");
-  const configPath = join(configDirectory, "config.json");
-  const { config } = await loadWorkspaceConfigFile(workspaceRoot);
-
-  await mkdir(configDirectory, { recursive: true });
-  await writeFile(
-    configPath,
-    `${JSON.stringify(
-      {
-        ...config,
-        model: normalizedModel,
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
-
-  return configPath;
 };

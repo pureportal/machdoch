@@ -1,13 +1,22 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   getUserConfigPath,
   getUserProviderAvailability,
+  getUserWebSearchProviderAvailability,
   hasConfiguredValue,
   loadProcessEnv,
   loadUserApiKeys,
+  loadUserMemorySettings,
+  loadUserWebSearchApiKeys,
+  loadUserWebSearchSettings,
+  loadWorkspaceEnv,
+  rememberUserGlobalMemory,
   saveUserApiKey,
+  saveUserGlobalMemoryEnabled,
+  saveUserWebSearchActiveProvider,
+  saveUserWebSearchApiKey,
 } from "./env.ts";
 
 const workspacesToClean: string[] = [];
@@ -16,11 +25,13 @@ const ISOLATED_ENV_KEYS = [
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
   "GOOGLE_API_KEY",
-  "OPENAI_COMPATIBLE_BASE_URL",
+  "PERPLEXITY_API_KEY",
+  "TAVILY_API_KEY",
   "MACHDOCH_MODE",
   "MACHDOCH_MODEL",
   "MACHDOCH_OFFLINE",
   "MACHDOCH_PROFILE",
+  "MACHDOCH_WEB_SEARCH_PROVIDER",
   "MACHDOCH_USER_CONFIG_DIR",
 ] as const;
 
@@ -72,6 +83,8 @@ describe("hasConfiguredValue", () => {
     expect(hasConfiguredValue("YOUR_OPENAI_API_KEY_HERE")).toBe(false);
     expect(hasConfiguredValue("CHANGE_ME")).toBe(false);
     expect(hasConfiguredValue("api-key-PLACEHOLDER")).toBe(false);
+    expect(hasConfiguredValue("sk-user-config")).toBe(false);
+    expect(hasConfiguredValue("pplx-live")).toBe(false);
     expect(hasConfiguredValue("sk-real-value")).toBe(true);
   });
 });
@@ -91,23 +104,92 @@ describe("loadProcessEnv", () => {
   });
 });
 
+describe("loadWorkspaceEnv", () => {
+  it("loads workspace .env values and process overrides for runtime config resolution", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    await saveUserApiKey("openai", "sk-test-user-config-123456");
+    await writeFile(
+      join(workspaceRoot, ".env"),
+      ["OPENAI_API_KEY=sk-workspace", "MACHDOCH_MODEL=workspace-model"].join(
+        "\n",
+      ),
+    );
+    process.env.MACHDOCH_MODE = "auto";
+
+    const env = await loadWorkspaceEnv(workspaceRoot);
+
+    expect(env.OPENAI_API_KEY).toBe("sk-workspace");
+    expect(env.MACHDOCH_MODEL).toBe("workspace-model");
+    expect(env.MACHDOCH_MODE).toBe("auto");
+  });
+});
+
 describe("user config API key helpers", () => {
   it("persists provider keys in the user-scoped config file", async () => {
     isolateEnvironment();
     const configDirectory = await createWorkspace();
     process.env.MACHDOCH_USER_CONFIG_DIR = configDirectory;
 
-    const savedPath = await saveUserApiKey("openai", "sk-live");
+    const savedPath = await saveUserApiKey(
+      "openai",
+      "sk-test-openai-key-1234567890",
+    );
     const apiKeys = await loadUserApiKeys();
     const availability = await getUserProviderAvailability();
 
     expect(savedPath).toBe(join(configDirectory, "user-config.json"));
     expect(getUserConfigPath()).toBe(join(configDirectory, "user-config.json"));
-    expect(apiKeys.openai).toBe("sk-live");
+    expect(apiKeys.openai).toBe("sk-test-openai-key-1234567890");
     expect(availability).toEqual([
       { provider: "openai", configured: true },
       { provider: "anthropic", configured: false },
       { provider: "google", configured: false },
     ]);
+  });
+
+  it("persists web-search settings in the user-scoped config file", async () => {
+    isolateEnvironment();
+    const configDirectory = await createWorkspace();
+    process.env.MACHDOCH_USER_CONFIG_DIR = configDirectory;
+
+    await saveUserWebSearchApiKey("perplexity", "pplx-test-key-1234567890");
+    await saveUserWebSearchActiveProvider("perplexity");
+
+    const apiKeys = await loadUserWebSearchApiKeys();
+    const availability = await getUserWebSearchProviderAvailability();
+    const settings = await loadUserWebSearchSettings();
+
+    expect(apiKeys.perplexity).toBe("pplx-test-key-1234567890");
+    expect(availability).toEqual([
+      { provider: "perplexity", configured: true },
+      { provider: "tavily", configured: false },
+    ]);
+    expect(settings.activeProvider).toBe("perplexity");
+    expect(settings.apiKeys.perplexity).toBe("pplx-test-key-1234567890");
+  });
+
+  it("persists cross-session global memory settings and deduplicates entries", async () => {
+    isolateEnvironment();
+    const configDirectory = await createWorkspace();
+    process.env.MACHDOCH_USER_CONFIG_DIR = configDirectory;
+
+    await saveUserGlobalMemoryEnabled(true);
+    const firstEntry = await rememberUserGlobalMemory(
+      "The user prefers compact summaries.",
+    );
+    const secondEntry = await rememberUserGlobalMemory(
+      "The user prefers compact summaries.",
+    );
+    const settings = await loadUserMemorySettings();
+
+    expect(firstEntry.content).toBe("The user prefers compact summaries.");
+    expect(secondEntry.content).toBe("The user prefers compact summaries.");
+    expect(settings.globalEnabled).toBe(true);
+    expect(settings.entries).toHaveLength(1);
+    expect(settings.entries[0]?.content).toBe(
+      "The user prefers compact summaries.",
+    );
   });
 });

@@ -2,8 +2,6 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadRuntimeConfig, saveWorkspaceDefaultModel } from "./config.ts";
-import { saveUserApiKey } from "./env.ts";
-import { afterEach, describe, it } from "node:test";
 
 const workspacesToClean: string[] = [];
 const originalEnvironment = new Map<string, string | undefined>();
@@ -21,6 +19,7 @@ const ISOLATED_ENV_KEYS = [
 const createWorkspace = async (): Promise<string> => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-config-"));
   workspacesToClean.push(workspaceRoot);
+  process.env.MACHDOCH_USER_CONFIG_DIR = join(workspaceRoot, ".user-config");
   return workspaceRoot;
 };
 
@@ -77,15 +76,18 @@ describe("loadRuntimeConfig", () => {
     expect(config.compatibility.discoverGithubCustomizations).toBe(false);
   });
 
-  it("loads runtime config from the user API config and .machdoch/config.json", async () => {
+  it("loads runtime config from .env and .machdoch/config.json", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();
-    const userConfigDirectory = await createWorkspace();
-
-    process.env.MACHDOCH_USER_CONFIG_DIR = userConfigDirectory;
-    await saveUserApiKey("openai", "sk-live");
 
     await mkdir(join(workspaceRoot, ".machdoch"), { recursive: true });
+    await writeFile(
+      join(workspaceRoot, ".env"),
+      [
+        "OPENAI_API_KEY=sk-real-openai-key-123456",
+        "MACHDOCH_MODEL=env-model",
+      ].join("\n"),
+    );
     await writeFile(
       join(workspaceRoot, ".machdoch", "config.json"),
       JSON.stringify(
@@ -102,8 +104,8 @@ describe("loadRuntimeConfig", () => {
               mode: "safe",
               enabledTools: ["filesystem"],
             },
-            google: {
-              description: "Prefer Google for multimodal work",
+            local: {
+              description: "Prefer a local backend",
               provider: "google",
               model: "gemini-2.5-flash",
               offline: false,
@@ -120,8 +122,8 @@ describe("loadRuntimeConfig", () => {
     expect(config.activeProfile).toBe("safe-review");
     expect(config.availableProfiles).toEqual([
       {
-        name: "google",
-        description: "Prefer Google for multimodal work",
+        name: "local",
+        description: "Prefer a local backend",
       },
       {
         name: "safe-review",
@@ -152,8 +154,8 @@ describe("loadRuntimeConfig", () => {
           provider: "openai",
           model: "base-model",
           profiles: {
-            google: {
-              description: "Google profile",
+            local: {
+              description: "Local backend profile",
               mode: "auto",
               enabledTools: ["filesystem", "network"],
               provider: "google",
@@ -167,9 +169,9 @@ describe("loadRuntimeConfig", () => {
       ),
     );
 
-    const config = await loadRuntimeConfig(workspaceRoot, undefined, "google");
+    const config = await loadRuntimeConfig(workspaceRoot, undefined, "local");
 
-    expect(config.activeProfile).toBe("google");
+    expect(config.activeProfile).toBe("local");
     expect(config.mode).toBe("auto");
     expect(config.enabledTools).toEqual(["filesystem", "network"]);
     expect(config.provider).toBe("google");
@@ -180,10 +182,8 @@ describe("loadRuntimeConfig", () => {
   it("uses environment values for mode, model, offline, and provider discovery when config does not set them", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();
-    const userConfigDirectory = await createWorkspace();
 
-    process.env.MACHDOCH_USER_CONFIG_DIR = userConfigDirectory;
-    await saveUserApiKey("openai", "sk-live");
+    process.env.OPENAI_API_KEY = "sk-real-openai-key-123456";
     process.env.MACHDOCH_MODE = "auto";
     process.env.MACHDOCH_MODEL = "env-model";
     process.env.MACHDOCH_OFFLINE = "true";
@@ -198,20 +198,6 @@ describe("loadRuntimeConfig", () => {
       config.providerAvailability.find((entry) => entry.provider === "openai")
         ?.configured,
     ).toBe(true);
-  });
-
-  it("keeps the provider unconfigured when no supported provider keys are present", async () => {
-    isolateEnvironment();
-    const workspaceRoot = await createWorkspace();
-
-    const config = await loadRuntimeConfig(workspaceRoot);
-
-    expect(config.provider).toBe("unconfigured");
-    expect(config.providerAvailability).toEqual([
-      { provider: "openai", configured: false },
-      { provider: "anthropic", configured: false },
-      { provider: "google", configured: false },
-    ]);
   });
 
   it("throws a helpful error for unknown profile names", async () => {
@@ -245,11 +231,11 @@ describe("loadRuntimeConfig", () => {
 
     const configPath = await saveWorkspaceDefaultModel(
       workspaceRoot,
-      "gpt-4.5",
+      "gpt-5.4",
     );
     const config = await loadRuntimeConfig(workspaceRoot);
 
     expect(configPath).toBe(join(workspaceRoot, ".machdoch", "config.json"));
-    expect(config.model).toBe("gpt-4.5");
+    expect(config.model).toBe("gpt-5.4");
   });
 });

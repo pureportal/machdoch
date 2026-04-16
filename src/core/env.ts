@@ -2,24 +2,67 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ProviderAvailability } from "./types.js";
+import {
+    MAX_GLOBAL_MEMORY_ENTRIES,
+    normalizeConversationMemoryEntries,
+    rememberConversationMemoryEntry,
+} from "./memory.js";
+import type {
+    ConversationMemoryEntry,
+    ProviderAvailability,
+    WebSearchProvider,
+    WebSearchProviderAvailability,
+} from "./types.js";
 
 const PLACEHOLDER_TOKENS = ["YOUR_", "CHANGE_ME", "PLACEHOLDER"];
+const KNOWN_SAMPLE_SECRET_VALUES = new Set([
+  "sk-user-config",
+  "sk-live",
+  "pplx-live",
+  "tvly-live",
+  "tavily-live",
+]);
 const USER_CONFIG_FILE_NAME = "user-config.json";
+const WORKSPACE_ENV_FILE_NAME = ".env";
+export type UserApiProvider = ProviderAvailability["provider"];
+export type UserWebSearchProvider = Exclude<WebSearchProvider, "none">;
+
+const PROVIDER_ENV_KEY_BY_PROVIDER: Record<UserApiProvider, string> = {
+  openai: "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  google: "GOOGLE_API_KEY",
+};
+const WEB_SEARCH_ENV_KEY_BY_PROVIDER: Record<UserWebSearchProvider, string> = {
+  perplexity: "PERPLEXITY_API_KEY",
+  tavily: "TAVILY_API_KEY",
+};
 const RUNTIME_ENV_KEYS = [
   "MACHDOCH_MODE",
   "MACHDOCH_MODEL",
   "MACHDOCH_OFFLINE",
   "MACHDOCH_PROFILE",
+  "MACHDOCH_WEB_SEARCH_PROVIDER",
 ] as const;
-const USER_API_PROVIDERS: ProviderAvailability["provider"][] = [
-  "openai",
-  "anthropic",
-  "google",
+const USER_API_PROVIDERS: UserApiProvider[] = ["openai", "anthropic", "google"];
+const USER_WEB_SEARCH_PROVIDERS: UserWebSearchProvider[] = [
+  "perplexity",
+  "tavily",
 ];
 
+interface UserWebSearchConfigFile {
+  activeProvider?: WebSearchProvider;
+  apiKeys?: Partial<Record<UserWebSearchProvider, string>>;
+}
+
+interface UserMemoryConfigFile {
+  globalEnabled?: boolean;
+  entries?: ConversationMemoryEntry[];
+}
+
 interface UserConfigFile {
-  apiKeys?: Partial<Record<ProviderAvailability["provider"], string>>;
+  apiKeys?: Partial<Record<UserApiProvider, string>>;
+  webSearch?: UserWebSearchConfigFile;
+  memory?: UserMemoryConfigFile;
 }
 
 /**
@@ -37,13 +80,74 @@ const normalizeOptionalString = (
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const stripWrappingQuotes = (value: string): string => {
+  const trimmed = value.trim();
+
+  if (trimmed.length >= 2) {
+    const wrappedInSingleQuotes =
+      trimmed.startsWith("'") && trimmed.endsWith("'");
+    const wrappedInDoubleQuotes =
+      trimmed.startsWith('"') && trimmed.endsWith('"');
+
+    if (wrappedInSingleQuotes || wrappedInDoubleQuotes) {
+      return trimmed.slice(1, -1);
+    }
+  }
+
+  return trimmed;
+};
+
+const parseDotEnvFile = async (
+  filePath: string,
+): Promise<Record<string, string>> => {
+  const raw = await readFile(filePath, "utf8");
+  const values: Record<string, string> = {};
+
+  for (const line of raw.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmed.indexOf("=");
+
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = normalizeOptionalString(trimmed.slice(0, separatorIndex));
+    const value = normalizeOptionalString(
+      stripWrappingQuotes(trimmed.slice(separatorIndex + 1)),
+    );
+
+    if (!key || !value) {
+      continue;
+    }
+
+    values[key] = value;
+  }
+
+  return values;
+};
+
 /**
  * Returns whether a provider id is supported by the user API config file.
  */
-const isUserApiProvider = (
+const isUserApiProvider = (value: string): value is UserApiProvider => {
+  return USER_API_PROVIDERS.includes(value as UserApiProvider);
+};
+
+const isWebSearchProvider = (value: string): value is WebSearchProvider => {
+  return ["none", ...USER_WEB_SEARCH_PROVIDERS].includes(
+    value as WebSearchProvider,
+  );
+};
+
+const isUserWebSearchProvider = (
   value: string,
-): value is ProviderAvailability["provider"] => {
-  return USER_API_PROVIDERS.includes(value as ProviderAvailability["provider"]);
+): value is UserWebSearchProvider => {
+  return USER_WEB_SEARCH_PROVIDERS.includes(value as UserWebSearchProvider);
 };
 
 /**
@@ -100,6 +204,62 @@ export const loadProcessEnv = (): Record<string, string> => {
 };
 
 /**
+ * Loads the effective workspace environment by combining user-scoped provider
+ * keys, workspace `.env` values, and current-process overrides.
+ */
+export const loadWorkspaceEnv = async (
+  workspaceRoot: string,
+): Promise<Record<string, string>> => {
+  const env: Record<string, string> = {};
+  const userApiKeys = await loadUserApiKeys();
+  const userWebSearchApiKeys = await loadUserWebSearchApiKeys();
+
+  for (const [provider, key] of Object.entries(userApiKeys)) {
+    if (
+      isUserApiProvider(provider) &&
+      typeof key === "string" &&
+      key.trim().length > 0
+    ) {
+      env[PROVIDER_ENV_KEY_BY_PROVIDER[provider]] = key.trim();
+    }
+  }
+
+  for (const [provider, key] of Object.entries(userWebSearchApiKeys)) {
+    if (
+      isUserWebSearchProvider(provider) &&
+      typeof key === "string" &&
+      key.trim().length > 0
+    ) {
+      env[WEB_SEARCH_ENV_KEY_BY_PROVIDER[provider]] = key.trim();
+    }
+  }
+
+  const workspaceEnvPath = join(workspaceRoot, WORKSPACE_ENV_FILE_NAME);
+
+  if (existsSync(workspaceEnvPath)) {
+    Object.assign(env, await parseDotEnvFile(workspaceEnvPath));
+  }
+
+  for (const key of [
+    ...Object.keys(env),
+    ...RUNTIME_ENV_KEYS,
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GOOGLE_API_KEY",
+    "PERPLEXITY_API_KEY",
+    "TAVILY_API_KEY",
+  ]) {
+    const value = normalizeOptionalString(process.env[key]);
+
+    if (value) {
+      env[key] = value;
+    }
+  }
+
+  return env;
+};
+
+/**
  * Reads the user-scoped Machdoch config file when present.
  */
 const loadUserConfigFile = async (): Promise<{
@@ -123,11 +283,20 @@ const loadUserConfigFile = async (): Promise<{
   };
 };
 
+const saveUserConfigFile = async (config: UserConfigFile): Promise<string> => {
+  const path = getUserConfigPath();
+
+  await mkdir(getUserConfigDirectory(), { recursive: true });
+  await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  return path;
+};
+
 /**
  * Loads the configured provider API keys from the user-scoped config file.
  */
 export const loadUserApiKeys = async (): Promise<
-  Partial<Record<ProviderAvailability["provider"], string>>
+  Partial<Record<UserApiProvider, string>>
 > => {
   const { config } = await loadUserConfigFile();
   const apiKeys = config.apiKeys ?? {};
@@ -135,8 +304,31 @@ export const loadUserApiKeys = async (): Promise<
   return Object.fromEntries(
     Object.entries(apiKeys)
       .filter(
-        (entry): entry is [ProviderAvailability["provider"], string] =>
-          isUserApiProvider(entry[0]) && typeof entry[1] === "string",
+        (entry): entry is [UserApiProvider, string] =>
+          isUserApiProvider(entry[0]) &&
+          typeof entry[1] === "string" &&
+          hasConfiguredValue(entry[1]),
+      )
+      .map(([provider, value]) => [provider, value.trim()]),
+  );
+};
+
+/**
+ * Loads the configured web-search API keys from the user-scoped config file.
+ */
+export const loadUserWebSearchApiKeys = async (): Promise<
+  Partial<Record<UserWebSearchProvider, string>>
+> => {
+  const { config } = await loadUserConfigFile();
+  const apiKeys = config.webSearch?.apiKeys ?? {};
+
+  return Object.fromEntries(
+    Object.entries(apiKeys)
+      .filter(
+        (entry): entry is [UserWebSearchProvider, string] =>
+          isUserWebSearchProvider(entry[0]) &&
+          typeof entry[1] === "string" &&
+          hasConfiguredValue(entry[1]),
       )
       .map(([provider, value]) => [provider, value.trim()]),
   );
@@ -146,14 +338,16 @@ export const loadUserApiKeys = async (): Promise<
  * Saves a provider API key into the user-scoped config file.
  */
 export const saveUserApiKey = async (
-  provider: ProviderAvailability["provider"],
+  provider: UserApiProvider,
   apiKey: string,
 ): Promise<string> => {
   const normalizedProvider = normalizeOptionalString(provider);
   const normalizedApiKey = normalizeOptionalString(apiKey);
 
   if (!normalizedProvider || !isUserApiProvider(normalizedProvider)) {
-    throw new Error("Expected --provider to be one of openai, anthropic, or google.");
+    throw new Error(
+      "Expected --provider to be one of openai, anthropic, or google.",
+    );
   }
 
   if (!normalizedApiKey) {
@@ -162,22 +356,72 @@ export const saveUserApiKey = async (
 
   const { config, path } = await loadUserConfigFile();
 
-  await mkdir(getUserConfigDirectory(), { recursive: true });
-  await writeFile(
-    path,
-    `${JSON.stringify(
-      {
-        ...config,
-        apiKeys: {
-          ...(config.apiKeys ?? {}),
-          [normalizedProvider]: normalizedApiKey,
-        },
+  await saveUserConfigFile({
+    ...config,
+    apiKeys: {
+      ...(config.apiKeys ?? {}),
+      [normalizedProvider]: normalizedApiKey,
+    },
+  });
+
+  return path;
+};
+
+/**
+ * Saves a web-search provider API key into the user-scoped config file.
+ */
+export const saveUserWebSearchApiKey = async (
+  provider: UserWebSearchProvider,
+  apiKey: string,
+): Promise<string> => {
+  const normalizedProvider = normalizeOptionalString(provider);
+  const normalizedApiKey = normalizeOptionalString(apiKey);
+
+  if (!normalizedProvider || !isUserWebSearchProvider(normalizedProvider)) {
+    throw new Error("Expected provider to be one of perplexity or tavily.");
+  }
+
+  if (!normalizedApiKey) {
+    throw new Error("Expected a non-empty API key.");
+  }
+
+  const { config, path } = await loadUserConfigFile();
+
+  await saveUserConfigFile({
+    ...config,
+    webSearch: {
+      ...(config.webSearch ?? {}),
+      apiKeys: {
+        ...(config.webSearch?.apiKeys ?? {}),
+        [normalizedProvider]: normalizedApiKey,
       },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
+    },
+  });
+
+  return path;
+};
+
+/**
+ * Persists the active web-search provider into the user-scoped config file.
+ */
+export const saveUserWebSearchActiveProvider = async (
+  provider: WebSearchProvider,
+): Promise<string> => {
+  if (!isWebSearchProvider(provider)) {
+    throw new Error(
+      "Expected the active web search provider to be one of none, perplexity, or tavily.",
+    );
+  }
+
+  const { config, path } = await loadUserConfigFile();
+
+  await saveUserConfigFile({
+    ...config,
+    webSearch: {
+      ...(config.webSearch ?? {}),
+      activeProvider: provider,
+    },
+  });
 
   return path;
 };
@@ -197,6 +441,112 @@ export const getUserProviderAvailability = async (): Promise<
 };
 
 /**
+ * Returns web-search provider availability derived from the user-scoped config file.
+ */
+export const getUserWebSearchProviderAvailability = async (): Promise<
+  WebSearchProviderAvailability[]
+> => {
+  const apiKeys = await loadUserWebSearchApiKeys();
+
+  return USER_WEB_SEARCH_PROVIDERS.map((provider) => ({
+    provider,
+    configured: hasConfiguredValue(apiKeys[provider]),
+  }));
+};
+
+/**
+ * Loads the saved user-scoped web-search settings.
+ */
+export const loadUserWebSearchSettings = async (): Promise<{
+  activeProvider: WebSearchProvider;
+  apiKeys: Partial<Record<UserWebSearchProvider, string>>;
+  providerAvailability: WebSearchProviderAvailability[];
+}> => {
+  const { config } = await loadUserConfigFile();
+  const activeProvider = isWebSearchProvider(
+    config.webSearch?.activeProvider ?? "none",
+  )
+    ? (config.webSearch?.activeProvider ?? "none")
+    : "none";
+  const apiKeys = await loadUserWebSearchApiKeys();
+
+  return {
+    activeProvider,
+    apiKeys,
+    providerAvailability: await getUserWebSearchProviderAvailability(),
+  };
+};
+
+/**
+ * Loads the saved cross-session global memory settings.
+ */
+export const loadUserMemorySettings = async (): Promise<{
+  globalEnabled: boolean;
+  entries: ConversationMemoryEntry[];
+}> => {
+  const { config } = await loadUserConfigFile();
+
+  return {
+    globalEnabled: config.memory?.globalEnabled === true,
+    entries: normalizeConversationMemoryEntries(
+      config.memory?.entries,
+      "global",
+    ),
+  };
+};
+
+/**
+ * Persists whether cross-session global memory is enabled.
+ */
+export const saveUserGlobalMemoryEnabled = async (
+  enabled: boolean,
+): Promise<string> => {
+  const { config } = await loadUserConfigFile();
+
+  return saveUserConfigFile({
+    ...config,
+    memory: {
+      ...(config.memory ?? {}),
+      globalEnabled: enabled,
+      entries: normalizeConversationMemoryEntries(
+        config.memory?.entries,
+        "global",
+      ),
+    },
+  });
+};
+
+/**
+ * Appends or refreshes a durable cross-session memory entry.
+ */
+export const rememberUserGlobalMemory = async (
+  content: string,
+): Promise<ConversationMemoryEntry> => {
+  const { config } = await loadUserConfigFile();
+  const normalizedEntries = normalizeConversationMemoryEntries(
+    config.memory?.entries,
+    "global",
+  );
+  const remembered = rememberConversationMemoryEntry(
+    normalizedEntries,
+    "global",
+    content,
+    MAX_GLOBAL_MEMORY_ENTRIES,
+  );
+
+  await saveUserConfigFile({
+    ...config,
+    memory: {
+      ...(config.memory ?? {}),
+      globalEnabled: config.memory?.globalEnabled === true,
+      entries: remembered.entries,
+    },
+  });
+
+  return remembered.entry;
+};
+
+/**
  * Returns whether a configuration value looks usable instead of empty or a
  * placeholder token.
  */
@@ -208,6 +558,10 @@ export const hasConfiguredValue = (value: string | undefined): boolean => {
   const trimmed = value.trim();
 
   if (trimmed.length === 0) {
+    return false;
+  }
+
+  if (KNOWN_SAMPLE_SECRET_VALUES.has(trimmed)) {
     return false;
   }
 

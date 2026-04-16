@@ -25,7 +25,17 @@ const TOOL_REGISTRY: ToolDefinition[] = [
     description:
       "Fetch APIs, web pages, and remote resources or submit outbound requests.",
     riskLevel: "medium",
-    keywords: ["api", "http", "fetch", "download", "request", "url"],
+    keywords: [
+      "api",
+      "http",
+      "fetch",
+      "download",
+      "request",
+      "url",
+      "online",
+      "internet",
+      "web search",
+    ],
   },
   {
     name: "browser",

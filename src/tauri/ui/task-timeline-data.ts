@@ -33,7 +33,6 @@ const executionStatusLabels: Record<TaskExecutionStatus, string> = {
   executed: "Executed",
   "approval-required": "Approval required",
   blocked: "Blocked",
-  cancelled: "Cancelled",
   unsupported: "Preview only",
 };
 
@@ -41,7 +40,6 @@ const executionStatusTones: Record<TaskExecutionStatus, TaskPanelTone> = {
   executed: "success",
   "approval-required": "warning",
   blocked: "danger",
-  cancelled: "neutral",
   unsupported: "neutral",
 };
 
@@ -242,7 +240,10 @@ export const createTaskTimelineModel = (
     }
 
     existingGroup.messages.push(message);
-    existingGroup.lastCreatedAt = Math.max(existingGroup.lastCreatedAt, createdAt);
+    existingGroup.lastCreatedAt = Math.max(
+      existingGroup.lastCreatedAt,
+      createdAt,
+    );
   });
 
   return Array.from(groupedMessages.values())

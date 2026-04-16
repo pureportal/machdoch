@@ -16,11 +16,90 @@ const PATH_INSPECTION_ACTIONS = [
   "view",
 ];
 
+const CREATE_FILE_ACTION_TOKENS = new Set([
+  "add",
+  "create",
+  "generate",
+  "make",
+  "touch",
+  "write",
+]);
+
+const CREATE_FILE_OBJECT_TOKENS = new Set([
+  "document",
+  "file",
+  "note",
+  "notes",
+]);
+
+const CREATE_FILE_DISALLOWED_TOKENS = new Set([
+  "append",
+  "commit",
+  "delete",
+  "edit",
+  "fix",
+  "install",
+  "modify",
+  "move",
+  "push",
+  "remove",
+  "rename",
+  "replace",
+  "run",
+  "update",
+]);
+
+const FILE_TYPE_EXTENSION_HINTS: ReadonlyArray<
+  readonly [keyword: string, extension: string]
+> = [
+  ["markdown", "md"],
+  ["md", "md"],
+  ["json", "json"],
+  ["typescript", "ts"],
+  ["ts", "ts"],
+  ["javascript", "js"],
+  ["js", "js"],
+  ["html", "html"],
+  ["css", "css"],
+  ["yaml", "yaml"],
+  ["yml", "yml"],
+  ["toml", "toml"],
+  ["text", "txt"],
+  ["txt", "txt"],
+];
+
+const GENERIC_FILE_NAME_TOKENS = new Set([
+  "blank",
+  "document",
+  "dummy",
+  "empty",
+  "file",
+  "json",
+  "markdown",
+  "new",
+  "note",
+  "sample",
+  "simple",
+  "stub",
+  "temp",
+  "temporary",
+  "text",
+  "toml",
+  "ts",
+  "typescript",
+  "yaml",
+  "yml",
+]);
+
 export interface TaskPathReference {
   requestedPath: string;
   resolvedPath: string;
   insideWorkspace: boolean;
   workspacePath?: string;
+}
+
+export interface CreateFilePathReference extends TaskPathReference {
+  inferredPath: boolean;
 }
 
 const cleanPathCandidate = (value: string): string => {
@@ -79,6 +158,19 @@ const normalizeRelativePath = (value: string): string => {
     .replace(/\/$/, "");
 
   return normalized === "." ? "" : normalized;
+};
+
+const hasAnyToken = (
+  tokens: ReadonlySet<string>,
+  candidates: ReadonlySet<string>,
+): boolean => {
+  for (const candidate of candidates) {
+    if (tokens.has(candidate)) {
+      return true;
+    }
+  }
+
+  return false;
 };
 
 const isPathInsideWorkspace = (
@@ -279,6 +371,106 @@ export const extractExplicitInspectionPathReference = (
   }
 
   return extractTaskPathReferences(task, workspaceRoot)[0];
+};
+
+const inferCreateFileExtension = (task: string): string => {
+  const tokens = createTokenSet(task);
+
+  for (const [keyword, extension] of FILE_TYPE_EXTENSION_HINTS) {
+    if (tokens.has(keyword)) {
+      return extension;
+    }
+  }
+
+  return "txt";
+};
+
+const extractNamedCreateFileCandidate = (task: string): string | undefined => {
+  const match = task.match(/\b(?:named|called)\s+["'`]?([A-Za-z0-9_./\\-]+)["'`]?/iu);
+  const candidate = cleanPathCandidate(match?.[1] ?? "");
+
+  return candidate.length > 0 ? candidate : undefined;
+};
+
+const extractDerivedCreateFileBaseName = (task: string): string | undefined => {
+  const match = task.match(
+    /\b(?:add|create|generate|make|touch|write)\b(?:\s+(?:a|an))?\s+([A-Za-z0-9_-]+)\s+file\b/iu,
+  );
+  const candidate = cleanPathCandidate(match?.[1] ?? "").toLowerCase();
+
+  if (candidate.length === 0 || GENERIC_FILE_NAME_TOKENS.has(candidate)) {
+    return undefined;
+  }
+
+  return candidate;
+};
+
+const resolveDefaultCreateFileCandidate = (task: string): string | undefined => {
+  const tokens = createTokenSet(task);
+
+  if (!hasAnyToken(tokens, CREATE_FILE_OBJECT_TOKENS)) {
+    return undefined;
+  }
+
+  const extension = inferCreateFileExtension(task);
+  const derivedBaseName = extractDerivedCreateFileBaseName(task);
+
+  if (derivedBaseName) {
+    return `${derivedBaseName}.${extension}`;
+  }
+
+  if (tokens.has("test")) {
+    return `test.${extension}`;
+  }
+
+  return `untitled.${extension}`;
+};
+
+/**
+ * Returns a deterministic create-file target for narrow workspace write tasks
+ * like `create a test file` or `create notes.txt`.
+ */
+export const resolveDeterministicCreateFileTarget = (
+  task: string,
+  workspaceRoot: string,
+): CreateFilePathReference | undefined => {
+  const tokens = createTokenSet(task);
+
+  if (!hasAnyToken(tokens, CREATE_FILE_ACTION_TOKENS)) {
+    return undefined;
+  }
+
+  if (hasAnyToken(tokens, CREATE_FILE_DISALLOWED_TOKENS)) {
+    return undefined;
+  }
+
+  const explicitPathReference = extractTaskPathReferences(task, workspaceRoot)[0];
+  const namedPathCandidate = extractNamedCreateFileCandidate(task);
+  const fallbackCandidate = resolveDefaultCreateFileCandidate(task);
+  const candidate =
+    explicitPathReference?.requestedPath ?? namedPathCandidate ?? fallbackCandidate;
+
+  if (!candidate) {
+    return undefined;
+  }
+
+  const resolvedPath = isAbsolute(candidate)
+    ? resolve(candidate)
+    : resolve(workspaceRoot, candidate);
+  const insideWorkspace = isPathInsideWorkspace(workspaceRoot, resolvedPath);
+
+  return {
+    requestedPath: candidate,
+    resolvedPath,
+    insideWorkspace,
+    inferredPath:
+      explicitPathReference === undefined && namedPathCandidate === undefined,
+    ...(insideWorkspace
+      ? {
+          workspacePath: normalizeRelativePath(relative(workspaceRoot, resolvedPath)),
+        }
+      : {}),
+  };
 };
 
 /**

@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 import { parseArgs as parseNodeArgs } from "node:util";
@@ -6,25 +7,39 @@ import {
   saveWorkspaceDefaultModel,
 } from "../core/config.js";
 import { discoverCustomizations } from "../core/customizations.js";
-import { saveUserApiKey } from "../core/env.js";
+import {
+  loadUserMemorySettings,
+  saveUserApiKey,
+  saveUserGlobalMemoryEnabled,
+  type UserApiProvider,
+} from "../core/env.js";
 import { createTaskExecutionController } from "../core/execution.js";
+import {
+  MAX_SESSION_MEMORY_ENTRIES,
+  mergeConversationMemoryEntries,
+} from "../core/memory.js";
 import { resolveToolPolicies } from "../core/policy.js";
 import { previewTaskRun } from "../core/task-runner.js";
 import { getToolRegistry } from "../core/tools.js";
 import type {
-  ProviderAvailability,
+  ConversationHistoryEntry,
+  ConversationMemoryEntry,
+  ModelProvider,
   RunMode,
   RuntimeProfileSummary,
+  TaskConversationContext,
   TaskExecutionProgress,
   TaskExecutionProgressHandler,
   TaskExecutionResult,
   TaskExecutionState,
+  TaskRunPreview,
 } from "../core/types.js";
 
 export type CommandName =
   | "run"
   | "chat"
   | "set-api"
+  | "set-global-memory"
   | "inspect"
   | "config"
   | "tools"
@@ -37,20 +52,34 @@ export interface ParsedCliArgs {
   task?: string;
   mode?: RunMode;
   profile?: string;
-  provider?: ProviderAvailability["provider"];
+  provider?: UserApiProvider;
+  runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
   key?: string;
   model?: string;
   defaultModel?: string;
+  sessionMemoryEnabled?: boolean;
+  globalMemoryEnabled?: boolean;
+  setGlobalMemoryEnabled?: boolean;
+  conversationContextFile?: string;
   json: boolean;
   verbose: boolean;
   workspaceRoot: string;
 }
 
 const VALID_MODES: ReadonlySet<RunMode> = new Set(["safe", "ask", "auto"]);
-const VALID_PROVIDERS: ReadonlySet<ProviderAvailability["provider"]> = new Set([
+const VALID_PROVIDERS: ReadonlySet<UserApiProvider> = new Set([
   "openai",
   "anthropic",
   "google",
+]);
+const VALID_RUNTIME_PROVIDERS: ReadonlySet<
+  Exclude<ModelProvider, "unconfigured">
+> = new Set(["openai", "anthropic", "google"]);
+const VALID_BOOLEAN_TOGGLE_VALUES: ReadonlySet<string> = new Set(["on", "off"]);
+const VALID_MEMORY_OVERRIDE_VALUES: ReadonlySet<string> = new Set([
+  "inherit",
+  "on",
+  "off",
 ]);
 const COMMANDS_WITHOUT_POSITIONALS: ReadonlySet<CommandName> = new Set([
   "inspect",
@@ -74,15 +103,31 @@ const fail = (message: string): never => {
 const createParsedArgs = (
   base: Omit<
     ParsedCliArgs,
-    "mode" | "profile" | "task" | "provider" | "key" | "model" | "defaultModel"
+    | "mode"
+    | "profile"
+    | "task"
+    | "provider"
+    | "runtimeProvider"
+    | "key"
+    | "model"
+    | "defaultModel"
+    | "sessionMemoryEnabled"
+    | "globalMemoryEnabled"
+    | "setGlobalMemoryEnabled"
+    | "conversationContextFile"
   >,
   options?: {
     mode?: RunMode;
     profile?: string;
-    provider?: ProviderAvailability["provider"];
+    provider?: UserApiProvider;
+    runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
     key?: string;
     model?: string;
     defaultModel?: string;
+    sessionMemoryEnabled?: boolean;
+    globalMemoryEnabled?: boolean;
+    setGlobalMemoryEnabled?: boolean;
+    conversationContextFile?: string;
     task?: string;
   },
 ): ParsedCliArgs => {
@@ -91,9 +136,24 @@ const createParsedArgs = (
     ...(options?.mode ? { mode: options.mode } : {}),
     ...(options?.profile ? { profile: options.profile } : {}),
     ...(options?.provider ? { provider: options.provider } : {}),
+    ...(options?.runtimeProvider
+      ? { runtimeProvider: options.runtimeProvider }
+      : {}),
     ...(options?.key ? { key: options.key } : {}),
     ...(options?.model ? { model: options.model } : {}),
     ...(options?.defaultModel ? { defaultModel: options.defaultModel } : {}),
+    ...(options?.sessionMemoryEnabled !== undefined
+      ? { sessionMemoryEnabled: options.sessionMemoryEnabled }
+      : {}),
+    ...(options?.globalMemoryEnabled !== undefined
+      ? { globalMemoryEnabled: options.globalMemoryEnabled }
+      : {}),
+    ...(options?.setGlobalMemoryEnabled !== undefined
+      ? { setGlobalMemoryEnabled: options.setGlobalMemoryEnabled }
+      : {}),
+    ...(options?.conversationContextFile
+      ? { conversationContextFile: options.conversationContextFile }
+      : {}),
     ...(options?.task ? { task: options.task } : {}),
   };
 };
@@ -116,8 +176,12 @@ const createSharedParsedOptions = (options: {
   workspaceRoot: string;
   mode?: RunMode;
   profile?: string;
+  runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
   model?: string;
   defaultModel?: string;
+  sessionMemoryEnabled?: boolean;
+  globalMemoryEnabled?: boolean;
+  conversationContextFile?: string;
 }): Omit<ParsedCliArgs, "command" | "task"> => {
   return {
     json: options.json,
@@ -125,9 +189,44 @@ const createSharedParsedOptions = (options: {
     workspaceRoot: options.workspaceRoot,
     ...(options.mode ? { mode: options.mode } : {}),
     ...(options.profile ? { profile: options.profile } : {}),
+    ...(options.runtimeProvider
+      ? { runtimeProvider: options.runtimeProvider }
+      : {}),
     ...(options.model ? { model: options.model } : {}),
     ...(options.defaultModel ? { defaultModel: options.defaultModel } : {}),
+    ...(options.sessionMemoryEnabled !== undefined
+      ? { sessionMemoryEnabled: options.sessionMemoryEnabled }
+      : {}),
+    ...(options.globalMemoryEnabled !== undefined
+      ? { globalMemoryEnabled: options.globalMemoryEnabled }
+      : {}),
+    ...(options.conversationContextFile
+      ? { conversationContextFile: options.conversationContextFile }
+      : {}),
   };
+};
+
+const parseBooleanToggle = (value: string, flagName: string): boolean => {
+  if (!VALID_BOOLEAN_TOGGLE_VALUES.has(value)) {
+    fail(`Expected ${flagName} to be followed by on or off.`);
+  }
+
+  return value === "on";
+};
+
+const parseMemoryOverride = (
+  value: string,
+  flagName: string,
+): boolean | undefined => {
+  if (!VALID_MEMORY_OVERRIDE_VALUES.has(value)) {
+    fail(`Expected ${flagName} to be followed by inherit, on, or off.`);
+  }
+
+  if (value === "inherit") {
+    return undefined;
+  }
+
+  return value === "on";
 };
 
 const assertNoAdditionalPositionals = (
@@ -149,8 +248,11 @@ export const getHelpText = (): string => {
 Usage:
   machdoch <task>
   machdoch run <task>
+  machdoch --quick --task <task> [--mode <safe|ask|auto>]
   machdoch --set-api --provider <openai|anthropic|google> --key <value>
-  machdoch --task <task> [--quick] [--model <name>]
+  machdoch --set-global-memory <on|off>
+  machdoch --runtime-provider <openai|anthropic|google>
+  machdoch --task <task> [--mode <safe|ask|auto>] [--quick] [--model <name>]
   machdoch --model <name>
   machdoch --default-model <name>
   machdoch inspect [--json]
@@ -160,13 +262,21 @@ Usage:
 
 Options:
   --mode <safe|ask|auto>  Override the runtime mode for this command.
-  --quick                 Shortcut for --mode auto.
+  --quick                 Force a one-shot task run that exits at a terminal state. Use --mode to choose safe, ask, or auto.
   --set-api               Save a provider API key into the user-scoped Machdoch config file.
   --provider <name>       Provider name for --set-api (openai, anthropic, google).
+  --runtime-provider <name>
+                          Override the runtime provider for this command or chat session.
   --key <value>           API key value for --set-api.
   --task <text>           Provide the task text explicitly instead of positionals.
   --model <name>          Override the active model for this run or chat session.
   --default-model <name>  Persist the workspace default model to .machdoch/config.json.
+  --set-global-memory <on|off>
+                          Persist whether cross-session global memory is enabled.
+  --session-memory <on|off>
+                          Enable or disable per-session memory for this run or chat session.
+  --global-memory <inherit|on|off>
+                          Override cross-session global memory for this run or chat session.
   --profile <name>        Use a named profile from .machdoch/config.json.
   --cwd <path>            Use a different workspace root.
   --json                  Print machine-readable JSON.
@@ -194,12 +304,17 @@ export const parseCliArgs = (
         help?: boolean;
         quick?: boolean;
         "set-api"?: boolean;
+        "set-global-memory"?: string;
         mode?: string;
         provider?: string;
+        "runtime-provider"?: string;
         key?: string;
         task?: string;
         model?: string;
         "default-model"?: string;
+        "session-memory"?: string;
+        "global-memory"?: string;
+        "conversation-context-file"?: string;
         profile?: string;
         cwd?: string;
       }
@@ -215,12 +330,17 @@ export const parseCliArgs = (
         help: { type: "boolean", short: "h" },
         quick: { type: "boolean" },
         "set-api": { type: "boolean" },
+        "set-global-memory": { type: "string" },
         mode: { type: "string" },
         provider: { type: "string" },
+        "runtime-provider": { type: "string" },
         key: { type: "string" },
         task: { type: "string" },
         model: { type: "string" },
         "default-model": { type: "string" },
+        "session-memory": { type: "string" },
+        "global-memory": { type: "string" },
+        "conversation-context-file": { type: "string" },
         profile: { type: "string" },
         cwd: { type: "string" },
       },
@@ -236,6 +356,7 @@ export const parseCliArgs = (
 
   const json = values?.json === true;
   const verbose = values?.verbose === true;
+  const quickRunRequested = values?.quick === true;
   const workspaceRoot =
     normalizeOptionalString(values?.cwd) ?? currentWorkingDirectory;
 
@@ -245,10 +366,21 @@ export const parseCliArgs = (
 
   const rawMode = normalizeOptionalString(values?.mode);
   const rawProvider = normalizeOptionalString(values?.provider);
+  const rawRuntimeProvider = normalizeOptionalString(
+    values?.["runtime-provider"],
+  );
   const rawKey = normalizeOptionalString(values?.key);
   const rawTask = normalizeOptionalString(values?.task);
   const rawModel = normalizeOptionalString(values?.model);
   const rawDefaultModel = normalizeOptionalString(values?.["default-model"]);
+  const rawSessionMemory = normalizeOptionalString(values?.["session-memory"]);
+  const rawGlobalMemory = normalizeOptionalString(values?.["global-memory"]);
+  const rawSetGlobalMemory = normalizeOptionalString(
+    values?.["set-global-memory"],
+  );
+  const rawConversationContextFile = normalizeOptionalString(
+    values?.["conversation-context-file"],
+  );
   const rawProfile = normalizeOptionalString(values?.profile);
 
   if (values?.mode !== undefined && !rawMode) {
@@ -267,11 +399,25 @@ export const parseCliArgs = (
     fail("Expected --provider to be followed by openai, anthropic, or google.");
   }
 
-  if (
-    rawProvider &&
-    !VALID_PROVIDERS.has(rawProvider as ProviderAvailability["provider"])
-  ) {
+  if (values?.["runtime-provider"] !== undefined && !rawRuntimeProvider) {
+    fail(
+      "Expected --runtime-provider to be followed by openai, anthropic, or google.",
+    );
+  }
+
+  if (rawProvider && !VALID_PROVIDERS.has(rawProvider as UserApiProvider)) {
     fail("Expected --provider to be followed by openai, anthropic, or google.");
+  }
+
+  if (
+    rawRuntimeProvider &&
+    !VALID_RUNTIME_PROVIDERS.has(
+      rawRuntimeProvider as Exclude<ModelProvider, "unconfigured">,
+    )
+  ) {
+    fail(
+      "Expected --runtime-provider to be followed by openai, anthropic, or google.",
+    );
   }
 
   if (values?.key !== undefined && !rawKey) {
@@ -290,16 +436,47 @@ export const parseCliArgs = (
     fail("Expected --default-model to be followed by a model name.");
   }
 
+  if (values?.["session-memory"] !== undefined && !rawSessionMemory) {
+    fail("Expected --session-memory to be followed by on or off.");
+  }
+
+  if (values?.["global-memory"] !== undefined && !rawGlobalMemory) {
+    fail("Expected --global-memory to be followed by inherit, on, or off.");
+  }
+
+  if (values?.["set-global-memory"] !== undefined && !rawSetGlobalMemory) {
+    fail("Expected --set-global-memory to be followed by on or off.");
+  }
+
+  if (
+    values?.["conversation-context-file"] !== undefined &&
+    !rawConversationContextFile
+  ) {
+    fail("Expected --conversation-context-file to be followed by a file path.");
+  }
+
+  const sessionMemoryEnabled = rawSessionMemory
+    ? parseBooleanToggle(rawSessionMemory, "--session-memory")
+    : undefined;
+  const globalMemoryEnabled = rawGlobalMemory
+    ? parseMemoryOverride(rawGlobalMemory, "--global-memory")
+    : undefined;
+  const setGlobalMemoryEnabled = rawSetGlobalMemory
+    ? parseBooleanToggle(rawSetGlobalMemory, "--set-global-memory")
+    : undefined;
+
   if (rawTask && positionals.length > 0) {
     fail("Use either positional task text or --task, not both.");
   }
 
-  if (values?.quick === true && rawMode !== undefined && rawMode !== "auto") {
-    fail("--quick cannot be combined with a non-auto --mode value.");
-  }
-
   if (rawDefaultModel && (rawTask || positionals.length > 0)) {
     fail("--default-model cannot be combined with a task.");
+  }
+
+  if (quickRunRequested && rawDefaultModel) {
+    fail(
+      "--quick can only be used with a task provided via --task or positional task text.",
+    );
   }
 
   if (values?.["set-api"] === true) {
@@ -317,8 +494,12 @@ export const parseCliArgs = (
       rawModel ||
       rawDefaultModel ||
       rawProfile ||
+      rawRuntimeProvider ||
       rawMode ||
-      values?.quick === true
+      quickRunRequested ||
+      sessionMemoryEnabled !== undefined ||
+      globalMemoryEnabled !== undefined ||
+      rawConversationContextFile
     ) {
       fail(
         "--set-api cannot be combined with tasks or runtime override options.",
@@ -333,13 +514,13 @@ export const parseCliArgs = (
         command: "set-api",
       },
       {
-        provider: rawProvider as ProviderAvailability["provider"],
+        provider: rawProvider as UserApiProvider,
         key: rawKey ?? fail("--set-api requires --key."),
       },
     );
   }
 
-  const resolvedMode = rawMode ?? (values?.quick === true ? "auto" : undefined);
+  const resolvedMode = rawMode;
 
   const sharedOptions = createSharedParsedOptions({
     json,
@@ -347,11 +528,58 @@ export const parseCliArgs = (
     workspaceRoot,
     ...(resolvedMode ? { mode: resolvedMode as RunMode } : {}),
     ...(rawProfile ? { profile: rawProfile } : {}),
+    ...(rawRuntimeProvider
+      ? {
+          runtimeProvider: rawRuntimeProvider as Exclude<
+            ModelProvider,
+            "unconfigured"
+          >,
+        }
+      : {}),
     ...(rawModel ? { model: rawModel } : {}),
     ...(rawDefaultModel ? { defaultModel: rawDefaultModel } : {}),
+    ...(sessionMemoryEnabled !== undefined ? { sessionMemoryEnabled } : {}),
+    ...(globalMemoryEnabled !== undefined ? { globalMemoryEnabled } : {}),
+    ...(rawConversationContextFile
+      ? { conversationContextFile: rawConversationContextFile }
+      : {}),
   });
 
+  if (setGlobalMemoryEnabled !== undefined) {
+    if (
+      rawTask ||
+      positionals.length > 0 ||
+      rawModel ||
+      rawDefaultModel ||
+      rawProfile ||
+      rawRuntimeProvider ||
+      rawMode ||
+      quickRunRequested ||
+      sessionMemoryEnabled !== undefined ||
+      globalMemoryEnabled !== undefined ||
+      rawConversationContextFile
+    ) {
+      fail(
+        "--set-global-memory cannot be combined with tasks or runtime override options.",
+      );
+    }
+
+    return createParsedArgs(
+      {
+        ...sharedOptions,
+        command: "set-global-memory",
+      },
+      { setGlobalMemoryEnabled },
+    );
+  }
+
   if (values?.help === true) {
+    if (quickRunRequested) {
+      fail(
+        "--quick can only be used with a task provided via --task or positional task text.",
+      );
+    }
+
     return createParsedArgs({
       ...sharedOptions,
       command: "help",
@@ -359,6 +587,12 @@ export const parseCliArgs = (
   }
 
   if (rawDefaultModel) {
+    if (quickRunRequested) {
+      fail(
+        "--quick can only be used with a task provided via --task or positional task text.",
+      );
+    }
+
     return createParsedArgs({
       ...sharedOptions,
       command: "set-default-model",
@@ -376,7 +610,20 @@ export const parseCliArgs = (
       );
     }
 
-    if (rawModel || resolvedMode || rawProfile) {
+    if (quickRunRequested) {
+      fail(
+        "--quick can only be used with a task provided via --task or positional task text.",
+      );
+    }
+
+    if (
+      rawModel ||
+      resolvedMode ||
+      rawProfile ||
+      rawRuntimeProvider ||
+      sessionMemoryEnabled !== undefined ||
+      rawGlobalMemory
+    ) {
       return createParsedArgs({
         ...sharedOptions,
         command: "chat",
@@ -398,6 +645,12 @@ export const parseCliArgs = (
     first === "profiles" ||
     first === "help"
   ) {
+    if (quickRunRequested) {
+      fail(
+        "--quick can only be used with a task provided via --task or positional task text.",
+      );
+    }
+
     assertNoAdditionalPositionals(first, rest);
 
     return createParsedArgs({
@@ -606,6 +859,12 @@ const printExecutionSummary = (execution: TaskExecutionResult): void => {
     writeStdoutLine(`reason: ${execution.reason}`);
   }
 
+  if (execution.autopilot) {
+    writeStdoutLine(
+      `autopilot: executor iterations=${execution.autopilot.executorIterations}, validator passes=${execution.autopilot.validatorPasses}, continuation requests=${execution.autopilot.continuationCount}`,
+    );
+  }
+
   for (const section of execution.outputSections) {
     writeStdoutLine(`${section.title.toLowerCase()}:`);
     for (const line of section.lines) {
@@ -623,12 +882,21 @@ const printConfigSummary = async (args: ParsedCliArgs): Promise<void> => {
     args.mode,
     args.profile,
     args.model,
+    args.runtimeProvider,
   );
+  const memorySettings = await loadUserMemorySettings();
 
   if (args.json) {
     writeStdoutLine(JSON.stringify(config, null, 2));
     return;
   }
+
+  const activeWebSearchConfigured =
+    config.webSearch.activeProvider !== "none" &&
+    config.webSearch.providerAvailability.some(
+      (entry) =>
+        entry.provider === config.webSearch.activeProvider && entry.configured,
+    );
 
   writeStdoutLine(`workspace: ${config.workspaceRoot}`);
   writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
@@ -637,6 +905,13 @@ const printConfigSummary = async (args: ParsedCliArgs): Promise<void> => {
   writeStdoutLine(`model: ${config.model}`);
   writeStdoutLine(`offline: ${config.offline ? "true" : "false"}`);
   writeStdoutLine(`enabled tools: ${config.enabledTools.join(", ")}`);
+  writeStdoutLine(`web search provider: ${config.webSearch.activeProvider}`);
+  writeStdoutLine(
+    `web search status: ${activeWebSearchConfigured ? "available" : "hidden"}`,
+  );
+  writeStdoutLine(
+    `global memory: ${memorySettings.globalEnabled ? "enabled" : "disabled"} (${memorySettings.entries.length} saved fact${memorySettings.entries.length === 1 ? "" : "s"})`,
+  );
   if (config.availableProfiles.length > 0) {
     writeStdoutLine("profiles:");
     for (const profile of config.availableProfiles) {
@@ -663,6 +938,7 @@ const printCustomizationSummary = async (
     args.mode,
     args.profile,
     args.model,
+    args.runtimeProvider,
   );
   const customizations = await discoverCustomizations(
     args.workspaceRoot,
@@ -702,6 +978,7 @@ const printToolSummary = async (args: ParsedCliArgs): Promise<void> => {
     args.mode,
     args.profile,
     args.model,
+    args.runtimeProvider,
   );
   const toolPolicies = resolveToolPolicies(config);
 
@@ -733,6 +1010,7 @@ const printProfileSummary = async (args: ParsedCliArgs): Promise<void> => {
     args.mode,
     args.profile,
     args.model,
+    args.runtimeProvider,
   );
 
   if (args.json) {
@@ -768,14 +1046,76 @@ const printProfileSummary = async (args: ParsedCliArgs): Promise<void> => {
  * Executes a supported task directly when possible or prints the staged preview
  * fallback when live execution is unavailable.
  */
-const printTaskPreview = async (args: ParsedCliArgs): Promise<void> => {
+const loadConversationContextFromFile = async (
+  filePath: string,
+): Promise<TaskConversationContext> => {
+  const raw = await readFile(filePath, "utf8");
+
+  return JSON.parse(raw) as TaskConversationContext;
+};
+
+const resolveConversationContext = async (
+  args: ParsedCliArgs,
+  explicitContext?: TaskConversationContext,
+): Promise<TaskConversationContext | undefined> => {
+  const baseContext =
+    explicitContext ??
+    (args.conversationContextFile
+      ? await loadConversationContextFromFile(args.conversationContextFile)
+      : undefined);
+
+  if (
+    !baseContext &&
+    args.sessionMemoryEnabled === undefined &&
+    args.globalMemoryEnabled === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    history: baseContext?.history ?? [],
+    ...(baseContext?.sessionMemory !== undefined
+      ? { sessionMemory: baseContext.sessionMemory }
+      : {}),
+    ...(baseContext?.sessionMemoryEnabled !== undefined
+      ? { sessionMemoryEnabled: baseContext.sessionMemoryEnabled }
+      : {}),
+    ...(baseContext?.globalMemory !== undefined
+      ? { globalMemory: baseContext.globalMemory }
+      : {}),
+    ...(baseContext?.globalMemoryEnabled !== undefined
+      ? { globalMemoryEnabled: baseContext.globalMemoryEnabled }
+      : {}),
+    ...(args.sessionMemoryEnabled !== undefined
+      ? { sessionMemoryEnabled: args.sessionMemoryEnabled }
+      : {}),
+    ...(args.globalMemoryEnabled !== undefined
+      ? { globalMemoryEnabled: args.globalMemoryEnabled }
+      : {}),
+  };
+};
+
+const printTaskPreview = async (
+  args: ParsedCliArgs,
+  options?: {
+    conversationContext?: TaskConversationContext;
+  },
+): Promise<{
+  execution: TaskExecutionResult;
+  preview?: TaskRunPreview;
+}> => {
   const task = args.task ?? fail("No task was provided.");
+  const conversationContext = await resolveConversationContext(
+    args,
+    options?.conversationContext,
+  );
 
   const config = await loadRuntimeConfig(
     args.workspaceRoot,
     args.mode,
     args.profile,
     args.model,
+    args.runtimeProvider,
   );
   const customizations = await discoverCustomizations(
     args.workspaceRoot,
@@ -786,11 +1126,12 @@ const printTaskPreview = async (args: ParsedCliArgs): Promise<void> => {
     config,
     customizations,
     {
-      ...(args.verbose && !args.json
+      ...(args.verbose
         ? {
             onStateChange: createVerboseProgressReporter(writeStderrLine),
           }
         : {}),
+      ...(conversationContext ? { conversationContext } : {}),
     },
   );
   const detachCancellationHandlers = attachCancellationHandlers(controller, {
@@ -812,19 +1153,19 @@ const printTaskPreview = async (args: ParsedCliArgs): Promise<void> => {
   if (execution.status === "executed" || execution.status === "cancelled") {
     if (args.json) {
       writeStdoutLine(JSON.stringify({ execution }, null, 2));
-      return;
+      return { execution };
     }
 
     writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
     printExecutionSummary(execution);
-    return;
+    return { execution };
   }
 
   const preview = previewTaskRun(task, config, customizations);
 
   if (args.json) {
     writeStdoutLine(JSON.stringify({ execution, preview }, null, 2));
-    return;
+    return { execution, preview };
   }
 
   writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
@@ -972,6 +1313,8 @@ const printTaskPreview = async (args: ParsedCliArgs): Promise<void> => {
     writeStdoutLine(`  ${index + 1}. ${step.title}`);
     writeStdoutLine(`     ${step.description}`);
   });
+
+  return { execution, preview };
 };
 
 const printDefaultModelSummary = async (args: ParsedCliArgs): Promise<void> => {
@@ -1023,6 +1366,32 @@ const printSetApiSummary = async (args: ParsedCliArgs): Promise<void> => {
   writeStdoutLine("status: configured");
 };
 
+const printSetGlobalMemorySummary = async (
+  args: ParsedCliArgs,
+): Promise<void> => {
+  const enabled =
+    args.setGlobalMemoryEnabled ??
+    fail("No global-memory setting was provided.");
+  const configPath = await saveUserGlobalMemoryEnabled(enabled);
+
+  if (args.json) {
+    writeStdoutLine(
+      JSON.stringify(
+        {
+          globalMemoryEnabled: enabled,
+          configPath,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  writeStdoutLine(`updated user config: ${configPath}`);
+  writeStdoutLine(`global memory: ${enabled ? "enabled" : "disabled"}`);
+};
+
 const printInteractiveChatHelp = (): void => {
   writeStdoutLine("interactive commands:");
   writeStdoutLine("  /help  Show this help");
@@ -1044,12 +1413,35 @@ const runInteractiveChat = async (args: ParsedCliArgs): Promise<void> => {
     args.mode,
     args.profile,
     args.model,
+    args.runtimeProvider,
   );
+  const memorySettings = await loadUserMemorySettings();
+  const sessionState: {
+    history: ConversationHistoryEntry[];
+    sessionMemory: ConversationMemoryEntry[];
+    sessionMemoryEnabled: boolean;
+    globalMemoryEnabled?: boolean;
+  } = {
+    history: [],
+    sessionMemory: [],
+    sessionMemoryEnabled: args.sessionMemoryEnabled ?? true,
+    ...(args.globalMemoryEnabled !== undefined
+      ? { globalMemoryEnabled: args.globalMemoryEnabled }
+      : {}),
+  };
+  const effectiveGlobalMemoryEnabled =
+    sessionState.globalMemoryEnabled ?? memorySettings.globalEnabled;
 
   writeStdoutLine(`workspace: ${config.workspaceRoot}`);
   writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
   writeStdoutLine(`mode: ${config.mode}`);
   writeStdoutLine(`model: ${config.model}`);
+  writeStdoutLine(
+    `session memory: ${sessionState.sessionMemoryEnabled ? "enabled" : "disabled"}`,
+  );
+  writeStdoutLine(
+    `global memory: ${effectiveGlobalMemoryEnabled ? "enabled" : "disabled"}`,
+  );
   writeStdoutLine("Type a task and press Enter. Use /exit to quit.");
   printInteractiveChatHelp();
   writeStdoutLine();
@@ -1082,11 +1474,54 @@ const runInteractiveChat = async (args: ParsedCliArgs): Promise<void> => {
         continue;
       }
 
-      await printTaskPreview({
-        ...args,
-        command: "run",
-        task: nextTask,
-      });
+      const { execution } = await printTaskPreview(
+        {
+          ...args,
+          command: "run",
+          task: nextTask,
+        },
+        {
+          conversationContext: {
+            history: sessionState.history,
+            sessionMemory: sessionState.sessionMemory,
+            sessionMemoryEnabled: sessionState.sessionMemoryEnabled,
+            ...(sessionState.globalMemoryEnabled !== undefined
+              ? { globalMemoryEnabled: sessionState.globalMemoryEnabled }
+              : {}),
+          },
+        },
+      );
+
+      const assistantContent =
+        execution.response?.markdown.trim() || execution.summary.trim();
+
+      sessionState.history = [
+        ...sessionState.history,
+        {
+          role: "user" as const,
+          content: nextTask,
+          createdAt: Date.now(),
+        },
+        {
+          role: "assistant" as const,
+          content: assistantContent,
+          createdAt: Date.now(),
+        },
+      ].slice(-60);
+
+      const sessionMemoryUpdates =
+        execution.memoryUpdates
+          ?.filter((update) => update.scope === "session")
+          .map((update) => update.entry) ?? [];
+
+      if (sessionMemoryUpdates.length > 0) {
+        sessionState.sessionMemory = mergeConversationMemoryEntries(
+          sessionState.sessionMemory,
+          sessionMemoryUpdates,
+          MAX_SESSION_MEMORY_ENTRIES,
+        );
+      }
+
       writeStdoutLine();
     }
   } finally {
@@ -1107,6 +1542,10 @@ export const runCli = async (argv: string[]): Promise<void> => {
     }
     case "set-api": {
       await printSetApiSummary(args);
+      return;
+    }
+    case "set-global-memory": {
+      await printSetGlobalMemorySummary(args);
       return;
     }
     case "set-default-model": {

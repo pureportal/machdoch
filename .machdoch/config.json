@@ -16,9 +16,9 @@
       "enabledTools": ["filesystem", "git"]
     },
     "local-model": {
-      "description": "Prefer a local OpenAI-compatible backend for experimentation.",
-      "provider": "openai-compatible",
-      "model": "local-model"
+      "description": "Prefer an alternate experimental provider profile.",
+      "provider": "google",
+      "model": "gemini-2.5-flash"
     }
   },
   "compatibility": {

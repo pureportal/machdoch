@@ -14,6 +14,8 @@ export type ToolPolicyDecision = "allow" | "ask" | "blocked";
 
 export type ModelProvider = "openai" | "anthropic" | "google" | "unconfigured";
 
+export type WebSearchProvider = "none" | "perplexity" | "tavily";
+
 export type FrontmatterValue = string | number | boolean | string[];
 
 export interface WorkspaceCompatibilityConfig {
@@ -46,6 +48,16 @@ export interface ProviderAvailability {
   configured: boolean;
 }
 
+export interface WebSearchProviderAvailability {
+  provider: Exclude<WebSearchProvider, "none">;
+  configured: boolean;
+}
+
+export interface RuntimeWebSearchConfig {
+  activeProvider: WebSearchProvider;
+  providerAvailability: WebSearchProviderAvailability[];
+}
+
 export interface RuntimeConfig {
   workspaceRoot: string;
   workspaceConfigPath?: string;
@@ -58,6 +70,7 @@ export interface RuntimeConfig {
   offline: boolean;
   compatibility: WorkspaceCompatibilityConfig;
   providerAvailability: ProviderAvailability[];
+  webSearch: RuntimeWebSearchConfig;
 }
 
 export interface ToolDefinition {
@@ -129,6 +142,79 @@ export interface TaskPlanStep {
   description: string;
 }
 
+export type ConversationRole = "user" | "assistant";
+
+export type ConversationMemoryScope = "session" | "global";
+
+export interface ConversationHistoryEntry {
+  role: ConversationRole;
+  content: string;
+  createdAt?: number;
+}
+
+export interface ConversationMemoryEntry {
+  id: string;
+  scope: ConversationMemoryScope;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TaskConversationContext {
+  history: ConversationHistoryEntry[];
+  sessionMemoryEnabled?: boolean;
+  sessionMemory?: ConversationMemoryEntry[];
+  globalMemoryEnabled?: boolean;
+  globalMemory?: ConversationMemoryEntry[];
+}
+
+export interface TaskExecutionMemoryUpdate {
+  scope: ConversationMemoryScope;
+  entry: ConversationMemoryEntry;
+}
+
+export interface AgentModelToolSpec {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface AgentModelToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  rawArguments?: string;
+}
+
+export interface AgentModelToolResult {
+  callId: string;
+  name: string;
+  output: string;
+  isError?: boolean;
+}
+
+export interface AgentModelTurn {
+  text: string;
+  toolCalls: AgentModelToolCall[];
+  stopReason?: string;
+}
+
+export interface AgentModelStartParams {
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  tools: AgentModelToolSpec[];
+}
+
+export interface AgentModelContinueParams {
+  toolResults: AgentModelToolResult[];
+}
+
+export interface AgentModelAdapter {
+  startTurn(params: AgentModelStartParams): Promise<AgentModelTurn>;
+  continueTurn(params: AgentModelContinueParams): Promise<AgentModelTurn>;
+}
+
 export interface TaskCustomizationMatch {
   kind: DiscoveredInstruction["kind"];
   name: string;
@@ -195,6 +281,7 @@ export type TaskExecutionState =
   | "checking-policies"
   | "executing"
   | "verifying"
+  | "monitoring"
   | "completed"
   | "approval-required"
   | "blocked"
@@ -228,9 +315,42 @@ export type TaskExecutionProgressHandler = (
   progress: TaskExecutionProgress,
 ) => void | Promise<void>;
 
+export interface TaskAutopilotDecision {
+  pass: number;
+  decision: "complete" | "continue";
+  confidence: "low" | "medium" | "high";
+  rationale: string;
+  missingRequirements: string[];
+  requiredActions: string[];
+}
+
+export interface TaskAutopilotReport {
+  executorIterations: number;
+  validatorPasses: number;
+  continuationCount: number;
+  maxExecutorIterations: number;
+  decisions: TaskAutopilotDecision[];
+}
+
+export interface TaskExecutionFileReference {
+  path: string;
+  description: string;
+}
+
+export interface TaskExecutionNarrative {
+  markdown: string;
+  highlights: string[];
+  relatedFiles: TaskExecutionFileReference[];
+  verification: string[];
+  followUps: string[];
+}
+
 export interface TaskExecutionOptions {
   signal?: AbortSignal;
   onStateChange?: TaskExecutionProgressHandler;
+  modelAdapter?: AgentModelAdapter;
+  monitorModelAdapter?: AgentModelAdapter;
+  conversationContext?: TaskConversationContext;
 }
 
 export interface TaskExecutionResult {
@@ -241,4 +361,7 @@ export interface TaskExecutionResult {
   executedTools: ToolName[];
   reason?: string;
   outputSections: TaskExecutionSection[];
+  response?: TaskExecutionNarrative;
+  autopilot?: TaskAutopilotReport;
+  memoryUpdates?: TaskExecutionMemoryUpdate[];
 }

@@ -123,11 +123,11 @@ That means the product is not just a chat window with a terminal taped to it. It
 
 | Feature                    | Status                 | Details                                                                                                                                                                                                               |
 | -------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Model abstraction layer    | **Planned**            | OpenAI, Anthropic, Google, OpenRouter-style adapters, and local/OpenAI-compatible backends.                                                                                                                           |
+| Model abstraction layer    | **Partly Implemented** | The shared runtime now includes OpenAI, Anthropic, and Google adapters, while broader provider coverage and hardening are still in progress.                                                                      |
 | Local model mode           | **Planned**            | Connect to Ollama, LM Studio, Jan, or similar local endpoints without changing the core design.                                                                                                                       |
 | Profiles / config files    | **Partly Implemented** | The scaffold can load `.machdoch/config.json`, `.env`, named profiles, and the `--profile` CLI override; richer user/global config layers are still to come.                                                          |
-| Instruction files          | **Partly Implemented** | The scaffold discovers `.machdoch/instructions.md` and `*.instructions.md` files, but it does not inject them into a live model runtime yet.                                                                          |
-| Prompt files               | **Partly Implemented** | Prompt files are discovered and listed, but prompt execution is not wired up yet.                                                                                                                                     |
+| Instruction files          | **Partly Implemented** | The runtime discovers relevant `.machdoch/instructions.md` and `*.instructions.md` files and includes them in task context, but instruction precedence and richer composition still need more hardening.              |
+| Prompt files               | **Partly Implemented** | Prompt files are discovered, resolved, and can flow into the shared runtime, but richer prompt orchestration and input UX are still evolving.                                                                         |
 | Skill folders              | **Partly Implemented** | Skill folders with `SKILL.md` are discovered and summarized, but on-demand skill loading is still planned.                                                                                                            |
 | VS Code compatibility mode | **Partly Implemented** | The runtime can now optionally discover `.github/copilot-instructions.md`, `.github/instructions`, `.github/prompts`, `.github/skills`, and `AGENTS.md` when `compatibility.discoverGithubCustomizations` is enabled. |
 | Plugin / MCP integrations  | **Planned**            | Native plugins and MCP servers should both be possible extension points.                                                                                                                                              |
@@ -166,7 +166,7 @@ Open Interpreter is a good reference point for what makes a local AI agent feel 
 - **Streaming execution** — show tool output as it happens, not just a final summary.
 - **Session restore** — let users resume a previous conversation or task.
 - **Simple profiles** — switch models, policies, or runtime defaults without passing endless flags.
-- **Local model connectivity** — support OpenAI-compatible local servers and offline-ish workflows.
+- **Local model connectivity** — support local servers and offline-ish workflows.
 - **Verbose mode** — make the agent debuggable for developers and power users.
 - **Interactive helper commands** — reset, undo, token inspection, help, and maybe profile switching.
 - **Server mode** — expose the core engine to other applications over an API.
