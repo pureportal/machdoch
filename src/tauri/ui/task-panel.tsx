@@ -1,5 +1,5 @@
-import type { ComponentProps, JSX } from "react";
-import { Badge } from "./components/ui/badge";
+import type { JSX } from "react";
+import { StatusBadge } from "../../common/_components/status-badge";
 import {
   Card,
   CardContent,
@@ -13,37 +13,6 @@ import {
   type TaskPanelSource,
   type TaskPanelTone,
 } from "./task-panel.model";
-
-type BadgeVariant = NonNullable<ComponentProps<typeof Badge>["variant"]>;
-
-const createBadgeToneClasses = (
-  tone: TaskPanelTone,
-): { variant: BadgeVariant; className?: string } => {
-  switch (tone) {
-    case "danger":
-      return { variant: "destructive" };
-    case "success":
-      return {
-        variant: "outline",
-        className: "border-emerald-500/30 bg-emerald-500/12 text-emerald-200",
-      };
-    case "warning":
-      return {
-        variant: "outline",
-        className: "border-amber-500/30 bg-amber-500/12 text-amber-200",
-      };
-    case "info":
-      return {
-        variant: "outline",
-        className: "border-sky-500/30 bg-sky-500/12 text-sky-200",
-      };
-    default:
-      return {
-        variant: "secondary",
-        className: "border-slate-700 bg-slate-900 text-slate-300",
-      };
-  }
-};
 
 const sectionToneClasses: Record<TaskPanelTone, string> = {
   neutral: "border-slate-800 bg-slate-950/80",
@@ -98,17 +67,11 @@ export const TaskPanel = ({ source }: TaskPanelProps): JSX.Element => {
 
           <ul aria-label="Task state badges" className="m-0 flex flex-wrap gap-2 p-0 list-none">
             {model.badges.map((badge) => {
-              const badgeTone = createBadgeToneClasses(badge.tone);
-
               return (
                 <li key={`${badge.label}-${badge.tone}`}>
-                  <Badge
-                    data-tone={badge.tone}
-                    variant={badgeTone.variant}
-                    className={badgeTone.className}
-                  >
+                  <StatusBadge data-tone={badge.tone} tone={badge.tone}>
                     {badge.label}
-                  </Badge>
+                  </StatusBadge>
                 </li>
               );
             })}

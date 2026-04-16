@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { normalizeOptionalString } from "../common/_helpers/normalize-optional-string.js";
 import {
   hasConfiguredValue,
   loadUserWebSearchSettings,
@@ -43,21 +44,6 @@ const VALID_WEB_SEARCH_PROVIDERS: WebSearchProvider[] = [
   "perplexity",
   "tavily",
 ];
-
-/**
- * Trims a string and collapses empty input to `undefined`.
- */
-const normalizeOptionalString = (
-  value: string | undefined,
-): string | undefined => {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-
-  return trimmed.length > 0 ? trimmed : undefined;
-};
 
 /**
  * Returns whether a string matches one of the supported runtime modes.

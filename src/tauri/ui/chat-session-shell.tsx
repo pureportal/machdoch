@@ -3,7 +3,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   AlertCircle,
-  Archive,
   Bot,
   Brain,
   BrainCircuit,
@@ -11,13 +10,9 @@ import {
   CircleDashed,
   Cog,
   FolderOpen,
-  ListFilter,
-  LoaderCircle,
-  MessageSquare,
   PencilLine,
   Plus,
   SendHorizonal,
-  ShieldAlert,
   TerminalSquare,
   Trash2,
   User,
@@ -32,18 +27,12 @@ import {
   type KeyboardEvent,
   type SetStateAction,
 } from "react";
-import type { Components } from "react-markdown";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { StatusBadge } from "../../common/_components/status-badge";
 import { Avatar } from "./components/ui/avatar";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import {
   Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
 } from "./components/ui/dialog";
 import { Textarea } from "./components/ui/textarea";
 
@@ -51,12 +40,7 @@ import {
   MAX_SESSION_MEMORY_ENTRIES,
   mergeConversationMemoryEntries,
 } from "../../core/memory.js";
-import type {
-  ConversationHistoryEntry,
-  RunMode,
-  TaskConversationContext,
-  TaskExecutionResult,
-} from "../../core/types.js";
+import type { RunMode, TaskExecutionResult } from "../../core/types.js";
 import {
   canArchiveSession,
   createInitialShellState,
@@ -69,7 +53,6 @@ import {
   sortSessionsByUpdatedAt,
   type ChatSessionMessage,
   type ChatSessionRecord,
-  type SessionOverviewStatus,
   type ShellPersistedState,
 } from "./chat-session.model";
 import { Input } from "./components/ui/input";
@@ -86,6 +69,34 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./components/ui/tooltip";
+import { ExecutionInsightRow } from "./chat-session/components/execution-insight-row";
+import { MemoryShortcutButton } from "./chat-session/components/memory-shortcut-button";
+import { MessageMarkdown } from "./chat-session/components/message-markdown";
+import { SessionsSidebar } from "./chat-session/components/sessions-sidebar";
+import { SettingsDialog } from "./chat-session/components/settings-dialog";
+import {
+  createExecutionThinkingTrace,
+  getExecutionMessageContent,
+  getRenderedMessageContent,
+} from "./chat-session/_helpers/execution-message.tsx";
+import {
+  MODEL_STAGE_CLASSES,
+  MODEL_STAGE_LABELS,
+  RUN_MODE_META,
+  RUN_MODE_ORDER,
+  createConversationContextFromSession,
+  createEmptyUserMemorySettings,
+  createEmptyWebSearchSettings,
+  formatSavedFactCount,
+  getEffectiveSessionMode,
+  getWebSearchProviderLabel,
+  getWorkspaceLabel,
+  removeSessionArchiveFlag,
+  removeSessionModeOverride,
+  type SessionScopeFilter,
+  type SessionStatusFilter,
+  type SettingsSection,
+} from "./chat-session/_helpers/session-shell.ts";
 import { loadShellState, saveShellState } from "./lib/shell-store";
 import { cn } from "./lib/utils";
 import {
@@ -93,7 +104,6 @@ import {
   getDefaultModelForProvider,
   getProviderLabel,
   SUPPORTED_PROVIDER_ORDER,
-  type CatalogModelStage,
   type RuntimeProvider,
 } from "./model-catalog";
 import {
@@ -107,7 +117,6 @@ import {
   saveUserProviderApiKey,
   saveUserWebSearchActiveProvider,
   saveUserWebSearchApiKey,
-  USER_API_KEY_PROVIDER_ORDER,
   USER_WEB_SEARCH_PROVIDER_ORDER,
   type RuntimeProviderAvailability,
   type RuntimeSnapshot,
@@ -121,583 +130,6 @@ import {
 } from "./runtime";
 import { TaskPanel } from "./task-panel";
 import { TaskThinkingPanel } from "./task-thinking-panel";
-import type { TaskThinkingTrace } from "./task-thinking.model";
-
-type SettingsSection = "providers" | "web-search" | "memory";
-type SessionScopeFilter = "all" | "open" | "archived";
-type SessionStatusFilter = "any" | SessionOverviewStatus;
-
-const SETTINGS_SECTIONS: ReadonlyArray<{
-  id: SettingsSection;
-  label: string;
-}> = [
-  { id: "providers", label: "Providers" },
-  { id: "web-search", label: "Web search" },
-  { id: "memory", label: "Memory" },
-];
-
-const MODEL_STAGE_LABELS: Record<CatalogModelStage, string> = {
-  stable: "Stable",
-  preview: "Preview",
-  specialized: "Specialized",
-  open: "Open",
-};
-
-const MODEL_STAGE_CLASSES: Record<CatalogModelStage, string> = {
-  stable: "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
-  preview: "border-amber-500/20 bg-amber-500/10 text-amber-200",
-  specialized: "border-sky-500/20 bg-sky-500/10 text-sky-200",
-  open: "border-violet-500/20 bg-violet-500/10 text-violet-200",
-};
-
-const RUN_MODE_ORDER = ["safe", "ask", "auto"] as const satisfies ReadonlyArray<RunMode>;
-
-const RUN_MODE_META = {
-  safe: {
-    label: "Safe mode",
-    description: "Keep each run read-only or otherwise low-risk.",
-    icon: ShieldAlert,
-    triggerClassName:
-      "border-emerald-500/20 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15 hover:text-white",
-    selectedClassName:
-      "border-emerald-500/30 bg-emerald-500/10 text-emerald-100",
-    iconClassName: "text-emerald-300",
-    badgeClassName:
-      "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
-  },
-  ask: {
-    label: "Ask mode",
-    description: "Pause for approval before riskier file or shell actions.",
-    icon: MessageSquare,
-    triggerClassName:
-      "border-amber-500/20 bg-amber-500/10 text-amber-100 hover:bg-amber-500/15 hover:text-white",
-    selectedClassName:
-      "border-amber-500/30 bg-amber-500/10 text-amber-100",
-    iconClassName: "text-amber-300",
-    badgeClassName:
-      "border-amber-500/20 bg-amber-500/10 text-amber-200",
-  },
-  auto: {
-    label: "Autopilot",
-    description:
-      "Let machdoch continue automatically when it can verify the next step.",
-    icon: WandSparkles,
-    triggerClassName:
-      "border-violet-500/20 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
-    selectedClassName:
-      "border-violet-500/30 bg-violet-500/10 text-violet-100",
-    iconClassName: "text-violet-300",
-    badgeClassName:
-      "border-violet-500/20 bg-violet-500/10 text-violet-200",
-  },
-} satisfies Record<
-  RunMode,
-  {
-    label: string;
-    description: string;
-    icon: typeof ShieldAlert;
-    triggerClassName: string;
-    selectedClassName: string;
-    iconClassName: string;
-    badgeClassName: string;
-  }
->;
-
-const SESSION_SCOPE_FILTERS = [
-  { id: "all", label: "All", icon: ListFilter },
-  { id: "open", label: "Open", icon: MessageSquare },
-  { id: "archived", label: "Archived", icon: Archive },
-] as const satisfies ReadonlyArray<{
-  id: SessionScopeFilter;
-  label: string;
-  icon: typeof ListFilter;
-}>;
-
-const SESSION_STATUS_META = {
-  empty: {
-    label: "Empty",
-    filterLabel: "Empty",
-    icon: CircleDashed,
-    containerClassName: "border-slate-800 bg-slate-950/80",
-    iconClassName: "text-slate-500",
-  },
-  running: {
-    label: "Running",
-    filterLabel: "Running",
-    icon: LoaderCircle,
-    containerClassName:
-      "border-sky-500/20 bg-sky-500/10 shadow-[0_0_18px_rgba(14,165,233,0.16)]",
-    iconClassName: "animate-spin text-sky-300",
-  },
-  waiting: {
-    label: "Waiting for approval",
-    filterLabel: "Waiting",
-    icon: ShieldAlert,
-    containerClassName:
-      "border-amber-500/20 bg-amber-500/10 shadow-[0_0_18px_rgba(245,158,11,0.18)]",
-    iconClassName: "animate-pulse text-amber-300",
-  },
-  done: {
-    label: "Done",
-    filterLabel: "Done",
-    icon: Check,
-    containerClassName:
-      "border-emerald-500/20 bg-emerald-500/10 shadow-[0_0_18px_rgba(16,185,129,0.18)]",
-    iconClassName: "animate-pulse text-emerald-300",
-  },
-} satisfies Record<
-  SessionOverviewStatus,
-  {
-    label: string;
-    filterLabel: string;
-    icon: typeof CircleDashed;
-    containerClassName: string;
-    iconClassName: string;
-  }
->;
-
-const SESSION_STATUS_FILTERS = [
-  { id: "any", label: "Any status", icon: ListFilter },
-  {
-    id: "empty",
-    label: SESSION_STATUS_META.empty.filterLabel,
-    icon: SESSION_STATUS_META.empty.icon,
-  },
-  {
-    id: "running",
-    label: SESSION_STATUS_META.running.filterLabel,
-    icon: SESSION_STATUS_META.running.icon,
-  },
-  {
-    id: "waiting",
-    label: SESSION_STATUS_META.waiting.filterLabel,
-    icon: SESSION_STATUS_META.waiting.icon,
-  },
-  {
-    id: "done",
-    label: SESSION_STATUS_META.done.filterLabel,
-    icon: SESSION_STATUS_META.done.icon,
-  },
-] as const satisfies ReadonlyArray<{
-  id: SessionStatusFilter;
-  label: string;
-  icon: typeof ListFilter;
-}>;
-
-const formatSessionTimestamp = (timestamp: number): string => {
-  return new Intl.DateTimeFormat("en", {
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "short",
-    day: "numeric",
-  }).format(timestamp);
-};
-
-const getWorkspaceLabel = (workspace: string | null): string => {
-  if (!workspace) {
-    return "No workspace";
-  }
-
-  const parts = workspace.replace(/\\/g, "/").split("/").filter(Boolean);
-  return parts.at(-1) ?? workspace;
-};
-
-const createSessionSubtitle = (session: ChatSessionRecord): string => {
-  const providerLabel = getProviderLabel(session.provider);
-  const workspaceLabel = getWorkspaceLabel(session.workspace);
-
-  return `${providerLabel} · ${workspaceLabel}`;
-};
-
-const removeSessionArchiveFlag = (
-  session: ChatSessionRecord,
-): ChatSessionRecord => {
-  const sessionWithoutArchive = { ...session };
-
-  delete sessionWithoutArchive.archivedAt;
-
-  return sessionWithoutArchive;
-};
-
-const removeSessionModeOverride = (
-  session: ChatSessionRecord,
-): ChatSessionRecord => {
-  const sessionWithoutMode = { ...session };
-
-  delete sessionWithoutMode.mode;
-
-  return sessionWithoutMode;
-};
-
-const getEffectiveSessionMode = (
-  sessionMode: RunMode | undefined,
-  runtimeSnapshot: RuntimeSnapshot | null,
-): RunMode => {
-  return sessionMode ?? runtimeSnapshot?.mode ?? "ask";
-};
-
-const markdownComponents: Components = {
-  p: ({ children }) => <p className="m-0 whitespace-pre-wrap">{children}</p>,
-  ul: ({ children }) => (
-    <ul className="m-0 list-disc space-y-1 pl-5">{children}</ul>
-  ),
-  ol: ({ children }) => (
-    <ol className="m-0 list-decimal space-y-1 pl-5">{children}</ol>
-  ),
-  li: ({ children }) => <li className="leading-6">{children}</li>,
-  blockquote: ({ children }) => (
-    <blockquote className="m-0 border-l-2 border-slate-700 pl-4 text-slate-400 italic">
-      {children}
-    </blockquote>
-  ),
-  pre: ({ children }) => (
-    <pre className="m-0 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-xs leading-6 text-slate-200">
-      {children}
-    </pre>
-  ),
-  code: ({ children, className, ...props }) => (
-    <code
-      {...props}
-      className={cn(
-        "rounded-md bg-slate-950/90 px-1.5 py-0.5 font-mono text-[0.92em] text-sky-200",
-        className,
-      )}
-    >
-      {children}
-    </code>
-  ),
-  a: ({ children, href, ...props }) => (
-    <a
-      {...props}
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="font-medium text-sky-300 underline decoration-sky-500/40 underline-offset-4 transition-colors hover:text-sky-100"
-    >
-      {children}
-    </a>
-  ),
-};
-
-interface MessageMarkdownProps {
-  content: string;
-}
-
-const MessageMarkdown = ({ content }: MessageMarkdownProps): JSX.Element => {
-  return (
-    <div className="grid gap-3">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={markdownComponents}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
-  );
-};
-
-const createFallbackExecutionMarkdown = (
-  execution: TaskExecutionResult,
-): string => {
-  const summary =
-    execution.summary.trim() ||
-    "The task completed without a detailed summary.";
-
-  switch (execution.status) {
-    case "executed":
-      return `**Done.** ${summary}`;
-    case "approval-required":
-      return `**Approval required.** ${summary}`;
-    case "blocked":
-      return `**Blocked.** ${summary}`;
-    case "cancelled":
-      return `**Cancelled.** ${summary}`;
-    case "unsupported":
-    default:
-      return `**Preview only.** ${summary}`;
-  }
-};
-
-const getExecutionMessageContent = (execution: TaskExecutionResult): string => {
-  const structuredMarkdown = execution.response?.markdown?.trim();
-
-  return structuredMarkdown || createFallbackExecutionMarkdown(execution);
-};
-
-const getRelatedFileButtonLabel = (path: string): string => {
-  return path.length <= 42 ? path : `…${path.slice(path.length - 39)}`;
-};
-
-const getRenderedMessageContent = (message: ChatSessionMessage): string => {
-  if (message.role === "agent" && message.source?.kind === "execution") {
-    return getExecutionMessageContent(message.source.execution);
-  }
-
-  return message.content;
-};
-
-const createExecutionThinkingTone = (
-  status: TaskExecutionResult["status"],
-): TaskThinkingTrace["entries"][number]["tone"] => {
-  switch (status) {
-    case "executed":
-      return "success";
-    case "approval-required":
-      return "warning";
-    case "blocked":
-      return "danger";
-    case "cancelled":
-    case "unsupported":
-    default:
-      return "neutral";
-  }
-};
-
-const createExecutionThinkingLabel = (
-  status: TaskExecutionResult["status"],
-): string => {
-  switch (status) {
-    case "executed":
-      return "Completed";
-    case "approval-required":
-      return "Approval required";
-    case "blocked":
-      return "Blocked";
-    case "cancelled":
-      return "Cancelled";
-    case "unsupported":
-    default:
-      return "Preview only";
-  }
-};
-
-const createExecutionThinkingTrace = (
-  execution: TaskExecutionResult,
-): TaskThinkingTrace => {
-  const summaryTone = createExecutionThinkingTone(execution.status);
-  const entries: TaskThinkingTrace["entries"] = [];
-  const normalizedSummary = execution.summary.trim();
-
-  if (normalizedSummary.length > 0) {
-    entries.push({
-      id: `${execution.task}-summary`,
-      label: createExecutionThinkingLabel(execution.status),
-      detail: normalizedSummary,
-      tone: summaryTone,
-      timestamp: 0,
-    });
-  }
-
-  execution.outputSections.forEach((section, sectionIndex) => {
-    section.lines.forEach((line, lineIndex) => {
-      const normalizedLine = line.trim();
-
-      if (!normalizedLine) {
-        return;
-      }
-
-      entries.push({
-        id: `${execution.task}-${sectionIndex}-${lineIndex}`,
-        label: section.title,
-        detail: normalizedLine,
-        tone: sectionIndex === 0 ? summaryTone : "neutral",
-        timestamp: entries.length,
-      });
-    });
-  });
-
-  if (entries.length === 0) {
-    entries.push({
-      id: `${execution.task}-empty`,
-      label: createExecutionThinkingLabel(execution.status),
-      detail: "Task finished without additional execution trace details.",
-      tone: summaryTone,
-      timestamp: 0,
-    });
-  }
-
-  return {
-    status: "complete",
-    mode: execution.mode,
-    entries,
-  };
-};
-
-interface ExecutionInsightRowProps {
-  execution: TaskExecutionResult;
-  onOpenWorkspaceFile: (relativePath: string) => void;
-}
-
-const ExecutionInsightRow = ({
-  execution,
-  onOpenWorkspaceFile,
-}: ExecutionInsightRowProps): JSX.Element | null => {
-  const relatedFiles = execution.response?.relatedFiles ?? [];
-  const verification = execution.response?.verification ?? [];
-  const continuationCount = execution.autopilot?.continuationCount ?? 0;
-
-  if (
-    relatedFiles.length === 0 &&
-    verification.length === 0 &&
-    continuationCount === 0
-  ) {
-    return null;
-  }
-
-  return (
-    <div className="flex max-w-[90%] flex-wrap items-center gap-2">
-      {continuationCount > 0 ? (
-        <Badge className="border-violet-500/20 bg-violet-500/10 text-violet-200">
-          {`Auto review ×${continuationCount}`}
-        </Badge>
-      ) : null}
-
-      {verification.length > 0 ? (
-        <Badge
-          className="border-emerald-500/20 bg-emerald-500/10 text-emerald-200"
-          title={verification.join(" • ")}
-        >
-          {`${verification.length} check${verification.length === 1 ? "" : "s"}`}
-        </Badge>
-      ) : null}
-
-      {relatedFiles.map((fileReference) => (
-        <Button
-          key={`${execution.task}-${fileReference.path}`}
-          type="button"
-          variant="outline"
-          size="sm"
-          title={`${fileReference.path} — ${fileReference.description}`}
-          onClick={() => onOpenWorkspaceFile(fileReference.path)}
-          className="h-8 max-w-full rounded-full border-slate-700 bg-slate-950/70 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-60"
-        >
-          <span className="truncate">
-            {getRelatedFileButtonLabel(fileReference.path)}
-          </span>
-        </Button>
-      ))}
-    </div>
-  );
-};
-
-const WEB_SEARCH_PROVIDER_LABELS: Record<WebSearchProvider, string> = {
-  none: "None",
-  perplexity: "Perplexity",
-  tavily: "Tavily",
-};
-
-const getWebSearchProviderLabel = (provider: WebSearchProvider): string => {
-  return WEB_SEARCH_PROVIDER_LABELS[provider];
-};
-
-const createEmptyWebSearchSettings = (): UserWebSearchSettings => {
-  return {
-    activeProvider: "none",
-    apiKeys: {},
-    providerAvailability: USER_WEB_SEARCH_PROVIDER_ORDER.map((provider) => ({
-      provider,
-      configured: false,
-    })),
-  };
-};
-
-const createEmptyUserMemorySettings = (): UserMemorySettings => {
-  return {
-    globalEnabled: false,
-    entries: [],
-  };
-};
-
-const createConversationContextFromSession = (
-  session: ChatSessionRecord,
-  globalMemoryEnabled: boolean,
-): TaskConversationContext => {
-  const history: ConversationHistoryEntry[] = createVisibleConversationMessages(
-    session.messages,
-  )
-    .map((message) => {
-      const role: ConversationHistoryEntry["role"] =
-        message.role === "agent" ? "assistant" : "user";
-
-      return {
-        role,
-        content: getRenderedMessageContent(message).trim(),
-        ...(typeof message.createdAt === "number"
-          ? { createdAt: message.createdAt }
-          : {}),
-      };
-    })
-    .filter((entry) => entry.content.length > 0)
-    .slice(-60);
-
-  return {
-    history,
-    sessionMemoryEnabled: session.sessionMemoryEnabled,
-    sessionMemory: session.sessionMemory,
-    globalMemoryEnabled: globalMemoryEnabled ? session.useGlobalMemory : false,
-  };
-};
-
-const formatSavedFactCount = (count: number): string => {
-  return `${count} saved fact${count === 1 ? "" : "s"}`;
-};
-
-interface MemoryShortcutButtonProps {
-  label: string;
-  description: string;
-  pressed: boolean;
-  disabled?: boolean;
-  icon: JSX.Element;
-  onClick: () => void;
-  className?: string;
-}
-
-const MemoryShortcutButton = ({
-  label,
-  description,
-  pressed,
-  disabled = false,
-  icon,
-  onClick,
-  className,
-}: MemoryShortcutButtonProps): JSX.Element => {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          aria-label={label}
-          aria-pressed={pressed}
-          aria-disabled={disabled || undefined}
-          onClick={() => {
-            if (!disabled) {
-              onClick();
-            }
-          }}
-          className={cn(
-            "h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
-            disabled &&
-              "cursor-not-allowed border-dashed bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
-            className,
-          )}
-        >
-          {icon}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent
-        side="top"
-        className="max-w-64 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
-      >
-        <div className="grid gap-1">
-          <p className="text-xs font-semibold text-slate-100">{label}</p>
-          <p className="text-xs leading-5 text-slate-400">{description}</p>
-        </div>
-      </TooltipContent>
-    </Tooltip>
-  );
-};
 
 export const ChatSession = (): JSX.Element => {
   const initialShellStateRef = useRef<ShellPersistedState>(
@@ -1332,6 +764,44 @@ export const ChatSession = (): JSX.Element => {
     });
   };
 
+  const handleProviderSetupProviderChange = (
+    provider: UserApiKeyProvider,
+  ): void => {
+    setProviderSetupProvider(provider);
+    setProviderSetupMessage(null);
+  };
+
+  const handleProviderSetupKeyChange = (value: string): void => {
+    setProviderSetupKey(value);
+    setProviderSetupKeys((prev) => ({
+      ...prev,
+      [providerSetupProvider]: value,
+    }));
+
+    if (providerSetupMessage) {
+      setProviderSetupMessage(null);
+    }
+  };
+
+  const handleWebSearchSetupProviderChange = (
+    provider: UserWebSearchApiKeyProvider,
+  ): void => {
+    setWebSearchSetupProvider(provider);
+    setWebSearchSetupMessage(null);
+  };
+
+  const handleWebSearchSetupKeyChange = (value: string): void => {
+    setWebSearchSetupKey(value);
+    setWebSearchSetupKeys((prev) => ({
+      ...prev,
+      [webSearchSetupProvider]: value,
+    }));
+
+    if (webSearchSetupMessage) {
+      setWebSearchSetupMessage(null);
+    }
+  };
+
   const handleProviderSetupSave = async (): Promise<void> => {
     const normalizedKey = providerSetupKey.trim();
 
@@ -1774,10 +1244,6 @@ export const ChatSession = (): JSX.Element => {
   const activeRunModeMeta = RUN_MODE_META[activeRunMode];
   const ActiveRunModeIcon = activeRunModeMeta.icon;
   const isUsingWorkspaceDefaultMode = !activeSession.mode;
-  const sessionListCountLabel =
-    filteredSessions.length === shellState.sessions.length
-      ? `${shellState.sessions.length} saved session${shellState.sessions.length === 1 ? "" : "s"}`
-      : `${filteredSessions.length} of ${shellState.sessions.length} saved sessions`;
   const isGlobalMemoryAvailable = userMemorySettings.globalEnabled;
   const isGlobalMemoryActive =
     isGlobalMemoryAvailable && activeSession.useGlobalMemory;
@@ -1936,229 +1402,18 @@ export const ChatSession = (): JSX.Element => {
               </Tooltip>
             </aside>
 
-            <aside className="flex min-h-0 w-84 flex-col border-r border-slate-900 bg-slate-950/50 backdrop-blur-xl">
-              <div className="flex h-16 items-center justify-between border-b border-slate-900 px-5">
-                <div>
-                  <p className="text-xs font-semibold tracking-[0.24em] text-slate-500 uppercase">
-                    Sessions
-                  </p>
-                  <p className="mt-1 text-sm text-slate-400">
-                    {sessionListCountLabel}
-                  </p>
-                </div>
-
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={createNewSession}
-                  className="rounded-xl bg-sky-600 text-white hover:bg-sky-500"
-                >
-                  <Plus className="h-4 w-4" />
-                  New
-                </Button>
-              </div>
-
-              <ScrollArea className="min-h-0 flex-1" type="always">
-                <div className="space-y-4 px-5 py-5 pr-7">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex items-center gap-1.5 rounded-full border border-slate-800/80 bg-slate-950/70 p-1">
-                      {SESSION_SCOPE_FILTERS.map((filter) => {
-                        const FilterIcon = filter.icon;
-                        const isSelected = sessionScopeFilter === filter.id;
-
-                        return (
-                          <Tooltip key={filter.id}>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="ghost"
-                                aria-label={`Scope: ${filter.label}`}
-                                aria-pressed={isSelected}
-                                onClick={() => setSessionScopeFilter(filter.id)}
-                                className={cn(
-                                  "h-8 w-8 rounded-full border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
-                                  isSelected &&
-                                    "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
-                                )}
-                              >
-                                <FilterIcon className="h-3.5 w-3.5" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                              {`Scope: ${filter.label}`}
-                            </TooltipContent>
-                          </Tooltip>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex items-center gap-1.5 rounded-full border border-slate-800/80 bg-slate-950/70 p-1">
-                      {SESSION_STATUS_FILTERS.map((filter) => {
-                        const FilterIcon = filter.icon;
-                        const isSelected = sessionStatusFilter === filter.id;
-
-                        return (
-                          <Tooltip key={filter.id}>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="ghost"
-                                aria-label={`Status: ${filter.label}`}
-                                aria-pressed={isSelected}
-                                onClick={() =>
-                                  setSessionStatusFilter(filter.id)
-                                }
-                                className={cn(
-                                  "h-8 w-8 rounded-full border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
-                                  isSelected &&
-                                    "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
-                                )}
-                              >
-                                <FilterIcon className="h-3.5 w-3.5" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                              {`Status: ${filter.label}`}
-                            </TooltipContent>
-                          </Tooltip>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {filteredSessions.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 px-4 py-6 text-center text-sm leading-6 text-slate-500">
-                      No sessions match the current filters.
-                    </div>
-                  ) : (
-                    filteredSessions.map((session) => {
-                      const isActive = session.id === activeSession.id;
-                      const archived = isSessionArchived(session);
-                      const sessionStatus = getSessionOverviewStatus(session);
-                      const statusMeta = SESSION_STATUS_META[sessionStatus];
-                      const SessionStatusIcon = statusMeta.icon;
-                      const showArchiveAction = canArchiveSession(session);
-
-                      return (
-                        <div
-                          key={session.id}
-                          className={cn(
-                            "group flex items-start gap-2 rounded-xl border px-3 py-2.5 transition-all",
-                            isActive
-                              ? "border-sky-500/30 bg-sky-500/10 shadow-lg shadow-sky-950/20"
-                              : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-950",
-                            archived &&
-                              (isActive
-                                ? "border-dashed"
-                                : "border-dashed opacity-80"),
-                          )}
-                        >
-                          <button
-                            type="button"
-                            aria-label={`Open session ${getSessionTitle(session)}`}
-                            onClick={() => handleActivateSession(session.id)}
-                            className="min-w-0 flex-1 text-left"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p
-                                  className={cn(
-                                    "truncate text-sm font-semibold placeholder:text-slate-500",
-                                    archived
-                                      ? "text-slate-300"
-                                      : "text-slate-100",
-                                  )}
-                                >
-                                  {getSessionTitle(session)}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="mt-1 flex items-center justify-between text-[10px] font-medium tracking-wide text-slate-500 uppercase">
-                              <span className="mr-2 truncate">
-                                {createSessionSubtitle(session)}
-                              </span>
-                              <span className="shrink-0">
-                                {formatSessionTimestamp(session.updatedAt)}
-                              </span>
-                            </div>
-                          </button>
-
-                          <div className="flex shrink-0 items-center gap-1 self-start pt-0.5">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <div
-                                  aria-label={`Session status: ${statusMeta.label}`}
-                                  className={cn(
-                                    "flex h-8 w-8 items-center justify-center rounded-full border",
-                                    statusMeta.containerClassName,
-                                  )}
-                                >
-                                  <SessionStatusIcon
-                                    className={cn(
-                                      "h-4 w-4",
-                                      statusMeta.iconClassName,
-                                    )}
-                                  />
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent side="top">
-                                {statusMeta.label}
-                              </TooltipContent>
-                            </Tooltip>
-
-                            {archived ? (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <div
-                                    aria-label="Archived session"
-                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-800 bg-slate-950/80 text-slate-500"
-                                  >
-                                    <Archive className="h-3.5 w-3.5" />
-                                  </div>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  Archived
-                                </TooltipContent>
-                              </Tooltip>
-                            ) : null}
-
-                            {showArchiveAction ? (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    size="icon"
-                                    variant="ghost"
-                                    aria-label={`Archive ${getSessionTitle(session)}`}
-                                    onClick={() =>
-                                      handleArchiveSession(session.id)
-                                    }
-                                    className={cn(
-                                      "h-8 w-8 rounded-full border border-slate-800 bg-slate-950/80 text-slate-500 transition-all hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
-                                      isActive
-                                        ? "opacity-100"
-                                        : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-                                    )}
-                                  >
-                                    <Archive className="h-3.5 w-3.5" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  Archive
-                                </TooltipContent>
-                              </Tooltip>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </ScrollArea>
-            </aside>
+            <SessionsSidebar
+              totalSessions={shellState.sessions.length}
+              activeSessionId={activeSession.id}
+              filteredSessions={filteredSessions}
+              sessionScopeFilter={sessionScopeFilter}
+              sessionStatusFilter={sessionStatusFilter}
+              onSessionScopeFilterChange={setSessionScopeFilter}
+              onSessionStatusFilterChange={setSessionStatusFilter}
+              onCreateSession={createNewSession}
+              onActivateSession={handleActivateSession}
+              onArchiveSession={handleArchiveSession}
+            />
 
             {isTauri() && !hasAnyProvider ? (
               <main className="flex min-min-h-0 flex-1 flex-col items-center justify-center bg-[#050816] px-6 py-12 text-center shadow-inner shadow-black/80 z-20">
@@ -2217,24 +1472,31 @@ export const ChatSession = (): JSX.Element => {
                         <h1 className="truncate text-2xl font-semibold tracking-tight text-white">
                           {currentSessionTitle}
                         </h1>
-                        <Badge className="border-sky-500/20 bg-sky-500/10 text-sky-200">
+                        <StatusBadge tone="info">
                           {getProviderLabel(activeSession.provider)}
-                        </Badge>
-                        <Badge className="border-slate-700 bg-slate-900 text-slate-300">
+                        </StatusBadge>
+                        <StatusBadge tone="neutral">
                           {activeSession.model}
-                        </Badge>
-                        <Badge
+                        </StatusBadge>
+                        <StatusBadge
+                          tone={
+                            activeSession.mode === "safe"
+                              ? "success"
+                              : activeSession.mode === "ask"
+                                ? "warning"
+                                : "accent"
+                          }
                           className={cn(
                             "border",
                             activeRunModeMeta.badgeClassName,
                           )}
                         >
                           {activeRunModeMeta.label}
-                        </Badge>
+                        </StatusBadge>
                         {activeSession.workspace ? (
-                          <Badge className="border-slate-700 bg-slate-900 text-slate-300">
+                          <StatusBadge tone="neutral">
                             {getWorkspaceLabel(activeSession.workspace)}
-                          </Badge>
+                          </StatusBadge>
                         ) : null}
                       </div>
                     )}
@@ -2883,339 +2145,36 @@ export const ChatSession = (): JSX.Element => {
           </div>
         </div>
 
-        <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden rounded-3xl border-slate-800 bg-slate-950/96 p-0 text-slate-100 shadow-2xl">
-          <div className="flex max-h-[85vh] flex-col overflow-hidden">
-            <DialogHeader className="border-b border-slate-800 px-6 py-5 text-left">
-              <DialogTitle className="text-xl font-semibold text-white">
-                Settings
-              </DialogTitle>
-              <DialogDescription className="text-sm leading-6 text-slate-400">
-                Provider API keys, web search connectors, and memory controls.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="border-b border-slate-800 px-6 py-4">
-              <div className="flex flex-wrap gap-2">
-                {SETTINGS_SECTIONS.map((section) => (
-                  <Button
-                    key={section.id}
-                    type="button"
-                    variant="outline"
-                    onClick={() => setSettingsSection(section.id)}
-                    className={cn(
-                      "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                      settingsSection === section.id &&
-                        "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                    )}
-                  >
-                    {section.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            <ScrollArea className="min-h-0 flex-1" type="always">
-              <div className="grid gap-6 px-6 py-6 pr-8">
-                {settingsSection === "providers" ? (
-                  <div className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-                    <div className="grid gap-1">
-                      <p className="text-sm font-semibold text-slate-100">
-                        Model providers
-                      </p>
-                      <p className="text-sm leading-6 text-slate-400">
-                        Save the API keys the desktop shell can reuse for model
-                        access.
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {USER_API_KEY_PROVIDER_ORDER.map((provider) => (
-                        <Button
-                          key={provider}
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            setProviderSetupProvider(provider);
-                            setProviderSetupMessage(null);
-                          }}
-                          className={cn(
-                            "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                            providerSetupProvider === provider &&
-                              "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                          )}
-                        >
-                          {getProviderLabel(provider)}
-                        </Button>
-                      ))}
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                      <Input
-                        type="text"
-                        value={providerSetupKey}
-                        onChange={(event) => {
-                          const nextKey = event.target.value;
-
-                          setProviderSetupKey(nextKey);
-                          setProviderSetupKeys((prev) => ({
-                            ...prev,
-                            [providerSetupProvider]: nextKey,
-                          }));
-
-                          if (providerSetupMessage) {
-                            setProviderSetupMessage(null);
-                          }
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            void handleProviderSetupSave();
-                          }
-                        }}
-                        placeholder={`Paste your ${getProviderLabel(providerSetupProvider)} API key`}
-                        autoComplete="off"
-                        spellCheck={false}
-                        className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
-                      />
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          void handleProviderSetupSave();
-                        }}
-                        disabled={
-                          !providerSetupKey.trim() || providerSetupSaving
-                        }
-                        className="h-11 rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500 disabled:opacity-50"
-                      >
-                        {providerSetupSaving ? "Saving…" : "Save key"}
-                      </Button>
-                    </div>
-
-                    {providerSetupMessage ? (
-                      <p
-                        className={cn(
-                          "text-xs leading-6",
-                          providerSetupMessage.tone === "error"
-                            ? "text-rose-300"
-                            : "text-emerald-300",
-                        )}
-                      >
-                        {providerSetupMessage.text}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {settingsSection === "web-search" ? (
-                  <div className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-                    <div className="grid gap-1">
-                      <p className="text-sm font-semibold text-slate-100">
-                        Web search
-                      </p>
-                      <p className="text-sm leading-6 text-slate-400">
-                        Choose one active provider at a time. The executor hides
-                        web search until the active provider has a configured
-                        key.
-                      </p>
-                    </div>
-
-                    <div className="grid gap-2">
-                      <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                        Active web search provider
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {(
-                          ["none", ...USER_WEB_SEARCH_PROVIDER_ORDER] as const
-                        ).map((provider) => (
-                          <Button
-                            key={provider}
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                              void handleWebSearchActiveProviderSave(provider);
-                            }}
-                            disabled={webSearchSetupSaving}
-                            className={cn(
-                              "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                              webSearchActiveProvider === provider &&
-                                "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                            )}
-                          >
-                            {getWebSearchProviderLabel(provider)}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <Separator className="bg-slate-800" />
-
-                    <div className="grid gap-2">
-                      <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                        API keys
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {USER_WEB_SEARCH_PROVIDER_ORDER.map((provider) => (
-                          <Button
-                            key={provider}
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                              setWebSearchSetupProvider(provider);
-                              setWebSearchSetupMessage(null);
-                            }}
-                            className={cn(
-                              "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                              webSearchSetupProvider === provider &&
-                                "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                            )}
-                          >
-                            {getWebSearchProviderLabel(provider)}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                      <Input
-                        type="text"
-                        value={webSearchSetupKey}
-                        onChange={(event) => {
-                          const nextKey = event.target.value;
-
-                          setWebSearchSetupKey(nextKey);
-                          setWebSearchSetupKeys((prev) => ({
-                            ...prev,
-                            [webSearchSetupProvider]: nextKey,
-                          }));
-
-                          if (webSearchSetupMessage) {
-                            setWebSearchSetupMessage(null);
-                          }
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            void handleWebSearchSetupSave();
-                          }
-                        }}
-                        placeholder={`Paste your ${getWebSearchProviderLabel(webSearchSetupProvider)} API key`}
-                        autoComplete="off"
-                        spellCheck={false}
-                        className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
-                      />
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          void handleWebSearchSetupSave();
-                        }}
-                        disabled={
-                          !webSearchSetupKey.trim() || webSearchSetupSaving
-                        }
-                        className="h-11 rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500 disabled:opacity-50"
-                      >
-                        {webSearchSetupSaving ? "Saving…" : "Save key"}
-                      </Button>
-                    </div>
-
-                    {webSearchSetupMessage ? (
-                      <p
-                        className={cn(
-                          "text-xs leading-6",
-                          webSearchSetupMessage.tone === "error"
-                            ? "text-rose-300"
-                            : "text-emerald-300",
-                        )}
-                      >
-                        {webSearchSetupMessage.text}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {settingsSection === "memory" ? (
-                  <div className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-                    <div className="grid gap-1">
-                      <p className="text-sm font-semibold text-slate-100">
-                        Global memory
-                      </p>
-                      <p className="text-sm leading-6 text-slate-400">
-                        Cross-session facts the assistant can reuse later. Keep
-                        this off if you want every session to start fresh.
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={memorySetupSaving}
-                        onClick={() => {
-                          void handleGlobalMemoryEnabledSave(true);
-                        }}
-                        className={cn(
-                          "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                          userMemorySettings.globalEnabled &&
-                            "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                        )}
-                      >
-                        Enabled
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={memorySetupSaving}
-                        onClick={() => {
-                          void handleGlobalMemoryEnabledSave(false);
-                        }}
-                        className={cn(
-                          "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                          !userMemorySettings.globalEnabled &&
-                            "border-slate-600 bg-slate-900 text-slate-100",
-                        )}
-                      >
-                        Disabled
-                      </Button>
-                      <Badge className="border-slate-700 bg-slate-950 text-slate-300">
-                        {userMemorySettings.entries.length} saved fact
-                        {userMemorySettings.entries.length === 1 ? "" : "s"}
-                      </Badge>
-                    </div>
-
-                    {userMemorySettings.entries.length === 0 ? (
-                      <p className="text-sm leading-6 text-slate-500">
-                        No global memories have been saved yet.
-                      </p>
-                    ) : (
-                      <div className="grid gap-2">
-                        {userMemorySettings.entries.map((entry) => (
-                          <div
-                            key={entry.id}
-                            className="rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm leading-6 text-slate-300"
-                          >
-                            {entry.content}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {memorySetupMessage ? (
-                      <p
-                        className={cn(
-                          "text-xs leading-6",
-                          memorySetupMessage.tone === "error"
-                            ? "text-rose-300"
-                            : "text-emerald-300",
-                        )}
-                      >
-                        {memorySetupMessage.text}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            </ScrollArea>
-          </div>
-        </DialogContent>
+        <SettingsDialog
+          settingsSection={settingsSection}
+          onSettingsSectionChange={setSettingsSection}
+          providerSetup={{
+            provider: providerSetupProvider,
+            keyValue: providerSetupKey,
+            saving: providerSetupSaving,
+            message: providerSetupMessage,
+            onProviderChange: handleProviderSetupProviderChange,
+            onKeyChange: handleProviderSetupKeyChange,
+            onSave: handleProviderSetupSave,
+          }}
+          webSearchSetup={{
+            activeProvider: webSearchActiveProvider,
+            provider: webSearchSetupProvider,
+            keyValue: webSearchSetupKey,
+            saving: webSearchSetupSaving,
+            message: webSearchSetupMessage,
+            onActiveProviderChange: handleWebSearchActiveProviderSave,
+            onProviderChange: handleWebSearchSetupProviderChange,
+            onKeyChange: handleWebSearchSetupKeyChange,
+            onSave: handleWebSearchSetupSave,
+          }}
+          memorySetup={{
+            settings: userMemorySettings,
+            saving: memorySetupSaving,
+            message: memorySetupMessage,
+            onGlobalEnabledChange: handleGlobalMemoryEnabledSave,
+          }}
+        />
       </Dialog>
     </TooltipProvider>
   );

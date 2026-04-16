@@ -2,22 +2,11 @@ import type {
   ConversationMemoryEntry,
   ConversationMemoryScope,
 } from "./types.js";
+import { normalizeOptionalString } from "../common/_helpers/normalize-optional-string.js";
 
 export const MAX_SESSION_MEMORY_ENTRIES = 24;
 export const MAX_GLOBAL_MEMORY_ENTRIES = 40;
 const MAX_MEMORY_CONTENT_LENGTH = 280;
-
-const normalizeOptionalString = (
-  value: string | undefined,
-): string | undefined => {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-
-  return trimmed.length > 0 ? trimmed : undefined;
-};
 
 const createMemoryKey = (content: string): string => {
   return content.replace(/\s+/g, " ").trim().toLowerCase();

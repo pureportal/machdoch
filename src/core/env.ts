@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { normalizeOptionalString } from "../common/_helpers/normalize-optional-string.js";
 import {
     MAX_GLOBAL_MEMORY_ENTRIES,
     normalizeConversationMemoryEntries,
@@ -64,21 +65,6 @@ interface UserConfigFile {
   webSearch?: UserWebSearchConfigFile;
   memory?: UserMemoryConfigFile;
 }
-
-/**
- * Trims a string and collapses empty input to `undefined`.
- */
-const normalizeOptionalString = (
-  value: string | undefined,
-): string | undefined => {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-
-  return trimmed.length > 0 ? trimmed : undefined;
-};
 
 const stripWrappingQuotes = (value: string): string => {
   const trimmed = value.trim();

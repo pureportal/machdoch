@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 import { parseArgs as parseNodeArgs } from "node:util";
+import { normalizeOptionalString } from "../common/_helpers/normalize-optional-string.js";
 import {
   loadRuntimeConfig,
   saveWorkspaceDefaultModel,
@@ -26,14 +27,17 @@ import type {
   ConversationMemoryEntry,
   ModelProvider,
   RunMode,
-  RuntimeProfileSummary,
   TaskConversationContext,
-  TaskExecutionProgress,
   TaskExecutionProgressHandler,
   TaskExecutionResult,
-  TaskExecutionState,
   TaskRunPreview,
 } from "../core/types.js";
+import {
+  createBodyPreviewLines,
+  createDiscoveryOptions,
+  formatExecutionProgressLines,
+  formatProfileLine,
+} from "./_helpers/cli-output.js";
 
 export type CommandName =
   | "run"
@@ -87,13 +91,6 @@ const COMMANDS_WITHOUT_POSITIONALS: ReadonlySet<CommandName> = new Set([
   "tools",
   "profiles",
   "help",
-]);
-const TERMINAL_PROGRESS_STATES: ReadonlySet<TaskExecutionState> = new Set([
-  "completed",
-  "approval-required",
-  "blocked",
-  "unsupported",
-  "cancelled",
 ]);
 
 const fail = (message: string): never => {
@@ -156,18 +153,6 @@ const createParsedArgs = (
       : {}),
     ...(options?.task ? { task: options.task } : {}),
   };
-};
-
-const normalizeOptionalString = (
-  value: string | boolean | undefined,
-): string | undefined => {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-
-  return trimmed.length > 0 ? trimmed : undefined;
 };
 
 const createSharedParsedOptions = (options: {
@@ -696,27 +681,7 @@ export const parseCliArgs = (
   );
 };
 
-/**
- * Formats execution-state progress for the CLI's verbose stderr stream.
- */
-export const formatExecutionProgressLines = (
-  progress: TaskExecutionProgress,
-): string[] => {
-  const lines = [`[${progress.state}] ${progress.message}`];
-
-  if (progress.reason) {
-    lines.push(`reason: ${progress.reason}`);
-  }
-
-  if (
-    progress.executedTools.length > 0 &&
-    TERMINAL_PROGRESS_STATES.has(progress.state)
-  ) {
-    lines.push(`tools: ${progress.executedTools.join(", ")}`);
-  }
-
-  return lines;
-};
+export { formatExecutionProgressLines } from "./_helpers/cli-output.js";
 
 const createVerboseProgressReporter = (
   writeLine: (line: string) => void,
@@ -743,59 +708,6 @@ const createVerboseProgressReporter = (
   };
 };
 
-/**
- * Formats a single profile line for human-readable console output.
- */
-const formatProfileLine = (
-  profile: RuntimeProfileSummary,
-  activeProfile: string | undefined,
-): string => {
-  const activeMarker = activeProfile === profile.name ? " (active)" : "";
-
-  return `  - ${profile.name}${activeMarker}${profile.description ? `: ${profile.description}` : ""}`;
-};
-
-/**
- * Creates the optional discovery flags object only when GitHub compatibility is
- * enabled.
- */
-const createDiscoveryOptions = (
-  discoverGithubCustomizations: boolean | undefined,
-): { discoverGithubCustomizations: true } | undefined => {
-  return discoverGithubCustomizations
-    ? { discoverGithubCustomizations: true }
-    : undefined;
-};
-
-const DEFAULT_BODY_PREVIEW_LINES = 8;
-
-/**
- * Produces a truncated preview of Markdown body content for CLI display.
- */
-const createBodyPreviewLines = (
-  body: string,
-  maxPreviewLines = DEFAULT_BODY_PREVIEW_LINES,
-): string[] => {
-  const normalizedBody = body
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .trim();
-
-  if (normalizedBody.length === 0) {
-    return [];
-  }
-
-  const bodyLines = normalizedBody.split("\n");
-  const previewLines = bodyLines.slice(0, maxPreviewLines);
-
-  if (bodyLines.length > maxPreviewLines) {
-    previewLines.push(
-      `… truncated after ${maxPreviewLines} of ${bodyLines.length} lines`,
-    );
-  }
-
-  return previewLines;
-};
 
 const writeStdoutLine = (line = ""): void => {
   process.stdout.write(`${line}\n`);
