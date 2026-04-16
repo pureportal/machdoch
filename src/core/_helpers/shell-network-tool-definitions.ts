@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { RuntimeConfig } from "../types.js";
 import {
@@ -49,6 +49,51 @@ export const resolveShellCommandInvocation = (
     shellExecutable: "sh",
     shellArgs: ["-lc", command],
   };
+};
+
+export const startDetachedShellCommand = async (
+  command: string,
+  workspaceRoot: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<number | undefined> => {
+  const { shellExecutable, shellArgs } = resolveShellCommandInvocation(
+    command,
+    platform,
+  );
+  const child = spawn(shellExecutable, shellArgs, {
+    cwd: workspaceRoot,
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+
+  const pid = await new Promise<number | undefined>((resolve, reject) => {
+    let settled = false;
+
+    const settle = (callback: () => void): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      callback();
+    };
+
+    child.once("spawn", () => {
+      settle(() => {
+        resolve(child.pid);
+      });
+    });
+    child.once("error", (error) => {
+      settle(() => {
+        reject(error);
+      });
+    });
+  });
+
+  child.unref();
+
+  return pid;
 };
 
 export const createShellNetworkToolDefinitions = (
@@ -190,6 +235,108 @@ export const createShellNetworkToolDefinitions = (
             ],
             traceLines: [
               `run_shell_command(${compactTraceText(command)}) -> error`,
+            ],
+          };
+        }
+      },
+    },
+    {
+      spec: {
+        name: "start_detached_command",
+        description:
+          "Launch a GUI app, document, URL, or other command detached from machdoch so it can keep running after machdoch exits. Use this instead of run_shell_command when you do not need stdout or stderr.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            command: {
+              type: "string",
+              description:
+                "The shell command to launch detached from the current machdoch process.",
+            },
+          },
+          required: ["command"],
+        },
+      },
+      backingTool: "shell",
+      riskLevel: "high",
+      execute: async (args, context) => {
+        const command = coerceString(args, "command");
+
+        if (!command) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "start_detached_command",
+            "Expected a non-empty `command`.",
+          );
+        }
+
+        try {
+          const pid = await startDetachedShellCommand(
+            command,
+            context.workspaceRoot,
+          );
+          const output = [
+            `Command: ${command}`,
+            `Launch mode: detached`,
+            `Workspace: ${context.workspaceRoot}`,
+            pid !== undefined ? `PID: ${pid}` : undefined,
+          ]
+            .filter(
+              (part): part is string =>
+                typeof part === "string" && part.length > 0,
+            )
+            .join("\n");
+
+          return {
+            toolResult: {
+              callId: crypto.randomUUID(),
+              name: "start_detached_command",
+              output: limitText(output),
+            },
+            sections: [
+              {
+                title: "Detached command",
+                lines: [
+                  `command: ${command}`,
+                  `cwd: ${context.workspaceRoot}`,
+                  `launch mode: detached from machdoch`,
+                  ...(pid !== undefined ? [`pid: ${pid}`] : []),
+                ],
+              },
+            ],
+            traceLines: [
+              `start_detached_command(${compactTraceText(command)}) -> launched`,
+            ],
+          };
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+
+          return {
+            toolResult: {
+              callId: crypto.randomUUID(),
+              name: "start_detached_command",
+              output: limitText([
+                `Command: ${command}`,
+                `Launch mode: detached`,
+                `Error: ${message}`,
+              ].join("\n")),
+              isError: true,
+            },
+            sections: [
+              {
+                title: "Detached command",
+                lines: [
+                  `command: ${command}`,
+                  `cwd: ${context.workspaceRoot}`,
+                  `launch mode: detached from machdoch`,
+                  `error: ${message}`,
+                ],
+              },
+            ],
+            traceLines: [
+              `start_detached_command(${compactTraceText(command)}) -> error`,
             ],
           };
         }

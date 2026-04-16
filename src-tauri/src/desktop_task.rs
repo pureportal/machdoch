@@ -7,6 +7,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::Emitter;
@@ -14,6 +17,12 @@ use tauri::Emitter;
 use crate::runtime_snapshot::resolve_workspace_root_path;
 
 const DESKTOP_TASK_PROGRESS_EVENT: &str = "desktop-task-progress";
+
+#[cfg(target_os = "windows")]
+const DETACHED_PROCESS: u32 = 0x00000008;
+
+#[cfg(target_os = "windows")]
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -387,6 +396,23 @@ fn resolve_workspace_relative_path(
     Ok(resolved_path)
 }
 
+fn spawn_detached_command(command: &mut Command, error_prefix: &str) -> Result<(), String> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("{error_prefix}: {error}"))
+}
+
 fn open_path_in_system_shell(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -398,15 +424,10 @@ fn open_path_in_system_shell(path: &Path) -> Result<(), String> {
             command.arg(path);
         }
 
-        let status = command.status().map_err(|error| {
-            format!("Windows Explorer could not open the requested path: {error}")
-        })?;
-
-        return if status.success() {
-            Ok(())
-        } else {
-            Err("Windows Explorer could not open the requested workspace path.".to_string())
-        };
+        return spawn_detached_command(
+            &mut command,
+            "Windows Explorer could not open the requested path",
+        );
     }
 
     #[cfg(target_os = "macos")]
@@ -417,15 +438,9 @@ fn open_path_in_system_shell(path: &Path) -> Result<(), String> {
             command.arg("-R");
         }
 
-        let status = command.arg(path).status().map_err(|error| {
-            format!("Finder could not open the requested path: {error}")
-        })?;
+        command.arg(path);
 
-        return if status.success() {
-            Ok(())
-        } else {
-            Err("Finder could not open the requested workspace path.".to_string())
-        };
+        return spawn_detached_command(&mut command, "Finder could not open the requested path");
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -436,18 +451,13 @@ fn open_path_in_system_shell(path: &Path) -> Result<(), String> {
             path.parent().unwrap_or(path)
         };
 
-        let status = Command::new("xdg-open")
-            .arg(target)
-            .status()
-            .map_err(|error| {
-                format!("The system file browser could not open the requested path: {error}")
-            })?;
+        let mut command = Command::new("xdg-open");
+        command.arg(target);
 
-        return if status.success() {
-            Ok(())
-        } else {
-            Err("The system file browser could not open the requested workspace path.".to_string())
-        };
+        return spawn_detached_command(
+            &mut command,
+            "The system file browser could not open the requested path",
+        );
     }
 
     #[allow(unreachable_code)]
