@@ -56,7 +56,7 @@ export const SessionsSidebar = ({
       : `${filteredSessions.length} of ${totalSessions} saved sessions`;
 
   return (
-    <aside className="flex min-h-0 w-84 flex-col border-r border-slate-900 bg-slate-950/50 backdrop-blur-xl">
+    <aside className="flex min-h-0 w-[21rem] shrink-0 flex-col border-r border-slate-900 bg-slate-950/50 backdrop-blur-xl">
       <div className="flex h-16 items-center justify-between border-b border-slate-900 px-5">
         <div>
           <p className="text-xs font-semibold tracking-[0.24em] text-slate-500 uppercase">

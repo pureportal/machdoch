@@ -1,6 +1,17 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, relative } from "node:path";
+import type { ReadOnlyInspectionTarget } from "../task-inspection.js";
+import type {
+  CreateFilePathReference,
+  TaskPathReference,
+} from "../task-paths.js";
+import type {
+  CustomizationDiscoveryResult,
+  RuntimeConfig,
+  TaskExecutionResult,
+  TaskExecutionSection,
+} from "../types.js";
 import {
   createCustomizationSummarySection,
   createDirectoryPreviewSection,
@@ -17,17 +28,6 @@ import {
   createWorkspaceInspectionSections,
 } from "./execution-sections.js";
 import { createExecutionResult } from "./execution-state.js";
-import type {
-  CustomizationDiscoveryResult,
-  RuntimeConfig,
-  TaskExecutionResult,
-  TaskExecutionSection,
-} from "../types.js";
-import type { ReadOnlyInspectionTarget } from "../task-inspection.js";
-import type {
-  CreateFilePathReference,
-  TaskPathReference,
-} from "../task-paths.js";
 
 export const getInspectionLabel = (
   inspectionTarget: ReadOnlyInspectionTarget,

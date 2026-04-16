@@ -1,4 +1,37 @@
 import {
+  createAutopilotAuditSection,
+  createAutopilotMonitorSystemPrompt,
+  createAutopilotMonitorTool,
+  createAutopilotMonitorUserPrompt,
+  parseAutopilotDecisionFromTurn,
+} from "./_helpers/agent-runtime-autopilot.js";
+import {
+  createExecutorSystemPrompt,
+  createExecutorUserPrompt,
+} from "./_helpers/agent-runtime-executor-prompts.js";
+import {
+  createAssistantAnswerSection,
+  createFinalResponseSections,
+  createFinalResponseTool,
+  createFinalResponseToolResult,
+  FINAL_RESPONSE_TOOL_NAME,
+  parseFinalResponsePayload,
+} from "./_helpers/agent-runtime-final-response.js";
+import {
+  createExecutionResult,
+  emitAgentProgress,
+  normalizeFinalSummary,
+  upsertMemoryUpdate,
+} from "./_helpers/agent-runtime-shared.js";
+import {
+  MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
+  MAX_EXECUTOR_TURNS,
+  type AgentLoopState,
+  type ExecutorContinuationRequest,
+  type ExecutorCycleOutcome,
+  type ModelDrivenExecutionParams,
+} from "./_helpers/agent-runtime-types.js";
+import {
   createToolDefinitions,
   executeToolCall,
   type ApprovalPause,
@@ -8,177 +41,18 @@ import {
   type PreparedConversationPromptContext,
 } from "./_helpers/conversation-prompt-context.js";
 import { createProviderAdapter } from "./_helpers/provider-adapters.js";
+import { compactTraceText } from "./_helpers/runtime-text.js";
 import type {
   AgentModelAdapter,
   AgentModelToolResult,
-  AgentModelToolSpec,
-  AgentModelTurn,
   ResolvedTaskContext,
   RuntimeConfig,
   TaskAutopilotDecision,
   TaskAutopilotReport,
-  TaskConversationContext,
-  TaskExecutionFileReference,
-  TaskExecutionMemoryUpdate,
-  TaskExecutionNarrative,
   TaskExecutionProgressHandler,
   TaskExecutionResult,
   TaskExecutionSection,
-  TaskExecutionState,
-  ToolName,
 } from "./types.js";
-
-const MAX_EXECUTOR_TURNS = 16;
-const MAX_AUTOPILOT_EXECUTOR_ITERATIONS = 4;
-const MAX_OUTPUT_CHARS = 12_000;
-const MAX_PREVIEW_LINES = 80;
-const TOOL_TRACE_PREVIEW_CHARS = 220;
-
-interface AgentLoopState {
-  executedTools: ToolName[];
-  outputSections: TaskExecutionSection[];
-  traceLines: string[];
-  memoryUpdates: TaskExecutionMemoryUpdate[];
-  lastAssistantText?: string;
-  finalResponse?: TaskExecutionNarrative;
-}
-
-interface TaskFinalResponsePayload extends TaskExecutionNarrative {
-  summary: string;
-}
-const MAX_FINAL_RESPONSE_ITEMS = 4;
-
-interface ModelDrivenExecutionParams {
-  task: string;
-  config: RuntimeConfig;
-  taskContext: ResolvedTaskContext;
-  contextSections: TaskExecutionSection[];
-  conversationContext?: TaskConversationContext;
-  modelAdapter?: AgentModelAdapter;
-  monitorModelAdapter?: AgentModelAdapter;
-  onStateChange?: TaskExecutionProgressHandler;
-}
-
-interface ExecutorContinuationRequest {
-  continuationIndex: number;
-  rationale: string;
-  missingRequirements: string[];
-  requiredActions: string[];
-}
-
-interface ExecutorCycleOutcome {
-  loopState: AgentLoopState;
-  result: TaskExecutionResult;
-}
-
-const createExecutionResult = (
-  base: Omit<TaskExecutionResult, "reason">,
-  reason?: string,
-): TaskExecutionResult => {
-  return {
-    ...base,
-    ...(reason ? { reason } : {}),
-  };
-};
-
-const isTerminalAgentProgressState = (state: TaskExecutionState): boolean => {
-  return (
-    state === "completed" ||
-    state === "approval-required" ||
-    state === "blocked" ||
-    state === "unsupported" ||
-    state === "cancelled"
-  );
-};
-
-const emitAgentProgress = async (
-  task: string,
-  config: RuntimeConfig,
-  state: TaskExecutionState,
-  message: string,
-  loopState: AgentLoopState,
-  onStateChange: TaskExecutionProgressHandler | undefined,
-  result?: TaskExecutionResult,
-): Promise<void> => {
-  if (!onStateChange) {
-    return;
-  }
-
-  await onStateChange({
-    task,
-    mode: config.mode,
-    state,
-    message,
-    executedTools: result?.executedTools ?? loopState.executedTools,
-    outputSections: result?.outputSections ?? loopState.outputSections,
-    cancellable: !isTerminalAgentProgressState(state),
-    ...(result?.reason ? { reason: result.reason } : {}),
-  });
-};
-
-const createLinesFromText = (
-  text: string,
-  maxLines = MAX_PREVIEW_LINES,
-  startLine = 1,
-): string[] => {
-  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const lines = normalized.split("\n");
-  const previewLines = lines
-    .slice(0, maxLines)
-    .map((line, index) => `${startLine + index}: ${line}`);
-
-  if (lines.length > maxLines) {
-    previewLines.push(`… truncated after ${maxLines} of ${lines.length} lines`);
-  }
-
-  return previewLines;
-};
-
-const createTextSection = (
-  title: string,
-  text: string,
-  maxLines = MAX_PREVIEW_LINES,
-  startLine = 1,
-): TaskExecutionSection => {
-  const previewLines = createLinesFromText(text, maxLines, startLine);
-
-  return {
-    title,
-    lines: previewLines.length > 0 ? previewLines : ["(empty)"],
-  };
-};
-
-const limitText = (value: string, maxChars = MAX_OUTPUT_CHARS): string => {
-  if (value.length <= maxChars) {
-    return value;
-  }
-
-  return `${value.slice(0, maxChars)}\n… truncated after ${maxChars} characters`;
-};
-
-const compactTraceText = (value: string): string => {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= TOOL_TRACE_PREVIEW_CHARS) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, TOOL_TRACE_PREVIEW_CHARS)}…`;
-};
-
-const normalizeFinalSummary = (text: string | undefined): string => {
-  const normalized = text?.replace(/\s+/g, " ").trim();
-
-  if (!normalized) {
-    return "Completed the task with the model-driven execution loop.";
-  }
-
-  if (normalized.length <= 220) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, 220)}…`;
-};
 
 const attachAutopilotReport = (
   result: TaskExecutionResult,
@@ -192,552 +66,6 @@ const attachAutopilotReport = (
     ],
     autopilot: report,
   };
-};
-
-const coerceString = (
-  record: Record<string, unknown>,
-  field: string,
-): string | undefined => {
-  const value = record[field];
-
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : undefined;
-};
-
-const coerceStringArray = (
-  record: Record<string, unknown>,
-  field: string,
-): string[] | undefined => {
-  const value = record[field];
-
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-
-  return value.flatMap((entry) =>
-    typeof entry === "string" && entry.trim().length > 0 ? [entry.trim()] : [],
-  );
-};
-
-const coerceFileReferenceArray = (
-  record: Record<string, unknown>,
-  field: string,
-): TaskExecutionFileReference[] | undefined => {
-  const value = record[field];
-
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-
-  return value.flatMap((entry) => {
-    if (typeof entry !== "object" || entry === null) {
-      return [];
-    }
-
-    const reference = entry as Record<string, unknown>;
-    const path = coerceString(reference, "path");
-    const description = coerceString(reference, "description");
-
-    if (!path || !description) {
-      return [];
-    }
-
-    return [{ path, description }];
-  });
-};
-
-const upsertMemoryUpdate = (
-  updates: TaskExecutionMemoryUpdate[],
-  nextUpdate: TaskExecutionMemoryUpdate,
-): TaskExecutionMemoryUpdate[] => {
-  const existingWithoutScope = updates.filter(
-    (update) =>
-      !(
-        update.scope === nextUpdate.scope &&
-        update.entry.content.toLowerCase() ===
-          nextUpdate.entry.content.toLowerCase()
-      ),
-  );
-
-  return [...existingWithoutScope, nextUpdate];
-};
-
-const FINAL_RESPONSE_TOOL_NAME = "submit_final_response";
-
-const createAutopilotAuditSection = (
-  report: TaskAutopilotReport,
-): TaskExecutionSection => {
-  return {
-    title: "Autopilot audit",
-    lines: [
-      `executor iterations: ${report.executorIterations}/${report.maxExecutorIterations}`,
-      `validator passes: ${report.validatorPasses}`,
-      `validator continuation requests: ${report.continuationCount}`,
-      ...report.decisions.flatMap((decision) => [
-        `pass ${decision.pass}: ${decision.decision} (${decision.confidence})`,
-        `  rationale: ${decision.rationale}`,
-        ...(decision.missingRequirements.length > 0
-          ? [
-              `  missing requirements: ${decision.missingRequirements.join(", ")}`,
-            ]
-          : []),
-        ...(decision.requiredActions.length > 0
-          ? [`  required actions: ${decision.requiredActions.join(", ")}`]
-          : []),
-      ]),
-    ],
-  };
-};
-
-const createFinalResponseTool = (): AgentModelToolSpec => {
-  return {
-    name: FINAL_RESPONSE_TOOL_NAME,
-    description:
-      "Submit the final user-facing response after the task is actually complete. Call this exactly once, as the only tool in the turn, when no further execution is required.",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        summary: {
-          type: "string",
-          description:
-            "A concise plain-text completion summary for the activity feed and task card.",
-        },
-        markdown: {
-          type: "string",
-          description:
-            "A compact GitHub-flavored Markdown answer for the user. Keep it brief, scannable, and grounded in actual tool results.",
-        },
-        highlights: {
-          type: "array",
-          items: { type: "string" },
-          maxItems: MAX_FINAL_RESPONSE_ITEMS,
-          description:
-            "Short insight bullets that add value beyond the summary. Use an empty array when no extra highlights are needed.",
-        },
-        relatedFiles: {
-          type: "array",
-          maxItems: MAX_FINAL_RESPONSE_ITEMS,
-          description:
-            "Workspace-relative files that were changed or are especially relevant to the result.",
-          items: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              path: {
-                type: "string",
-                description: "Workspace-relative file path.",
-              },
-              description: {
-                type: "string",
-                description: "Short explanation of why the file matters.",
-              },
-            },
-            required: ["path", "description"],
-          },
-        },
-        verification: {
-          type: "array",
-          items: { type: "string" },
-          maxItems: MAX_FINAL_RESPONSE_ITEMS,
-          description:
-            "Concrete checks or evidence used to verify the result. Use an empty array when verification was not possible.",
-        },
-        followUps: {
-          type: "array",
-          items: { type: "string" },
-          maxItems: MAX_FINAL_RESPONSE_ITEMS,
-          description:
-            "Short remaining caveats or next steps. Use an empty array when none remain.",
-        },
-      },
-      required: [
-        "summary",
-        "markdown",
-        "highlights",
-        "relatedFiles",
-        "verification",
-        "followUps",
-      ],
-    },
-  };
-};
-
-const parseFinalResponsePayload = (
-  record: Record<string, unknown>,
-): TaskFinalResponsePayload | undefined => {
-  const summary = coerceString(record, "summary");
-  const markdown = coerceString(record, "markdown");
-  const highlights = coerceStringArray(record, "highlights");
-  const relatedFiles = coerceFileReferenceArray(record, "relatedFiles");
-  const verification = coerceStringArray(record, "verification");
-  const followUps = coerceStringArray(record, "followUps");
-
-  if (
-    !summary ||
-    !markdown ||
-    !highlights ||
-    !relatedFiles ||
-    !verification ||
-    !followUps
-  ) {
-    return undefined;
-  }
-
-  return {
-    summary,
-    markdown,
-    highlights,
-    relatedFiles,
-    verification,
-    followUps,
-  };
-};
-
-const createFinalResponseSections = (
-  response: TaskExecutionNarrative,
-): TaskExecutionSection[] => {
-  return [
-    createTextSection("Agent response", limitText(response.markdown)),
-    ...(response.highlights.length > 0
-      ? [
-          {
-            title: "Highlights",
-            lines: response.highlights,
-          },
-        ]
-      : []),
-    ...(response.relatedFiles.length > 0
-      ? [
-          {
-            title: "Related files",
-            lines: response.relatedFiles.map(
-              (fileReference) =>
-                `${fileReference.path} — ${fileReference.description}`,
-            ),
-          },
-        ]
-      : []),
-    ...(response.verification.length > 0
-      ? [
-          {
-            title: "Verification",
-            lines: response.verification,
-          },
-        ]
-      : []),
-    ...(response.followUps.length > 0
-      ? [
-          {
-            title: "Follow-up",
-            lines: response.followUps,
-          },
-        ]
-      : []),
-  ];
-};
-
-const createFinalResponseToolResult = (
-  callId: string,
-  output: string,
-  isError = false,
-): AgentModelToolResult => {
-  return {
-    callId,
-    name: FINAL_RESPONSE_TOOL_NAME,
-    output,
-    ...(isError ? { isError: true } : {}),
-  };
-};
-
-const createAssistantAnswerSection = (text: string): TaskExecutionSection => {
-  return createTextSection("Agent answer", limitText(text));
-};
-
-const createExecutorSystemPrompt = (
-  config: RuntimeConfig,
-  taskContext: ResolvedTaskContext,
-  tools: AgentModelToolSpec[],
-  conversationContext: PreparedConversationPromptContext,
-  continuationRequest?: ExecutorContinuationRequest,
-): string => {
-  const instructionLines =
-    taskContext.applicableInstructions.length > 0
-      ? taskContext.applicableInstructions.map(
-          (instruction) => `${instruction.name}: ${instruction.body}`,
-        )
-      : ["No additional task-specific instructions were discovered."];
-  const promptContextLines = taskContext.invokedPrompt
-    ? [
-        `Resolved prompt: /${taskContext.invokedPrompt.name}`,
-        `Prompt body: ${taskContext.invokedPrompt.resolvedBody}`,
-      ]
-    : ["Resolved prompt: none"];
-
-  return [
-    "<role>You are Machdoch Executor, a local-first autonomous workspace agent responsible for doing the work rather than grading it.</role>",
-    "<mission>Keep working until the task is complete, blocked by a real runtime limitation, or paused for approval. Use tools instead of guessing, and never claim a change, command, or fetched result unless a tool actually produced it.</mission>",
-    "<operating_principles>Prefer low-risk inspection before edits. Before editing an existing file, inspect it first. Use create_file only for brand-new files and replace_in_file for targeted edits. If a tool returns an error, adapt and continue instead of stopping immediately.</operating_principles>",
-    config.mode === "auto"
-      ? "<autopilot_contract>You are running in Autopilot mode. A separate monitor agent will review every claimed completion. Before you stop, gather concrete verification evidence from tool results. If monitor feedback is provided, treat every missing requirement and required action as mandatory for the next iteration.</autopilot_contract>"
-      : "<approval_contract>If a higher-risk action is necessary, call the tool anyway; the runtime will pause automatically if approval is required.</approval_contract>",
-    continuationRequest
-      ? [
-          "<monitor_feedback>",
-          `This is continuation iteration ${continuationRequest.continuationIndex}.`,
-          `Rationale: ${continuationRequest.rationale}`,
-          continuationRequest.missingRequirements.length > 0
-            ? `Missing requirements: ${continuationRequest.missingRequirements.join(", ")}`
-            : "Missing requirements: none listed",
-          continuationRequest.requiredActions.length > 0
-            ? `Required actions: ${continuationRequest.requiredActions.join(", ")}`
-            : "Required actions: none listed",
-          "You must address this feedback before claiming completion again.",
-          "</monitor_feedback>",
-        ].join("\n")
-      : "<monitor_feedback>No prior monitor feedback has been issued for this task.</monitor_feedback>",
-    [
-      "<runtime>",
-      `Workspace root: ${config.workspaceRoot}`,
-      `Runtime mode: ${config.mode}`,
-      `Selected provider: ${config.provider}`,
-      `Selected model: ${config.model}`,
-      `Enabled high-level tools: ${config.enabledTools.join(", ")}`,
-      `Available agent tools: ${tools.map((tool) => tool.name).join(", ")}`,
-      ...promptContextLines,
-      "</runtime>",
-    ].join("\n"),
-    ["<instructions>", ...instructionLines, "</instructions>"].join("\n"),
-    [
-      "<memory_contract>",
-      conversationContext.memory.sessionEnabled
-        ? "Session memory is enabled. Use `remember_session_memory` for facts, preferences, or decisions that should matter later in this same session."
-        : "Session memory is disabled for this run.",
-      conversationContext.memory.globalEnabled
-        ? "Global memory is enabled. Use `remember_global_memory` only for durable cross-session preferences or facts that will still matter in later sessions."
-        : "Global memory is disabled for this run.",
-      "Never store transient tool output, secrets, or speculative guesses as memory.",
-      "</memory_contract>",
-    ].join("\n"),
-    "<final_response_contract>When the task is complete, call `submit_final_response` exactly once and make it the only tool call in that turn. The markdown must stay compact, use standard Markdown, prefer short bullet lists over long prose, and only mention files or checks that are grounded in actual tool output. Put workspace file references in `relatedFiles` instead of inventing inline file URLs.</final_response_contract>",
-    "<completion_requirements>Only stop when the user request is actually satisfied and you have tool-grounded evidence for that conclusion. Do not end with freeform prose alone when you can return the structured final response.</completion_requirements>",
-  ].join("\n\n");
-};
-
-const createExecutorUserPrompt = (
-  task: string,
-  taskContext: ResolvedTaskContext,
-  conversationContext: PreparedConversationPromptContext,
-  continuationRequest?: ExecutorContinuationRequest,
-): string => {
-  return [
-    `<original_task>${task}</original_task>`,
-    `<effective_task>${taskContext.effectiveTask}</effective_task>`,
-    `<workspace_paths>${taskContext.workspacePaths.length > 0 ? taskContext.workspacePaths.join(", ") : "none"}</workspace_paths>`,
-    continuationRequest
-      ? `<current_goal>Continue the task and satisfy the monitor feedback from continuation ${continuationRequest.continuationIndex}.</current_goal>`
-      : "<current_goal>Complete the task by using tools, checking the results, and continuing until the work is done.</current_goal>",
-    ...(conversationContext.promptBlock
-      ? [conversationContext.promptBlock]
-      : []),
-  ].join("\n");
-};
-
-const AUTOPILOT_MONITOR_TOOL_NAME = "report_autopilot_decision";
-
-const createAutopilotMonitorTool = (): AgentModelToolSpec => {
-  return {
-    name: AUTOPILOT_MONITOR_TOOL_NAME,
-    description:
-      "Return the structured validation decision for the latest executor iteration. Call this exactly once after reviewing the grounded evidence.",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        decision: {
-          type: "string",
-          enum: ["complete", "continue"],
-          description:
-            "Use `complete` only when the user request is fully satisfied with sufficient evidence. Otherwise use `continue`.",
-        },
-        confidence: {
-          type: "string",
-          enum: ["low", "medium", "high"],
-          description: "Your confidence in the validation judgment.",
-        },
-        rationale: {
-          type: "string",
-          description:
-            "A concise explanation referencing grounded evidence or missing evidence.",
-        },
-        missingRequirements: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "Concrete requirements that are still unmet or not yet verified.",
-        },
-        requiredActions: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "Concrete next actions the executor should take before the task can be accepted.",
-        },
-      },
-      required: [
-        "decision",
-        "confidence",
-        "rationale",
-        "missingRequirements",
-        "requiredActions",
-      ],
-    },
-  };
-};
-
-const extractJsonCandidate = (value: string): string | undefined => {
-  const trimmed = value.trim();
-
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-    return trimmed;
-  }
-
-  const startIndex = trimmed.indexOf("{");
-  const endIndex = trimmed.lastIndexOf("}");
-
-  if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
-    return undefined;
-  }
-
-  return trimmed.slice(startIndex, endIndex + 1);
-};
-
-const parseAutopilotDecisionRecord = (
-  record: Record<string, unknown>,
-  pass: number,
-): TaskAutopilotDecision | undefined => {
-  const decision = coerceString(record, "decision");
-  const confidence = coerceString(record, "confidence");
-  const rationale = coerceString(record, "rationale");
-  const missingRequirements = coerceStringArray(record, "missingRequirements");
-  const requiredActions = coerceStringArray(record, "requiredActions");
-
-  if (
-    (decision !== "complete" && decision !== "continue") ||
-    (confidence !== "low" &&
-      confidence !== "medium" &&
-      confidence !== "high") ||
-    !rationale ||
-    !missingRequirements ||
-    !requiredActions
-  ) {
-    return undefined;
-  }
-
-  return {
-    pass,
-    decision,
-    confidence,
-    rationale,
-    missingRequirements,
-    requiredActions,
-  };
-};
-
-const parseAutopilotDecisionFromTurn = (
-  turn: AgentModelTurn,
-  pass: number,
-): TaskAutopilotDecision | undefined => {
-  const toolCall = turn.toolCalls.find(
-    (call) => call.name === AUTOPILOT_MONITOR_TOOL_NAME,
-  );
-
-  if (toolCall) {
-    return parseAutopilotDecisionRecord(toolCall.arguments, pass);
-  }
-
-  const jsonCandidate = extractJsonCandidate(turn.text);
-
-  if (!jsonCandidate) {
-    return undefined;
-  }
-
-  try {
-    const parsed = JSON.parse(jsonCandidate) as unknown;
-
-    if (typeof parsed !== "object" || parsed === null) {
-      return undefined;
-    }
-
-    return parseAutopilotDecisionRecord(
-      parsed as Record<string, unknown>,
-      pass,
-    );
-  } catch {
-    return undefined;
-  }
-};
-
-const createSectionTranscript = (
-  sections: TaskExecutionSection[],
-  maxChars = 6_000,
-): string => {
-  return limitText(
-    sections
-      .map((section) => `## ${section.title}\n${section.lines.join("\n")}`)
-      .join("\n\n"),
-    maxChars,
-  );
-};
-
-const createAutopilotMonitorSystemPrompt = (config: RuntimeConfig): string => {
-  return [
-    "<role>You are Machdoch Monitor, a separate validator agent that judges whether the executor fully satisfied the user's request.</role>",
-    "<review_contract>Be strict about grounded evidence. Do not accept work because it sounds plausible. If requirements are partially satisfied, not verified, or only implied, choose continue. Call the structured report_autopilot_decision tool exactly once.</review_contract>",
-    "<safety_rules>Only use `complete` when the user's request is fully satisfied within the current workspace and tool policy boundaries. Prefer a continuation request over a false positive. Required actions must be concrete, minimal, and testable.</safety_rules>",
-    [
-      "<runtime>",
-      `Workspace root: ${config.workspaceRoot}`,
-      `Runtime mode: ${config.mode}`,
-      `Selected provider: ${config.provider}`,
-      `Selected model: ${config.model}`,
-      "</runtime>",
-    ].join("\n"),
-  ].join("\n\n");
-};
-
-const createAutopilotMonitorUserPrompt = (
-  task: string,
-  taskContext: ResolvedTaskContext,
-  cycleResult: ExecutorCycleOutcome,
-  priorDecisions: TaskAutopilotDecision[],
-): string => {
-  const priorDecisionLines =
-    priorDecisions.length > 0
-      ? priorDecisions.flatMap((decision) => [
-          `Pass ${decision.pass}: ${decision.decision} (${decision.confidence})`,
-          `Rationale: ${decision.rationale}`,
-          ...(decision.missingRequirements.length > 0
-            ? [
-                `Missing requirements: ${decision.missingRequirements.join(", ")}`,
-              ]
-            : []),
-          ...(decision.requiredActions.length > 0
-            ? [`Required actions: ${decision.requiredActions.join(", ")}`]
-            : []),
-        ])
-      : ["No prior validator decisions."];
-
-  return [
-    `<original_task>${task}</original_task>`,
-    `<effective_task>${taskContext.effectiveTask}</effective_task>`,
-    `<executor_summary>${cycleResult.result.summary}</executor_summary>`,
-    `<executed_tools>${cycleResult.result.executedTools.join(", ") || "none"}</executed_tools>`,
-    `<assistant_answer>${cycleResult.loopState.lastAssistantText ?? "(none)"}</assistant_answer>`,
-    `<prior_validator_history>${priorDecisionLines.join("\n")}</prior_validator_history>`,
-    `<grounded_evidence>${createSectionTranscript(cycleResult.result.outputSections)}</grounded_evidence>`,
-    "<decision_rule>Return `continue` if any user requirement appears incomplete, unverified, or contradicted by the evidence. Return `complete` only when the evidence shows the task is done as requested.</decision_rule>",
-  ].join("\n\n");
 };
 
 const finalizeExecutedResult = (
@@ -879,19 +207,6 @@ const runExecutorCycle = async (
   const executorIteration = continuationRequest
     ? continuationRequest.continuationIndex + 1
     : 1;
-  const systemPrompt = createExecutorSystemPrompt(
-    config,
-    taskContext,
-    toolSpecs,
-    conversationContext,
-    continuationRequest,
-  );
-  const userPrompt = createExecutorUserPrompt(
-    task,
-    taskContext,
-    conversationContext,
-    continuationRequest,
-  );
   const adapter = await createProviderAdapter(
     config,
     toolSpecs,
@@ -924,8 +239,19 @@ const runExecutorCycle = async (
 
   let turn = await adapter.startTurn({
     model: config.model,
-    systemPrompt,
-    userPrompt,
+    systemPrompt: createExecutorSystemPrompt(
+      config,
+      taskContext,
+      toolSpecs,
+      conversationContext,
+      continuationRequest,
+    ),
+    userPrompt: createExecutorUserPrompt(
+      task,
+      taskContext,
+      conversationContext,
+      continuationRequest,
+    ),
     tools: toolSpecs,
   });
 
@@ -957,18 +283,18 @@ const runExecutorCycle = async (
 
     if (finalResponseCall) {
       if (turn.toolCalls.length !== 1) {
-        const toolResults = [
-          createFinalResponseToolResult(
-            finalResponseCall.id,
-            "`submit_final_response` must be the only tool call in its turn.",
-            true,
-          ),
-        ];
-
+        turn = await adapter.continueTurn({
+          toolResults: [
+            createFinalResponseToolResult(
+              finalResponseCall.id,
+              "`submit_final_response` must be the only tool call in its turn.",
+              true,
+            ),
+          ],
+        });
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected because additional tool calls were present in the same turn.`,
         );
-        turn = await adapter.continueTurn({ toolResults });
         continue;
       }
 
@@ -977,18 +303,18 @@ const runExecutorCycle = async (
         finalResponseCall.arguments === null ||
         Array.isArray(finalResponseCall.arguments)
       ) {
-        const toolResults = [
-          createFinalResponseToolResult(
-            finalResponseCall.id,
-            "`submit_final_response` requires an object payload that matches the schema.",
-            true,
-          ),
-        ];
-
+        turn = await adapter.continueTurn({
+          toolResults: [
+            createFinalResponseToolResult(
+              finalResponseCall.id,
+              "`submit_final_response` requires an object payload that matches the schema.",
+              true,
+            ),
+          ],
+        });
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected invalid payload shape.`,
         );
-        turn = await adapter.continueTurn({ toolResults });
         continue;
       }
 
@@ -997,18 +323,18 @@ const runExecutorCycle = async (
       );
 
       if (!parsedPayload) {
-        const toolResults = [
-          createFinalResponseToolResult(
-            finalResponseCall.id,
-            "`submit_final_response` payload was missing one or more required fields.",
-            true,
-          ),
-        ];
-
+        turn = await adapter.continueTurn({
+          toolResults: [
+            createFinalResponseToolResult(
+              finalResponseCall.id,
+              "`submit_final_response` payload was missing one or more required fields.",
+              true,
+            ),
+          ],
+        });
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected incomplete payload.`,
         );
-        turn = await adapter.continueTurn({ toolResults });
         continue;
       }
 

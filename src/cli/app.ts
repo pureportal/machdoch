@@ -1,3 +1,6 @@
+import { getHelpText, parseCliArgs } from "./_helpers/cli-args.js";
+import { writeStdoutLine } from "./_helpers/cli-io.js";
+import { formatExecutionProgressLines } from "./_helpers/cli-output.js";
 import {
   printConfigSummary,
   printCustomizationSummary,
@@ -7,9 +10,6 @@ import {
   printSetGlobalMemorySummary,
   printToolSummary,
 } from "./_helpers/cli-summary-commands.js";
-import { getHelpText, parseCliArgs } from "./_helpers/cli-args.js";
-import { writeStdoutLine } from "./_helpers/cli-io.js";
-import { formatExecutionProgressLines } from "./_helpers/cli-output.js";
 import {
   printTaskPreview,
   runInteractiveChat,

@@ -1,14 +1,12 @@
-import { resolveConversationContext } from "./cli-task-run.ts";
-import type { ParsedCliArgs } from "./cli-args.ts";
 import type { TaskConversationContext } from "../../core/types.ts";
+import type { ParsedCliArgs } from "./cli-args.ts";
+import { resolveConversationContext } from "./cli-task-run.ts";
 
 const createArgs = (
   overrides: Partial<
     Pick<
       ParsedCliArgs,
-      | "conversationContextFile"
-      | "globalMemoryEnabled"
-      | "sessionMemoryEnabled"
+      "conversationContextFile" | "globalMemoryEnabled" | "sessionMemoryEnabled"
     >
   > = {},
 ): Pick<

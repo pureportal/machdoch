@@ -1,3 +1,8 @@
+import type { ReadOnlyInspectionTarget } from "../task-inspection.js";
+import type {
+  CreateFilePathReference,
+  TaskPathReference,
+} from "../task-paths.js";
 import type {
   ResolvedTaskContext,
   ResolvedToolPolicy,
@@ -9,11 +14,6 @@ import type {
   TaskExecutionState,
   ToolName,
 } from "../types.js";
-import type { ReadOnlyInspectionTarget } from "../task-inspection.js";
-import type {
-  CreateFilePathReference,
-  TaskPathReference,
-} from "../task-paths.js";
 
 export interface TaskExecutionRuntime {
   taskContext: ResolvedTaskContext | undefined;

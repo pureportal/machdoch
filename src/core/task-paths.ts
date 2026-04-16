@@ -219,9 +219,11 @@ const resolveWorkspacePathReference = (
   const unresolvedPath = isAbsolute(candidate)
     ? resolve(candidate)
     : resolve(workspaceRoot, candidate);
+  const resolvedWorkspaceRoot = existsSync(workspaceRoot)
+    ? realpathSync.native(workspaceRoot)
+    : resolve(workspaceRoot);
 
   try {
-    const resolvedWorkspaceRoot = realpathSync.native(workspaceRoot);
     const resolvedPath = resolvePathWithinExistingTree(unresolvedPath);
     const insideWorkspace = isPathInsideWorkspace(
       resolvedWorkspaceRoot,
@@ -241,10 +243,22 @@ const resolveWorkspacePathReference = (
         : {}),
     };
   } catch {
+    const insideWorkspace = isPathInsideWorkspace(
+      resolvedWorkspaceRoot,
+      unresolvedPath,
+    );
+
     return {
       requestedPath: candidate,
       resolvedPath: unresolvedPath,
-      insideWorkspace: false,
+      insideWorkspace,
+      ...(insideWorkspace
+        ? {
+            workspacePath: normalizeRelativePath(
+              relative(resolvedWorkspaceRoot, unresolvedPath),
+            ),
+          }
+        : {}),
     };
   }
 };
@@ -436,7 +450,9 @@ const inferCreateFileExtension = (task: string): string => {
 };
 
 const extractNamedCreateFileCandidate = (task: string): string | undefined => {
-  const match = task.match(/\b(?:named|called)\s+["'`]?([A-Za-z0-9_./\\-]+)["'`]?/iu);
+  const match = task.match(
+    /\b(?:named|called)\s+["'`]?([A-Za-z0-9_./\\-]+)["'`]?/iu,
+  );
   const candidate = cleanPathCandidate(match?.[1] ?? "");
 
   return candidate.length > 0 ? candidate : undefined;
@@ -455,7 +471,9 @@ const extractDerivedCreateFileBaseName = (task: string): string | undefined => {
   return candidate;
 };
 
-const resolveDefaultCreateFileCandidate = (task: string): string | undefined => {
+const resolveDefaultCreateFileCandidate = (
+  task: string,
+): string | undefined => {
   const tokens = createTokenSet(task);
 
   if (!hasAnyToken(tokens, CREATE_FILE_OBJECT_TOKENS)) {
@@ -494,11 +512,16 @@ export const resolveDeterministicCreateFileTarget = (
     return undefined;
   }
 
-  const explicitPathReference = extractTaskPathReferences(task, workspaceRoot)[0];
+  const explicitPathReference = extractTaskPathReferences(
+    task,
+    workspaceRoot,
+  )[0];
   const namedPathCandidate = extractNamedCreateFileCandidate(task);
   const fallbackCandidate = resolveDefaultCreateFileCandidate(task);
   const candidate =
-    explicitPathReference?.requestedPath ?? namedPathCandidate ?? fallbackCandidate;
+    explicitPathReference?.requestedPath ??
+    namedPathCandidate ??
+    fallbackCandidate;
 
   if (!candidate) {
     return undefined;

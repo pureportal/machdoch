@@ -21,6 +21,36 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+const WINDOWS_POWERSHELL_BOOTSTRAP_LINES = [
+  "$PSDefaultParameterValues['Invoke-WebRequest:UseBasicParsing'] = $true",
+  "$PSDefaultParameterValues['Invoke-RestMethod:UseBasicParsing'] = $true",
+] as const;
+
+export const resolveShellCommandInvocation = (
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+): {
+  shellExecutable: string;
+  shellArgs: string[];
+} => {
+  if (platform === "win32") {
+    return {
+      shellExecutable: "powershell.exe",
+      shellArgs: [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        [...WINDOWS_POWERSHELL_BOOTSTRAP_LINES, command].join(";\n"),
+      ],
+    };
+  }
+
+  return {
+    shellExecutable: "sh",
+    shellArgs: ["-lc", command],
+  };
+};
+
 export const createShellNetworkToolDefinitions = (
   config: RuntimeConfig,
 ): AgentToolDefinition[] => {
@@ -55,12 +85,8 @@ export const createShellNetworkToolDefinitions = (
           );
         }
 
-        const shellArgs =
-          process.platform === "win32"
-            ? ["-NoProfile", "-Command", command]
-            : ["-lc", command];
-        const shellExecutable =
-          process.platform === "win32" ? "powershell.exe" : "sh";
+        const { shellExecutable, shellArgs } =
+          resolveShellCommandInvocation(command);
 
         try {
           const { stdout, stderr } = await execFileAsync(

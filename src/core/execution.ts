@@ -1,5 +1,3 @@
-import { maybeExecuteModelDrivenTask } from "./agent-runtime.js";
-import { createContextSections } from "./_helpers/execution-sections.js";
 import {
   createFileWriteLabel,
   executeCreateFileTarget,
@@ -7,6 +5,7 @@ import {
   executeInspectionTarget,
   getInspectionLabel,
 } from "./_helpers/deterministic-task-execution.js";
+import { createContextSections } from "./_helpers/execution-sections.js";
 import {
   createExecutionResult,
   createInvariantViolationResult,
@@ -16,6 +15,7 @@ import {
   type TaskExecutionRuntime,
   verifyExecutedResult,
 } from "./_helpers/execution-state.js";
+import { maybeExecuteModelDrivenTask } from "./agent-runtime.js";
 import { resolveToolPolicies } from "./policy.js";
 import { resolveTaskContext } from "./task-context.js";
 import { resolveReadOnlyInspectionTarget } from "./task-inspection.js";

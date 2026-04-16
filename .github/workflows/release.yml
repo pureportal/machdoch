@@ -1,0 +1,216 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      version: ${{ steps.version.outputs.version }}
+      publish_on_success: ${{ steps.release.outputs.publish_on_success }}
+      delete_on_failure: ${{ steps.release.outputs.delete_on_failure }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag and verify project versions
+        id: version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+
+          if [ "$tag" = "$version" ] || [ -z "$version" ]; then
+            echo "Expected a version tag like v0.1.0 but got: $tag"
+            exit 1
+          fi
+
+          package_version="$(node -e "const fs = require('node:fs'); console.log(JSON.parse(fs.readFileSync('package.json', 'utf8')).version)")"
+          tauri_version="$(node -e "const fs = require('node:fs'); console.log(JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8')).version)")"
+
+          if [ "$package_version" != "$version" ]; then
+            echo "Tag version $version does not match package.json version $package_version"
+            exit 1
+          fi
+
+          if [ "$tauri_version" != "$version" ]; then
+            echo "Tag version $version does not match src-tauri/tauri.conf.json version $tauri_version"
+            exit 1
+          fi
+
+          echo "tag_name=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Create or reuse GitHub release
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.version.outputs.tag_name }}
+          RELEASE_TITLE: machdoch ${{ steps.version.outputs.tag_name }}
+        shell: bash
+        run: |
+          if gh release view "$TAG_NAME" --json databaseId,isDraft >/dev/null 2>&1; then
+            release_id="$(gh release view "$TAG_NAME" --json databaseId --jq '.databaseId')"
+            is_draft="$(gh release view "$TAG_NAME" --json isDraft --jq '.isDraft')"
+
+            gh release edit "$TAG_NAME" --title "$RELEASE_TITLE"
+
+            if [ "$is_draft" = "true" ]; then
+              echo "publish_on_success=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "publish_on_success=false" >> "$GITHUB_OUTPUT"
+            fi
+
+            echo "delete_on_failure=false" >> "$GITHUB_OUTPUT"
+          else
+            gh release create "$TAG_NAME" \
+              --title "$RELEASE_TITLE" \
+              --generate-notes \
+              --draft
+
+            release_id="$(gh release view "$TAG_NAME" --json databaseId --jq '.databaseId')"
+            echo "publish_on_success=true" >> "$GITHUB_OUTPUT"
+            echo "delete_on_failure=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+
+  build-and-release:
+    needs: prepare-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            bundle_patterns: |
+              src-tauri/target/release/bundle/msi/*.msi
+              src-tauri/target/release/bundle/nsis/*-setup.exe
+          - platform: ubuntu-22.04
+            bundle_patterns: |
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/rpm/*.rpm
+              src-tauri/target/release/bundle/appimage/*.AppImage
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and upload release assets
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          tagName: ${{ needs.prepare-release.outputs.tag_name }}
+
+      - name: List bundle outputs
+        shell: bash
+        run: |
+          ls -la src-tauri/target/release/bundle || true
+          find src-tauri/target/release/bundle -maxdepth 3 -type f || true
+
+      - name: Collect bundle artifacts
+        id: bundles
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=()
+          while IFS= read -r pattern; do
+            [ -z "$pattern" ] && continue
+            for file in $pattern; do
+              if [ -f "$file" ]; then
+                files+=("$file")
+              fi
+            done
+          done <<'EOF'
+          ${{ matrix.bundle_patterns }}
+          EOF
+
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No release artifacts found."
+            exit 1
+          fi
+
+          printf "paths<<EOF\n%s\nEOF\n" "$(printf "%s\n" "${files[@]}")" >> "$GITHUB_OUTPUT"
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          artifact-name: sbom-${{ matrix.platform }}.spdx.json
+          output-file: sbom-${{ matrix.platform }}.spdx.json
+          format: spdx-json
+          upload-release-assets: false
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ steps.bundles.outputs.paths }}
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@v3
+        with:
+          subject-path: ${{ steps.bundles.outputs.paths }}
+          sbom-path: sbom-${{ matrix.platform }}.spdx.json
+
+  publish-release:
+    needs: [prepare-release, build-and-release]
+    if: needs.prepare-release.outputs.publish_on_success == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
+        run: gh release edit "$TAG_NAME" --draft=false
+
+  cleanup-release:
+    name: Cleanup Draft Release on Failure
+    needs: [prepare-release, build-and-release, publish-release]
+    if: always() && failure() && needs.prepare-release.outputs.delete_on_failure == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete draft release created by this workflow
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
+        run: gh release delete "$TAG_NAME" --yes

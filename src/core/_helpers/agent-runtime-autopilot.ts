@@ -1,0 +1,235 @@
+import type {
+  AgentModelToolSpec,
+  AgentModelTurn,
+  ResolvedTaskContext,
+  RuntimeConfig,
+  TaskAutopilotDecision,
+  TaskAutopilotReport,
+  TaskExecutionSection,
+} from "../types.js";
+import { coerceString, coerceStringArray } from "./agent-runtime-shared.js";
+import type { ExecutorCycleOutcome } from "./agent-runtime-types.js";
+import { limitText } from "./runtime-text.js";
+
+export const AUTOPILOT_MONITOR_TOOL_NAME = "report_autopilot_decision";
+
+export const createAutopilotAuditSection = (
+  report: TaskAutopilotReport,
+): TaskExecutionSection => {
+  return {
+    title: "Autopilot audit",
+    lines: [
+      `executor iterations: ${report.executorIterations}/${report.maxExecutorIterations}`,
+      `validator passes: ${report.validatorPasses}`,
+      `validator continuation requests: ${report.continuationCount}`,
+      ...report.decisions.flatMap((decision) => [
+        `pass ${decision.pass}: ${decision.decision} (${decision.confidence})`,
+        `  rationale: ${decision.rationale}`,
+        ...(decision.missingRequirements.length > 0
+          ? [
+              `  missing requirements: ${decision.missingRequirements.join(", ")}`,
+            ]
+          : []),
+        ...(decision.requiredActions.length > 0
+          ? [`  required actions: ${decision.requiredActions.join(", ")}`]
+          : []),
+      ]),
+    ],
+  };
+};
+
+export const createAutopilotMonitorTool = (): AgentModelToolSpec => {
+  return {
+    name: AUTOPILOT_MONITOR_TOOL_NAME,
+    description:
+      "Return the structured validation decision for the latest executor iteration. Call this exactly once after reviewing the grounded evidence.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        decision: {
+          type: "string",
+          enum: ["complete", "continue"],
+          description:
+            "Use `complete` only when the user request is fully satisfied with sufficient evidence. Otherwise use `continue`.",
+        },
+        confidence: {
+          type: "string",
+          enum: ["low", "medium", "high"],
+          description: "Your confidence in the validation judgment.",
+        },
+        rationale: {
+          type: "string",
+          description:
+            "A concise explanation referencing grounded evidence or missing evidence.",
+        },
+        missingRequirements: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Concrete requirements that are still unmet or not yet verified.",
+        },
+        requiredActions: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Concrete next actions the executor should take before the task can be accepted.",
+        },
+      },
+      required: [
+        "decision",
+        "confidence",
+        "rationale",
+        "missingRequirements",
+        "requiredActions",
+      ],
+    },
+  };
+};
+
+const extractJsonCandidate = (value: string): string | undefined => {
+  const trimmed = value.trim();
+
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    return trimmed;
+  }
+
+  const startIndex = trimmed.indexOf("{");
+  const endIndex = trimmed.lastIndexOf("}");
+
+  if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
+    return undefined;
+  }
+
+  return trimmed.slice(startIndex, endIndex + 1);
+};
+
+const parseAutopilotDecisionRecord = (
+  record: Record<string, unknown>,
+  pass: number,
+): TaskAutopilotDecision | undefined => {
+  const decision = coerceString(record, "decision");
+  const confidence = coerceString(record, "confidence");
+  const rationale = coerceString(record, "rationale");
+  const missingRequirements = coerceStringArray(record, "missingRequirements");
+  const requiredActions = coerceStringArray(record, "requiredActions");
+
+  if (
+    (decision !== "complete" && decision !== "continue") ||
+    (confidence !== "low" &&
+      confidence !== "medium" &&
+      confidence !== "high") ||
+    !rationale ||
+    !missingRequirements ||
+    !requiredActions
+  ) {
+    return undefined;
+  }
+
+  return {
+    pass,
+    decision,
+    confidence,
+    rationale,
+    missingRequirements,
+    requiredActions,
+  };
+};
+
+export const parseAutopilotDecisionFromTurn = (
+  turn: AgentModelTurn,
+  pass: number,
+): TaskAutopilotDecision | undefined => {
+  const toolCall = turn.toolCalls.find(
+    (call) => call.name === AUTOPILOT_MONITOR_TOOL_NAME,
+  );
+
+  if (toolCall) {
+    return parseAutopilotDecisionRecord(toolCall.arguments, pass);
+  }
+
+  const jsonCandidate = extractJsonCandidate(turn.text);
+
+  if (!jsonCandidate) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(jsonCandidate) as unknown;
+
+    if (typeof parsed !== "object" || parsed === null) {
+      return undefined;
+    }
+
+    return parseAutopilotDecisionRecord(
+      parsed as Record<string, unknown>,
+      pass,
+    );
+  } catch {
+    return undefined;
+  }
+};
+
+const createSectionTranscript = (
+  sections: TaskExecutionSection[],
+  maxChars = 6_000,
+): string => {
+  return limitText(
+    sections
+      .map((section) => `## ${section.title}\n${section.lines.join("\n")}`)
+      .join("\n\n"),
+    maxChars,
+  );
+};
+
+export const createAutopilotMonitorSystemPrompt = (
+  config: RuntimeConfig,
+): string => {
+  return [
+    "<role>You are Machdoch Monitor, a separate validator agent that judges whether the executor fully satisfied the user's request.</role>",
+    "<review_contract>Be strict about grounded evidence. Do not accept work because it sounds plausible. If requirements are partially satisfied, not verified, or only implied, choose continue. Call the structured report_autopilot_decision tool exactly once.</review_contract>",
+    "<safety_rules>Only use `complete` when the user's request is fully satisfied within the current workspace and tool policy boundaries. Prefer a continuation request over a false positive. Required actions must be concrete, minimal, and testable.</safety_rules>",
+    [
+      "<runtime>",
+      `Workspace root: ${config.workspaceRoot}`,
+      `Runtime mode: ${config.mode}`,
+      `Selected provider: ${config.provider}`,
+      `Selected model: ${config.model}`,
+      "</runtime>",
+    ].join("\n"),
+  ].join("\n\n");
+};
+
+export const createAutopilotMonitorUserPrompt = (
+  task: string,
+  taskContext: ResolvedTaskContext,
+  cycleResult: ExecutorCycleOutcome,
+  priorDecisions: TaskAutopilotDecision[],
+): string => {
+  const priorDecisionLines =
+    priorDecisions.length > 0
+      ? priorDecisions.flatMap((decision) => [
+          `Pass ${decision.pass}: ${decision.decision} (${decision.confidence})`,
+          `Rationale: ${decision.rationale}`,
+          ...(decision.missingRequirements.length > 0
+            ? [
+                `Missing requirements: ${decision.missingRequirements.join(", ")}`,
+              ]
+            : []),
+          ...(decision.requiredActions.length > 0
+            ? [`Required actions: ${decision.requiredActions.join(", ")}`]
+            : []),
+        ])
+      : ["No prior validator decisions."];
+
+  return [
+    `<original_task>${task}</original_task>`,
+    `<effective_task>${taskContext.effectiveTask}</effective_task>`,
+    `<executor_summary>${cycleResult.result.summary}</executor_summary>`,
+    `<executed_tools>${cycleResult.result.executedTools.join(", ") || "none"}</executed_tools>`,
+    `<assistant_answer>${cycleResult.loopState.lastAssistantText ?? "(none)"}</assistant_answer>`,
+    `<prior_validator_history>${priorDecisionLines.join("\n")}</prior_validator_history>`,
+    `<grounded_evidence>${createSectionTranscript(cycleResult.result.outputSections)}</grounded_evidence>`,
+    "<decision_rule>Return `continue` if any user requirement appears incomplete, unverified, or contradicted by the evidence. Return `complete` only when the evidence shows the task is done as requested.</decision_rule>",
+  ].join("\n\n");
+};
