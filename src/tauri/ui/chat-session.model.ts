@@ -1,5 +1,5 @@
 import { normalizeConversationMemoryEntries } from "../../core/memory.js";
-import type { ConversationMemoryEntry } from "../../core/types.js";
+import type { ConversationMemoryEntry, RunMode } from "../../core/types.js";
 import {
   getDefaultModelForProvider,
   type RuntimeProvider,
@@ -23,6 +23,7 @@ export interface ChatSessionRecord {
   workspace: string | null;
   provider: RuntimeProvider;
   model: string;
+  mode?: RunMode;
   draft: string;
   manualTitle?: string;
   messages: ChatSessionMessage[];
@@ -40,10 +41,16 @@ export interface ShellPersistedState {
   sessions: ChatSessionRecord[];
   lastSelectedProvider: RuntimeProvider;
   lastSelectedModelByProvider: Partial<Record<RuntimeProvider, string>>;
+  lastSelectedMode?: RunMode;
 }
 
 const DEFAULT_PROVIDER: RuntimeProvider = "openai";
+const RUN_MODES: RunMode[] = ["safe", "ask", "auto"];
 const RUNTIME_PROVIDERS: RuntimeProvider[] = ["openai", "anthropic", "google"];
+
+const isRunMode = (value: unknown): value is RunMode => {
+  return typeof value === "string" && RUN_MODES.includes(value as RunMode);
+};
 
 const isRuntimeProvider = (value: unknown): value is RuntimeProvider => {
   return (
@@ -68,6 +75,7 @@ export const createSession = (
     workspace: overrides.workspace ?? null,
     provider,
     model: overrides.model ?? getDefaultModelForProvider(provider),
+    ...(overrides.mode ? { mode: overrides.mode } : {}),
     draft: overrides.draft ?? "",
     ...(overrides.manualTitle ? { manualTitle: overrides.manualTitle } : {}),
     messages: overrides.messages ?? [],
@@ -138,10 +146,12 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
               ? session.provider
               : DEFAULT_PROVIDER;
             const preserveModel = provider === session.provider;
+            const mode = isRunMode(session.mode) ? session.mode : undefined;
 
             return createSession({
               ...session,
               provider,
+              ...(mode ? { mode } : {}),
               model:
                 preserveModel &&
                 typeof session.model === "string" &&
@@ -205,6 +215,9 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
 
     return accumulator;
   }, {});
+  const lastSelectedMode = isRunMode(candidate.lastSelectedMode)
+    ? candidate.lastSelectedMode
+    : undefined;
 
   return {
     version: 1,
@@ -217,6 +230,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
       ...fallback.lastSelectedModelByProvider,
       ...lastSelectedModelByProvider,
     },
+    ...(lastSelectedMode ? { lastSelectedMode } : {}),
   };
 };
 

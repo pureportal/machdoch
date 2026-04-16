@@ -2,35 +2,35 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
-    AlertCircle,
-    Archive,
-    Bot,
-    Brain,
-    BrainCircuit,
-    Check,
-    CircleDashed,
-    Cog,
-    FolderOpen,
-    ListFilter,
-    LoaderCircle,
-    MessageSquare,
-    PencilLine,
-    Plus,
-    SendHorizonal,
-    ShieldAlert,
-    TerminalSquare,
-    Trash2,
-    User,
-    WandSparkles,
+  AlertCircle,
+  Archive,
+  Bot,
+  Brain,
+  BrainCircuit,
+  Check,
+  CircleDashed,
+  Cog,
+  FolderOpen,
+  ListFilter,
+  LoaderCircle,
+  MessageSquare,
+  PencilLine,
+  Plus,
+  SendHorizonal,
+  ShieldAlert,
+  TerminalSquare,
+  Trash2,
+  User,
+  WandSparkles,
 } from "lucide-react";
 import {
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-    type JSX,
-    type KeyboardEvent,
-    type SetStateAction,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type KeyboardEvent,
+  type SetStateAction,
 } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
@@ -39,84 +39,85 @@ import { Avatar } from "./components/ui/avatar";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
 } from "./components/ui/dialog";
 import { Textarea } from "./components/ui/textarea";
 
 import {
-    MAX_SESSION_MEMORY_ENTRIES,
-    mergeConversationMemoryEntries,
+  MAX_SESSION_MEMORY_ENTRIES,
+  mergeConversationMemoryEntries,
 } from "../../core/memory.js";
 import type {
-    ConversationHistoryEntry,
-    TaskConversationContext,
-    TaskExecutionResult,
+  ConversationHistoryEntry,
+  RunMode,
+  TaskConversationContext,
+  TaskExecutionResult,
 } from "../../core/types.js";
 import {
-    canArchiveSession,
-    type ChatSessionMessage,
-    createInitialShellState,
-    createSession,
-    createVisibleConversationMessages,
-    getSessionOverviewStatus,
-    getSessionTitle,
-    isSessionArchived,
-    normalizeShellState,
-    sortSessionsByUpdatedAt,
-    type ChatSessionRecord,
-    type SessionOverviewStatus,
-    type ShellPersistedState,
+  canArchiveSession,
+  createInitialShellState,
+  createSession,
+  createVisibleConversationMessages,
+  getSessionOverviewStatus,
+  getSessionTitle,
+  isSessionArchived,
+  normalizeShellState,
+  sortSessionsByUpdatedAt,
+  type ChatSessionMessage,
+  type ChatSessionRecord,
+  type SessionOverviewStatus,
+  type ShellPersistedState,
 } from "./chat-session.model";
 import { Input } from "./components/ui/input";
 import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
 } from "./components/ui/popover";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { Separator } from "./components/ui/separator";
 import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "./components/ui/tooltip";
 import { loadShellState, saveShellState } from "./lib/shell-store";
 import { cn } from "./lib/utils";
 import {
-    getCatalogModelsForProvider,
-    getDefaultModelForProvider,
-    getProviderLabel,
-    SUPPORTED_PROVIDER_ORDER,
-    type CatalogModelStage,
-    type RuntimeProvider,
+  getCatalogModelsForProvider,
+  getDefaultModelForProvider,
+  getProviderLabel,
+  SUPPORTED_PROVIDER_ORDER,
+  type CatalogModelStage,
+  type RuntimeProvider,
 } from "./model-catalog";
 import {
-    loadGlobalProviderAvailability,
-    loadUserMemorySettings,
-    loadUserWebSearchSettings,
-    loadWorkspaceRuntimeSnapshot,
-    openWorkspacePath,
-    runDesktopTask,
-    saveUserGlobalMemoryEnabled,
-    saveUserProviderApiKey,
-    saveUserWebSearchActiveProvider,
-    saveUserWebSearchApiKey,
-    USER_API_KEY_PROVIDER_ORDER,
-    USER_WEB_SEARCH_PROVIDER_ORDER,
-    type RuntimeProviderAvailability,
-    type RuntimeSnapshot,
-    type UserApiKeyProvider,
-    type UserMemorySettings,
-    type UserProviderApiKeys,
-    type UserWebSearchApiKeyProvider,
-    type UserWebSearchApiKeys,
-    type UserWebSearchSettings,
-    type WebSearchProvider,
+  loadGlobalProviderAvailability,
+  loadUserMemorySettings,
+  loadUserWebSearchSettings,
+  loadWorkspaceRuntimeSnapshot,
+  openWorkspacePath,
+  runDesktopTask,
+  saveUserGlobalMemoryEnabled,
+  saveUserProviderApiKey,
+  saveUserWebSearchActiveProvider,
+  saveUserWebSearchApiKey,
+  USER_API_KEY_PROVIDER_ORDER,
+  USER_WEB_SEARCH_PROVIDER_ORDER,
+  type RuntimeProviderAvailability,
+  type RuntimeSnapshot,
+  type UserApiKeyProvider,
+  type UserMemorySettings,
+  type UserProviderApiKeys,
+  type UserWebSearchApiKeyProvider,
+  type UserWebSearchApiKeys,
+  type UserWebSearchSettings,
+  type WebSearchProvider,
 } from "./runtime";
 import { TaskPanel } from "./task-panel";
 import { TaskThinkingPanel } from "./task-thinking-panel";
@@ -148,6 +149,59 @@ const MODEL_STAGE_CLASSES: Record<CatalogModelStage, string> = {
   specialized: "border-sky-500/20 bg-sky-500/10 text-sky-200",
   open: "border-violet-500/20 bg-violet-500/10 text-violet-200",
 };
+
+const RUN_MODE_ORDER = ["safe", "ask", "auto"] as const satisfies ReadonlyArray<RunMode>;
+
+const RUN_MODE_META = {
+  safe: {
+    label: "Safe mode",
+    description: "Keep each run read-only or otherwise low-risk.",
+    icon: ShieldAlert,
+    triggerClassName:
+      "border-emerald-500/20 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15 hover:text-white",
+    selectedClassName:
+      "border-emerald-500/30 bg-emerald-500/10 text-emerald-100",
+    iconClassName: "text-emerald-300",
+    badgeClassName:
+      "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
+  },
+  ask: {
+    label: "Ask mode",
+    description: "Pause for approval before riskier file or shell actions.",
+    icon: MessageSquare,
+    triggerClassName:
+      "border-amber-500/20 bg-amber-500/10 text-amber-100 hover:bg-amber-500/15 hover:text-white",
+    selectedClassName:
+      "border-amber-500/30 bg-amber-500/10 text-amber-100",
+    iconClassName: "text-amber-300",
+    badgeClassName:
+      "border-amber-500/20 bg-amber-500/10 text-amber-200",
+  },
+  auto: {
+    label: "Autopilot",
+    description:
+      "Let machdoch continue automatically when it can verify the next step.",
+    icon: WandSparkles,
+    triggerClassName:
+      "border-violet-500/20 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
+    selectedClassName:
+      "border-violet-500/30 bg-violet-500/10 text-violet-100",
+    iconClassName: "text-violet-300",
+    badgeClassName:
+      "border-violet-500/20 bg-violet-500/10 text-violet-200",
+  },
+} satisfies Record<
+  RunMode,
+  {
+    label: string;
+    description: string;
+    icon: typeof ShieldAlert;
+    triggerClassName: string;
+    selectedClassName: string;
+    iconClassName: string;
+    badgeClassName: string;
+  }
+>;
 
 const SESSION_SCOPE_FILTERS = [
   { id: "all", label: "All", icon: ListFilter },
@@ -263,6 +317,23 @@ const removeSessionArchiveFlag = (
   delete sessionWithoutArchive.archivedAt;
 
   return sessionWithoutArchive;
+};
+
+const removeSessionModeOverride = (
+  session: ChatSessionRecord,
+): ChatSessionRecord => {
+  const sessionWithoutMode = { ...session };
+
+  delete sessionWithoutMode.mode;
+
+  return sessionWithoutMode;
+};
+
+const getEffectiveSessionMode = (
+  sessionMode: RunMode | undefined,
+  runtimeSnapshot: RuntimeSnapshot | null,
+): RunMode => {
+  return sessionMode ?? runtimeSnapshot?.mode ?? "ask";
 };
 
 const markdownComponents: Components = {
@@ -1081,6 +1152,7 @@ export const ChatSession = (): JSX.Element => {
       const session = createSession({
         workspace: activeSession.workspace,
         provider,
+        ...(prev.lastSelectedMode ? { mode: prev.lastSelectedMode } : {}),
         model:
           prev.lastSelectedModelByProvider[provider] ??
           getDefaultModelForProvider(provider),
@@ -1104,6 +1176,7 @@ export const ChatSession = (): JSX.Element => {
         const replacement = createSession({
           workspace: activeSession.workspace,
           provider: prev.lastSelectedProvider,
+          ...(prev.lastSelectedMode ? { mode: prev.lastSelectedMode } : {}),
           model:
             prev.lastSelectedModelByProvider[prev.lastSelectedProvider] ??
             getDefaultModelForProvider(prev.lastSelectedProvider),
@@ -1221,6 +1294,42 @@ export const ChatSession = (): JSX.Element => {
           : session,
       ),
     }));
+  };
+
+  const handleSessionModeSelection = (mode: RunMode | null): void => {
+    applyShellState((prev) => {
+      const nextUpdatedAt = Date.now();
+      const nextSessions = prev.sessions.map((session) => {
+        if (session.id !== prev.activeSessionId) {
+          return session;
+        }
+
+        if (mode) {
+          return {
+            ...session,
+            mode,
+            updatedAt: nextUpdatedAt,
+          };
+        }
+
+        return {
+          ...removeSessionModeOverride(session),
+          updatedAt: nextUpdatedAt,
+        };
+      });
+      const nextState: ShellPersistedState = {
+        ...prev,
+        sessions: nextSessions,
+      };
+
+      if (mode) {
+        nextState.lastSelectedMode = mode;
+      } else {
+        delete nextState.lastSelectedMode;
+      }
+
+      return nextState;
+    });
   };
 
   const handleProviderSetupSave = async (): Promise<void> => {
@@ -1469,6 +1578,7 @@ export const ChatSession = (): JSX.Element => {
       conversationContext,
       provider: selectedProvider,
       model: selectedModel,
+      ...(activeSession.mode ? { mode: activeSession.mode } : {}),
       taskId,
     });
     let taskFailureReported = false;
@@ -1656,6 +1766,14 @@ export const ChatSession = (): JSX.Element => {
   const canSendMessage = Boolean(activeSession.draft.trim());
   const sessionMemoryFactCount = activeSession.sessionMemory.length;
   const globalMemoryFactCount = userMemorySettings.entries.length;
+  const defaultRunMode = runtimeSnapshot?.mode ?? "ask";
+  const activeRunMode = getEffectiveSessionMode(
+    activeSession.mode,
+    runtimeSnapshot,
+  );
+  const activeRunModeMeta = RUN_MODE_META[activeRunMode];
+  const ActiveRunModeIcon = activeRunModeMeta.icon;
+  const isUsingWorkspaceDefaultMode = !activeSession.mode;
   const sessionListCountLabel =
     filteredSessions.length === shellState.sessions.length
       ? `${shellState.sessions.length} saved session${shellState.sessions.length === 1 ? "" : "s"}`
@@ -1677,8 +1795,15 @@ export const ChatSession = (): JSX.Element => {
       <Dialog open={catalogOpen} onOpenChange={setCatalogOpen}>
         <div className="dark flex h-screen w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 font-sans text-slate-100 antialiased">
           <div className="relative z-50 flex h-10 w-full shrink-0 select-none items-center border-b border-slate-900 bg-slate-950/90 px-3">
-            <div aria-hidden="true" className="absolute inset-0" data-tauri-drag-region />
-            <div className="relative z-10 flex items-center gap-2" data-tauri-drag-region>
+            <div
+              aria-hidden="true"
+              className="absolute inset-0"
+              data-tauri-drag-region
+            />
+            <div
+              className="relative z-10 flex items-center gap-2"
+              data-tauri-drag-region
+            >
               <TerminalSquare
                 className="h-4 w-4 text-sky-500"
                 data-tauri-drag-region
@@ -1882,7 +2007,9 @@ export const ChatSession = (): JSX.Element => {
                                 variant="ghost"
                                 aria-label={`Status: ${filter.label}`}
                                 aria-pressed={isSelected}
-                                onClick={() => setSessionStatusFilter(filter.id)}
+                                onClick={() =>
+                                  setSessionStatusFilter(filter.id)
+                                }
                                 className={cn(
                                   "h-8 w-8 rounded-full border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
                                   isSelected &&
@@ -2029,7 +2156,6 @@ export const ChatSession = (): JSX.Element => {
                       );
                     })
                   )}
-
                 </div>
               </ScrollArea>
             </aside>
@@ -2096,6 +2222,14 @@ export const ChatSession = (): JSX.Element => {
                         </Badge>
                         <Badge className="border-slate-700 bg-slate-900 text-slate-300">
                           {activeSession.model}
+                        </Badge>
+                        <Badge
+                          className={cn(
+                            "border",
+                            activeRunModeMeta.badgeClassName,
+                          )}
+                        >
+                          {activeRunModeMeta.label}
                         </Badge>
                         {activeSession.workspace ? (
                           <Badge className="border-slate-700 bg-slate-900 text-slate-300">
@@ -2181,6 +2315,19 @@ export const ChatSession = (): JSX.Element => {
                               <Badge className="border-slate-700 bg-slate-900 text-slate-300">
                                 Model: {activeSession.model}
                               </Badge>
+                              <Badge
+                                className={cn(
+                                  "border",
+                                  activeRunModeMeta.badgeClassName,
+                                )}
+                              >
+                                Mode: {activeRunModeMeta.label}
+                              </Badge>
+                              {isUsingWorkspaceDefaultMode ? (
+                                <Badge className="border-slate-700 bg-slate-900 text-slate-300">
+                                  Uses workspace default
+                                </Badge>
+                              ) : null}
                             </div>
                           </div>
 
@@ -2504,6 +2651,125 @@ export const ChatSession = (): JSX.Element => {
                                   </div>
                                 </div>
                               ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              aria-label={`Execution mode: ${activeRunModeMeta.label}`}
+                              className={cn(
+                                "h-8 rounded-full border px-3 text-xs font-medium shadow-none",
+                                activeRunModeMeta.triggerClassName,
+                              )}
+                            >
+                              <ActiveRunModeIcon
+                                className={cn(
+                                  "mr-2 h-3.5 w-3.5",
+                                  activeRunModeMeta.iconClassName,
+                                )}
+                              />
+                              {activeRunModeMeta.label}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            align="start"
+                            className="w-96 rounded-3xl border-slate-800 bg-slate-950/95 p-5 backdrop-blur-xl shadow-2xl"
+                          >
+                            <div className="grid gap-3">
+                              <div className="grid gap-1">
+                                <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
+                                  Execution mode
+                                </p>
+                                <p className="text-sm leading-6 text-slate-400">
+                                  Switch between safe, approval-first, and
+                                  autopilot runs without leaving the composer.
+                                </p>
+                              </div>
+
+                              <button
+                                type="button"
+                                aria-label="Use workspace default mode"
+                                onClick={() => handleSessionModeSelection(null)}
+                                className={cn(
+                                  "flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-all",
+                                  isUsingWorkspaceDefaultMode
+                                    ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
+                                    : "border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
+                                )}
+                              >
+                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-300">
+                                  <CircleDashed className="h-4 w-4" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <p className="text-sm font-semibold text-slate-100">
+                                      Workspace default
+                                    </p>
+                                    {isUsingWorkspaceDefaultMode ? (
+                                      <Badge className="border-sky-500/20 bg-sky-500/10 text-sky-200">
+                                        Current
+                                      </Badge>
+                                    ) : null}
+                                  </div>
+                                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                                    {`Currently ${RUN_MODE_META[defaultRunMode].label}. Use your workspace profile, config, or environment default.`}
+                                  </p>
+                                </div>
+                              </button>
+
+                              <div className="grid gap-2">
+                                {RUN_MODE_ORDER.map((mode) => {
+                                  const meta = RUN_MODE_META[mode];
+                                  const ModeIcon = meta.icon;
+                                  const isSelected = activeSession.mode === mode;
+
+                                  return (
+                                    <button
+                                      key={mode}
+                                      type="button"
+                                      aria-label={`Choose ${meta.label}`}
+                                      onClick={() =>
+                                        handleSessionModeSelection(mode)
+                                      }
+                                      className={cn(
+                                        "flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-all",
+                                        isSelected
+                                          ? meta.selectedClassName
+                                          : "border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
+                                      )}
+                                    >
+                                      <div
+                                        className={cn(
+                                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950",
+                                          meta.iconClassName,
+                                        )}
+                                      >
+                                        <ModeIcon className="h-4 w-4" />
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center justify-between gap-3">
+                                          <p className="text-sm font-semibold text-slate-100">
+                                            {meta.label}
+                                          </p>
+                                          {isSelected ? (
+                                            <Badge className="border-slate-700 bg-slate-950 text-slate-200">
+                                              <Check className="mr-1 h-3 w-3" />
+                                              Current
+                                            </Badge>
+                                          ) : null}
+                                        </div>
+                                        <p className="mt-1 text-xs leading-5 text-slate-400">
+                                          {meta.description}
+                                        </p>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             </div>
                           </PopoverContent>
                         </Popover>

@@ -79,10 +79,7 @@ const selectWorkspace = async (): Promise<void> => {
 const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
 
 const storeShellState = (state: ShellPersistedState): void => {
-  window.localStorage.setItem(
-    SHELL_STATE_STORAGE_KEY,
-    JSON.stringify(state),
-  );
+  window.localStorage.setItem(SHELL_STATE_STORAGE_KEY, JSON.stringify(state));
 };
 
 const createStoredShellState = (): ShellPersistedState => {
@@ -223,13 +220,11 @@ const getSessionRow = (title: string): HTMLElement => {
 };
 
 const getVisibleSessionButtonLabels = (): string[] => {
-  return screen
-    .getAllByRole("button")
-    .flatMap((button) => {
-      const label = button.getAttribute("aria-label");
+  return screen.getAllByRole("button").flatMap((button) => {
+    const label = button.getAttribute("aria-label");
 
-      return label?.startsWith("Open session ") ? [label] : [];
-    });
+    return label?.startsWith("Open session ") ? [label] : [];
+  });
 };
 
 const findByTextContent = (text: string): Promise<HTMLElement> => {
@@ -296,6 +291,57 @@ describe("ChatSession component", () => {
           provider: expect.any(String),
         }),
       );
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "lets you switch the task mode from the composer",
+    async () => {
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockResolvedValue({
+          execution: createMockExecutionFixture(
+            "scan this workspace and explain the setup",
+            "/mock/home/path",
+            { mode: "auto" },
+          ),
+        });
+
+      render(<ChatSession />);
+
+      fireEvent.click(
+        screen.getByRole("button", { name: /Execution mode: Ask mode/i }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /Choose Autopilot/i }),
+      );
+
+      expect(
+        screen.getByRole("button", { name: /Execution mode: Autopilot/i }),
+      ).toBeDefined();
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: "scan this workspace and explain the setup" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledWith(
+          null,
+          "scan this workspace and explain the setup",
+          expect.objectContaining({
+            mode: "auto",
+            model: expect.any(String),
+            provider: expect.any(String),
+          }),
+        );
+      });
 
       runDesktopTaskSpy.mockRestore();
     },
@@ -681,9 +727,7 @@ describe("ChatSession component", () => {
         }),
       ).toBeNull();
 
-      fireEvent.click(
-        screen.getByRole("button", { name: "Status: Running" }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: "Status: Running" }));
 
       expect(
         screen.getByRole("button", { name: "Open session Running session" }),
@@ -695,9 +739,7 @@ describe("ChatSession component", () => {
       fireEvent.click(
         screen.getByRole("button", { name: "Status: Any status" }),
       );
-      fireEvent.click(
-        screen.getByRole("button", { name: "Scope: Archived" }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: "Scope: Archived" }));
       const archivedScopeButton = screen.getByRole("button", {
         name: "Scope: Archived",
       });
@@ -755,9 +797,7 @@ describe("ChatSession component", () => {
         screen.queryByRole("button", { name: "Open session Done session" }),
       ).toBeNull();
 
-      fireEvent.click(
-        screen.getByRole("button", { name: "Scope: Archived" }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: "Scope: Archived" }));
       const archivedScopeButton = screen.getByRole("button", {
         name: "Scope: Archived",
       });
@@ -793,9 +833,7 @@ describe("ChatSession component", () => {
         }),
       ).toBeDefined();
 
-      fireEvent.click(
-        screen.getByRole("button", { name: "Scope: Archived" }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: "Scope: Archived" }));
 
       expect(
         screen.queryByRole("button", {
