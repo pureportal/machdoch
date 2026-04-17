@@ -3,8 +3,10 @@ use std::{
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::{Arc, Mutex},
+    sync::atomic::{AtomicBool, Ordering},
     thread,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(target_os = "windows")]
@@ -17,6 +19,10 @@ use tauri::Emitter;
 use crate::runtime_snapshot::resolve_workspace_root_path;
 
 const DESKTOP_TASK_PROGRESS_EVENT: &str = "desktop-task-progress";
+const DESKTOP_TASK_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
+const DESKTOP_TASK_WAIT_POLL_MS: u64 = 250;
+
+pub struct DesktopTaskCancelMap(pub Mutex<std::collections::HashMap<String, Arc<AtomicBool>>>);
 
 #[cfg(target_os = "windows")]
 const DETACHED_PROCESS: u32 = 0x00000008;
@@ -298,6 +304,16 @@ fn join_worker<T>(
     }
 }
 
+fn parse_desktop_task_response(stdout: &str) -> Result<DesktopTaskRunResponse, String> {
+    let trimmed_stdout = stdout.trim();
+
+    serde_json::from_str::<DesktopTaskRunResponse>(trimmed_stdout).map_err(|error| {
+        format!(
+            "Failed to parse the shared CLI JSON response: {error}. Output: {trimmed_stdout}"
+        )
+    })
+}
+
 fn execute_desktop_task(
     app_handle: tauri::AppHandle,
     window_label: String,
@@ -309,6 +325,7 @@ fn execute_desktop_task(
     model: Option<String>,
     conversation_context: Option<Value>,
     task_id: Option<String>,
+    cancel_flag: Arc<AtomicBool>,
 ) -> Result<DesktopTaskRunResponse, String> {
     let workspace_path = resolve_workspace_root_path(&workspace_root)?;
     let normalized_workspace_root = workspace_path.display().to_string();
@@ -393,17 +410,83 @@ fn execute_desktop_task(
         cleanup_temporary_file(conversation_context_path.as_ref());
         "The shared CLI did not expose a stderr stream for the desktop bridge.".to_string()
     })?;
+    let progress_app_handle = app_handle.clone();
+    let progress_window_label = window_label.clone();
+    let progress_task_id = task_id.clone();
 
     let stdout_worker = thread::spawn(move || read_stdout(stdout));
     let stderr_worker = thread::spawn(move || {
         read_stderr(stderr, app_handle, window_label, task_id)
     });
 
-    let status = child
-        .wait()
-        .map_err(|error| format!("Failed to wait for the shared CLI to finish: {error}"))?;
+    let started_at = Instant::now();
+    let status = loop {
+        match child
+            .try_wait()
+            .map_err(|error| format!("Failed to wait for the shared CLI to finish: {error}"))?
+        {
+            Some(status) => break status,
+            None => {
+                if cancel_flag.load(Ordering::SeqCst) {
+                    emit_progress_line(
+                        &progress_app_handle,
+                        &progress_window_label,
+                        progress_task_id.as_deref(),
+                        "machdoch: Cancelled by user; stopping the task.",
+                    );
+
+                    let _ = child.kill();
+                    let _ = child.wait();
+
+                    let stdout_text = join_worker(stdout_worker, "stdout")?;
+                    let stderr_text = join_worker(stderr_worker, "stderr")?.join("\n");
+
+                    cleanup_temporary_file(conversation_context_path.as_ref());
+
+                    let failure_tail = format_command_failure(&stderr_text, &stdout_text);
+                    return Err(format!(
+                        "The task was cancelled. {}",
+                        failure_tail
+                    ));
+                }
+
+                if started_at.elapsed() >= Duration::from_millis(DESKTOP_TASK_TIMEOUT_MS) {
+                    emit_progress_line(
+                        &progress_app_handle,
+                        &progress_window_label,
+                        progress_task_id.as_deref(),
+                        "machdoch: execution exceeded the desktop safety timeout; stopping the task.",
+                    );
+
+                    let _ = child.kill();
+                    let _ = child.wait();
+
+                    let stdout_text = join_worker(stdout_worker, "stdout")?;
+                    let stderr_text = join_worker(stderr_worker, "stderr")?.join("\n");
+
+                    cleanup_temporary_file(conversation_context_path.as_ref());
+
+                    let failure_tail = format_command_failure(&stderr_text, &stdout_text);
+                    return Err(format!(
+                        "The shared CLI exceeded the desktop safety timeout of {} minutes and was stopped. {}",
+                        DESKTOP_TASK_TIMEOUT_MS / 60_000,
+                        failure_tail
+                    ));
+                }
+
+                thread::sleep(Duration::from_millis(DESKTOP_TASK_WAIT_POLL_MS));
+            }
+        }
+    };
     let stdout_text = join_worker(stdout_worker, "stdout")?;
     let stderr_text = join_worker(stderr_worker, "stderr")?.join("\n");
+
+    if !stdout_text.trim().is_empty() {
+        if let Ok(response) = parse_desktop_task_response(&stdout_text) {
+            cleanup_temporary_file(conversation_context_path.as_ref());
+            return Ok(response);
+        }
+    }
 
     if !status.success() {
         cleanup_temporary_file(conversation_context_path.as_ref());
@@ -413,13 +496,7 @@ fn execute_desktop_task(
         ));
     }
 
-    let trimmed_stdout = stdout_text.trim();
-
-    let response = serde_json::from_str::<DesktopTaskRunResponse>(trimmed_stdout).map_err(|error| {
-        format!(
-            "Failed to parse the shared CLI JSON response: {error}. Output: {trimmed_stdout}"
-        )
-    });
+    let response = parse_desktop_task_response(&stdout_text);
 
     cleanup_temporary_file(conversation_context_path.as_ref());
 
@@ -529,8 +606,22 @@ fn open_path_in_system_shell(path: &Path) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn cancel_desktop_task(
+    state: tauri::State<'_, DesktopTaskCancelMap>,
+    task_id: String,
+) -> Result<(), String> {
+    if let Ok(map) = state.0.lock() {
+        if let Some(cancel_flag) = map.get(&task_id) {
+            cancel_flag.store(true, Ordering::SeqCst);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn run_desktop_task(
     app_handle: tauri::AppHandle,
+    state: tauri::State<'_, DesktopTaskCancelMap>,
     window: tauri::WebviewWindow,
     workspace_root: String,
     task: String,
@@ -542,8 +633,15 @@ pub async fn run_desktop_task(
     task_id: Option<String>,
 ) -> Result<DesktopTaskRunResponse, String> {
     let window_label = window.label().to_string();
+    let cancel_flag = Arc::new(AtomicBool::new(false));
 
-    tauri::async_runtime::spawn_blocking(move || {
+    if let Some(id) = &task_id {
+        if let Ok(mut map) = state.0.lock() {
+            map.insert(id.clone(), cancel_flag.clone());
+        }
+    }
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
         execute_desktop_task(
             app_handle,
             window_label,
@@ -555,10 +653,13 @@ pub async fn run_desktop_task(
             model,
             conversation_context,
             task_id,
+            cancel_flag,
         )
     })
     .await
-    .map_err(|error| format!("The desktop task bridge stopped unexpectedly. {error}"))?
+    .map_err(|error| format!("The desktop task bridge stopped unexpectedly. {error}"))?;
+
+    result
 }
 
 #[tauri::command]

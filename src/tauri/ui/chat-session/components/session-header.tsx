@@ -3,51 +3,33 @@ import type { JSX } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import type { ChatSessionRecord } from "../../chat-session.model";
-import { SessionRuntimePopover } from "./session-runtime-popover";
 
 export interface SessionHeaderProps {
   activeSession: ChatSessionRecord;
   currentSessionTitle: string;
   isRenamingSession: boolean;
   renameValue: string;
-  activeRunModeLabel: string;
-  activeRunModeBadgeClassName: string;
-  isUsingWorkspaceDefaultMode: boolean;
-  runtimeSnapshot: import("../../runtime").RuntimeSnapshot | null;
-  runtimeLoading: boolean;
-  runtimeError: string | null;
-  onSessionProfileSelection: (profile: string | null) => Promise<void>;
   onRenameValueChange: (value: string) => void;
   onRenameCommit: () => void;
   onRenameCancel: () => void;
-  onSelectFolder: () => Promise<void>;
   onCreateSession: () => void;
   onStartRename: () => void;
   onDeleteSession: () => void;
 }
 
 export const SessionHeader = ({
-  activeSession,
   currentSessionTitle,
   isRenamingSession,
   renameValue,
-  activeRunModeLabel,
-  activeRunModeBadgeClassName,
-  isUsingWorkspaceDefaultMode,
-  runtimeSnapshot,
-  runtimeLoading,
-  runtimeError,
-  onSessionProfileSelection,
   onRenameValueChange,
   onRenameCommit,
   onRenameCancel,
-  onSelectFolder,
   onStartRename,
   onDeleteSession,
 }: SessionHeaderProps): JSX.Element => {
   return (
-    <header className="flex h-16 items-center justify-between border-b border-slate-900 bg-slate-950/60 px-8 backdrop-blur-md">
-      <div className="min-w-0">
+    <header className="flex h-16 items-center justify-between gap-4 border-b border-slate-900 bg-slate-950/60 px-8 backdrop-blur-md">
+      <div className="min-w-0 flex-1">
         {isRenamingSession ? (
           <Input
             autoFocus
@@ -75,17 +57,6 @@ export const SessionHeader = ({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        <SessionRuntimePopover
-          activeSession={activeSession}
-          activeRunModeLabel={activeRunModeLabel}
-          activeRunModeBadgeClassName={activeRunModeBadgeClassName}
-          isUsingWorkspaceDefaultMode={isUsingWorkspaceDefaultMode}
-          runtimeSnapshot={runtimeSnapshot}
-          runtimeLoading={runtimeLoading}
-          runtimeError={runtimeError}
-          onSelectFolder={onSelectFolder}
-          onSessionProfileSelection={onSessionProfileSelection}
-        />
         <Button
           type="button"
           variant="ghost"

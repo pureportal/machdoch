@@ -173,6 +173,24 @@ const finalizeApprovalResult = (
   );
 };
 
+const throwIfExecutionAborted = (signal: AbortSignal | undefined): void => {
+  if (!signal?.aborted) {
+    return;
+  }
+
+  const reason = signal.reason;
+
+  if (reason instanceof Error) {
+    throw reason;
+  }
+
+  throw new Error(
+    typeof reason === "string" && reason.trim().length > 0
+      ? reason
+      : "Execution cancelled by user.",
+  );
+};
+
 const runExecutorCycle = async (
   task: string,
   config: RuntimeConfig,
@@ -181,8 +199,11 @@ const runExecutorCycle = async (
   conversationContext: PreparedConversationPromptContext,
   overrideAdapter: AgentModelAdapter | undefined,
   continuationRequest: ExecutorContinuationRequest | undefined,
+  signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
 ): Promise<ExecutorCycleOutcome> => {
+  throwIfExecutionAborted(signal);
+
   const toolDefinitions = createToolDefinitions(
     config,
     conversationContext.memory,
@@ -256,9 +277,12 @@ const runExecutorCycle = async (
       continuationRequest,
     ),
     tools: toolSpecs,
+    ...(signal ? { signal } : {}),
   });
 
   for (let turnIndex = 0; turnIndex < MAX_EXECUTOR_TURNS; turnIndex += 1) {
+    throwIfExecutionAborted(signal);
+
     if (turn.text.trim()) {
       loopState.lastAssistantText = turn.text.trim();
       loopState.traceLines.push(`assistant: ${compactTraceText(turn.text)}`);
@@ -294,6 +318,7 @@ const runExecutorCycle = async (
               true,
             ),
           ],
+          ...(signal ? { signal } : {}),
         });
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected because additional tool calls were present in the same turn.`,
@@ -314,6 +339,7 @@ const runExecutorCycle = async (
               true,
             ),
           ],
+          ...(signal ? { signal } : {}),
         });
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected invalid payload shape.`,
@@ -334,6 +360,7 @@ const runExecutorCycle = async (
               true,
             ),
           ],
+          ...(signal ? { signal } : {}),
         });
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected incomplete payload.`,
@@ -376,6 +403,8 @@ const runExecutorCycle = async (
     const toolResults: AgentModelToolResult[] = [];
 
     for (const call of turn.toolCalls) {
+      throwIfExecutionAborted(signal);
+
       const executionOutcome = await executeToolCall(
         task,
         config,
@@ -428,7 +457,10 @@ const runExecutorCycle = async (
       }
     }
 
-    turn = await adapter.continueTurn({ toolResults });
+    turn = await adapter.continueTurn({
+      toolResults,
+      ...(signal ? { signal } : {}),
+    });
   }
 
   return {
@@ -450,8 +482,11 @@ const runAutopilotMonitorPass = async (
   cycleResult: ExecutorCycleOutcome,
   priorDecisions: TaskAutopilotDecision[],
   overrideMonitorAdapter: AgentModelAdapter | undefined,
+  signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
 ): Promise<TaskAutopilotDecision> => {
+  throwIfExecutionAborted(signal);
+
   const monitorPass = priorDecisions.length + 1;
   const monitorTool = createAutopilotMonitorTool();
   const adapter = await createProviderAdapter(
@@ -485,6 +520,7 @@ const runAutopilotMonitorPass = async (
       priorDecisions,
     ),
     tools: [monitorTool],
+    ...(signal ? { signal } : {}),
   });
 
   const decision = parseAutopilotDecisionFromTurn(turn, monitorPass);
@@ -517,6 +553,7 @@ const runModelDrivenLoop = async (
   conversationContext: PreparedConversationPromptContext,
   executorAdapter: AgentModelAdapter | undefined,
   monitorAdapter: AgentModelAdapter | undefined,
+  signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
 ): Promise<TaskExecutionResult> => {
   let cycleResult = await runExecutorCycle(
@@ -527,6 +564,7 @@ const runModelDrivenLoop = async (
     conversationContext,
     executorAdapter,
     undefined,
+    signal,
     onStateChange,
   );
   let executorIterations = 1;
@@ -557,6 +595,7 @@ const runModelDrivenLoop = async (
         cycleResult,
         decisions,
         monitorAdapter,
+        signal,
         onStateChange,
       );
     } catch (error) {
@@ -607,6 +646,7 @@ const runModelDrivenLoop = async (
         missingRequirements: decision.missingRequirements,
         requiredActions: decision.requiredActions,
       },
+      signal,
       onStateChange,
     );
     executorIterations += 1;
@@ -646,6 +686,7 @@ export const maybeExecuteModelDrivenTask = async (
       params.task,
       params.config,
       params.conversationContext,
+      params.signal,
     );
 
     return await runModelDrivenLoop(
@@ -656,6 +697,7 @@ export const maybeExecuteModelDrivenTask = async (
       preparedConversationContext,
       params.modelAdapter,
       params.monitorModelAdapter,
+      params.signal,
       params.onStateChange,
     );
   } catch (error) {

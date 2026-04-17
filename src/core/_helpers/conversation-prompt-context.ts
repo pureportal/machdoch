@@ -143,6 +143,7 @@ const summarizeConversationHistory = async (
   task: string,
   config: RuntimeConfig,
   history: ConversationHistoryEntry[],
+  signal: AbortSignal | undefined,
 ): Promise<string | undefined> => {
   if (history.length === 0) {
     return undefined;
@@ -172,6 +173,7 @@ const summarizeConversationHistory = async (
         transcript.slice(0, MAX_CONVERSATION_SUMMARY_INPUT_CHARS),
       ].join("\n\n"),
       tools: [],
+      ...(signal ? { signal } : {}),
     });
 
     const summary = turn.text.trim();
@@ -186,6 +188,7 @@ export const prepareConversationPromptContext = async (
   task: string,
   config: RuntimeConfig,
   conversationContext: TaskConversationContext | undefined,
+  signal?: AbortSignal,
 ): Promise<PreparedConversationPromptContext> => {
   const normalizedHistory = normalizeConversationHistory(
     conversationContext?.history,
@@ -213,7 +216,12 @@ export const prepareConversationPromptContext = async (
     createRecentHistoryWindow(normalizedHistory);
   const summary =
     omittedHistory.length > 0
-      ? ((await summarizeConversationHistory(task, config, omittedHistory)) ??
+      ? ((await summarizeConversationHistory(
+          task,
+          config,
+          omittedHistory,
+          signal,
+        )) ??
         createDeterministicConversationSummary(omittedHistory))
       : undefined;
   const recentHistoryLines = recentHistory.map(formatConversationHistoryEntry);

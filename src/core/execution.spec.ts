@@ -1,8 +1,10 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentModelStartParams } from "./types.ts";
 import { executeTask } from "./execution.ts";
 import type {
+  AgentModelAdapter,
   CustomizationDiscoveryResult,
   ProviderAvailability,
   RunMode,
@@ -705,4 +707,53 @@ describe("executeTask", () => {
       "… 3 more top-level entries",
     );
   });
+
+  it("stops model-driven execution after the high safety timeout when a provider turn wedges", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const hangingAdapter: AgentModelAdapter = {
+      startTurn: ({ signal }: AgentModelStartParams) => {
+        return new Promise((_, reject) => {
+          const rejectWithReason = (): void => {
+            const reason = signal?.reason;
+
+            reject(
+              reason instanceof Error
+                ? reason
+                : new Error(
+                    typeof reason === "string" && reason.trim().length > 0
+                      ? reason
+                      : "Execution cancelled by user.",
+                  ),
+            );
+          };
+
+          if (signal?.aborted) {
+            rejectWithReason();
+            return;
+          }
+
+          signal?.addEventListener("abort", rejectWithReason, { once: true });
+        });
+      },
+      continueTurn: (): Promise<never> => {
+        throw new Error("The hanging adapter should never continue after timing out.");
+      },
+    };
+
+    const result = await executeTask(
+      "scan this workspace and explain the setup",
+      createConfig(workspaceRoot, "ask", ["filesystem", "shell"]),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: hangingAdapter,
+        maxDurationMs: 25,
+      },
+    );
+
+    expect(result.status).toBe("cancelled");
+    expect(result.summary).toContain("safety timeout");
+    expect(result.reason).toContain("25ms");
+    expect(result.outputSections.at(-1)?.title).toBe("Execution limit");
+  }, 10_000);
 });

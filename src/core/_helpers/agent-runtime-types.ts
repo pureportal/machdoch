@@ -14,6 +14,9 @@ import type {
 export const MAX_EXECUTOR_TURNS = 16;
 export const MAX_AUTOPILOT_EXECUTOR_ITERATIONS = 4;
 export const MAX_FINAL_RESPONSE_ITEMS = 4;
+export const TASK_EXECUTION_TIMEOUT_MS = 20 * 60 * 1_000;
+export const TASK_EXECUTION_TIMEOUT_REASON_PREFIX =
+  "Execution stopped after exceeding the safety timeout";
 
 export interface AgentLoopState {
   executedTools: ToolName[];
@@ -37,6 +40,7 @@ export interface ModelDrivenExecutionParams {
   modelAdapter?: AgentModelAdapter;
   monitorModelAdapter?: AgentModelAdapter;
   onStateChange?: TaskExecutionProgressHandler;
+  signal?: AbortSignal;
 }
 
 export interface ExecutorContinuationRequest {

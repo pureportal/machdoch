@@ -4,6 +4,7 @@ import {
   FolderOpen,
   Monitor,
   SendHorizonal,
+  Square,
 } from "lucide-react";
 import type { JSX, KeyboardEvent } from "react";
 import type { RunMode } from "../../../../core/types.js";
@@ -44,6 +45,8 @@ export interface SessionComposerProps {
     event: KeyboardEvent<HTMLTextAreaElement>,
   ) => void;
   onSend: () => void;
+  onCancel: () => void;
+  isExecuting: boolean;
 }
 
 export const SessionComposer = ({
@@ -71,6 +74,8 @@ export const SessionComposer = ({
   onDraftChange,
   onComposerHistoryNavigation,
   onSend,
+  onCancel,
+  isExecuting,
 }: SessionComposerProps): JSX.Element => {
   return (
     <div className="rounded-[1.75rem] border border-slate-800/80 bg-slate-950/75 p-3 shadow-[0_18px_48px_rgba(2,6,23,0.42)]">
@@ -188,20 +193,33 @@ export const SessionComposer = ({
           className="max-h-[30vh] min-h-14 resize-none overflow-y-auto rounded-[1.4rem] border-slate-800 bg-slate-900/70 px-5 py-4 text-base text-slate-100 shadow-inner shadow-black/20 placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:bg-slate-900/50 disabled:text-slate-500 disabled:opacity-100"
         />
 
-        <Button
-          type="submit"
-          variant="outline"
-          size="icon"
-          aria-label="Send message"
-          disabled={!canSendMessage}
-          className={cn(
-            "h-11 w-11 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-100",
-            canSendMessage &&
-              "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
-          )}
-        >
-          <SendHorizonal className="h-4 w-4" />
-        </Button>
+        {isExecuting ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label="Cancel task"
+            onClick={onCancel}
+            className="h-11 w-11 shrink-0 rounded-[1.15rem] border-rose-500/20 bg-rose-500/10 text-rose-100 shadow-none hover:bg-rose-500/15 hover:text-white"
+          >
+            <Square className="h-4 w-4 fill-current" />
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            variant="outline"
+            size="icon"
+            aria-label="Send message"
+            disabled={!canSendMessage}
+            className={cn(
+              "h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-100",
+              canSendMessage &&
+                "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
+            )}
+          >
+            <SendHorizonal className="h-4 w-4" />
+          </Button>
+        )}
       </form>
     </div>
   );

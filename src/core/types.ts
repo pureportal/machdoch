@@ -239,10 +239,12 @@ export interface AgentModelStartParams {
   systemPrompt: string;
   userPrompt: string;
   tools: AgentModelToolSpec[];
+  signal?: AbortSignal | undefined;
 }
 
 export interface AgentModelContinueParams {
   toolResults: AgentModelToolResult[];
+  signal?: AbortSignal | undefined;
 }
 
 export interface AgentModelAdapter {
@@ -386,6 +388,7 @@ export interface TaskExecutionOptions {
   modelAdapter?: AgentModelAdapter;
   monitorModelAdapter?: AgentModelAdapter;
   conversationContext?: TaskConversationContext;
+  maxDurationMs?: number;
 }
 
 export interface TaskExecutionResult {

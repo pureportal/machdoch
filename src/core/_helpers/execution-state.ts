@@ -14,6 +14,7 @@ import type {
   TaskExecutionState,
   ToolName,
 } from "../types.js";
+import { TASK_EXECUTION_TIMEOUT_REASON_PREFIX } from "./agent-runtime-types.js";
 
 export interface TaskExecutionRuntime {
   taskContext: ResolvedTaskContext | undefined;
@@ -123,10 +124,13 @@ const getCancellationReason = (signal: AbortSignal | undefined): string => {
 const createCancellationSection = (
   state: TaskExecutionState,
   message: string,
+  reason: string,
 ): TaskExecutionSection => {
   return {
-    title: "Cancellation",
-    lines: [`state: ${state}`, `message: ${message}`],
+    title: reason.startsWith(TASK_EXECUTION_TIMEOUT_REASON_PREFIX)
+      ? "Execution limit"
+      : "Cancellation",
+    lines: [`state: ${state}`, `message: ${message}`, `reason: ${reason}`],
   };
 };
 
@@ -143,21 +147,25 @@ const createCancelledResult = (
     runtime.pendingResult.outputSections.length > 0
       ? runtime.pendingResult.outputSections
       : runtime.contextSections;
+  const reason = getCancellationReason(signal);
+  const timedOut = reason.startsWith(TASK_EXECUTION_TIMEOUT_REASON_PREFIX);
 
   return createExecutionResult(
     {
       task,
       mode: config.mode,
       status: "cancelled",
-      summary: "Execution was cancelled before the task completed.",
+      summary: timedOut
+        ? "Execution was stopped after running longer than the configured safety timeout."
+        : "Execution was cancelled before the task completed.",
       executedTools:
         runtime.pendingResult?.executedTools ?? runtime.executedTools,
       outputSections: [
         ...baseSections,
-        createCancellationSection(state, message),
+        createCancellationSection(state, message, reason),
       ],
     },
-    getCancellationReason(signal),
+    reason,
   );
 };
 

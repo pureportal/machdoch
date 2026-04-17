@@ -15,6 +15,10 @@ import {
   type TaskExecutionRuntime,
   verifyExecutedResult,
 } from "./_helpers/execution-state.js";
+import {
+  TASK_EXECUTION_TIMEOUT_MS,
+  TASK_EXECUTION_TIMEOUT_REASON_PREFIX,
+} from "./_helpers/agent-runtime-types.js";
 import { maybeExecuteModelDrivenTask } from "./agent-runtime.js";
 import { resolveToolPolicies } from "./policy.js";
 import { resolveTaskContext } from "./task-context.js";
@@ -30,6 +34,79 @@ import type {
   TaskExecutionResult,
   TaskExecutionState,
 } from "./types.js";
+
+const unrefTimer = (handle: ReturnType<typeof setTimeout>): void => {
+  const candidate = handle as ReturnType<typeof setTimeout> & {
+    unref?: () => void;
+  };
+
+  candidate.unref?.();
+};
+
+const normalizeMaxDurationMs = (value: number | undefined): number => {
+  if (!Number.isFinite(value) || value === undefined || value <= 0) {
+    return TASK_EXECUTION_TIMEOUT_MS;
+  }
+
+  return Math.max(1, Math.round(value));
+};
+
+const formatExecutionDuration = (maxDurationMs: number): string => {
+  if (maxDurationMs % 60_000 === 0) {
+    const minutes = maxDurationMs / 60_000;
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+
+  if (maxDurationMs % 1_000 === 0) {
+    const seconds = maxDurationMs / 1_000;
+    return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  }
+
+  return `${maxDurationMs}ms`;
+};
+
+const createTaskExecutionTimeoutReason = (maxDurationMs: number): string => {
+  return `${TASK_EXECUTION_TIMEOUT_REASON_PREFIX} of ${formatExecutionDuration(maxDurationMs)}.`;
+};
+
+const createManagedExecutionSignal = (
+  sourceSignal: AbortSignal | undefined,
+  maxDurationMs: number,
+): {
+  signal: AbortSignal;
+  cleanup: () => void;
+} => {
+  const abortController = new AbortController();
+  const forwardAbort = (): void => {
+    if (!abortController.signal.aborted) {
+      abortController.abort(sourceSignal?.reason);
+    }
+  };
+
+  if (sourceSignal?.aborted) {
+    forwardAbort();
+  } else if (sourceSignal) {
+    sourceSignal.addEventListener("abort", forwardAbort, { once: true });
+  }
+
+  const timeoutHandle = setTimeout(() => {
+    if (!abortController.signal.aborted) {
+      abortController.abort(createTaskExecutionTimeoutReason(maxDurationMs));
+    }
+  }, maxDurationMs);
+  unrefTimer(timeoutHandle);
+
+  return {
+    signal: abortController.signal,
+    cleanup: (): void => {
+      clearTimeout(timeoutHandle);
+
+      if (sourceSignal) {
+        sourceSignal.removeEventListener("abort", forwardAbort);
+      }
+    },
+  };
+};
 
 const runTaskExecutionStateMachine = async (
   task: string,
@@ -158,6 +235,7 @@ const runTaskExecutionStateMachine = async (
             config,
             taskContext: runtime.taskContext,
             contextSections: runtime.contextSections,
+            ...(options.signal ? { signal: options.signal } : {}),
             ...(options.conversationContext
               ? { conversationContext: options.conversationContext }
               : {}),
@@ -171,6 +249,19 @@ const runTaskExecutionStateMachine = async (
               ? { onStateChange: options.onStateChange }
               : {}),
           });
+
+          const cancelledAfterModelExecution = await maybeReturnCancelledResult(
+            task,
+            config,
+            state,
+            message,
+            runtime,
+            options,
+          );
+
+          if (cancelledAfterModelExecution) {
+            return cancelledAfterModelExecution;
+          }
 
           if (modelDrivenResult) {
             const terminalState: TaskExecutionState =
@@ -432,11 +523,20 @@ export const createTaskExecutionController = (
         abortController.abort(reason ?? "Execution cancelled by user.");
       }
     },
-    execute: (): Promise<TaskExecutionResult> => {
-      return runTaskExecutionStateMachine(task, config, customizations, {
-        ...options,
-        signal: abortController.signal,
-      });
+    execute: async (): Promise<TaskExecutionResult> => {
+      const managedSignal = createManagedExecutionSignal(
+        abortController.signal,
+        normalizeMaxDurationMs(options.maxDurationMs),
+      );
+
+      try {
+        return await runTaskExecutionStateMachine(task, config, customizations, {
+          ...options,
+          signal: managedSignal.signal,
+        });
+      } finally {
+        managedSignal.cleanup();
+      }
     },
   };
 };
@@ -447,5 +547,17 @@ export const executeTask = async (
   customizations: CustomizationDiscoveryResult,
   options: TaskExecutionOptions = {},
 ): Promise<TaskExecutionResult> => {
-  return runTaskExecutionStateMachine(task, config, customizations, options);
+  const managedSignal = createManagedExecutionSignal(
+    options.signal,
+    normalizeMaxDurationMs(options.maxDurationMs),
+  );
+
+  try {
+    return await runTaskExecutionStateMachine(task, config, customizations, {
+      ...options,
+      signal: managedSignal.signal,
+    });
+  } finally {
+    managedSignal.cleanup();
+  }
 };

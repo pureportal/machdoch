@@ -53,6 +53,20 @@ const createUserMemorySettings = (
   };
 };
 
+const createExecutedMessageSource = () => {
+  return {
+    kind: "execution" as const,
+    execution: {
+      task: "Refactor this",
+      mode: "ask" as const,
+      status: "executed" as const,
+      summary: "Done",
+      executedTools: [],
+      outputSections: [],
+    },
+  };
+};
+
 describe("session shell view model helpers", () => {
   it("filters sessions by scope and overview status", () => {
     const doneSession = createSession({
@@ -70,6 +84,7 @@ describe("session shell view model helpers", () => {
           role: "agent",
           content: "Done",
           createdAt: 2,
+          source: createExecutedMessageSource(),
         },
       ],
     });

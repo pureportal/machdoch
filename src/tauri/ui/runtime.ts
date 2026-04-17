@@ -386,6 +386,12 @@ export const loadWorkspaceRuntimeSnapshot = async (
   }
 };
 
+export const cancelDesktopTask = async (taskId: string): Promise<void> => {
+  if (isTauri()) {
+    return await tauriCore.invoke("cancel_desktop_task", { taskId });
+  }
+};
+
 export const runDesktopTask = async (
   workspaceRoot: string | null | undefined,
   task: string,

@@ -43,7 +43,7 @@ export const ConversationFeed = ({
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 pb-2 pr-4 pt-8 lg:pr-6">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 pb-2 px-4 pt-8 lg:px-6">
       {visibleMessages.map((message) => {
         if (message.role === "agent" && message.source?.kind === "preview") {
           return null;

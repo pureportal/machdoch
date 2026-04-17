@@ -1,3 +1,5 @@
+use tauri::Manager;
+
 mod desktop_task;
 mod runtime_snapshot;
 mod ui_control;
@@ -16,10 +18,17 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .setup(|app| {
+            app.manage(desktop_task::DesktopTaskCancelMap(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )));
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
+            desktop_task::cancel_desktop_task,
             desktop_task::open_workspace_path,
             desktop_task::run_desktop_task,
             runtime_snapshot::get_global_provider_availability,

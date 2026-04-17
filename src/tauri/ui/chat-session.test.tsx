@@ -473,13 +473,6 @@ describe("ChatSession component", () => {
       render(<ChatSession />);
       await selectWorkspace();
 
-      fireEvent.click(
-        await screen.findByRole("button", { name: /Routing & Workspace/i }),
-      );
-      fireEvent.click(
-        await screen.findByRole("button", { name: /^Use profile offline$/i }),
-      );
-
       await waitFor(() => {
         expect(
           screen.getByRole("button", { name: /Execution mode: Safe mode/i }),

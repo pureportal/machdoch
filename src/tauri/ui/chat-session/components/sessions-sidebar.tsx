@@ -1,5 +1,5 @@
 import { Archive, Plus } from "lucide-react";
-import type { JSX } from "react";
+import type { CSSProperties, JSX } from "react";
 import {
   canArchiveSession,
   getSessionOverviewStatus,
@@ -38,6 +38,13 @@ export interface SessionsSidebarProps {
   onArchiveSession: (sessionId: string) => void;
 }
 
+const SESSION_TITLE_CLAMP_STYLE: CSSProperties = {
+  display: "-webkit-box",
+  WebkitBoxOrient: "vertical",
+  WebkitLineClamp: 2,
+  overflow: "hidden",
+};
+
 export const SessionsSidebar = ({
   totalSessions,
   activeSessionId,
@@ -56,7 +63,7 @@ export const SessionsSidebar = ({
       : `${filteredSessions.length} of ${totalSessions} saved sessions`;
 
   return (
-    <aside className="flex min-h-0 w-[21rem] shrink-0 flex-col border-r border-slate-900 bg-slate-950/50 backdrop-blur-xl">
+    <aside className="flex min-h-0 w-84 shrink-0 flex-col border-r border-slate-900 bg-slate-950/50 backdrop-blur-xl">
       <div className="flex h-16 items-center justify-between border-b border-slate-900 px-5">
         <div>
           <p className="text-xs font-semibold tracking-[0.24em] text-slate-500 uppercase">
@@ -177,7 +184,7 @@ export const SessionsSidebar = ({
                     onClick={() => onActivateSession(session.id)}
                     className="min-w-0 flex-1 text-left"
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex w-full min-w-0 items-start gap-2">
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <div
@@ -198,8 +205,9 @@ export const SessionsSidebar = ({
                       </Tooltip>
                       <div className="min-w-0 flex-1">
                         <p
+                          style={SESSION_TITLE_CLAMP_STYLE}
                           className={cn(
-                            "truncate text-sm font-semibold placeholder:text-slate-500",
+                            "wrap-break-word text-sm font-semibold leading-5 placeholder:text-slate-500",
                             archived ? "text-slate-300" : "text-slate-100",
                           )}
                         >
@@ -208,8 +216,8 @@ export const SessionsSidebar = ({
                       </div>
                     </div>
 
-                    <div className="mt-1 flex items-center justify-between text-[10px] font-medium tracking-wide text-slate-500 uppercase">
-                      <span className="mr-2 truncate">
+                    <div className="mt-1 flex w-full min-w-0 items-center justify-between gap-2 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
+                      <span className="min-w-0 flex-1 truncate">
                         {createSessionSubtitle(session)}
                       </span>
                       <span className="shrink-0">
@@ -218,7 +226,7 @@ export const SessionsSidebar = ({
                     </div>
                   </button>
 
-                  <div className="flex shrink-0 items-center gap-1 self-start pt-0.5">
+                  <div className="flex shrink-0 items-start gap-1 self-start pt-0.5">
                     {archived ? (
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -234,26 +242,30 @@ export const SessionsSidebar = ({
                     ) : null}
 
                     {showArchiveAction ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            aria-label={`Archive ${getSessionTitle(session)}`}
-                            onClick={() => onArchiveSession(session.id)}
-                            className={cn(
-                              "h-8 w-8 rounded-full border border-slate-800 bg-slate-950/80 text-slate-500 transition-all hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
-                              isActive
-                                ? "opacity-100"
-                                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-                            )}
-                          >
-                            <Archive className="h-3.5 w-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">Archive</TooltipContent>
-                      </Tooltip>
+                      <div
+                        className={cn(
+                          "overflow-hidden transition-[width,opacity] duration-150 ease-out",
+                          isActive
+                            ? "w-8 opacity-100"
+                            : "w-0 opacity-0 group-hover:w-8 group-hover:opacity-100 group-focus-within:w-8 group-focus-within:opacity-100",
+                        )}
+                      >
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              aria-label={`Archive ${getSessionTitle(session)}`}
+                              onClick={() => onArchiveSession(session.id)}
+                              className="h-8 w-8 rounded-full border border-slate-800 bg-slate-950/80 text-slate-500 transition-all hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100"
+                            >
+                              <Archive className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">Archive</TooltipContent>
+                        </Tooltip>
+                      </div>
                     ) : null}
                   </div>
                 </div>

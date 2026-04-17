@@ -9,9 +9,12 @@ import {
   createPartFromFunctionResponse,
   FunctionCallingConfigMode,
   GoogleGenAI,
+  type GenerateContentResponse,
+  type Part,
 } from "@google/genai";
 import OpenAI from "openai";
 import { hasConfiguredValue, loadWorkspaceEnv } from "../env.js";
+import { TASK_EXECUTION_TIMEOUT_MS } from "./agent-runtime-types.js";
 import type {
   AgentModelAdapter,
   AgentModelContinueParams,
@@ -340,6 +343,56 @@ const createGeminiFunctionResponsePayload = (
   };
 };
 
+type GeminiResponsePart = Pick<Part, "text" | "thought" | "functionCall">;
+type GeminiResponseLike = {
+  candidates?: GenerateContentResponse["candidates"] | undefined;
+};
+
+const extractGeminiResponseParts = (
+  response: GeminiResponseLike,
+): GeminiResponsePart[] => {
+  const firstCandidate = response.candidates?.[0];
+
+  if (!firstCandidate?.content || !Array.isArray(firstCandidate.content.parts)) {
+    return [];
+  }
+
+  return firstCandidate.content.parts;
+};
+
+export const normalizeGeminiResponse = (
+  response: GeminiResponseLike,
+): AgentModelTurn => {
+  let text = "";
+  const toolCalls: AgentModelToolCall[] = [];
+
+  for (const part of extractGeminiResponseParts(response)) {
+    if (typeof part.text === "string" && part.thought !== true) {
+      text += part.text;
+    }
+
+    const functionCall = part.functionCall;
+
+    if (!functionCall) {
+      continue;
+    }
+
+    toolCalls.push({
+      id: functionCall.id ?? crypto.randomUUID(),
+      name: functionCall.name ?? "unknown_tool",
+      arguments:
+        typeof functionCall.args === "object" && functionCall.args !== null
+          ? (functionCall.args as Record<string, unknown>)
+          : {},
+    });
+  }
+
+  return {
+    text: text.trim(),
+    toolCalls,
+  };
+};
+
 class OpenAIResponsesAdapter implements AgentModelAdapter {
   private readonly client: OpenAI;
   private readonly tools: AgentModelToolSpec[];
@@ -360,6 +413,9 @@ class OpenAIResponsesAdapter implements AgentModelAdapter {
       input: params.userPrompt,
       tools: createOpenAITools(params.tools),
       parallel_tool_calls: false,
+    }, {
+      timeout: TASK_EXECUTION_TIMEOUT_MS,
+      ...(params.signal ? { signal: params.signal } : {}),
     });
 
     this.previousResponseId = response.id;
@@ -384,6 +440,9 @@ class OpenAIResponsesAdapter implements AgentModelAdapter {
       })),
       tools: createOpenAITools(this.tools),
       parallel_tool_calls: false,
+    }, {
+      timeout: TASK_EXECUTION_TIMEOUT_MS,
+      ...(params.signal ? { signal: params.signal } : {}),
     });
 
     this.previousResponseId = response.id;
@@ -466,6 +525,9 @@ class AnthropicMessagesAdapter implements AgentModelAdapter {
       system: params.systemPrompt,
       messages: this.messages,
       tools: createAnthropicTools(params.tools),
+    }, {
+      timeout: TASK_EXECUTION_TIMEOUT_MS,
+      ...(params.signal ? { signal: params.signal } : {}),
     });
 
     this.messages.push({
@@ -501,6 +563,9 @@ class AnthropicMessagesAdapter implements AgentModelAdapter {
       system: this.startParams.systemPrompt,
       messages: this.messages,
       tools: createAnthropicTools(this.tools),
+    }, {
+      timeout: TASK_EXECUTION_TIMEOUT_MS,
+      ...(params.signal ? { signal: params.signal } : {}),
     });
 
     this.messages.push({
@@ -592,6 +657,10 @@ class GeminiChatAdapter implements AgentModelAdapter {
       config: {
         systemInstruction: params.systemPrompt,
         ...this.createConfig(params.tools),
+        httpOptions: {
+          timeout: TASK_EXECUTION_TIMEOUT_MS,
+        },
+        ...(params.signal ? { abortSignal: params.signal } : {}),
       },
     });
 
@@ -617,6 +686,10 @@ class GeminiChatAdapter implements AgentModelAdapter {
       config: {
         systemInstruction: this.startParams.systemPrompt,
         ...this.createConfig(this.tools),
+        httpOptions: {
+          timeout: TASK_EXECUTION_TIMEOUT_MS,
+        },
+        ...(params.signal ? { abortSignal: params.signal } : {}),
       },
     });
 
@@ -624,23 +697,9 @@ class GeminiChatAdapter implements AgentModelAdapter {
   }
 
   private normalizeResponse(response: {
-    text?: string | undefined;
-    functionCalls?:
-      | Array<{
-          id?: string | undefined;
-          name?: string | undefined;
-          args?: Record<string, unknown> | undefined;
-        }>
-      | undefined;
+    candidates?: GenerateContentResponse["candidates"];
   }): AgentModelTurn {
-    return {
-      text: response.text?.trim() ?? "",
-      toolCalls: (response.functionCalls ?? []).map((functionCall) => ({
-        id: functionCall.id ?? crypto.randomUUID(),
-        name: functionCall.name ?? "unknown_tool",
-        arguments: functionCall.args ?? {},
-      })),
-    };
+    return normalizeGeminiResponse(response);
   }
 }
 

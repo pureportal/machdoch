@@ -15,6 +15,7 @@ import type { RunMode, TaskExecutionResult } from "../../../../core/types.js";
 import {
   canArchiveSession,
   createSession,
+  getSessionOverviewStatus,
   getSessionTitle,
   isSessionArchived,
   sortSessionsByUpdatedAt,
@@ -26,6 +27,7 @@ import {
   type RuntimeProvider,
 } from "../../model-catalog";
 import {
+  cancelDesktopTask,
   loadUserMemorySettings,
   openWorkspacePath,
   runDesktopTask,
@@ -605,6 +607,23 @@ export const useChatSessionController = () => {
     );
   };
 
+  const handleCancel = (): void => {
+    let targetTaskId: string | null = null;
+    
+    for (const [taskId, sessionId] of activeDesktopTasksRef.current.entries()) {
+      if (sessionId === state.activeSession.id) {
+        targetTaskId = taskId;
+        break;
+      }
+    }
+
+    if (targetTaskId) {
+      void cancelDesktopTask(targetTaskId).catch((error) => {
+        console.error("Failed to cancel desktop task:", error);
+      });
+    }
+  };
+
   const handleSend = (): void => {
     const task = state.activeSession.draft.trim();
 
@@ -833,6 +852,8 @@ export const useChatSessionController = () => {
       onDraftChange: handleDraftChange,
       onComposerHistoryNavigation: handleComposerHistoryNavigation,
       onSend: handleSend,
+      onCancel: handleCancel,
+      isExecuting: getSessionOverviewStatus(state.activeSession) === "running",
     },
     settingsDialog: {
       settingsSection: state.settingsSection,
