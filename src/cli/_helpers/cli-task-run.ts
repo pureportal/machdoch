@@ -77,6 +77,12 @@ export const resolveConversationContext = async (
     ...(baseContext?.globalMemoryEnabled !== undefined
       ? { globalMemoryEnabled: baseContext.globalMemoryEnabled }
       : {}),
+    ...(baseContext?.uiControl !== undefined
+      ? { uiControl: baseContext.uiControl }
+      : {}),
+    ...(baseContext?.uiControlEnabled !== undefined
+      ? { uiControlEnabled: baseContext.uiControlEnabled }
+      : {}),
     ...(args.sessionMemoryEnabled !== undefined
       ? { sessionMemoryEnabled: args.sessionMemoryEnabled }
       : {}),

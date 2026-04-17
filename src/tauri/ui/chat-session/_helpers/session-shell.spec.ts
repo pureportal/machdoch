@@ -55,6 +55,7 @@ describe("session shell helpers", () => {
     const session = createSession({
       sessionMemoryEnabled: true,
       useGlobalMemory: true,
+      uiControlEnabled: true,
       sessionMemory: [],
       messages: [
         {
@@ -80,8 +81,20 @@ describe("session shell helpers", () => {
         },
       ],
     });
+    const uiControl = {
+      available: true,
+      platform: "windows" as const,
+      supportsScreenshots: true,
+      supportsWindowEnumeration: true,
+      supportsInput: true,
+      supportsWindowHandles: true,
+    };
 
-    const context = createConversationContextFromSession(session, false);
+    const context = createConversationContextFromSession(
+      session,
+      false,
+      uiControl,
+    );
 
     expect(context.history).toEqual([
       {
@@ -97,5 +110,7 @@ describe("session shell helpers", () => {
     ]);
     expect(context.sessionMemoryEnabled).toBe(true);
     expect(context.globalMemoryEnabled).toBe(false);
+    expect(context.uiControlEnabled).toBe(true);
+    expect(context.uiControl).toEqual(uiControl);
   });
 });

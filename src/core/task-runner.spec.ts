@@ -245,8 +245,14 @@ describe("previewTaskRun", () => {
 
   it("supports prompt: invocations, deduplicates suggested tools, and notes the prompt model", () => {
     const customizations = createCustomizations();
+    const debugBuildPrompt = customizations.prompts[0];
+
+    if (!debugBuildPrompt) {
+      throw new Error("Expected the debug-build prompt fixture to exist.");
+    }
+
     customizations.prompts[0] = {
-      ...customizations.prompts[0],
+      ...debugBuildPrompt,
       model: "gpt-5.4-mini",
     };
 
@@ -396,14 +402,20 @@ describe("previewTaskRun", () => {
 
   it("orders applicable instructions by descending priority and preserves their bodies", () => {
     const customizations = createCustomizations();
+    const workspaceDefaultsInstruction = customizations.instructions[0];
+    const securityDefaultsInstruction = customizations.instructions[1];
+
+    if (!workspaceDefaultsInstruction || !securityDefaultsInstruction) {
+      throw new Error("Expected the instruction fixtures to exist.");
+    }
 
     customizations.instructions[0] = {
-      ...customizations.instructions[0],
+      ...workspaceDefaultsInstruction,
       priority: 10,
       body: "Always follow the shared workspace defaults.",
     };
     customizations.instructions[1] = {
-      ...customizations.instructions[1],
+      ...securityDefaultsInstruction,
       priority: 90,
       body: "Protect secrets before installs or auth changes.",
     };

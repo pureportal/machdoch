@@ -28,6 +28,13 @@ const createConfig = (
       discoverGithubCustomizations: false,
     },
     providerAvailability,
+    webSearch: {
+      activeProvider: "none",
+      providerAvailability: [
+        { provider: "perplexity", configured: false },
+        { provider: "tavily", configured: false },
+      ],
+    },
     availableProfiles: [],
   };
 };

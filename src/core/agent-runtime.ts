@@ -186,6 +186,9 @@ const runExecutorCycle = async (
   const toolDefinitions = createToolDefinitions(
     config,
     conversationContext.memory,
+    conversationContext.uiControlEnabled
+      ? conversationContext.uiControl
+      : undefined,
   );
   const finalResponseTool = createFinalResponseTool();
   const toolSpecs = [
@@ -378,6 +381,9 @@ const runExecutorCycle = async (
         config,
         loopState,
         conversationContext.memory,
+        conversationContext.uiControlEnabled
+          ? conversationContext.uiControl
+          : undefined,
         toolMap,
         call,
       );

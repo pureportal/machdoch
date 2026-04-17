@@ -12,6 +12,7 @@ import {
   loadUserMemorySettings,
   loadUserWebSearchSettings,
   loadWorkspaceRuntimeSnapshot,
+  openUserProviderApiKeyPortal,
   saveUserGlobalMemoryEnabled,
   saveUserProviderApiKey,
   saveUserWebSearchActiveProvider,
@@ -64,6 +65,7 @@ export interface ChatSessionRuntimeController {
     workspaceRoot: string | null,
   ) => Promise<void>;
   handleProviderSetupProviderChange: (provider: UserApiKeyProvider) => void;
+  handleProviderSetupPortalOpen: (provider: UserApiKeyProvider) => Promise<void>;
   handleProviderSetupKeyChange: (value: string) => void;
   handleProviderSetupSave: () => Promise<void>;
   handleWebSearchActiveProviderSave: (
@@ -322,6 +324,21 @@ export const useChatSessionRuntime = (
     [providerSetupMessage, providerSetupProvider],
   );
 
+  const handleProviderSetupPortalOpen = useCallback(
+    async (provider: UserApiKeyProvider): Promise<void> => {
+      try {
+        await openUserProviderApiKeyPortal(provider);
+      } catch (error) {
+        console.error("Failed to open provider API key settings", error);
+        setProviderSetupMessage({
+          tone: "error",
+          text: `Could not open ${getProviderLabel(provider)} API key settings.`,
+        });
+      }
+    },
+    [],
+  );
+
   const handleWebSearchSetupProviderChange = useCallback(
     (provider: UserWebSearchApiKeyProvider): void => {
       setWebSearchSetupProvider(provider);
@@ -533,6 +550,7 @@ export const useChatSessionRuntime = (
     setGlobalProviders,
     refreshWorkspaceRuntimeSnapshot,
     handleProviderSetupProviderChange,
+    handleProviderSetupPortalOpen,
     handleProviderSetupKeyChange,
     handleProviderSetupSave,
     handleWebSearchActiveProviderSave,

@@ -1,6 +1,12 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { KeyboardEvent, MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import {
   MAX_SESSION_MEMORY_ENTRIES,
   mergeConversationMemoryEntries,
@@ -23,7 +29,12 @@ import {
   loadUserMemorySettings,
   openWorkspacePath,
   runDesktopTask,
+  subscribeToDesktopTaskProgress,
 } from "../../runtime";
+import {
+  appendThinkingProgressLine,
+  createInitialThinkingTrace,
+} from "../../task-thinking.model";
 import { getExecutionMessageContent } from "./execution-message.tsx";
 import {
   createConversationContextFromSession,
@@ -60,6 +71,7 @@ const createExecutionMessageContent = (
 
 export const useChatSessionController = () => {
   const state = useChatSessionShellState();
+  const activeDesktopTasksRef = useRef<Map<string, string>>(new Map());
   const runtime = useChatSessionRuntime({
     catalogOpen: state.catalogOpen,
     activeSessionProvider: state.activeSession.provider,
@@ -85,6 +97,14 @@ export const useChatSessionController = () => {
   const isUsingWorkspaceDefaultMode = !state.activeSession.mode;
   const hasActiveWorkspace = state.activeSession.workspace !== null;
   const canSendMessage = Boolean(state.activeSession.draft.trim());
+  const uiControlAvailability = runtime.runtimeSnapshot?.uiControl;
+  const isUiControlAvailable = uiControlAvailability?.available === true;
+  const uiControlDescription = isUiControlAvailable
+    ? uiControlAvailability.supportsWindowHandles
+      ? "Let machdoch inspect the desktop, capture windows, drive mouse and keyboard, and on Windows target native window/control handles."
+      : "Let machdoch inspect the desktop, capture windows, and drive mouse and keyboard when GUI automation is available."
+    : (uiControlAvailability?.reason ??
+      "Desktop UI control is unavailable for this workspace or environment right now.");
 
   const handleOpenSettings = (section: SettingsSection = "providers"): void => {
     state.setSettingsSection(section);
@@ -130,6 +150,122 @@ export const useChatSessionController = () => {
       ],
     }));
   };
+
+  const updateThinkingTrace = useCallback(
+    (
+      sessionId: string,
+      taskId: string,
+      updater: (
+        trace: ReturnType<typeof createInitialThinkingTrace>,
+      ) => ReturnType<typeof createInitialThinkingTrace>,
+    ): void => {
+      state.updateSessionById(sessionId, (session) => {
+        let thinkingMessageIndex = -1;
+
+        for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+          const message = session.messages[index];
+
+          if (
+            message.taskId === taskId &&
+            message.role === "agent" &&
+            message.source?.kind === "thinking"
+          ) {
+            thinkingMessageIndex = index;
+            break;
+          }
+        }
+
+        const baseTrace =
+          thinkingMessageIndex >= 0 &&
+          session.messages[thinkingMessageIndex]?.source?.kind === "thinking"
+            ? session.messages[thinkingMessageIndex].source.thinking
+            : createInitialThinkingTrace(
+                getEffectiveSessionMode(session.mode, runtime.runtimeSnapshot),
+              );
+        const nextTrace = updater(baseTrace);
+
+        if (thinkingMessageIndex >= 0) {
+          if (nextTrace === baseTrace) {
+            return session;
+          }
+
+          const nextMessages = [...session.messages];
+          const thinkingMessage = nextMessages[thinkingMessageIndex];
+
+          if (!thinkingMessage || thinkingMessage.source?.kind !== "thinking") {
+            return session;
+          }
+
+          nextMessages[thinkingMessageIndex] = {
+            ...thinkingMessage,
+            source: {
+              kind: "thinking",
+              thinking: nextTrace,
+            },
+          };
+
+          return {
+            ...session,
+            updatedAt: Date.now(),
+            messages: nextMessages,
+          };
+        }
+
+        return {
+          ...session,
+          updatedAt: Date.now(),
+          messages: [
+            ...session.messages,
+            {
+              id: crypto.randomUUID(),
+              taskId,
+              role: "agent",
+              content: "",
+              createdAt: Date.now(),
+              source: {
+                kind: "thinking",
+                thinking: nextTrace,
+              },
+            },
+          ],
+        };
+      });
+    },
+    [runtime.runtimeSnapshot, state.updateSessionById],
+  );
+
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+
+    void subscribeToDesktopTaskProgress((progressEvent) => {
+      const sessionId = activeDesktopTasksRef.current.get(progressEvent.taskId);
+
+      if (!sessionId) {
+        return;
+      }
+
+      updateThinkingTrace(sessionId, progressEvent.taskId, (trace) => {
+        return appendThinkingProgressLine(
+          trace,
+          progressEvent.line,
+          progressEvent.timestamp,
+        );
+      });
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+        return;
+      }
+
+      unsubscribe = unlisten;
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, [updateThinkingTrace]);
 
   const createNewSession = (): void => {
     state.applyShellState((prev) => {
@@ -323,6 +459,14 @@ export const useChatSessionController = () => {
     }));
   };
 
+  const handleUiControlEnabledChange = (enabled: boolean): void => {
+    state.updateActiveSession((session) => ({
+      ...session,
+      uiControlEnabled: enabled,
+      updatedAt: Date.now(),
+    }));
+  };
+
   const handleDraftChange = (value: string): void => {
     state.setPromptHistoryIndex(null);
     state.setDraftBeforeHistory("");
@@ -397,6 +541,7 @@ export const useChatSessionController = () => {
     const conversationContext = createConversationContextFromSession(
       state.activeSession,
       runtime.userMemorySettings.globalEnabled,
+      uiControlAvailability,
     );
     const taskRunPromise = runDesktopTask(state.activeSession.workspace, task, {
       conversationContext,
@@ -408,6 +553,8 @@ export const useChatSessionController = () => {
     let taskFailureReported = false;
 
     const reportTaskFailure = (error: unknown): void => {
+      activeDesktopTasksRef.current.delete(taskId);
+
       if (taskFailureReported) {
         return;
       }
@@ -451,9 +598,15 @@ export const useChatSessionController = () => {
 
     state.setPromptHistoryIndex(null);
     state.setDraftBeforeHistory("");
+    activeDesktopTasksRef.current.set(taskId, sessionId);
+    updateThinkingTrace(sessionId, taskId, () => {
+      return createInitialThinkingTrace(activeRunMode);
+    });
 
     void taskRunPromise
       .then((taskRun) => {
+        activeDesktopTasksRef.current.delete(taskId);
+
         const sessionMemoryUpdates =
           taskRun.execution.memoryUpdates
             ?.filter((update) => update.scope === "session")
@@ -485,22 +638,6 @@ export const useChatSessionController = () => {
             });
         }
 
-        if (taskRun.preview) {
-          const preview = taskRun.preview;
-
-          state.scheduleMessage(() => {
-            appendAgentMessage(
-              sessionId,
-              taskId,
-              "I staged a compact task preview for this request, including likely tools, approvals, and the safest first move.",
-              {
-                kind: "preview",
-                preview,
-              },
-            );
-          }, 220);
-        }
-
         state.scheduleMessage(
           () => {
             appendAgentMessage(
@@ -513,7 +650,7 @@ export const useChatSessionController = () => {
               },
             );
           },
-          taskRun.preview ? 700 : 220,
+          220,
         );
       })
       .catch(reportTaskFailure);
@@ -597,14 +734,17 @@ export const useChatSessionController = () => {
       composerWorkspaceLabel: memorySummaryState.composerWorkspaceLabel,
       sessionMemoryDescription: memorySummaryState.sessionMemoryDescription,
       globalMemoryDescription: memorySummaryState.globalMemoryDescription,
+      uiControlDescription,
       isGlobalMemoryAvailable: memorySummaryState.isGlobalMemoryAvailable,
       isGlobalMemoryActive: memorySummaryState.isGlobalMemoryActive,
+      isUiControlAvailable,
       canSendMessage,
       onSelectFolder: handleSelectFolder,
       onSessionModelSelection: handleSessionModelSelection,
       onSessionModeSelection: handleSessionModeSelection,
       onSessionMemoryEnabledChange: handleSessionMemoryEnabledChange,
       onUseGlobalMemoryChange: handleUseGlobalMemoryChange,
+      onUiControlEnabledChange: handleUiControlEnabledChange,
       onDraftChange: handleDraftChange,
       onComposerHistoryNavigation: handleComposerHistoryNavigation,
       onSend: handleSend,
@@ -618,6 +758,7 @@ export const useChatSessionController = () => {
         saving: runtime.providerSetupSaving,
         message: runtime.providerSetupMessage,
         onProviderChange: runtime.handleProviderSetupProviderChange,
+        onOpenProviderPortal: runtime.handleProviderSetupPortalOpen,
         onKeyChange: runtime.handleProviderSetupKeyChange,
         onSave: runtime.handleProviderSetupSave,
       },

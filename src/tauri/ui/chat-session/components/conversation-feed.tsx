@@ -3,7 +3,6 @@ import type { JSX, RefObject } from "react";
 import type { ChatSessionMessage } from "../../chat-session.model";
 import { Avatar } from "../../components/ui/avatar";
 import { cn } from "../../lib/utils";
-import { TaskPanel } from "../../task-panel";
 import { TaskThinkingPanel } from "../../task-thinking-panel";
 import {
   createExecutionThinkingTrace,
@@ -46,7 +45,19 @@ export const ConversationFeed = ({
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 py-8 pr-4 lg:pr-6">
       {visibleMessages.map((message) => {
+        if (message.role === "agent" && message.source?.kind === "preview") {
+          return null;
+        }
+
         const renderedContent = getRenderedMessageContent(message);
+        const thinkingTrace =
+          message.source?.kind === "execution"
+            ? createExecutionThinkingTrace(message.source.execution)
+            : message.source?.kind === "thinking"
+              ? message.source.thinking
+              : null;
+        const shouldRenderBubble =
+          message.role === "user" || renderedContent.trim().length > 0;
 
         return (
           <div
@@ -79,42 +90,34 @@ export const ConversationFeed = ({
                 message.role === "user" ? "items-end" : "items-start",
               )}
             >
-              {message.source?.kind === "execution" ? (
+              {thinkingTrace ? (
                 <div className="w-full pt-1 lg:max-w-4xl">
-                  <TaskThinkingPanel
-                    thinking={createExecutionThinkingTrace(
-                      message.source.execution,
-                    )}
-                  />
+                  <TaskThinkingPanel thinking={thinkingTrace} />
                 </div>
               ) : null}
 
-              <div
-                className={cn(
-                  "max-w-[90%] rounded-[1.75rem] px-5 py-4 text-sm leading-7 shadow-lg",
-                  message.role === "user"
-                    ? "rounded-tr-md bg-slate-800 text-slate-100 shadow-slate-950/20"
-                    : "rounded-tl-sm border border-slate-800 bg-slate-900/80 text-slate-300 shadow-slate-950/30",
-                )}
-              >
-                {message.role === "agent" ? (
-                  <MessageMarkdown content={renderedContent} />
-                ) : (
-                  <div className="whitespace-pre-wrap">{renderedContent}</div>
-                )}
-              </div>
+              {shouldRenderBubble ? (
+                <div
+                  className={cn(
+                    "max-w-[90%] rounded-[1.75rem] px-5 py-4 text-sm leading-7 shadow-lg",
+                    message.role === "user"
+                      ? "rounded-tr-md bg-slate-800 text-slate-100 shadow-slate-950/20"
+                      : "rounded-tl-sm border border-slate-800 bg-slate-900/80 text-slate-300 shadow-slate-950/30",
+                  )}
+                >
+                  {message.role === "agent" ? (
+                    <MessageMarkdown content={renderedContent} />
+                  ) : (
+                    <div className="whitespace-pre-wrap">{renderedContent}</div>
+                  )}
+                </div>
+              ) : null}
 
               {message.source?.kind === "execution" ? (
                 <ExecutionInsightRow
                   execution={message.source.execution}
                   onOpenWorkspaceFile={onOpenWorkspaceFile}
                 />
-              ) : null}
-
-              {message.source?.kind === "preview" ? (
-                <div className="w-full pt-1 lg:max-w-4xl">
-                  <TaskPanel source={message.source} />
-                </div>
               ) : null}
             </div>
           </div>

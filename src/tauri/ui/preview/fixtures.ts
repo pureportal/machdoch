@@ -499,7 +499,7 @@ const createUnsupportedExecutionResponse = (): NonNullable<
       "**Preview only.**",
       "",
       "- This request goes beyond the current deterministic mock executor",
-      "- The preview below still shows the likely tools, approvals, and next move",
+      "- The shell kept the response explicit instead of pretending the task already ran",
     ].join("\n"),
     highlights: [
       "The shell kept the result explicit instead of pretending the task already ran.",

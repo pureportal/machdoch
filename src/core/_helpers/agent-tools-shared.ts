@@ -9,6 +9,7 @@ import type {
   TaskExecutionSection,
   ToolName,
   ToolRiskLevel,
+  UiControlRuntimeInfo,
 } from "../types.js";
 
 export const MAX_DIRECTORY_ENTRIES = 60;
@@ -41,6 +42,7 @@ export interface ConversationMemoryRuntime {
 export interface AgentToolExecutionContext {
   workspaceRoot: string;
   memory: ConversationMemoryRuntime;
+  uiControl?: UiControlRuntimeInfo;
 }
 
 export interface AgentToolExecutionResult {

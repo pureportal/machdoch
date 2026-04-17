@@ -1,10 +1,23 @@
 mod desktop_task;
 mod runtime_snapshot;
+mod ui_control;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    match ui_control::try_run_ui_control_bridge_from_args() {
+        Ok(true) => {
+            return;
+        }
+        Ok(false) => {}
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             desktop_task::open_workspace_path,

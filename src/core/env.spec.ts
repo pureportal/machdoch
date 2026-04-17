@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -38,6 +38,7 @@ const ISOLATED_ENV_KEYS = [
 const createWorkspace = async (): Promise<string> => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-env-"));
   workspacesToClean.push(workspaceRoot);
+  process.env.MACHDOCH_USER_CONFIG_DIR = join(workspaceRoot, ".user-config");
   return workspaceRoot;
 };
 
@@ -108,8 +109,21 @@ describe("loadWorkspaceEnv", () => {
   it("loads workspace .env values and process overrides for runtime config resolution", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();
+    const userConfigDirectory = join(workspaceRoot, ".user-config");
 
-    await saveUserApiKey("openai", "sk-test-user-config-123456");
+    await mkdir(userConfigDirectory, { recursive: true });
+    await writeFile(
+      join(userConfigDirectory, "user-config.json"),
+      `${JSON.stringify(
+        {
+          apiKeys: {
+            openai: "sk-test-user-config-123456",
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
     await writeFile(
       join(workspaceRoot, ".env"),
       ["OPENAI_API_KEY=sk-workspace", "MACHDOCH_MODEL=workspace-model"].join(

@@ -5,6 +5,18 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@tauri-apps/api/core": fileURLToPath(
+        new URL("./src/tauri/ui/test/tauri-test-mocks.ts", import.meta.url),
+      ),
+      "@tauri-apps/api/event": fileURLToPath(
+        new URL("./src/tauri/ui/test/tauri-test-mocks.ts", import.meta.url),
+      ),
+      "@tauri-apps/plugin-dialog": fileURLToPath(
+        new URL("./src/tauri/ui/test/tauri-test-mocks.ts", import.meta.url),
+      ),
+      "@tauri-apps/plugin-opener": fileURLToPath(
+        new URL("./src/tauri/ui/test/tauri-test-mocks.ts", import.meta.url),
+      ),
     },
   },
   test: {

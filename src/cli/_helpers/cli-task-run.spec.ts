@@ -1,6 +1,22 @@
-import type { TaskConversationContext } from "../../core/types.ts";
+import type {
+  ConversationMemoryEntry,
+  TaskConversationContext,
+} from "../../core/types.ts";
 import type { ParsedCliArgs } from "./cli-args.ts";
 import { resolveConversationContext } from "./cli-task-run.ts";
+
+const createMemoryEntry = (
+  scope: ConversationMemoryEntry["scope"],
+  content: string,
+): ConversationMemoryEntry => {
+  return {
+    id: `${scope}-${content}`,
+    scope,
+    content,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+};
 
 const createArgs = (
   overrides: Partial<
@@ -29,9 +45,11 @@ describe("resolveConversationContext", () => {
     const explicitContext: TaskConversationContext = {
       history: [{ role: "user", content: "Summarize the repo" }],
       sessionMemoryEnabled: true,
-      sessionMemory: [{ content: "Prefers concise output" }],
+      sessionMemory: [
+        createMemoryEntry("session", "Prefers concise output"),
+      ],
       globalMemoryEnabled: false,
-      globalMemory: [{ content: "Uses Windows" }],
+      globalMemory: [createMemoryEntry("global", "Uses Windows")],
     };
 
     await expect(

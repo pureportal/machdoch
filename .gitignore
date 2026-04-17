@@ -1,7 +1,55 @@
+# Node / frontend dependencies
 node_modules/
+
+# Frontend build and test outputs
 dist/
+dist-ssr/
 coverage/
+.nyc_output/
+.vite/
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+*.tsbuildinfo
+
+# Package manager caches
+.npm/
+.pnpm-store/
+.yarn/
+
+# Environment files
 .env
 .env.local
+.env.*
+!.env.example
+
+# Logs and runtime data
+logs/
+*.log
 npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+*.pid
+*.pid.lock
+*.seed
+
+# Rust / Tauri build artifacts
 src-tauri/target/
+src-tauri/target-*/
+**/*.rs.bk
+*.pdb
+
+# Editor / tool local state
+.cache/
+.parcel-cache/
+.eslintcache
+.idea/
+.vs/
+.vscode/settings.json
+.vscode/tasks.json
+.vscode-test/
+
+# OS cruft
+.DS_Store
+Thumbs.db

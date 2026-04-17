@@ -41,6 +41,10 @@ export const getRelatedFileButtonLabel = (path: string): string => {
 export const getRenderedMessageContent = (
   message: ChatSessionMessage,
 ): string => {
+  if (message.role === "agent" && message.source?.kind === "thinking") {
+    return "";
+  }
+
   if (message.role === "agent" && message.source?.kind === "execution") {
     return getExecutionMessageContent(message.source.execution);
   }

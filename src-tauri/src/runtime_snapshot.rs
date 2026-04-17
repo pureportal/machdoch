@@ -8,6 +8,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use crate::ui_control::UiControlAvailability;
+
 const DEFAULT_MODEL: &str = "gpt-5.4-mini";
 const PLACEHOLDER_TOKENS: [&str; 3] = ["YOUR_", "CHANGE_ME", "PLACEHOLDER"];
 const KNOWN_SAMPLE_SECRET_VALUES: [&str; 5] = [
@@ -42,6 +44,7 @@ pub struct RuntimeSnapshot {
     compatibility: RuntimeCompatibilityConfig,
     provider_availability: Vec<ProviderAvailability>,
     web_search: RuntimeWebSearchConfig,
+    ui_control: UiControlAvailability,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1014,5 +1017,6 @@ pub async fn get_runtime_snapshot(workspace_root: String) -> Result<RuntimeSnaps
             active_provider: web_search_active_provider,
             provider_availability: web_search_provider_availability,
         },
+        ui_control: crate::ui_control::detect_ui_control_availability(),
     })
 }

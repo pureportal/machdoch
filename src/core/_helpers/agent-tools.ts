@@ -4,6 +4,7 @@ import type {
   TaskExecutionSection,
   ToolName,
   ToolRiskLevel,
+  UiControlRuntimeInfo,
 } from "../types.js";
 import {
   createToolErrorResult,
@@ -19,6 +20,7 @@ import {
   limitText,
   stringifyUnknown,
 } from "./runtime-text.js";
+import { createDesktopUiToolDefinitions } from "./desktop-ui-tool-definitions.js";
 import { createShellNetworkToolDefinitions } from "./shell-network-tool-definitions.js";
 
 export type {
@@ -116,11 +118,13 @@ const createApprovalPause = (
 export const createToolDefinitions = (
   config: RuntimeConfig,
   memory: ConversationMemoryRuntime,
+  uiControl?: UiControlRuntimeInfo,
 ): AgentToolDefinition[] => {
   return [
     ...createFilesystemToolDefinitions(),
     ...createShellNetworkToolDefinitions(config),
     ...createMemoryToolDefinitions(memory),
+    ...createDesktopUiToolDefinitions(uiControl),
   ];
 };
 
@@ -129,6 +133,7 @@ export const executeToolCall = async (
   config: RuntimeConfig,
   loopState: AgentLoopSnapshot,
   memory: ConversationMemoryRuntime,
+  uiControl: UiControlRuntimeInfo | undefined,
   toolDefinitions: Map<string, AgentToolDefinition>,
   call: AgentModelToolCall,
 ): Promise<{
@@ -174,6 +179,7 @@ export const executeToolCall = async (
   const result = await toolDefinition.execute(call.arguments, {
     workspaceRoot: config.workspaceRoot,
     memory,
+    ...(uiControl !== undefined ? { uiControl } : {}),
   });
 
   return {

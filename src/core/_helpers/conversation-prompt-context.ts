@@ -6,6 +6,7 @@ import type {
   RuntimeConfig,
   TaskConversationContext,
   TaskExecutionSection,
+  UiControlRuntimeInfo,
 } from "../types.js";
 import type { ConversationMemoryRuntime } from "./agent-tools.js";
 import { createProviderAdapter } from "./provider-adapters.js";
@@ -26,6 +27,8 @@ export interface PreparedConversationPromptContext {
   promptBlock?: string;
   sections: TaskExecutionSection[];
   memory: ConversationMemoryRuntime;
+  uiControlEnabled: boolean;
+  uiControl?: UiControlRuntimeInfo;
 }
 
 const normalizeConversationHistory = (
@@ -204,6 +207,8 @@ export const prepareConversationPromptContext = async (
         "global",
       )
     : [];
+  const uiControlEnabled = conversationContext?.uiControlEnabled === true;
+  const uiControl = conversationContext?.uiControl;
   const { omittedHistory, recentHistory } =
     createRecentHistoryWindow(normalizedHistory);
   const summary =
@@ -241,6 +246,21 @@ export const prepareConversationPromptContext = async (
           "<global_memory>",
           ...globalMemoryLines.map((line) => `- ${line}`),
           "</global_memory>",
+        ].join("\n")
+      : undefined,
+    uiControlEnabled
+      ? [
+          "<ui_control>",
+          "Desktop UI control is enabled for this run.",
+          `available: ${uiControl?.available === true ? "yes" : "no"}`,
+          `platform: ${uiControl?.platform ?? "unknown"}`,
+          `screenshots: ${uiControl?.supportsScreenshots === true ? "yes" : "no"}`,
+          `window enumeration: ${uiControl?.supportsWindowEnumeration === true ? "yes" : "no"}`,
+          `mouse and keyboard input: ${uiControl?.supportsInput === true ? "yes" : "no"}`,
+          `window handles: ${uiControl?.supportsWindowHandles === true ? "yes" : "no"}`,
+          ...(uiControl?.reason ? [`reason: ${uiControl.reason}`] : []),
+          "Prefer a capture → act → wait/re-capture loop for GUI tasks.",
+          "</ui_control>",
         ].join("\n")
       : undefined,
   ].filter((section): section is string => typeof section === "string");
@@ -302,6 +322,23 @@ export const prepareConversationPromptContext = async (
             },
           ]
         : []),
+      ...(uiControlEnabled
+        ? [
+            {
+              title: "UI control",
+              lines: [
+                `enabled: yes`,
+                `available: ${uiControl?.available === true ? "yes" : "no"}`,
+                `platform: ${uiControl?.platform ?? "unknown"}`,
+                `screenshots: ${uiControl?.supportsScreenshots === true ? "yes" : "no"}`,
+                `window enumeration: ${uiControl?.supportsWindowEnumeration === true ? "yes" : "no"}`,
+                `mouse and keyboard input: ${uiControl?.supportsInput === true ? "yes" : "no"}`,
+                `window handles: ${uiControl?.supportsWindowHandles === true ? "yes" : "no"}`,
+                ...(uiControl?.reason ? [`reason: ${uiControl.reason}`] : []),
+              ],
+            },
+          ]
+        : []),
     ],
     memory: {
       sessionEnabled,
@@ -309,5 +346,7 @@ export const prepareConversationPromptContext = async (
       globalEnabled,
       globalEntries,
     },
+    uiControlEnabled,
+    ...(uiControl ? { uiControl } : {}),
   };
 };

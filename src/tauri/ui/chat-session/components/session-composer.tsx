@@ -1,4 +1,10 @@
-import { Brain, BrainCircuit, FolderOpen, SendHorizonal } from "lucide-react";
+import {
+  Brain,
+  BrainCircuit,
+  FolderOpen,
+  Monitor,
+  SendHorizonal,
+} from "lucide-react";
 import type { JSX, KeyboardEvent } from "react";
 import type { RunMode } from "../../../../core/types.js";
 import type { ChatSessionRecord } from "../../chat-session.model";
@@ -22,14 +28,17 @@ export interface SessionComposerProps {
   composerWorkspaceLabel: string;
   sessionMemoryDescription: string;
   globalMemoryDescription: string;
+  uiControlDescription: string;
   isGlobalMemoryAvailable: boolean;
   isGlobalMemoryActive: boolean;
+  isUiControlAvailable: boolean;
   canSendMessage: boolean;
   onSelectFolder: () => Promise<void>;
   onSessionModelSelection: (provider: RuntimeProvider, model: string) => void;
   onSessionModeSelection: (mode: RunMode | null) => void;
   onSessionMemoryEnabledChange: (enabled: boolean) => void;
   onUseGlobalMemoryChange: (enabled: boolean) => void;
+  onUiControlEnabledChange: (enabled: boolean) => void;
   onDraftChange: (value: string) => void;
   onComposerHistoryNavigation: (
     event: KeyboardEvent<HTMLTextAreaElement>,
@@ -48,14 +57,17 @@ export const SessionComposer = ({
   composerWorkspaceLabel,
   sessionMemoryDescription,
   globalMemoryDescription,
+  uiControlDescription,
   isGlobalMemoryAvailable,
   isGlobalMemoryActive,
+  isUiControlAvailable,
   canSendMessage,
   onSelectFolder,
   onSessionModelSelection,
   onSessionModeSelection,
   onSessionMemoryEnabledChange,
   onUseGlobalMemoryChange,
+  onUiControlEnabledChange,
   onDraftChange,
   onComposerHistoryNavigation,
   onSend,
@@ -127,6 +139,24 @@ export const SessionComposer = ({
             isGlobalMemoryAvailable && isGlobalMemoryActive
               ? "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white"
               : isGlobalMemoryAvailable
+                ? undefined
+                : "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
+          )}
+        />
+
+        <MemoryShortcutButton
+          label="UI control"
+          description={uiControlDescription}
+          pressed={activeSession.uiControlEnabled}
+          disabled={!isUiControlAvailable}
+          onClick={() =>
+            onUiControlEnabledChange(!activeSession.uiControlEnabled)
+          }
+          icon={<Monitor className="h-4 w-4" />}
+          className={cn(
+            isUiControlAvailable && activeSession.uiControlEnabled
+              ? "border-violet-500/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white"
+              : isUiControlAvailable
                 ? undefined
                 : "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
           )}

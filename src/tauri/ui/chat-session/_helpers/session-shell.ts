@@ -12,6 +12,7 @@ import type {
   ConversationHistoryEntry,
   RunMode,
   TaskConversationContext,
+  UiControlAvailability,
 } from "../../../../core/types.js";
 import {
   createVisibleConversationMessages,
@@ -273,6 +274,7 @@ export const createEmptyUserMemorySettings = (): UserMemorySettings => {
 export const createConversationContextFromSession = (
   session: ChatSessionRecord,
   globalMemoryEnabled: boolean,
+  uiControl?: UiControlAvailability,
 ): TaskConversationContext => {
   const history: ConversationHistoryEntry[] = createVisibleConversationMessages(
     session.messages,
@@ -297,6 +299,8 @@ export const createConversationContextFromSession = (
     sessionMemoryEnabled: session.sessionMemoryEnabled,
     sessionMemory: session.sessionMemory,
     globalMemoryEnabled: globalMemoryEnabled ? session.useGlobalMemory : false,
+    uiControlEnabled: session.uiControlEnabled,
+    ...(uiControl ? { uiControl } : {}),
   };
 };
 

@@ -5,6 +5,9 @@ import {
   type RuntimeProvider,
 } from "./model-catalog";
 import type { TaskPanelSource } from "./task-panel.model";
+import type { TaskThinkingSource } from "./task-thinking.model";
+
+export type ChatSessionMessageSource = TaskPanelSource | TaskThinkingSource;
 
 export interface ChatSessionMessage {
   id: string;
@@ -12,7 +15,7 @@ export interface ChatSessionMessage {
   role: "user" | "agent";
   content: string;
   createdAt?: number;
-  source?: TaskPanelSource;
+  source?: ChatSessionMessageSource;
 }
 
 export interface ChatSessionRecord {
@@ -30,6 +33,7 @@ export interface ChatSessionRecord {
   promptHistory: string[];
   sessionMemoryEnabled: boolean;
   useGlobalMemory: boolean;
+  uiControlEnabled: boolean;
   sessionMemory: ConversationMemoryEntry[];
 }
 
@@ -82,6 +86,7 @@ export const createSession = (
     promptHistory: overrides.promptHistory ?? [],
     sessionMemoryEnabled: overrides.sessionMemoryEnabled ?? true,
     useGlobalMemory: overrides.useGlobalMemory ?? true,
+    uiControlEnabled: overrides.uiControlEnabled ?? false,
     sessionMemory: overrides.sessionMemory ?? [],
   };
 };
@@ -173,6 +178,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
               : [],
             sessionMemoryEnabled: session.sessionMemoryEnabled !== false,
             useGlobalMemory: session.useGlobalMemory !== false,
+            uiControlEnabled: session.uiControlEnabled === true,
             sessionMemory: normalizeConversationMemoryEntries(
               session.sessionMemory,
               "session",
@@ -304,6 +310,12 @@ export const getSessionOverviewStatus = (
     return "running";
   }
 
+  if (latestTerminalAgentMessage.source?.kind === "thinking") {
+    return latestTerminalAgentMessage.source.thinking.status === "running"
+      ? "running"
+      : "done";
+  }
+
   if (
     latestTerminalAgentMessage.source?.kind === "execution" &&
     latestTerminalAgentMessage.source.execution.status === "approval-required"
@@ -324,11 +336,15 @@ export const canArchiveSession = (session: ChatSessionRecord): boolean => {
 export const createVisibleConversationMessages = (
   messages: ChatSessionMessage[],
 ): ChatSessionMessage[] => {
-  const latestAgentMessageByTask = new Map<string, string>();
+  const latestRenderableAgentMessageByTask = new Map<string, string>();
 
   messages.forEach((message) => {
-    if (message.role === "agent" && message.taskId) {
-      latestAgentMessageByTask.set(message.taskId, message.id);
+    if (
+      message.role === "agent" &&
+      message.taskId &&
+      message.source?.kind !== "preview"
+    ) {
+      latestRenderableAgentMessageByTask.set(message.taskId, message.id);
     }
   });
 
@@ -337,6 +353,12 @@ export const createVisibleConversationMessages = (
       return true;
     }
 
-    return latestAgentMessageByTask.get(message.taskId) === message.id;
+    if (message.source?.kind === "preview") {
+      return false;
+    }
+
+    return (
+      latestRenderableAgentMessageByTask.get(message.taskId) === message.id
+    );
   });
 };

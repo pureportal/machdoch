@@ -146,6 +146,22 @@ export type ConversationRole = "user" | "assistant";
 
 export type ConversationMemoryScope = "session" | "global";
 
+export type UiControlPlatform = "windows" | "macos" | "linux" | "unknown";
+
+export interface UiControlAvailability {
+  available: boolean;
+  platform: UiControlPlatform;
+  supportsScreenshots: boolean;
+  supportsWindowEnumeration: boolean;
+  supportsInput: boolean;
+  supportsWindowHandles: boolean;
+  reason?: string;
+}
+
+export interface UiControlRuntimeInfo extends UiControlAvailability {
+  bridgeCommand?: string;
+}
+
 export interface ConversationHistoryEntry {
   role: ConversationRole;
   content: string;
@@ -166,6 +182,8 @@ export interface TaskConversationContext {
   sessionMemory?: ConversationMemoryEntry[];
   globalMemoryEnabled?: boolean;
   globalMemory?: ConversationMemoryEntry[];
+  uiControlEnabled?: boolean;
+  uiControl?: UiControlRuntimeInfo;
 }
 
 export interface TaskExecutionMemoryUpdate {
@@ -186,10 +204,27 @@ export interface AgentModelToolCall {
   rawArguments?: string;
 }
 
+export interface AgentModelToolTextContent {
+  type: "text";
+  text: string;
+}
+
+export interface AgentModelToolImageContent {
+  type: "image";
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  data: string;
+  detail?: "low" | "high" | "auto" | "original";
+}
+
+export type AgentModelToolResultContent =
+  | AgentModelToolTextContent
+  | AgentModelToolImageContent;
+
 export interface AgentModelToolResult {
   callId: string;
   name: string;
   output: string;
+  content?: AgentModelToolResultContent[];
   isError?: boolean;
 }
 

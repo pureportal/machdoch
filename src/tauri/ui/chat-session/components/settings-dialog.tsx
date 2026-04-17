@@ -1,3 +1,4 @@
+import { ArrowUpRight } from "lucide-react";
 import type { JSX } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -37,6 +38,7 @@ export interface ProviderSetupControls {
   saving: boolean;
   message: SettingsStatusMessage | null;
   onProviderChange: (provider: UserApiKeyProvider) => void;
+  onOpenProviderPortal: (provider: UserApiKeyProvider) => Promise<void> | void;
   onKeyChange: (value: string) => void;
   onSave: () => Promise<void> | void;
 }
@@ -157,18 +159,35 @@ export const SettingsDialog = ({
                     spellCheck={false}
                     className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
                   />
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      void providerSetup.onSave();
-                    }}
-                    disabled={
-                      !providerSetup.keyValue.trim() || providerSetup.saving
-                    }
-                    className="h-11 rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500 disabled:opacity-50"
-                  >
-                    {providerSetup.saving ? "Saving…" : "Save key"}
-                  </Button>
+                  <div className="flex items-center gap-2 md:justify-end">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Open ${getProviderLabel(providerSetup.provider)} API key settings`}
+                      title={`Open ${getProviderLabel(providerSetup.provider)} API key settings`}
+                      onClick={() => {
+                        void providerSetup.onOpenProviderPortal(
+                          providerSetup.provider,
+                        );
+                      }}
+                      className="h-11 w-11 rounded-2xl border border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+                    >
+                      <ArrowUpRight className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        void providerSetup.onSave();
+                      }}
+                      disabled={
+                        !providerSetup.keyValue.trim() || providerSetup.saving
+                      }
+                      className="h-11 rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500 disabled:opacity-50"
+                    >
+                      {providerSetup.saving ? "Saving…" : "Save key"}
+                    </Button>
+                  </div>
                 </div>
 
                 {providerSetup.message ? (

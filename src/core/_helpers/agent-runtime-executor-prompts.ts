@@ -71,9 +71,29 @@ export const createExecutorSystemPrompt = (
       "Never store transient tool output, secrets, or speculative guesses as memory.",
       "</memory_contract>",
     ].join("\n"),
+    conversationContext.uiControlEnabled
+      ? [
+          "<ui_control_contract>",
+          conversationContext.uiControl?.available
+            ? `Desktop UI control is enabled on ${conversationContext.uiControl.platform}. Use the UI tools to inspect windows or screens before acting, then verify the outcome with another capture.`
+            : "Desktop UI control was requested for this run, but the native bridge is currently unavailable.",
+          conversationContext.uiControl?.available
+            ? `Capabilities: screenshots=${conversationContext.uiControl.supportsScreenshots ? "yes" : "no"}, windows=${conversationContext.uiControl.supportsWindowEnumeration ? "yes" : "no"}, input=${conversationContext.uiControl.supportsInput ? "yes" : "no"}, window_handles=${conversationContext.uiControl.supportsWindowHandles ? "yes" : "no"}.`
+            : undefined,
+          conversationContext.uiControl?.supportsWindowHandles
+            ? "On Windows, prefer handle-based window and control operations when they are available because they are more stable than blind coordinate clicks."
+            : "Use absolute desktop coordinates carefully and recapture after each meaningful UI action.",
+          "After opening apps, switching windows, or triggering navigation, budget for startup/render time by waiting explicitly before assuming the UI has settled.",
+          "</ui_control_contract>",
+        ]
+          .filter((line): line is string => typeof line === "string")
+          .join("\n")
+      : undefined,
     "<final_response_contract>When the task is complete, call `submit_final_response` exactly once and make it the only tool call in that turn. The markdown must stay compact, use standard Markdown, prefer short bullet lists over long prose, and only mention files or checks that are grounded in actual tool output. Put workspace file references in `relatedFiles` instead of inventing inline file URLs.</final_response_contract>",
     "<completion_requirements>Only stop when the user request is actually satisfied and you have tool-grounded evidence for that conclusion. Do not end with freeform prose alone when you can return the structured final response.</completion_requirements>",
-  ].join("\n\n");
+  ]
+    .filter((section): section is string => typeof section === "string")
+    .join("\n\n");
 };
 
 export const createExecutorUserPrompt = (

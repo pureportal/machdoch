@@ -11,7 +11,7 @@ use std::{
 use std::os::windows::process::CommandExt;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tauri::Emitter;
 
 use crate::runtime_snapshot::resolve_workspace_root_path;
@@ -143,6 +143,53 @@ fn cleanup_temporary_file(path: Option<&PathBuf>) {
     if let Some(path) = path {
         let _ = fs::remove_file(path);
     }
+}
+
+fn enrich_ui_control_conversation_context(
+    conversation_context: Option<Value>,
+) -> Result<Option<Value>, String> {
+    let Some(mut conversation_context) = conversation_context else {
+        return Ok(None);
+    };
+
+    let Value::Object(context_object) = &mut conversation_context else {
+        return Err(
+            "Expected the desktop conversation context to be a JSON object.".to_string(),
+        );
+    };
+
+    if context_object
+        .get("uiControlEnabled")
+        .and_then(Value::as_bool)
+        != Some(true)
+    {
+        return Ok(Some(conversation_context));
+    }
+
+    let runtime_info = serde_json::to_value(crate::ui_control::create_ui_control_runtime_info())
+        .map_err(|error| format!("Failed to serialize desktop UI control metadata: {error}"))?;
+
+    let ui_control_value = match context_object.get_mut("uiControl") {
+        Some(Value::Object(existing)) => {
+            let mut merged = match runtime_info {
+                Value::Object(object) => object,
+                _ => Map::new(),
+            };
+
+            for (key, value) in existing.clone() {
+                if key != "bridgeCommand" {
+                    merged.insert(key, value);
+                }
+            }
+
+            Value::Object(merged)
+        }
+        _ => runtime_info,
+    };
+
+    context_object.insert("uiControl".to_string(), ui_control_value);
+
+    Ok(Some(conversation_context))
 }
 
 fn create_progress_timestamp() -> u64 {
@@ -295,6 +342,7 @@ fn execute_desktop_task(
             Some(trimmed)
         }
     });
+    let conversation_context = enrich_ui_control_conversation_context(conversation_context)?;
     let conversation_context_path = conversation_context
         .as_ref()
         .map(write_conversation_context_file)

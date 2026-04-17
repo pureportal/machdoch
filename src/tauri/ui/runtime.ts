@@ -1,9 +1,12 @@
 import * as tauriCore from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   ConversationMemoryEntry,
   TaskConversationContext,
   TaskExecutionResult,
   TaskRunPreview,
+  UiControlAvailability,
 } from "../../core/types.js";
 import {
   SUPPORTED_PROVIDER_ORDER,
@@ -23,6 +26,15 @@ export type UserWebSearchApiKeyProvider = Exclude<WebSearchProvider, "none">;
 export const USER_API_KEY_PROVIDER_ORDER: UserApiKeyProvider[] = [
   ...SUPPORTED_PROVIDER_ORDER,
 ];
+
+export const USER_API_KEY_PROVIDER_PORTAL_URLS: Record<
+  UserApiKeyProvider,
+  string
+> = {
+  openai: "https://platform.openai.com/api-keys",
+  anthropic: "https://platform.claude.com/settings/keys",
+  google: "https://aistudio.google.com/app/apikey",
+};
 
 export const USER_WEB_SEARCH_PROVIDER_ORDER: UserWebSearchApiKeyProvider[] = [
   "perplexity",
@@ -83,6 +95,7 @@ export interface RuntimeSnapshot {
   compatibility: RuntimeCompatibilityConfig;
   providerAvailability: RuntimeProviderAvailability[];
   webSearch: RuntimeWebSearchConfig;
+  uiControl?: UiControlAvailability;
 }
 
 export interface DesktopTaskRunResponse {
@@ -90,7 +103,18 @@ export interface DesktopTaskRunResponse {
   preview?: TaskRunPreview;
 }
 
+export interface DesktopTaskProgressEvent {
+  taskId: string;
+  line: string;
+  timestamp: number;
+}
+
 const DEFAULT_MOCK_WORKSPACE_ROOT = "/mock/home/path";
+const DESKTOP_TASK_PROGRESS_EVENT = "desktop-task-progress";
+
+const canListenToDesktopTaskProgress = (): boolean => {
+  return tauriCore.isTauri() || import.meta.env.MODE === "test";
+};
 
 const canInvokeTauriCommands = (): boolean => {
   return tauriCore.isTauri() && typeof tauriCore.invoke === "function";
@@ -210,6 +234,28 @@ export const saveUserProviderApiKey = async (
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
+};
+
+export const openUserProviderApiKeyPortal = async (
+  provider: UserApiKeyProvider,
+): Promise<void> => {
+  const portalUrl = USER_API_KEY_PROVIDER_PORTAL_URLS[provider];
+
+  if (tauriCore.isTauri()) {
+    try {
+      await openUrl(portalUrl);
+      return;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  if (typeof window !== "undefined" && typeof window.open === "function") {
+    window.open(portalUrl, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  throw new Error("The provider API key page could not be opened.");
 };
 
 export const loadUserWebSearchSettings =
@@ -385,6 +431,26 @@ export const runDesktopTask = async (
     });
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const subscribeToDesktopTaskProgress = async (
+  onProgress: (event: DesktopTaskProgressEvent) => void,
+): Promise<() => void> => {
+  if (!canListenToDesktopTaskProgress()) {
+    return () => {};
+  }
+
+  try {
+    return await listen<DesktopTaskProgressEvent>(
+      DESKTOP_TASK_PROGRESS_EVENT,
+      (event) => {
+        onProgress(event.payload);
+      },
+    );
+  } catch (error) {
+    console.error("Failed to subscribe to desktop task progress", error);
+    return () => {};
   }
 };
 

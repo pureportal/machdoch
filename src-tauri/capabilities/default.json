@@ -12,6 +12,20 @@
     "core:window:allow-is-maximized",
     "core:window:allow-close",
     "dialog:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://platform.openai.com/api-keys"
+        },
+        {
+          "url": "https://platform.claude.com/settings/keys"
+        },
+        {
+          "url": "https://aistudio.google.com/app/apikey"
+        }
+      ]
+    },
     "store:default"
   ]
 }

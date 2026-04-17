@@ -5,6 +5,7 @@ import type {
   Tool as AnthropicTool,
 } from "@anthropic-ai/sdk/resources/messages";
 import {
+  createFunctionResponsePartFromBase64,
   createPartFromFunctionResponse,
   FunctionCallingConfigMode,
   GoogleGenAI,
@@ -16,17 +17,171 @@ import type {
   AgentModelContinueParams,
   AgentModelStartParams,
   AgentModelToolCall,
+  AgentModelToolResult,
+  AgentModelToolResultContent,
   AgentModelToolSpec,
   AgentModelTurn,
   RuntimeConfig,
 } from "../types.js";
+
+const isSchemaRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const schemaAllowsNull = (schema: Record<string, unknown>): boolean => {
+  if (schema.const === null) {
+    return true;
+  }
+
+  if (Array.isArray(schema.enum) && schema.enum.includes(null)) {
+    return true;
+  }
+
+  if (schema.type === "null") {
+    return true;
+  }
+
+  if (Array.isArray(schema.type) && schema.type.includes("null")) {
+    return true;
+  }
+
+  for (const key of ["anyOf", "oneOf"] as const) {
+    const options = schema[key];
+
+    if (
+      Array.isArray(options) &&
+      options.some(
+        (option) => isSchemaRecord(option) && schemaAllowsNull(option),
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const makeSchemaNullable = (
+  schema: Record<string, unknown>,
+): Record<string, unknown> => {
+  if (schemaAllowsNull(schema)) {
+    return schema;
+  }
+
+  const nullableSchema: Record<string, unknown> = { ...schema };
+
+  if (
+    Array.isArray(nullableSchema.enum) &&
+    !nullableSchema.enum.includes(null)
+  ) {
+    nullableSchema.enum = [...nullableSchema.enum, null];
+  }
+
+  if (typeof nullableSchema.type === "string") {
+    nullableSchema.type = [nullableSchema.type, "null"];
+    return nullableSchema;
+  }
+
+  if (Array.isArray(nullableSchema.type)) {
+    nullableSchema.type = nullableSchema.type.includes("null")
+      ? nullableSchema.type
+      : [...nullableSchema.type, "null"];
+    return nullableSchema;
+  }
+
+  if (Array.isArray(nullableSchema.anyOf)) {
+    nullableSchema.anyOf = [...nullableSchema.anyOf, { type: "null" }];
+    return nullableSchema;
+  }
+
+  if (Array.isArray(nullableSchema.oneOf)) {
+    nullableSchema.oneOf = [...nullableSchema.oneOf, { type: "null" }];
+    return nullableSchema;
+  }
+
+  return {
+    anyOf: [nullableSchema, { type: "null" }],
+  };
+};
+
+export const normalizeOpenAIStrictInputSchema = (
+  schema: Record<string, unknown>,
+): Record<string, unknown> => {
+  const normalizedSchema: Record<string, unknown> = { ...schema };
+
+  if (Array.isArray(schema.items)) {
+    normalizedSchema.items = schema.items.map((item) =>
+      isSchemaRecord(item) ? normalizeOpenAIStrictInputSchema(item) : item,
+    );
+  } else if (isSchemaRecord(schema.items)) {
+    normalizedSchema.items = normalizeOpenAIStrictInputSchema(schema.items);
+  }
+
+  for (const key of ["anyOf", "oneOf", "allOf"] as const) {
+    const variants = schema[key];
+
+    if (Array.isArray(variants)) {
+      normalizedSchema[key] = variants.map((variant) =>
+        isSchemaRecord(variant)
+          ? normalizeOpenAIStrictInputSchema(variant)
+          : variant,
+      );
+    }
+  }
+
+  if (isSchemaRecord(schema.not)) {
+    normalizedSchema.not = normalizeOpenAIStrictInputSchema(schema.not);
+  }
+
+  const properties = isSchemaRecord(schema.properties)
+    ? schema.properties
+    : null;
+
+  if (!properties) {
+    if (schema.type === "object") {
+      normalizedSchema.required = [];
+    }
+
+    return normalizedSchema;
+  }
+
+  const originalRequired = new Set(
+    Array.isArray(schema.required)
+      ? schema.required.filter(
+          (entry): entry is string => typeof entry === "string",
+        )
+      : [],
+  );
+  const normalizedProperties = Object.fromEntries(
+    Object.entries(properties).map(([propertyName, propertySchema]) => {
+      if (!isSchemaRecord(propertySchema)) {
+        return [propertyName, propertySchema];
+      }
+
+      const normalizedPropertySchema =
+        normalizeOpenAIStrictInputSchema(propertySchema);
+
+      return [
+        propertyName,
+        originalRequired.has(propertyName)
+          ? normalizedPropertySchema
+          : makeSchemaNullable(normalizedPropertySchema),
+      ];
+    }),
+  );
+
+  normalizedSchema.properties = normalizedProperties;
+  normalizedSchema.required = Object.keys(normalizedProperties);
+
+  return normalizedSchema;
+};
 
 const createOpenAITools = (tools: AgentModelToolSpec[]) => {
   return tools.map((tool) => ({
     type: "function" as const,
     name: tool.name,
     description: tool.description,
-    parameters: tool.inputSchema,
+    parameters: normalizeOpenAIStrictInputSchema(tool.inputSchema),
     strict: true,
   }));
 };
@@ -53,6 +208,136 @@ const createGeminiTools = (tools: AgentModelToolSpec[]) => {
       })),
     },
   ];
+};
+
+const normalizeToolResultContent = (
+  toolResult: AgentModelToolResult,
+): AgentModelToolResultContent[] => {
+  const normalized: AgentModelToolResultContent[] = [];
+
+  for (const contentPart of toolResult.content ?? []) {
+    if (contentPart.type === "text") {
+      const text = contentPart.text.trim();
+
+      if (text.length > 0) {
+        normalized.push({
+          type: "text",
+          text,
+        });
+      }
+
+      continue;
+    }
+
+    if (contentPart.data.trim().length > 0) {
+      normalized.push(contentPart);
+    }
+  }
+
+  const normalizedOutput = toolResult.output.trim();
+  const hasTextContent = normalized.some(
+    (contentPart) => contentPart.type === "text",
+  );
+
+  if (!hasTextContent && normalizedOutput.length > 0) {
+    normalized.unshift({
+      type: "text",
+      text: normalizedOutput,
+    });
+  }
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  return normalizedOutput.length > 0
+    ? [
+        {
+          type: "text",
+          text: normalizedOutput,
+        },
+      ]
+    : [];
+};
+
+const createOpenAIFunctionCallOutput = (toolResult: AgentModelToolResult) => {
+  const content = normalizeToolResultContent(toolResult);
+
+  if (content.length === 1 && content[0]?.type === "text") {
+    return content[0].text;
+  }
+
+  return content.map((contentPart) => {
+    if (contentPart.type === "text") {
+      return {
+        type: "input_text" as const,
+        text: contentPart.text,
+      };
+    }
+
+    return {
+      type: "input_image" as const,
+      detail: contentPart.detail ?? "original",
+      image_url: `data:${contentPart.mediaType};base64,${contentPart.data}`,
+    };
+  });
+};
+
+const createAnthropicToolResultContent = (toolResult: AgentModelToolResult) => {
+  const content = normalizeToolResultContent(toolResult).map((contentPart) => {
+    if (contentPart.type === "text") {
+      return {
+        type: "text" as const,
+        text: contentPart.text,
+      };
+    }
+
+    return {
+      type: "image" as const,
+      source: {
+        type: "base64" as const,
+        media_type: contentPart.mediaType,
+        data: contentPart.data,
+      },
+    };
+  });
+
+  if (content.length === 1 && content[0]?.type === "text") {
+    return content[0].text;
+  }
+
+  return content;
+};
+
+const createGeminiFunctionResponseParts = (
+  toolResult: AgentModelToolResult,
+) => {
+  return normalizeToolResultContent(toolResult).flatMap((contentPart) => {
+    if (contentPart.type !== "image") {
+      return [];
+    }
+
+    return [
+      createFunctionResponsePartFromBase64(
+        contentPart.data,
+        contentPart.mediaType,
+      ),
+    ];
+  });
+};
+
+const createGeminiFunctionResponsePayload = (
+  toolResult: AgentModelToolResult,
+): Record<string, unknown> => {
+  if (toolResult.isError) {
+    return {
+      error: toolResult.output,
+    };
+  }
+
+  return {
+    output: toolResult.output,
+  };
 };
 
 class OpenAIResponsesAdapter implements AgentModelAdapter {
@@ -95,7 +380,7 @@ class OpenAIResponsesAdapter implements AgentModelAdapter {
       input: params.toolResults.map((toolResult) => ({
         type: "function_call_output" as const,
         call_id: toolResult.callId,
-        output: toolResult.output,
+        output: createOpenAIFunctionCallOutput(toolResult),
       })),
       tools: createOpenAITools(this.tools),
       parallel_tool_calls: false,
@@ -205,7 +490,7 @@ class AnthropicMessagesAdapter implements AgentModelAdapter {
       content: params.toolResults.map((toolResult) => ({
         type: "tool_result" as const,
         tool_use_id: toolResult.callId,
-        content: toolResult.output,
+        content: createAnthropicToolResultContent(toolResult),
         ...(toolResult.isError ? { is_error: true } : {}),
       })) as AnthropicMessageParam["content"],
     });
@@ -322,10 +607,12 @@ class GeminiChatAdapter implements AgentModelAdapter {
 
     const response = await this.chat.sendMessage({
       message: params.toolResults.map((toolResult) =>
-        createPartFromFunctionResponse(toolResult.callId, toolResult.name, {
-          output: toolResult.output,
-          isError: toolResult.isError === true,
-        }),
+        createPartFromFunctionResponse(
+          toolResult.callId,
+          toolResult.name,
+          createGeminiFunctionResponsePayload(toolResult),
+          createGeminiFunctionResponseParts(toolResult),
+        ),
       ),
       config: {
         systemInstruction: this.startParams.systemPrompt,

@@ -13,13 +13,18 @@ import {
   createSession,
   type ShellPersistedState,
 } from "./chat-session.model";
-import { createMockExecutionFixture } from "./preview/fixtures";
+import {
+  createMockExecutionFixture,
+  createPreviewFixture,
+} from "./preview/fixtures";
 import * as runtime from "./runtime";
-
-const { isTauriMock, openMock } = vi.hoisted(() => ({
-  isTauriMock: vi.fn(() => true),
-  openMock: vi.fn().mockResolvedValue("/mocked/tauri/path"),
-}));
+import {
+  desktopEventListeners,
+  isTauriMock,
+  listenMock,
+  openMock,
+  openUrlMock,
+} from "./test/tauri-test-mocks";
 
 class ResizeObserverMock {
   observe(): void {}
@@ -34,15 +39,6 @@ beforeAll(() => {
   vi.stubGlobal("ResizeObserver", ResizeObserverMock);
 });
 
-vi.mock("@tauri-apps/api/core", () => ({
-  isTauri: isTauriMock,
-  invoke: undefined,
-}));
-
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: openMock,
-}));
-
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
@@ -50,6 +46,9 @@ beforeEach(() => {
   isTauriMock.mockReturnValue(true);
   openMock.mockResolvedValue("/mocked/tauri/path");
   openMock.mockClear();
+  openUrlMock.mockClear();
+  listenMock.mockClear();
+  desktopEventListeners.clear();
   window.localStorage.clear();
 });
 
@@ -68,14 +67,14 @@ afterEach(() => {
 });
 
 const selectWorkspace = async (): Promise<void> => {
-  fireEvent.click(screen.getByRole("button", { name: /Routing & Workspace/i }));
-
-  fireEvent.click(screen.getByRole("button", { name: /Select directory/i }));
+  fireEvent.click(screen.getByRole("button", { name: /Choose workspace/i }));
 
   await waitFor(() => {
-    expect(
-      screen.getByRole("button", { name: /Change folder/i }),
-    ).toBeDefined();
+    const dialogOpened = openMock.mock.calls.length > 0;
+    const workspaceLabelUpdated =
+      screen.queryByRole("button", { name: /Choose workspace/i }) === null;
+
+    expect(dialogOpened || workspaceLabelUpdated).toBe(true);
   });
 };
 
@@ -83,6 +82,29 @@ const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
 
 const storeShellState = (state: ShellPersistedState): void => {
   window.localStorage.setItem(SHELL_STATE_STORAGE_KEY, JSON.stringify(state));
+};
+
+const createRuntimeSnapshot = (
+  overrides: Partial<RuntimeSnapshot> = {},
+): RuntimeSnapshot => {
+  return {
+    workspaceRoot: "/mocked/tauri/path",
+    availableProfiles: [],
+    mode: "ask",
+    enabledTools: ["filesystem", "shell"],
+    provider: "openai",
+    model: "gpt-5.4-mini",
+    offline: false,
+    compatibility: {
+      discoverGithubCustomizations: false,
+    },
+    providerAvailability: [],
+    webSearch: {
+      activeProvider: "none",
+      providerAvailability: [],
+    },
+    ...overrides,
+  };
 };
 
 const createStoredShellState = (): ShellPersistedState => {
@@ -232,6 +254,20 @@ const getVisibleSessionButtonLabels = (): string[] => {
 
 const SLOW_UI_TEST_TIMEOUT_MS = 15_000;
 
+const emitDesktopTaskProgress = (payload: {
+  taskId: string;
+  line: string;
+  timestamp: number;
+}): void => {
+  const handler = desktopEventListeners.get("desktop-task-progress");
+
+  expect(handler).toBeDefined();
+
+  act(() => {
+    handler?.({ payload });
+  });
+};
+
 describe("ChatSession component", () => {
   it("renders empty state initially", () => {
     render(<ChatSession />);
@@ -250,6 +286,54 @@ describe("ChatSession component", () => {
       true,
     );
   });
+
+  it(
+    "shows live thinking updates with a running spinner before the final response arrives",
+    async () => {
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(
+          () => new Promise<DesktopTaskRunResponse>(() => {}),
+        );
+
+      const { container } = render(<ChatSession />);
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: "scan this workspace and explain the setup" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(() => {
+        expect(desktopEventListeners.has("desktop-task-progress")).toBe(true);
+      });
+
+      const taskId = runDesktopTaskSpy.mock.calls[0]?.[2]?.taskId;
+
+      expect(typeof taskId).toBe("string");
+      expect(
+        screen.getByText(/Submitting the task to the desktop runtime\./i),
+      ).toBeDefined();
+      expect(container.querySelector(".animate-spin")).not.toBeNull();
+
+      emitDesktopTaskProgress({
+        taskId: taskId as string,
+        line: "[executing] Reading workspace files",
+        timestamp: 1,
+      });
+
+      expect(screen.getByText(/Reading workspace files/i)).toBeDefined();
+      expect(screen.queryByText(/Workspace scan complete\./i)).toBeNull();
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
 
   it(
     "allows sending a task before a folder is selected",
@@ -389,12 +473,69 @@ describe("ChatSession component", () => {
         },
         { timeout: SLOW_UI_TEST_TIMEOUT_MS },
       );
+      expect(screen.queryByText(/Task preview/i)).toBeNull();
+      expect(screen.queryByText(/compact task preview/i)).toBeNull();
       expect(screen.queryByText(/Task execution/i)).toBeNull();
       expect(
         screen.getByText(
-          /The preview below still shows the likely tools, approvals, and next move/i,
+          /The shell kept the response explicit instead of pretending the task already ran/i,
         ),
       ).toBeDefined();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "keeps preview staging hidden while the final response is queued",
+    async () => {
+      vi.useFakeTimers();
+
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockResolvedValue({
+          preview: createPreviewFixture("install dependencies and commit the changes"),
+          execution: createMockExecutionFixture(
+            "install dependencies and commit the changes",
+            "/mocked/tauri/path",
+          ),
+        });
+
+      render(<ChatSession />);
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: "install dependencies and commit the changes" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      expect(
+        screen.getByText(/Submitting the task to the desktop runtime\./i),
+      ).toBeDefined();
+
+      await act(async () => {
+        await Promise.resolve();
+        vi.advanceTimersByTime(100);
+      });
+
+      expect(screen.queryByText(/Task preview/i)).toBeNull();
+      expect(screen.queryByText(/compact task preview/i)).toBeNull();
+      expect(
+        screen.getByRole("button", { name: /Collapse thinking process/i }),
+      ).toBeDefined();
+
+      await act(async () => {
+        vi.advanceTimersByTime(200);
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText(/Preview only\./i)).toBeDefined();
+      expect(
+        screen.getByRole("button", { name: /Expand thinking process/i }),
+      ).toBeDefined();
+
+      runDesktopTaskSpy.mockRestore();
     },
     SLOW_UI_TEST_TIMEOUT_MS,
   );
@@ -623,6 +764,48 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "opens the selected provider API key portal from settings",
+    async () => {
+      render(<ChatSession />);
+
+      fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
+
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: /Open OpenAI API key settings/i,
+        }),
+      );
+
+      expect(openUrlMock).toHaveBeenCalledWith(
+        "https://platform.openai.com/api-keys",
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /^Anthropic$/i }));
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: /Open Anthropic API key settings/i,
+        }),
+      );
+
+      expect(openUrlMock).toHaveBeenLastCalledWith(
+        "https://platform.claude.com/settings/keys",
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /^Google$/i }));
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: /Open Google API key settings/i,
+        }),
+      );
+
+      expect(openUrlMock).toHaveBeenLastCalledWith(
+        "https://aistudio.google.com/app/apikey",
+      );
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "toggles session and global memory from composer shortcuts",
     async () => {
       const loadUserMemorySettingsSpy = vi
@@ -691,6 +874,114 @@ describe("ChatSession component", () => {
       });
 
       loadUserMemorySettingsSpy.mockRestore();
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "enables UI control from the composer when the desktop runtime supports it",
+    async () => {
+      const loadWorkspaceRuntimeSnapshotSpy = vi
+        .spyOn(runtime, "loadWorkspaceRuntimeSnapshot")
+        .mockResolvedValue(
+          createRuntimeSnapshot({
+            providerAvailability: [{ provider: "openai", configured: true }],
+            uiControl: {
+              available: true,
+              platform: "windows",
+              supportsScreenshots: true,
+              supportsWindowEnumeration: true,
+              supportsInput: true,
+              supportsWindowHandles: true,
+            },
+          }),
+        );
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockResolvedValue({
+          execution: createMockExecutionFixture(
+            "open Notepad and inspect it",
+            "/mocked/tauri/path",
+          ),
+        });
+
+      render(<ChatSession />);
+
+      await waitFor(
+        () => {
+          expect(
+            screen.getByPlaceholderText(/What should machdoch do next\?/i),
+          ).toBeTruthy();
+        },
+        {
+          timeout: SLOW_UI_TEST_TIMEOUT_MS,
+        },
+      );
+
+      await waitFor(
+        () => {
+          expect(
+            screen.getByRole("button", {
+              name: /^UI control$/i,
+            }),
+          ).toBeTruthy();
+        },
+        {
+          timeout: SLOW_UI_TEST_TIMEOUT_MS,
+        },
+      );
+
+      await waitFor(() => {
+        expect(
+          screen
+            .getByRole("button", { name: /^UI control$/i })
+            .getAttribute("aria-disabled"),
+        ).toBeNull();
+      });
+
+      const uiControlButton = screen.getByRole("button", {
+        name: /^UI control$/i,
+      });
+
+      fireEvent.click(uiControlButton);
+
+      await waitFor(() => {
+        expect(
+          screen
+            .getByRole("button", { name: /^UI control$/i })
+            .getAttribute("aria-pressed"),
+        ).toBe("true");
+      });
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+
+      fireEvent.change(input, {
+        target: { value: "open Notepad and inspect it" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      expect(
+        runDesktopTaskSpy.mock.calls[0]?.[2]?.conversationContext,
+      ).toMatchObject({
+        uiControlEnabled: true,
+        uiControl: {
+          available: true,
+          platform: "windows",
+          supportsScreenshots: true,
+          supportsWindowEnumeration: true,
+          supportsInput: true,
+          supportsWindowHandles: true,
+        },
+      });
+
+      loadWorkspaceRuntimeSnapshotSpy.mockRestore();
       runDesktopTaskSpy.mockRestore();
     },
     SLOW_UI_TEST_TIMEOUT_MS,
