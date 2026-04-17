@@ -41,6 +41,7 @@ import {
   getEffectiveSessionMode,
   removeSessionArchiveFlag,
   removeSessionModeOverride,
+  removeSessionProfileOverride,
   RUN_MODE_META,
   type SettingsSection,
 } from "./session-shell";
@@ -75,6 +76,7 @@ export const useChatSessionController = () => {
   const runtime = useChatSessionRuntime({
     catalogOpen: state.catalogOpen,
     activeSessionProvider: state.activeSession.provider,
+    activeSessionProfile: state.activeSession.profile,
     activeSessionWorkspace: state.activeSession.workspace,
   });
   const isDesktop = isTauri();
@@ -278,6 +280,7 @@ export const useChatSessionController = () => {
       const session = createSession({
         workspace: state.activeSession.workspace,
         provider,
+        ...(prev.lastSelectedProfile ? { profile: prev.lastSelectedProfile } : {}),
         ...(prev.lastSelectedMode ? { mode: prev.lastSelectedMode } : {}),
         model:
           prev.lastSelectedModelByProvider[provider] ??
@@ -302,6 +305,9 @@ export const useChatSessionController = () => {
         const replacement = createSession({
           workspace: state.activeSession.workspace,
           provider: prev.lastSelectedProvider,
+          ...(prev.lastSelectedProfile
+            ? { profile: prev.lastSelectedProfile }
+            : {}),
           ...(prev.lastSelectedMode ? { mode: prev.lastSelectedMode } : {}),
           model:
             prev.lastSelectedModelByProvider[prev.lastSelectedProvider] ??
@@ -443,6 +449,78 @@ export const useChatSessionController = () => {
     });
   };
 
+  const handleSessionProfileSelection = async (
+    profile: string | null,
+  ): Promise<void> => {
+    const nextSnapshot = await runtime.refreshWorkspaceRuntimeSnapshot(
+      state.activeSession.workspace,
+      profile,
+    );
+
+    if (profile && !nextSnapshot) {
+      return;
+    }
+
+    state.applyShellState((prev) => {
+      const activeSession = prev.sessions.find(
+        (session) => session.id === prev.activeSessionId,
+      );
+
+      if (!activeSession) {
+        return prev;
+      }
+
+      const nextProvider =
+        nextSnapshot?.provider && nextSnapshot.provider !== "unconfigured"
+          ? nextSnapshot.provider
+          : activeSession.provider;
+      const nextModel = nextSnapshot?.model ?? activeSession.model;
+      const nextUpdatedAt = Date.now();
+      const nextSessions = prev.sessions.map((session) => {
+        if (session.id !== prev.activeSessionId) {
+          return session;
+        }
+
+        const profileScopedSession = profile
+          ? {
+              ...session,
+              profile,
+              updatedAt: nextUpdatedAt,
+            }
+          : {
+              ...removeSessionProfileOverride(session),
+              updatedAt: nextUpdatedAt,
+            };
+        const nextSession = removeSessionModeOverride(profileScopedSession);
+
+        return {
+          ...nextSession,
+          provider: nextProvider,
+          model: nextModel,
+        };
+      });
+      const nextState: ShellPersistedState = {
+        ...prev,
+        lastSelectedProvider: nextProvider,
+        lastSelectedModelByProvider: {
+          ...prev.lastSelectedModelByProvider,
+          [nextProvider]: nextModel,
+        },
+        sessions: nextSessions,
+      };
+
+      if (profile) {
+        nextState.lastSelectedProfile = profile;
+      } else {
+        delete nextState.lastSelectedProfile;
+      }
+
+      delete nextState.lastSelectedMode;
+
+      return nextState;
+    });
+  };
+
   const handleSessionMemoryEnabledChange = (enabled: boolean): void => {
     state.updateActiveSession((session) => ({
       ...session,
@@ -545,8 +623,11 @@ export const useChatSessionController = () => {
     );
     const taskRunPromise = runDesktopTask(state.activeSession.workspace, task, {
       conversationContext,
-      provider: selectedProvider,
       model: selectedModel,
+      ...(state.activeSession.profile
+        ? { profile: state.activeSession.profile }
+        : {}),
+      provider: selectedProvider,
       ...(state.activeSession.mode ? { mode: state.activeSession.mode } : {}),
       taskId,
     });
@@ -630,7 +711,10 @@ export const useChatSessionController = () => {
 
         if (wroteGlobalMemory) {
           void runtime
-            .refreshWorkspaceRuntimeSnapshot(state.activeSession.workspace)
+            .refreshWorkspaceRuntimeSnapshot(
+              state.activeSession.workspace,
+              state.activeSession.profile,
+            )
             .then(() => loadUserMemorySettings())
             .then(runtime.applyLoadedUserMemorySettings)
             .catch((error) => {
@@ -707,6 +791,7 @@ export const useChatSessionController = () => {
       runtimeSnapshot: runtime.runtimeSnapshot,
       runtimeLoading: runtime.runtimeLoading,
       runtimeError: runtime.runtimeError,
+      onSessionProfileSelection: handleSessionProfileSelection,
       onRenameValueChange: state.setRenameValue,
       onRenameCommit: handleRenameCommit,
       onRenameCancel: handleRenameCancel,

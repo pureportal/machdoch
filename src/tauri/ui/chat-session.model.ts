@@ -24,6 +24,7 @@ export interface ChatSessionRecord {
   updatedAt: number;
   archivedAt?: number;
   workspace: string | null;
+  profile?: string;
   provider: RuntimeProvider;
   model: string;
   mode?: RunMode;
@@ -37,7 +38,13 @@ export interface ChatSessionRecord {
   sessionMemory: ConversationMemoryEntry[];
 }
 
-export type SessionOverviewStatus = "empty" | "running" | "waiting" | "done";
+export type SessionOverviewStatus =
+  | "empty"
+  | "running"
+  | "waiting"
+  | "done"
+  | "failed"
+  | "crashed";
 
 export interface ShellPersistedState {
   version: 1;
@@ -45,6 +52,7 @@ export interface ShellPersistedState {
   sessions: ChatSessionRecord[];
   lastSelectedProvider: RuntimeProvider;
   lastSelectedModelByProvider: Partial<Record<RuntimeProvider, string>>;
+  lastSelectedProfile?: string;
   lastSelectedMode?: RunMode;
 }
 
@@ -77,6 +85,7 @@ export const createSession = (
       ? { archivedAt: overrides.archivedAt }
       : {}),
     workspace: overrides.workspace ?? null,
+    ...(overrides.profile ? { profile: overrides.profile } : {}),
     provider,
     model: overrides.model ?? getDefaultModelForProvider(provider),
     ...(overrides.mode ? { mode: overrides.mode } : {}),
@@ -156,6 +165,10 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
           return createSession({
             ...session,
             provider,
+            ...(typeof session.profile === "string" &&
+            session.profile.trim().length > 0
+              ? { profile: session.profile }
+              : {}),
             ...(mode ? { mode } : {}),
             model:
               preserveModel &&
@@ -221,6 +234,11 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
 
     return accumulator;
   }, {});
+  const lastSelectedProfile =
+    typeof candidate.lastSelectedProfile === "string" &&
+    candidate.lastSelectedProfile.trim().length > 0
+      ? candidate.lastSelectedProfile
+      : undefined;
   const lastSelectedMode = isRunMode(candidate.lastSelectedMode)
     ? candidate.lastSelectedMode
     : undefined;
@@ -236,6 +254,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
       ...fallback.lastSelectedModelByProvider,
       ...lastSelectedModelByProvider,
     },
+    ...(lastSelectedProfile ? { lastSelectedProfile } : {}),
     ...(lastSelectedMode ? { lastSelectedMode } : {}),
   };
 };
@@ -307,20 +326,32 @@ export const getSessionOverviewStatus = (
     });
 
   if (!latestTerminalAgentMessage) {
-    return "running";
+    const isStale = Date.now() - session.updatedAt > 10 * 60 * 1000;
+    return isStale ? "crashed" : "running";
   }
 
-  if (latestTerminalAgentMessage.source?.kind === "thinking") {
-    return latestTerminalAgentMessage.source.thinking.status === "running"
-      ? "running"
-      : "done";
+  if (!latestTerminalAgentMessage.source) {
+    return "crashed";
   }
 
-  if (
-    latestTerminalAgentMessage.source?.kind === "execution" &&
-    latestTerminalAgentMessage.source.execution.status === "approval-required"
-  ) {
-    return "waiting";
+  if (latestTerminalAgentMessage.source.kind === "thinking") {
+    if (latestTerminalAgentMessage.source.thinking.status === "running") {
+      const isStale = Date.now() - session.updatedAt > 10 * 60 * 1000;
+      return isStale ? "crashed" : "running";
+    }
+    return "done";
+  }
+
+  if (latestTerminalAgentMessage.source.kind === "execution") {
+    const status = latestTerminalAgentMessage.source.execution.status;
+    
+    if (status === "approval-required") {
+      return "waiting";
+    }
+    
+    if (status === "blocked" || status === "cancelled") {
+      return "failed";
+    }
   }
 
   return "done";

@@ -16,6 +16,22 @@ export const createTokenSet = (value: string): Set<string> => {
 };
 
 /**
+ * Returns whether any candidate token is present in the token set.
+ */
+export const tokenSetHasAny = (
+  tokens: ReadonlySet<string>,
+  candidates: Iterable<string>,
+): boolean => {
+  for (const candidate of candidates) {
+    if (tokens.has(candidate)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+/**
  * Checks whether a keyword is present either as an exact token or, for
  * multi-word phrases, as a normalized substring match.
  */

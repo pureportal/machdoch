@@ -572,7 +572,8 @@ export const parseCliArgs = (
       rawProfile ||
       rawRuntimeProvider ||
       sessionMemoryEnabled !== undefined ||
-      rawGlobalMemory
+      rawGlobalMemory ||
+      rawConversationContextFile
     ) {
       return createParsedArgs({
         ...sharedOptions,

@@ -3,7 +3,10 @@ import type {
   TaskConversationContext,
 } from "../../core/types.ts";
 import type { ParsedCliArgs } from "./cli-args.ts";
-import { resolveConversationContext } from "./cli-task-run.ts";
+import {
+  createInteractiveChatSessionState,
+  resolveConversationContext,
+} from "./cli-task-run.ts";
 
 const createMemoryEntry = (
   scope: ConversationMemoryEntry["scope"],
@@ -76,6 +79,54 @@ describe("resolveConversationContext", () => {
       history: [{ role: "user", content: "Inspect src" }],
       sessionMemoryEnabled: false,
       globalMemoryEnabled: false,
+    });
+  });
+});
+
+describe("createInteractiveChatSessionState", () => {
+  it("preserves seeded history, memory, and UI-control metadata", () => {
+    const seededContext: TaskConversationContext = {
+      history: [{ role: "user", content: "Continue from the previous run" }],
+      sessionMemoryEnabled: false,
+      sessionMemory: [createMemoryEntry("session", "Prefers terse answers")],
+      globalMemoryEnabled: true,
+      globalMemory: [createMemoryEntry("global", "Uses Windows")],
+      uiControlEnabled: true,
+      uiControl: {
+        available: true,
+        platform: "windows",
+        supportsScreenshots: true,
+        supportsWindowEnumeration: true,
+        supportsInput: true,
+        supportsWindowHandles: true,
+      },
+    };
+
+    expect(createInteractiveChatSessionState(seededContext, false)).toEqual({
+      history: [{ role: "user", content: "Continue from the previous run" }],
+      sessionMemoryEnabled: false,
+      sessionMemory: [createMemoryEntry("session", "Prefers terse answers")],
+      globalMemoryEnabled: true,
+      globalMemory: [createMemoryEntry("global", "Uses Windows")],
+      uiControlEnabled: true,
+      uiControl: {
+        available: true,
+        platform: "windows",
+        supportsScreenshots: true,
+        supportsWindowEnumeration: true,
+        supportsInput: true,
+        supportsWindowHandles: true,
+      },
+      effectiveGlobalMemoryEnabled: true,
+    });
+  });
+
+  it("falls back to empty interactive chat state when no seed context exists", () => {
+    expect(createInteractiveChatSessionState(undefined, false)).toEqual({
+      history: [],
+      sessionMemory: [],
+      sessionMemoryEnabled: true,
+      effectiveGlobalMemoryEnabled: false,
     });
   });
 });

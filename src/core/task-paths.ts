@@ -1,8 +1,8 @@
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
-import { createTokenSet } from "./text.js";
+import { createTokenSet, tokenSetHasAny } from "./text.js";
 
-const PATH_INSPECTION_ACTIONS = [
+const PATH_INSPECTION_ACTION_TOKENS = new Set([
   "cat",
   "display",
   "explain",
@@ -14,7 +14,7 @@ const PATH_INSPECTION_ACTIONS = [
   "show",
   "summarize",
   "view",
-];
+]);
 
 const CREATE_FILE_ACTION_TOKENS = new Set([
   "add",
@@ -130,23 +130,32 @@ const looksLikePathCandidate = (
   );
 };
 
+const collectPathCandidates = (
+  candidates: Iterable<string>,
+  workspaceRoot: string,
+): string[] => {
+  return Array.from(candidates, (candidate) => cleanPathCandidate(candidate))
+    .filter((candidate) => candidate.length > 0)
+    .filter((candidate) => looksLikePathCandidate(candidate, workspaceRoot));
+};
+
 const extractQuotedPathCandidates = (
   task: string,
   workspaceRoot: string,
 ): string[] => {
-  return Array.from(task.matchAll(/["'`]([^"'`]+)["'`]/g), (match) =>
-    cleanPathCandidate(match[1] ?? ""),
-  ).filter((candidate) => looksLikePathCandidate(candidate, workspaceRoot));
+  return collectPathCandidates(
+    Array.from(task.matchAll(/["'`]([^"'`]+)["'`]/g), (match) =>
+      match[1] ?? "",
+    ),
+    workspaceRoot,
+  );
 };
 
 const extractInlinePathCandidates = (
   task: string,
   workspaceRoot: string,
 ): string[] => {
-  return task
-    .split(/\s+/)
-    .map(cleanPathCandidate)
-    .filter((candidate) => looksLikePathCandidate(candidate, workspaceRoot));
+  return collectPathCandidates(task.split(/\s+/), workspaceRoot);
 };
 
 const normalizeRelativePath = (value: string): string => {
@@ -158,19 +167,6 @@ const normalizeRelativePath = (value: string): string => {
     .replace(/\/$/, "");
 
   return normalized === "." ? "" : normalized;
-};
-
-const hasAnyToken = (
-  tokens: ReadonlySet<string>,
-  candidates: ReadonlySet<string>,
-): boolean => {
-  for (const candidate of candidates) {
-    if (tokens.has(candidate)) {
-      return true;
-    }
-  }
-
-  return false;
 };
 
 const isPathInsideWorkspace = (
@@ -420,6 +416,13 @@ export const extractTaskPathReferences = (
   return references;
 };
 
+const getFirstTaskPathReference = (
+  task: string,
+  workspaceRoot: string,
+): TaskPathReference | undefined => {
+  return extractTaskPathReferences(task, workspaceRoot)[0];
+};
+
 /**
  * Returns the first explicit path reference when a task clearly asks to inspect
  * a file or directory.
@@ -430,11 +433,11 @@ export const extractExplicitInspectionPathReference = (
 ): TaskPathReference | undefined => {
   const tokens = createTokenSet(task);
 
-  if (!PATH_INSPECTION_ACTIONS.some((token) => tokens.has(token))) {
+  if (!tokenSetHasAny(tokens, PATH_INSPECTION_ACTION_TOKENS)) {
     return undefined;
   }
 
-  return extractTaskPathReferences(task, workspaceRoot)[0];
+  return getFirstTaskPathReference(task, workspaceRoot);
 };
 
 const inferCreateFileExtension = (task: string): string => {
@@ -476,7 +479,7 @@ const resolveDefaultCreateFileCandidate = (
 ): string | undefined => {
   const tokens = createTokenSet(task);
 
-  if (!hasAnyToken(tokens, CREATE_FILE_OBJECT_TOKENS)) {
+  if (!tokenSetHasAny(tokens, CREATE_FILE_OBJECT_TOKENS)) {
     return undefined;
   }
 
@@ -494,6 +497,40 @@ const resolveDefaultCreateFileCandidate = (
   return `untitled.${extension}`;
 };
 
+const resolveCreateFileCandidate = (
+  task: string,
+  workspaceRoot: string,
+): { candidate: string; inferredPath: boolean } | undefined => {
+  const explicitPathReference = getFirstTaskPathReference(task, workspaceRoot);
+
+  if (explicitPathReference) {
+    return {
+      candidate: explicitPathReference.requestedPath,
+      inferredPath: false,
+    };
+  }
+
+  const namedPathCandidate = extractNamedCreateFileCandidate(task);
+
+  if (namedPathCandidate) {
+    return {
+      candidate: namedPathCandidate,
+      inferredPath: false,
+    };
+  }
+
+  const fallbackCandidate = resolveDefaultCreateFileCandidate(task);
+
+  if (!fallbackCandidate) {
+    return undefined;
+  }
+
+  return {
+    candidate: fallbackCandidate,
+    inferredPath: true,
+  };
+};
+
 /**
  * Returns a deterministic create-file target for narrow workspace write tasks
  * like `create a test file` or `create notes.txt`.
@@ -504,33 +541,26 @@ export const resolveDeterministicCreateFileTarget = (
 ): CreateFilePathReference | undefined => {
   const tokens = createTokenSet(task);
 
-  if (!hasAnyToken(tokens, CREATE_FILE_ACTION_TOKENS)) {
+  if (!tokenSetHasAny(tokens, CREATE_FILE_ACTION_TOKENS)) {
     return undefined;
   }
 
-  if (hasAnyToken(tokens, CREATE_FILE_DISALLOWED_TOKENS)) {
+  if (tokenSetHasAny(tokens, CREATE_FILE_DISALLOWED_TOKENS)) {
     return undefined;
   }
 
-  const explicitPathReference = extractTaskPathReferences(
-    task,
-    workspaceRoot,
-  )[0];
-  const namedPathCandidate = extractNamedCreateFileCandidate(task);
-  const fallbackCandidate = resolveDefaultCreateFileCandidate(task);
-  const candidate =
-    explicitPathReference?.requestedPath ??
-    namedPathCandidate ??
-    fallbackCandidate;
+  const createFileCandidate = resolveCreateFileCandidate(task, workspaceRoot);
 
-  if (!candidate) {
+  if (!createFileCandidate) {
     return undefined;
   }
 
   return {
-    ...resolveWorkspacePathReference(workspaceRoot, candidate),
-    inferredPath:
-      explicitPathReference === undefined && namedPathCandidate === undefined,
+    ...resolveWorkspacePathReference(
+      workspaceRoot,
+      createFileCandidate.candidate,
+    ),
+    inferredPath: createFileCandidate.inferredPath,
   };
 };
 

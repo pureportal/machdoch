@@ -39,6 +39,7 @@ export interface UseChatSessionRuntimeOptions {
   catalogOpen: boolean;
   activeSessionProvider: UserApiKeyProvider;
   activeSessionWorkspace: string | null;
+  activeSessionProfile?: string;
 }
 
 export interface ChatSessionRuntimeController {
@@ -63,7 +64,8 @@ export interface ChatSessionRuntimeController {
   >;
   refreshWorkspaceRuntimeSnapshot: (
     workspaceRoot: string | null,
-  ) => Promise<void>;
+    profile?: string | null,
+  ) => Promise<RuntimeSnapshot | null>;
   handleProviderSetupProviderChange: (provider: UserApiKeyProvider) => void;
   handleProviderSetupPortalOpen: (provider: UserApiKeyProvider) => Promise<void>;
   handleProviderSetupKeyChange: (value: string) => void;
@@ -135,12 +137,18 @@ export const useChatSessionRuntime = (
   );
 
   const refreshWorkspaceRuntimeSnapshot = useCallback(
-    async (workspaceRoot: string | null): Promise<void> => {
+    async (
+      workspaceRoot: string | null,
+      profile?: string | null,
+    ): Promise<RuntimeSnapshot | null> => {
       setRuntimeLoading(true);
       setRuntimeError(null);
 
       try {
-        const snapshot = await loadWorkspaceRuntimeSnapshot(workspaceRoot);
+        const snapshot = await loadWorkspaceRuntimeSnapshot(
+          workspaceRoot,
+          profile,
+        );
 
         setRuntimeSnapshot(snapshot);
 
@@ -149,12 +157,15 @@ export const useChatSessionRuntime = (
             "Runtime metadata is unavailable for this workspace right now.",
           );
         }
+
+        return snapshot;
       } catch (error) {
         console.error("Failed to resolve runtime snapshot", error);
         setRuntimeSnapshot(null);
         setRuntimeError(
           "Runtime metadata could not be loaded for this workspace.",
         );
+        return null;
       } finally {
         setRuntimeLoading(false);
       }
@@ -288,7 +299,10 @@ export const useChatSessionRuntime = (
   useEffect(() => {
     let cancelled = false;
 
-    void refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace).catch(
+    void refreshWorkspaceRuntimeSnapshot(
+      options.activeSessionWorkspace,
+      options.activeSessionProfile,
+    ).catch(
       (error) => {
         if (!cancelled) {
           console.error("Failed to refresh runtime snapshot", error);
@@ -299,7 +313,11 @@ export const useChatSessionRuntime = (
     return () => {
       cancelled = true;
     };
-  }, [options.activeSessionWorkspace, refreshWorkspaceRuntimeSnapshot]);
+  }, [
+    options.activeSessionProfile,
+    options.activeSessionWorkspace,
+    refreshWorkspaceRuntimeSnapshot,
+  ]);
 
   const handleProviderSetupProviderChange = useCallback(
     (provider: UserApiKeyProvider): void => {
@@ -389,7 +407,10 @@ export const useChatSessionRuntime = (
         text: `${getProviderLabel(providerSetupProvider)} is ready to use.`,
       });
 
-      await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
+      await refreshWorkspaceRuntimeSnapshot(
+        options.activeSessionWorkspace,
+        options.activeSessionProfile,
+      );
     } catch (error) {
       setProviderSetupMessage({
         tone: "error",
@@ -402,6 +423,7 @@ export const useChatSessionRuntime = (
       setProviderSetupSaving(false);
     }
   }, [
+    options.activeSessionProfile,
     options.activeSessionWorkspace,
     providerSetupKey,
     providerSetupProvider,
@@ -425,7 +447,10 @@ export const useChatSessionRuntime = (
               : `${getWebSearchProviderLabel(provider)} is now the active web-search provider.`,
         });
 
-        await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
+        await refreshWorkspaceRuntimeSnapshot(
+          options.activeSessionWorkspace,
+          options.activeSessionProfile,
+        );
       } catch (error) {
         setWebSearchSetupMessage({
           tone: "error",
@@ -440,6 +465,7 @@ export const useChatSessionRuntime = (
     },
     [
       applyLoadedWebSearchSettings,
+      options.activeSessionProfile,
       options.activeSessionWorkspace,
       refreshWorkspaceRuntimeSnapshot,
     ],
@@ -472,7 +498,10 @@ export const useChatSessionRuntime = (
         text: `${getWebSearchProviderLabel(webSearchSetupProvider)} is ready for web search.`,
       });
 
-      await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
+      await refreshWorkspaceRuntimeSnapshot(
+        options.activeSessionWorkspace,
+        options.activeSessionProfile,
+      );
     } catch (error) {
       setWebSearchSetupMessage({
         tone: "error",
@@ -486,6 +515,7 @@ export const useChatSessionRuntime = (
     }
   }, [
     applyLoadedWebSearchSettings,
+    options.activeSessionProfile,
     options.activeSessionWorkspace,
     refreshWorkspaceRuntimeSnapshot,
     webSearchSetupKey,

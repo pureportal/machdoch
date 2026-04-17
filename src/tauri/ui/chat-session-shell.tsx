@@ -74,7 +74,7 @@ export const ChatSession = (): JSX.Element => {
                   <ConversationFeed {...controller.conversation} />
                 </ScrollArea>
 
-                <footer className="border-t border-slate-900/80 bg-slate-950/40 px-8 py-5 backdrop-blur-xl">
+                <footer className="border-t border-slate-900/80 bg-slate-950/40 px-8 pb-5 pt-3 backdrop-blur-xl">
                   <div className="mx-auto w-full max-w-5xl">
                     <SessionComposer {...controller.composer} />
                   </div>

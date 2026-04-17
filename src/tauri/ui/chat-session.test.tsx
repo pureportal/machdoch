@@ -431,6 +431,88 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "lets you apply a named profile from the runtime popover",
+    async () => {
+      const loadWorkspaceRuntimeSnapshotSpy = vi
+        .spyOn(runtime, "loadWorkspaceRuntimeSnapshot")
+        .mockImplementation(async (workspaceRoot, profile) => {
+          return createRuntimeSnapshot({
+            workspaceRoot: workspaceRoot ?? "/mocked/tauri/path",
+            availableProfiles: [
+              {
+                name: "offline",
+                description: "Safer local review defaults.",
+              },
+            ],
+            ...(profile ? { activeProfile: profile } : {}),
+            mode: profile === "offline" ? "safe" : "ask",
+            provider: profile === "offline" ? "anthropic" : "openai",
+            model:
+              profile === "offline"
+                ? "claude-sonnet-4-20250514"
+                : "gpt-5.4-mini",
+            providerAvailability: [
+              { provider: "openai", configured: true },
+              { provider: "anthropic", configured: true },
+            ],
+          });
+        });
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockResolvedValue({
+          execution: createMockExecutionFixture(
+            "review the workspace defaults",
+            "/mocked/tauri/path",
+            {
+              provider: "anthropic",
+              model: "claude-sonnet-4-20250514",
+            },
+          ),
+        });
+
+      render(<ChatSession />);
+      await selectWorkspace();
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: /Routing & Workspace/i }),
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: /^Use profile offline$/i }),
+      );
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /Execution mode: Safe mode/i }),
+        ).toBeDefined();
+      });
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: "review the workspace defaults" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledWith(
+          "/mocked/tauri/path",
+          "review the workspace defaults",
+          expect.objectContaining({
+            profile: "offline",
+            provider: "anthropic",
+            model: "claude-sonnet-4-20250514",
+          }),
+        );
+      });
+
+      loadWorkspaceRuntimeSnapshotSpy.mockRestore();
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "selects a folder via Tauri dialog",
     async () => {
       render(<ChatSession />);

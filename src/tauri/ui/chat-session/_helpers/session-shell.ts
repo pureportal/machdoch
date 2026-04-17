@@ -2,10 +2,13 @@ import {
   Archive,
   Check,
   CircleDashed,
+  Inbox,
   ListFilter,
   LoaderCircle,
   MessageSquare,
   ShieldAlert,
+  ServerCrash,
+  XCircle,
   WandSparkles,
 } from "lucide-react";
 import type {
@@ -109,13 +112,13 @@ export const RUN_MODE_META = {
 >;
 
 export const SESSION_SCOPE_FILTERS = [
-  { id: "all", label: "All", icon: ListFilter },
+  { id: "all", label: "All", icon: Inbox },
   { id: "open", label: "Open", icon: MessageSquare },
   { id: "archived", label: "Archived", icon: Archive },
 ] as const satisfies ReadonlyArray<{
   id: SessionScopeFilter;
   label: string;
-  icon: typeof ListFilter;
+  icon: typeof Inbox;
 }>;
 
 export const SESSION_STATUS_META = {
@@ -149,8 +152,22 @@ export const SESSION_STATUS_META = {
     containerClassName:
       "border-emerald-500/20 bg-emerald-500/10 shadow-[0_0_18px_rgba(16,185,129,0.18)]",
     iconClassName: "animate-pulse text-emerald-300",
+  },  failed: {
+    label: "Failed",
+    filterLabel: "Failed",
+    icon: XCircle,
+    containerClassName:
+      "border-rose-500/20 bg-rose-500/10 shadow-[0_0_18px_rgba(244,63,94,0.18)]",
+    iconClassName: "text-rose-400",
   },
-} satisfies Record<
+  crashed: {
+    label: "Crashed",
+    filterLabel: "Crashed",
+    icon: ServerCrash,
+    containerClassName:
+      "border-rose-700/30 bg-rose-900/40 shadow-[0_0_18px_rgba(225,29,72,0.18)]",
+    iconClassName: "text-rose-300",
+  },} satisfies Record<
   SessionOverviewStatus,
   {
     label: string;
@@ -182,6 +199,16 @@ export const SESSION_STATUS_FILTERS = [
     id: "done",
     label: SESSION_STATUS_META.done.filterLabel,
     icon: SESSION_STATUS_META.done.icon,
+  },
+  {
+    id: "failed",
+    label: SESSION_STATUS_META.failed.filterLabel,
+    icon: SESSION_STATUS_META.failed.icon,
+  },
+  {
+    id: "crashed",
+    label: SESSION_STATUS_META.crashed.filterLabel,
+    icon: SESSION_STATUS_META.crashed.icon,
   },
 ] as const satisfies ReadonlyArray<{
   id: SessionStatusFilter;
@@ -232,6 +259,16 @@ export const removeSessionModeOverride = (
   delete sessionWithoutMode.mode;
 
   return sessionWithoutMode;
+};
+
+export const removeSessionProfileOverride = (
+  session: ChatSessionRecord,
+): ChatSessionRecord => {
+  const sessionWithoutProfile = { ...session };
+
+  delete sessionWithoutProfile.profile;
+
+  return sessionWithoutProfile;
 };
 
 export const getEffectiveSessionMode = (

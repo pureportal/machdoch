@@ -77,9 +77,9 @@ export const SessionsSidebar = ({
       </div>
 
       <ScrollArea className="min-h-0 flex-1" type="always">
-        <div className="space-y-4 px-5 py-5 pr-7">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 rounded-full border border-slate-800/80 bg-slate-950/70 p-1">
+        <div className="space-y-4 px-5 py-5 pr-6">
+          <div className="flex h-9 items-center justify-between rounded-xl border border-slate-800/80 bg-slate-950/70 p-1">
+            <div className="flex items-center gap-0.5">
               {SESSION_SCOPE_FILTERS.map((filter) => {
                 const FilterIcon = filter.icon;
                 const isSelected = sessionScopeFilter === filter.id;
@@ -95,7 +95,7 @@ export const SessionsSidebar = ({
                         aria-pressed={isSelected}
                         onClick={() => onSessionScopeFilterChange(filter.id)}
                         className={cn(
-                          "h-8 w-8 rounded-full border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
+                          "h-7 w-7 rounded-lg border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
                           isSelected &&
                             "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
                         )}
@@ -111,7 +111,9 @@ export const SessionsSidebar = ({
               })}
             </div>
 
-            <div className="flex items-center gap-1.5 rounded-full border border-slate-800/80 bg-slate-950/70 p-1">
+            <div className="mx-1 h-4 w-px shrink-0 bg-slate-800" />
+
+            <div className="flex items-center gap-0.5">
               {SESSION_STATUS_FILTERS.map((filter) => {
                 const FilterIcon = filter.icon;
                 const isSelected = sessionStatusFilter === filter.id;
@@ -127,7 +129,7 @@ export const SessionsSidebar = ({
                         aria-pressed={isSelected}
                         onClick={() => onSessionStatusFilterChange(filter.id)}
                         className={cn(
-                          "h-8 w-8 rounded-full border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
+                          "h-7 w-7 rounded-lg border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
                           isSelected &&
                             "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
                         )}
@@ -175,8 +177,26 @@ export const SessionsSidebar = ({
                     onClick={() => onActivateSession(session.id)}
                     className="min-w-0 flex-1 text-left"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div
+                            aria-label={`Session status: ${statusMeta.label}`}
+                            className={cn(
+                              "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
+                              statusMeta.containerClassName,
+                            )}
+                          >
+                            <SessionStatusIcon
+                              className={cn("h-3 w-3", statusMeta.iconClassName)}
+                            />
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          {statusMeta.label}
+                        </TooltipContent>
+                      </Tooltip>
+                      <div className="min-w-0 flex-1">
                         <p
                           className={cn(
                             "truncate text-sm font-semibold placeholder:text-slate-500",
@@ -199,25 +219,6 @@ export const SessionsSidebar = ({
                   </button>
 
                   <div className="flex shrink-0 items-center gap-1 self-start pt-0.5">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div
-                          aria-label={`Session status: ${statusMeta.label}`}
-                          className={cn(
-                            "flex h-8 w-8 items-center justify-center rounded-full border",
-                            statusMeta.containerClassName,
-                          )}
-                        >
-                          <SessionStatusIcon
-                            className={cn("h-4 w-4", statusMeta.iconClassName)}
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        {statusMeta.label}
-                      </TooltipContent>
-                    </Tooltip>
-
                     {archived ? (
                       <Tooltip>
                         <TooltipTrigger asChild>

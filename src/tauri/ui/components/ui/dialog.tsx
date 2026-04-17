@@ -68,7 +68,7 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-oklch(1 0 0) transition-opacity hover:opacity-100 focus:ring-2 focus:ring-oklch(0.705 0.015 286.067) focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-oklch(0.967 0.001 286.375) data-[state=open]:text-oklch(0.552 0.016 285.938) [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 dark:ring-offset-oklch(0.141 0.005 285.823) dark:focus:ring-oklch(0.552 0.016 285.938) dark:data-[state=open]:bg-oklch(0.274 0.006 286.033) dark:data-[state=open]:text-oklch(0.705 0.015 286.067)"
+            className="absolute top-4 right-4 rounded-xs cursor-pointer opacity-70 ring-offset-oklch(1 0 0) transition-opacity hover:opacity-100 focus:ring-2 focus:ring-oklch(0.705 0.015 286.067) focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-oklch(0.967 0.001 286.375) data-[state=open]:text-oklch(0.552 0.016 285.938) [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 dark:ring-offset-oklch(0.141 0.005 285.823) dark:focus:ring-oklch(0.552 0.016 285.938) dark:data-[state=open]:bg-oklch(0.274 0.006 286.033) dark:data-[state=open]:text-oklch(0.705 0.015 286.067)"
           >
             <XIcon />
             <span className="sr-only">Close</span>

@@ -1,4 +1,4 @@
-import { createTokenSet } from "./text.js";
+import { createTokenSet, tokenSetHasAny } from "./text.js";
 
 export type ReadOnlyInspectionTarget =
   | "workspace"
@@ -80,41 +80,58 @@ const CUSTOMIZATION_TARGET_TOKENS = new Set([
   "customizations",
 ]);
 
-const hasAnyToken = (
+const CUSTOMIZATION_TARGET_MATCHERS = [
+  ["instructions", INSTRUCTION_TARGET_TOKENS],
+  ["prompts", PROMPT_TARGET_TOKENS],
+  ["skills", SKILL_TARGET_TOKENS],
+] as const satisfies ReadonlyArray<
+  readonly [
+    Extract<ReadOnlyInspectionTarget, "instructions" | "prompts" | "skills">,
+    ReadonlySet<string>,
+  ]
+>;
+
+const PRIORITIZED_TARGET_MATCHERS = [
+  ["profiles", PROFILE_TARGET_TOKENS],
+  ["tools", TOOL_TARGET_TOKENS],
+  ["runtime-config", CONFIG_TARGET_TOKENS],
+  ["workspace", WORKSPACE_TARGET_TOKENS],
+] as const satisfies ReadonlyArray<
+  readonly [
+    Exclude<
+      ReadOnlyInspectionTarget,
+      "customizations" | "instructions" | "prompts" | "skills"
+    >,
+    ReadonlySet<string>,
+  ]
+>;
+
+const collectMatchingTargets = <Target extends string>(
   tokens: ReadonlySet<string>,
-  candidates: ReadonlySet<string>,
-): boolean => {
-  for (const candidate of candidates) {
-    if (tokens.has(candidate)) {
-      return true;
+  matchers: ReadonlyArray<readonly [Target, ReadonlySet<string>]>,
+): Target[] => {
+  const matchedTargets: Target[] = [];
+
+  for (const [target, targetTokens] of matchers) {
+    if (tokenSetHasAny(tokens, targetTokens)) {
+      matchedTargets.push(target);
     }
   }
 
-  return false;
+  return matchedTargets;
 };
 
-const collectCustomizationTargets = (
+const resolveFirstMatchingTarget = <Target extends string>(
   tokens: ReadonlySet<string>,
-): Array<
-  Extract<ReadOnlyInspectionTarget, "instructions" | "prompts" | "skills">
-> => {
-  const matchedTargets: Array<
-    Extract<ReadOnlyInspectionTarget, "instructions" | "prompts" | "skills">
-  > = [];
-
-  if (hasAnyToken(tokens, INSTRUCTION_TARGET_TOKENS)) {
-    matchedTargets.push("instructions");
+  matchers: ReadonlyArray<readonly [Target, ReadonlySet<string>]>,
+): Target | undefined => {
+  for (const [target, targetTokens] of matchers) {
+    if (tokenSetHasAny(tokens, targetTokens)) {
+      return target;
+    }
   }
 
-  if (hasAnyToken(tokens, PROMPT_TARGET_TOKENS)) {
-    matchedTargets.push("prompts");
-  }
-
-  if (hasAnyToken(tokens, SKILL_TARGET_TOKENS)) {
-    matchedTargets.push("skills");
-  }
-
-  return matchedTargets;
+  return undefined;
 };
 
 /**
@@ -126,19 +143,22 @@ export const resolveReadOnlyInspectionTarget = (
 ): ReadOnlyInspectionTarget | undefined => {
   const tokens = createTokenSet(task);
 
-  if (!hasAnyToken(tokens, READ_ONLY_ACTION_TOKENS)) {
+  if (!tokenSetHasAny(tokens, READ_ONLY_ACTION_TOKENS)) {
     return undefined;
   }
 
-  if (hasAnyToken(tokens, MUTATION_HINT_TOKENS)) {
+  if (tokenSetHasAny(tokens, MUTATION_HINT_TOKENS)) {
     return undefined;
   }
 
-  const customizationTargets = collectCustomizationTargets(tokens);
+  const customizationTargets = collectMatchingTargets(
+    tokens,
+    CUSTOMIZATION_TARGET_MATCHERS,
+  );
 
   if (
     customizationTargets.length > 1 ||
-    hasAnyToken(tokens, CUSTOMIZATION_TARGET_TOKENS)
+    tokenSetHasAny(tokens, CUSTOMIZATION_TARGET_TOKENS)
   ) {
     return "customizations";
   }
@@ -147,21 +167,5 @@ export const resolveReadOnlyInspectionTarget = (
     return customizationTargets[0];
   }
 
-  if (hasAnyToken(tokens, PROFILE_TARGET_TOKENS)) {
-    return "profiles";
-  }
-
-  if (hasAnyToken(tokens, TOOL_TARGET_TOKENS)) {
-    return "tools";
-  }
-
-  if (hasAnyToken(tokens, CONFIG_TARGET_TOKENS)) {
-    return "runtime-config";
-  }
-
-  if (hasAnyToken(tokens, WORKSPACE_TARGET_TOKENS)) {
-    return "workspace";
-  }
-
-  return undefined;
+  return resolveFirstMatchingTarget(tokens, PRIORITIZED_TARGET_MATCHERS);
 };

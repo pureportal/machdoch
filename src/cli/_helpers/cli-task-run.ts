@@ -34,6 +34,16 @@ const fail = (message: string): never => {
   throw new Error(message);
 };
 
+export interface InteractiveChatSessionState {
+  history: ConversationHistoryEntry[];
+  sessionMemory: ConversationMemoryEntry[];
+  sessionMemoryEnabled: boolean;
+  globalMemoryEnabled?: boolean;
+  globalMemory?: ConversationMemoryEntry[];
+  uiControlEnabled?: boolean;
+  uiControl?: TaskConversationContext["uiControl"];
+}
+
 const loadConversationContextFromFile = async (
   filePath: string,
 ): Promise<TaskConversationContext> => {
@@ -89,6 +99,37 @@ export const resolveConversationContext = async (
     ...(args.globalMemoryEnabled !== undefined
       ? { globalMemoryEnabled: args.globalMemoryEnabled }
       : {}),
+  };
+};
+
+export const createInteractiveChatSessionState = (
+  baseContext: TaskConversationContext | undefined,
+  fallbackGlobalMemoryEnabled: boolean,
+): InteractiveChatSessionState & {
+  effectiveGlobalMemoryEnabled: boolean;
+} => {
+  const sessionState: InteractiveChatSessionState = {
+    history: baseContext?.history ?? [],
+    sessionMemory: baseContext?.sessionMemory ?? [],
+    sessionMemoryEnabled: baseContext?.sessionMemoryEnabled ?? true,
+    ...(baseContext?.globalMemoryEnabled !== undefined
+      ? { globalMemoryEnabled: baseContext.globalMemoryEnabled }
+      : {}),
+    ...(baseContext?.globalMemory !== undefined
+      ? { globalMemory: baseContext.globalMemory }
+      : {}),
+    ...(baseContext?.uiControlEnabled !== undefined
+      ? { uiControlEnabled: baseContext.uiControlEnabled }
+      : {}),
+    ...(baseContext?.uiControl !== undefined
+      ? { uiControl: baseContext.uiControl }
+      : {}),
+  };
+
+  return {
+    ...sessionState,
+    effectiveGlobalMemoryEnabled:
+      sessionState.globalMemoryEnabled ?? fallbackGlobalMemoryEnabled,
   };
 };
 
@@ -340,21 +381,16 @@ export const runInteractiveChat = async (
     args.runtimeProvider,
   );
   const memorySettings = await loadUserMemorySettings();
-  const sessionState: {
-    history: ConversationHistoryEntry[];
-    sessionMemory: ConversationMemoryEntry[];
-    sessionMemoryEnabled: boolean;
-    globalMemoryEnabled?: boolean;
-  } = {
-    history: [],
-    sessionMemory: [],
-    sessionMemoryEnabled: args.sessionMemoryEnabled ?? true,
-    ...(args.globalMemoryEnabled !== undefined
-      ? { globalMemoryEnabled: args.globalMemoryEnabled }
-      : {}),
-  };
-  const effectiveGlobalMemoryEnabled =
-    sessionState.globalMemoryEnabled ?? memorySettings.globalEnabled;
+  const baseConversationContext = await resolveConversationContext(args);
+  const {
+    effectiveGlobalMemoryEnabled,
+    ...sessionState
+  }: InteractiveChatSessionState & {
+    effectiveGlobalMemoryEnabled: boolean;
+  } = createInteractiveChatSessionState(
+    baseConversationContext,
+    memorySettings.globalEnabled,
+  );
 
   writeStdoutLine(`workspace: ${config.workspaceRoot}`);
   writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
@@ -411,6 +447,15 @@ export const runInteractiveChat = async (
             sessionMemoryEnabled: sessionState.sessionMemoryEnabled,
             ...(sessionState.globalMemoryEnabled !== undefined
               ? { globalMemoryEnabled: sessionState.globalMemoryEnabled }
+              : {}),
+            ...(sessionState.globalMemory !== undefined
+              ? { globalMemory: sessionState.globalMemory }
+              : {}),
+            ...(sessionState.uiControlEnabled !== undefined
+              ? { uiControlEnabled: sessionState.uiControlEnabled }
+              : {}),
+            ...(sessionState.uiControl !== undefined
+              ? { uiControl: sessionState.uiControl }
               : {}),
           },
         },

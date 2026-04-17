@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import type { ChatSessionRecord } from "../../chat-session.model";
+import { SessionRuntimePopover } from "./session-runtime-popover";
 
 export interface SessionHeaderProps {
   activeSession: ChatSessionRecord;
@@ -15,6 +16,7 @@ export interface SessionHeaderProps {
   runtimeSnapshot: import("../../runtime").RuntimeSnapshot | null;
   runtimeLoading: boolean;
   runtimeError: string | null;
+  onSessionProfileSelection: (profile: string | null) => Promise<void>;
   onRenameValueChange: (value: string) => void;
   onRenameCommit: () => void;
   onRenameCancel: () => void;
@@ -25,12 +27,21 @@ export interface SessionHeaderProps {
 }
 
 export const SessionHeader = ({
+  activeSession,
   currentSessionTitle,
   isRenamingSession,
   renameValue,
+  activeRunModeLabel,
+  activeRunModeBadgeClassName,
+  isUsingWorkspaceDefaultMode,
+  runtimeSnapshot,
+  runtimeLoading,
+  runtimeError,
+  onSessionProfileSelection,
   onRenameValueChange,
   onRenameCommit,
   onRenameCancel,
+  onSelectFolder,
   onStartRename,
   onDeleteSession,
 }: SessionHeaderProps): JSX.Element => {
@@ -64,6 +75,17 @@ export const SessionHeader = ({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        <SessionRuntimePopover
+          activeSession={activeSession}
+          activeRunModeLabel={activeRunModeLabel}
+          activeRunModeBadgeClassName={activeRunModeBadgeClassName}
+          isUsingWorkspaceDefaultMode={isUsingWorkspaceDefaultMode}
+          runtimeSnapshot={runtimeSnapshot}
+          runtimeLoading={runtimeLoading}
+          runtimeError={runtimeError}
+          onSelectFolder={onSelectFolder}
+          onSessionProfileSelection={onSessionProfileSelection}
+        />
         <Button
           type="button"
           variant="ghost"

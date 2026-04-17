@@ -675,10 +675,11 @@ fn get_available_profiles(
 fn resolve_profile<'a>(
     config: &'a WorkspaceConfigFile,
     env: &HashMap<String, String>,
+    override_profile: Option<&str>,
 ) -> Result<(Option<String>, Option<&'a WorkspaceProfileConfig>), String> {
     let requested_profile = normalize_optional_string(
-        env.get("MACHDOCH_PROFILE")
-            .map(String::as_str)
+        override_profile
+            .or(env.get("MACHDOCH_PROFILE").map(String::as_str))
             .or(config.default_profile.as_deref()),
     );
 
@@ -942,14 +943,18 @@ pub async fn save_user_global_memory_enabled(
 }
 
 #[tauri::command]
-pub async fn get_runtime_snapshot(workspace_root: String) -> Result<RuntimeSnapshot, String> {
+pub async fn get_runtime_snapshot(
+    workspace_root: String,
+    profile: Option<String>,
+) -> Result<RuntimeSnapshot, String> {
     let workspace_path = resolve_workspace_root_path(&workspace_root)?;
     let resolved_workspace_root = workspace_path.display().to_string();
 
     let env = load_workspace_env(&workspace_path)?;
     let (config, workspace_config_path) = load_workspace_config(&workspace_path)?;
     let (user_config, _) = load_user_config_file()?;
-    let (active_profile, profile) = resolve_profile(&config, &env)?;
+    let (active_profile, profile) =
+        resolve_profile(&config, &env, profile.as_deref())?;
     let provider_availability = get_provider_availability(&env);
     let web_search_provider_availability = get_web_search_provider_availability(&env);
     let web_search_active_provider = resolve_web_search_active_provider(

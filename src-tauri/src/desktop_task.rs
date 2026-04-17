@@ -82,6 +82,7 @@ fn build_cli_command(
     workspace_root: &str,
     task: &str,
     mode: Option<&str>,
+    profile: Option<&str>,
     provider: Option<&str>,
     model: Option<&str>,
     conversation_context_file: Option<&Path>,
@@ -102,6 +103,10 @@ fn build_cli_command(
 
     if let Some(mode) = mode {
         command.arg("--mode").arg(mode);
+    }
+
+    if let Some(profile) = profile {
+        command.arg("--profile").arg(profile);
     }
 
     if let Some(provider) = provider {
@@ -299,6 +304,7 @@ fn execute_desktop_task(
     workspace_root: String,
     task: String,
     mode: Option<String>,
+    profile: Option<String>,
     provider: Option<String>,
     model: Option<String>,
     conversation_context: Option<Value>,
@@ -333,6 +339,15 @@ fn execute_desktop_task(
             Some(trimmed)
         }
     });
+    let normalized_profile = profile.and_then(|value| {
+        let trimmed = value.trim().to_string();
+
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
     let normalized_model = model.and_then(|value| {
         let trimmed = value.trim().to_string();
 
@@ -354,6 +369,7 @@ fn execute_desktop_task(
         &normalized_workspace_root,
         normalized_task,
         normalized_mode.as_deref(),
+        normalized_profile.as_deref(),
         normalized_provider.as_deref(),
         normalized_model.as_deref(),
         conversation_context_path.as_deref(),
@@ -519,6 +535,7 @@ pub async fn run_desktop_task(
     workspace_root: String,
     task: String,
     mode: Option<String>,
+    profile: Option<String>,
     provider: Option<String>,
     model: Option<String>,
     conversation_context: Option<Value>,
@@ -533,6 +550,7 @@ pub async fn run_desktop_task(
             workspace_root,
             task,
             mode,
+            profile,
             provider,
             model,
             conversation_context,

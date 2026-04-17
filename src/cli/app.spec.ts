@@ -211,6 +211,26 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("treats a conversation context file as sufficient to enter interactive chat mode", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--conversation-context-file",
+          "C:/workspace/.machdoch/context.json",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "chat",
+      conversationContextFile: "C:/workspace/.machdoch/context.json",
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
   it("parses persistent default-model updates", () => {
     expect(
       parseCliArgs(["--default-model", "gpt-4.5"], {

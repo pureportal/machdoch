@@ -366,8 +366,10 @@ export const saveUserWebSearchActiveProvider = async (
 
 export const loadWorkspaceRuntimeSnapshot = async (
   workspaceRoot: string | null | undefined,
+  profile?: string | null,
 ): Promise<RuntimeSnapshot | null> => {
   const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  const normalizedProfile = profile?.trim();
 
   if (!canInvokeTauriCommands()) {
     return null;
@@ -376,6 +378,7 @@ export const loadWorkspaceRuntimeSnapshot = async (
   try {
     return await tauriCore.invoke<RuntimeSnapshot>("get_runtime_snapshot", {
       workspaceRoot: normalizedWorkspaceRoot ?? "",
+      ...(normalizedProfile ? { profile: normalizedProfile } : {}),
     });
   } catch (error) {
     console.error("Failed to load runtime snapshot", error);
@@ -390,6 +393,7 @@ export const runDesktopTask = async (
     conversationContext?: TaskConversationContext;
     mode?: RuntimeSnapshot["mode"];
     model?: string;
+    profile?: string;
     provider?: RuntimeProvider;
     taskId?: string;
   } = {},
@@ -403,6 +407,7 @@ export const runDesktopTask = async (
 
   const normalizedModel = context.model?.trim();
   const normalizedMode = context.mode;
+  const normalizedProfile = context.profile?.trim();
   const normalizedProvider = context.provider;
   const normalizedTaskId = context.taskId?.trim();
 
@@ -422,6 +427,7 @@ export const runDesktopTask = async (
       workspaceRoot: normalizedWorkspaceRoot ?? "",
       task: normalizedTask,
       ...(normalizedMode ? { mode: normalizedMode } : {}),
+      ...(normalizedProfile ? { profile: normalizedProfile } : {}),
       ...(normalizedTaskId ? { taskId: normalizedTaskId } : {}),
       ...(normalizedProvider ? { provider: normalizedProvider } : {}),
       ...(normalizedModel ? { model: normalizedModel } : {}),
