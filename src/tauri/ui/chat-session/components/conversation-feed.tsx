@@ -1,7 +1,8 @@
-import { Bot, User, WandSparkles } from "lucide-react";
+import { Bot, Square, User, Volume2, WandSparkles } from "lucide-react";
 import type { JSX, RefObject } from "react";
 import type { ChatSessionMessage } from "../../chat-session.model";
 import { Avatar } from "../../components/ui/avatar";
+import { Button } from "../../components/ui/button";
 import { cn } from "../../lib/utils";
 import { TaskThinkingPanel } from "../../task-thinking-panel";
 import {
@@ -15,12 +16,19 @@ export interface ConversationFeedProps {
   visibleMessages: ChatSessionMessage[];
   bottomRef: RefObject<HTMLDivElement | null>;
   onOpenWorkspaceFile: (relativePath: string) => void;
+  voicePlayback: {
+    supported: boolean;
+    speakingMessageId: string | null;
+    onSpeakMessage: (message: ChatSessionMessage) => void;
+    onStopSpeaking: () => void;
+  };
 }
 
 export const ConversationFeed = ({
   visibleMessages,
   bottomRef,
   onOpenWorkspaceFile,
+  voicePlayback,
 }: ConversationFeedProps): JSX.Element => {
   if (visibleMessages.length === 0) {
     return (
@@ -56,6 +64,7 @@ export const ConversationFeed = ({
             : message.source?.kind === "thinking"
               ? message.source.thinking
               : null;
+        const isSpeakingMessage = voicePlayback.speakingMessageId === message.id;
         const shouldRenderBubble =
           message.role === "user" || renderedContent.trim().length > 0;
 
@@ -99,12 +108,51 @@ export const ConversationFeed = ({
               {shouldRenderBubble ? (
                 <div
                   className={cn(
-                    "max-w-[90%] rounded-[1.75rem] px-5 py-4 text-sm leading-7 shadow-lg",
+                    "relative max-w-[90%] rounded-[1.75rem] px-5 py-4 text-sm leading-7 shadow-lg",
                     message.role === "user"
                       ? "rounded-tr-md bg-slate-800 text-slate-100 shadow-slate-950/20"
-                      : "rounded-tl-sm border border-slate-800 bg-slate-900/80 text-slate-300 shadow-slate-950/30",
+                      : "rounded-tl-sm border border-slate-800 bg-slate-900/80 pr-14 text-slate-300 shadow-slate-950/30",
                   )}
                 >
+                  {message.role === "agent" &&
+                  voicePlayback.supported &&
+                  renderedContent.trim().length > 0 ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={
+                        isSpeakingMessage
+                          ? "Stop reading aloud"
+                          : "Read response aloud"
+                      }
+                      title={
+                        isSpeakingMessage
+                          ? "Stop reading aloud"
+                          : "Read response aloud"
+                      }
+                      onClick={() => {
+                        if (isSpeakingMessage) {
+                          voicePlayback.onStopSpeaking();
+                          return;
+                        }
+
+                        voicePlayback.onSpeakMessage(message);
+                      }}
+                      className={cn(
+                        "absolute top-3 right-3 h-7 w-7 rounded-full border border-slate-800 bg-slate-950/70 text-slate-300 hover:bg-slate-900 hover:text-slate-100",
+                        isSpeakingMessage &&
+                          "border-rose-500/30 text-rose-200 hover:text-rose-100",
+                      )}
+                    >
+                      {isSpeakingMessage ? (
+                        <Square className="h-3.5 w-3.5" />
+                      ) : (
+                        <Volume2 className="h-3.5 w-3.5 text-sky-300" />
+                      )}
+                    </Button>
+                  ) : null}
+
                   {message.role === "agent" ? (
                     <MessageMarkdown content={renderedContent} />
                   ) : (

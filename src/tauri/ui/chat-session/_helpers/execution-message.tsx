@@ -52,6 +52,38 @@ export const getRenderedMessageContent = (
   return message.content;
 };
 
+export const normalizeMarkdownForSpeech = (content: string): string => {
+  const normalized = content
+    .replace(/```[\s\S]*?```/g, " Code sample omitted. ")
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, "$1")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/~~([^~]+)~~/g, "$1")
+    .replace(/\|/g, " ")
+    .replace(/\n{2,}/g, ". ")
+    .replace(/\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  return content.replace(/\s+/g, " ").trim();
+};
+
+export const getSpeechMessageContent = (
+  message: ChatSessionMessage,
+): string => {
+  return normalizeMarkdownForSpeech(getRenderedMessageContent(message));
+};
+
 const createExecutionThinkingTone = (
   status: TaskExecutionResult["status"],
 ): TaskThinkingTrace["entries"][number]["tone"] => {

@@ -1,8 +1,10 @@
 use tauri::Manager;
 
+mod desktop_shell;
 mod desktop_task;
 mod runtime_snapshot;
 mod ui_control;
+mod voice;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -17,13 +19,27 @@ pub fn run() {
         }
     }
 
+    let launch_context = desktop_shell::resolve_launch_context();
+
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
             app.manage(desktop_task::DesktopTaskCancelMap(std::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )));
+
+            if let Err(error) = desktop_shell::create_tray(&app.handle()) {
+                eprintln!("Failed to create tray icon: {error}");
+            }
+
+            desktop_shell::apply_startup_mode(&app.handle(), launch_context);
+
             Ok(())
         })
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .arg(desktop_shell::AUTOSTART_LAUNCH_ARG)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -31,15 +47,23 @@ pub fn run() {
             desktop_task::cancel_desktop_task,
             desktop_task::open_workspace_path,
             desktop_task::run_desktop_task,
+            runtime_snapshot::get_user_desktop_settings,
             runtime_snapshot::get_global_provider_availability,
             runtime_snapshot::get_user_memory_settings,
             runtime_snapshot::get_user_provider_api_keys,
+            runtime_snapshot::get_user_speech_to_text_settings,
+            runtime_snapshot::get_user_voice_settings,
             runtime_snapshot::get_user_web_search_settings,
             runtime_snapshot::get_runtime_snapshot,
+            runtime_snapshot::save_user_desktop_settings,
             runtime_snapshot::save_user_global_memory_enabled,
             runtime_snapshot::save_user_provider_api_key,
+            runtime_snapshot::save_user_speech_to_text_active_provider,
+            runtime_snapshot::save_user_voice_active_provider,
             runtime_snapshot::save_user_web_search_active_provider,
-            runtime_snapshot::save_user_web_search_api_key
+            runtime_snapshot::save_user_web_search_api_key,
+            voice::synthesize_user_voice_audio,
+            voice::transcribe_user_speech_audio
         ])
         .run(tauri::generate_context!())
         .expect("error while running machdoch desktop shell");

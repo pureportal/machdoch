@@ -9,20 +9,32 @@ import {
 import { getProviderLabel } from "../../model-catalog";
 import {
   loadGlobalProviderAvailability,
+  loadUserDesktopSettings,
+  loadUserSpeechToTextSettings,
   loadUserMemorySettings,
+  loadUserVoiceSettings,
   loadUserWebSearchSettings,
   loadWorkspaceRuntimeSnapshot,
   openUserProviderApiKeyPortal,
+  saveUserSpeechToTextActiveProvider,
+  saveUserDesktopSettings,
   saveUserGlobalMemoryEnabled,
+  saveUserVoiceActiveProvider,
   saveUserProviderApiKey,
+  USER_SPEECH_TO_TEXT_PROVIDER_ORDER,
   saveUserWebSearchActiveProvider,
   saveUserWebSearchApiKey,
   USER_WEB_SEARCH_PROVIDER_ORDER,
   type RuntimeProviderAvailability,
   type RuntimeSnapshot,
+  type UserSpeechToTextSettings,
+  type UserDesktopSettings,
+  type SpeechToTextProvider,
   type UserApiKeyProvider,
   type UserMemorySettings,
   type UserProviderApiKeys,
+  type UserVoiceSettings,
+  type VoiceAiProvider,
   type UserWebSearchApiKeyProvider,
   type UserWebSearchApiKeys,
   type UserWebSearchSettings,
@@ -51,11 +63,20 @@ export interface ChatSessionRuntimeController {
   providerSetupKey: string;
   providerSetupSaving: boolean;
   providerSetupMessage: SettingsStatusMessage | null;
+  userVoiceSettings: UserVoiceSettings;
+  voiceSetupSaving: boolean;
+  voiceSetupMessage: SettingsStatusMessage | null;
+  userSpeechToTextSettings: UserSpeechToTextSettings;
+  speechToTextSetupSaving: boolean;
+  speechToTextSetupMessage: SettingsStatusMessage | null;
   webSearchActiveProvider: WebSearchProvider;
   webSearchSetupProvider: UserWebSearchApiKeyProvider;
   webSearchSetupKey: string;
   webSearchSetupSaving: boolean;
   webSearchSetupMessage: SettingsStatusMessage | null;
+  userDesktopSettings: UserDesktopSettings;
+  desktopSetupSaving: boolean;
+  desktopSetupMessage: SettingsStatusMessage | null;
   userMemorySettings: UserMemorySettings;
   memorySetupSaving: boolean;
   memorySetupMessage: SettingsStatusMessage | null;
@@ -70,6 +91,10 @@ export interface ChatSessionRuntimeController {
   handleProviderSetupPortalOpen: (provider: UserApiKeyProvider) => Promise<void>;
   handleProviderSetupKeyChange: (value: string) => void;
   handleProviderSetupSave: () => Promise<void>;
+  handleVoiceActiveProviderSave: (provider: VoiceAiProvider) => Promise<void>;
+  handleSpeechToTextActiveProviderSave: (
+    provider: SpeechToTextProvider,
+  ) => Promise<void>;
   handleWebSearchActiveProviderSave: (
     provider: WebSearchProvider,
   ) => Promise<void>;
@@ -78,9 +103,37 @@ export interface ChatSessionRuntimeController {
   ) => void;
   handleWebSearchSetupKeyChange: (value: string) => void;
   handleWebSearchSetupSave: () => Promise<void>;
+  handleDesktopSettingsSave: (settings: UserDesktopSettings) => Promise<void>;
   handleGlobalMemoryEnabledSave: (enabled: boolean) => Promise<void>;
+  applyLoadedUserDesktopSettings: (settings: UserDesktopSettings) => void;
   applyLoadedUserMemorySettings: (settings: UserMemorySettings) => void;
 }
+
+const createEmptyUserDesktopSettings = (): UserDesktopSettings => {
+  return {
+    autostartEnabled: false,
+    autostartMinimized: false,
+    autostartToTray: false,
+  };
+};
+
+const getDesktopSettingsSavedMessage = (
+  settings: UserDesktopSettings,
+): string => {
+  if (!settings.autostartEnabled) {
+    return "Desktop startup settings saved. Autostart is currently off.";
+  }
+
+  if (settings.autostartToTray) {
+    return "Desktop startup settings saved. Login launches will start in the tray.";
+  }
+
+  if (settings.autostartMinimized) {
+    return "Desktop startup settings saved. Login launches will start minimized.";
+  }
+
+  return "Desktop startup settings saved. Login launches will open normally.";
+};
 
 export const useChatSessionRuntime = (
   options: UseChatSessionRuntimeOptions,
@@ -97,6 +150,23 @@ export const useChatSessionRuntime = (
   const [providerSetupSaving, setProviderSetupSaving] = useState(false);
   const [providerSetupMessage, setProviderSetupMessage] =
     useState<SettingsStatusMessage | null>(null);
+  const [userVoiceSettings, setUserVoiceSettings] =
+    useState<UserVoiceSettings>({
+      activeProvider: "none",
+      providerAvailability: [],
+    });
+  const [voiceSetupSaving, setVoiceSetupSaving] = useState(false);
+  const [voiceSetupMessage, setVoiceSetupMessage] =
+    useState<SettingsStatusMessage | null>(null);
+  const [userSpeechToTextSettings, setUserSpeechToTextSettings] = useState<
+    UserSpeechToTextSettings
+  >({
+    activeProvider: "none",
+    providerAvailability: [],
+  });
+  const [speechToTextSetupSaving, setSpeechToTextSetupSaving] = useState(false);
+  const [speechToTextSetupMessage, setSpeechToTextSetupMessage] =
+    useState<SettingsStatusMessage | null>(null);
   const [webSearchActiveProvider, setWebSearchActiveProvider] =
     useState<WebSearchProvider>("none");
   const [webSearchSetupProvider, setWebSearchSetupProvider] =
@@ -106,6 +176,11 @@ export const useChatSessionRuntime = (
   const [webSearchSetupKey, setWebSearchSetupKey] = useState("");
   const [webSearchSetupSaving, setWebSearchSetupSaving] = useState(false);
   const [webSearchSetupMessage, setWebSearchSetupMessage] =
+    useState<SettingsStatusMessage | null>(null);
+  const [userDesktopSettings, setUserDesktopSettings] =
+    useState<UserDesktopSettings>(createEmptyUserDesktopSettings());
+  const [desktopSetupSaving, setDesktopSetupSaving] = useState(false);
+  const [desktopSetupMessage, setDesktopSetupMessage] =
     useState<SettingsStatusMessage | null>(null);
   const [userMemorySettings, setUserMemorySettings] =
     useState<UserMemorySettings>(createEmptyUserMemorySettings());
@@ -132,6 +207,27 @@ export const useChatSessionRuntime = (
   const applyLoadedUserMemorySettings = useCallback(
     (settings: UserMemorySettings): void => {
       setUserMemorySettings(settings);
+    },
+    [],
+  );
+
+  const applyLoadedUserDesktopSettings = useCallback(
+    (settings: UserDesktopSettings): void => {
+      setUserDesktopSettings(settings);
+    },
+    [],
+  );
+
+  const applyLoadedUserVoiceSettings = useCallback(
+    (settings: UserVoiceSettings): void => {
+      setUserVoiceSettings(settings);
+    },
+    [],
+  );
+
+  const applyLoadedUserSpeechToTextSettings = useCallback(
+    (settings: UserSpeechToTextSettings): void => {
+      setUserSpeechToTextSettings(settings);
     },
     [],
   );
@@ -186,6 +282,160 @@ export const useChatSessionRuntime = (
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadUserVoiceSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          applyLoadedUserVoiceSettings(settings);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("Failed to load user voice settings", error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLoadedUserVoiceSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadUserSpeechToTextSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          applyLoadedUserSpeechToTextSettings(settings);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("Failed to load user speech-to-text settings", error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLoadedUserSpeechToTextSettings]);
+
+  useEffect(() => {
+    if (!options.catalogOpen) {
+      return;
+    }
+
+    let cancelled = false;
+
+    setVoiceSetupMessage(null);
+
+    void loadUserVoiceSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          applyLoadedUserVoiceSettings(settings);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        console.error("Failed to load user voice settings", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLoadedUserVoiceSettings, options.catalogOpen]);
+
+  useEffect(() => {
+    if (!options.catalogOpen) {
+      return;
+    }
+
+    let cancelled = false;
+
+    setSpeechToTextSetupMessage(null);
+
+    void loadUserSpeechToTextSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          applyLoadedUserSpeechToTextSettings(settings);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        console.error("Failed to load user speech-to-text settings", error);
+        applyLoadedUserSpeechToTextSettings({
+          activeProvider: "none",
+          providerAvailability: USER_SPEECH_TO_TEXT_PROVIDER_ORDER.map(
+            (provider) => ({
+              provider,
+              configured: false,
+            }),
+          ),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLoadedUserSpeechToTextSettings, options.catalogOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadUserDesktopSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          applyLoadedUserDesktopSettings(settings);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("Failed to load user desktop settings", error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLoadedUserDesktopSettings]);
+
+  useEffect(() => {
+    if (!options.catalogOpen) {
+      return;
+    }
+
+    let cancelled = false;
+
+    setDesktopSetupMessage(null);
+
+    void loadUserDesktopSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          applyLoadedUserDesktopSettings(settings);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        console.error("Failed to load user desktop settings", error);
+        applyLoadedUserDesktopSettings(createEmptyUserDesktopSettings());
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLoadedUserDesktopSettings, options.catalogOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -411,6 +661,12 @@ export const useChatSessionRuntime = (
         options.activeSessionWorkspace,
         options.activeSessionProfile,
       );
+      const [voiceSettings, speechToTextSettings] = await Promise.all([
+        loadUserVoiceSettings(),
+        loadUserSpeechToTextSettings(),
+      ]);
+      applyLoadedUserVoiceSettings(voiceSettings);
+      applyLoadedUserSpeechToTextSettings(speechToTextSettings);
     } catch (error) {
       setProviderSetupMessage({
         tone: "error",
@@ -423,12 +679,88 @@ export const useChatSessionRuntime = (
       setProviderSetupSaving(false);
     }
   }, [
+    applyLoadedUserVoiceSettings,
+    applyLoadedUserSpeechToTextSettings,
     options.activeSessionProfile,
     options.activeSessionWorkspace,
     providerSetupKey,
     providerSetupProvider,
     refreshWorkspaceRuntimeSnapshot,
   ]);
+
+  const handleVoiceActiveProviderSave = useCallback(
+    async (provider: VoiceAiProvider): Promise<void> => {
+      setVoiceSetupSaving(true);
+      setVoiceSetupMessage(null);
+
+      try {
+        const settings = await saveUserVoiceActiveProvider(provider);
+        const providerLabel =
+          provider === "none" ? "System voice fallback" : getProviderLabel(provider);
+
+        applyLoadedUserVoiceSettings(settings);
+        setVoiceSetupMessage({
+          tone: "success",
+          text:
+            provider === "none"
+              ? "AI voice playback is disabled. System voices remain available when supported."
+              : settings.providerAvailability.some(
+                    (entry) => entry.provider === provider && entry.configured,
+                  )
+                ? `${providerLabel} will handle new spoken replies.`
+                : `${providerLabel} was selected, but replies will keep falling back until its API key is configured.`,
+        });
+      } catch (error) {
+        setVoiceSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "The voice provider could not be saved.",
+        });
+      } finally {
+        setVoiceSetupSaving(false);
+      }
+    },
+    [applyLoadedUserVoiceSettings],
+  );
+
+  const handleSpeechToTextActiveProviderSave = useCallback(
+    async (provider: SpeechToTextProvider): Promise<void> => {
+      setSpeechToTextSetupSaving(true);
+      setSpeechToTextSetupMessage(null);
+
+      try {
+        const settings = await saveUserSpeechToTextActiveProvider(provider);
+        const providerLabel =
+          provider === "none" ? "Speak to text" : getProviderLabel(provider);
+
+        applyLoadedUserSpeechToTextSettings(settings);
+        setSpeechToTextSetupMessage({
+          tone: "success",
+          text:
+            provider === "none"
+              ? "Speak to text is turned off."
+              : settings.providerAvailability.some(
+                    (entry) => entry.provider === provider && entry.configured,
+                  )
+                ? `${providerLabel} will handle new spoken prompts.`
+                : `${providerLabel} was selected, but speech input will stay unavailable until its API key is configured.`,
+        });
+      } catch (error) {
+        setSpeechToTextSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "The speech-to-text provider could not be saved.",
+        });
+      } finally {
+        setSpeechToTextSetupSaving(false);
+      }
+    },
+    [applyLoadedUserSpeechToTextSettings],
+  );
 
   const handleWebSearchActiveProviderSave = useCallback(
     async (provider: WebSearchProvider): Promise<void> => {
@@ -522,6 +854,43 @@ export const useChatSessionRuntime = (
     webSearchSetupProvider,
   ]);
 
+  const handleDesktopSettingsSave = useCallback(
+    async (settings: UserDesktopSettings): Promise<void> => {
+      if (!isTauri()) {
+        applyLoadedUserDesktopSettings(settings);
+        setDesktopSetupMessage({
+          tone: "success",
+          text: getDesktopSettingsSavedMessage(settings),
+        });
+        return;
+      }
+
+      setDesktopSetupSaving(true);
+      setDesktopSetupMessage(null);
+
+      try {
+        const nextSettings = await saveUserDesktopSettings(settings);
+
+        applyLoadedUserDesktopSettings(nextSettings);
+        setDesktopSetupMessage({
+          tone: "success",
+          text: getDesktopSettingsSavedMessage(nextSettings),
+        });
+      } catch (error) {
+        setDesktopSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "Desktop startup settings could not be updated.",
+        });
+      } finally {
+        setDesktopSetupSaving(false);
+      }
+    },
+    [applyLoadedUserDesktopSettings],
+  );
+
   const handleGlobalMemoryEnabledSave = useCallback(
     async (enabled: boolean): Promise<void> => {
       if (!isTauri()) {
@@ -569,11 +938,20 @@ export const useChatSessionRuntime = (
     providerSetupKey,
     providerSetupSaving,
     providerSetupMessage,
+    userVoiceSettings,
+    voiceSetupSaving,
+    voiceSetupMessage,
+    userSpeechToTextSettings,
+    speechToTextSetupSaving,
+    speechToTextSetupMessage,
     webSearchActiveProvider,
     webSearchSetupProvider,
     webSearchSetupKey,
     webSearchSetupSaving,
     webSearchSetupMessage,
+    userDesktopSettings,
+    desktopSetupSaving,
+    desktopSetupMessage,
     userMemorySettings,
     memorySetupSaving,
     memorySetupMessage,
@@ -583,11 +961,15 @@ export const useChatSessionRuntime = (
     handleProviderSetupPortalOpen,
     handleProviderSetupKeyChange,
     handleProviderSetupSave,
+    handleVoiceActiveProviderSave,
+    handleSpeechToTextActiveProviderSave,
     handleWebSearchActiveProviderSave,
     handleWebSearchSetupProviderChange,
     handleWebSearchSetupKeyChange,
     handleWebSearchSetupSave,
+    handleDesktopSettingsSave,
     handleGlobalMemoryEnabledSave,
+    applyLoadedUserDesktopSettings,
     applyLoadedUserMemorySettings,
   };
 };

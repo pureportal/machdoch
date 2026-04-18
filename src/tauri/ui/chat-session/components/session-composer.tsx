@@ -2,6 +2,8 @@ import {
   Brain,
   BrainCircuit,
   FolderOpen,
+  LoaderCircle,
+  Mic,
   Monitor,
   SendHorizonal,
   Square,
@@ -12,8 +14,8 @@ import type { ChatSessionRecord } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
-import { type RuntimeProvider } from "../../model-catalog";
-import { type RUN_MODE_META } from "../_helpers/session-shell";
+import type { RuntimeProvider } from "../../model-catalog";
+import type { RUN_MODE_META } from "../_helpers/session-shell";
 import { MemoryShortcutButton } from "./memory-shortcut-button";
 import { SessionModePicker } from "./session-mode-picker";
 import { SessionModelPicker } from "./session-model-picker";
@@ -33,6 +35,15 @@ export interface SessionComposerProps {
   isGlobalMemoryAvailable: boolean;
   isGlobalMemoryActive: boolean;
   isUiControlAvailable: boolean;
+  speechInput: {
+    browserSupported: boolean;
+    enabled: boolean;
+    recording: boolean;
+    transcribing: boolean;
+    statusText: string | null;
+    statusTone: "success" | "error" | "info" | null;
+    onAction: () => void;
+  };
   canSendMessage: boolean;
   onSelectFolder: () => Promise<void>;
   onSessionModelSelection: (provider: RuntimeProvider, model: string) => void;
@@ -64,6 +75,7 @@ export const SessionComposer = ({
   isGlobalMemoryAvailable,
   isGlobalMemoryActive,
   isUiControlAvailable,
+  speechInput,
   canSendMessage,
   onSelectFolder,
   onSessionModelSelection,
@@ -77,6 +89,16 @@ export const SessionComposer = ({
   onCancel,
   isExecuting,
 }: SessionComposerProps): JSX.Element => {
+  const speechInputActionLabel = !speechInput.browserSupported
+    ? "Speech input unavailable"
+    : speechInput.transcribing
+      ? "Transcribing speech"
+      : speechInput.recording
+        ? "Stop recording"
+        : speechInput.enabled
+          ? "Speak to text"
+          : "Configure speak to text";
+
   return (
     <div className="rounded-[1.75rem] border border-slate-800/80 bg-slate-950/75 p-3 shadow-[0_18px_48px_rgba(2,6,23,0.42)]">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-900/80 pb-3">
@@ -168,59 +190,109 @@ export const SessionComposer = ({
         />
       </div>
 
-      <form
-        className="mt-3 flex items-end gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSend();
-        }}
-      >
-        <Textarea
-          aria-label="Task composer"
-          value={activeSession.draft}
-          onChange={(event) => onDraftChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              if (canSendMessage) {
-                onSend();
-              }
-            } else {
-              onComposerHistoryNavigation(event);
-            }
+      <div className="mt-3 grid gap-2">
+        <form
+          className="flex items-end gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSend();
           }}
-          placeholder="What should machdoch do next?"
-          className="max-h-[30vh] min-h-14 resize-none overflow-y-auto rounded-[1.4rem] border-slate-800 bg-slate-900/70 px-5 py-4 text-base text-slate-100 shadow-inner shadow-black/20 placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:bg-slate-900/50 disabled:text-slate-500 disabled:opacity-100"
-        />
+        >
+          <Textarea
+            aria-label="Task composer"
+            value={activeSession.draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
 
-        {isExecuting ? (
+                if (canSendMessage) {
+                  onSend();
+                }
+
+                return;
+              }
+
+              onComposerHistoryNavigation(event);
+            }}
+            placeholder="What should machdoch do next?"
+            className="max-h-[30vh] min-h-14 resize-none overflow-y-auto rounded-[1.4rem] border-slate-800 bg-slate-900/70 px-5 py-4 text-base text-slate-100 shadow-inner shadow-black/20 placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:bg-slate-900/50 disabled:text-slate-500 disabled:opacity-100"
+          />
+
           <Button
             type="button"
             variant="outline"
             size="icon"
-            aria-label="Cancel task"
-            onClick={onCancel}
-            className="h-11 w-11 shrink-0 rounded-[1.15rem] border-rose-500/20 bg-rose-500/10 text-rose-100 shadow-none hover:bg-rose-500/15 hover:text-white"
-          >
-            <Square className="h-4 w-4 fill-current" />
-          </Button>
-        ) : (
-          <Button
-            type="submit"
-            variant="outline"
-            size="icon"
-            aria-label="Send message"
-            disabled={!canSendMessage}
+            aria-label={speechInputActionLabel}
+            title={speechInputActionLabel}
+            disabled={!speechInput.browserSupported || speechInput.transcribing}
+            onClick={speechInput.onAction}
             className={cn(
               "h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-100",
-              canSendMessage &&
-                "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
+              speechInput.recording &&
+                "border-rose-500/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15 hover:text-white",
+              speechInput.transcribing &&
+                "border-amber-500/20 bg-amber-500/10 text-amber-100 hover:bg-amber-500/10 hover:text-amber-100",
+              !speechInput.recording &&
+                !speechInput.transcribing &&
+                speechInput.enabled &&
+                "border-violet-500/20 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
             )}
           >
-            <SendHorizonal className="h-4 w-4" />
+            {speechInput.transcribing ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : speechInput.recording ? (
+              <Square className="h-4 w-4 fill-current" />
+            ) : (
+              <Mic className="h-4 w-4" />
+            )}
           </Button>
-        )}
-      </form>
+
+          {isExecuting && !canSendMessage ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="Cancel task"
+              onClick={onCancel}
+              className="h-11 w-11 shrink-0 rounded-[1.15rem] border-rose-500/20 bg-rose-500/10 text-rose-100 shadow-none hover:bg-rose-500/15 hover:text-white"
+            >
+              <Square className="h-4 w-4 fill-current" />
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              variant="outline"
+              size="icon"
+              aria-label="Send message"
+              disabled={!canSendMessage}
+              className={cn(
+                "h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-100",
+                canSendMessage &&
+                  "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
+              )}
+            >
+              <SendHorizonal className="h-4 w-4" />
+            </Button>
+          )}
+        </form>
+
+        {speechInput.statusText ? (
+          <p
+            aria-live="polite"
+            className={cn(
+              "px-1 text-xs leading-6",
+              speechInput.statusTone === "error"
+                ? "text-rose-300"
+                : speechInput.statusTone === "success"
+                  ? "text-emerald-300"
+                  : "text-slate-400",
+            )}
+          >
+            {speechInput.statusText}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 };

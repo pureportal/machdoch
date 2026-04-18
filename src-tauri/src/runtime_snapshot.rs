@@ -7,6 +7,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use tauri_plugin_autostart::ManagerExt as _;
 
 use crate::ui_control::UiControlAvailability;
 
@@ -25,7 +26,9 @@ const VALID_MODEL_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
 const USER_CONFIG_FILE_NAME: &str = "user-config.json";
 const USER_API_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
 const USER_WEB_SEARCH_PROVIDERS: [&str; 2] = ["perplexity", "tavily"];
+const USER_AUDIO_AI_PROVIDERS: [&str; 2] = ["openai", "google"];
 const VALID_WEB_SEARCH_PROVIDERS: [&str; 3] = ["none", "perplexity", "tavily"];
+const VALID_AUDIO_AI_PROVIDERS: [&str; 3] = ["none", "openai", "google"];
 const MAX_GLOBAL_MEMORY_ENTRIES: usize = 40;
 const MAX_MEMORY_CONTENT_LENGTH: usize = 280;
 
@@ -76,6 +79,13 @@ pub struct WebSearchProviderAvailability {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AudioProviderAvailability {
+    provider: String,
+    configured: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RuntimeWebSearchConfig {
     active_provider: String,
     provider_availability: Vec<WebSearchProviderAvailability>,
@@ -91,9 +101,37 @@ pub struct UserWebSearchSettings {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UserVoiceSettings {
+    active_provider: String,
+    provider_availability: Vec<AudioProviderAvailability>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserSpeechToTextSettings {
+    active_provider: String,
+    provider_availability: Vec<AudioProviderAvailability>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserMemorySettings {
     global_enabled: bool,
     entries: Vec<UserMemoryEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserDesktopSettings {
+    autostart_enabled: bool,
+    autostart_minimized: bool,
+    autostart_to_tray: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct UserDesktopLaunchPreferences {
+    pub(crate) autostart_minimized: bool,
+    pub(crate) autostart_to_tray: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -136,6 +174,12 @@ struct UserConfigFile {
     #[serde(default)]
     web_search: UserWebSearchConfigFile,
     #[serde(default)]
+    voice: UserVoiceConfigFile,
+    #[serde(default)]
+    speech_to_text: UserSpeechToTextConfigFile,
+    #[serde(default)]
+    desktop: UserDesktopConfigFile,
+    #[serde(default)]
     memory: UserMemoryConfigFile,
 }
 
@@ -145,6 +189,25 @@ struct UserWebSearchConfigFile {
     active_provider: Option<String>,
     #[serde(default)]
     api_keys: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct UserVoiceConfigFile {
+    active_provider: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct UserSpeechToTextConfigFile {
+    active_provider: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct UserDesktopConfigFile {
+    autostart_minimized: Option<bool>,
+    autostart_to_tray: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -409,12 +472,20 @@ fn is_user_web_search_provider(value: &str) -> bool {
     USER_WEB_SEARCH_PROVIDERS.contains(&value)
 }
 
+fn is_user_audio_ai_provider(value: &str) -> bool {
+    USER_AUDIO_AI_PROVIDERS.contains(&value)
+}
+
 fn is_valid_model_provider(value: &str) -> bool {
     VALID_MODEL_PROVIDERS.contains(&value)
 }
 
 fn is_valid_web_search_provider(value: &str) -> bool {
     VALID_WEB_SEARCH_PROVIDERS.contains(&value)
+}
+
+fn is_valid_audio_ai_provider(value: &str) -> bool {
+    VALID_AUDIO_AI_PROVIDERS.contains(&value)
 }
 
 fn load_user_config_file() -> Result<(UserConfigFile, PathBuf), String> {
@@ -526,7 +597,7 @@ fn merge_user_web_search_api_keys_into_env(
     Ok(())
 }
 
-fn load_global_env() -> Result<HashMap<String, String>, String> {
+pub(crate) fn load_global_env() -> Result<HashMap<String, String>, String> {
     let mut values = HashMap::new();
     merge_user_api_keys_into_env(&mut values)?;
     merge_user_web_search_api_keys_into_env(&mut values)?;
@@ -617,6 +688,25 @@ fn get_web_search_provider_availability(
             configured: has_configured_value(env.get("TAVILY_API_KEY").map(String::as_str)),
         },
     ]
+}
+
+fn get_audio_provider_availability(env: &HashMap<String, String>) -> Vec<AudioProviderAvailability> {
+    vec![
+        AudioProviderAvailability {
+            provider: "openai".to_string(),
+            configured: has_configured_value(env.get("OPENAI_API_KEY").map(String::as_str)),
+        },
+        AudioProviderAvailability {
+            provider: "google".to_string(),
+            configured: has_configured_value(env.get("GOOGLE_API_KEY").map(String::as_str)),
+        },
+    ]
+}
+
+fn resolve_audio_active_provider(configured_provider: Option<&str>) -> String {
+    normalize_optional_string(configured_provider)
+        .filter(|provider| is_valid_audio_ai_provider(provider))
+        .unwrap_or_else(|| "none".to_string())
 }
 
 fn resolve_provider(
@@ -799,12 +889,59 @@ fn load_user_web_search_settings() -> Result<UserWebSearchSettings, String> {
     })
 }
 
+fn load_user_voice_settings() -> Result<UserVoiceSettings, String> {
+    let (config, _) = load_user_config_file()?;
+    let env = load_global_env()?;
+
+    Ok(UserVoiceSettings {
+        active_provider: resolve_audio_active_provider(config.voice.active_provider.as_deref()),
+        provider_availability: get_audio_provider_availability(&env),
+    })
+}
+
+fn load_user_speech_to_text_settings() -> Result<UserSpeechToTextSettings, String> {
+    let (config, _) = load_user_config_file()?;
+    let env = load_global_env()?;
+
+    Ok(UserSpeechToTextSettings {
+        active_provider: resolve_audio_active_provider(
+            config.speech_to_text.active_provider.as_deref(),
+        ),
+        provider_availability: get_audio_provider_availability(&env),
+    })
+}
+
 fn load_user_memory_settings() -> Result<UserMemorySettings, String> {
     let (config, _) = load_user_config_file()?;
 
     Ok(UserMemorySettings {
         global_enabled: config.memory.global_enabled.unwrap_or(false),
         entries: normalize_user_memory_entries(&config.memory.entries, "global"),
+    })
+}
+
+pub(crate) fn load_user_desktop_launch_preferences() -> Result<UserDesktopLaunchPreferences, String> {
+    let (config, _) = load_user_config_file()?;
+
+    Ok(UserDesktopLaunchPreferences {
+        autostart_minimized: config.desktop.autostart_minimized.unwrap_or(false),
+        autostart_to_tray: config.desktop.autostart_to_tray.unwrap_or(false),
+    })
+}
+
+fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>>(
+    manager: &M,
+) -> Result<UserDesktopSettings, String> {
+    let preferences = load_user_desktop_launch_preferences()?;
+    let autostart_enabled = manager
+        .autolaunch()
+        .is_enabled()
+        .map_err(|error| format!("Failed to read the autostart state: {error}"))?;
+
+    Ok(UserDesktopSettings {
+        autostart_enabled,
+        autostart_minimized: preferences.autostart_minimized,
+        autostart_to_tray: preferences.autostart_to_tray,
     })
 }
 
@@ -874,6 +1011,40 @@ fn save_user_web_search_active_provider_value(provider: &str) -> Result<PathBuf,
     Ok(config_path)
 }
 
+fn save_user_voice_active_provider_value(provider: &str) -> Result<PathBuf, String> {
+    let normalized_provider = normalize_optional_string(Some(provider))
+        .ok_or_else(|| "Expected provider to be one of none, openai, or google.".to_string())?;
+
+    if !is_user_audio_ai_provider(&normalized_provider) && normalized_provider != "none" {
+        return Err("Expected provider to be one of none, openai, or google.".to_string());
+    }
+
+    let (mut config, config_path) = load_user_config_file()?;
+
+    config.voice.active_provider = Some(normalized_provider);
+
+    write_user_config_file(&config, &config_path)?;
+
+    Ok(config_path)
+}
+
+fn save_user_speech_to_text_active_provider_value(provider: &str) -> Result<PathBuf, String> {
+    let normalized_provider = normalize_optional_string(Some(provider))
+        .ok_or_else(|| "Expected provider to be one of none, openai, or google.".to_string())?;
+
+    if !is_user_audio_ai_provider(&normalized_provider) && normalized_provider != "none" {
+        return Err("Expected provider to be one of none, openai, or google.".to_string());
+    }
+
+    let (mut config, config_path) = load_user_config_file()?;
+
+    config.speech_to_text.active_provider = Some(normalized_provider);
+
+    write_user_config_file(&config, &config_path)?;
+
+    Ok(config_path)
+}
+
 fn save_user_global_memory_enabled_value(enabled: bool) -> Result<PathBuf, String> {
     let (mut config, config_path) = load_user_config_file()?;
 
@@ -885,10 +1056,46 @@ fn save_user_global_memory_enabled_value(enabled: bool) -> Result<PathBuf, Strin
     Ok(config_path)
 }
 
+fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Manager<R>>(
+    manager: &M,
+    settings: &UserDesktopSettings,
+) -> Result<PathBuf, String> {
+    let (mut config, config_path) = load_user_config_file()?;
+
+    config.desktop.autostart_minimized = Some(settings.autostart_minimized);
+    config.desktop.autostart_to_tray = Some(settings.autostart_to_tray);
+
+    write_user_config_file(&config, &config_path)?;
+
+    let autolaunch = manager.autolaunch();
+    let currently_enabled = autolaunch
+        .is_enabled()
+        .map_err(|error| format!("Failed to read the autostart state: {error}"))?;
+
+    if settings.autostart_enabled && !currently_enabled {
+        autolaunch
+            .enable()
+            .map_err(|error| format!("Failed to enable autostart: {error}"))?;
+    } else if !settings.autostart_enabled && currently_enabled {
+        autolaunch
+            .disable()
+            .map_err(|error| format!("Failed to disable autostart: {error}"))?;
+    }
+
+    Ok(config_path)
+}
+
 #[tauri::command]
 pub async fn get_global_provider_availability() -> Result<Vec<ProviderAvailability>, String> {
     let env = load_global_env()?;
     Ok(get_provider_availability(&env))
+}
+
+#[tauri::command]
+pub async fn get_user_desktop_settings(
+    app: tauri::AppHandle,
+) -> Result<UserDesktopSettings, String> {
+    load_user_desktop_settings(&app)
 }
 
 #[tauri::command]
@@ -913,8 +1120,27 @@ pub async fn get_user_web_search_settings() -> Result<UserWebSearchSettings, Str
 }
 
 #[tauri::command]
+pub async fn get_user_voice_settings() -> Result<UserVoiceSettings, String> {
+    load_user_voice_settings()
+}
+
+#[tauri::command]
+pub async fn get_user_speech_to_text_settings() -> Result<UserSpeechToTextSettings, String> {
+    load_user_speech_to_text_settings()
+}
+
+#[tauri::command]
 pub async fn get_user_memory_settings() -> Result<UserMemorySettings, String> {
     load_user_memory_settings()
+}
+
+#[tauri::command]
+pub async fn save_user_desktop_settings(
+    app: tauri::AppHandle,
+    settings: UserDesktopSettings,
+) -> Result<UserDesktopSettings, String> {
+    save_user_desktop_settings_value(&app, &settings)?;
+    load_user_desktop_settings(&app)
 }
 
 #[tauri::command]
@@ -932,6 +1158,22 @@ pub async fn save_user_web_search_active_provider(
 ) -> Result<UserWebSearchSettings, String> {
     save_user_web_search_active_provider_value(&provider)?;
     load_user_web_search_settings()
+}
+
+#[tauri::command]
+pub async fn save_user_voice_active_provider(
+    provider: String,
+) -> Result<UserVoiceSettings, String> {
+    save_user_voice_active_provider_value(&provider)?;
+    load_user_voice_settings()
+}
+
+#[tauri::command]
+pub async fn save_user_speech_to_text_active_provider(
+    provider: String,
+) -> Result<UserSpeechToTextSettings, String> {
+    save_user_speech_to_text_active_provider_value(&provider)?;
+    load_user_speech_to_text_settings()
 }
 
 #[tauri::command]

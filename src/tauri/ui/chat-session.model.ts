@@ -38,6 +38,12 @@ export interface ChatSessionRecord {
   sessionMemory: ConversationMemoryEntry[];
 }
 
+export interface ShellVoiceSettings {
+  autoSpeakResponses: boolean;
+  preferredVoiceURI?: string;
+  rate: number;
+}
+
 export type SessionOverviewStatus =
   | "empty"
   | "running"
@@ -50,6 +56,7 @@ export interface ShellPersistedState {
   version: 1;
   activeSessionId: string;
   sessions: ChatSessionRecord[];
+  voice: ShellVoiceSettings;
   lastSelectedProvider: RuntimeProvider;
   lastSelectedModelByProvider: Partial<Record<RuntimeProvider, string>>;
   lastSelectedProfile?: string;
@@ -57,8 +64,26 @@ export interface ShellPersistedState {
 }
 
 const DEFAULT_PROVIDER: RuntimeProvider = "openai";
+const DEFAULT_VOICE_RATE = 1;
+const MIN_VOICE_RATE = 0.8;
+const MAX_VOICE_RATE = 1.4;
 const RUN_MODES: RunMode[] = ["safe", "ask", "auto"];
 const RUNTIME_PROVIDERS: RuntimeProvider[] = ["openai", "anthropic", "google"];
+
+const clampVoiceRate = (value: unknown): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_VOICE_RATE;
+  }
+
+  return Math.min(MAX_VOICE_RATE, Math.max(MIN_VOICE_RATE, value));
+};
+
+export const createDefaultShellVoiceSettings = (): ShellVoiceSettings => {
+  return {
+    autoSpeakResponses: false,
+    rate: DEFAULT_VOICE_RATE,
+  };
+};
 
 const isRunMode = (value: unknown): value is RunMode => {
   return typeof value === "string" && RUN_MODES.includes(value as RunMode);
@@ -129,6 +154,7 @@ export const createInitialShellState = (): ShellPersistedState => {
     version: 1,
     activeSessionId: initialSession.id,
     sessions: [initialSession],
+    voice: createDefaultShellVoiceSettings(),
     lastSelectedProvider: DEFAULT_PROVIDER,
     lastSelectedModelByProvider: {
       openai: getDefaultModelForProvider("openai"),
@@ -242,6 +268,22 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
   const lastSelectedMode = isRunMode(candidate.lastSelectedMode)
     ? candidate.lastSelectedMode
     : undefined;
+  const voiceCandidate =
+    candidate.voice && typeof candidate.voice === "object"
+      ? (candidate.voice as Partial<ShellVoiceSettings>)
+      : null;
+  const normalizedPreferredVoiceURI =
+    typeof voiceCandidate?.preferredVoiceURI === "string" &&
+    voiceCandidate.preferredVoiceURI.trim().length > 0
+      ? voiceCandidate.preferredVoiceURI
+      : undefined;
+  const normalizedVoice: ShellVoiceSettings = {
+    autoSpeakResponses: voiceCandidate?.autoSpeakResponses === true,
+    rate: clampVoiceRate(voiceCandidate?.rate),
+    ...(normalizedPreferredVoiceURI
+      ? { preferredVoiceURI: normalizedPreferredVoiceURI }
+      : {}),
+  };
 
   return {
     version: 1,
@@ -249,6 +291,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
       ? (candidate.activeSessionId as string)
       : normalizedSessions[0].id,
     sessions: normalizedSessions,
+    voice: normalizedVoice,
     lastSelectedProvider,
     lastSelectedModelByProvider: {
       ...fallback.lastSelectedModelByProvider,
@@ -326,8 +369,7 @@ export const getSessionOverviewStatus = (
     });
 
   if (!latestTerminalAgentMessage) {
-    const isStale = Date.now() - session.updatedAt > 10 * 60 * 1000;
-    return isStale ? "crashed" : "running";
+    return "running";
   }
 
   if (!latestTerminalAgentMessage.source) {
@@ -336,19 +378,18 @@ export const getSessionOverviewStatus = (
 
   if (latestTerminalAgentMessage.source.kind === "thinking") {
     if (latestTerminalAgentMessage.source.thinking.status === "running") {
-      const isStale = Date.now() - session.updatedAt > 10 * 60 * 1000;
-      return isStale ? "crashed" : "running";
+      return "running";
     }
     return "done";
   }
 
   if (latestTerminalAgentMessage.source.kind === "execution") {
     const status = latestTerminalAgentMessage.source.execution.status;
-    
+
     if (status === "approval-required") {
       return "waiting";
     }
-    
+
     if (status === "blocked" || status === "cancelled") {
       return "failed";
     }

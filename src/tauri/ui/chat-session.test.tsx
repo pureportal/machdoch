@@ -8,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { ChatSession } from "./chat-session";
+import { ConversationFeed } from "./chat-session/components/conversation-feed";
 import {
   createInitialShellState,
   createSession,
@@ -18,6 +19,7 @@ import {
   createPreviewFixture,
 } from "./preview/fixtures";
 import * as runtime from "./runtime";
+import type { RuntimeSnapshot } from "./runtime";
 import {
   desktopEventListeners,
   isTauriMock,
@@ -34,15 +36,133 @@ class ResizeObserverMock {
   disconnect(): void {}
 }
 
+class SpeechSynthesisUtteranceMock {
+  text: string;
+  rate = 1;
+  lang = "";
+  voice: SpeechSynthesisVoice | null = null;
+  onstart: ((event: Event) => void) | null = null;
+  onend: ((event: Event) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+
+  constructor(text: string) {
+    this.text = text;
+  }
+}
+
+const speechVoices: SpeechSynthesisVoice[] = [
+  {
+    default: true,
+    lang: "en-US",
+    localService: true,
+    name: "Machdoch Voice",
+    voiceURI: "voice-default",
+  } as SpeechSynthesisVoice,
+  {
+    default: false,
+    lang: "en-GB",
+    localService: true,
+    name: "Review Voice",
+    voiceURI: "voice-review",
+  } as SpeechSynthesisVoice,
+];
+
+const speechVoiceListeners = new Set<() => void>();
+
+const speechSynthesisMock = {
+  paused: false,
+  pending: false,
+  speaking: false,
+  lastUtterance: null as SpeechSynthesisUtteranceMock | null,
+  getVoices: vi.fn(() => speechVoices),
+  cancel: vi.fn(() => {
+    speechSynthesisMock.speaking = false;
+    speechSynthesisMock.lastUtterance = null;
+  }),
+  speak: vi.fn((utterance: SpeechSynthesisUtteranceMock) => {
+    speechSynthesisMock.speaking = true;
+    speechSynthesisMock.lastUtterance = utterance;
+    utterance.onstart?.(new Event("start"));
+  }),
+  addEventListener: vi.fn((eventName: string, listener: () => void) => {
+    if (eventName === "voiceschanged") {
+      speechVoiceListeners.add(listener);
+    }
+  }),
+  removeEventListener: vi.fn((eventName: string, listener: () => void) => {
+    if (eventName === "voiceschanged") {
+      speechVoiceListeners.delete(listener);
+    }
+  }),
+};
+
+const createdAudioElements: AudioMock[] = [];
+
+class AudioMock {
+  src: string;
+  currentTime = 0;
+  onended: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  pause = vi.fn(() => undefined);
+  play = vi.fn(async () => undefined);
+
+  constructor(src = "") {
+    this.src = src;
+    createdAudioElements.push(this);
+  }
+}
+
+const disableSpeechSynthesisSupport = (): void => {
+  vi.stubGlobal("SpeechSynthesisUtterance", undefined);
+  Object.defineProperty(window, "speechSynthesis", {
+    value: undefined,
+    writable: true,
+    configurable: true,
+  });
+};
+
+const enableSpeechSynthesisSupport = (): void => {
+  vi.stubGlobal("SpeechSynthesisUtterance", SpeechSynthesisUtteranceMock);
+  Object.defineProperty(window, "speechSynthesis", {
+    value: speechSynthesisMock,
+    writable: true,
+    configurable: true,
+  });
+};
+
+const resetSpeechSynthesisMock = (): void => {
+  speechSynthesisMock.paused = false;
+  speechSynthesisMock.pending = false;
+  speechSynthesisMock.speaking = false;
+  speechSynthesisMock.lastUtterance = null;
+  speechSynthesisMock.getVoices.mockClear();
+  speechSynthesisMock.cancel.mockClear();
+  speechSynthesisMock.speak.mockClear();
+  speechSynthesisMock.addEventListener.mockClear();
+  speechSynthesisMock.removeEventListener.mockClear();
+  speechVoiceListeners.clear();
+};
+
+const resetAudioPlaybackMock = (): void => {
+  createdAudioElements.length = 0;
+};
+
+const AI_AUDIO_BASE64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+
 beforeAll(() => {
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+  vi.stubGlobal("Audio", AudioMock as unknown as typeof Audio);
+  disableSpeechSynthesisSupport();
 });
 
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
   cleanup();
+  disableSpeechSynthesisSupport();
+  resetSpeechSynthesisMock();
+  resetAudioPlaybackMock();
   isTauriMock.mockReturnValue(true);
   openMock.mockResolvedValue("/mocked/tauri/path");
   openMock.mockClear();
@@ -82,6 +202,25 @@ const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
 
 const storeShellState = (state: ShellPersistedState): void => {
   window.localStorage.setItem(SHELL_STATE_STORAGE_KEY, JSON.stringify(state));
+};
+
+const storeAutoReadVoiceShellState = (): void => {
+  const baseState = createInitialShellState();
+
+  storeShellState({
+    ...baseState,
+    voice: {
+      ...baseState.voice,
+      autoSpeakResponses: true,
+    },
+  });
+};
+
+const flushShellHydration = async (): Promise<void> => {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 };
 
 const createRuntimeSnapshot = (
@@ -837,6 +976,222 @@ describe("ChatSession component", () => {
     },
     SLOW_UI_TEST_TIMEOUT_MS,
   );
+
+  it(
+    "saves the selected AI voice provider from global settings",
+    async () => {
+      const loadUserVoiceSettingsSpy = vi
+        .spyOn(runtime, "loadUserVoiceSettings")
+        .mockResolvedValue({
+          activeProvider: "none",
+          providerAvailability: [
+            { provider: "openai", configured: true },
+            { provider: "google", configured: false },
+          ],
+        });
+      const saveUserVoiceActiveProviderSpy = vi
+        .spyOn(runtime, "saveUserVoiceActiveProvider")
+        .mockResolvedValue({
+          activeProvider: "openai",
+          providerAvailability: [
+            { provider: "openai", configured: true },
+            { provider: "google", configured: false },
+          ],
+        });
+
+      render(<ChatSession />);
+
+      fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /^Voice$/i }));
+      fireEvent.click(screen.getByRole("button", { name: /^OpenAI$/i }));
+
+      await waitFor(() => {
+        expect(saveUserVoiceActiveProviderSpy).toHaveBeenCalledWith("openai");
+      });
+      expect(
+        await screen.findByText(/OpenAI will handle new spoken replies\./i),
+      ).toBeDefined();
+
+      loadUserVoiceSettingsSpy.mockRestore();
+      saveUserVoiceActiveProviderSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "auto-reads new assistant replies with AI voice when the provider is configured",
+    async () => {
+      storeAutoReadVoiceShellState();
+
+      const loadUserVoiceSettingsSpy = vi
+        .spyOn(runtime, "loadUserVoiceSettings")
+        .mockResolvedValue({
+          activeProvider: "openai",
+          providerAvailability: [
+            { provider: "openai", configured: true },
+            { provider: "google", configured: false },
+          ],
+        });
+      const synthesizeUserVoiceAudioSpy = vi
+        .spyOn(runtime, "synthesizeUserVoiceAudio")
+        .mockResolvedValue({
+          provider: "openai",
+          mimeType: "audio/wav",
+          audioBase64: AI_AUDIO_BASE64,
+        });
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockResolvedValue({
+          execution: {
+            ...createMockExecutionFixture(
+              "summarize the latest changes",
+              "/mock/home/path",
+            ),
+            summary: "Spoke the latest response.",
+            response: {
+              markdown: "**Voice reply.** Hello from AI speech.",
+              highlights: [],
+              relatedFiles: [],
+              verification: [],
+              followUps: [],
+            },
+          },
+        });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      await waitFor(() => {
+        expect(loadUserVoiceSettingsSpy).toHaveBeenCalled();
+      });
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: "summarize the latest changes" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(synthesizeUserVoiceAudioSpy).toHaveBeenCalledTimes(1);
+      });
+
+      expect(createdAudioElements.length).toBeGreaterThan(0);
+      expect(createdAudioElements[0]?.play).toHaveBeenCalledTimes(1);
+      expect(speechSynthesisMock.speak).toHaveBeenCalledTimes(0);
+
+      loadUserVoiceSettingsSpy.mockRestore();
+      synthesizeUserVoiceAudioSpy.mockRestore();
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "falls back to system speech when the selected AI voice provider is unavailable",
+    async () => {
+      enableSpeechSynthesisSupport();
+      storeAutoReadVoiceShellState();
+
+      const loadUserVoiceSettingsSpy = vi
+        .spyOn(runtime, "loadUserVoiceSettings")
+        .mockResolvedValue({
+          activeProvider: "google",
+          providerAvailability: [
+            { provider: "openai", configured: false },
+            { provider: "google", configured: false },
+          ],
+        });
+      const synthesizeUserVoiceAudioSpy = vi.spyOn(
+        runtime,
+        "synthesizeUserVoiceAudio",
+      );
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockResolvedValue({
+          execution: {
+            ...createMockExecutionFixture(
+              "read the latest assistant reply",
+              "/mock/home/path",
+            ),
+            summary: "Fallback speech is ready.",
+            response: {
+              markdown: "**Voice reply.** Fallback speech is ready.",
+              highlights: [],
+              relatedFiles: [],
+              verification: [],
+              followUps: [],
+            },
+          },
+        });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      await waitFor(() => {
+        expect(loadUserVoiceSettingsSpy).toHaveBeenCalled();
+      });
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: "read the latest assistant reply" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(speechSynthesisMock.speak).toHaveBeenCalledTimes(1);
+      });
+
+      expect(synthesizeUserVoiceAudioSpy).not.toHaveBeenCalled();
+      expect(speechSynthesisMock.lastUtterance?.text).toContain(
+        "Voice reply. Fallback speech is ready.",
+      );
+
+      loadUserVoiceSettingsSpy.mockRestore();
+      synthesizeUserVoiceAudioSpy.mockRestore();
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it("renders a compact in-bubble replay control for assistant replies", () => {
+    const onSpeakMessage = vi.fn();
+    const onStopSpeaking = vi.fn();
+
+    render(
+      <ConversationFeed
+        visibleMessages={[
+          {
+            id: "agent-reply-1",
+            role: "agent",
+            content: "**Voice reply.** Ready for manual playback.",
+          },
+        ]}
+        bottomRef={{ current: null }}
+        onOpenWorkspaceFile={() => {}}
+        voicePlayback={{
+          supported: true,
+          speakingMessageId: null,
+          onSpeakMessage,
+          onStopSpeaking,
+        }}
+      />,
+    );
+
+    expect(screen.queryByText(/^Speak$/i)).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Read response aloud/i }),
+    );
+
+    expect(onSpeakMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "agent-reply-1" }),
+    );
+    expect(onStopSpeaking).not.toHaveBeenCalled();
+  });
 
   it(
     "opens the selected provider API key portal from settings",

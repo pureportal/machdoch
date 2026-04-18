@@ -21,10 +21,28 @@ export type UserApiKeyProvider = RuntimeProvider;
 
 export type WebSearchProvider = "none" | "perplexity" | "tavily";
 
+export type VoiceAiProvider = "none" | "openai" | "google";
+
+export type SpeechToTextProvider = "none" | "openai" | "google";
+
 export type UserWebSearchApiKeyProvider = Exclude<WebSearchProvider, "none">;
+
+export type UserVoiceAiProvider = Exclude<VoiceAiProvider, "none">;
+
+export type UserSpeechToTextProvider = Exclude<SpeechToTextProvider, "none">;
 
 export const USER_API_KEY_PROVIDER_ORDER: UserApiKeyProvider[] = [
   ...SUPPORTED_PROVIDER_ORDER,
+];
+
+export const USER_VOICE_AI_PROVIDER_ORDER: UserVoiceAiProvider[] = [
+  "openai",
+  "google",
+];
+
+export const USER_SPEECH_TO_TEXT_PROVIDER_ORDER: UserSpeechToTextProvider[] = [
+  "openai",
+  "google",
 ];
 
 export const USER_API_KEY_PROVIDER_PORTAL_URLS: Record<
@@ -57,6 +75,16 @@ export interface WebSearchProviderAvailability {
   configured: boolean;
 }
 
+export interface VoiceProviderAvailability {
+  provider: UserVoiceAiProvider;
+  configured: boolean;
+}
+
+export interface SpeechToTextProviderAvailability {
+  provider: UserSpeechToTextProvider;
+  configured: boolean;
+}
+
 export interface RuntimeWebSearchConfig {
   activeProvider: WebSearchProvider;
   providerAvailability: WebSearchProviderAvailability[];
@@ -68,9 +96,38 @@ export interface UserWebSearchSettings {
   providerAvailability: WebSearchProviderAvailability[];
 }
 
+export interface UserVoiceSettings {
+  activeProvider: VoiceAiProvider;
+  providerAvailability: VoiceProviderAvailability[];
+}
+
+export interface UserSpeechToTextSettings {
+  activeProvider: SpeechToTextProvider;
+  providerAvailability: SpeechToTextProviderAvailability[];
+}
+
 export interface UserMemorySettings {
   globalEnabled: boolean;
   entries: ConversationMemoryEntry[];
+}
+
+export interface UserDesktopSettings {
+  autostartEnabled: boolean;
+  autostartMinimized: boolean;
+  autostartToTray: boolean;
+}
+
+export interface SynthesizedVoiceAudio {
+  provider: UserVoiceAiProvider;
+  mimeType: string;
+  audioBase64: string;
+}
+
+export interface TranscribedSpeechText {
+  provider: UserSpeechToTextProvider;
+  text: string;
+  mimeType: string;
+  detectedLanguage?: string;
 }
 
 export interface RuntimeProfileSummary {
@@ -169,10 +226,50 @@ const createDefaultUserWebSearchSettings = (): UserWebSearchSettings => {
   };
 };
 
+const createVoiceAvailabilitySnapshot = (
+  configuredProviders: UserVoiceAiProvider[],
+): VoiceProviderAvailability[] => {
+  return USER_VOICE_AI_PROVIDER_ORDER.map((provider) => ({
+    provider,
+    configured: configuredProviders.includes(provider),
+  }));
+};
+
+const createDefaultUserVoiceSettings = (): UserVoiceSettings => {
+  return {
+    activeProvider: "none",
+    providerAvailability: createVoiceAvailabilitySnapshot([]),
+  };
+};
+
+const createSpeechToTextAvailabilitySnapshot = (
+  configuredProviders: UserSpeechToTextProvider[],
+): SpeechToTextProviderAvailability[] => {
+  return USER_SPEECH_TO_TEXT_PROVIDER_ORDER.map((provider) => ({
+    provider,
+    configured: configuredProviders.includes(provider),
+  }));
+};
+
+const createDefaultUserSpeechToTextSettings = (): UserSpeechToTextSettings => {
+  return {
+    activeProvider: "none",
+    providerAvailability: createSpeechToTextAvailabilitySnapshot([]),
+  };
+};
+
 const createDefaultUserMemorySettings = (): UserMemorySettings => {
   return {
     globalEnabled: false,
     entries: [],
+  };
+};
+
+const createDefaultUserDesktopSettings = (): UserDesktopSettings => {
+  return {
+    autostartEnabled: false,
+    autostartMinimized: false,
+    autostartToTray: false,
   };
 };
 
@@ -274,6 +371,49 @@ export const loadUserWebSearchSettings =
     }
   };
 
+export const loadUserVoiceSettings = async (): Promise<UserVoiceSettings> => {
+  if (!canInvokeTauriCommands()) {
+    return createDefaultUserVoiceSettings();
+  }
+
+  try {
+    return await tauriCore.invoke<UserVoiceSettings>("get_user_voice_settings");
+  } catch (error) {
+    console.error("Failed to load user voice settings", error);
+    return createDefaultUserVoiceSettings();
+  }
+};
+
+export const loadUserSpeechToTextSettings = async (): Promise<UserSpeechToTextSettings> => {
+  if (!canInvokeTauriCommands()) {
+    return createDefaultUserSpeechToTextSettings();
+  }
+
+  try {
+    return await tauriCore.invoke<UserSpeechToTextSettings>(
+      "get_user_speech_to_text_settings",
+    );
+  } catch (error) {
+    console.error("Failed to load user speech-to-text settings", error);
+    return createDefaultUserSpeechToTextSettings();
+  }
+};
+
+export const loadUserDesktopSettings = async (): Promise<UserDesktopSettings> => {
+  if (!canInvokeTauriCommands()) {
+    return createDefaultUserDesktopSettings();
+  }
+
+  try {
+    return await tauriCore.invoke<UserDesktopSettings>(
+      "get_user_desktop_settings",
+    );
+  } catch (error) {
+    console.error("Failed to load user desktop settings", error);
+    return createDefaultUserDesktopSettings();
+  }
+};
+
 export const loadUserMemorySettings = async (): Promise<UserMemorySettings> => {
   if (!canInvokeTauriCommands()) {
     return createDefaultUserMemorySettings();
@@ -303,6 +443,26 @@ export const saveUserGlobalMemoryEnabled = async (
     return await tauriCore.invoke<UserMemorySettings>(
       "save_user_global_memory_enabled",
       { enabled },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const saveUserDesktopSettings = async (
+  settings: UserDesktopSettings,
+): Promise<UserDesktopSettings> => {
+  if (!canInvokeTauriCommands()) {
+    return {
+      ...createDefaultUserDesktopSettings(),
+      ...settings,
+    };
+  }
+
+  try {
+    return await tauriCore.invoke<UserDesktopSettings>(
+      "save_user_desktop_settings",
+      { settings },
     );
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
@@ -364,6 +524,123 @@ export const saveUserWebSearchActiveProvider = async (
   }
 };
 
+export const saveUserVoiceActiveProvider = async (
+  provider: VoiceAiProvider,
+): Promise<UserVoiceSettings> => {
+  if (!canInvokeTauriCommands()) {
+    return {
+      ...createDefaultUserVoiceSettings(),
+      activeProvider: provider,
+    };
+  }
+
+  try {
+    return await tauriCore.invoke<UserVoiceSettings>(
+      "save_user_voice_active_provider",
+      { provider },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const saveUserSpeechToTextActiveProvider = async (
+  provider: SpeechToTextProvider,
+): Promise<UserSpeechToTextSettings> => {
+  if (!canInvokeTauriCommands()) {
+    return {
+      ...createDefaultUserSpeechToTextSettings(),
+      activeProvider: provider,
+    };
+  }
+
+  try {
+    return await tauriCore.invoke<UserSpeechToTextSettings>(
+      "save_user_speech_to_text_active_provider",
+      { provider },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const synthesizeUserVoiceAudio = async (options: {
+  provider: UserVoiceAiProvider;
+  text: string;
+  languageCode?: string;
+  rate?: number;
+}): Promise<SynthesizedVoiceAudio> => {
+  const normalizedText = options.text.trim();
+
+  if (!normalizedText) {
+    throw new Error("Expected non-empty text to synthesize.");
+  }
+
+  if (!canInvokeTauriCommands()) {
+    throw new Error(
+      "AI voice synthesis is only available in the desktop runtime.",
+    );
+  }
+
+  try {
+    return await tauriCore.invoke<SynthesizedVoiceAudio>(
+      "synthesize_user_voice_audio",
+      {
+        provider: options.provider,
+        text: normalizedText,
+        ...(options.languageCode?.trim()
+          ? { languageCode: options.languageCode.trim() }
+          : {}),
+        ...(typeof options.rate === "number" && Number.isFinite(options.rate)
+          ? { rate: options.rate }
+          : {}),
+      },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const transcribeUserSpeechAudio = async (options: {
+  provider: UserSpeechToTextProvider;
+  audioBase64: string;
+  mimeType: string;
+  languageCode?: string;
+}): Promise<TranscribedSpeechText> => {
+  const normalizedAudioBase64 = options.audioBase64.trim();
+  const normalizedMimeType = options.mimeType.trim();
+
+  if (!normalizedAudioBase64) {
+    throw new Error("Expected non-empty audio data to transcribe.");
+  }
+
+  if (!normalizedMimeType) {
+    throw new Error("Expected an audio MIME type.");
+  }
+
+  if (!canInvokeTauriCommands()) {
+    throw new Error(
+      "AI speech-to-text is only available in the desktop runtime.",
+    );
+  }
+
+  try {
+    return await tauriCore.invoke<TranscribedSpeechText>(
+      "transcribe_user_speech_audio",
+      {
+        provider: options.provider,
+        audioBase64: normalizedAudioBase64,
+        mimeType: normalizedMimeType,
+        ...(options.languageCode?.trim()
+          ? { languageCode: options.languageCode.trim() }
+          : {}),
+      },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
 export const loadWorkspaceRuntimeSnapshot = async (
   workspaceRoot: string | null | undefined,
   profile?: string | null,
@@ -387,7 +664,7 @@ export const loadWorkspaceRuntimeSnapshot = async (
 };
 
 export const cancelDesktopTask = async (taskId: string): Promise<void> => {
-  if (isTauri()) {
+  if (canInvokeTauriCommands()) {
     return await tauriCore.invoke("cancel_desktop_task", { taskId });
   }
 };

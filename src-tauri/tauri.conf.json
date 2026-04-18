@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "machdoch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.machdoch.desktop",
   "build": {
     "beforeDevCommand": {
@@ -28,6 +28,7 @@
         "minWidth": 960,
         "minHeight": 720,
         "center": true,
+        "visible": false,
         "resizable": true,
         "decorations": false,
         "transparent": false

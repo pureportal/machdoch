@@ -92,6 +92,8 @@ export const ChatSession = (): JSX.Element => {
           providerSetup={controller.settingsDialog.providerSetup}
           webSearchSetup={controller.settingsDialog.webSearchSetup}
           memorySetup={controller.settingsDialog.memorySetup}
+          desktopSetup={controller.settingsDialog.desktopSetup}
+          voiceSetup={controller.settingsDialog.voiceSetup}
         />
       </Dialog>
     </TooltipProvider>

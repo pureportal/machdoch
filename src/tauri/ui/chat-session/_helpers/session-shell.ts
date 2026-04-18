@@ -32,7 +32,12 @@ import {
 } from "../../runtime";
 import { getRenderedMessageContent } from "./execution-message.tsx";
 
-export type SettingsSection = "providers" | "web-search" | "memory";
+export type SettingsSection =
+  | "providers"
+  | "web-search"
+  | "voice"
+  | "memory"
+  | "desktop";
 export type SessionScopeFilter = "all" | "open" | "archived";
 export type SessionStatusFilter = "any" | SessionOverviewStatus;
 
@@ -42,7 +47,9 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
 }> = [
   { id: "providers", label: "Providers" },
   { id: "web-search", label: "Web search" },
+  { id: "voice", label: "Voice" },
   { id: "memory", label: "Memory" },
+  { id: "desktop", label: "Desktop" },
 ];
 
 export const MODEL_STAGE_LABELS: Record<CatalogModelStage, string> = {

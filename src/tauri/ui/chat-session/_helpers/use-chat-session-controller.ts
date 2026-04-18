@@ -58,7 +58,9 @@ import {
   toggleDesktopWindowMaximize,
 } from "./session-window-controls";
 import { useChatSessionRuntime } from "./use-chat-session-runtime";
+import { useChatSessionSpeechInput } from "./use-chat-session-speech-input";
 import { useChatSessionShellState } from "./use-chat-session-shell-state";
+import { useChatSessionVoice } from "./use-chat-session-voice";
 
 const formatTaskExecutionError = (error: unknown): string => {
   const detail = error instanceof Error ? error.message : String(error);
@@ -72,6 +74,20 @@ const createExecutionMessageContent = (
   return getExecutionMessageContent(execution);
 };
 
+const appendTranscriptToDraft = (draft: string, transcript: string): string => {
+  const normalizedTranscript = transcript.trim();
+
+  if (!normalizedTranscript) {
+    return draft;
+  }
+
+  if (!draft.trim()) {
+    return normalizedTranscript;
+  }
+
+  return /\s$/u.test(draft) ? `${draft}${normalizedTranscript}` : `${draft}\n${normalizedTranscript}`;
+};
+
 export const useChatSessionController = () => {
   const state = useChatSessionShellState();
   const activeDesktopTasksRef = useRef<Map<string, string>>(new Map());
@@ -80,6 +96,43 @@ export const useChatSessionController = () => {
     activeSessionProvider: state.activeSession.provider,
     activeSessionProfile: state.activeSession.profile,
     activeSessionWorkspace: state.activeSession.workspace,
+  });
+  const voice = useChatSessionVoice({
+    activeSessionId: state.activeSession.id,
+    settings: state.shellState.voice,
+    aiVoiceSettings: runtime.userVoiceSettings,
+    visibleMessages: state.visibleMessages,
+    onSettingsChange: (updater) => {
+      state.applyShellState((prev) => ({
+        ...prev,
+        voice: updater(prev.voice),
+      }));
+    },
+  });
+  const handleSpeechTranscript = useCallback(
+    (sessionId: string, transcript: string): void => {
+      const normalizedTranscript = transcript.trim();
+
+      if (!normalizedTranscript) {
+        return;
+      }
+
+      if (sessionId === state.activeSession.id) {
+        state.setPromptHistoryIndex(null);
+        state.setDraftBeforeHistory("");
+      }
+
+      state.updateSessionById(sessionId, (session) => ({
+        ...session,
+        draft: appendTranscriptToDraft(session.draft, normalizedTranscript),
+      }));
+    },
+    [state.activeSession.id, state.setDraftBeforeHistory, state.setPromptHistoryIndex, state.updateSessionById],
+  );
+  const speechInput = useChatSessionSpeechInput({
+    activeSessionId: state.activeSession.id,
+    settings: runtime.userSpeechToTextSettings,
+    onTranscript: handleSpeechTranscript,
   });
   const isDesktop = isTauri();
   const providerChooserState = createProviderChooserState({
@@ -100,7 +153,10 @@ export const useChatSessionController = () => {
   const defaultRunMode = runtime.runtimeSnapshot?.mode ?? "ask";
   const isUsingWorkspaceDefaultMode = !state.activeSession.mode;
   const hasActiveWorkspace = state.activeSession.workspace !== null;
-  const canSendMessage = Boolean(state.activeSession.draft.trim());
+  const canSendMessage =
+    Boolean(state.activeSession.draft.trim()) &&
+    !speechInput.recording &&
+    !speechInput.transcribing;
   const uiControlAvailability = runtime.runtimeSnapshot?.uiControl;
   const isUiControlAvailable = uiControlAvailability?.available === true;
   const uiControlDescription = isUiControlAvailable
@@ -113,6 +169,19 @@ export const useChatSessionController = () => {
   const handleOpenSettings = (section: SettingsSection = "providers"): void => {
     state.setSettingsSection(section);
     state.setCatalogOpen(true);
+  };
+
+  const handleSpeechInputAction = (): void => {
+    if (!speechInput.browserSupported) {
+      return;
+    }
+
+    if (!speechInput.enabled && !speechInput.recording && !speechInput.transcribing) {
+      handleOpenSettings("voice");
+      return;
+    }
+
+    speechInput.toggleRecording();
   };
 
   const handleMinimizeWindow = (event: MouseEvent<HTMLButtonElement>): void => {
@@ -451,77 +520,118 @@ export const useChatSessionController = () => {
     });
   };
 
-  const handleSessionProfileSelection = async (
-    profile: string | null,
-  ): Promise<void> => {
-    const nextSnapshot = await runtime.refreshWorkspaceRuntimeSnapshot(
-      state.activeSession.workspace,
-      profile,
-    );
+  const handleSessionProfileSelection = useCallback(
+    async (profile: string | null): Promise<void> => {
+      const nextSnapshot = await runtime.refreshWorkspaceRuntimeSnapshot(
+        state.activeSession.workspace,
+        profile,
+      );
 
-    if (profile && !nextSnapshot) {
+      if (profile && !nextSnapshot) {
+        return;
+      }
+
+      state.applyShellState((prev) => {
+        const activeSession = prev.sessions.find(
+          (session) => session.id === prev.activeSessionId,
+        );
+
+        if (!activeSession) {
+          return prev;
+        }
+
+        const nextProvider =
+          nextSnapshot?.provider && nextSnapshot.provider !== "unconfigured"
+            ? nextSnapshot.provider
+            : activeSession.provider;
+        const nextModel = nextSnapshot?.model ?? activeSession.model;
+        const nextUpdatedAt = Date.now();
+        const nextSessions = prev.sessions.map((session) => {
+          if (session.id !== prev.activeSessionId) {
+            return session;
+          }
+
+          const profileScopedSession = profile
+            ? {
+                ...session,
+                profile,
+                updatedAt: nextUpdatedAt,
+              }
+            : {
+                ...removeSessionProfileOverride(session),
+                updatedAt: nextUpdatedAt,
+              };
+          const nextSession = removeSessionModeOverride(profileScopedSession);
+
+          return {
+            ...nextSession,
+            provider: nextProvider,
+            model: nextModel,
+          };
+        });
+        const nextState: ShellPersistedState = {
+          ...prev,
+          lastSelectedProvider: nextProvider,
+          lastSelectedModelByProvider: {
+            ...prev.lastSelectedModelByProvider,
+            [nextProvider]: nextModel,
+          },
+          sessions: nextSessions,
+        };
+
+        if (profile) {
+          nextState.lastSelectedProfile = profile;
+        } else {
+          delete nextState.lastSelectedProfile;
+        }
+
+        delete nextState.lastSelectedMode;
+
+        return nextState;
+      });
+    },
+    [
+      runtime.refreshWorkspaceRuntimeSnapshot,
+      state.activeSession.workspace,
+      state.applyShellState,
+    ],
+  );
+
+  useEffect(() => {
+    if (!state.activeSession.workspace || state.activeSession.profile) {
       return;
     }
 
-    state.applyShellState((prev) => {
-      const activeSession = prev.sessions.find(
-        (session) => session.id === prev.activeSessionId,
-      );
+    if (state.shellState.lastSelectedProfile) {
+      return;
+    }
 
-      if (!activeSession) {
-        return prev;
-      }
+    const runtimeSnapshot = runtime.runtimeSnapshot;
 
-      const nextProvider =
-        nextSnapshot?.provider && nextSnapshot.provider !== "unconfigured"
-          ? nextSnapshot.provider
-          : activeSession.provider;
-      const nextModel = nextSnapshot?.model ?? activeSession.model;
-      const nextUpdatedAt = Date.now();
-      const nextSessions = prev.sessions.map((session) => {
-        if (session.id !== prev.activeSessionId) {
-          return session;
-        }
+    if (!runtimeSnapshot) {
+      return;
+    }
 
-        const profileScopedSession = profile
-          ? {
-              ...session,
-              profile,
-              updatedAt: nextUpdatedAt,
-            }
-          : {
-              ...removeSessionProfileOverride(session),
-              updatedAt: nextUpdatedAt,
-            };
-        const nextSession = removeSessionModeOverride(profileScopedSession);
+    const autoProfile =
+      runtimeSnapshot.activeProfile?.trim() ||
+      (runtimeSnapshot.availableProfiles.length === 1
+        ? runtimeSnapshot.availableProfiles[0]?.name.trim()
+        : undefined);
 
-        return {
-          ...nextSession,
-          provider: nextProvider,
-          model: nextModel,
-        };
-      });
-      const nextState: ShellPersistedState = {
-        ...prev,
-        lastSelectedProvider: nextProvider,
-        lastSelectedModelByProvider: {
-          ...prev.lastSelectedModelByProvider,
-          [nextProvider]: nextModel,
-        },
-        sessions: nextSessions,
-      };
+    if (!autoProfile) {
+      return;
+    }
 
-      if (profile) {
-        nextState.lastSelectedProfile = profile;
-      } else {
-        delete nextState.lastSelectedProfile;
-      }
-
-      delete nextState.lastSelectedMode;
-
-      return nextState;
+    void handleSessionProfileSelection(autoProfile).catch((error) => {
+      console.error("Failed to auto-apply runtime profile", error);
     });
-  };
+  }, [
+    handleSessionProfileSelection,
+    runtime.runtimeSnapshot,
+    state.activeSession.profile,
+    state.activeSession.workspace,
+    state.shellState.lastSelectedProfile,
+  ]);
 
   const handleSessionMemoryEnabledChange = (enabled: boolean): void => {
     state.updateActiveSession((session) => ({
@@ -609,7 +719,7 @@ export const useChatSessionController = () => {
 
   const handleCancel = (): void => {
     let targetTaskId: string | null = null;
-    
+
     for (const [taskId, sessionId] of activeDesktopTasksRef.current.entries()) {
       if (sessionId === state.activeSession.id) {
         targetTaskId = taskId;
@@ -630,6 +740,8 @@ export const useChatSessionController = () => {
     if (!task) {
       return;
     }
+
+    voice.stopSpeaking();
 
     const taskId = crypto.randomUUID();
     const sessionId = state.activeSession.id;
@@ -826,6 +938,12 @@ export const useChatSessionController = () => {
       visibleMessages: state.visibleMessages,
       bottomRef: state.bottomRef,
       onOpenWorkspaceFile: handleOpenWorkspaceFile,
+      voicePlayback: {
+        supported: voice.supported,
+        speakingMessageId: voice.speakingMessageId,
+        onSpeakMessage: voice.speakMessage,
+        onStopSpeaking: voice.stopSpeaking,
+      },
     },
     composer: {
       activeSession: state.activeSession,
@@ -842,6 +960,15 @@ export const useChatSessionController = () => {
       isGlobalMemoryAvailable: memorySummaryState.isGlobalMemoryAvailable,
       isGlobalMemoryActive: memorySummaryState.isGlobalMemoryActive,
       isUiControlAvailable,
+      speechInput: {
+        browserSupported: speechInput.browserSupported,
+        enabled: speechInput.enabled,
+        recording: speechInput.recording,
+        transcribing: speechInput.transcribing,
+        statusText: speechInput.statusText,
+        statusTone: speechInput.statusTone,
+        onAction: handleSpeechInputAction,
+      },
       canSendMessage,
       onSelectFolder: handleSelectFolder,
       onSessionModelSelection: handleSessionModelSelection,
@@ -884,6 +1011,38 @@ export const useChatSessionController = () => {
         saving: runtime.memorySetupSaving,
         message: runtime.memorySetupMessage,
         onGlobalEnabledChange: runtime.handleGlobalMemoryEnabledSave,
+      },
+      desktopSetup: {
+        settings: runtime.userDesktopSettings,
+        saving: runtime.desktopSetupSaving,
+        message: runtime.desktopSetupMessage,
+        onSave: runtime.handleDesktopSettingsSave,
+      },
+      voiceSetup: {
+        supported: voice.supported,
+        systemVoicesSupported: voice.systemVoicesSupported,
+        autoSpeakResponses: voice.autoSpeakResponses,
+        availabilityDescription: voice.availabilityDescription,
+        speechToTextAvailabilityDescription:
+          speechInput.availabilityDescription,
+        speechToTextProvider: runtime.userSpeechToTextSettings.activeProvider,
+        speechToTextProviderAvailability:
+          runtime.userSpeechToTextSettings.providerAvailability,
+        speechToTextProviderSaving: runtime.speechToTextSetupSaving,
+        speechToTextProviderMessage: runtime.speechToTextSetupMessage,
+        aiProvider: runtime.userVoiceSettings.activeProvider,
+        aiProviderAvailability: runtime.userVoiceSettings.providerAvailability,
+        aiProviderSaving: runtime.voiceSetupSaving,
+        aiProviderMessage: runtime.voiceSetupMessage,
+        preferredVoiceURI: voice.preferredVoiceURI,
+        rate: voice.rate,
+        voiceOptions: voice.voiceOptions,
+        onSpeechToTextProviderChange:
+          runtime.handleSpeechToTextActiveProviderSave,
+        onAiProviderChange: runtime.handleVoiceActiveProviderSave,
+        onAutoSpeakResponsesChange: voice.setAutoSpeakResponses,
+        onPreferredVoiceChange: voice.setPreferredVoiceURI,
+        onRateChange: voice.setRate,
       },
     },
   };
