@@ -334,7 +334,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
-        run: gh release edit "$TAG_NAME" --draft=false
+        run: gh release edit "$TAG_NAME" --draft=false --repo "$GITHUB_REPOSITORY"
 
   cleanup-release:
     name: Cleanup Draft Release on Failure
@@ -348,4 +348,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
-        run: gh release delete "$TAG_NAME" --yes
+        run: gh release delete "$TAG_NAME" --yes --repo "$GITHUB_REPOSITORY"
