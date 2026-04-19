@@ -14,13 +14,19 @@ import {
 import type { RunMode, TaskExecutionResult } from "../../../../core/types.js";
 import {
   canArchiveSession,
+  canDeleteSession,
+  canRenameSession,
   createSession,
   getSessionOverviewStatus,
   getSessionTitle,
+  isQuickVoiceSession,
   isSessionArchived,
+  QUICK_VOICE_SESSION_KIND,
   sortSessionsByUpdatedAt,
   type ChatSessionMessage,
+  type ChatSessionRecord,
   type ShellPersistedState,
+  trimSessionTaskGroupsToVisibleMessageLimit,
 } from "../../chat-session.model";
 import {
   getDefaultModelForProvider,
@@ -86,6 +92,14 @@ const appendTranscriptToDraft = (draft: string, transcript: string): string => {
   }
 
   return /\s$/u.test(draft) ? `${draft}${normalizedTranscript}` : `${draft}\n${normalizedTranscript}`;
+};
+
+const clampQuickVoiceMessageLimit = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return 50;
+  }
+
+  return Math.min(200, Math.max(10, Math.round(value)));
 };
 
 export const useChatSessionController = () => {
@@ -201,27 +215,48 @@ export const useChatSessionController = () => {
     void closeDesktopWindow();
   };
 
+  const applySessionMessageLimit = useCallback(
+    (session: ChatSessionRecord): ChatSessionRecord => {
+      if (!isQuickVoiceSession(session)) {
+        return session;
+      }
+
+      return {
+        ...session,
+        messages: trimSessionTaskGroupsToVisibleMessageLimit(
+          session.messages,
+          clampQuickVoiceMessageLimit(
+            runtime.userDesktopSettings.quickVoiceMaxMessages,
+          ),
+        ),
+      };
+    },
+    [runtime.userDesktopSettings.quickVoiceMaxMessages],
+  );
+
   const appendAgentMessage = (
     sessionId: string,
     taskId: string,
     content: string,
     source?: ChatSessionMessage["source"],
   ): void => {
-    state.updateSessionById(sessionId, (session) => ({
-      ...session,
-      updatedAt: Date.now(),
-      messages: [
-        ...session.messages,
-        {
-          id: crypto.randomUUID(),
-          taskId,
-          role: "agent",
-          content,
-          createdAt: Date.now(),
-          ...(source ? { source } : {}),
-        },
-      ],
-    }));
+    state.updateSessionById(sessionId, (session) => {
+      return applySessionMessageLimit({
+        ...session,
+        updatedAt: Date.now(),
+        messages: [
+          ...session.messages,
+          {
+            id: crypto.randomUUID(),
+            taskId,
+            role: "agent",
+            content,
+            createdAt: Date.now(),
+            ...(source ? { source } : {}),
+          },
+        ],
+      });
+    });
   };
 
   const updateThinkingTrace = useCallback(
@@ -277,14 +312,14 @@ export const useChatSessionController = () => {
             },
           };
 
-          return {
+          return applySessionMessageLimit({
             ...session,
             updatedAt: Date.now(),
             messages: nextMessages,
-          };
+          });
         }
 
-        return {
+        return applySessionMessageLimit({
           ...session,
           updatedAt: Date.now(),
           messages: [
@@ -301,10 +336,10 @@ export const useChatSessionController = () => {
               },
             },
           ],
-        };
+        });
       });
     },
-    [runtime.runtimeSnapshot, state.updateSessionById],
+    [applySessionMessageLimit, runtime.runtimeSnapshot, state.updateSessionById],
   );
 
   useEffect(() => {
@@ -368,6 +403,12 @@ export const useChatSessionController = () => {
 
   const deleteSession = (sessionId: string): void => {
     state.applyShellState((prev) => {
+      const targetSession = prev.sessions.find((session) => session.id === sessionId);
+
+      if (targetSession && !canDeleteSession(targetSession)) {
+        return prev;
+      }
+
       const remainingSessions = prev.sessions.filter(
         (session) => session.id !== sessionId,
       );
@@ -734,6 +775,320 @@ export const useChatSessionController = () => {
     }
   };
 
+  const buildQuickVoiceSessionSnapshot = useCallback((): ChatSessionRecord => {
+    const existingQuickVoiceSession = state.shellState.sessions.find(
+      isQuickVoiceSession,
+    );
+    const baseSession =
+      existingQuickVoiceSession ??
+      createSession({
+        id: crypto.randomUUID(),
+        specialSession: QUICK_VOICE_SESSION_KIND,
+      });
+    const nextSession: ChatSessionRecord = {
+      ...baseSession,
+      specialSession: QUICK_VOICE_SESSION_KIND,
+      workspace: state.activeSession.workspace,
+      provider: state.activeSession.provider,
+      model: state.activeSession.model,
+      sessionMemoryEnabled: state.activeSession.sessionMemoryEnabled,
+      useGlobalMemory: state.activeSession.useGlobalMemory,
+      uiControlEnabled: state.activeSession.uiControlEnabled,
+      updatedAt: Date.now(),
+    };
+
+    if (state.activeSession.profile) {
+      nextSession.profile = state.activeSession.profile;
+    } else {
+      delete nextSession.profile;
+    }
+
+    if (state.activeSession.mode) {
+      nextSession.mode = state.activeSession.mode;
+    } else {
+      delete nextSession.mode;
+    }
+
+    delete nextSession.archivedAt;
+    delete nextSession.manualTitle;
+
+    return nextSession;
+  }, [
+    state.activeSession.mode,
+    state.activeSession.model,
+    state.activeSession.profile,
+    state.activeSession.provider,
+    state.activeSession.sessionMemoryEnabled,
+    state.activeSession.uiControlEnabled,
+    state.activeSession.useGlobalMemory,
+    state.activeSession.workspace,
+    state.shellState.sessions,
+  ]);
+
+  const submitTaskToSession = useCallback(
+    (options: {
+      sessionSnapshot: ChatSessionRecord;
+      task: string;
+      clearDraft: boolean;
+      activateSession: boolean;
+    }): void => {
+      const normalizedTask = options.task.trim();
+
+      if (!normalizedTask) {
+        return;
+      }
+
+      const { sessionSnapshot } = options;
+      const taskId = crypto.randomUUID();
+      const sessionId = sessionSnapshot.id;
+      const sessionWorkspace = sessionSnapshot.workspace;
+      const sessionProfile = sessionSnapshot.profile;
+      const sessionMode = sessionSnapshot.mode;
+      const taskConversationContext = createConversationContextFromSession(
+        sessionSnapshot,
+        runtime.userMemorySettings.globalEnabled,
+        uiControlAvailability,
+      );
+      const taskRunPromise = runDesktopTask(sessionWorkspace, normalizedTask, {
+        conversationContext: taskConversationContext,
+        model: sessionSnapshot.model,
+        ...(sessionProfile ? { profile: sessionProfile } : {}),
+        provider: sessionSnapshot.provider,
+        ...(sessionMode ? { mode: sessionMode } : {}),
+        taskId,
+      });
+      const nextRunMode = getEffectiveSessionMode(
+        sessionSnapshot.mode,
+        runtime.runtimeSnapshot,
+      );
+      let taskFailureReported = false;
+
+      voice.stopSpeaking();
+
+      const reportTaskFailure = (error: unknown): void => {
+        activeDesktopTasksRef.current.delete(taskId);
+
+        if (taskFailureReported) {
+          return;
+        }
+
+        taskFailureReported = true;
+        appendAgentMessage(sessionId, taskId, formatTaskExecutionError(error));
+      };
+
+      if (
+        isSessionArchived(sessionSnapshot) &&
+        state.sessionScopeFilter === "archived"
+      ) {
+        state.setSessionScopeFilter("open");
+      }
+
+      state.applyShellState((prev) => {
+        const nextUpdatedAt = Date.now();
+        let sessionFound = false;
+        const nextSessions = prev.sessions.map((session) => {
+          if (session.id !== sessionId) {
+            return session;
+          }
+
+          sessionFound = true;
+
+          const sessionWithoutArchive = removeSessionArchiveFlag(session);
+          const nextPromptHistory =
+            sessionWithoutArchive.promptHistory.at(-1) === normalizedTask
+              ? sessionWithoutArchive.promptHistory
+              : [...sessionWithoutArchive.promptHistory, normalizedTask].slice(
+                  -40,
+                );
+          const nextSession: ChatSessionRecord = {
+            ...sessionWithoutArchive,
+            workspace: sessionSnapshot.workspace,
+            provider: sessionSnapshot.provider,
+            model: sessionSnapshot.model,
+            draft: options.clearDraft ? "" : sessionWithoutArchive.draft,
+            sessionMemoryEnabled: sessionSnapshot.sessionMemoryEnabled,
+            useGlobalMemory: sessionSnapshot.useGlobalMemory,
+            uiControlEnabled: sessionSnapshot.uiControlEnabled,
+            updatedAt: nextUpdatedAt,
+            messages: [
+              ...sessionWithoutArchive.messages,
+              {
+                id: crypto.randomUUID(),
+                taskId,
+                role: "user",
+                content: normalizedTask,
+                createdAt: Date.now(),
+              },
+            ],
+            promptHistory: nextPromptHistory,
+          };
+
+          if (sessionSnapshot.profile) {
+            nextSession.profile = sessionSnapshot.profile;
+          } else {
+            delete nextSession.profile;
+          }
+
+          if (sessionSnapshot.mode) {
+            nextSession.mode = sessionSnapshot.mode;
+          } else {
+            delete nextSession.mode;
+          }
+
+          if (sessionSnapshot.specialSession) {
+            nextSession.specialSession = sessionSnapshot.specialSession;
+          } else {
+            delete nextSession.specialSession;
+          }
+
+          if (sessionSnapshot.manualTitle) {
+            nextSession.manualTitle = sessionSnapshot.manualTitle;
+          } else {
+            delete nextSession.manualTitle;
+          }
+
+          return applySessionMessageLimit(nextSession);
+        });
+
+        if (!sessionFound) {
+          const nextPromptHistory =
+            sessionSnapshot.promptHistory.at(-1) === normalizedTask
+              ? sessionSnapshot.promptHistory
+              : [...sessionSnapshot.promptHistory, normalizedTask].slice(-40);
+          const insertedSession = applySessionMessageLimit({
+            ...sessionSnapshot,
+            draft: options.clearDraft ? "" : sessionSnapshot.draft,
+            updatedAt: nextUpdatedAt,
+            messages: [
+              ...sessionSnapshot.messages,
+              {
+                id: crypto.randomUUID(),
+                taskId,
+                role: "user",
+                content: normalizedTask,
+                createdAt: Date.now(),
+              },
+            ],
+            promptHistory: nextPromptHistory,
+          });
+
+          return {
+            ...prev,
+            ...(options.activateSession ? { activeSessionId: sessionId } : {}),
+            sessions: [insertedSession, ...prev.sessions],
+          };
+        }
+
+        return {
+          ...prev,
+          ...(options.activateSession ? { activeSessionId: sessionId } : {}),
+          sessions: nextSessions,
+        };
+      });
+
+      if (sessionId === state.activeSession.id) {
+        state.setPromptHistoryIndex(null);
+        state.setDraftBeforeHistory("");
+      }
+
+      activeDesktopTasksRef.current.set(taskId, sessionId);
+      updateThinkingTrace(sessionId, taskId, () => {
+        return createInitialThinkingTrace(nextRunMode);
+      });
+
+      void taskRunPromise
+        .then((taskRun) => {
+          activeDesktopTasksRef.current.delete(taskId);
+
+          const sessionMemoryUpdates =
+            taskRun.execution.memoryUpdates
+              ?.filter((update) => update.scope === "session")
+              .map((update) => update.entry) ?? [];
+          const wroteGlobalMemory =
+            taskRun.execution.memoryUpdates?.some(
+              (update) => update.scope === "global",
+            ) ?? false;
+
+          if (sessionMemoryUpdates.length > 0) {
+            state.updateSessionById(sessionId, (session) => {
+              return applySessionMessageLimit({
+                ...session,
+                sessionMemory: mergeConversationMemoryEntries(
+                  session.sessionMemory,
+                  sessionMemoryUpdates,
+                  MAX_SESSION_MEMORY_ENTRIES,
+                ),
+                updatedAt: Date.now(),
+              });
+            });
+          }
+
+          if (wroteGlobalMemory) {
+            void runtime
+              .refreshWorkspaceRuntimeSnapshot(sessionWorkspace, sessionProfile)
+              .then(() => loadUserMemorySettings())
+              .then(runtime.applyLoadedUserMemorySettings)
+              .catch((error) => {
+                console.error("Failed to refresh user memory settings", error);
+              });
+          }
+
+          state.scheduleMessage(
+            () => {
+              appendAgentMessage(
+                sessionId,
+                taskId,
+                createExecutionMessageContent(taskRun.execution),
+                {
+                  kind: "execution",
+                  execution: taskRun.execution,
+                },
+              );
+            },
+            220,
+          );
+        })
+        .catch(reportTaskFailure);
+    },
+    [
+      applySessionMessageLimit,
+      appendAgentMessage,
+      runtime.applyLoadedUserMemorySettings,
+      runtime.refreshWorkspaceRuntimeSnapshot,
+      runtime.runtimeSnapshot,
+      runtime.userMemorySettings.globalEnabled,
+      state.activeSession.id,
+      state.applyShellState,
+      state.scheduleMessage,
+      state.sessionScopeFilter,
+      state.setDraftBeforeHistory,
+      state.setPromptHistoryIndex,
+      state.setSessionScopeFilter,
+      state.updateSessionById,
+      uiControlAvailability,
+      updateThinkingTrace,
+      voice,
+    ],
+  );
+
+  const submitQuickVoiceCommand = useCallback(
+    (transcript: string): void => {
+      const normalizedTranscript = transcript.trim();
+
+      if (!normalizedTranscript) {
+        return;
+      }
+
+      submitTaskToSession({
+        sessionSnapshot: buildQuickVoiceSessionSnapshot(),
+        task: normalizedTranscript,
+        clearDraft: true,
+        activateSession: false,
+      });
+    },
+    [buildQuickVoiceSessionSnapshot, submitTaskToSession],
+  );
+
   const handleSend = (): void => {
     const task = state.activeSession.draft.trim();
 
@@ -741,138 +1096,17 @@ export const useChatSessionController = () => {
       return;
     }
 
-    voice.stopSpeaking();
-
-    const taskId = crypto.randomUUID();
-    const sessionId = state.activeSession.id;
-    const selectedProvider = state.activeSession.provider;
-    const selectedModel = state.activeSession.model;
-    const conversationContext = createConversationContextFromSession(
-      state.activeSession,
-      runtime.userMemorySettings.globalEnabled,
-      uiControlAvailability,
-    );
-    const taskRunPromise = runDesktopTask(state.activeSession.workspace, task, {
-      conversationContext,
-      model: selectedModel,
-      ...(state.activeSession.profile
-        ? { profile: state.activeSession.profile }
-        : {}),
-      provider: selectedProvider,
-      ...(state.activeSession.mode ? { mode: state.activeSession.mode } : {}),
-      taskId,
+    submitTaskToSession({
+      sessionSnapshot: state.activeSession,
+      task,
+      clearDraft: true,
+      activateSession: true,
     });
-    let taskFailureReported = false;
-
-    const reportTaskFailure = (error: unknown): void => {
-      activeDesktopTasksRef.current.delete(taskId);
-
-      if (taskFailureReported) {
-        return;
-      }
-
-      taskFailureReported = true;
-      appendAgentMessage(sessionId, taskId, formatTaskExecutionError(error));
-    };
-
-    const updatedPromptHistory =
-      state.activeSession.promptHistory.at(-1) === task
-        ? state.activeSession.promptHistory
-        : [...state.activeSession.promptHistory, task].slice(-40);
-
-    if (
-      isSessionArchived(state.activeSession) &&
-      state.sessionScopeFilter === "archived"
-    ) {
-      state.setSessionScopeFilter("open");
-    }
-
-    state.updateActiveSession((session) => {
-      const sessionWithoutArchive = removeSessionArchiveFlag(session);
-
-      return {
-        ...sessionWithoutArchive,
-        draft: "",
-        updatedAt: Date.now(),
-        messages: [
-          ...sessionWithoutArchive.messages,
-          {
-            id: crypto.randomUUID(),
-            taskId,
-            role: "user",
-            content: task,
-            createdAt: Date.now(),
-          },
-        ],
-        promptHistory: updatedPromptHistory,
-      };
-    });
-
-    state.setPromptHistoryIndex(null);
-    state.setDraftBeforeHistory("");
-    activeDesktopTasksRef.current.set(taskId, sessionId);
-    updateThinkingTrace(sessionId, taskId, () => {
-      return createInitialThinkingTrace(activeRunMode);
-    });
-
-    void taskRunPromise
-      .then((taskRun) => {
-        activeDesktopTasksRef.current.delete(taskId);
-
-        const sessionMemoryUpdates =
-          taskRun.execution.memoryUpdates
-            ?.filter((update) => update.scope === "session")
-            .map((update) => update.entry) ?? [];
-        const wroteGlobalMemory =
-          taskRun.execution.memoryUpdates?.some(
-            (update) => update.scope === "global",
-          ) ?? false;
-
-        if (sessionMemoryUpdates.length > 0) {
-          state.updateSessionById(sessionId, (session) => ({
-            ...session,
-            sessionMemory: mergeConversationMemoryEntries(
-              session.sessionMemory,
-              sessionMemoryUpdates,
-              MAX_SESSION_MEMORY_ENTRIES,
-            ),
-            updatedAt: Date.now(),
-          }));
-        }
-
-        if (wroteGlobalMemory) {
-          void runtime
-            .refreshWorkspaceRuntimeSnapshot(
-              state.activeSession.workspace,
-              state.activeSession.profile,
-            )
-            .then(() => loadUserMemorySettings())
-            .then(runtime.applyLoadedUserMemorySettings)
-            .catch((error) => {
-              console.error("Failed to refresh user memory settings", error);
-            });
-        }
-
-        state.scheduleMessage(
-          () => {
-            appendAgentMessage(
-              sessionId,
-              taskId,
-              createExecutionMessageContent(taskRun.execution),
-              {
-                kind: "execution",
-                execution: taskRun.execution,
-              },
-            );
-          },
-          220,
-        );
-      })
-      .catch(reportTaskFailure);
   };
 
   return {
     isDesktop,
+    submitQuickVoiceCommand,
     catalogOpen: state.catalogOpen,
     setCatalogOpen: state.setCatalogOpen,
     hasAnyProvider: providerChooserState.hasAnyProvider,
@@ -916,6 +1150,8 @@ export const useChatSessionController = () => {
       currentSessionTitle,
       isRenamingSession: state.isRenamingSession,
       renameValue: state.renameValue,
+      canRenameSession: canRenameSession(state.activeSession),
+      canDeleteSession: canDeleteSession(state.activeSession),
       activeRunModeLabel: activeRunModeMeta.label,
       activeRunModeBadgeClassName: activeRunModeMeta.badgeClassName,
       isUsingWorkspaceDefaultMode,

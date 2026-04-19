@@ -9,6 +9,8 @@ export interface SessionHeaderProps {
   currentSessionTitle: string;
   isRenamingSession: boolean;
   renameValue: string;
+  canRenameSession: boolean;
+  canDeleteSession: boolean;
   onRenameValueChange: (value: string) => void;
   onRenameCommit: () => void;
   onRenameCancel: () => void;
@@ -21,6 +23,8 @@ export const SessionHeader = ({
   currentSessionTitle,
   isRenamingSession,
   renameValue,
+  canRenameSession,
+  canDeleteSession,
   onRenameValueChange,
   onRenameCommit,
   onRenameCancel,
@@ -57,26 +61,30 @@ export const SessionHeader = ({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="Rename session"
-          onClick={onStartRename}
-          className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-        >
-          <PencilLine className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="Delete session"
-          onClick={onDeleteSession}
-          className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-rose-500/10 hover:text-rose-200"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        {canRenameSession ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Rename session"
+            onClick={onStartRename}
+            className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+          >
+            <PencilLine className="h-4 w-4" />
+          </Button>
+        ) : null}
+        {canDeleteSession ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Delete session"
+            onClick={onDeleteSession}
+            className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-rose-500/10 hover:text-rose-200"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        ) : null}
       </div>
     </header>
   );

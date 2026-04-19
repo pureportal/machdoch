@@ -21,6 +21,7 @@ import {
   saveUserGlobalMemoryEnabled,
   saveUserVoiceActiveProvider,
   saveUserProviderApiKey,
+  subscribeToDesktopSettingsChanged,
   USER_SPEECH_TO_TEXT_PROVIDER_ORDER,
   saveUserWebSearchActiveProvider,
   saveUserWebSearchApiKey,
@@ -114,25 +115,47 @@ const createEmptyUserDesktopSettings = (): UserDesktopSettings => {
     autostartEnabled: false,
     autostartMinimized: false,
     autostartToTray: false,
+    assistantBubbleEnabled: true,
+    assistantBubbleHideWhenFullscreen: true,
+    assistantBubbleTemporarilyHideSeconds: 6,
+    quickVoiceEnabled: true,
+    quickVoiceShortcut: "CommandOrControl+Alt+V",
+    quickVoiceSilenceSeconds: 1.8,
+    quickVoiceMaxMessages: 50,
   };
 };
 
 const getDesktopSettingsSavedMessage = (
   settings: UserDesktopSettings,
 ): string => {
+  const surfacesDescription = [
+    settings.assistantBubbleEnabled ? "bubble" : null,
+    settings.quickVoiceEnabled ? "quick voice" : null,
+  ]
+    .filter((entry): entry is string => entry !== null)
+    .join(" + ");
+
   if (!settings.autostartEnabled) {
-    return "Desktop startup settings saved. Autostart is currently off.";
+    return surfacesDescription.length > 0
+      ? `Desktop assistant settings saved. Autostart is currently off, and ${surfacesDescription} is ready while the app is running.`
+      : "Desktop startup settings saved. Autostart is currently off.";
   }
 
   if (settings.autostartToTray) {
-    return "Desktop startup settings saved. Login launches will start in the tray.";
+    return `Desktop assistant settings saved. Login launches will start in the tray${
+      surfacesDescription.length > 0 ? ` with ${surfacesDescription}.` : "."
+    }`;
   }
 
   if (settings.autostartMinimized) {
-    return "Desktop startup settings saved. Login launches will start minimized.";
+    return `Desktop assistant settings saved. Login launches will start minimized${
+      surfacesDescription.length > 0 ? ` with ${surfacesDescription}.` : "."
+    }`;
   }
 
-  return "Desktop startup settings saved. Login launches will open normally.";
+  return `Desktop assistant settings saved. Login launches will open normally${
+    surfacesDescription.length > 0 ? ` with ${surfacesDescription}.` : "."
+  }`;
 };
 
 export const useChatSessionRuntime = (
@@ -405,6 +428,27 @@ export const useChatSessionRuntime = (
 
     return () => {
       cancelled = true;
+    };
+  }, [applyLoadedUserDesktopSettings]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+
+    void subscribeToDesktopSettingsChanged((settings) => {
+      applyLoadedUserDesktopSettings(settings);
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+        return;
+      }
+
+      unsubscribe = unlisten;
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
     };
   }, [applyLoadedUserDesktopSettings]);
 

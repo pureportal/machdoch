@@ -19,6 +19,7 @@ import type {
 } from "../../../../core/types.js";
 import {
   createVisibleConversationMessages,
+  isQuickVoiceSession,
   type ChatSessionRecord,
   type SessionOverviewStatus,
 } from "../../chat-session.model";
@@ -242,6 +243,10 @@ export const getWorkspaceLabel = (workspace: string | null): string => {
 };
 
 export const createSessionSubtitle = (session: ChatSessionRecord): string => {
+  if (isQuickVoiceSession(session)) {
+    return "Protected utility session";
+  }
+
   const providerLabel = getProviderLabel(session.provider);
   const workspaceLabel = getWorkspaceLabel(session.workspace);
 

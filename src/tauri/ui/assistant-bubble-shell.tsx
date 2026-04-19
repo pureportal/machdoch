@@ -1,0 +1,210 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { MessageSquareMore, Mic } from "lucide-react";
+import { useEffect, useMemo, useRef, type MouseEvent } from "react";
+import { getSessionOverviewStatus } from "./chat-session.model";
+import {
+  hideAssistantPopup,
+  resolveAssistantSurfaceLayout,
+  setWindowPosition,
+  showQuickVoiceWindow,
+  syncAssistantPopupPosition,
+  toggleAssistantPopup,
+} from "./assistant-surface";
+import { useUserDesktopSettings } from "./_helpers/use-user-desktop-settings";
+import { useChatSessionShellState } from "./chat-session/_helpers/use-chat-session-shell-state";
+import { detectFullscreenWindowOnMonitor } from "./runtime";
+
+export const AssistantBubbleShell = () => {
+  const state = useChatSessionShellState();
+  const desktopSettings = useUserDesktopSettings();
+  const temporarilyHiddenUntilRef = useRef<number>(0);
+  const suppressPrimaryActionUntilRef = useRef<number>(0);
+  const lastVisibilityRef = useRef<boolean | null>(null);
+  const lastBubblePositionRef = useRef<string | null>(null);
+  const syncInFlightRef = useRef(false);
+
+  const activeSessionSummary = useMemo(() => {
+    let runningCount = 0;
+    let waitingCount = 0;
+
+    for (const session of state.shellState.sessions) {
+      const status = getSessionOverviewStatus(session);
+
+      if (status === "running") {
+        runningCount += 1;
+      }
+
+      if (status === "waiting") {
+        waitingCount += 1;
+      }
+    }
+
+    return {
+      runningCount,
+      waitingCount,
+      pendingCount: runningCount + waitingCount,
+    };
+  }, [state.shellState.sessions]);
+
+  useEffect(() => {
+    const currentWindow = getCurrentWindow();
+    let disposed = false;
+
+    const setBubbleVisibility = async (visible: boolean): Promise<void> => {
+      if (lastVisibilityRef.current === visible) {
+        return;
+      }
+
+      lastVisibilityRef.current = visible;
+
+      if (visible) {
+        if (!(await currentWindow.isVisible())) {
+          try {
+            await currentWindow.show();
+          } catch {
+            // ignore transient show failures while syncing
+          }
+        }
+
+        return;
+      }
+
+      try {
+        await currentWindow.hide();
+      } catch {
+        // ignore no-op hide failures while syncing
+      }
+
+      await hideAssistantPopup();
+    };
+
+    const syncBubbleWindow = async (): Promise<void> => {
+      if (disposed || syncInFlightRef.current) {
+        return;
+      }
+
+      syncInFlightRef.current = true;
+
+      try {
+        if (!desktopSettings.assistantBubbleEnabled) {
+          await setBubbleVisibility(false);
+          return;
+        }
+
+        const layout = await resolveAssistantSurfaceLayout();
+
+        if (!layout) {
+          return;
+        }
+
+        const shouldHideTemporarily =
+          Date.now() < temporarilyHiddenUntilRef.current;
+        const shouldHideForFullscreen =
+          desktopSettings.assistantBubbleHideWhenFullscreen &&
+          (await detectFullscreenWindowOnMonitor(layout.monitorBounds));
+        const shouldShow = !shouldHideTemporarily && !shouldHideForFullscreen;
+        const nextPositionKey = `${layout.bubblePosition.x}:${layout.bubblePosition.y}`;
+
+        if (nextPositionKey !== lastBubblePositionRef.current) {
+          lastBubblePositionRef.current = nextPositionKey;
+          await setWindowPosition(currentWindow, layout.bubblePosition);
+          await syncAssistantPopupPosition();
+        }
+
+        await setBubbleVisibility(shouldShow);
+      } finally {
+        syncInFlightRef.current = false;
+      }
+    };
+
+    void syncBubbleWindow();
+    const intervalId = window.setInterval(() => {
+      void syncBubbleWindow();
+    }, 250);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    desktopSettings.assistantBubbleEnabled,
+    desktopSettings.assistantBubbleHideWhenFullscreen,
+  ]);
+
+  const handleTemporarilyHide = (event: MouseEvent<HTMLButtonElement>): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    suppressPrimaryActionUntilRef.current = Date.now() + 800;
+    lastVisibilityRef.current = false;
+    temporarilyHiddenUntilRef.current =
+      Date.now() +
+      desktopSettings.assistantBubbleTemporarilyHideSeconds * 1000;
+    void hideAssistantPopup();
+    void getCurrentWindow().hide().catch(() => undefined);
+  };
+
+  const handleBubbleMouseDown = (event: MouseEvent<HTMLButtonElement>): void => {
+    if (event.button !== 2) {
+      return;
+    }
+
+    handleTemporarilyHide(event);
+  };
+
+  const handleBubbleClick = (event: MouseEvent<HTMLButtonElement>): void => {
+    if (Date.now() < suppressPrimaryActionUntilRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    void toggleAssistantPopup();
+  };
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center overflow-hidden bg-transparent select-none">
+      <div className="relative">
+        <button
+          type="button"
+          aria-label="Open assistant popup"
+          title="Open assistant popup"
+          onClick={handleBubbleClick}
+          onMouseDown={handleBubbleMouseDown}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          className="group relative flex h-17 w-17 items-center justify-center rounded-full border border-slate-700/80 bg-slate-950/95 text-slate-100 shadow-none outline-none transition-colors duration-150 hover:border-sky-500/40 hover:bg-slate-900/95 focus-visible:ring-0"
+        >
+          <span className="absolute inset-1.25 rounded-full bg-slate-900/95" />
+          <MessageSquareMore className="relative z-10 h-6 w-6 text-sky-100 transition-colors group-hover:text-white" />
+
+          {activeSessionSummary.pendingCount > 0 ? (
+            <span className="absolute -right-1 -top-1 z-20 flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold text-slate-950">
+              {activeSessionSummary.pendingCount > 9
+                ? "9+"
+                : activeSessionSummary.pendingCount}
+            </span>
+          ) : null}
+        </button>
+
+        <button
+          type="button"
+          aria-label="Start quick voice command"
+          title="Start quick voice command"
+          disabled={!desktopSettings.quickVoiceEnabled}
+          onClick={() => {
+            void showQuickVoiceWindow();
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          className="absolute -bottom-1 -left-1 z-20 flex h-7 w-7 items-center justify-center rounded-full border border-violet-400/40 bg-violet-500 text-white shadow-none transition-colors duration-150 hover:bg-violet-400 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:hover:bg-slate-800"
+        >
+          <Mic className="h-3 w-3" />
+        </button>
+      </div>
+    </div>
+  );
+};

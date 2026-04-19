@@ -26,12 +26,21 @@ pub fn run() {
             app.manage(desktop_task::DesktopTaskCancelMap(std::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )));
+            app.manage(desktop_shell::QuickVoiceShortcutState::default());
 
             if let Err(error) = desktop_shell::create_tray(&app.handle()) {
                 eprintln!("Failed to create tray icon: {error}");
             }
 
+            if let Err(error) = desktop_shell::sync_quick_voice_shortcut(&app.handle()) {
+                eprintln!("Failed to initialize the Quick Voice shortcut: {error}");
+            }
+
             desktop_shell::apply_startup_mode(&app.handle(), launch_context);
+
+            if let Err(error) = desktop_shell::sync_assistant_bubble_window(&app.handle()) {
+                eprintln!("Failed to initialize the assistant bubble window: {error}");
+            }
 
             Ok(())
         })
@@ -41,9 +50,11 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
+            desktop_shell::detect_fullscreen_window_on_monitor,
             desktop_task::cancel_desktop_task,
             desktop_task::open_workspace_path,
             desktop_task::run_desktop_task,

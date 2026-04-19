@@ -123,9 +123,16 @@ pub struct UserMemorySettings {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDesktopSettings {
-    autostart_enabled: bool,
-    autostart_minimized: bool,
-    autostart_to_tray: bool,
+    pub(crate) autostart_enabled: bool,
+    pub(crate) autostart_minimized: bool,
+    pub(crate) autostart_to_tray: bool,
+    pub(crate) assistant_bubble_enabled: bool,
+    pub(crate) assistant_bubble_hide_when_fullscreen: bool,
+    pub(crate) assistant_bubble_temporarily_hide_seconds: u32,
+    pub(crate) quick_voice_enabled: bool,
+    pub(crate) quick_voice_shortcut: String,
+    pub(crate) quick_voice_silence_seconds: f64,
+    pub(crate) quick_voice_max_messages: u32,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -208,6 +215,13 @@ struct UserSpeechToTextConfigFile {
 struct UserDesktopConfigFile {
     autostart_minimized: Option<bool>,
     autostart_to_tray: Option<bool>,
+    assistant_bubble_enabled: Option<bool>,
+    assistant_bubble_hide_when_fullscreen: Option<bool>,
+    assistant_bubble_temporarily_hide_seconds: Option<u32>,
+    quick_voice_enabled: Option<bool>,
+    quick_voice_shortcut: Option<String>,
+    quick_voice_silence_seconds: Option<f64>,
+    quick_voice_max_messages: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -236,6 +250,64 @@ fn normalize_optional_string(value: Option<&str>) -> Option<String> {
     }
 
     Some(trimmed.to_string())
+}
+
+fn clamp_assistant_bubble_hide_seconds(value: u32) -> u32 {
+    value.clamp(2, 30)
+}
+
+fn clamp_quick_voice_silence_seconds(value: f64) -> f64 {
+    if !value.is_finite() {
+        return 1.8;
+    }
+
+    ((value * 10.0).round() / 10.0).clamp(0.8, 8.0)
+}
+
+fn clamp_quick_voice_message_limit(value: u32) -> u32 {
+    value.clamp(10, 200)
+}
+
+fn normalize_quick_voice_shortcut(value: Option<&str>) -> String {
+    normalize_optional_string(value)
+        .unwrap_or_else(|| crate::desktop_shell::DEFAULT_QUICK_VOICE_SHORTCUT.to_string())
+}
+
+fn resolve_quick_voice_shortcut(value: Option<&str>) -> String {
+    let normalized = normalize_quick_voice_shortcut(value);
+
+    if crate::desktop_shell::validate_quick_voice_shortcut(&normalized).is_ok() {
+        normalized
+    } else {
+        crate::desktop_shell::DEFAULT_QUICK_VOICE_SHORTCUT.to_string()
+    }
+}
+
+fn normalize_user_desktop_settings_input(
+    settings: &UserDesktopSettings,
+) -> Result<UserDesktopSettings, String> {
+    let quick_voice_shortcut = normalize_quick_voice_shortcut(Some(settings.quick_voice_shortcut.as_str()));
+
+    crate::desktop_shell::validate_quick_voice_shortcut(&quick_voice_shortcut)?;
+
+    Ok(UserDesktopSettings {
+        autostart_enabled: settings.autostart_enabled,
+        autostart_minimized: settings.autostart_minimized,
+        autostart_to_tray: settings.autostart_to_tray,
+        assistant_bubble_enabled: settings.assistant_bubble_enabled,
+        assistant_bubble_hide_when_fullscreen: settings.assistant_bubble_hide_when_fullscreen,
+        assistant_bubble_temporarily_hide_seconds: clamp_assistant_bubble_hide_seconds(
+            settings.assistant_bubble_temporarily_hide_seconds,
+        ),
+        quick_voice_enabled: settings.quick_voice_enabled,
+        quick_voice_shortcut,
+        quick_voice_silence_seconds: clamp_quick_voice_silence_seconds(
+            settings.quick_voice_silence_seconds,
+        ),
+        quick_voice_max_messages: clamp_quick_voice_message_limit(
+            settings.quick_voice_max_messages,
+        ),
+    })
 }
 
 fn strip_wrapping_quotes(value: &str) -> String {
@@ -929,9 +1001,10 @@ pub(crate) fn load_user_desktop_launch_preferences() -> Result<UserDesktopLaunch
     })
 }
 
-fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>>(
+pub(crate) fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>>(
     manager: &M,
 ) -> Result<UserDesktopSettings, String> {
+    let (config, _) = load_user_config_file()?;
     let preferences = load_user_desktop_launch_preferences()?;
     let autostart_enabled = manager
         .autolaunch()
@@ -942,6 +1015,27 @@ fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>>(
         autostart_enabled,
         autostart_minimized: preferences.autostart_minimized,
         autostart_to_tray: preferences.autostart_to_tray,
+        assistant_bubble_enabled: config.desktop.assistant_bubble_enabled.unwrap_or(true),
+        assistant_bubble_hide_when_fullscreen: config
+            .desktop
+            .assistant_bubble_hide_when_fullscreen
+            .unwrap_or(true),
+        assistant_bubble_temporarily_hide_seconds: clamp_assistant_bubble_hide_seconds(
+            config
+                .desktop
+                .assistant_bubble_temporarily_hide_seconds
+                .unwrap_or(6),
+        ),
+        quick_voice_enabled: config.desktop.quick_voice_enabled.unwrap_or(true),
+        quick_voice_shortcut: resolve_quick_voice_shortcut(
+            config.desktop.quick_voice_shortcut.as_deref(),
+        ),
+        quick_voice_silence_seconds: clamp_quick_voice_silence_seconds(
+            config.desktop.quick_voice_silence_seconds.unwrap_or(1.8),
+        ),
+        quick_voice_max_messages: clamp_quick_voice_message_limit(
+            config.desktop.quick_voice_max_messages.unwrap_or(50),
+        ),
     })
 }
 
@@ -1060,10 +1154,22 @@ fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Manager<R>>(
     manager: &M,
     settings: &UserDesktopSettings,
 ) -> Result<PathBuf, String> {
+    let normalized_settings = normalize_user_desktop_settings_input(settings)?;
     let (mut config, config_path) = load_user_config_file()?;
 
-    config.desktop.autostart_minimized = Some(settings.autostart_minimized);
-    config.desktop.autostart_to_tray = Some(settings.autostart_to_tray);
+    config.desktop.autostart_minimized = Some(normalized_settings.autostart_minimized);
+    config.desktop.autostart_to_tray = Some(normalized_settings.autostart_to_tray);
+    config.desktop.assistant_bubble_enabled = Some(normalized_settings.assistant_bubble_enabled);
+    config.desktop.assistant_bubble_hide_when_fullscreen =
+        Some(normalized_settings.assistant_bubble_hide_when_fullscreen);
+    config.desktop.assistant_bubble_temporarily_hide_seconds = Some(
+        normalized_settings.assistant_bubble_temporarily_hide_seconds,
+    );
+    config.desktop.quick_voice_enabled = Some(normalized_settings.quick_voice_enabled);
+    config.desktop.quick_voice_shortcut = Some(normalized_settings.quick_voice_shortcut.clone());
+    config.desktop.quick_voice_silence_seconds =
+        Some(normalized_settings.quick_voice_silence_seconds);
+    config.desktop.quick_voice_max_messages = Some(normalized_settings.quick_voice_max_messages);
 
     write_user_config_file(&config, &config_path)?;
 
@@ -1072,11 +1178,11 @@ fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Manager<R>>(
         .is_enabled()
         .map_err(|error| format!("Failed to read the autostart state: {error}"))?;
 
-    if settings.autostart_enabled && !currently_enabled {
+    if normalized_settings.autostart_enabled && !currently_enabled {
         autolaunch
             .enable()
             .map_err(|error| format!("Failed to enable autostart: {error}"))?;
-    } else if !settings.autostart_enabled && currently_enabled {
+    } else if !normalized_settings.autostart_enabled && currently_enabled {
         autolaunch
             .disable()
             .map_err(|error| format!("Failed to disable autostart: {error}"))?;
@@ -1139,7 +1245,23 @@ pub async fn save_user_desktop_settings(
     app: tauri::AppHandle,
     settings: UserDesktopSettings,
 ) -> Result<UserDesktopSettings, String> {
+    let previous_settings = load_user_desktop_settings(&app)?;
+
     save_user_desktop_settings_value(&app, &settings)?;
+
+    if let Err(error) = crate::desktop_shell::sync_quick_voice_shortcut(&app) {
+        let _ = save_user_desktop_settings_value(&app, &previous_settings);
+        let _ = crate::desktop_shell::sync_quick_voice_shortcut(&app);
+
+        return Err(format!(
+            "The Quick Voice shortcut could not be updated, so the desktop settings were restored: {error}"
+        ));
+    }
+
+    if let Err(error) = crate::desktop_shell::sync_assistant_bubble_window(&app) {
+        eprintln!("Failed to sync the assistant bubble window after saving desktop settings: {error}");
+    }
+
     load_user_desktop_settings(&app)
 }
 

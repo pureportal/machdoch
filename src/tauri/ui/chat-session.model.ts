@@ -9,6 +9,8 @@ import type { TaskThinkingSource } from "./task-thinking.model";
 
 export type ChatSessionMessageSource = TaskPanelSource | TaskThinkingSource;
 
+export type ChatSessionSpecialKind = "quick-voice";
+
 export interface ChatSessionMessage {
   id: string;
   taskId?: string;
@@ -23,6 +25,7 @@ export interface ChatSessionRecord {
   createdAt: number;
   updatedAt: number;
   archivedAt?: number;
+  specialSession?: ChatSessionSpecialKind;
   workspace: string | null;
   profile?: string;
   provider: RuntimeProvider;
@@ -67,8 +70,11 @@ const DEFAULT_PROVIDER: RuntimeProvider = "openai";
 const DEFAULT_VOICE_RATE = 1;
 const MIN_VOICE_RATE = 0.8;
 const MAX_VOICE_RATE = 1.4;
+const SPECIAL_SESSION_KINDS = ["quick-voice"] as const;
 const RUN_MODES: RunMode[] = ["safe", "ask", "auto"];
 const RUNTIME_PROVIDERS: RuntimeProvider[] = ["openai", "anthropic", "google"];
+
+export const QUICK_VOICE_SESSION_KIND: ChatSessionSpecialKind = "quick-voice";
 
 const clampVoiceRate = (value: unknown): number => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -96,6 +102,15 @@ const isRuntimeProvider = (value: unknown): value is RuntimeProvider => {
   );
 };
 
+const isSpecialSessionKind = (
+  value: unknown,
+): value is ChatSessionSpecialKind => {
+  return (
+    typeof value === "string" &&
+    SPECIAL_SESSION_KINDS.includes(value as ChatSessionSpecialKind)
+  );
+};
+
 export const createSession = (
   overrides: Partial<ChatSessionRecord> = {},
 ): ChatSessionRecord => {
@@ -108,6 +123,9 @@ export const createSession = (
     updatedAt: now,
     ...(typeof overrides.archivedAt === "number"
       ? { archivedAt: overrides.archivedAt }
+      : {}),
+    ...(isSpecialSessionKind(overrides.specialSession)
+      ? { specialSession: overrides.specialSession }
       : {}),
     workspace: overrides.workspace ?? null,
     ...(overrides.profile ? { profile: overrides.profile } : {}),
@@ -126,6 +144,10 @@ export const createSession = (
 };
 
 export const getSessionTitle = (session: ChatSessionRecord): string => {
+  if (session.specialSession === QUICK_VOICE_SESSION_KIND) {
+    return "Quick Voice";
+  }
+
   if (session.manualTitle?.trim()) {
     return session.manualTitle.trim();
   }
@@ -191,6 +213,9 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
           return createSession({
             ...session,
             provider,
+            ...(isSpecialSessionKind(session.specialSession)
+              ? { specialSession: session.specialSession }
+              : {}),
             ...(typeof session.profile === "string" &&
             session.profile.trim().length > 0
               ? { profile: session.profile }
@@ -342,6 +367,20 @@ export const isSessionArchived = (session: ChatSessionRecord): boolean => {
   return typeof session.archivedAt === "number";
 };
 
+export const isQuickVoiceSession = (
+  session: ChatSessionRecord,
+): boolean => {
+  return session.specialSession === QUICK_VOICE_SESSION_KIND;
+};
+
+export const canDeleteSession = (session: ChatSessionRecord): boolean => {
+  return !isQuickVoiceSession(session);
+};
+
+export const canRenameSession = (session: ChatSessionRecord): boolean => {
+  return !isQuickVoiceSession(session);
+};
+
 export const getSessionOverviewStatus = (
   session: ChatSessionRecord,
 ): SessionOverviewStatus => {
@@ -400,6 +439,7 @@ export const getSessionOverviewStatus = (
 
 export const canArchiveSession = (session: ChatSessionRecord): boolean => {
   return (
+    !isQuickVoiceSession(session) &&
     !isSessionArchived(session) &&
     getSessionOverviewStatus(session) !== "running"
   );
@@ -433,4 +473,53 @@ export const createVisibleConversationMessages = (
       latestRenderableAgentMessageByTask.get(message.taskId) === message.id
     );
   });
+};
+
+export const trimSessionTaskGroupsToVisibleMessageLimit = (
+  messages: ChatSessionMessage[],
+  maxVisibleMessages: number,
+): ChatSessionMessage[] => {
+  if (!Number.isFinite(maxVisibleMessages) || maxVisibleMessages <= 0) {
+    return [];
+  }
+
+  const normalizedLimit = Math.max(1, Math.floor(maxVisibleMessages));
+  const taskGroups: ChatSessionMessage[][] = [];
+
+  for (const message of messages) {
+    const taskGroupId = getMessageTaskId(message);
+    const currentGroup = taskGroups.at(-1);
+    const currentGroupId = currentGroup?.[0]
+      ? getMessageTaskId(currentGroup[0])
+      : null;
+
+    if (currentGroup && currentGroupId === taskGroupId) {
+      currentGroup.push(message);
+      continue;
+    }
+
+    taskGroups.push([message]);
+  }
+
+  let visibleMessageCount = 0;
+  const keptGroups: ChatSessionMessage[][] = [];
+
+  for (let index = taskGroups.length - 1; index >= 0; index -= 1) {
+    const taskGroup = taskGroups[index];
+    const taskGroupVisibleMessages = createVisibleConversationMessages(
+      taskGroup,
+    ).length;
+
+    if (
+      keptGroups.length > 0 &&
+      visibleMessageCount + taskGroupVisibleMessages > normalizedLimit
+    ) {
+      break;
+    }
+
+    visibleMessageCount += taskGroupVisibleMessages;
+    keptGroups.unshift(taskGroup);
+  }
+
+  return keptGroups.flat();
 };

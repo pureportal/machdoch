@@ -1,7 +1,13 @@
 name: Release
 
 on:
+  workflow_dispatch:
   push:
+    branches:
+      - main
+    paths:
+      - package.json
+      - src-tauri/tauri.conf.json
     tags:
       - "v*"
 
@@ -18,6 +24,7 @@ jobs:
   prepare-release:
     runs-on: ubuntu-latest
     outputs:
+      should_release: ${{ steps.version.outputs.should_release }}
       release_id: ${{ steps.release.outputs.release_id }}
       tag_name: ${{ steps.version.outputs.tag_name }}
       version: ${{ steps.version.outputs.version }}
@@ -28,36 +35,158 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve tag and verify project versions
+      - name: Resolve version and ensure release tag
         id: version
         shell: bash
+        env:
+          CURRENT_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
-          tag="${GITHUB_REF_NAME}"
-          version="${tag#v}"
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const fs = require('node:fs');
 
-          if [ "$tag" = "$version" ] || [ -z "$version" ]; then
-            echo "Expected a version tag like v0.1.0 but got: $tag"
-            exit 1
-          fi
+          const beforeSha = process.env.BEFORE_SHA ?? '';
+          const currentSha = process.env.CURRENT_SHA;
+          const defaultBranch = process.env.DEFAULT_BRANCH;
+          const eventName = process.env.EVENT_NAME;
+          const outputPath = process.env.GITHUB_OUTPUT;
+          const refName = process.env.REF_NAME;
+          const refType = process.env.REF_TYPE;
 
-          package_version="$(node -e "const fs = require('node:fs'); console.log(JSON.parse(fs.readFileSync('package.json', 'utf8')).version)")"
-          tauri_version="$(node -e "const fs = require('node:fs'); console.log(JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8')).version)")"
+          const setOutput = (name, value) => {
+            fs.appendFileSync(outputPath, `${name}=${value}\n`);
+          };
 
-          if [ "$package_version" != "$version" ]; then
-            echo "Tag version $version does not match package.json version $package_version"
-            exit 1
-          fi
+          const readJsonFile = (path) => JSON.parse(fs.readFileSync(path, 'utf8'));
+          const readVersionAtRevision = (revision, path) => {
+            try {
+              return (
+                JSON.parse(
+                  execFileSync('git', ['show', `${revision}:${path}`], {
+                    encoding: 'utf8',
+                    stdio: ['ignore', 'pipe', 'ignore'],
+                  }),
+                ).version ?? ''
+              );
+            } catch {
+              return '';
+            }
+          };
 
-          if [ "$tauri_version" != "$version" ]; then
-            echo "Tag version $version does not match src-tauri/tauri.conf.json version $tauri_version"
-            exit 1
-          fi
+          const packageVersion = readJsonFile('package.json').version ?? '';
+          const tauriVersion = readJsonFile('src-tauri/tauri.conf.json').version ?? '';
 
-          echo "tag_name=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if (!packageVersion) {
+            console.error('package.json is missing a version.');
+            process.exit(1);
+          }
+
+          if (!tauriVersion) {
+            console.error('src-tauri/tauri.conf.json is missing a version.');
+            process.exit(1);
+          }
+
+          if (packageVersion !== tauriVersion) {
+            console.error(
+              `package.json version ${packageVersion} does not match src-tauri/tauri.conf.json version ${tauriVersion}.`,
+            );
+            process.exit(1);
+          }
+
+          const version = packageVersion;
+          const tagName = `v${version}`;
+
+          if (refType === 'tag') {
+            if (refName !== tagName) {
+              console.error(
+                `Expected tag ${tagName} for version ${version}, but this workflow ran for ${refName}.`,
+              );
+              process.exit(1);
+            }
+
+            setOutput('should_release', 'true');
+            setOutput('tag_name', tagName);
+            setOutput('version', version);
+            process.exit(0);
+          }
+
+          if (refName !== defaultBranch) {
+            console.error(
+              `Releases can only be created from ${defaultBranch} or a version tag. This workflow ran for ${refName}.`,
+            );
+            process.exit(1);
+          }
+
+          if (eventName === 'push') {
+            const hasBeforeRevision = beforeSha.length > 0 && !/^0+$/.test(beforeSha);
+
+            if (hasBeforeRevision) {
+              const previousPackageVersion = readVersionAtRevision(beforeSha, 'package.json');
+              const previousTauriVersion = readVersionAtRevision(beforeSha, 'src-tauri/tauri.conf.json');
+
+              if (
+                previousPackageVersion === version &&
+                previousTauriVersion === version
+              ) {
+                console.log(
+                  `Version stayed at ${version}; skipping the release pipeline for this push.`,
+                );
+                setOutput('should_release', 'false');
+                setOutput('tag_name', tagName);
+                setOutput('version', version);
+                process.exit(0);
+              }
+            }
+          }
+
+          let existingTagCommit = '';
+
+          try {
+            existingTagCommit = execFileSync('git', ['rev-list', '-n', '1', tagName], {
+              encoding: 'utf8',
+              stdio: ['ignore', 'pipe', 'ignore'],
+            }).trim();
+          } catch {
+            existingTagCommit = '';
+          }
+
+          if (existingTagCommit && existingTagCommit !== currentSha) {
+            console.error(
+              `Tag ${tagName} already exists at ${existingTagCommit}, but this workflow is building ${currentSha}. Bump the app version or remove the conflicting tag.`,
+            );
+            process.exit(1);
+          }
+
+          if (!existingTagCommit) {
+            execFileSync('git', ['config', 'user.name', 'github-actions[bot]'], {
+              stdio: 'inherit',
+            });
+            execFileSync(
+              'git',
+              ['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'],
+              { stdio: 'inherit' },
+            );
+            execFileSync('git', ['tag', '-a', tagName, currentSha, '-m', `Release ${tagName}`], {
+              stdio: 'inherit',
+            });
+            execFileSync('git', ['push', 'origin', `refs/tags/${tagName}`], {
+              stdio: 'inherit',
+            });
+          }
+
+          setOutput('should_release', 'true');
+          setOutput('tag_name', tagName);
+          setOutput('version', version);
+          NODE
 
       - name: Create or reuse GitHub release
         id: release
+        if: steps.version.outputs.should_release == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ steps.version.outputs.tag_name }}
@@ -92,6 +221,7 @@ jobs:
 
   build-and-release:
     needs: prepare-release
+    if: needs.prepare-release.outputs.should_release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -117,7 +247,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -129,7 +258,13 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Install dependencies
-        run: npm ci
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Build and upload release assets
         uses: tauri-apps/tauri-action@v0
@@ -190,7 +325,7 @@ jobs:
 
   publish-release:
     needs: [prepare-release, build-and-release]
-    if: needs.prepare-release.outputs.publish_on_success == 'true'
+    if: needs.prepare-release.outputs.should_release == 'true' && needs.prepare-release.outputs.publish_on_success == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -204,7 +339,7 @@ jobs:
   cleanup-release:
     name: Cleanup Draft Release on Failure
     needs: [prepare-release, build-and-release, publish-release]
-    if: always() && failure() && needs.prepare-release.outputs.delete_on_failure == 'true'
+    if: always() && needs.prepare-release.outputs.should_release == 'true' && failure() && needs.prepare-release.outputs.delete_on_failure == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write

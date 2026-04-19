@@ -32,6 +32,63 @@
         "resizable": true,
         "decorations": false,
         "transparent": false
+      },
+      {
+        "label": "assistant-bubble",
+        "title": "machdoch Assistant Bubble",
+        "width": 84,
+        "height": 84,
+        "minWidth": 84,
+        "minHeight": 84,
+        "visible": false,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "preventOverflow": {
+          "width": 24,
+          "height": 24
+        }
+      },
+      {
+        "label": "assistant-popup",
+        "title": "machdoch Assistant Popup",
+        "width": 448,
+        "height": 720,
+        "minWidth": 448,
+        "minHeight": 620,
+        "visible": false,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "preventOverflow": {
+          "width": 24,
+          "height": 24
+        }
+      },
+      {
+        "label": "quick-voice",
+        "title": "machdoch Quick Voice",
+        "width": 380,
+        "height": 220,
+        "minWidth": 380,
+        "minHeight": 220,
+        "visible": false,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "preventOverflow": {
+          "width": 24,
+          "height": 24
+        }
       }
     ]
   },

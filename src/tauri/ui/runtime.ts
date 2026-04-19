@@ -1,5 +1,6 @@
 import * as tauriCore from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   ConversationMemoryEntry,
@@ -30,6 +31,14 @@ export type UserWebSearchApiKeyProvider = Exclude<WebSearchProvider, "none">;
 export type UserVoiceAiProvider = Exclude<VoiceAiProvider, "none">;
 
 export type UserSpeechToTextProvider = Exclude<SpeechToTextProvider, "none">;
+
+export const MAIN_WINDOW_LABEL = "main";
+export const ASSISTANT_BUBBLE_WINDOW_LABEL = "assistant-bubble";
+export const ASSISTANT_POPUP_WINDOW_LABEL = "assistant-popup";
+export const QUICK_VOICE_WINDOW_LABEL = "quick-voice";
+export const DESKTOP_SETTINGS_CHANGED_EVENT =
+  "machdoch://desktop-settings-changed";
+export const QUICK_VOICE_START_EVENT = "machdoch://quick-voice-start";
 
 export const USER_API_KEY_PROVIDER_ORDER: UserApiKeyProvider[] = [
   ...SUPPORTED_PROVIDER_ORDER,
@@ -115,6 +124,20 @@ export interface UserDesktopSettings {
   autostartEnabled: boolean;
   autostartMinimized: boolean;
   autostartToTray: boolean;
+  assistantBubbleEnabled: boolean;
+  assistantBubbleHideWhenFullscreen: boolean;
+  assistantBubbleTemporarilyHideSeconds: number;
+  quickVoiceEnabled: boolean;
+  quickVoiceShortcut: string;
+  quickVoiceSilenceSeconds: number;
+  quickVoiceMaxMessages: number;
+}
+
+export interface MonitorBoundsInput {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface SynthesizedVoiceAudio {
@@ -175,6 +198,14 @@ const canListenToDesktopTaskProgress = (): boolean => {
 
 const canInvokeTauriCommands = (): boolean => {
   return tauriCore.isTauri() && typeof tauriCore.invoke === "function";
+};
+
+const canEmitTauriWindowEvents = (): boolean => {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return tauriCore.isTauri() && "__TAURI_INTERNALS__" in window;
 };
 
 const normalizeWorkspaceRoot = (
@@ -270,7 +301,28 @@ const createDefaultUserDesktopSettings = (): UserDesktopSettings => {
     autostartEnabled: false,
     autostartMinimized: false,
     autostartToTray: false,
+    assistantBubbleEnabled: true,
+    assistantBubbleHideWhenFullscreen: true,
+    assistantBubbleTemporarilyHideSeconds: 6,
+    quickVoiceEnabled: true,
+    quickVoiceShortcut: "CommandOrControl+Alt+V",
+    quickVoiceSilenceSeconds: 1.8,
+    quickVoiceMaxMessages: 50,
   };
+};
+
+const emitDesktopSettingsChanged = async (
+  settings: UserDesktopSettings,
+): Promise<void> => {
+  if (!canEmitTauriWindowEvents()) {
+    return;
+  }
+
+  try {
+    await getCurrentWindow().emit(DESKTOP_SETTINGS_CHANGED_EVENT, settings);
+  } catch (error) {
+    console.error("Failed to broadcast desktop settings update", error);
+  }
 };
 
 export const loadGlobalProviderAvailability = async (): Promise<
@@ -453,19 +505,63 @@ export const saveUserDesktopSettings = async (
   settings: UserDesktopSettings,
 ): Promise<UserDesktopSettings> => {
   if (!canInvokeTauriCommands()) {
-    return {
+    const nextSettings = {
       ...createDefaultUserDesktopSettings(),
       ...settings,
     };
+
+    await emitDesktopSettingsChanged(nextSettings);
+    return nextSettings;
   }
 
   try {
-    return await tauriCore.invoke<UserDesktopSettings>(
+    const nextSettings = await tauriCore.invoke<UserDesktopSettings>(
       "save_user_desktop_settings",
       { settings },
     );
+
+    await emitDesktopSettingsChanged(nextSettings);
+    return nextSettings;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const subscribeToDesktopSettingsChanged = async (
+  onChange: (settings: UserDesktopSettings) => void,
+): Promise<() => void> => {
+  if (!canEmitTauriWindowEvents()) {
+    return () => {};
+  }
+
+  try {
+    return await listen<UserDesktopSettings>(
+      DESKTOP_SETTINGS_CHANGED_EVENT,
+      (event) => {
+        onChange(event.payload);
+      },
+    );
+  } catch (error) {
+    console.error("Failed to subscribe to desktop settings updates", error);
+    return () => {};
+  }
+};
+
+export const detectFullscreenWindowOnMonitor = async (
+  monitor: MonitorBoundsInput,
+): Promise<boolean> => {
+  if (!canInvokeTauriCommands()) {
+    return false;
+  }
+
+  try {
+    return await tauriCore.invoke<boolean>(
+      "detect_fullscreen_window_on_monitor",
+      monitor,
+    );
+  } catch (error) {
+    console.error("Failed to detect fullscreen window on monitor", error);
+    return false;
   }
 };
 

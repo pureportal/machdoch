@@ -1,5 +1,5 @@
 import { ArrowUpRight } from "lucide-react";
-import type { JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
@@ -155,6 +155,13 @@ const applyDesktopAutostartMode = (
   };
 };
 
+const hasDesktopSettingsDraftChanges = (
+  left: UserDesktopSettings,
+  right: UserDesktopSettings,
+): boolean => {
+  return JSON.stringify(left) !== JSON.stringify(right);
+};
+
 export const SettingsDialog = ({
   settingsSection,
   onSettingsSectionChange,
@@ -164,7 +171,19 @@ export const SettingsDialog = ({
   desktopSetup,
   voiceSetup,
 }: SettingsDialogProps): JSX.Element => {
-  const desktopAutostartMode = getDesktopAutostartMode(desktopSetup.settings);
+  const [desktopDraft, setDesktopDraft] = useState<UserDesktopSettings>(
+    desktopSetup.settings,
+  );
+
+  useEffect(() => {
+    setDesktopDraft(desktopSetup.settings);
+  }, [desktopSetup.settings]);
+
+  const desktopAutostartMode = getDesktopAutostartMode(desktopDraft);
+  const desktopDraftDirty = hasDesktopSettingsDraftChanges(
+    desktopDraft,
+    desktopSetup.settings,
+  );
 
   return (
     <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden rounded-3xl border-slate-800 bg-slate-950/96 p-0 text-slate-100 shadow-2xl">
@@ -495,10 +514,10 @@ export const SettingsDialog = ({
               <div className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
                 <div className="grid gap-1">
                   <p className="text-sm font-semibold text-slate-100">
-                    Desktop startup
+                    Desktop assistant
                   </p>
                   <p className="text-sm leading-6 text-slate-400">
-                    Use the native tray to show, hide, or quit machdoch. When login launch is set to tray, the window stays out of the taskbar until you restore it.
+                    Configure startup behavior, the floating assistant bubble, and the quick voice-command overlay.
                   </p>
                 </div>
 
@@ -512,8 +531,8 @@ export const SettingsDialog = ({
                       variant="outline"
                       disabled={desktopSetup.saving}
                       onClick={() => {
-                        void desktopSetup.onSave({
-                          ...desktopSetup.settings,
+                        setDesktopDraft({
+                          ...desktopDraft,
                           autostartEnabled: true,
                         });
                       }}
@@ -530,8 +549,8 @@ export const SettingsDialog = ({
                       variant="outline"
                       disabled={desktopSetup.saving}
                       onClick={() => {
-                        void desktopSetup.onSave({
-                          ...desktopSetup.settings,
+                        setDesktopDraft({
+                          ...desktopDraft,
                           autostartEnabled: false,
                         });
                       }}
@@ -564,11 +583,8 @@ export const SettingsDialog = ({
                         variant="outline"
                         disabled={desktopSetup.saving}
                         onClick={() => {
-                          void desktopSetup.onSave(
-                            applyDesktopAutostartMode(
-                              desktopSetup.settings,
-                              mode,
-                            ),
+                          setDesktopDraft(
+                            applyDesktopAutostartMode(desktopDraft, mode),
                           );
                         }}
                         className={cn(
@@ -584,6 +600,257 @@ export const SettingsDialog = ({
                   <p className="text-sm leading-6 text-slate-400">
                     Tray launch wins over minimized. The tray menu provides Show, Hide to tray, and Quit actions while the app is running.
                   </p>
+                </div>
+
+                <Separator className="bg-slate-800" />
+
+                <div className="grid gap-3">
+                  <div className="grid gap-1">
+                    <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
+                      Floating assistant bubble
+                    </p>
+                    <p className="text-sm leading-6 text-slate-400">
+                      Keep a lightweight always-on-top bubble available near the bottom-right corner of the monitor you are currently using.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={desktopSetup.saving}
+                      onClick={() => {
+                        setDesktopDraft({
+                          ...desktopDraft,
+                          assistantBubbleEnabled: true,
+                        });
+                      }}
+                      className={cn(
+                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
+                        desktopDraft.assistantBubbleEnabled &&
+                          "border-sky-500/30 bg-sky-500/10 text-sky-100",
+                      )}
+                    >
+                      Enabled
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={desktopSetup.saving}
+                      onClick={() => {
+                        setDesktopDraft({
+                          ...desktopDraft,
+                          assistantBubbleEnabled: false,
+                        });
+                      }}
+                      className={cn(
+                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
+                        !desktopDraft.assistantBubbleEnabled &&
+                          "border-slate-600 bg-slate-900 text-slate-100",
+                      )}
+                    >
+                      Disabled
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={desktopSetup.saving}
+                      onClick={() => {
+                        setDesktopDraft({
+                          ...desktopDraft,
+                          assistantBubbleHideWhenFullscreen: true,
+                        });
+                      }}
+                      className={cn(
+                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
+                        desktopDraft.assistantBubbleHideWhenFullscreen &&
+                          "border-sky-500/30 bg-sky-500/10 text-sky-100",
+                      )}
+                    >
+                      Hide over fullscreen apps
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={desktopSetup.saving}
+                      onClick={() => {
+                        setDesktopDraft({
+                          ...desktopDraft,
+                          assistantBubbleHideWhenFullscreen: false,
+                        });
+                      }}
+                      className={cn(
+                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
+                        !desktopDraft.assistantBubbleHideWhenFullscreen &&
+                          "border-slate-600 bg-slate-900 text-slate-100",
+                      )}
+                    >
+                      Keep visible
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-2 md:max-w-xs">
+                    <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
+                      Right-click hide duration
+                    </p>
+                    <Input
+                      type="number"
+                      min="2"
+                      max="30"
+                      step="1"
+                      value={desktopDraft.assistantBubbleTemporarilyHideSeconds}
+                      onChange={(event) => {
+                        setDesktopDraft({
+                          ...desktopDraft,
+                          assistantBubbleTemporarilyHideSeconds: Number(
+                            event.target.value,
+                          ),
+                        });
+                      }}
+                      className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+                    />
+                    <p className="text-sm leading-6 text-slate-400">
+                      Right-clicking the bubble hides it briefly so you can click whatever is underneath it.
+                    </p>
+                  </div>
+                </div>
+
+                <Separator className="bg-slate-800" />
+
+                <div className="grid gap-3">
+                  <div className="grid gap-1">
+                    <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
+                      Quick voice command
+                    </p>
+                    <p className="text-sm leading-6 text-slate-400">
+                      Launch a small recording overlay from anywhere, stop automatically after silence, and send the transcript to the protected Quick Voice session.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={desktopSetup.saving}
+                      onClick={() => {
+                        setDesktopDraft({
+                          ...desktopDraft,
+                          quickVoiceEnabled: true,
+                        });
+                      }}
+                      className={cn(
+                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
+                        desktopDraft.quickVoiceEnabled &&
+                          "border-sky-500/30 bg-sky-500/10 text-sky-100",
+                      )}
+                    >
+                      Enabled
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={desktopSetup.saving}
+                      onClick={() => {
+                        setDesktopDraft({
+                          ...desktopDraft,
+                          quickVoiceEnabled: false,
+                        });
+                      }}
+                      className={cn(
+                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
+                        !desktopDraft.quickVoiceEnabled &&
+                          "border-slate-600 bg-slate-900 text-slate-100",
+                      )}
+                    >
+                      Disabled
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="grid gap-2">
+                      <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
+                        Global shortcut
+                      </p>
+                      <Input
+                        type="text"
+                        value={desktopDraft.quickVoiceShortcut}
+                        onChange={(event) => {
+                          setDesktopDraft({
+                            ...desktopDraft,
+                            quickVoiceShortcut: event.target.value,
+                          });
+                        }}
+                        placeholder="CommandOrControl+Alt+V"
+                        autoComplete="off"
+                        spellCheck={false}
+                        className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
+                        Silence timeout (seconds)
+                      </p>
+                      <Input
+                        type="number"
+                        min="0.8"
+                        max="8"
+                        step="0.1"
+                        value={desktopDraft.quickVoiceSilenceSeconds}
+                        onChange={(event) => {
+                          setDesktopDraft({
+                            ...desktopDraft,
+                            quickVoiceSilenceSeconds: Number(
+                              event.target.value,
+                            ),
+                          });
+                        }}
+                        className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2 md:max-w-xs">
+                    <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
+                      Quick Voice message cap
+                    </p>
+                    <Input
+                      type="number"
+                      min="10"
+                      max="200"
+                      step="5"
+                      value={desktopDraft.quickVoiceMaxMessages}
+                      onChange={(event) => {
+                        setDesktopDraft({
+                          ...desktopDraft,
+                          quickVoiceMaxMessages: Number(event.target.value),
+                        });
+                      }}
+                      className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+                    />
+                    <p className="text-sm leading-6 text-slate-400">
+                      Older Quick Voice messages are trimmed automatically once the protected session reaches this size.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
+                  <p className="text-sm leading-6 text-slate-400">
+                    Changes here update the desktop surfaces and the quick voice shortcut for every open window.
+                  </p>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      void desktopSetup.onSave(desktopDraft);
+                    }}
+                    disabled={desktopSetup.saving || !desktopDraftDirty}
+                    className="h-11 rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500 disabled:opacity-50"
+                  >
+                    {desktopSetup.saving ? "Saving…" : "Save desktop settings"}
+                  </Button>
                 </div>
 
                 {desktopSetup.message ? (

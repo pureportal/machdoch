@@ -18,7 +18,13 @@ import {
   type ChatSessionRecord,
   type ShellPersistedState,
 } from "../../chat-session.model";
-import { loadShellState, saveShellState } from "../../lib/shell-store";
+import {
+  broadcastShellStateChanged,
+  getCurrentShellWindowLabel,
+  loadShellState,
+  saveShellState,
+  subscribeToShellStateChanged,
+} from "../../lib/shell-store";
 import {
   type SessionScopeFilter,
   type SessionStatusFilter,
@@ -83,6 +89,7 @@ export const useChatSessionShellState = (): ChatSessionShellStateController => {
   );
   const [draftBeforeHistory, setDraftBeforeHistory] = useState("");
   const didMutateBeforeHydrationRef = useRef(false);
+  const skipNextShellStateBroadcastRef = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scheduledTimeoutsRef = useRef<number[]>([]);
 
@@ -164,8 +171,51 @@ export const useChatSessionShellState = (): ChatSessionShellStateController => {
       return;
     }
 
-    void saveShellState(shellState);
+    void saveShellState(shellState).then(() => {
+      if (skipNextShellStateBroadcastRef.current) {
+        skipNextShellStateBroadcastRef.current = false;
+        return;
+      }
+
+      void broadcastShellStateChanged();
+    });
   }, [hasHydrated, shellState]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+
+    void subscribeToShellStateChanged((payload) => {
+      if (!hasHydrated) {
+        return;
+      }
+
+      if (payload.originWindowLabel === getCurrentShellWindowLabel()) {
+        return;
+      }
+
+      void loadShellState(initialShellStateRef.current).then((value) => {
+        if (disposed) {
+          return;
+        }
+
+        skipNextShellStateBroadcastRef.current = true;
+        setShellState(normalizeShellState(value));
+      });
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+        return;
+      }
+
+      unsubscribe = unlisten;
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, [hasHydrated]);
 
   useEffect(() => {
     setPromptHistoryIndex(null);
