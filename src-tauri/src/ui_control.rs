@@ -90,6 +90,7 @@ struct UiWindowInfo {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(target_os = "windows")]
 struct UiWindowControlInfo {
     handle: String,
     parent_handle: String,
@@ -179,6 +180,7 @@ struct CaptureWindowPayload {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(target_os = "windows")]
 struct WindowIdPayload {
     window_id: u32,
 }
@@ -216,18 +218,21 @@ struct PressKeysPayload {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(target_os = "windows")]
 struct WindowHandlePayload {
     window_handle: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(target_os = "windows")]
 struct ControlHandlePayload {
     control_handle: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(target_os = "windows")]
 struct SetControlTextPayload {
     control_handle: String,
     text: String,
@@ -457,13 +462,13 @@ fn monitor_to_info(monitor: &Monitor) -> Result<UiMonitorInfo, String> {
     })
 }
 
+#[cfg(target_os = "windows")]
 fn window_native_handle(window: &Window) -> Option<String> {
-    #[cfg(target_os = "windows")]
-    {
-        return Some(format!("0x{:x}", window.id().ok()? as usize));
-    }
+    Some(format!("0x{:x}", window.id().ok()? as usize))
+}
 
-    #[allow(unreachable_code)]
+#[cfg(not(target_os = "windows"))]
+fn window_native_handle(_window: &Window) -> Option<String> {
     None
 }
 

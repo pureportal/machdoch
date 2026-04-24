@@ -325,37 +325,42 @@ const emitDesktopSettingsChanged = async (
   }
 };
 
-export const loadGlobalProviderAvailability = async (): Promise<
-  RuntimeProviderAvailability[]
-> => {
+const loadTauriValueOrFallback = async <T>(
+  command: string,
+  fallback: () => T,
+  errorMessage: string,
+  errorFallback: () => T = fallback,
+): Promise<T> => {
   if (!canInvokeTauriCommands()) {
-    return createOptimisticProviderAvailability();
+    return fallback();
   }
 
   try {
-    return await tauriCore.invoke<RuntimeProviderAvailability[]>(
-      "get_global_provider_availability",
-    );
+    return await tauriCore.invoke<T>(command);
   } catch (error) {
-    console.error("Failed to load global provider availability", error);
-    return createUnavailableProviderAvailability();
+    console.error(errorMessage, error);
+    return errorFallback();
   }
+};
+
+export const loadGlobalProviderAvailability = async (): Promise<
+  RuntimeProviderAvailability[]
+> => {
+  return loadTauriValueOrFallback(
+    "get_global_provider_availability",
+    createOptimisticProviderAvailability,
+    "Failed to load global provider availability",
+    createUnavailableProviderAvailability,
+  );
 };
 
 export const loadUserProviderApiKeys =
   async (): Promise<UserProviderApiKeys> => {
-    if (!canInvokeTauriCommands()) {
-      return {};
-    }
-
-    try {
-      return await tauriCore.invoke<UserProviderApiKeys>(
-        "get_user_provider_api_keys",
-      );
-    } catch (error) {
-      console.error("Failed to load user provider API keys", error);
-      return {};
-    }
+    return loadTauriValueOrFallback(
+      "get_user_provider_api_keys",
+      () => ({}),
+      "Failed to load user provider API keys",
+    );
   };
 
 export const saveUserProviderApiKey = async (
@@ -409,76 +414,45 @@ export const openUserProviderApiKeyPortal = async (
 
 export const loadUserWebSearchSettings =
   async (): Promise<UserWebSearchSettings> => {
-    if (!canInvokeTauriCommands()) {
-      return createDefaultUserWebSearchSettings();
-    }
-
-    try {
-      return await tauriCore.invoke<UserWebSearchSettings>(
-        "get_user_web_search_settings",
-      );
-    } catch (error) {
-      console.error("Failed to load user web-search settings", error);
-      return createDefaultUserWebSearchSettings();
-    }
+    return loadTauriValueOrFallback(
+      "get_user_web_search_settings",
+      createDefaultUserWebSearchSettings,
+      "Failed to load user web-search settings",
+    );
   };
 
 export const loadUserVoiceSettings = async (): Promise<UserVoiceSettings> => {
-  if (!canInvokeTauriCommands()) {
-    return createDefaultUserVoiceSettings();
-  }
-
-  try {
-    return await tauriCore.invoke<UserVoiceSettings>("get_user_voice_settings");
-  } catch (error) {
-    console.error("Failed to load user voice settings", error);
-    return createDefaultUserVoiceSettings();
-  }
+  return loadTauriValueOrFallback(
+    "get_user_voice_settings",
+    createDefaultUserVoiceSettings,
+    "Failed to load user voice settings",
+  );
 };
 
-export const loadUserSpeechToTextSettings = async (): Promise<UserSpeechToTextSettings> => {
-  if (!canInvokeTauriCommands()) {
-    return createDefaultUserSpeechToTextSettings();
-  }
-
-  try {
-    return await tauriCore.invoke<UserSpeechToTextSettings>(
+export const loadUserSpeechToTextSettings =
+  async (): Promise<UserSpeechToTextSettings> => {
+    return loadTauriValueOrFallback(
       "get_user_speech_to_text_settings",
+      createDefaultUserSpeechToTextSettings,
+      "Failed to load user speech-to-text settings",
     );
-  } catch (error) {
-    console.error("Failed to load user speech-to-text settings", error);
-    return createDefaultUserSpeechToTextSettings();
-  }
-};
+  };
 
-export const loadUserDesktopSettings = async (): Promise<UserDesktopSettings> => {
-  if (!canInvokeTauriCommands()) {
-    return createDefaultUserDesktopSettings();
-  }
-
-  try {
-    return await tauriCore.invoke<UserDesktopSettings>(
+export const loadUserDesktopSettings =
+  async (): Promise<UserDesktopSettings> => {
+    return loadTauriValueOrFallback(
       "get_user_desktop_settings",
+      createDefaultUserDesktopSettings,
+      "Failed to load user desktop settings",
     );
-  } catch (error) {
-    console.error("Failed to load user desktop settings", error);
-    return createDefaultUserDesktopSettings();
-  }
-};
+  };
 
 export const loadUserMemorySettings = async (): Promise<UserMemorySettings> => {
-  if (!canInvokeTauriCommands()) {
-    return createDefaultUserMemorySettings();
-  }
-
-  try {
-    return await tauriCore.invoke<UserMemorySettings>(
-      "get_user_memory_settings",
-    );
-  } catch (error) {
-    console.error("Failed to load user memory settings", error);
-    return createDefaultUserMemorySettings();
-  }
+  return loadTauriValueOrFallback(
+    "get_user_memory_settings",
+    createDefaultUserMemorySettings,
+    "Failed to load user memory settings",
+  );
 };
 
 export const saveUserGlobalMemoryEnabled = async (

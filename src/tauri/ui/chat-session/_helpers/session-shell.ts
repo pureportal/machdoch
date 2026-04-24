@@ -20,6 +20,7 @@ import type {
 import {
   createVisibleConversationMessages,
   isQuickVoiceSession,
+  type ChatSessionMessage,
   type ChatSessionRecord,
   type SessionOverviewStatus,
 } from "../../chat-session.model";
@@ -160,7 +161,8 @@ export const SESSION_STATUS_META = {
     containerClassName:
       "border-emerald-500/20 bg-emerald-500/10 shadow-[0_0_18px_rgba(16,185,129,0.18)]",
     iconClassName: "animate-pulse text-emerald-300",
-  },  failed: {
+  },
+  failed: {
     label: "Failed",
     filterLabel: "Failed",
     icon: XCircle,
@@ -175,7 +177,8 @@ export const SESSION_STATUS_META = {
     containerClassName:
       "border-rose-700/30 bg-rose-900/40 shadow-[0_0_18px_rgba(225,29,72,0.18)]",
     iconClassName: "text-rose-300",
-  },} satisfies Record<
+  },
+} satisfies Record<
   SessionOverviewStatus,
   {
     label: string;
@@ -253,34 +256,35 @@ export const createSessionSubtitle = (session: ChatSessionRecord): string => {
   return `${providerLabel} · ${workspaceLabel}`;
 };
 
+type RemovableSessionProperty = "archivedAt" | "mode" | "profile";
+
+const removeSessionProperty = (
+  session: ChatSessionRecord,
+  property: RemovableSessionProperty,
+): ChatSessionRecord => {
+  const sessionWithoutProperty = { ...session };
+
+  delete sessionWithoutProperty[property];
+
+  return sessionWithoutProperty;
+};
+
 export const removeSessionArchiveFlag = (
   session: ChatSessionRecord,
 ): ChatSessionRecord => {
-  const sessionWithoutArchive = { ...session };
-
-  delete sessionWithoutArchive.archivedAt;
-
-  return sessionWithoutArchive;
+  return removeSessionProperty(session, "archivedAt");
 };
 
 export const removeSessionModeOverride = (
   session: ChatSessionRecord,
 ): ChatSessionRecord => {
-  const sessionWithoutMode = { ...session };
-
-  delete sessionWithoutMode.mode;
-
-  return sessionWithoutMode;
+  return removeSessionProperty(session, "mode");
 };
 
 export const removeSessionProfileOverride = (
   session: ChatSessionRecord,
 ): ChatSessionRecord => {
-  const sessionWithoutProfile = { ...session };
-
-  delete sessionWithoutProfile.profile;
-
-  return sessionWithoutProfile;
+  return removeSessionProperty(session, "profile");
 };
 
 export const getEffectiveSessionMode = (
@@ -320,6 +324,33 @@ export const createEmptyUserMemorySettings = (): UserMemorySettings => {
   };
 };
 
+const createConversationHistoryEntry = (
+  message: ChatSessionMessage,
+): ConversationHistoryEntry | undefined => {
+  const content = getRenderedMessageContent(message).trim();
+
+  if (content.length === 0) {
+    return undefined;
+  }
+
+  const role: ConversationHistoryEntry["role"] =
+    message.role === "agent" ? "assistant" : "user";
+
+  return {
+    role,
+    content,
+    ...(typeof message.createdAt === "number"
+      ? { createdAt: message.createdAt }
+      : {}),
+  };
+};
+
+const isConversationHistoryEntry = (
+  entry: ConversationHistoryEntry | undefined,
+): entry is ConversationHistoryEntry => {
+  return entry !== undefined;
+};
+
 export const createConversationContextFromSession = (
   session: ChatSessionRecord,
   globalMemoryEnabled: boolean,
@@ -328,19 +359,8 @@ export const createConversationContextFromSession = (
   const history: ConversationHistoryEntry[] = createVisibleConversationMessages(
     session.messages,
   )
-    .map((message) => {
-      const role: ConversationHistoryEntry["role"] =
-        message.role === "agent" ? "assistant" : "user";
-
-      return {
-        role,
-        content: getRenderedMessageContent(message).trim(),
-        ...(typeof message.createdAt === "number"
-          ? { createdAt: message.createdAt }
-          : {}),
-      };
-    })
-    .filter((entry) => entry.content.length > 0)
+    .map(createConversationHistoryEntry)
+    .filter(isConversationHistoryEntry)
     .slice(-60);
 
   return {
