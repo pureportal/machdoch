@@ -13,9 +13,11 @@
     "outDir": "dist",
     "declaration": true,
     "sourceMap": true,
+    "incremental": true,
+    "tsBuildInfoFile": "./.cache/tsconfig.tsbuildinfo",
     "resolveJsonModule": true,
     "lib": ["ES2022"],
-    "types": ["node", "vitest/globals"]
+    "types": ["node"]
   },
   "include": ["src/**/*.ts"],
   "exclude": [

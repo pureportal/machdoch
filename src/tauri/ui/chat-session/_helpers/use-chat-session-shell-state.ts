@@ -34,6 +34,7 @@ import { filterSessions } from "./session-shell-view-model";
 
 export interface ChatSessionShellStateController {
   shellState: ShellPersistedState;
+  activeSessionId: string;
   activeSession: ChatSessionRecord;
   visibleMessages: ChatSessionMessage[];
   filteredSessions: ChatSessionRecord[];
@@ -49,6 +50,7 @@ export interface ChatSessionShellStateController {
   bottomRef: RefObject<HTMLDivElement | null>;
   setCatalogOpen: Dispatch<SetStateAction<boolean>>;
   setSettingsSection: Dispatch<SetStateAction<SettingsSection>>;
+  setActiveSessionId: (sessionId: string) => void;
   setSessionScopeFilter: Dispatch<SetStateAction<SessionScopeFilter>>;
   setSessionStatusFilter: Dispatch<SetStateAction<SessionStatusFilter>>;
   setIsRenamingSession: Dispatch<SetStateAction<boolean>>;
@@ -67,12 +69,22 @@ export interface ChatSessionShellStateController {
   scheduleMessage: (callback: () => void, delay: number) => void;
 }
 
-export const useChatSessionShellState = (): ChatSessionShellStateController => {
+export interface UseChatSessionShellStateOptions {
+  isolateActiveSession?: boolean;
+}
+
+export const useChatSessionShellState = (
+  options: UseChatSessionShellStateOptions = {},
+): ChatSessionShellStateController => {
+  const isolateActiveSession = options.isolateActiveSession !== false;
   const initialShellStateRef = useRef<ShellPersistedState>(
     createInitialShellState(),
   );
   const [shellState, setShellState] = useState<ShellPersistedState>(
     initialShellStateRef.current,
+  );
+  const [activeSessionId, setActiveSessionIdState] = useState<string>(
+    initialShellStateRef.current.activeSessionId,
   );
   const [hasHydrated, setHasHydrated] = useState(false);
   const [sessionScopeFilter, setSessionScopeFilter] =
@@ -93,10 +105,42 @@ export const useChatSessionShellState = (): ChatSessionShellStateController => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scheduledTimeoutsRef = useRef<number[]>([]);
 
+  const resolvedActiveSessionId = useMemo(() => {
+    if (!isolateActiveSession) {
+      if (
+        shellState.sessions.some(
+          (session) => session.id === shellState.activeSessionId,
+        )
+      ) {
+        return shellState.activeSessionId;
+      }
+
+      return shellState.sessions[0]?.id ?? activeSessionId;
+    }
+
+    if (shellState.sessions.some((session) => session.id === activeSessionId)) {
+      return activeSessionId;
+    }
+
+    if (
+      shellState.sessions.some(
+        (session) => session.id === shellState.activeSessionId,
+      )
+    ) {
+      return shellState.activeSessionId;
+    }
+
+    return shellState.sessions[0]?.id ?? activeSessionId;
+  }, [
+    activeSessionId,
+    isolateActiveSession,
+    shellState.activeSessionId,
+    shellState.sessions,
+  ]);
+
   const activeSession =
-    shellState.sessions.find(
-      (session) => session.id === shellState.activeSessionId,
-    ) ?? shellState.sessions[0];
+    shellState.sessions.find((session) => session.id === resolvedActiveSessionId) ??
+    shellState.sessions[0];
 
   const visibleMessages = useMemo(() => {
     return createVisibleConversationMessages(activeSession.messages);
@@ -136,6 +180,14 @@ export const useChatSessionShellState = (): ChatSessionShellStateController => {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [visibleMessages]);
+
+  useEffect(() => {
+    if (!activeSession || resolvedActiveSessionId === activeSessionId) {
+      return;
+    }
+
+    setActiveSessionIdState(resolvedActiveSessionId);
+  }, [activeSession, activeSessionId, resolvedActiveSessionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -238,11 +290,11 @@ export const useChatSessionShellState = (): ChatSessionShellStateController => {
       applyShellState((prev) => ({
         ...prev,
         sessions: prev.sessions.map((session) =>
-          session.id === prev.activeSessionId ? updater(session) : session,
+          session.id === activeSession.id ? updater(session) : session,
         ),
       }));
     },
-    [applyShellState],
+    [activeSession.id, applyShellState],
   );
 
   const updateSessionById = useCallback(
@@ -281,8 +333,26 @@ export const useChatSessionShellState = (): ChatSessionShellStateController => {
     scheduledTimeoutsRef.current.push(timeoutId);
   }, []);
 
+  const setActiveSessionId = useCallback(
+    (sessionId: string): void => {
+      setActiveSessionIdState(sessionId);
+      applyShellState((prev) => {
+        if (prev.activeSessionId === sessionId) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          activeSessionId: sessionId,
+        };
+      });
+    },
+    [applyShellState],
+  );
+
   return {
     shellState,
+    activeSessionId: activeSession.id,
     activeSession,
     visibleMessages,
     filteredSessions,
@@ -298,6 +368,7 @@ export const useChatSessionShellState = (): ChatSessionShellStateController => {
     bottomRef,
     setCatalogOpen,
     setSettingsSection,
+    setActiveSessionId,
     setSessionScopeFilter,
     setSessionStatusFilter,
     setIsRenamingSession,

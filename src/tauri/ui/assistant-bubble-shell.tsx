@@ -14,6 +14,8 @@ import { useUserDesktopSettings } from "./_helpers/use-user-desktop-settings";
 import { useChatSessionShellState } from "./chat-session/_helpers/use-chat-session-shell-state";
 import { detectFullscreenWindowOnMonitor } from "./runtime";
 
+const BUBBLE_SYNC_INTERVAL_MS = 1000;
+
 export const AssistantBubbleShell = () => {
   const state = useChatSessionShellState();
   const desktopSettings = useUserDesktopSettings();
@@ -21,6 +23,7 @@ export const AssistantBubbleShell = () => {
   const suppressPrimaryActionUntilRef = useRef<number>(0);
   const lastVisibilityRef = useRef<boolean | null>(null);
   const lastBubblePositionRef = useRef<string | null>(null);
+  const lastPopupPositionRef = useRef<{ x: number; y: number } | null>(null);
   const syncInFlightRef = useRef(false);
 
   const activeSessionSummary = useMemo(() => {
@@ -105,6 +108,8 @@ export const AssistantBubbleShell = () => {
         const shouldShow = !shouldHideTemporarily && !shouldHideForFullscreen;
         const nextPositionKey = `${layout.bubblePosition.x}:${layout.bubblePosition.y}`;
 
+        lastPopupPositionRef.current = layout.popupPosition;
+
         if (nextPositionKey !== lastBubblePositionRef.current) {
           lastBubblePositionRef.current = nextPositionKey;
           await setWindowPosition(currentWindow, layout.bubblePosition);
@@ -120,7 +125,7 @@ export const AssistantBubbleShell = () => {
     void syncBubbleWindow();
     const intervalId = window.setInterval(() => {
       void syncBubbleWindow();
-    }, 250);
+    }, BUBBLE_SYNC_INTERVAL_MS);
 
     return () => {
       disposed = true;
@@ -158,7 +163,7 @@ export const AssistantBubbleShell = () => {
       return;
     }
 
-    void toggleAssistantPopup();
+    void toggleAssistantPopup(lastPopupPositionRef.current ?? undefined);
   };
 
   return (

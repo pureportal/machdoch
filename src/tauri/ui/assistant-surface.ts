@@ -216,7 +216,9 @@ export const syncAssistantPopupPosition = async (): Promise<void> => {
   await setWindowPosition(popupWindow, layout.popupPosition);
 };
 
-export const toggleAssistantPopup = async (): Promise<void> => {
+export const toggleAssistantPopup = async (
+  popupPositionOverride?: { x: number; y: number },
+): Promise<void> => {
   const popupWindow = await getWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL);
 
   if (!popupWindow) {
@@ -229,10 +231,14 @@ export const toggleAssistantPopup = async (): Promise<void> => {
       return;
     }
 
-    const layout = await resolveAssistantSurfaceLayout();
+    if (popupPositionOverride) {
+      await setWindowPosition(popupWindow, popupPositionOverride);
+    } else {
+      const layout = await resolveAssistantSurfaceLayout();
 
-    if (layout) {
-      await setWindowPosition(popupWindow, layout.popupPosition);
+      if (layout) {
+        await setWindowPosition(popupWindow, layout.popupPosition);
+      }
     }
 
     await popupWindow.show();

@@ -102,8 +102,16 @@ const clampQuickVoiceMessageLimit = (value: number): number => {
   return Math.min(200, Math.max(10, Math.round(value)));
 };
 
-export const useChatSessionController = () => {
-  const state = useChatSessionShellState();
+export interface UseChatSessionControllerOptions {
+  isolateActiveSession?: boolean;
+}
+
+export const useChatSessionController = (
+  options: UseChatSessionControllerOptions = {},
+) => {
+  const state = useChatSessionShellState({
+    isolateActiveSession: options.isolateActiveSession,
+  });
   const activeDesktopTasksRef = useRef<Map<string, string>>(new Map());
   const runtime = useChatSessionRuntime({
     catalogOpen: state.catalogOpen,
@@ -376,32 +384,37 @@ export const useChatSessionController = () => {
   }, [updateThinkingTrace]);
 
   const createNewSession = (): void => {
-    state.applyShellState((prev) => {
-      const provider =
-        providerChooserState.chooserProviders.find(
-          (entry) => entry === prev.lastSelectedProvider,
-        ) ??
-        providerChooserState.chooserProviders[0] ??
-        prev.lastSelectedProvider;
-      const session = createSession({
-        workspace: state.activeSession.workspace,
-        provider,
-        ...(prev.lastSelectedProfile ? { profile: prev.lastSelectedProfile } : {}),
-        ...(prev.lastSelectedMode ? { mode: prev.lastSelectedMode } : {}),
-        model:
-          prev.lastSelectedModelByProvider[provider] ??
-          getDefaultModelForProvider(provider),
-      });
-
-      return {
-        ...prev,
-        activeSessionId: session.id,
-        sessions: [session, ...prev.sessions],
-      };
+    const provider =
+      providerChooserState.chooserProviders.find(
+        (entry) => entry === state.shellState.lastSelectedProvider,
+      ) ??
+      providerChooserState.chooserProviders[0] ??
+      state.shellState.lastSelectedProvider;
+    const session = createSession({
+      workspace: state.activeSession.workspace,
+      provider,
+      ...(state.shellState.lastSelectedProfile
+        ? { profile: state.shellState.lastSelectedProfile }
+        : {}),
+      ...(state.shellState.lastSelectedMode
+        ? { mode: state.shellState.lastSelectedMode }
+        : {}),
+      model:
+        state.shellState.lastSelectedModelByProvider[provider] ??
+        getDefaultModelForProvider(provider),
     });
+
+    state.applyShellState((prev) => ({
+      ...prev,
+      activeSessionId: session.id,
+      sessions: [session, ...prev.sessions],
+    }));
+    state.setActiveSessionId(session.id);
   };
 
   const deleteSession = (sessionId: string): void => {
+    let nextActiveSessionId = state.activeSessionId;
+
     state.applyShellState((prev) => {
       const targetSession = prev.sessions.find((session) => session.id === sessionId);
 
@@ -425,12 +438,17 @@ export const useChatSessionController = () => {
             prev.lastSelectedModelByProvider[prev.lastSelectedProvider] ??
             getDefaultModelForProvider(prev.lastSelectedProvider),
         });
+        nextActiveSessionId = replacement.id;
 
         return {
           ...prev,
           activeSessionId: replacement.id,
           sessions: [replacement],
         };
+      }
+
+      if (state.activeSessionId === sessionId) {
+        nextActiveSessionId = sortSessionsByUpdatedAt(remainingSessions)[0].id;
       }
 
       return {
@@ -442,6 +460,10 @@ export const useChatSessionController = () => {
         sessions: remainingSessions,
       };
     });
+
+    if (nextActiveSessionId !== state.activeSessionId) {
+      state.setActiveSessionId(nextActiveSessionId);
+    }
   };
 
   const handleRenameCommit = (): void => {
@@ -513,7 +535,7 @@ export const useChatSessionController = () => {
         [provider]: model,
       },
       sessions: prev.sessions.map((session) =>
-        session.id === prev.activeSessionId
+        session.id === state.activeSessionId
           ? {
               ...session,
               provider,
@@ -529,7 +551,7 @@ export const useChatSessionController = () => {
     state.applyShellState((prev) => {
       const nextUpdatedAt = Date.now();
       const nextSessions = prev.sessions.map((session) => {
-        if (session.id !== prev.activeSessionId) {
+        if (session.id !== state.activeSessionId) {
           return session;
         }
 
@@ -574,7 +596,7 @@ export const useChatSessionController = () => {
 
       state.applyShellState((prev) => {
         const activeSession = prev.sessions.find(
-          (session) => session.id === prev.activeSessionId,
+          (session) => session.id === state.activeSessionId,
         );
 
         if (!activeSession) {
@@ -588,7 +610,7 @@ export const useChatSessionController = () => {
         const nextModel = nextSnapshot?.model ?? activeSession.model;
         const nextUpdatedAt = Date.now();
         const nextSessions = prev.sessions.map((session) => {
-          if (session.id !== prev.activeSessionId) {
+          if (session.id !== state.activeSessionId) {
             return session;
           }
 
@@ -633,6 +655,7 @@ export const useChatSessionController = () => {
     },
     [
       runtime.refreshWorkspaceRuntimeSnapshot,
+      state.activeSessionId,
       state.activeSession.workspace,
       state.applyShellState,
     ],
@@ -986,6 +1009,10 @@ export const useChatSessionController = () => {
         };
       });
 
+      if (options.activateSession) {
+        state.setActiveSessionId(sessionId);
+      }
+
       if (sessionId === state.activeSession.id) {
         state.setPromptHistoryIndex(null);
         state.setDraftBeforeHistory("");
@@ -1059,6 +1086,7 @@ export const useChatSessionController = () => {
       runtime.userMemorySettings.globalEnabled,
       state.activeSession.id,
       state.applyShellState,
+      state.setActiveSessionId,
       state.scheduleMessage,
       state.sessionScopeFilter,
       state.setDraftBeforeHistory,
@@ -1126,12 +1154,7 @@ export const useChatSessionController = () => {
       onSessionScopeFilterChange: state.setSessionScopeFilter,
       onSessionStatusFilterChange: state.setSessionStatusFilter,
       onCreateSession: createNewSession,
-      onActivateSession: (sessionId: string) => {
-        state.applyShellState((prev) => ({
-          ...prev,
-          activeSessionId: sessionId,
-        }));
-      },
+      onActivateSession: state.setActiveSessionId,
       onArchiveSession: (sessionId: string) => {
         state.updateSessionById(sessionId, (session) => {
           if (!canArchiveSession(session)) {

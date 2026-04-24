@@ -43,7 +43,9 @@ import { cn } from "./lib/utils";
 const VOICE_ACTIVITY_THRESHOLD = 0.035;
 
 export const QuickVoiceShell = (): JSX.Element => {
-  const controller = useChatSessionController();
+  const controller = useChatSessionController({
+    isolateActiveSession: false,
+  });
   const speechToTextSettings = useMemo<UserSpeechToTextSettings>(() => {
     return {
       activeProvider: controller.settingsDialog.voiceSetup.speechToTextProvider,

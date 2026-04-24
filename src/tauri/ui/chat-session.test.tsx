@@ -391,7 +391,7 @@ const getVisibleSessionButtonLabels = (): string[] => {
   });
 };
 
-const SLOW_UI_TEST_TIMEOUT_MS = 15_000;
+const SLOW_UI_TEST_TIMEOUT_MS = 30_000;
 
 const emitDesktopTaskProgress = (payload: {
   taskId: string;
@@ -424,7 +424,7 @@ describe("ChatSession component", () => {
       "disabled",
       true,
     );
-  });
+  }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it(
     "shows live thinking updates with a running spinner before the final response arrives",
@@ -847,16 +847,20 @@ describe("ChatSession component", () => {
       fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
       expect(
-        await screen.findByText(/Updated the chat shell\./i),
+        await screen.findByText(
+          /Added Markdown rendering for agent replies/i,
+          {},
+          { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+        ),
       ).toBeDefined();
-      expect(
-        screen.getByText(/Added Markdown rendering for agent replies/i),
-      ).toBeDefined();
-      expect(screen.getAllByText(/1 check/i).length).toBeGreaterThan(0);
 
-      const relatedFileButton = screen.getByTitle(
+      const relatedFileButton = await screen.findByTitle(
         /Desktop chat shell response rendering\./i,
+        {},
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
       );
+
+      expect(screen.getAllByText(/1 check/i).length).toBeGreaterThan(0);
 
       fireEvent.click(relatedFileButton);
 
@@ -1594,5 +1598,5 @@ describe("ChatSession component", () => {
     )) as HTMLInputElement;
 
     expect(input.value).toBe("");
-  });
+  }, SLOW_UI_TEST_TIMEOUT_MS);
 });

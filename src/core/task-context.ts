@@ -49,15 +49,20 @@ const GENERIC_INSTRUCTION_METADATA_TERMS = new Set([
 /**
  * Tokenizes task text while dropping short words and common stop words.
  */
+const createTaskMatchTokenSet = (value: string): Set<string> => {
+  const tokens = new Set<string>();
+
+  for (const part of value.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (part.length >= 3 && !STOP_WORDS.has(part)) {
+      tokens.add(part);
+    }
+  }
+
+  return tokens;
+};
+
 export const tokenizeTaskMatchText = (value: string): string[] => {
-  return Array.from(
-    new Set(
-      value
-        .toLowerCase()
-        .split(/[^a-z0-9]+/)
-        .filter((part) => part.length >= 3 && !STOP_WORDS.has(part)),
-    ),
-  );
+  return Array.from(createTaskMatchTokenSet(value));
 };
 
 /**
@@ -67,11 +72,14 @@ export const rankTaskMatchText = (
   taskTokens: string[],
   candidateText: string,
 ): { score: number; matchedTerms: string[] } => {
-  const candidateTokens = tokenizeTaskMatchText(candidateText);
-  const candidateTokenSet = new Set(candidateTokens);
-  const matchedTerms = taskTokens.filter((token) =>
-    candidateTokenSet.has(token),
-  );
+  const candidateTokenSet = createTaskMatchTokenSet(candidateText);
+  const matchedTerms: string[] = [];
+
+  for (const token of taskTokens) {
+    if (candidateTokenSet.has(token)) {
+      matchedTerms.push(token);
+    }
+  }
 
   return {
     score: matchedTerms.length,

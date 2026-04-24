@@ -186,6 +186,67 @@ export const createInitialShellState = (): ShellPersistedState => {
   };
 };
 
+const normalizePromptHistoryEntries = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const normalizedEntries: string[] = [];
+
+  for (const entry of value) {
+    if (typeof entry === "string") {
+      normalizedEntries.push(entry);
+    }
+  }
+
+  return normalizedEntries;
+};
+
+const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord => {
+  const provider = isRuntimeProvider(session.provider)
+    ? session.provider
+    : DEFAULT_PROVIDER;
+  const preserveModel = provider === session.provider;
+  const mode = isRunMode(session.mode) ? session.mode : undefined;
+
+  return createSession({
+    ...session,
+    provider,
+    ...(isSpecialSessionKind(session.specialSession)
+      ? { specialSession: session.specialSession }
+      : {}),
+    ...(typeof session.profile === "string" && session.profile.trim().length > 0
+      ? { profile: session.profile }
+      : {}),
+    ...(mode ? { mode } : {}),
+    model:
+      preserveModel &&
+      typeof session.model === "string" &&
+      session.model.trim().length > 0
+        ? session.model
+        : undefined,
+    draft: typeof session.draft === "string" ? session.draft : "",
+    workspace: typeof session.workspace === "string" ? session.workspace : null,
+    manualTitle:
+      typeof session.manualTitle === "string" ? session.manualTitle : undefined,
+    messages: Array.isArray(session.messages) ? session.messages : [],
+    promptHistory: normalizePromptHistoryEntries(session.promptHistory),
+    sessionMemoryEnabled: session.sessionMemoryEnabled !== false,
+    useGlobalMemory: session.useGlobalMemory !== false,
+    uiControlEnabled: session.uiControlEnabled === true,
+    sessionMemory: normalizeConversationMemoryEntries(
+      session.sessionMemory,
+      "session",
+    ),
+    createdAt:
+      typeof session.createdAt === "number" ? session.createdAt : undefined,
+    updatedAt:
+      typeof session.updatedAt === "number" ? session.updatedAt : undefined,
+    archivedAt:
+      typeof session.archivedAt === "number" ? session.archivedAt : undefined,
+  });
+};
+
 export const normalizeShellState = (value: unknown): ShellPersistedState => {
   const fallback = createInitialShellState();
 
@@ -194,97 +255,50 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
   }
 
   const candidate = value as Partial<ShellPersistedState>;
-  const sessions = Array.isArray(candidate.sessions)
-    ? candidate.sessions
-        .filter((session): session is ChatSessionRecord => {
-          return Boolean(
-            session &&
-            typeof session === "object" &&
-            typeof (session as ChatSessionRecord).id === "string",
-          );
-        })
-        .map((session) => {
-          const provider = isRuntimeProvider(session.provider)
-            ? session.provider
-            : DEFAULT_PROVIDER;
-          const preserveModel = provider === session.provider;
-          const mode = isRunMode(session.mode) ? session.mode : undefined;
+  const sessions: ChatSessionRecord[] = [];
 
-          return createSession({
-            ...session,
-            provider,
-            ...(isSpecialSessionKind(session.specialSession)
-              ? { specialSession: session.specialSession }
-              : {}),
-            ...(typeof session.profile === "string" &&
-            session.profile.trim().length > 0
-              ? { profile: session.profile }
-              : {}),
-            ...(mode ? { mode } : {}),
-            model:
-              preserveModel &&
-              typeof session.model === "string" &&
-              session.model.trim().length > 0
-                ? session.model
-                : undefined,
-            draft: typeof session.draft === "string" ? session.draft : "",
-            workspace:
-              typeof session.workspace === "string" ? session.workspace : null,
-            manualTitle:
-              typeof session.manualTitle === "string"
-                ? session.manualTitle
-                : undefined,
-            messages: Array.isArray(session.messages) ? session.messages : [],
-            promptHistory: Array.isArray(session.promptHistory)
-              ? session.promptHistory.filter(
-                  (entry): entry is string => typeof entry === "string",
-                )
-              : [],
-            sessionMemoryEnabled: session.sessionMemoryEnabled !== false,
-            useGlobalMemory: session.useGlobalMemory !== false,
-            uiControlEnabled: session.uiControlEnabled === true,
-            sessionMemory: normalizeConversationMemoryEntries(
-              session.sessionMemory,
-              "session",
-            ),
-            createdAt:
-              typeof session.createdAt === "number"
-                ? session.createdAt
-                : undefined,
-            updatedAt:
-              typeof session.updatedAt === "number"
-                ? session.updatedAt
-                : undefined,
-            archivedAt:
-              typeof session.archivedAt === "number"
-                ? session.archivedAt
-                : undefined,
-          });
-        })
-    : [];
+  if (Array.isArray(candidate.sessions)) {
+    for (const session of candidate.sessions) {
+      if (
+        !session ||
+        typeof session !== "object" ||
+        typeof (session as ChatSessionRecord).id !== "string"
+      ) {
+        continue;
+      }
+
+      sessions.push(normalizeSessionRecord(session as ChatSessionRecord));
+    }
+  }
 
   const normalizedSessions = sessions.length > 0 ? sessions : fallback.sessions;
-  const hasActiveSession = normalizedSessions.some(
-    (session) => session.id === candidate.activeSessionId,
-  );
+  let hasActiveSession = false;
+
+  for (const session of normalizedSessions) {
+    if (session.id === candidate.activeSessionId) {
+      hasActiveSession = true;
+      break;
+    }
+  }
+
   const lastSelectedProvider = isRuntimeProvider(candidate.lastSelectedProvider)
     ? candidate.lastSelectedProvider
     : fallback.lastSelectedProvider;
-  const lastSelectedModelByProvider = Object.entries(
-    candidate.lastSelectedModelByProvider ?? {},
-  ).reduce<Partial<Record<RuntimeProvider, string>>>((accumulator, entry) => {
-    const [provider, model] = entry;
+  const lastSelectedModelByProvider: Partial<Record<RuntimeProvider, string>> =
+    {};
 
+  for (const [provider, model] of Object.entries(
+    candidate.lastSelectedModelByProvider ?? {},
+  )) {
     if (
       isRuntimeProvider(provider) &&
       typeof model === "string" &&
       model.trim().length > 0
     ) {
-      accumulator[provider] = model;
+      lastSelectedModelByProvider[provider] = model;
     }
+  }
 
-    return accumulator;
-  }, {});
   const lastSelectedProfile =
     typeof candidate.lastSelectedProfile === "string" &&
     candidate.lastSelectedProfile.trim().length > 0
@@ -394,18 +408,22 @@ export const getSessionOverviewStatus = (
     return "empty";
   }
 
-  const taskMessages = session.messages.filter(
-    (message) => getMessageTaskId(message) === latestUserTaskId,
-  );
-  const latestTerminalAgentMessage = [...taskMessages]
-    .reverse()
-    .find((message) => {
-      if (message.role !== "agent") {
-        return false;
-      }
+  let latestTerminalAgentMessage: ChatSessionMessage | null = null;
 
-      return message.source?.kind !== "preview";
-    });
+  for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+    const message = session.messages[index];
+
+    if (getMessageTaskId(message) !== latestUserTaskId) {
+      continue;
+    }
+
+    if (message.role !== "agent" || message.source?.kind === "preview") {
+      continue;
+    }
+
+    latestTerminalAgentMessage = message;
+    break;
+  }
 
   if (!latestTerminalAgentMessage) {
     return "running";
@@ -450,7 +468,7 @@ export const createVisibleConversationMessages = (
 ): ChatSessionMessage[] => {
   const latestRenderableAgentMessageByTask = new Map<string, string>();
 
-  messages.forEach((message) => {
+  for (const message of messages) {
     if (
       message.role === "agent" &&
       message.taskId &&
@@ -458,21 +476,26 @@ export const createVisibleConversationMessages = (
     ) {
       latestRenderableAgentMessageByTask.set(message.taskId, message.id);
     }
-  });
+  }
 
-  return messages.filter((message) => {
+  const visibleMessages: ChatSessionMessage[] = [];
+
+  for (const message of messages) {
     if (message.role !== "agent" || !message.taskId) {
-      return true;
+      visibleMessages.push(message);
+      continue;
     }
 
     if (message.source?.kind === "preview") {
-      return false;
+      continue;
     }
 
-    return (
-      latestRenderableAgentMessageByTask.get(message.taskId) === message.id
-    );
-  });
+    if (latestRenderableAgentMessageByTask.get(message.taskId) === message.id) {
+      visibleMessages.push(message);
+    }
+  }
+
+  return visibleMessages;
 };
 
 export const trimSessionTaskGroupsToVisibleMessageLimit = (

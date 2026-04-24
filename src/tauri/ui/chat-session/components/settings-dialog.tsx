@@ -159,7 +159,20 @@ const hasDesktopSettingsDraftChanges = (
   left: UserDesktopSettings,
   right: UserDesktopSettings,
 ): boolean => {
-  return JSON.stringify(left) !== JSON.stringify(right);
+  return (
+    left.autostartEnabled !== right.autostartEnabled ||
+    left.autostartMinimized !== right.autostartMinimized ||
+    left.autostartToTray !== right.autostartToTray ||
+    left.assistantBubbleEnabled !== right.assistantBubbleEnabled ||
+    left.assistantBubbleHideWhenFullscreen !==
+      right.assistantBubbleHideWhenFullscreen ||
+    left.assistantBubbleTemporarilyHideSeconds !==
+      right.assistantBubbleTemporarilyHideSeconds ||
+    left.quickVoiceEnabled !== right.quickVoiceEnabled ||
+    left.quickVoiceShortcut !== right.quickVoiceShortcut ||
+    left.quickVoiceSilenceSeconds !== right.quickVoiceSilenceSeconds ||
+    left.quickVoiceMaxMessages !== right.quickVoiceMaxMessages
+  );
 };
 
 export const SettingsDialog = ({

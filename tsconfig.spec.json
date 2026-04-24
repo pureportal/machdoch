@@ -2,7 +2,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "types": ["node", "vitest/globals"],
+    "incremental": true,
+    "tsBuildInfoFile": "./.cache/tsconfig.spec.tsbuildinfo"
   },
   "include": [
     "src/**/*.spec.ts"
