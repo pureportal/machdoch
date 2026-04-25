@@ -1,9 +1,11 @@
 use std::time::Duration;
 
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use reqwest::{Client, multipart};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
+use reqwest::{multipart, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::runtime_snapshot::normalize_optional_string;
 
 const OPENAI_TTS_ENDPOINT: &str = "https://api.openai.com/v1/audio/speech";
 const OPENAI_TTS_MODEL: &str = "gpt-4o-mini-tts";
@@ -101,16 +103,6 @@ struct GoogleInlineData {
     data: String,
 }
 
-fn normalize_optional_string(value: Option<&str>) -> Option<String> {
-    let trimmed = value?.trim();
-
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    Some(trimmed.to_string())
-}
-
 fn normalize_text(value: &str) -> Result<String, String> {
     let normalized = value.trim();
 
@@ -194,9 +186,7 @@ fn clamp_openai_speed(value: Option<f64>) -> f64 {
 }
 
 fn create_google_pace_instruction(rate: Option<f64>) -> Option<String> {
-    let Some(rate) = rate.filter(|value| value.is_finite()) else {
-        return None;
-    };
+    let rate = rate.filter(|value| value.is_finite())?;
 
     if (rate - 1.0).abs() < 0.05 {
         return None;
@@ -375,12 +365,8 @@ fn extract_google_audio(
         return Err("Google Gemini returned no audio content.".to_string());
     };
 
-    let Some(inline_data) = content.parts.into_iter().find_map(|part| part.inline_data)
-    else {
-        return Err(
-            "Google Gemini returned a response without inline audio data."
-                .to_string(),
-        );
+    let Some(inline_data) = content.parts.into_iter().find_map(|part| part.inline_data) else {
+        return Err("Google Gemini returned a response without inline audio data.".to_string());
     };
 
     let mime_type = inline_data
@@ -514,7 +500,9 @@ async fn synthesize_google(
             let error_message = read_api_error(response).await;
 
             if status.is_server_error() && attempt + 1 < GOOGLE_TTS_RETRY_COUNT {
-                last_error = Some(format!("Google Gemini speech request failed: {error_message}"));
+                last_error = Some(format!(
+                    "Google Gemini speech request failed: {error_message}"
+                ));
                 continue;
             }
 
@@ -662,7 +650,9 @@ async fn transcribe_google(
     let parsed = response
         .json::<GoogleGenerateContentResponse>()
         .await
-        .map_err(|error| format!("Failed to parse Google Gemini speech-to-text response: {error}"))?;
+        .map_err(|error| {
+            format!("Failed to parse Google Gemini speech-to-text response: {error}")
+        })?;
     let transcript = extract_google_transcript(parsed)?;
 
     Ok(TranscribedSpeechText {

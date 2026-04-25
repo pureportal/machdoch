@@ -117,6 +117,7 @@ export const useChatSessionController = (
     isolateActiveSession: options.isolateActiveSession,
   });
   const activeDesktopTasksRef = useRef<Map<string, string>>(new Map());
+  const ignoredDesktopTaskIdsRef = useRef<Set<string>>(new Set());
   const runtime = useChatSessionRuntime({
     catalogOpen: state.catalogOpen,
     activeSessionProvider: state.activeSession.provider,
@@ -380,7 +381,10 @@ export const useChatSessionController = (
     void subscribeToDesktopTaskProgress((progressEvent) => {
       const sessionId = activeDesktopTasksRef.current.get(progressEvent.taskId);
 
-      if (!sessionId) {
+      if (
+        !sessionId ||
+        ignoredDesktopTaskIdsRef.current.has(progressEvent.taskId)
+      ) {
         return;
       }
 
@@ -919,6 +923,11 @@ export const useChatSessionController = (
       const reportTaskFailure = (error: unknown): void => {
         activeDesktopTasksRef.current.delete(taskId);
 
+        if (ignoredDesktopTaskIdsRef.current.has(taskId)) {
+          ignoredDesktopTaskIdsRef.current.delete(taskId);
+          return;
+        }
+
         if (taskFailureReported) {
           return;
         }
@@ -1059,6 +1068,11 @@ export const useChatSessionController = (
         .then((taskRun) => {
           activeDesktopTasksRef.current.delete(taskId);
 
+          if (ignoredDesktopTaskIdsRef.current.has(taskId)) {
+            ignoredDesktopTaskIdsRef.current.delete(taskId);
+            return;
+          }
+
           const sessionMemoryUpdates =
             taskRun.execution.memoryUpdates
               ?.filter((update) => update.scope === "session")
@@ -1094,6 +1108,11 @@ export const useChatSessionController = (
 
           state.scheduleMessage(
             () => {
+              if (ignoredDesktopTaskIdsRef.current.has(taskId)) {
+                ignoredDesktopTaskIdsRef.current.delete(taskId);
+                return;
+              }
+
               appendAgentMessage(
                 sessionId,
                 taskId,
@@ -1150,6 +1169,79 @@ export const useChatSessionController = (
     [buildQuickVoiceSessionSnapshot, submitTaskToSession],
   );
 
+  const clearQuickTaskHistory = useCallback((): void => {
+    const quickTaskSessionId = quickTaskSession?.id ?? null;
+
+    if (quickTaskSessionId) {
+      const quickTaskIds = new Set<string>();
+      const isQuickTaskRunning =
+        getSessionOverviewStatus(quickTaskSession) === "running";
+
+      if (isQuickTaskRunning) {
+        for (const message of quickTaskSession.messages) {
+          quickTaskIds.add(message.taskId ?? message.id);
+        }
+      }
+
+      for (const [
+        taskId,
+        sessionId,
+      ] of activeDesktopTasksRef.current.entries()) {
+        if (sessionId !== quickTaskSessionId) {
+          continue;
+        }
+
+        quickTaskIds.add(taskId);
+        activeDesktopTasksRef.current.delete(taskId);
+        void cancelDesktopTask(taskId).catch((error) => {
+          console.error("Failed to cancel cleared quick task:", error);
+        });
+      }
+
+      for (const taskId of quickTaskIds) {
+        ignoredDesktopTaskIdsRef.current.add(taskId);
+      }
+    }
+
+    state.applyShellState((prev) => {
+      const nextUpdatedAt = Date.now();
+      let didClearQuickTaskHistory = false;
+      const sessions = prev.sessions.map((session) => {
+        if (!isQuickVoiceSession(session)) {
+          return session;
+        }
+
+        const hasHistory =
+          session.messages.length > 0 ||
+          session.promptHistory.length > 0 ||
+          session.sessionMemory.length > 0;
+
+        if (!hasHistory) {
+          return session;
+        }
+
+        didClearQuickTaskHistory = true;
+
+        return {
+          ...session,
+          messages: [],
+          promptHistory: [],
+          sessionMemory: [],
+          updatedAt: nextUpdatedAt,
+        };
+      });
+
+      if (!didClearQuickTaskHistory) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        sessions,
+      };
+    });
+  }, [quickTaskSession, state.applyShellState]);
+
   const handleSend = (): void => {
     const task = state.activeSession.draft.trim();
 
@@ -1168,9 +1260,16 @@ export const useChatSessionController = (
   return {
     isDesktop,
     submitQuickVoiceCommand,
+    clearQuickTaskHistory,
     quickTask: {
       session: quickTaskSession,
       visibleMessages: quickTaskVisibleMessages,
+      canClearHistory: Boolean(
+        quickTaskSession &&
+          (quickTaskSession.messages.length > 0 ||
+            quickTaskSession.promptHistory.length > 0 ||
+            quickTaskSession.sessionMemory.length > 0),
+      ),
       status: quickTaskSession
         ? getSessionOverviewStatus(quickTaskSession)
         : "empty",

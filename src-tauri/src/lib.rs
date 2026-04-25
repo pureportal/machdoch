@@ -2,7 +2,9 @@ use tauri::Manager;
 
 mod desktop_shell;
 mod desktop_task;
+mod launcher;
 mod runtime_snapshot;
+mod shared_cli;
 mod ui_control;
 mod voice;
 
@@ -19,26 +21,42 @@ pub fn run() {
         }
     }
 
-    let launch_context = desktop_shell::resolve_launch_context();
+    let launch_context = match launcher::resolve_launch_action() {
+        Ok(launcher::LaunchAction::Ui(launch_context)) => launch_context,
+        Ok(launcher::LaunchAction::Cli(args)) => match launcher::run_cli(&args) {
+            Ok(exit_code) => std::process::exit(exit_code),
+            Err(error) => {
+                eprintln!("machdoch: {error}");
+                std::process::exit(1);
+            }
+        },
+        Err(error) => {
+            eprintln!("machdoch: {error}");
+            std::process::exit(1);
+        }
+    };
 
     tauri::Builder::default()
         .setup(move |app| {
             app.manage(desktop_task::DesktopTaskCancelMap(std::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )));
+            app.manage(desktop_shell::DesktopLaunchId(
+                desktop_shell::create_desktop_launch_id(),
+            ));
             app.manage(desktop_shell::QuickVoiceShortcutState::default());
 
-            if let Err(error) = desktop_shell::create_tray(&app.handle()) {
+            if let Err(error) = desktop_shell::create_tray(app.handle()) {
                 eprintln!("Failed to create tray icon: {error}");
             }
 
-            if let Err(error) = desktop_shell::sync_quick_voice_shortcut(&app.handle()) {
+            if let Err(error) = desktop_shell::sync_quick_voice_shortcut(app.handle()) {
                 eprintln!("Failed to initialize the Quick Voice shortcut: {error}");
             }
 
-            desktop_shell::apply_startup_mode(&app.handle(), launch_context);
+            desktop_shell::apply_startup_mode(app.handle(), launch_context);
 
-            if let Err(error) = desktop_shell::sync_assistant_bubble_window(&app.handle()) {
+            if let Err(error) = desktop_shell::sync_assistant_bubble_window(app.handle()) {
                 eprintln!("Failed to initialize the assistant bubble window: {error}");
             }
 
@@ -55,6 +73,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             desktop_shell::detect_fullscreen_window_on_monitor,
+            desktop_shell::get_desktop_launch_id,
             desktop_task::cancel_desktop_task,
             desktop_task::open_workspace_path,
             desktop_task::run_desktop_task,

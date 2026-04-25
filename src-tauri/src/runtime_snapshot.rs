@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -21,7 +20,14 @@ const KNOWN_SAMPLE_SECRET_VALUES: [&str; 5] = [
     "tavily-live",
 ];
 const DEFAULT_TOOLS: [&str; 2] = ["filesystem", "shell"];
-const VALID_TOOLS: [&str; 6] = ["filesystem", "shell", "network", "browser", "git", "packages"];
+const VALID_TOOLS: [&str; 6] = [
+    "filesystem",
+    "shell",
+    "network",
+    "browser",
+    "git",
+    "packages",
+];
 const VALID_MODEL_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
 const USER_CONFIG_FILE_NAME: &str = "user-config.json";
 const USER_API_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
@@ -242,7 +248,7 @@ pub struct UserMemoryEntry {
     updated_at: u64,
 }
 
-fn normalize_optional_string(value: Option<&str>) -> Option<String> {
+pub(crate) fn normalize_optional_string(value: Option<&str>) -> Option<String> {
     let trimmed = value?.trim();
 
     if trimmed.is_empty() {
@@ -286,7 +292,8 @@ fn resolve_quick_voice_shortcut(value: Option<&str>) -> String {
 fn normalize_user_desktop_settings_input(
     settings: &UserDesktopSettings,
 ) -> Result<UserDesktopSettings, String> {
-    let quick_voice_shortcut = normalize_quick_voice_shortcut(Some(settings.quick_voice_shortcut.as_str()));
+    let quick_voice_shortcut =
+        normalize_quick_voice_shortcut(Some(settings.quick_voice_shortcut.as_str()));
 
     crate::desktop_shell::validate_quick_voice_shortcut(&quick_voice_shortcut)?;
 
@@ -456,7 +463,7 @@ fn get_user_config_directory() -> Result<PathBuf, String> {
                 "Unable to determine the Windows roaming config directory.".to_string()
             })?;
 
-        return Ok(base_directory.join("machdoch"));
+        Ok(base_directory.join("machdoch"))
     }
 
     #[cfg(target_os = "macos")]
@@ -477,7 +484,11 @@ fn get_user_config_directory() -> Result<PathBuf, String> {
         let base_directory = env::var("XDG_CONFIG_HOME")
             .ok()
             .map(PathBuf::from)
-            .or_else(|| env::var("HOME").ok().map(|path| PathBuf::from(path).join(".config")))
+            .or_else(|| {
+                env::var("HOME")
+                    .ok()
+                    .map(|path| PathBuf::from(path).join(".config"))
+            })
             .ok_or_else(|| "Unable to determine the XDG config directory.".to_string())?;
 
         Ok(base_directory.join("machdoch"))
@@ -491,7 +502,7 @@ fn get_user_config_path() -> Result<PathBuf, String> {
 pub(crate) fn get_default_workspace_root() -> Result<PathBuf, String> {
     #[cfg(target_os = "windows")]
     {
-        return env::var("USERPROFILE")
+        env::var("USERPROFILE")
             .ok()
             .map(PathBuf::from)
             .or_else(|| {
@@ -504,7 +515,7 @@ pub(crate) fn get_default_workspace_root() -> Result<PathBuf, String> {
             .ok_or_else(|| {
                 "Unable to determine the Windows home directory for the default workspace."
                     .to_string()
-            });
+            })
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -577,12 +588,8 @@ fn load_user_config_file() -> Result<(UserConfigFile, PathBuf), String> {
 
 fn write_user_config_file(config: &UserConfigFile, config_path: &Path) -> Result<(), String> {
     if let Some(config_directory) = config_path.parent() {
-        fs::create_dir_all(config_directory).map_err(|error| {
-            format!(
-                "Failed to create {}: {error}",
-                config_directory.display()
-            )
-        })?;
+        fs::create_dir_all(config_directory)
+            .map_err(|error| format!("Failed to create {}: {error}", config_directory.display()))?;
     }
 
     let serialized = serde_json::to_string_pretty(config)
@@ -725,9 +732,7 @@ fn has_configured_value(value: Option<&str>) -> bool {
         return false;
     }
 
-    !PLACEHOLDER_TOKENS
-        .iter()
-        .any(|token| value.contains(token))
+    !PLACEHOLDER_TOKENS.iter().any(|token| value.contains(token))
 }
 
 fn get_provider_availability(env: &HashMap<String, String>) -> Vec<ProviderAvailability> {
@@ -762,7 +767,9 @@ fn get_web_search_provider_availability(
     ]
 }
 
-fn get_audio_provider_availability(env: &HashMap<String, String>) -> Vec<AudioProviderAvailability> {
+fn get_audio_provider_availability(
+    env: &HashMap<String, String>,
+) -> Vec<AudioProviderAvailability> {
     vec![
         AudioProviderAvailability {
             provider: "openai".to_string(),
@@ -876,10 +883,7 @@ fn normalize_tools(tools: Option<&Vec<String>>) -> Vec<String> {
     }
 
     if normalized.is_empty() {
-        return DEFAULT_TOOLS
-            .iter()
-            .map(|tool| tool.to_string())
-            .collect();
+        return DEFAULT_TOOLS.iter().map(|tool| tool.to_string()).collect();
     }
 
     normalized
@@ -926,12 +930,8 @@ fn save_user_api_key(provider: &str, api_key: &str) -> Result<PathBuf, String> {
     let (mut config, config_path) = load_user_config_file()?;
 
     if let Some(config_directory) = config_path.parent() {
-        fs::create_dir_all(config_directory).map_err(|error| {
-            format!(
-                "Failed to create {}: {error}",
-                config_directory.display()
-            )
-        })?;
+        fs::create_dir_all(config_directory)
+            .map_err(|error| format!("Failed to create {}: {error}", config_directory.display()))?;
     }
 
     config
@@ -992,7 +992,8 @@ fn load_user_memory_settings() -> Result<UserMemorySettings, String> {
     })
 }
 
-pub(crate) fn load_user_desktop_launch_preferences() -> Result<UserDesktopLaunchPreferences, String> {
+pub(crate) fn load_user_desktop_launch_preferences() -> Result<UserDesktopLaunchPreferences, String>
+{
     let (config, _) = load_user_config_file()?;
 
     Ok(UserDesktopLaunchPreferences {
@@ -1040,9 +1041,8 @@ pub(crate) fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>
 }
 
 fn save_user_web_search_api_key_value(provider: &str, api_key: &str) -> Result<PathBuf, String> {
-    let normalized_provider = normalize_optional_string(Some(provider)).ok_or_else(|| {
-        "Expected provider to be one of perplexity or tavily.".to_string()
-    })?;
+    let normalized_provider = normalize_optional_string(Some(provider))
+        .ok_or_else(|| "Expected provider to be one of perplexity or tavily.".to_string())?;
     let normalized_api_key = normalize_optional_string(Some(api_key))
         .ok_or_else(|| "Expected a non-empty API key.".to_string())?;
 
@@ -1053,12 +1053,8 @@ fn save_user_web_search_api_key_value(provider: &str, api_key: &str) -> Result<P
     let (mut config, config_path) = load_user_config_file()?;
 
     if let Some(config_directory) = config_path.parent() {
-        fs::create_dir_all(config_directory).map_err(|error| {
-            format!(
-                "Failed to create {}: {error}",
-                config_directory.display()
-            )
-        })?;
+        fs::create_dir_all(config_directory)
+            .map_err(|error| format!("Failed to create {}: {error}", config_directory.display()))?;
     }
 
     config
@@ -1086,12 +1082,8 @@ fn save_user_web_search_active_provider_value(provider: &str) -> Result<PathBuf,
     let (mut config, config_path) = load_user_config_file()?;
 
     if let Some(config_directory) = config_path.parent() {
-        fs::create_dir_all(config_directory).map_err(|error| {
-            format!(
-                "Failed to create {}: {error}",
-                config_directory.display()
-            )
-        })?;
+        fs::create_dir_all(config_directory)
+            .map_err(|error| format!("Failed to create {}: {error}", config_directory.display()))?;
     }
 
     config.web_search.active_provider = Some(normalized_provider);
@@ -1162,9 +1154,8 @@ fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Manager<R>>(
     config.desktop.assistant_bubble_enabled = Some(normalized_settings.assistant_bubble_enabled);
     config.desktop.assistant_bubble_hide_when_fullscreen =
         Some(normalized_settings.assistant_bubble_hide_when_fullscreen);
-    config.desktop.assistant_bubble_temporarily_hide_seconds = Some(
-        normalized_settings.assistant_bubble_temporarily_hide_seconds,
-    );
+    config.desktop.assistant_bubble_temporarily_hide_seconds =
+        Some(normalized_settings.assistant_bubble_temporarily_hide_seconds);
     config.desktop.quick_voice_enabled = Some(normalized_settings.quick_voice_enabled);
     config.desktop.quick_voice_shortcut = Some(normalized_settings.quick_voice_shortcut.clone());
     config.desktop.quick_voice_silence_seconds =
@@ -1259,7 +1250,9 @@ pub async fn save_user_desktop_settings(
     }
 
     if let Err(error) = crate::desktop_shell::sync_assistant_bubble_window(&app) {
-        eprintln!("Failed to sync the assistant bubble window after saving desktop settings: {error}");
+        eprintln!(
+            "Failed to sync the assistant bubble window after saving desktop settings: {error}"
+        );
     }
 
     load_user_desktop_settings(&app)
@@ -1299,9 +1292,7 @@ pub async fn save_user_speech_to_text_active_provider(
 }
 
 #[tauri::command]
-pub async fn save_user_global_memory_enabled(
-    enabled: bool,
-) -> Result<UserMemorySettings, String> {
+pub async fn save_user_global_memory_enabled(enabled: bool) -> Result<UserMemorySettings, String> {
     save_user_global_memory_enabled_value(enabled)?;
     load_user_memory_settings()
 }
@@ -1317,14 +1308,11 @@ pub async fn get_runtime_snapshot(
     let env = load_workspace_env(&workspace_path)?;
     let (config, workspace_config_path) = load_workspace_config(&workspace_path)?;
     let (user_config, _) = load_user_config_file()?;
-    let (active_profile, profile) =
-        resolve_profile(&config, &env, profile.as_deref())?;
+    let (active_profile, profile) = resolve_profile(&config, &env, profile.as_deref())?;
     let provider_availability = get_provider_availability(&env);
     let web_search_provider_availability = get_web_search_provider_availability(&env);
-    let web_search_active_provider = resolve_web_search_active_provider(
-        user_config.web_search.active_provider.as_deref(),
-        &env,
-    );
+    let web_search_active_provider =
+        resolve_web_search_active_provider(user_config.web_search.active_provider.as_deref(), &env);
 
     let mode = if is_valid_mode(env.get("MACHDOCH_MODE").map(String::as_str)) {
         env.get("MACHDOCH_MODE")
@@ -1364,11 +1352,13 @@ pub async fn get_runtime_snapshot(
     )
     .unwrap_or_else(|| DEFAULT_MODEL.to_string());
 
-    let offline = matches!(env.get("MACHDOCH_OFFLINE").map(String::as_str), Some("true"))
-        || profile
-            .and_then(|entry| entry.offline)
-            .or(config.offline)
-            .unwrap_or(false);
+    let offline = matches!(
+        env.get("MACHDOCH_OFFLINE").map(String::as_str),
+        Some("true")
+    ) || profile
+        .and_then(|entry| entry.offline)
+        .or(config.offline)
+        .unwrap_or(false);
 
     Ok(RuntimeSnapshot {
         workspace_root: resolved_workspace_root,

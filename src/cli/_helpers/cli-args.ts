@@ -308,11 +308,9 @@ export const parseCliArgs = (
   const verbose = values?.verbose === true;
   const quickRunRequested = values?.quick === true;
   const workspaceRoot =
-    normalizeOptionalString(values?.cwd) ?? currentWorkingDirectory;
-
-  if (workspaceRoot.trim().length === 0) {
+    normalizeOptionalString(values?.cwd) ??
+    normalizeOptionalString(currentWorkingDirectory) ??
     fail("Expected --cwd to be followed by a path.");
-  }
 
   const rawMode = normalizeOptionalString(values?.mode);
   const rawProvider = normalizeOptionalString(values?.provider);

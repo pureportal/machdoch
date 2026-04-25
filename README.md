@@ -7,7 +7,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-orange" />
-  <img alt="Node.js 20.10 or newer" src="https://img.shields.io/badge/node-%E2%89%A520.10-339933?logo=node.js&amp;logoColor=white" />
+  <img alt="Node.js >=20.10" src="https://img.shields.io/badge/node-%E2%89%A520.10-339933?logo=node.js&amp;logoColor=white" />
   <img alt="Tauri v2" src="https://img.shields.io/badge/tauri-v2-24C8DB?logo=tauri&amp;logoColor=white" />
 </p>
 

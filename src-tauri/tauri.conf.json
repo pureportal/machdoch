@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "machdoch",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "identifier": "com.machdoch.desktop",
   "build": {
     "beforeDevCommand": {
@@ -10,7 +10,7 @@
     },
     "beforeBuildCommand": {
       "cwd": "..",
-      "script": "npm run build:ui"
+      "script": "npm run build:cli-bundle && npm run build:ui"
     },
     "devUrl": "http://127.0.0.1:4173",
     "frontendDist": "../dist/ui-preview"

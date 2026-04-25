@@ -1,3 +1,4 @@
+import { normalizeOptionalString } from "../common/_helpers/normalize-optional-string.js";
 import type {
   CustomizationDiscoveryResult,
   DiscoveredPrompt,
@@ -24,14 +25,8 @@ interface PromptInputReference {
   placeholder?: string;
 }
 
-const trimOptionalValue = (value: string | undefined): string | undefined => {
-  const trimmed = value?.trim();
-
-  return trimmed && trimmed.length > 0 ? trimmed : undefined;
-};
-
 const hasNonBlankArgumentValue = (value: string): boolean => {
-  return value.trim().length > 0;
+  return normalizeOptionalString(value) !== undefined;
 };
 
 const tokenizeArgumentString = (value: string): string[] => {
@@ -128,8 +123,8 @@ const extractPromptInputReferences = (body: string): PromptInputReference[] => {
   const references: PromptInputReference[] = [];
 
   for (const match of body.matchAll(INPUT_VARIABLE_PATTERN)) {
-    const name = trimOptionalValue(match[1]);
-    const placeholder = trimOptionalValue(match[2]);
+    const name = normalizeOptionalString(match[1]);
+    const placeholder = normalizeOptionalString(match[2]);
 
     if (!name || seen.has(name)) {
       continue;
@@ -150,7 +145,7 @@ const collectExpectedInputs = (prompt: DiscoveredPrompt): string[] => {
   const seen = new Set<string>();
 
   for (const input of prompt.inputs) {
-    const normalizedInput = trimOptionalValue(input);
+    const normalizedInput = normalizeOptionalString(input);
 
     if (!normalizedInput || seen.has(normalizedInput)) {
       continue;

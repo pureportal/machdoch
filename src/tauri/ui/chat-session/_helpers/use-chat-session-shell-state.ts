@@ -14,6 +14,7 @@ import {
   createVisibleConversationMessages,
   getSessionTitle,
   normalizeShellState,
+  recoverInterruptedTasksForLaunch,
   sortSessionsByUpdatedAt,
   type ChatSessionMessage,
   type ChatSessionRecord,
@@ -26,6 +27,7 @@ import {
   saveShellState,
   subscribeToShellStateChanged,
 } from "../../lib/shell-store";
+import { loadDesktopLaunchId } from "../../runtime";
 import {
   type SessionScopeFilter,
   type SessionStatusFilter,
@@ -170,6 +172,18 @@ const mergeShellStateForPersistence = (
     mergedState.lastSelectedMode = latestState.lastSelectedMode;
   } else {
     delete mergedState.lastSelectedMode;
+  }
+
+  if (localState.lastRecoveredLaunchId !== baseState.lastRecoveredLaunchId) {
+    if (localState.lastRecoveredLaunchId) {
+      mergedState.lastRecoveredLaunchId = localState.lastRecoveredLaunchId;
+    } else {
+      delete mergedState.lastRecoveredLaunchId;
+    }
+  } else if (latestState.lastRecoveredLaunchId) {
+    mergedState.lastRecoveredLaunchId = latestState.lastRecoveredLaunchId;
+  } else {
+    delete mergedState.lastRecoveredLaunchId;
   }
 
   return mergedState;
@@ -410,23 +424,42 @@ export const useChatSessionShellState = (
   useEffect(() => {
     let cancelled = false;
 
-    void loadShellState(initialShellStateRef.current)
-      .then((value) => {
+    void Promise.all([
+      loadShellState(initialShellStateRef.current),
+      loadDesktopLaunchId(),
+    ])
+      .then(([value, launchId]) => {
         if (cancelled) {
           return;
         }
 
-        if (
-          didMutateBeforeHydrationRef.current ||
-          value === initialShellStateRef.current
-        ) {
+        if (didMutateBeforeHydrationRef.current) {
           return;
         }
 
         const normalizedShellState = normalizeShellState(value);
+        const recoveredShellState = recoverInterruptedTasksForLaunch(
+          normalizedShellState,
+          launchId,
+        );
+
+        if (
+          value === initialShellStateRef.current &&
+          areShellFragmentsEqual(
+            recoveredShellState,
+            initialShellStateRef.current,
+          )
+        ) {
+          return;
+        }
 
         lastPersistedShellStateRef.current = normalizedShellState;
-        setShellState(normalizedShellState);
+
+        if (!areShellFragmentsEqual(recoveredShellState, normalizedShellState)) {
+          localMutationRevisionRef.current += 1;
+        }
+
+        setShellState(recoveredShellState);
       })
       .finally(() => {
         if (!cancelled) {

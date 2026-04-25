@@ -64,6 +64,7 @@ export interface ShellPersistedState {
   lastSelectedModelByProvider: Partial<Record<RuntimeProvider, string>>;
   lastSelectedProfile?: string;
   lastSelectedMode?: RunMode;
+  lastRecoveredLaunchId?: string;
 }
 
 const DEFAULT_PROVIDER: RuntimeProvider = "openai";
@@ -307,6 +308,11 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
   const lastSelectedMode = isRunMode(candidate.lastSelectedMode)
     ? candidate.lastSelectedMode
     : undefined;
+  const lastRecoveredLaunchId =
+    typeof candidate.lastRecoveredLaunchId === "string" &&
+    candidate.lastRecoveredLaunchId.trim().length > 0
+      ? candidate.lastRecoveredLaunchId
+      : undefined;
   const voiceCandidate =
     candidate.voice && typeof candidate.voice === "object"
       ? (candidate.voice as Partial<ShellVoiceSettings>)
@@ -338,6 +344,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
     },
     ...(lastSelectedProfile ? { lastSelectedProfile } : {}),
     ...(lastSelectedMode ? { lastSelectedMode } : {}),
+    ...(lastRecoveredLaunchId ? { lastRecoveredLaunchId } : {}),
   };
 };
 
@@ -453,6 +460,170 @@ export const getSessionOverviewStatus = (
   }
 
   return "done";
+};
+
+const getInterruptedTaskIds = (
+  messages: ChatSessionMessage[],
+): Set<string> => {
+  const taskIdsWithUserMessage = new Set<string>();
+  const latestTerminalAgentMessageByTaskId = new Map<
+    string,
+    ChatSessionMessage
+  >();
+  let latestUserTaskId: string | null = null;
+
+  for (const message of messages) {
+    if (message.role === "user") {
+      const taskId = getMessageTaskId(message);
+
+      latestUserTaskId = taskId;
+      taskIdsWithUserMessage.add(taskId);
+      continue;
+    }
+
+    if (message.role !== "agent" || message.source?.kind === "preview") {
+      continue;
+    }
+
+    const taskId = message.taskId ?? latestUserTaskId ?? message.id;
+
+    latestTerminalAgentMessageByTaskId.set(taskId, message);
+  }
+
+  const interruptedTaskIds = new Set<string>();
+
+  for (const taskId of taskIdsWithUserMessage) {
+    const latestTerminalAgentMessage =
+      latestTerminalAgentMessageByTaskId.get(taskId);
+
+    if (!latestTerminalAgentMessage) {
+      interruptedTaskIds.add(taskId);
+      continue;
+    }
+
+    if (
+      latestTerminalAgentMessage.source?.kind === "thinking" &&
+      latestTerminalAgentMessage.source.thinking.status === "running"
+    ) {
+      interruptedTaskIds.add(taskId);
+    }
+  }
+
+  return interruptedTaskIds;
+};
+
+const createInterruptedTaskCrashMessage = (
+  taskId: string,
+  timestamp: number,
+  index: number,
+): ChatSessionMessage => {
+  return {
+    id: `interrupted-${taskId}-${timestamp}-${index}`,
+    taskId,
+    role: "agent",
+    content:
+      "**Task crashed.** machdoch restarted before this AI task finished, so it was marked as crashed.",
+    createdAt: timestamp,
+  };
+};
+
+const recoverInterruptedSessionTasks = (
+  session: ChatSessionRecord,
+  timestamp: number,
+): ChatSessionRecord => {
+  const interruptedTaskIds = getInterruptedTaskIds(session.messages);
+
+  if (interruptedTaskIds.size === 0) {
+    return session;
+  }
+
+  const messageTaskIds: string[] = [];
+  const lastMessageIndexByTaskId = new Map<string, number>();
+  const hasCrashMessageByTaskId = new Map<string, boolean>();
+  let latestUserTaskId: string | null = null;
+
+  for (const [index, message] of session.messages.entries()) {
+    const taskId =
+      message.role === "agent"
+        ? message.taskId ?? latestUserTaskId ?? message.id
+        : getMessageTaskId(message);
+
+    if (message.role === "user") {
+      latestUserTaskId = taskId;
+    }
+
+    messageTaskIds[index] = taskId;
+    lastMessageIndexByTaskId.set(taskId, index);
+
+    if (message.role === "agent" && !message.source) {
+      hasCrashMessageByTaskId.set(taskId, true);
+    }
+  }
+
+  const nextMessages: ChatSessionMessage[] = [];
+  let crashMessageIndex = 0;
+
+  for (const [index, message] of session.messages.entries()) {
+    const taskId = messageTaskIds[index] ?? getMessageTaskId(message);
+    const isStaleRunningThinkingMessage =
+      interruptedTaskIds.has(taskId) &&
+      message.role === "agent" &&
+      message.source?.kind === "thinking" &&
+      message.source.thinking.status === "running";
+
+    if (!isStaleRunningThinkingMessage) {
+      nextMessages.push(message);
+    }
+
+    if (
+      interruptedTaskIds.has(taskId) &&
+      lastMessageIndexByTaskId.get(taskId) === index &&
+      hasCrashMessageByTaskId.get(taskId) !== true
+    ) {
+      nextMessages.push(
+        createInterruptedTaskCrashMessage(
+          taskId,
+          timestamp,
+          crashMessageIndex,
+        ),
+      );
+      crashMessageIndex += 1;
+    }
+  }
+
+  return {
+    ...session,
+    messages: nextMessages,
+  };
+};
+
+export const recoverInterruptedTasksForLaunch = (
+  state: ShellPersistedState,
+  launchId: string | null | undefined,
+  timestamp = Date.now(),
+): ShellPersistedState => {
+  const normalizedLaunchId = launchId?.trim();
+
+  if (!normalizedLaunchId || state.lastRecoveredLaunchId === normalizedLaunchId) {
+    return state;
+  }
+
+  let didRecoverInterruptedTasks = false;
+  const sessions = state.sessions.map((session) => {
+    const recoveredSession = recoverInterruptedSessionTasks(session, timestamp);
+
+    if (recoveredSession !== session) {
+      didRecoverInterruptedTasks = true;
+    }
+
+    return recoveredSession;
+  });
+
+  return {
+    ...state,
+    lastRecoveredLaunchId: normalizedLaunchId,
+    sessions: didRecoverInterruptedTasks ? sessions : state.sessions,
+  };
 };
 
 export const canArchiveSession = (session: ChatSessionRecord): boolean => {

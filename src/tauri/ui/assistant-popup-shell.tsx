@@ -9,6 +9,7 @@ import {
   SendHorizonal,
   Sparkles,
   Square,
+  Trash2,
   X,
   Zap,
 } from "lucide-react";
@@ -144,9 +145,11 @@ const QuickTaskMessage = ({
 
 const QuickTaskActivity = ({
   quickTask,
+  onClearHistory,
   onOpenMain,
 }: {
   quickTask: ReturnType<typeof useChatSessionController>["quickTask"];
+  onClearHistory: () => void;
   onOpenMain: () => void;
 }): JSX.Element => {
   const recentMessages = useMemo(() => {
@@ -177,16 +180,31 @@ const QuickTaskActivity = ({
           {getQuickTaskStatusLabel(quickTask.status)}
         </div>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onOpenMain}
-          className="h-8 rounded-full px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-        >
-          Open Main
-          <ArrowUpRight className="h-3.5 w-3.5" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label="Clear Quick Chat history"
+            disabled={!quickTask.canClearHistory}
+            onClick={onClearHistory}
+            className="h-8 rounded-full px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100 disabled:text-slate-700 disabled:opacity-100"
+          >
+            Clear
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onOpenMain}
+            className="h-8 rounded-full px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+          >
+            Open Main
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
@@ -246,7 +264,7 @@ const QuickTaskComposer = ({
 
   return (
     <form
-      className="grid gap-3 rounded-3xl border border-slate-800 bg-slate-950/90 p-3"
+      className="grid gap-2.5"
       onSubmit={(event) => {
         event.preventDefault();
         sendQuickTask();
@@ -264,10 +282,10 @@ const QuickTaskComposer = ({
           }
         }}
         placeholder="Quick task…"
-        className="max-h-32 min-h-18 resize-none overflow-y-auto rounded-[1.2rem] border-slate-800 bg-slate-900/70 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500"
+        className="max-h-32 min-h-16 resize-none overflow-y-auto rounded-2xl border-slate-800/90 bg-slate-900/60 px-4 py-3 text-sm text-slate-100 shadow-inner shadow-black/10 placeholder:text-slate-500 focus-visible:border-sky-400/40 focus-visible:ring-2 focus-visible:ring-sky-500/20"
       />
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 px-0.5">
         <Button
           type="button"
           variant="ghost"
@@ -277,7 +295,7 @@ const QuickTaskComposer = ({
           onClick={() => {
             void showQuickVoiceWindow();
           }}
-          className="h-9 rounded-full border border-violet-400/20 bg-violet-400/10 px-3 text-xs text-violet-100 hover:bg-violet-400/15 hover:text-white disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-600"
+          className="h-8 rounded-full border border-violet-400/15 bg-violet-400/10 px-3 text-xs text-violet-100 hover:bg-violet-400/15 hover:text-white disabled:border-slate-800/80 disabled:bg-transparent disabled:text-slate-600 disabled:opacity-100"
         >
           <Mic className="h-4 w-4" />
           Voice
@@ -288,9 +306,9 @@ const QuickTaskComposer = ({
           variant="outline"
           disabled={!canSend}
           className={cn(
-            "h-9 rounded-full border-slate-800 bg-slate-900 px-4 text-xs text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-100",
+            "h-8 rounded-full border-slate-800/90 bg-slate-900/70 px-4 text-xs text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:bg-transparent disabled:text-slate-600 disabled:opacity-100",
             canSend &&
-              "border-sky-400/25 bg-sky-400/10 text-sky-50 hover:bg-sky-400/15 hover:text-white",
+              "border-sky-400/30 bg-sky-400/15 text-sky-50 hover:bg-sky-400/20 hover:text-white",
           )}
         >
           Send
@@ -383,12 +401,13 @@ export const AssistantPopupShell = (): JSX.Element => {
           <>
             <QuickTaskActivity
               quickTask={controller.quickTask}
+              onClearHistory={controller.clearQuickTaskHistory}
               onOpenMain={() => {
                 void revealMainWindow();
               }}
             />
 
-            <footer className="border-t border-slate-800 bg-slate-950/75 px-4 py-3">
+            <footer className="border-t border-slate-800/80 bg-slate-950/90 px-5 py-4">
               <QuickTaskComposer controller={controller} />
             </footer>
           </>

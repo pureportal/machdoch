@@ -1,4 +1,8 @@
-use std::{env, sync::Mutex};
+use std::{
+    env,
+    sync::Mutex,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use serde::{Deserialize, Serialize};
 use tauri::{
@@ -30,6 +34,9 @@ const QUICK_VOICE_SHORTCUT_SOURCE: &str = "global-shortcut";
 #[derive(Debug, Default)]
 pub(crate) struct QuickVoiceShortcutState(pub(crate) Mutex<Option<String>>);
 
+#[derive(Debug, Clone)]
+pub(crate) struct DesktopLaunchId(pub(crate) String);
+
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct LaunchContext {
     pub(crate) launched_from_autostart: bool,
@@ -54,6 +61,15 @@ pub(crate) fn resolve_launch_context() -> LaunchContext {
     LaunchContext {
         launched_from_autostart: env::args().skip(1).any(|arg| arg == AUTOSTART_LAUNCH_ARG),
     }
+}
+
+pub(crate) fn create_desktop_launch_id() -> String {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+
+    format!("{}-{timestamp}", std::process::id())
 }
 
 pub(crate) fn validate_quick_voice_shortcut(shortcut: &str) -> Result<(), String> {
@@ -174,7 +190,8 @@ pub(crate) fn apply_startup_mode<R: Runtime>(app: &AppHandle<R>, launch_context:
     };
 
     if launch_context.launched_from_autostart {
-        let preferences = runtime_snapshot::load_user_desktop_launch_preferences().unwrap_or_default();
+        let preferences =
+            runtime_snapshot::load_user_desktop_launch_preferences().unwrap_or_default();
 
         if preferences.autostart_to_tray {
             let _ = window.set_skip_taskbar(true);
@@ -221,6 +238,11 @@ pub(crate) fn sync_assistant_bubble_window<R: Runtime>(app: &AppHandle<R>) -> Re
 }
 
 #[tauri::command]
+pub fn get_desktop_launch_id(state: tauri::State<'_, DesktopLaunchId>) -> String {
+    state.0.clone()
+}
+
+#[tauri::command]
 pub fn detect_fullscreen_window_on_monitor(monitor: MonitorBoundsInput) -> Result<bool, String> {
     let current_process_id = std::process::id();
     let windows = DesktopWindow::all().map_err(|error| {
@@ -244,7 +266,10 @@ pub fn detect_fullscreen_window_on_monitor(monitor: MonitorBoundsInput) -> Resul
             continue;
         }
 
-        if window.title().map(|title| title.trim().is_empty()).unwrap_or(true)
+        if window
+            .title()
+            .map(|title| title.trim().is_empty())
+            .unwrap_or(true)
             && window
                 .app_name()
                 .map(|name| name.trim().is_empty())

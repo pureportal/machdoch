@@ -748,7 +748,7 @@ export const createProviderAdapter = async (
     case "google": {
       const apiKey = env.GOOGLE_API_KEY;
 
-      if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
+      if (!apiKey || !hasConfiguredValue(apiKey)) {
         return undefined;
       }
 

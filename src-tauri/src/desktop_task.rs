@@ -3,8 +3,8 @@ use std::{
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::{Arc, Mutex},
     sync::atomic::{AtomicBool, Ordering},
+    sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tauri::Emitter;
 
-use crate::runtime_snapshot::resolve_workspace_root_path;
+use crate::runtime_snapshot::{normalize_optional_string, resolve_workspace_root_path};
 
 const DESKTOP_TASK_PROGRESS_EVENT: &str = "desktop-task-progress";
 const DESKTOP_TASK_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
@@ -38,32 +38,35 @@ pub struct DesktopTaskRunResponse {
     preview: Option<Value>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopTaskRunRequest {
+    workspace_root: String,
+    task: String,
+    mode: Option<String>,
+    profile: Option<String>,
+    provider: Option<String>,
+    model: Option<String>,
+    conversation_context: Option<Value>,
+    task_id: Option<String>,
+}
+
+struct CliCommandOptions<'a> {
+    workspace_root: &'a str,
+    task: &'a str,
+    mode: Option<&'a str>,
+    profile: Option<&'a str>,
+    provider: Option<&'a str>,
+    model: Option<&'a str>,
+    conversation_context_file: Option<&'a Path>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DesktopTaskProgressEvent {
     task_id: String,
     line: String,
     timestamp: u64,
-}
-
-fn get_repo_root() -> Result<PathBuf, String> {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or_else(|| "Unable to resolve the desktop shell repository root.".to_string())
-}
-
-fn get_cli_entry_path(repo_root: &Path) -> Result<PathBuf, String> {
-    let cli_entry_path = repo_root.join("src").join("cli").join("main.ts");
-
-    if cli_entry_path.exists() {
-        return Ok(cli_entry_path);
-    }
-
-    Err(format!(
-        "Unable to locate the shared CLI entry at {}.",
-        cli_entry_path.display()
-    ))
 }
 
 fn format_command_failure(stderr: &str, stdout: &str) -> String {
@@ -82,54 +85,42 @@ fn format_command_failure(stderr: &str, stdout: &str) -> String {
     "The shared CLI exited without additional diagnostics.".to_string()
 }
 
-fn build_cli_command(
-    repo_root: &Path,
-    cli_entry_path: &Path,
-    workspace_root: &str,
-    task: &str,
-    mode: Option<&str>,
-    profile: Option<&str>,
-    provider: Option<&str>,
-    model: Option<&str>,
-    conversation_context_file: Option<&Path>,
-) -> Command {
-    let mut command = Command::new("node");
+fn build_cli_args(options: CliCommandOptions<'_>) -> Vec<String> {
+    let mut args = vec![
+        "--json".to_string(),
+        "--verbose".to_string(),
+        "--cwd".to_string(),
+        options.workspace_root.to_string(),
+        "--task".to_string(),
+        options.task.to_string(),
+    ];
 
-    command
-        .current_dir(repo_root)
-        .arg("--import")
-        .arg("tsx")
-        .arg(cli_entry_path)
-        .arg("--json")
-        .arg("--verbose")
-        .arg("--cwd")
-        .arg(workspace_root)
-        .arg("--task")
-        .arg(task);
-
-    if let Some(mode) = mode {
-        command.arg("--mode").arg(mode);
+    if let Some(mode) = options.mode {
+        args.push("--mode".to_string());
+        args.push(mode.to_string());
     }
 
-    if let Some(profile) = profile {
-        command.arg("--profile").arg(profile);
+    if let Some(profile) = options.profile {
+        args.push("--profile".to_string());
+        args.push(profile.to_string());
     }
 
-    if let Some(provider) = provider {
-        command.arg("--runtime-provider").arg(provider);
+    if let Some(provider) = options.provider {
+        args.push("--runtime-provider".to_string());
+        args.push(provider.to_string());
     }
 
-    if let Some(model) = model {
-        command.arg("--model").arg(model);
+    if let Some(model) = options.model {
+        args.push("--model".to_string());
+        args.push(model.to_string());
     }
 
-    if let Some(conversation_context_file) = conversation_context_file {
-        command
-            .arg("--conversation-context-file")
-            .arg(conversation_context_file);
+    if let Some(conversation_context_file) = options.conversation_context_file {
+        args.push("--conversation-context-file".to_string());
+        args.push(conversation_context_file.display().to_string());
     }
 
-    command
+    args
 }
 
 fn write_conversation_context_file(conversation_context: &Value) -> Result<PathBuf, String> {
@@ -164,9 +155,7 @@ fn enrich_ui_control_conversation_context(
     };
 
     let Value::Object(context_object) = &mut conversation_context else {
-        return Err(
-            "Expected the desktop conversation context to be a JSON object.".to_string(),
-        );
+        return Err("Expected the desktop conversation context to be a JSON object.".to_string());
     };
 
     if context_object
@@ -270,9 +259,8 @@ fn read_stderr(
     let mut stderr_lines = Vec::new();
 
     for line in BufReader::new(stderr).lines() {
-        let line = line.map_err(|error| {
-            format!("Failed to read the shared CLI stderr stream: {error}")
-        })?;
+        let line =
+            line.map_err(|error| format!("Failed to read the shared CLI stderr stream: {error}"))?;
 
         let trimmed_line = line.trim();
 
@@ -280,12 +268,7 @@ fn read_stderr(
             continue;
         }
 
-        emit_progress_line(
-            &app_handle,
-            &window_label,
-            task_id.as_deref(),
-            trimmed_line,
-        );
+        emit_progress_line(&app_handle, &window_label, task_id.as_deref(), trimmed_line);
         stderr_lines.push(trimmed_line.to_string());
     }
 
@@ -308,25 +291,26 @@ fn parse_desktop_task_response(stdout: &str) -> Result<DesktopTaskRunResponse, S
     let trimmed_stdout = stdout.trim();
 
     serde_json::from_str::<DesktopTaskRunResponse>(trimmed_stdout).map_err(|error| {
-        format!(
-            "Failed to parse the shared CLI JSON response: {error}. Output: {trimmed_stdout}"
-        )
+        format!("Failed to parse the shared CLI JSON response: {error}. Output: {trimmed_stdout}")
     })
 }
 
 fn execute_desktop_task(
     app_handle: tauri::AppHandle,
     window_label: String,
-    workspace_root: String,
-    task: String,
-    mode: Option<String>,
-    profile: Option<String>,
-    provider: Option<String>,
-    model: Option<String>,
-    conversation_context: Option<Value>,
-    task_id: Option<String>,
+    request: DesktopTaskRunRequest,
     cancel_flag: Arc<AtomicBool>,
 ) -> Result<DesktopTaskRunResponse, String> {
+    let DesktopTaskRunRequest {
+        workspace_root,
+        task,
+        mode,
+        profile,
+        provider,
+        model,
+        conversation_context,
+        task_id,
+    } = request;
     let workspace_path = resolve_workspace_root_path(&workspace_root)?;
     let normalized_workspace_root = workspace_path.display().to_string();
 
@@ -336,69 +320,38 @@ fn execute_desktop_task(
         return Err("Expected a non-empty task before running the desktop executor.".to_string());
     }
 
-    let repo_root = get_repo_root()?;
-    let cli_entry_path = get_cli_entry_path(&repo_root)?;
-    let normalized_provider = provider.and_then(|value| {
-        let trimmed = value.trim().to_string();
-
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed)
-        }
-    });
-    let normalized_mode = mode.and_then(|value| {
-        let trimmed = value.trim().to_string();
-
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed)
-        }
-    });
-    let normalized_profile = profile.and_then(|value| {
-        let trimmed = value.trim().to_string();
-
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed)
-        }
-    });
-    let normalized_model = model.and_then(|value| {
-        let trimmed = value.trim().to_string();
-
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed)
-        }
-    });
+    let normalized_provider = normalize_optional_string(provider.as_deref());
+    let normalized_mode = normalize_optional_string(mode.as_deref());
+    let normalized_profile = normalize_optional_string(profile.as_deref());
+    let normalized_model = normalize_optional_string(model.as_deref());
     let conversation_context = enrich_ui_control_conversation_context(conversation_context)?;
     let conversation_context_path = conversation_context
         .as_ref()
         .map(write_conversation_context_file)
         .transpose()?;
 
-    let mut command = build_cli_command(
-        &repo_root,
-        &cli_entry_path,
-        &normalized_workspace_root,
-        normalized_task,
-        normalized_mode.as_deref(),
-        normalized_profile.as_deref(),
-        normalized_provider.as_deref(),
-        normalized_model.as_deref(),
-        conversation_context_path.as_deref(),
-    );
+    let cli_args = build_cli_args(CliCommandOptions {
+        workspace_root: &normalized_workspace_root,
+        task: normalized_task,
+        mode: normalized_mode.as_deref(),
+        profile: normalized_profile.as_deref(),
+        provider: normalized_provider.as_deref(),
+        model: normalized_model.as_deref(),
+        conversation_context_file: conversation_context_path.as_deref(),
+    });
+    let mut cli_command = crate::shared_cli::create_shared_cli_command(&cli_args)?;
 
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    cli_command
+        .command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
-    let mut child = command.spawn().map_err(|error| {
+    let mut child = cli_command.command.spawn().map_err(|error| {
         cleanup_temporary_file(conversation_context_path.as_ref());
 
         format!(
-            "Failed to launch the shared CLI through Node.js. Ensure Node.js >= 20.10 is installed and available on PATH. {error}"
+            "Failed to launch the shared CLI. {} {error}",
+            crate::shared_cli::cli_runtime_error_hint()
         )
     })?;
 
@@ -415,9 +368,8 @@ fn execute_desktop_task(
     let progress_task_id = task_id.clone();
 
     let stdout_worker = thread::spawn(move || read_stdout(stdout));
-    let stderr_worker = thread::spawn(move || {
-        read_stderr(stderr, app_handle, window_label, task_id)
-    });
+    let stderr_worker =
+        thread::spawn(move || read_stderr(stderr, app_handle, window_label, task_id));
 
     let started_at = Instant::now();
     let status = loop {
@@ -444,10 +396,7 @@ fn execute_desktop_task(
                     cleanup_temporary_file(conversation_context_path.as_ref());
 
                     let failure_tail = format_command_failure(&stderr_text, &stdout_text);
-                    return Err(format!(
-                        "The task was cancelled. {}",
-                        failure_tail
-                    ));
+                    return Err(format!("The task was cancelled. {}", failure_tail));
                 }
 
                 if started_at.elapsed() >= Duration::from_millis(DESKTOP_TASK_TIMEOUT_MS) {
@@ -525,9 +474,7 @@ fn resolve_workspace_relative_path(
         .join(&candidate_relative_path)
         .canonicalize()
         .map_err(|error| {
-            format!(
-                "Unable to resolve `{normalized_relative_path}` inside the workspace: {error}"
-            )
+            format!("Unable to resolve `{normalized_relative_path}` inside the workspace: {error}")
         })?;
 
     if !resolved_path.starts_with(&workspace_path) {
@@ -623,38 +570,19 @@ pub async fn run_desktop_task(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, DesktopTaskCancelMap>,
     window: tauri::WebviewWindow,
-    workspace_root: String,
-    task: String,
-    mode: Option<String>,
-    profile: Option<String>,
-    provider: Option<String>,
-    model: Option<String>,
-    conversation_context: Option<Value>,
-    task_id: Option<String>,
+    request: DesktopTaskRunRequest,
 ) -> Result<DesktopTaskRunResponse, String> {
     let window_label = window.label().to_string();
     let cancel_flag = Arc::new(AtomicBool::new(false));
 
-    if let Some(id) = &task_id {
+    if let Some(id) = &request.task_id {
         if let Ok(mut map) = state.0.lock() {
             map.insert(id.clone(), cancel_flag.clone());
         }
     }
 
     let result = tauri::async_runtime::spawn_blocking(move || {
-        execute_desktop_task(
-            app_handle,
-            window_label,
-            workspace_root,
-            task,
-            mode,
-            profile,
-            provider,
-            model,
-            conversation_context,
-            task_id,
-            cancel_flag,
-        )
+        execute_desktop_task(app_handle, window_label, request, cancel_flag)
     })
     .await
     .map_err(|error| format!("The desktop task bridge stopped unexpectedly. {error}"))?;

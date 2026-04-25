@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  createInitialShellState,
   createSession,
   createVisibleConversationMessages,
   getSessionOverviewStatus,
   normalizeShellState,
+  recoverInterruptedTasksForLaunch,
 } from "./chat-session.model";
 import {
   createMockExecutionFixture,
@@ -142,6 +144,181 @@ describe("getSessionOverviewStatus", () => {
     });
 
     expect(getSessionOverviewStatus(session)).toBe("waiting");
+  });
+});
+
+describe("recoverInterruptedTasksForLaunch", () => {
+  it("marks persisted in-progress task groups as crashed once per app launch", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-with-interruptions",
+      messages: [
+        {
+          id: "task-1-user",
+          taskId: "task-1",
+          role: "user",
+          content: "finish the first stale task",
+          createdAt: 1,
+        },
+        {
+          id: "task-1-thinking",
+          taskId: "task-1",
+          role: "agent",
+          content: "",
+          createdAt: 2,
+          source: {
+            kind: "thinking",
+            thinking: createInitialThinkingTrace("ask", 2),
+          },
+        },
+        {
+          id: "task-2-user",
+          taskId: "task-2",
+          role: "user",
+          content: "finish the second stale task",
+          createdAt: 3,
+        },
+        {
+          id: "task-2-preview",
+          taskId: "task-2",
+          role: "agent",
+          content: "preview only",
+          createdAt: 4,
+          source: {
+            kind: "preview",
+            preview: createPreviewFixture("finish the second stale task"),
+          },
+        },
+        {
+          id: "task-3-user",
+          taskId: "task-3",
+          role: "user",
+          content: "wait for approval",
+          createdAt: 5,
+        },
+        {
+          id: "task-3-agent",
+          taskId: "task-3",
+          role: "agent",
+          content: "approval needed",
+          createdAt: 6,
+          source: {
+            kind: "execution",
+            execution: {
+              ...createMockExecutionFixture("wait for approval"),
+              status: "approval-required",
+            },
+          },
+        },
+      ],
+    });
+
+    const recovered = recoverInterruptedTasksForLaunch(
+      {
+        ...baseState,
+        activeSessionId: session.id,
+        sessions: [session],
+      },
+      "launch-1",
+      100,
+    );
+    const recoveredSession = recovered.sessions[0];
+
+    expect(recovered.lastRecoveredLaunchId).toBe("launch-1");
+    expect(recoveredSession).toBeDefined();
+    expect(getSessionOverviewStatus(recoveredSession!)).toBe("waiting");
+
+    const crashMessages = recoveredSession!.messages.filter((message) =>
+      message.content.startsWith("**Task crashed.**"),
+    );
+
+    expect(crashMessages.map((message) => message.taskId)).toEqual([
+      "task-1",
+      "task-2",
+    ]);
+    expect(crashMessages.map((message) => message.createdAt)).toEqual([
+      100,
+      100,
+    ]);
+    expect(crashMessages.every((message) => !("source" in message))).toBe(true);
+    expect(recoverInterruptedTasksForLaunch(recovered, "launch-1", 200)).toBe(
+      recovered,
+    );
+  });
+
+  it("records the recovered launch even when no tasks were interrupted", () => {
+    const baseState = createInitialShellState();
+    const recovered = recoverInterruptedTasksForLaunch(
+      baseState,
+      "launch-empty",
+      100,
+    );
+
+    expect(recovered.lastRecoveredLaunchId).toBe("launch-empty");
+    expect(recovered.sessions).toBe(baseState.sessions);
+  });
+
+  it("removes orphaned running thinking panels when the task already has a crash marker", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-with-orphan-thinking",
+      messages: [
+        {
+          id: "task-1-user",
+          taskId: "task-1",
+          role: "user",
+          content: "answer the stale task",
+          createdAt: 1,
+        },
+        {
+          id: "task-1-crash",
+          taskId: "task-1",
+          role: "agent",
+          content:
+            "**Task crashed.** machdoch restarted before this AI task finished, so it was marked as crashed.",
+          createdAt: 2,
+        },
+        {
+          id: "orphan-thinking",
+          role: "agent",
+          content: "",
+          createdAt: 3,
+          source: {
+            kind: "thinking",
+            thinking: createInitialThinkingTrace("ask", 3),
+          },
+        },
+      ],
+    });
+
+    const recovered = recoverInterruptedTasksForLaunch(
+      {
+        ...baseState,
+        activeSessionId: session.id,
+        sessions: [session],
+      },
+      "launch-orphan",
+      100,
+    );
+    const recoveredSession = recovered.sessions[0];
+
+    expect(recoveredSession).toBeDefined();
+    expect(getSessionOverviewStatus(recoveredSession!)).toBe("crashed");
+    expect(
+      recoveredSession!.messages.some(
+        (message) => message.id === "orphan-thinking",
+      ),
+    ).toBe(false);
+    expect(
+      recoveredSession!.messages.filter((message) =>
+        message.content.startsWith("**Task crashed.**"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      createVisibleConversationMessages(recoveredSession!.messages).map(
+        (message) => message.id,
+      ),
+    ).toEqual(["task-1-user", "task-1-crash"]);
   });
 });
 

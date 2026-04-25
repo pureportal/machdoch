@@ -459,6 +459,15 @@ export const loadUserMemorySettings = async (): Promise<UserMemorySettings> => {
   );
 };
 
+export const loadDesktopLaunchId = async (): Promise<string | null> => {
+  return loadTauriValueOrFallback<string | null>(
+    "get_desktop_launch_id",
+    () => null,
+    "Failed to load desktop launch ID",
+    () => null,
+  );
+};
+
 export const saveUserGlobalMemoryEnabled = async (
   enabled: boolean,
 ): Promise<UserMemorySettings> => {
@@ -781,16 +790,18 @@ export const runDesktopTask = async (
 
   try {
     return await tauriCore.invoke<DesktopTaskRunResponse>("run_desktop_task", {
-      workspaceRoot: normalizedWorkspaceRoot ?? "",
-      task: normalizedTask,
-      ...(normalizedMode ? { mode: normalizedMode } : {}),
-      ...(normalizedProfile ? { profile: normalizedProfile } : {}),
-      ...(normalizedTaskId ? { taskId: normalizedTaskId } : {}),
-      ...(normalizedProvider ? { provider: normalizedProvider } : {}),
-      ...(normalizedModel ? { model: normalizedModel } : {}),
-      ...(context.conversationContext
-        ? { conversationContext: context.conversationContext }
-        : {}),
+      request: {
+        workspaceRoot: normalizedWorkspaceRoot ?? "",
+        task: normalizedTask,
+        ...(normalizedMode ? { mode: normalizedMode } : {}),
+        ...(normalizedProfile ? { profile: normalizedProfile } : {}),
+        ...(normalizedTaskId ? { taskId: normalizedTaskId } : {}),
+        ...(normalizedProvider ? { provider: normalizedProvider } : {}),
+        ...(normalizedModel ? { model: normalizedModel } : {}),
+        ...(context.conversationContext
+          ? { conversationContext: context.conversationContext }
+          : {}),
+      },
     });
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));

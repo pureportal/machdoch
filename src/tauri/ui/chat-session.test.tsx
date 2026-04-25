@@ -7,11 +7,13 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { AssistantPopupShell } from "./assistant-popup-shell";
 import { ChatSession } from "./chat-session";
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
 import {
   createInitialShellState,
   createSession,
+  QUICK_VOICE_SESSION_KIND,
   type ShellPersistedState,
 } from "./chat-session.model";
 import {
@@ -19,7 +21,7 @@ import {
   createPreviewFixture,
 } from "./preview/fixtures";
 import * as runtime from "./runtime";
-import type { RuntimeSnapshot } from "./runtime";
+import type { DesktopTaskRunResponse, RuntimeSnapshot } from "./runtime";
 import {
   desktopEventListeners,
   isTauriMock,
@@ -1598,5 +1600,136 @@ describe("ChatSession component", () => {
     )) as HTMLInputElement;
 
     expect(input.value).toBe("");
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("clears Quick Chat history from the popup", async () => {
+    const baseState = createInitialShellState();
+    const quickSession = createSession({
+      id: "quick-chat-session",
+      specialSession: QUICK_VOICE_SESSION_KIND,
+      updatedAt: 1_713_260_010_000,
+      messages: [
+        {
+          id: "quick-user-message",
+          taskId: "quick-task",
+          role: "user",
+          content: "Summarize open windows",
+          createdAt: 1_713_260_000_000,
+        },
+        {
+          id: "quick-agent-message",
+          taskId: "quick-task",
+          role: "agent",
+          content: "All visible windows are summarized.",
+          createdAt: 1_713_260_001_000,
+        },
+      ],
+      promptHistory: ["Summarize open windows"],
+      sessionMemory: [
+        {
+          id: "quick-memory",
+          scope: "session",
+          content: "The quick chat inspected open windows.",
+          createdAt: 1_713_260_002_000,
+          updatedAt: 1_713_260_002_000,
+        },
+      ],
+    });
+
+    storeShellState({
+      ...baseState,
+      sessions: [baseState.sessions[0], quickSession],
+    });
+
+    render(<AssistantPopupShell />);
+
+    expect(
+      await screen.findByText(
+        /Summarize open windows/i,
+        {},
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+      ),
+    ).toBeDefined();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear Quick Chat history" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Summarize open windows/i)).toBeNull();
+      expect(screen.getByText(/Quick tasks, no planning board/i)).toBeDefined();
+    });
+
+    await waitFor(() => {
+      const storedState = JSON.parse(
+        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "null",
+      ) as ShellPersistedState | null;
+      const storedQuickSession = storedState?.sessions.find(
+        (session) => session.specialSession === QUICK_VOICE_SESSION_KIND,
+      );
+
+      expect(storedQuickSession).toMatchObject({
+        id: "quick-chat-session",
+        specialSession: QUICK_VOICE_SESSION_KIND,
+        messages: [],
+        promptHistory: [],
+        sessionMemory: [],
+      });
+    });
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("clears running Quick Chat history without restoring the completed task", async () => {
+    let resolveTask: ((value: DesktopTaskRunResponse) => void) | null = null;
+    const runDesktopTaskSpy = vi
+      .spyOn(runtime, "runDesktopTask")
+      .mockImplementation(
+        () =>
+          new Promise<DesktopTaskRunResponse>((resolve) => {
+            resolveTask = resolve;
+          }),
+      );
+
+    render(<AssistantPopupShell />);
+
+    const input = await screen.findByPlaceholderText(/Quick task/i);
+
+    fireEvent.change(input, {
+      target: { value: "Count the apples" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
+
+    expect(await screen.findByText(/Count the apples/i)).toBeDefined();
+
+    const clearButton = screen.getByRole("button", {
+      name: "Clear Quick Chat history",
+    });
+
+    expect(clearButton).toHaveProperty("disabled", false);
+
+    fireEvent.click(clearButton);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Count the apples/i)).toBeNull();
+      expect(screen.getByText(/Quick tasks, no planning board/i)).toBeDefined();
+    });
+
+    vi.useFakeTimers();
+
+    await act(async () => {
+      resolveTask?.({
+        execution: createMockExecutionFixture(
+          "Count the apples",
+          "/mock/home/path",
+        ),
+      });
+      await Promise.resolve();
+      vi.advanceTimersByTime(250);
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText(/Preview only/i)).toBeNull();
+    expect(screen.queryByText(/Count the apples/i)).toBeNull();
+
+    runDesktopTaskSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 });

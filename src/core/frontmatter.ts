@@ -1,3 +1,4 @@
+import { normalizeOptionalString } from "../common/_helpers/normalize-optional-string.js";
 import type { FrontmatterValue, ParsedMarkdownDocument } from "./types.js";
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
@@ -112,7 +113,7 @@ const parseFrontmatterAttributes = (
     const key = trimmed.slice(0, separatorIndex).trim();
     const rawValue = trimmed.slice(separatorIndex + 1);
 
-    if (rawValue.trim().length === 0) {
+    if (!normalizeOptionalString(rawValue)) {
       const { nextIndex, values } = collectBlockArrayValues(lines, index + 1);
 
       if (values.length > 0) {
