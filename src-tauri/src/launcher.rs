@@ -2,6 +2,11 @@ use std::{env, process::Stdio};
 
 use crate::{desktop_shell, shared_cli};
 
+const CLI_FLAG: &str = "--cli";
+const UI_FLAG: &str = "--ui";
+const QUICK_FLAG: &str = "--quick";
+const CWD_FLAG: &str = "--cwd";
+
 pub(crate) enum LaunchAction {
     Cli(Vec<String>),
     Ui(desktop_shell::LaunchContext),
@@ -9,15 +14,15 @@ pub(crate) enum LaunchAction {
 
 pub(crate) fn resolve_launch_action() -> Result<LaunchAction, String> {
     let args: Vec<String> = env::args().skip(1).collect();
-    let has_cli_flag = args.iter().any(|arg| arg == "--cli");
-    let has_ui_flag = args.iter().any(|arg| arg == "--ui");
+    let has_cli_flag = contains_exact_flag(&args, CLI_FLAG);
+    let has_ui_flag = contains_exact_flag(&args, UI_FLAG);
 
     if has_cli_flag && has_ui_flag {
         return Err("Use either --cli or --ui, not both.".to_string());
     }
 
     let forwarded_args = strip_launcher_mode_flags(&args);
-    let has_quick_flag = forwarded_args.iter().any(|arg| arg == "--quick");
+    let has_quick_flag = contains_exact_flag(&forwarded_args, QUICK_FLAG);
 
     if has_ui_flag {
         if has_quick_flag {
@@ -71,13 +76,16 @@ pub(crate) fn run_cli(args: &[String]) -> Result<i32, String> {
 
 fn strip_launcher_mode_flags(args: &[String]) -> Vec<String> {
     args.iter()
-        .filter(|arg| arg.as_str() != "--cli" && arg.as_str() != "--ui")
+        .filter(|arg| arg.as_str() != CLI_FLAG && arg.as_str() != UI_FLAG)
         .cloned()
         .collect()
 }
 
 fn args_with_current_working_directory(args: Vec<String>) -> Result<Vec<String>, String> {
-    if args.iter().any(|arg| arg == "--cwd") {
+    if args
+        .iter()
+        .any(|arg| arg == CWD_FLAG || arg.starts_with("--cwd="))
+    {
         return Ok(args);
     }
 
@@ -95,6 +103,10 @@ fn args_with_current_working_directory(args: Vec<String>) -> Result<Vec<String>,
 fn has_non_ui_startup_args(args: &[String]) -> bool {
     args.iter()
         .any(|arg| arg.as_str() != desktop_shell::AUTOSTART_LAUNCH_ARG)
+}
+
+fn contains_exact_flag(args: &[String], flag: &str) -> bool {
+    args.iter().any(|arg| arg == flag)
 }
 
 fn ensure_ui_supported() -> Result<(), String> {

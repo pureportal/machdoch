@@ -14,15 +14,6 @@ const BUILD_NODE_REQUIREMENT: &str = "Node.js >= 20.10";
 
 pub(crate) struct SharedCliCommand {
     pub(crate) command: Command,
-    temporary_paths: Vec<PathBuf>,
-}
-
-impl Drop for SharedCliCommand {
-    fn drop(&mut self) {
-        for path in &self.temporary_paths {
-            let _ = fs::remove_file(path);
-        }
-    }
 }
 
 pub(crate) fn create_shared_cli_command(args: &[String]) -> Result<SharedCliCommand, String> {
@@ -55,10 +46,7 @@ fn create_source_cli_command(args: &[String]) -> Option<SharedCliCommand> {
         .arg(cli_entry_path)
         .args(args);
 
-    Some(SharedCliCommand {
-        command,
-        temporary_paths: Vec::new(),
-    })
+    Some(SharedCliCommand { command })
 }
 
 fn create_embedded_cli_command(args: &[String]) -> Result<SharedCliCommand, String> {
@@ -75,20 +63,11 @@ fn create_embedded_cli_command(args: &[String]) -> Result<SharedCliCommand, Stri
     }
 
     let node_path = write_embedded_node_runtime()?;
-    let entry_path = match write_embedded_cli_entry() {
-        Ok(path) => path,
-        Err(error) => {
-            let _ = fs::remove_file(&node_path);
-            return Err(error);
-        }
-    };
+    let entry_path = write_embedded_cli_entry()?;
     let mut command = Command::new(&node_path);
     command.arg(&entry_path).args(args);
 
-    Ok(SharedCliCommand {
-        command,
-        temporary_paths: vec![entry_path, node_path],
-    })
+    Ok(SharedCliCommand { command })
 }
 
 fn embedded_cli_available() -> bool {
@@ -106,48 +85,89 @@ fn resolve_repo_root() -> Option<PathBuf> {
 }
 
 fn write_embedded_cli_entry() -> Result<PathBuf, String> {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
-    let entry_path = get_runtime_directory()?.join(format!(
-        "machdoch-cli-{}-{}-{timestamp}.cjs",
+    let file_name = format!(
+        "machdoch-cli-{}-{:016x}.cjs",
         env!("CARGO_PKG_VERSION"),
-        std::process::id(),
-    ));
+        stable_content_hash(EMBEDDED_CLI_BUNDLE.as_bytes()),
+    );
 
-    fs::write(&entry_path, EMBEDDED_CLI_BUNDLE).map_err(|error| {
-        format!(
-            "Failed to materialize the bundled CLI at {}: {error}",
-            entry_path.display()
-        )
-    })?;
-
-    Ok(entry_path)
+    materialize_cached_runtime_file(file_name, EMBEDDED_CLI_BUNDLE.as_bytes(), false)
 }
 
 fn write_embedded_node_runtime() -> Result<PathBuf, String> {
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
+    let file_name = format!(
+        "machdoch-node-{}-{:016x}{suffix}",
+        env!("CARGO_PKG_VERSION"),
+        stable_content_hash(EMBEDDED_NODE_BINARY),
+    );
+
+    materialize_cached_runtime_file(file_name, EMBEDDED_NODE_BINARY, true)
+}
+
+fn materialize_cached_runtime_file(
+    file_name: String,
+    contents: &[u8],
+    executable: bool,
+) -> Result<PathBuf, String> {
+    let runtime_directory = get_runtime_directory()?;
+    let runtime_path = runtime_directory.join(&file_name);
+
+    if runtime_path.is_file() {
+        if executable {
+            make_executable(&runtime_path)?;
+        }
+
+        return Ok(runtime_path);
+    }
+
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
-    let suffix = if cfg!(windows) { ".exe" } else { "" };
-    let node_path = get_runtime_directory()?.join(format!(
-        "machdoch-node-{}-{}-{timestamp}{suffix}",
-        env!("CARGO_PKG_VERSION"),
+    let temporary_path = runtime_directory.join(format!(
+        ".{file_name}.{}.{timestamp}.tmp",
         std::process::id(),
     ));
 
-    fs::write(&node_path, EMBEDDED_NODE_BINARY).map_err(|error| {
+    fs::write(&temporary_path, contents).map_err(|error| {
         format!(
-            "Failed to materialize the bundled Node.js runtime at {}: {error}",
-            node_path.display()
+            "Failed to materialize the bundled CLI runtime file at {}: {error}",
+            temporary_path.display()
         )
     })?;
 
-    make_executable(&node_path)?;
+    if executable {
+        make_executable(&temporary_path)?;
+    }
 
-    Ok(node_path)
+    match fs::rename(&temporary_path, &runtime_path) {
+        Ok(()) => {}
+        Err(_) if runtime_path.is_file() => {
+            let _ = fs::remove_file(&temporary_path);
+
+            if executable {
+                make_executable(&runtime_path)?;
+            }
+        }
+        Err(error) => {
+            let _ = fs::remove_file(&temporary_path);
+
+            return Err(format!(
+                "Failed to move the bundled CLI runtime file from {} to {}: {error}",
+                temporary_path.display(),
+                runtime_path.display(),
+            ));
+        }
+    }
+
+    Ok(runtime_path)
+}
+
+fn stable_content_hash(contents: &[u8]) -> u64 {
+    contents.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
 }
 
 fn get_runtime_directory() -> Result<PathBuf, String> {
