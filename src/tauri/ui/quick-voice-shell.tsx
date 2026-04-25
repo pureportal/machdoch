@@ -44,7 +44,7 @@ const VOICE_ACTIVITY_THRESHOLD = 0.035;
 
 export const QuickVoiceShell = (): JSX.Element => {
   const controller = useChatSessionController({
-    isolateActiveSession: false,
+    enableSessionAutoProfile: false,
   });
   const speechToTextSettings = useMemo<UserSpeechToTextSettings>(() => {
     return {
@@ -354,31 +354,6 @@ export const QuickVoiceShell = (): JSX.Element => {
   }, [startRecording]);
 
   useEffect(() => {
-    let disposed = false;
-    let unsubscribe: (() => void) | undefined;
-
-    void getCurrentWindow()
-      .onFocusChanged(({ payload: focused }) => {
-        if (!focused && !recording && !transcribing) {
-          void getCurrentWindow().hide().catch(() => undefined);
-        }
-      })
-      .then((unlisten) => {
-        if (disposed) {
-          unlisten();
-          return;
-        }
-
-        unsubscribe = unlisten;
-      });
-
-    return () => {
-      disposed = true;
-      unsubscribe?.();
-    };
-  }, [recording, transcribing]);
-
-  useEffect(() => {
     return () => {
       cleanupRecording();
     };
@@ -474,10 +449,9 @@ export const QuickVoiceShell = (): JSX.Element => {
               )}
             />
             <span
-              className="absolute rounded-full bg-sky-500/10 transition-all duration-150"
+              className="absolute h-18 w-18 rounded-full bg-sky-500/10 transition-transform duration-150"
               style={{
-                width: `${72 + Math.min(level, 0.2) * 140}px`,
-                height: `${72 + Math.min(level, 0.2) * 140}px`,
+                transform: `scale(${1 + Math.min(level, 0.2) * 1.9})`,
               }}
             />
             <span className="relative z-10 flex h-16 w-16 items-center justify-center rounded-full bg-slate-950/90">

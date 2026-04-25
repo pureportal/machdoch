@@ -313,11 +313,13 @@ jobs:
           upload-release-assets: false
 
       - name: Attest build provenance
+        if: ${{ github.event.repository.visibility == 'public' }}
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: ${{ steps.bundles.outputs.paths }}
 
       - name: Attest SBOM
+        if: ${{ github.event.repository.visibility == 'public' }}
         uses: actions/attest-sbom@v3
         with:
           subject-path: ${{ steps.bundles.outputs.paths }}

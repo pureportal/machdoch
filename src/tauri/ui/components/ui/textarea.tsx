@@ -19,6 +19,8 @@ const Textarea = React.forwardRef<
 >(({ className, onChange, rows = 1, ...props }, forwardedRef) => {
   const internalRef = React.useRef<HTMLTextAreaElement | null>(null)
   const lastMeasuredWidthRef = React.useRef<number | null>(null)
+  const lastMeasuredHeightRef = React.useRef<number | null>(null)
+  const resizeFrameRef = React.useRef<number | null>(null)
 
   const resizeToContent = React.useCallback((): void => {
     const node = internalRef.current
@@ -28,8 +30,32 @@ const Textarea = React.forwardRef<
     }
 
     node.style.height = "auto"
-    node.style.height = `${node.scrollHeight}px`
+    const nextHeight = node.scrollHeight
+
+    if (lastMeasuredHeightRef.current !== nextHeight) {
+      lastMeasuredHeightRef.current = nextHeight
+      node.style.height = `${nextHeight}px`
+      return
+    }
+
+    node.style.height = `${nextHeight}px`
   }, [])
+
+  const scheduleResizeToContent = React.useCallback((): void => {
+    if (typeof window.requestAnimationFrame !== "function") {
+      resizeToContent()
+      return
+    }
+
+    if (resizeFrameRef.current !== null) {
+      window.cancelAnimationFrame(resizeFrameRef.current)
+    }
+
+    resizeFrameRef.current = window.requestAnimationFrame(() => {
+      resizeFrameRef.current = null
+      resizeToContent()
+    })
+  }, [resizeToContent])
 
   const handleRef = React.useCallback(
     (node: HTMLTextAreaElement | null): void => {
@@ -41,8 +67,8 @@ const Textarea = React.forwardRef<
 
   const handleChange = React.useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>): void => {
-      resizeToContent()
       onChange?.(event)
+      resizeToContent()
     },
     [onChange, resizeToContent],
   )
@@ -80,7 +106,7 @@ const Textarea = React.forwardRef<
 
   React.useEffect(() => {
     const handleWindowResize = (): void => {
-      resizeToContent()
+      scheduleResizeToContent()
     }
 
     window.addEventListener("resize", handleWindowResize)
@@ -88,7 +114,18 @@ const Textarea = React.forwardRef<
     return () => {
       window.removeEventListener("resize", handleWindowResize)
     }
-  }, [resizeToContent])
+  }, [scheduleResizeToContent])
+
+  React.useEffect(() => {
+    return () => {
+      if (
+        resizeFrameRef.current !== null &&
+        typeof window.cancelAnimationFrame === "function"
+      ) {
+        window.cancelAnimationFrame(resizeFrameRef.current)
+      }
+    }
+  }, [])
 
   return (
     <textarea

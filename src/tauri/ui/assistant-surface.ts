@@ -241,8 +241,7 @@ export const toggleAssistantPopup = async (
       }
     }
 
-    await popupWindow.show();
-    await popupWindow.unminimize();
+    await Promise.all([popupWindow.show(), popupWindow.unminimize()]);
     await popupWindow.setFocus();
   } catch (error) {
     console.error("Failed to toggle the assistant popup", error);
@@ -279,8 +278,7 @@ export const showQuickVoiceWindow = async (): Promise<void> => {
       await setWindowPosition(quickVoiceWindow, layout.quickVoicePosition);
     }
 
-    await quickVoiceWindow.show();
-    await quickVoiceWindow.unminimize();
+    await Promise.all([quickVoiceWindow.show(), quickVoiceWindow.unminimize()]);
     await quickVoiceWindow.setFocus();
     await getCurrentWindow().emitTo(
       QUICK_VOICE_WINDOW_LABEL,

@@ -193,7 +193,11 @@ const DEFAULT_MOCK_WORKSPACE_ROOT = "/mock/home/path";
 const DESKTOP_TASK_PROGRESS_EVENT = "desktop-task-progress";
 
 const canListenToDesktopTaskProgress = (): boolean => {
-  return tauriCore.isTauri() || import.meta.env.MODE === "test";
+  const importMeta = import.meta as ImportMeta & {
+    env?: { MODE?: string };
+  };
+
+  return tauriCore.isTauri() || importMeta.env?.MODE === "test";
 };
 
 const canInvokeTauriCommands = (): boolean => {
@@ -531,7 +535,7 @@ export const detectFullscreenWindowOnMonitor = async (
   try {
     return await tauriCore.invoke<boolean>(
       "detect_fullscreen_window_on_monitor",
-      monitor,
+      { ...monitor },
     );
   } catch (error) {
     console.error("Failed to detect fullscreen window on monitor", error);

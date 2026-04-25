@@ -1,4 +1,4 @@
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInitialShellState, createSession } from "../../chat-session.model";
 import { useChatSessionShellState } from "./use-chat-session-shell-state";
@@ -14,6 +14,25 @@ const flushShellHydration = async (): Promise<void> => {
     await Promise.resolve();
     await Promise.resolve();
   });
+};
+
+const flushShellPersistence = async (): Promise<void> => {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+};
+
+const loadStoredShellState = (): ReturnType<typeof createInitialShellState> => {
+  const storedValue = window.localStorage.getItem(SHELL_STATE_STORAGE_KEY);
+
+  expect(storedValue).not.toBeNull();
+
+  return JSON.parse(storedValue as string) as ReturnType<
+    typeof createInitialShellState
+  >;
 };
 
 beforeAll(() => {
@@ -32,6 +51,105 @@ afterEach(() => {
 });
 
 describe("useChatSessionShellState", () => {
+  it("does not rewrite persisted state when a helper window only hydrates", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-stable",
+      manualTitle: "Stable session",
+      updatedAt: 1,
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
+
+    renderHook(() => useChatSessionShellState());
+    await flushShellHydration();
+    await flushShellPersistence();
+
+    expect(setItemSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps live draft edits local instead of persisting every keystroke", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-draft",
+      manualTitle: "Draft session",
+      updatedAt: 1,
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
+    const { result } = renderHook(() => useChatSessionShellState());
+
+    await flushShellHydration();
+
+    act(() => {
+      result.current.setDraftValue("This should stay local.");
+    });
+
+    expect(result.current.activeSession.draft).toBe("This should stay local.");
+    await flushShellPersistence();
+
+    expect(setItemSpy).not.toHaveBeenCalled();
+    expect(loadStoredShellState().sessions[0]?.draft).toBe("");
+  });
+
+  it("merges helper-window updates with newer archived session state", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-archive-race",
+      manualTitle: "Archive race",
+      updatedAt: 1,
+    });
+    const storedState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    };
+
+    storeShellState(storedState);
+
+    const { result } = renderHook(() => useChatSessionShellState());
+    await flushShellHydration();
+
+    storeShellState({
+      ...storedState,
+      sessions: [
+        {
+          ...session,
+          archivedAt: 10,
+        },
+      ],
+    });
+
+    act(() => {
+      result.current.applyShellState((prev) => ({
+        ...prev,
+        voice: {
+          ...prev.voice,
+          autoSpeakResponses: true,
+        },
+      }));
+    });
+
+    await waitFor(() => {
+      const persisted = loadStoredShellState();
+
+      expect(persisted.voice.autoSpeakResponses).toBe(true);
+      expect(persisted.sessions[0]?.archivedAt).toBe(10);
+    });
+  });
+
   it("keeps the window-local active session stable when persisted activeSessionId changes", async () => {
     const baseState = createInitialShellState();
     const firstSession = createSession({

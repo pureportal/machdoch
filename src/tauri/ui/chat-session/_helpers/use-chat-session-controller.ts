@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   type KeyboardEvent,
   type MouseEvent,
@@ -17,6 +18,7 @@ import {
   canDeleteSession,
   canRenameSession,
   createSession,
+  createVisibleConversationMessages,
   getSessionOverviewStatus,
   getSessionTitle,
   isQuickVoiceSession,
@@ -104,11 +106,13 @@ const clampQuickVoiceMessageLimit = (value: number): number => {
 
 export interface UseChatSessionControllerOptions {
   isolateActiveSession?: boolean;
+  enableSessionAutoProfile?: boolean;
 }
 
 export const useChatSessionController = (
   options: UseChatSessionControllerOptions = {},
 ) => {
+  const enableSessionAutoProfile = options.enableSessionAutoProfile !== false;
   const state = useChatSessionShellState({
     isolateActiveSession: options.isolateActiveSession,
   });
@@ -142,6 +146,10 @@ export const useChatSessionController = (
       if (sessionId === state.activeSession.id) {
         state.setPromptHistoryIndex(null);
         state.setDraftBeforeHistory("");
+        state.setDraftValue(
+          appendTranscriptToDraft(state.activeSession.draft, normalizedTranscript),
+        );
+        return;
       }
 
       state.updateSessionById(sessionId, (session) => ({
@@ -149,7 +157,14 @@ export const useChatSessionController = (
         draft: appendTranscriptToDraft(session.draft, normalizedTranscript),
       }));
     },
-    [state.activeSession.id, state.setDraftBeforeHistory, state.setPromptHistoryIndex, state.updateSessionById],
+    [
+      state.activeSession.draft,
+      state.activeSession.id,
+      state.setDraftBeforeHistory,
+      state.setDraftValue,
+      state.setPromptHistoryIndex,
+      state.updateSessionById,
+    ],
   );
   const speechInput = useChatSessionSpeechInput({
     activeSessionId: state.activeSession.id,
@@ -167,6 +182,14 @@ export const useChatSessionController = (
     userMemorySettings: runtime.userMemorySettings,
   });
   const currentSessionTitle = getSessionTitle(state.activeSession);
+  const quickTaskSession = useMemo(() => {
+    return state.shellState.sessions.find(isQuickVoiceSession) ?? null;
+  }, [state.shellState.sessions]);
+  const quickTaskVisibleMessages = useMemo(() => {
+    return quickTaskSession
+      ? createVisibleConversationMessages(quickTaskSession.messages)
+      : [];
+  }, [quickTaskSession]);
   const activeRunMode = getEffectiveSessionMode(
     state.activeSession.mode,
     runtime.runtimeSnapshot,
@@ -662,6 +685,10 @@ export const useChatSessionController = (
   );
 
   useEffect(() => {
+    if (!enableSessionAutoProfile) {
+      return;
+    }
+
     if (!state.activeSession.workspace || state.activeSession.profile) {
       return;
     }
@@ -690,6 +717,7 @@ export const useChatSessionController = (
       console.error("Failed to auto-apply runtime profile", error);
     });
   }, [
+    enableSessionAutoProfile,
     handleSessionProfileSelection,
     runtime.runtimeSnapshot,
     state.activeSession.profile,
@@ -1013,6 +1041,10 @@ export const useChatSessionController = (
         state.setActiveSessionId(sessionId);
       }
 
+      if (options.clearDraft && sessionId === state.activeSession.id) {
+        state.setDraftValue("");
+      }
+
       if (sessionId === state.activeSession.id) {
         state.setPromptHistoryIndex(null);
         state.setDraftBeforeHistory("");
@@ -1089,6 +1121,7 @@ export const useChatSessionController = (
       state.setActiveSessionId,
       state.scheduleMessage,
       state.sessionScopeFilter,
+      state.setDraftValue,
       state.setDraftBeforeHistory,
       state.setPromptHistoryIndex,
       state.setSessionScopeFilter,
@@ -1135,6 +1168,13 @@ export const useChatSessionController = (
   return {
     isDesktop,
     submitQuickVoiceCommand,
+    quickTask: {
+      session: quickTaskSession,
+      visibleMessages: quickTaskVisibleMessages,
+      status: quickTaskSession
+        ? getSessionOverviewStatus(quickTaskSession)
+        : "empty",
+    },
     catalogOpen: state.catalogOpen,
     setCatalogOpen: state.setCatalogOpen,
     hasAnyProvider: providerChooserState.hasAnyProvider,

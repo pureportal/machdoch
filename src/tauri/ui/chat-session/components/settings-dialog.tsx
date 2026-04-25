@@ -739,7 +739,7 @@ export const SettingsDialog = ({
                       Quick voice command
                     </p>
                     <p className="text-sm leading-6 text-slate-400">
-                      Launch a small recording overlay from anywhere, stop automatically after silence, and send the transcript to the protected Quick Voice session.
+                      Launch a small recording overlay from anywhere, stop automatically after silence, and send the transcript to the protected Quick Tasks session.
                     </p>
                   </div>
 
@@ -828,7 +828,7 @@ export const SettingsDialog = ({
 
                   <div className="grid gap-2 md:max-w-xs">
                     <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                      Quick Voice message cap
+                      Quick Tasks message cap
                     </p>
                     <Input
                       type="number"
@@ -845,7 +845,7 @@ export const SettingsDialog = ({
                       className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
                     />
                     <p className="text-sm leading-6 text-slate-400">
-                      Older Quick Voice messages are trimmed automatically once the protected session reaches this size.
+                      Older quick-task messages are trimmed automatically once the protected session reaches this size.
                     </p>
                   </div>
                 </div>

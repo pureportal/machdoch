@@ -145,7 +145,7 @@ export const createSession = (
 
 export const getSessionTitle = (session: ChatSessionRecord): string => {
   if (session.specialSession === QUICK_VOICE_SESSION_KIND) {
-    return "Quick Voice";
+    return "Quick Tasks";
   }
 
   if (session.manualTitle?.trim()) {

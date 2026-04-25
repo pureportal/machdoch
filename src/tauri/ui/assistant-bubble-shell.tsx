@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { MessageSquareMore, Mic } from "lucide-react";
+import { MessageSquareMore, Mic, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, type MouseEvent } from "react";
 import { getSessionOverviewStatus } from "./chat-session.model";
 import {
@@ -14,7 +14,7 @@ import { useUserDesktopSettings } from "./_helpers/use-user-desktop-settings";
 import { useChatSessionShellState } from "./chat-session/_helpers/use-chat-session-shell-state";
 import { detectFullscreenWindowOnMonitor } from "./runtime";
 
-const BUBBLE_SYNC_INTERVAL_MS = 1000;
+const BUBBLE_SYNC_INTERVAL_MS = 2500;
 
 export const AssistantBubbleShell = () => {
   const state = useChatSessionShellState();
@@ -25,6 +25,7 @@ export const AssistantBubbleShell = () => {
   const lastBubblePositionRef = useRef<string | null>(null);
   const lastPopupPositionRef = useRef<{ x: number; y: number } | null>(null);
   const syncInFlightRef = useRef(false);
+  const togglePopupInFlightRef = useRef(false);
 
   const activeSessionSummary = useMemo(() => {
     let runningCount = 0;
@@ -77,8 +78,6 @@ export const AssistantBubbleShell = () => {
       } catch {
         // ignore no-op hide failures while syncing
       }
-
-      await hideAssistantPopup();
     };
 
     const syncBubbleWindow = async (): Promise<void> => {
@@ -163,7 +162,16 @@ export const AssistantBubbleShell = () => {
       return;
     }
 
-    void toggleAssistantPopup(lastPopupPositionRef.current ?? undefined);
+    if (togglePopupInFlightRef.current) {
+      return;
+    }
+
+    togglePopupInFlightRef.current = true;
+    void toggleAssistantPopup(lastPopupPositionRef.current ?? undefined).finally(
+      () => {
+        togglePopupInFlightRef.current = false;
+      },
+    );
   };
 
   return (
@@ -171,18 +179,19 @@ export const AssistantBubbleShell = () => {
       <div className="relative">
         <button
           type="button"
-          aria-label="Open assistant popup"
-          title="Open assistant popup"
+          aria-label="Open Quick Chat"
+          title="Open Quick Chat"
           onClick={handleBubbleClick}
           onMouseDown={handleBubbleMouseDown}
           onContextMenu={(event) => {
             event.preventDefault();
             event.stopPropagation();
           }}
-          className="group relative flex h-17 w-17 items-center justify-center rounded-full border border-slate-700/80 bg-slate-950/95 text-slate-100 shadow-none outline-none transition-colors duration-150 hover:border-sky-500/40 hover:bg-slate-900/95 focus-visible:ring-0"
+          className="group relative flex h-17 w-17 items-center justify-center rounded-[1.35rem] border border-sky-400/25 bg-slate-950/95 text-slate-100 shadow-none outline-none transition-colors duration-150 hover:border-sky-300/45 hover:bg-slate-900/95 focus-visible:ring-0"
         >
-          <span className="absolute inset-1.25 rounded-full bg-slate-900/95" />
+          <span className="absolute inset-1.25 rounded-[1.05rem] bg-sky-400/8" />
           <MessageSquareMore className="relative z-10 h-6 w-6 text-sky-100 transition-colors group-hover:text-white" />
+          <Zap className="absolute right-3 top-3 z-10 h-3 w-3 text-sky-300" />
 
           {activeSessionSummary.pendingCount > 0 ? (
             <span className="absolute -right-1 -top-1 z-20 flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold text-slate-950">
@@ -205,9 +214,9 @@ export const AssistantBubbleShell = () => {
             event.preventDefault();
             event.stopPropagation();
           }}
-          className="absolute -bottom-1 -left-1 z-20 flex h-7 w-7 items-center justify-center rounded-full border border-violet-400/40 bg-violet-500 text-white shadow-none transition-colors duration-150 hover:bg-violet-400 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:hover:bg-slate-800"
+          className="absolute -bottom-1.5 -left-1.5 z-20 flex h-8 w-8 items-center justify-center rounded-xl border border-violet-300/45 bg-violet-500 text-white shadow-none transition-colors duration-150 hover:bg-violet-400 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:hover:bg-slate-800"
         >
-          <Mic className="h-3 w-3" />
+          <Mic className="h-3.5 w-3.5" />
         </button>
       </div>
     </div>
