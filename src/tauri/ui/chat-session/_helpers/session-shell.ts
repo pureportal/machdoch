@@ -57,14 +57,12 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
 export const MODEL_STAGE_LABELS: Record<CatalogModelStage, string> = {
   stable: "Stable",
   preview: "Preview",
-  specialized: "Specialized",
   open: "Open",
 };
 
 export const MODEL_STAGE_CLASSES: Record<CatalogModelStage, string> = {
   stable: "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
   preview: "border-amber-500/20 bg-amber-500/10 text-amber-200",
-  specialized: "border-sky-500/20 bg-sky-500/10 text-sky-200",
   open: "border-violet-500/20 bg-violet-500/10 text-violet-200",
 };
 

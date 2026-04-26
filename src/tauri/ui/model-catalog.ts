@@ -5,7 +5,7 @@ export type RuntimeProvider =
 
 export type CatalogProviderId = RuntimeProvider | "xai" | "mistral";
 
-export type CatalogModelStage = "stable" | "preview" | "specialized" | "open";
+export type CatalogModelStage = "stable" | "preview" | "open";
 
 export interface CatalogModel {
   id: string;
@@ -45,8 +45,15 @@ export const FRONTIER_PROVIDER_CATALOG: CatalogProvider[] = [
     docsUrl: "https://developers.openai.com/api/docs/models",
     supportedInApp: true,
     note:
-      "Official OpenAI docs recommend gpt-5.4 as the flagship frontier model, with mini and nano variants for lower latency and cost.",
+      "Official OpenAI docs recommend gpt-5.5 as the flagship frontier model, with GPT-5.4 mini and nano variants for lower latency and cost.",
     models: [
+      {
+        id: "gpt-5.5",
+        label: "GPT-5.5",
+        stage: "stable",
+        description: "Latest flagship frontier model for complex reasoning, coding, and agentic workflows.",
+        bestFor: "Deep coding, planning, and high-stakes automation.",
+      },
       {
         id: "gpt-5.4",
         label: "GPT-5.4",
@@ -67,20 +74,6 @@ export const FRONTIER_PROVIDER_CATALOG: CatalogProvider[] = [
         stage: "stable",
         description: "Smallest GPT-5.4 family model for high-volume structured work.",
         bestFor: "Classification, routing, summarization, and lightweight background jobs.",
-      },
-      {
-        id: "gpt-image-1.5",
-        label: "GPT Image 1.5",
-        stage: "specialized",
-        description: "State-of-the-art OpenAI image generation and editing model.",
-        bestFor: "Image generation, editing, and asset pipelines.",
-      },
-      {
-        id: "gpt-realtime-1.5",
-        label: "GPT Realtime 1.5",
-        stage: "specialized",
-        description: "Realtime speech-to-speech model for voice agents.",
-        bestFor: "Voice-first desktop and audio interaction workflows.",
       },
     ],
   },

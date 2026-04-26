@@ -1,5 +1,5 @@
-import { Bot } from "lucide-react";
-import type { JSX } from "react";
+import { Bot, Check, ChevronDown } from "lucide-react";
+import { useEffect, useState, type JSX } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
@@ -31,74 +31,169 @@ export const SessionModelPicker = ({
   activeModel,
   onSessionModelSelection,
 }: SessionModelPickerProps): JSX.Element => {
+  const [open, setOpen] = useState(false);
+  const [visibleProvider, setVisibleProvider] = useState(activeProvider);
+
+  useEffect(() => {
+    setVisibleProvider(activeProvider);
+  }, [activeProvider]);
+
+  const activeProviderModels = getCatalogModelsForProvider(activeProvider);
+  const activeModelMeta = activeProviderModels.find(
+    (model) => model.id === activeModel,
+  );
+  const activeModelLabel = activeModelMeta?.label ?? activeModel;
+  const selectedProvider = chooserProviders.includes(visibleProvider)
+    ? visibleProvider
+    : (chooserProviders[0] ?? activeProvider);
+  const selectedProviderModels = getCatalogModelsForProvider(selectedProvider);
+
+  const handleSessionModelSelection = (
+    provider: RuntimeProvider,
+    model: string,
+  ): void => {
+    onSessionModelSelection(provider, model);
+    setOpen(false);
+  };
+
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           type="button"
           variant="outline"
+          aria-label={`Session model: ${getProviderLabel(activeProvider)} ${activeModelLabel}`}
           disabled={chooserProviders.length === 0}
-          className="h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:opacity-50"
+          className="h-8 max-w-68 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:border-sky-500/30 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-50"
         >
-          <Bot className="mr-2 h-3.5 w-3.5 text-slate-500" />
-          {getProviderLabel(activeProvider)} · {activeModel}
+          <Bot className="h-3.5 w-3.5 text-sky-300" />
+          <span className="min-w-0 truncate">
+            {getProviderLabel(activeProvider)} · {activeModelLabel}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[30rem] rounded-3xl border-slate-800 bg-slate-950/95 p-5 shadow-2xl backdrop-blur-xl"
+        sideOffset={8}
+        className="w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border-slate-800 bg-slate-950/98 p-0 shadow-2xl shadow-sky-950/30 backdrop-blur-xl"
       >
-        <div className="grid gap-4">
-          <div className="grid gap-1">
-            <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-              Session model
-            </p>
-            <p className="text-sm leading-6 text-slate-400">
-              Each session keeps its own model, and new sessions reuse the last
-              model you selected.
-            </p>
+        <div className="border-b border-slate-800/80 px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase">
+                Session model
+              </p>
+              <p className="mt-1 truncate text-sm font-semibold text-slate-100">
+                {getProviderLabel(activeProvider)} · {activeModelLabel}
+              </p>
+            </div>
+            {activeModelMeta ? (
+              <Badge
+                className={cn(
+                  "border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide",
+                  MODEL_STAGE_CLASSES[activeModelMeta.stage],
+                )}
+              >
+                {MODEL_STAGE_LABELS[activeModelMeta.stage]}
+              </Badge>
+            ) : null}
           </div>
+        </div>
 
-          {chooserProviders.map((provider) => (
-            <div key={provider} className="grid gap-2">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-slate-100">
-                  {getProviderLabel(provider)}
-                </p>
-                {activeProvider === provider ? (
-                  <Badge className="border-sky-500/20 bg-sky-500/10 text-sky-200">
-                    Current provider
-                  </Badge>
-                ) : null}
-              </div>
+        <div className="grid gap-3 p-3">
+          <div className="grid gap-2">
+            <div
+              className="flex flex-wrap gap-2"
+              role="tablist"
+              aria-label="Model providers"
+            >
+              {chooserProviders.map((provider) => {
+                const isVisible = selectedProvider === provider;
+                const isCurrent = activeProvider === provider;
 
-              <div className="flex flex-wrap gap-2">
-                {getCatalogModelsForProvider(provider).map((model) => (
+                return (
                   <button
-                    key={`${provider}-${model.id}`}
+                    key={provider}
                     type="button"
-                    onClick={() => onSessionModelSelection(provider, model.id)}
+                    role="tab"
+                    aria-selected={isVisible}
+                    onClick={() => setVisibleProvider(provider)}
                     className={cn(
-                      "rounded-full border px-3 py-1.5 text-left text-xs transition-all",
-                      activeProvider === provider && activeModel === model.id
-                        ? "border-sky-500/30 bg-sky-500/12 text-sky-100"
-                        : "border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700 hover:text-slate-200",
+                      "flex h-8 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition-all",
+                      isVisible
+                        ? "border-sky-500/30 bg-sky-500/12 text-sky-100 shadow-[0_0_18px_rgba(14,165,233,0.14)]"
+                        : "border-slate-800 bg-slate-900/70 text-slate-400 hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
                     )}
                   >
-                    <span className="font-semibold">{model.label}</span>
-                    <span
+                    {isCurrent ? <Check className="h-3.5 w-3.5" /> : null}
+                    {getProviderLabel(provider)}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between gap-3 px-1">
+                <p className="text-sm font-semibold text-slate-100">
+                  {getProviderLabel(selectedProvider)} models
+                </p>
+                <span className="text-xs text-slate-500">
+                  {selectedProviderModels.length} available
+                </span>
+              </div>
+
+              <div className="grid max-h-72 gap-1.5 overflow-y-auto pr-1">
+                {selectedProviderModels.map((model) => {
+                  const isSelected =
+                    activeProvider === selectedProvider &&
+                    activeModel === model.id;
+
+                  return (
+                    <button
+                      key={`${selectedProvider}-${model.id}`}
+                      type="button"
+                      aria-label={`Choose ${getProviderLabel(selectedProvider)} ${model.label}. ${model.description}`}
+                      aria-pressed={isSelected}
+                      title={model.bestFor}
+                      onClick={() =>
+                        handleSessionModelSelection(selectedProvider, model.id)
+                      }
                       className={cn(
-                        "ml-2 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                        MODEL_STAGE_CLASSES[model.stage],
+                        "group flex w-full items-center gap-2 rounded-2xl border px-2.5 py-2 text-left transition-all",
+                        isSelected
+                          ? "border-sky-500/35 bg-sky-500/10 text-sky-100 shadow-[0_0_18px_rgba(14,165,233,0.12)]"
+                          : "border-slate-800 bg-slate-900/65 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
                       )}
                     >
-                      {MODEL_STAGE_LABELS[model.stage]}
-                    </span>
-                  </button>
-                ))}
+                      <span
+                        className={cn(
+                          "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+                          isSelected
+                            ? "border-sky-400/30 bg-sky-400/15 text-sky-200"
+                            : "border-slate-700 bg-transparent group-hover:border-slate-500",
+                        )}
+                      >
+                        {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
+                      </span>
+
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-100">
+                        {model.label}
+                      </span>
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                          MODEL_STAGE_CLASSES[model.stage],
+                        )}
+                      >
+                        {MODEL_STAGE_LABELS[model.stage]}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          ))}
+          </div>
         </div>
       </PopoverContent>
     </Popover>
