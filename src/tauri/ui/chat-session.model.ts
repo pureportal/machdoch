@@ -117,6 +117,10 @@ export const createSession = (
 ): ChatSessionRecord => {
   const provider = overrides.provider ?? DEFAULT_PROVIDER;
   const now = overrides.updatedAt ?? Date.now();
+  const specialSession = isSpecialSessionKind(overrides.specialSession)
+    ? overrides.specialSession
+    : undefined;
+  const isQuickTaskSession = specialSession === QUICK_VOICE_SESSION_KIND;
 
   return {
     id: overrides.id ?? crypto.randomUUID(),
@@ -125,9 +129,7 @@ export const createSession = (
     ...(typeof overrides.archivedAt === "number"
       ? { archivedAt: overrides.archivedAt }
       : {}),
-    ...(isSpecialSessionKind(overrides.specialSession)
-      ? { specialSession: overrides.specialSession }
-      : {}),
+    ...(specialSession ? { specialSession } : {}),
     workspace: overrides.workspace ?? null,
     ...(overrides.profile ? { profile: overrides.profile } : {}),
     provider,
@@ -137,10 +139,12 @@ export const createSession = (
     ...(overrides.manualTitle ? { manualTitle: overrides.manualTitle } : {}),
     messages: overrides.messages ?? [],
     promptHistory: overrides.promptHistory ?? [],
-    sessionMemoryEnabled: overrides.sessionMemoryEnabled ?? true,
+    sessionMemoryEnabled: isQuickTaskSession
+      ? false
+      : (overrides.sessionMemoryEnabled ?? true),
     useGlobalMemory: overrides.useGlobalMemory ?? true,
     uiControlEnabled: overrides.uiControlEnabled ?? false,
-    sessionMemory: overrides.sessionMemory ?? [],
+    sessionMemory: isQuickTaskSession ? [] : (overrides.sessionMemory ?? []),
   };
 };
 
@@ -209,13 +213,15 @@ const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord =
     : DEFAULT_PROVIDER;
   const preserveModel = provider === session.provider;
   const mode = isRunMode(session.mode) ? session.mode : undefined;
+  const specialSession = isSpecialSessionKind(session.specialSession)
+    ? session.specialSession
+    : undefined;
+  const isQuickTaskSession = specialSession === QUICK_VOICE_SESSION_KIND;
 
   return createSession({
     ...session,
     provider,
-    ...(isSpecialSessionKind(session.specialSession)
-      ? { specialSession: session.specialSession }
-      : {}),
+    ...(specialSession ? { specialSession } : {}),
     ...(typeof session.profile === "string" && session.profile.trim().length > 0
       ? { profile: session.profile }
       : {}),
@@ -232,13 +238,14 @@ const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord =
       typeof session.manualTitle === "string" ? session.manualTitle : undefined,
     messages: Array.isArray(session.messages) ? session.messages : [],
     promptHistory: normalizePromptHistoryEntries(session.promptHistory),
-    sessionMemoryEnabled: session.sessionMemoryEnabled !== false,
+    sessionMemoryEnabled: isQuickTaskSession
+      ? false
+      : session.sessionMemoryEnabled !== false,
     useGlobalMemory: session.useGlobalMemory !== false,
     uiControlEnabled: session.uiControlEnabled === true,
-    sessionMemory: normalizeConversationMemoryEntries(
-      session.sessionMemory,
-      "session",
-    ),
+    sessionMemory: isQuickTaskSession
+      ? []
+      : normalizeConversationMemoryEntries(session.sessionMemory, "session"),
     createdAt:
       typeof session.createdAt === "number" ? session.createdAt : undefined,
     updatedAt:

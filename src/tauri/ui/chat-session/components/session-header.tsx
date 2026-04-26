@@ -11,11 +11,14 @@ export interface SessionHeaderProps {
   renameValue: string;
   canRenameSession: boolean;
   canDeleteSession: boolean;
+  showClearSessionHistory: boolean;
+  canClearSessionHistory: boolean;
   onRenameValueChange: (value: string) => void;
   onRenameCommit: () => void;
   onRenameCancel: () => void;
   onCreateSession: () => void;
   onStartRename: () => void;
+  onClearSessionHistory: () => void;
   onDeleteSession: () => void;
 }
 
@@ -25,10 +28,13 @@ export const SessionHeader = ({
   renameValue,
   canRenameSession,
   canDeleteSession,
+  showClearSessionHistory,
+  canClearSessionHistory,
   onRenameValueChange,
   onRenameCommit,
   onRenameCancel,
   onStartRename,
+  onClearSessionHistory,
   onDeleteSession,
 }: SessionHeaderProps): JSX.Element => {
   return (
@@ -61,6 +67,20 @@ export const SessionHeader = ({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        {showClearSessionHistory ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label="Clear Quick Tasks history"
+            disabled={!canClearSessionHistory}
+            onClick={onClearSessionHistory}
+            className="h-9 rounded-2xl px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100 disabled:text-slate-700 disabled:opacity-100"
+          >
+            Clear
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        ) : null}
         {canRenameSession ? (
           <Button
             type="button"

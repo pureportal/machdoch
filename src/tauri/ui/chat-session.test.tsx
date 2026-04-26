@@ -20,14 +20,17 @@ import {
   createMockExecutionFixture,
   createPreviewFixture,
 } from "./preview/fixtures";
+import { resolveAssistantSurfaceLayout } from "./assistant-surface";
 import * as runtime from "./runtime";
 import type { DesktopTaskRunResponse, RuntimeSnapshot } from "./runtime";
 import {
   desktopEventListeners,
   isTauriMock,
   listenMock,
+  monitorFromPoint,
   openMock,
   openUrlMock,
+  windowDragDropListeners,
 } from "./test/tauri-test-mocks";
 
 class ResizeObserverMock {
@@ -169,8 +172,10 @@ beforeEach(() => {
   openMock.mockResolvedValue("/mocked/tauri/path");
   openMock.mockClear();
   openUrlMock.mockClear();
+  monitorFromPoint.mockResolvedValue(null);
   listenMock.mockClear();
   desktopEventListeners.clear();
+  windowDragDropListeners.clear();
   window.localStorage.clear();
 });
 
@@ -217,6 +222,16 @@ const storeAutoReadVoiceShellState = (): void => {
     },
   });
 };
+
+const createMonitorSnapshot = (workAreaHeight: number, scaleFactor = 1) => ({
+  position: { x: 0, y: 0 },
+  size: { width: 1280 * scaleFactor, height: workAreaHeight * scaleFactor },
+  workArea: {
+    position: { x: 0, y: 0 },
+    size: { width: 1280 * scaleFactor, height: workAreaHeight * scaleFactor },
+  },
+  scaleFactor,
+});
 
 const flushShellHydration = async (): Promise<void> => {
   await act(async () => {
@@ -409,13 +424,28 @@ const emitDesktopTaskProgress = (payload: {
   });
 };
 
+const emitWindowDropEvent = (
+  payload:
+    | { type: "enter"; paths: string[]; position: { x: number; y: number } }
+    | { type: "drop"; paths: string[]; position: { x: number; y: number } }
+    | { type: "leave" },
+): void => {
+  const handler = [...windowDragDropListeners].at(-1);
+
+  expect(handler).toBeDefined();
+
+  act(() => {
+    handler?.({ payload });
+  });
+};
+
 describe("ChatSession component", () => {
   it("renders empty state initially", () => {
     render(<ChatSession />);
     expect(screen.getByText(/Ready to automate/i)).toBeDefined();
     expect(
-      screen.getByText(/Pick a workspace anytime, or start from your home/i),
-    ).toBeDefined();
+      screen.queryByText(/Pick a workspace anytime, or start from your home/i),
+    ).toBeNull();
     expect(
       screen.getByPlaceholderText(/What should machdoch do next\?/i),
     ).toBeDefined();
@@ -954,7 +984,7 @@ describe("ChatSession component", () => {
 
       fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
 
-      expect(await screen.findByText(/Model providers/i)).toBeDefined();
+      expect(await screen.findByText(/Model provider keys/i)).toBeDefined();
 
       fireEvent.click(screen.getByRole("button", { name: /^Web search$/i }));
 
@@ -971,7 +1001,6 @@ describe("ChatSession component", () => {
           ) as HTMLInputElement
         ).value,
       ).toBe("");
-      expect(screen.getByText(/The executor hides web search/i)).toBeDefined();
       expect(screen.queryByText(/Missing key/i)).toBeNull();
 
       fireEvent.click(screen.getByRole("button", { name: /^Memory$/i }));
@@ -982,6 +1011,58 @@ describe("ChatSession component", () => {
     },
     SLOW_UI_TEST_TIMEOUT_MS,
   );
+
+  it("saves Start in Tray as the desktop startup behavior", async () => {
+    const saveUserDesktopSettingsSpy = vi
+      .spyOn(runtime, "saveUserDesktopSettings")
+      .mockImplementation(async (settings) => settings);
+
+    render(<ChatSession />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Desktop$/i }));
+
+    const launchPanel = screen
+      .getByText(/^Launch on sign-in$/i)
+      .closest(".rounded-2xl");
+    const startupPanel = screen
+      .getByText(/^Startup behavior$/i)
+      .closest(".rounded-2xl");
+
+    expect(launchPanel).not.toBeNull();
+    expect(startupPanel).not.toBeNull();
+
+    fireEvent.click(
+      within(launchPanel as HTMLElement).getByRole("button", {
+        name: "Enabled",
+      }),
+    );
+    fireEvent.click(
+      within(startupPanel as HTMLElement).getByRole("button", {
+        name: "Start in tray",
+      }),
+    );
+
+    expect(
+      within(startupPanel as HTMLElement)
+        .getByRole("button", { name: "Start in tray" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: /Save desktop settings/i }));
+
+    await waitFor(() => {
+      expect(saveUserDesktopSettingsSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          autostartEnabled: true,
+          autostartMinimized: false,
+          autostartToTray: true,
+        }),
+      );
+    });
+
+    saveUserDesktopSettingsSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it(
     "saves the selected AI voice provider from global settings",
@@ -1602,6 +1683,31 @@ describe("ChatSession component", () => {
     expect(input.value).toBe("");
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
+  it("shrinks the Quick Chat popup above the bubble on short screens", async () => {
+    monitorFromPoint.mockResolvedValue(createMonitorSnapshot(720));
+
+    const layout = await resolveAssistantSurfaceLayout();
+
+    expect(layout).not.toBeNull();
+
+    if (!layout) {
+      return;
+    }
+
+    expect(layout.popupSize.height).toBe(572);
+    expect(layout.popupPosition.y + layout.popupSize.height + 16).toBeLessThanOrEqual(
+      layout.bubblePosition.y,
+    );
+  });
+
+  it("keeps the preferred Quick Chat popup height on tall screens", async () => {
+    monitorFromPoint.mockResolvedValue(createMonitorSnapshot(1000));
+
+    const layout = await resolveAssistantSurfaceLayout();
+
+    expect(layout?.popupSize.height).toBe(720);
+  });
+
   it("clears Quick Chat history from the popup", async () => {
     const baseState = createInitialShellState();
     const quickSession = createSession({
@@ -1676,6 +1782,249 @@ describe("ChatSession component", () => {
         sessionMemory: [],
       });
     });
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("clears Quick Tasks history from the main window header", async () => {
+    const baseState = createInitialShellState();
+    const quickSession = createSession({
+      id: "quick-main-session",
+      specialSession: QUICK_VOICE_SESSION_KIND,
+      updatedAt: 1_713_260_010_000,
+      messages: [
+        {
+          id: "quick-main-user",
+          taskId: "quick-main-task",
+          role: "user",
+          content: "Inspect the focused app",
+          createdAt: 1_713_260_000_000,
+        },
+        {
+          id: "quick-main-agent",
+          taskId: "quick-main-task",
+          role: "agent",
+          content: "Focused app inspected.",
+          createdAt: 1_713_260_001_000,
+        },
+      ],
+      promptHistory: ["Inspect the focused app"],
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: quickSession.id,
+      sessions: [baseState.sessions[0], quickSession],
+    });
+
+    render(<ChatSession />);
+
+    expect(
+      await screen.findByText(
+        /Inspect the focused app/i,
+        {},
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+      ),
+    ).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: /^Session memory$/i }),
+    ).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear Quick Tasks history" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Inspect the focused app/i)).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Clear Quick Tasks history" }),
+      ).toHaveProperty("disabled", true);
+    });
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("adds dropped files and folders to the main composer", async () => {
+    const resolveDroppedPathsSpy = vi
+      .spyOn(runtime, "resolveDroppedPaths")
+      .mockResolvedValue({
+        workspaceRoot: "C:\\Docs",
+        entries: [
+          {
+            path: "C:\\Docs\\plan.md",
+            kind: "file",
+            name: "plan.md",
+            parent: "C:\\Docs",
+          },
+          {
+            path: "C:\\Docs\\references",
+            kind: "directory",
+            name: "references",
+            parent: "C:\\Docs",
+          },
+        ],
+      });
+
+    render(<ChatSession />);
+
+    await waitFor(() => {
+      expect(windowDragDropListeners.size).toBeGreaterThan(0);
+    });
+
+    emitWindowDropEvent({
+      type: "enter",
+      paths: ["C:\\Docs\\plan.md"],
+      position: { x: 20, y: 20 },
+    });
+
+    expect(screen.getByText(/Attach to task/i)).toBeDefined();
+
+    emitWindowDropEvent({
+      type: "drop",
+      paths: ["C:\\Docs\\plan.md", "C:\\Docs\\references"],
+      position: { x: 20, y: 20 },
+    });
+
+    const input = screen.getByPlaceholderText(
+      /What should machdoch do next\?/i,
+    ) as HTMLTextAreaElement;
+
+    await waitFor(() => {
+      expect(input.value).toContain("C:\\Docs\\plan.md");
+      expect(input.value).toContain("C:\\Docs\\references");
+    });
+    expect(resolveDroppedPathsSpy).toHaveBeenCalledWith([
+      "C:\\Docs\\plan.md",
+      "C:\\Docs\\references",
+    ]);
+
+    resolveDroppedPathsSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("sends Quick Chat tasks with compact controls and session memory disabled", async () => {
+    const loadUserMemorySettingsSpy = vi
+      .spyOn(runtime, "loadUserMemorySettings")
+      .mockResolvedValue({
+        globalEnabled: true,
+        entries: [],
+      });
+    const loadWorkspaceRuntimeSnapshotSpy = vi
+      .spyOn(runtime, "loadWorkspaceRuntimeSnapshot")
+      .mockResolvedValue(
+        createRuntimeSnapshot({
+          providerAvailability: [{ provider: "openai", configured: true }],
+          uiControl: {
+            available: true,
+            platform: "windows",
+            supportsScreenshots: true,
+            supportsWindowEnumeration: true,
+            supportsInput: true,
+            supportsWindowHandles: true,
+          },
+        }),
+      );
+    const runDesktopTaskSpy = vi
+      .spyOn(runtime, "runDesktopTask")
+      .mockResolvedValue({
+        execution: createMockExecutionFixture(
+          "Summarize the attached notes",
+          "/mock/home/path",
+          { mode: "auto" },
+        ),
+      });
+
+    render(<AssistantPopupShell />);
+
+    expect(
+      screen.queryByRole("button", { name: /^Session memory$/i }),
+    ).toBeNull();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Global Memory" }),
+      ).toHaveProperty("disabled", false);
+      expect(
+        screen.getByRole("button", { name: "UI Control" }),
+      ).toHaveProperty("disabled", false);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Autopilot" }));
+    fireEvent.click(screen.getByRole("button", { name: "UI Control" }));
+
+    const input = await screen.findByPlaceholderText(/Quick task/i);
+
+    fireEvent.change(input, {
+      target: { value: "Summarize the attached notes" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
+
+    await waitFor(() => {
+      expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+    });
+
+    expect(runDesktopTaskSpy).toHaveBeenCalledWith(
+      null,
+      "Summarize the attached notes",
+      expect.objectContaining({
+        mode: "auto",
+        conversationContext: expect.objectContaining({
+          sessionMemoryEnabled: false,
+          sessionMemory: [],
+          globalMemoryEnabled: true,
+          uiControlEnabled: true,
+        }),
+      }),
+    );
+
+    loadUserMemorySettingsSpy.mockRestore();
+    loadWorkspaceRuntimeSnapshotSpy.mockRestore();
+    runDesktopTaskSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("adds dropped files to the Quick Chat composer", async () => {
+    const resolveDroppedPathsSpy = vi
+      .spyOn(runtime, "resolveDroppedPaths")
+      .mockResolvedValue({
+        workspaceRoot: "C:\\Docs",
+        entries: [
+          {
+            path: "C:\\Docs\\quick-note.txt",
+            kind: "file",
+            name: "quick-note.txt",
+            parent: "C:\\Docs",
+          },
+        ],
+      });
+
+    render(<AssistantPopupShell />);
+
+    await waitFor(() => {
+      expect(windowDragDropListeners.size).toBeGreaterThan(0);
+    });
+
+    emitWindowDropEvent({
+      type: "enter",
+      paths: ["C:\\Docs\\quick-note.txt"],
+      position: { x: 10, y: 10 },
+    });
+
+    expect(screen.getByText(/Attach to quick task/i)).toBeDefined();
+
+    emitWindowDropEvent({
+      type: "drop",
+      paths: ["C:\\Docs\\quick-note.txt"],
+      position: { x: 10, y: 10 },
+    });
+
+    const input = (await screen.findByPlaceholderText(
+      /Quick task/i,
+    )) as HTMLTextAreaElement;
+
+    await waitFor(() => {
+      expect(input.value).toContain("C:\\Docs\\quick-note.txt");
+    });
+
+    expect(resolveDroppedPathsSpy).toHaveBeenCalledWith([
+      "C:\\Docs\\quick-note.txt",
+    ]);
+
+    resolveDroppedPathsSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("clears running Quick Chat history without restoring the completed task", async () => {

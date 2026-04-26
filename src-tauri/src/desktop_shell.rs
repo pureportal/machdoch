@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, Runtime,
+    AppHandle, Emitter, Manager, Runtime, Window, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut as GlobalShortcut, ShortcutState};
 use xcap::Window as DesktopWindow;
@@ -40,6 +40,13 @@ pub(crate) struct DesktopLaunchId(pub(crate) String);
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct LaunchContext {
     pub(crate) launched_from_autostart: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StartupWindowMode {
+    OpenWindow,
+    StartMinimized,
+    StartInTray,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -182,6 +189,20 @@ pub(crate) fn create_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }
 
+fn resolve_startup_window_mode(
+    preferences: runtime_snapshot::UserDesktopLaunchPreferences,
+) -> StartupWindowMode {
+    if preferences.autostart_to_tray {
+        return StartupWindowMode::StartInTray;
+    }
+
+    if preferences.autostart_minimized {
+        return StartupWindowMode::StartMinimized;
+    }
+
+    StartupWindowMode::OpenWindow
+}
+
 pub(crate) fn apply_startup_mode<R: Runtime>(app: &AppHandle<R>, launch_context: LaunchContext) {
     hide_transient_assistant_windows(app);
 
@@ -189,29 +210,81 @@ pub(crate) fn apply_startup_mode<R: Runtime>(app: &AppHandle<R>, launch_context:
         return;
     };
 
-    if launch_context.launched_from_autostart {
-        let preferences =
-            runtime_snapshot::load_user_desktop_launch_preferences().unwrap_or_default();
+    let preferences = runtime_snapshot::load_user_desktop_launch_preferences().unwrap_or_default();
 
-        if preferences.autostart_to_tray {
+    match resolve_startup_window_mode(preferences) {
+        StartupWindowMode::StartInTray => {
             let _ = window.set_skip_taskbar(true);
             let _ = window.hide();
-            return;
         }
-
-        let _ = window.set_skip_taskbar(false);
-        let _ = window.show();
-
-        if preferences.autostart_minimized {
+        StartupWindowMode::StartMinimized => {
+            let _ = window.set_skip_taskbar(false);
+            let _ = window.show();
             let _ = window.minimize();
         }
+        StartupWindowMode::OpenWindow => {
+            let _ = window.set_skip_taskbar(false);
+            let _ = window.show();
 
+            if !launch_context.launched_from_autostart {
+                let _ = window.set_focus();
+            }
+        }
+    }
+}
+
+pub(crate) fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
+    if window.label() != MAIN_WINDOW_LABEL {
         return;
     }
 
-    let _ = window.set_skip_taskbar(false);
-    let _ = window.show();
-    let _ = window.set_focus();
+    let WindowEvent::CloseRequested { api, .. } = event else {
+        return;
+    };
+
+    api.prevent_close();
+    hide_transient_assistant_windows(window);
+    let _ = window.set_skip_taskbar(true);
+    let _ = window.hide();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn launch_preferences(
+        autostart_minimized: bool,
+        autostart_to_tray: bool,
+    ) -> runtime_snapshot::UserDesktopLaunchPreferences {
+        runtime_snapshot::UserDesktopLaunchPreferences {
+            autostart_minimized,
+            autostart_to_tray,
+        }
+    }
+
+    #[test]
+    fn startup_mode_prefers_tray_over_minimized() {
+        assert_eq!(
+            resolve_startup_window_mode(launch_preferences(true, true)),
+            StartupWindowMode::StartInTray
+        );
+    }
+
+    #[test]
+    fn startup_mode_uses_minimized_when_tray_is_disabled() {
+        assert_eq!(
+            resolve_startup_window_mode(launch_preferences(true, false)),
+            StartupWindowMode::StartMinimized
+        );
+    }
+
+    #[test]
+    fn startup_mode_opens_window_by_default() {
+        assert_eq!(
+            resolve_startup_window_mode(launch_preferences(false, false)),
+            StartupWindowMode::OpenWindow
+        );
+    }
 }
 
 pub(crate) fn sync_assistant_bubble_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
@@ -308,7 +381,7 @@ pub(crate) fn show_quick_voice_window<R: Runtime>(
     Ok(())
 }
 
-fn hide_transient_assistant_windows<R: Runtime>(app: &AppHandle<R>) {
+fn hide_transient_assistant_windows<R: Runtime, M: Manager<R>>(app: &M) {
     for label in [ASSISTANT_POPUP_WINDOW_LABEL, QUICK_VOICE_WINDOW_LABEL] {
         if let Some(window) = app.get_webview_window(label) {
             let _ = window.hide();

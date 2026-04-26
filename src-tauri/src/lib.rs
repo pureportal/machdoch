@@ -37,6 +37,9 @@ pub fn run() {
     };
 
     tauri::Builder::default()
+        .on_window_event(|window, event| {
+            desktop_shell::handle_window_event(window, event);
+        })
         .setup(move |app| {
             app.manage(desktop_task::DesktopTaskCancelMap(std::sync::Mutex::new(
                 std::collections::HashMap::new(),
@@ -76,6 +79,7 @@ pub fn run() {
             desktop_shell::get_desktop_launch_id,
             desktop_task::cancel_desktop_task,
             desktop_task::open_workspace_path,
+            desktop_task::resolve_dropped_paths,
             desktop_task::run_desktop_task,
             runtime_snapshot::get_user_desktop_settings,
             runtime_snapshot::get_global_provider_availability,

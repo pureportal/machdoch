@@ -2,6 +2,7 @@ import { Cog, TerminalSquare } from "lucide-react";
 import type { JSX } from "react";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
+import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { ProviderEmptyState } from "./chat-session/components/provider-empty-state";
 import { SessionComposer } from "./chat-session/components/session-composer";
 import { SessionHeader } from "./chat-session/components/session-header";
@@ -20,7 +21,9 @@ import {
 } from "./components/ui/tooltip";
 
 export const ChatSession = (): JSX.Element => {
-  const controller = useChatSessionController();
+  const controller = useChatSessionController({
+    fileDropTarget: "active-session",
+  });
 
   return (
     <TooltipProvider delayDuration={250}>
@@ -28,8 +31,13 @@ export const ChatSession = (): JSX.Element => {
         open={controller.catalogOpen}
         onOpenChange={controller.setCatalogOpen}
       >
-        <div className="dark flex h-screen w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 font-sans text-slate-100 antialiased">
+        <div className="dark relative flex h-screen w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 font-sans text-slate-100 antialiased">
           <ShellTitlebar {...controller.titlebar} />
+
+          <FileDropOverlay
+            active={controller.fileDrop.isActive}
+            label="Attach to task"
+          />
 
           <div className="flex min-h-0 flex-1 w-full overflow-hidden bg-[#050816]">
             <aside className="z-10 flex w-20 shrink-0 flex-col items-center justify-between border-r border-slate-900 bg-slate-950 py-6">

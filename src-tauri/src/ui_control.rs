@@ -1,12 +1,16 @@
-use std::{env, fs, io::Cursor, path::PathBuf, time::Duration};
-
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use enigo::{
-    Button, Coordinate,
-    Direction::{Click, Press, Release},
-    Enigo, Key, Keyboard, Mouse, Settings,
+use std::{
+    env, fs,
+    io::Cursor,
+    path::PathBuf,
+    time::Duration,
 };
-use image::{imageops::FilterType, DynamicImage, ImageFormat, RgbaImage};
+
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use enigo::{
+    Button, Coordinate, Direction::{Click, Press, Release}, Enigo, Key, Keyboard, Mouse,
+    Settings,
+};
+use image::{DynamicImage, ImageFormat, RgbaImage, imageops::FilterType};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use xcap::{Monitor, Window};
@@ -16,9 +20,9 @@ use windows::Win32::{
     Foundation::{HWND, LPARAM, RECT, WPARAM},
     UI::Input::KeyboardAndMouse::IsWindowEnabled,
     UI::WindowsAndMessaging::{
-        EnumChildWindows, GetAncestor, GetClassNameW, GetParent, GetWindowRect,
-        GetWindowTextLengthW, GetWindowTextW, IsIconic, IsWindowVisible, SendMessageW,
-        SetForegroundWindow, ShowWindow, BM_CLICK, GA_ROOT, SW_RESTORE, WM_SETTEXT,
+        BM_CLICK, EnumChildWindows, GA_ROOT, GetAncestor, GetClassNameW, GetParent,
+        GetWindowRect, GetWindowTextLengthW, GetWindowTextW, IsIconic, IsWindowVisible,
+        SendMessageW, SetForegroundWindow, ShowWindow, SW_RESTORE, WM_SETTEXT,
     },
 };
 
@@ -253,10 +257,7 @@ fn windows_handle_support() -> bool {
 pub fn detect_ui_control_availability() -> UiControlAvailability {
     #[cfg(target_os = "linux")]
     {
-        let has_display = env::var("DISPLAY")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .is_some();
+        let has_display = env::var("DISPLAY").ok().filter(|value| !value.trim().is_empty()).is_some();
         let has_wayland = env::var("WAYLAND_DISPLAY")
             .ok()
             .filter(|value| !value.trim().is_empty())
@@ -326,9 +327,7 @@ fn serialize_data<T: Serialize>(data: &T) -> Result<Value, String> {
     serde_json::to_value(data).map_err(|error| format!("Failed to serialize bridge data: {error}"))
 }
 
-fn normalize_capture_region(
-    payload: &CaptureScreenPayload,
-) -> Result<Option<UiCaptureRegion>, String> {
+fn normalize_capture_region(payload: &CaptureScreenPayload) -> Result<Option<UiCaptureRegion>, String> {
     match (payload.x, payload.y, payload.width, payload.height) {
         (None, None, None, None) => Ok(None),
         (Some(x), Some(y), Some(width), Some(height)) => Ok(Some(UiCaptureRegion {
@@ -338,7 +337,8 @@ fn normalize_capture_region(
             height,
         })),
         _ => Err(
-            "Expected x, y, width, and height together when capturing a screen region.".to_string(),
+            "Expected x, y, width, and height together when capturing a screen region."
+                .to_string(),
         ),
     }
 }
@@ -358,10 +358,7 @@ fn encode_image_payload(
     let original_width = image.width();
     let original_height = image.height();
     let scale = f32::min(
-        f32::min(
-            max_width as f32 / original_width as f32,
-            max_height as f32 / original_height as f32,
-        ),
+        f32::min(max_width as f32 / original_width as f32, max_height as f32 / original_height as f32),
         1.0,
     );
     let output_image = if scale < 1.0 {
@@ -395,12 +392,7 @@ fn create_enigo() -> Result<Enigo, String> {
 }
 
 fn parse_button(button: Option<&str>) -> Result<Button, String> {
-    match button
-        .unwrap_or("left")
-        .trim()
-        .to_ascii_lowercase()
-        .as_str()
-    {
+    match button.unwrap_or("left").trim().to_ascii_lowercase().as_str() {
         "left" => Ok(Button::Left),
         "right" => Ok(Button::Right),
         "middle" => Ok(Button::Middle),
@@ -497,9 +489,7 @@ fn window_to_info(window: &Window) -> Result<UiWindowInfo, String> {
         is_maximized: window.is_maximized().unwrap_or(false),
         is_focused: window.is_focused().unwrap_or(false),
         monitor_id: monitor.as_ref().and_then(|entry| entry.id().ok()),
-        monitor_name: monitor
-            .as_ref()
-            .and_then(|entry| entry.friendly_name().ok()),
+        monitor_name: monitor.as_ref().and_then(|entry| entry.friendly_name().ok()),
         native_handle: window_native_handle(window),
     })
 }
@@ -601,9 +591,7 @@ fn click_point_action(payload: ClickPointPayload) -> Result<Value, String> {
         .map_err(|error| error.to_string())?;
 
     for _ in 0..payload.click_count.unwrap_or(1).max(1) {
-        enigo
-            .button(button, Click)
-            .map_err(|error| error.to_string())?;
+        enigo.button(button, Click).map_err(|error| error.to_string())?;
     }
 
     serialize_data(&serde_json::json!({
@@ -621,17 +609,13 @@ fn drag_pointer_action(payload: DragPointerPayload) -> Result<Value, String> {
     enigo
         .move_mouse(payload.start_x, payload.start_y, Coordinate::Abs)
         .map_err(|error| error.to_string())?;
-    enigo
-        .button(button, Press)
-        .map_err(|error| error.to_string())?;
+    enigo.button(button, Press).map_err(|error| error.to_string())?;
     std::thread::sleep(Duration::from_millis(30));
     enigo
         .move_mouse(payload.end_x, payload.end_y, Coordinate::Abs)
         .map_err(|error| error.to_string())?;
     std::thread::sleep(Duration::from_millis(30));
-    enigo
-        .button(button, Release)
-        .map_err(|error| error.to_string())?;
+    enigo.button(button, Release).map_err(|error| error.to_string())?;
 
     serialize_data(&serde_json::json!({
         "startX": payload.start_x,
@@ -649,9 +633,7 @@ fn type_text_action(payload: TypeTextPayload) -> Result<Value, String> {
 
     let mut enigo = create_enigo()?;
 
-    enigo
-        .text(&payload.text)
-        .map_err(|error| error.to_string())?;
+    enigo.text(&payload.text).map_err(|error| error.to_string())?;
 
     serialize_data(&serde_json::json!({
         "textLength": payload.text.chars().count(),
@@ -675,9 +657,7 @@ fn press_keys_action(payload: PressKeysPayload) -> Result<Value, String> {
     }
 
     for key in keys.iter().rev() {
-        enigo
-            .key(*key, Release)
-            .map_err(|error| error.to_string())?;
+        enigo.key(*key, Release).map_err(|error| error.to_string())?;
     }
 
     serialize_data(&serde_json::json!({
@@ -693,10 +673,7 @@ fn format_hwnd(hwnd: HWND) -> String {
 #[cfg(target_os = "windows")]
 fn parse_hwnd(raw: &str) -> Result<HWND, String> {
     let trimmed = raw.trim();
-    let parsed = if let Some(value) = trimmed
-        .strip_prefix("0x")
-        .or_else(|| trimmed.strip_prefix("0X"))
-    {
+    let parsed = if let Some(value) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")) {
         usize::from_str_radix(value, 16)
             .map_err(|error| format!("Invalid window handle `{trimmed}`: {error}"))?
     } else {
@@ -765,7 +742,10 @@ fn get_control_info(hwnd: HWND) -> Result<UiWindowControlInfo, String> {
 }
 
 #[cfg(target_os = "windows")]
-unsafe extern "system" fn enum_child_windows(hwnd: HWND, state: LPARAM) -> windows::core::BOOL {
+unsafe extern "system" fn enum_child_windows(
+    hwnd: HWND,
+    state: LPARAM,
+) -> windows::core::BOOL {
     let controls = &mut *(state.0 as *mut Vec<UiWindowControlInfo>);
 
     if let Ok(info) = get_control_info(hwnd) {
@@ -887,9 +867,11 @@ fn execute_bridge_action(request: UiControlBridgeRequest) -> Result<Value, Strin
     let availability = detect_ui_control_availability();
 
     if !availability.available {
-        return Err(availability.reason.unwrap_or_else(|| {
-            "Desktop UI control is unavailable in the current environment.".to_string()
-        }));
+        return Err(
+            availability
+                .reason
+                .unwrap_or_else(|| "Desktop UI control is unavailable in the current environment.".to_string()),
+        );
     }
 
     match request.action.as_str() {
@@ -998,9 +980,7 @@ pub fn try_run_ui_control_bridge_from_args() -> Result<bool, String> {
     }
 
     let Some(path) = args.next() else {
-        return Err(
-            "Expected a JSON request file path after --ui-control-bridge-request-file.".to_string(),
-        );
+        return Err("Expected a JSON request file path after --ui-control-bridge-request-file.".to_string());
     };
 
     if args.next().is_some() {

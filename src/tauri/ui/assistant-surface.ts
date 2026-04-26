@@ -5,6 +5,7 @@ import {
   getCurrentWindow,
   monitorFromPoint,
   PhysicalPosition,
+  PhysicalSize,
   Window,
 } from "@tauri-apps/api/window";
 import {
@@ -23,6 +24,7 @@ export const ASSISTANT_BUBBLE_DIMENSIONS = {
 export const ASSISTANT_POPUP_DIMENSIONS = {
   width: 448,
   height: 720,
+  minHeight: 420,
 } as const;
 
 export const QUICK_VOICE_DIMENSIONS = {
@@ -38,6 +40,7 @@ type MonitorSnapshot = Awaited<ReturnType<typeof monitorFromPoint>>;
 export interface AssistantSurfaceLayout {
   monitorBounds: MonitorBoundsInput;
   bubblePosition: { x: number; y: number };
+  popupSize: { width: number; height: number };
   popupPosition: { x: number; y: number };
   quickVoicePosition: { x: number; y: number };
 }
@@ -101,8 +104,12 @@ export const resolveAssistantSurfaceLayout = async (): Promise<AssistantSurfaceL
     ASSISTANT_POPUP_DIMENSIONS.width,
     scaleFactor,
   );
-  const popupHeight = toPhysicalPixels(
+  const preferredPopupHeight = toPhysicalPixels(
     ASSISTANT_POPUP_DIMENSIONS.height,
+    scaleFactor,
+  );
+  const minimumPopupHeight = toPhysicalPixels(
+    ASSISTANT_POPUP_DIMENSIONS.minHeight,
     scaleFactor,
   );
   const quickVoiceWidth = toPhysicalPixels(
@@ -123,6 +130,13 @@ export const resolveAssistantSurfaceLayout = async (): Promise<AssistantSurfaceL
     workY + workHeight - bubbleHeight - surfaceMargin,
     workY + surfaceMargin,
     workY + workHeight - bubbleHeight - surfaceMargin,
+  );
+  const popupHeightAvailableAboveBubble =
+    bubbleY - workY - surfaceMargin - popupVerticalGap;
+  const popupHeight = clampPosition(
+    preferredPopupHeight,
+    minimumPopupHeight,
+    popupHeightAvailableAboveBubble,
   );
   const popupX = clampPosition(
     workX + workWidth - popupWidth - surfaceMargin,
@@ -149,6 +163,7 @@ export const resolveAssistantSurfaceLayout = async (): Promise<AssistantSurfaceL
   return {
     monitorBounds: toMonitorBounds(monitor),
     bubblePosition: { x: bubbleX, y: bubbleY },
+    popupSize: { width: popupWidth, height: popupHeight },
     popupPosition: { x: popupX, y: popupY },
     quickVoicePosition: { x: quickVoiceX, y: quickVoiceY },
   };
@@ -182,6 +197,46 @@ export const setWindowPosition = async (
   }
 };
 
+export const setWindowSize = async (
+  window: Window | null,
+  size: { width: number; height: number },
+): Promise<void> => {
+  if (!window) {
+    return;
+  }
+
+  try {
+    await window.setSize(new PhysicalSize(size.width, size.height));
+  } catch (error) {
+    console.error(`Failed to size window \`${window.label}\``, error);
+  }
+};
+
+const applyAssistantPopupLayout = async (
+  popupWindow: Window | null,
+  popupPositionOverride?: { x: number; y: number },
+): Promise<void> => {
+  if (!popupWindow) {
+    return;
+  }
+
+  const layout = await resolveAssistantSurfaceLayout();
+
+  if (!layout) {
+    if (popupPositionOverride) {
+      await setWindowPosition(popupWindow, popupPositionOverride);
+    }
+
+    return;
+  }
+
+  await setWindowSize(popupWindow, layout.popupSize);
+  await setWindowPosition(
+    popupWindow,
+    popupPositionOverride ?? layout.popupPosition,
+  );
+};
+
 export const hideAssistantPopup = async (): Promise<void> => {
   const popupWindow = await getWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL);
 
@@ -207,13 +262,7 @@ export const syncAssistantPopupPosition = async (): Promise<void> => {
     return;
   }
 
-  const layout = await resolveAssistantSurfaceLayout();
-
-  if (!layout) {
-    return;
-  }
-
-  await setWindowPosition(popupWindow, layout.popupPosition);
+  await applyAssistantPopupLayout(popupWindow);
 };
 
 export const toggleAssistantPopup = async (
@@ -231,15 +280,7 @@ export const toggleAssistantPopup = async (
       return;
     }
 
-    if (popupPositionOverride) {
-      await setWindowPosition(popupWindow, popupPositionOverride);
-    } else {
-      const layout = await resolveAssistantSurfaceLayout();
-
-      if (layout) {
-        await setWindowPosition(popupWindow, layout.popupPosition);
-      }
-    }
+    await applyAssistantPopupLayout(popupWindow, popupPositionOverride);
 
     await Promise.all([popupWindow.show(), popupWindow.unminimize()]);
     await popupWindow.setFocus();

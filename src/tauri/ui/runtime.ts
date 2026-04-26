@@ -140,6 +140,18 @@ export interface MonitorBoundsInput {
   height: number;
 }
 
+export interface DroppedPathEntry {
+  path: string;
+  kind: "directory" | "file" | "other" | string;
+  name: string;
+  parent?: string;
+}
+
+export interface DroppedPathsResolution {
+  entries: DroppedPathEntry[];
+  workspaceRoot: string | null;
+}
+
 export interface SynthesizedVoiceAudio {
   provider: UserVoiceAiProvider;
   mimeType: string;
@@ -312,6 +324,46 @@ const createDefaultUserDesktopSettings = (): UserDesktopSettings => {
     quickVoiceShortcut: "CommandOrControl+Alt+V",
     quickVoiceSilenceSeconds: 1.8,
     quickVoiceMaxMessages: 50,
+  };
+};
+
+const getFallbackDroppedPathName = (path: string): string => {
+  const normalizedPath = path.replace(/\\/gu, "/");
+  const name = normalizedPath.split("/").filter(Boolean).at(-1);
+
+  return name ?? path;
+};
+
+const getFallbackDroppedPathParent = (path: string): string | undefined => {
+  const lastSeparatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+
+  if (lastSeparatorIndex <= 0) {
+    return undefined;
+  }
+
+  return path.slice(0, lastSeparatorIndex);
+};
+
+const createFallbackDroppedPathsResolution = (
+  paths: string[],
+): DroppedPathsResolution => {
+  const entries = paths
+    .map((path) => path.trim())
+    .filter((path) => path.length > 0)
+    .map((path) => {
+      const parent = getFallbackDroppedPathParent(path);
+
+      return {
+        path,
+        kind: "other",
+        name: getFallbackDroppedPathName(path),
+        ...(parent ? { parent } : {}),
+      } satisfies DroppedPathEntry;
+    });
+
+  return {
+    entries,
+    workspaceRoot: entries[0]?.parent ?? null,
   };
 };
 
@@ -544,7 +596,7 @@ export const detectFullscreenWindowOnMonitor = async (
   try {
     return await tauriCore.invoke<boolean>(
       "detect_fullscreen_window_on_monitor",
-      { ...monitor },
+      { monitor },
     );
   } catch (error) {
     console.error("Failed to detect fullscreen window on monitor", error);
@@ -847,6 +899,33 @@ export const openWorkspacePath = async (
     await tauriCore.invoke("open_workspace_path", {
       workspaceRoot: normalizedWorkspaceRoot ?? "",
       relativePath: normalizedRelativePath,
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const resolveDroppedPaths = async (
+  paths: string[],
+): Promise<DroppedPathsResolution> => {
+  const normalizedPaths = paths
+    .map((path) => path.trim())
+    .filter((path) => path.length > 0);
+
+  if (normalizedPaths.length === 0) {
+    return {
+      entries: [],
+      workspaceRoot: null,
+    };
+  }
+
+  if (!canInvokeTauriCommands()) {
+    return createFallbackDroppedPathsResolution(normalizedPaths);
+  }
+
+  try {
+    return await tauriCore.invoke<DroppedPathsResolution>("resolve_dropped_paths", {
+      paths: normalizedPaths,
     });
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));

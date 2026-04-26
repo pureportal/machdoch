@@ -41,9 +41,6 @@ export const ConversationFeed = ({
             <h2 className="text-xl font-medium text-white">
               Ready to automate
             </h2>
-            <p className="mx-auto max-w-sm text-sm leading-6 text-slate-400">
-              Pick a workspace anytime, or start from your home folder.
-            </p>
           </div>
         </div>
       </div>

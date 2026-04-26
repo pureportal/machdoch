@@ -1,5 +1,5 @@
 import { ArrowUpRight } from "lucide-react";
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useState, type JSX, type ReactNode } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
@@ -120,6 +120,118 @@ const getVoiceProviderAvailabilityTone = (
   return configured ? "text-emerald-300" : "text-slate-400";
 };
 
+interface SettingsCardProps {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  className?: string;
+}
+
+const SettingsCard = ({
+  title,
+  description,
+  children,
+  className,
+}: SettingsCardProps): JSX.Element => {
+  return (
+    <section
+      className={cn(
+        "grid min-h-full content-start gap-4 rounded-3xl border border-slate-800 bg-slate-900/45 p-5",
+        className,
+      )}
+    >
+      <div className="grid gap-1">
+        <h3 className="text-sm font-semibold text-slate-100">{title}</h3>
+        {description ? (
+          <p className="text-sm leading-6 text-slate-400">{description}</p>
+        ) : null}
+      </div>
+      {children}
+    </section>
+  );
+};
+
+interface SettingPanelProps {
+  label: string;
+  detail?: string;
+  children: ReactNode;
+  className?: string;
+  contentClassName?: string;
+}
+
+const SettingPanel = ({
+  label,
+  detail,
+  children,
+  className,
+  contentClassName,
+}: SettingPanelProps): JSX.Element => {
+  return (
+    <div
+      className={cn(
+        "grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/55 p-4 md:grid-cols-[minmax(9rem,0.8fr)_minmax(0,1.2fr)] md:items-center",
+        className,
+      )}
+    >
+      <div className="grid gap-1">
+        <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
+          {label}
+        </p>
+        {detail ? (
+          <p className="text-sm leading-5 text-slate-400">{detail}</p>
+        ) : null}
+      </div>
+      <div className={cn("min-w-0", contentClassName)}>{children}</div>
+    </div>
+  );
+};
+
+interface ChoiceOption<TValue extends string> {
+  value: TValue;
+  label: string;
+  ariaLabel?: string;
+}
+
+interface ChoiceButtonsProps<TValue extends string> {
+  value: TValue;
+  options: ReadonlyArray<ChoiceOption<TValue>>;
+  disabled?: boolean;
+  onChange: (value: TValue) => void;
+}
+
+function ChoiceButtons<TValue extends string>({
+  value,
+  options,
+  disabled = false,
+  onChange,
+}: ChoiceButtonsProps<TValue>): JSX.Element {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((option) => {
+        const selected = value === option.value;
+
+        return (
+          <Button
+            key={option.value}
+            type="button"
+            variant="outline"
+            aria-label={option.ariaLabel}
+            aria-pressed={selected}
+            disabled={disabled}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
+              selected && "border-sky-500/30 bg-sky-500/10 text-sky-100",
+            )}
+          >
+            {option.label}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
 export interface SettingsDialogProps {
   settingsSection: SettingsSection;
   onSettingsSectionChange: (section: SettingsSection) => void;
@@ -199,51 +311,42 @@ export const SettingsDialog = ({
   );
 
   return (
-    <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden rounded-3xl border-slate-800 bg-slate-950/96 p-0 text-slate-100 shadow-2xl">
-      <div className="flex max-h-[85vh] flex-col overflow-hidden">
-        <DialogHeader className="border-b border-slate-800 px-6 py-5 text-left">
+    <DialogContent className="h-[min(760px,calc(100vh-32px))] w-[min(1080px,calc(100vw-32px))] max-w-none gap-0 overflow-hidden rounded-3xl border-slate-800 bg-slate-950/96 p-0 text-slate-100 shadow-2xl sm:max-w-none">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <DialogHeader className="border-b border-slate-800 px-6 py-4 text-left">
           <DialogTitle className="text-xl font-semibold text-white">
             Settings
           </DialogTitle>
-          <DialogDescription className="text-sm leading-6 text-slate-400">
-            Provider API keys, web search connectors, voice playback, memory controls, and desktop startup behavior.
+          <DialogDescription className="sr-only">
+            Configure providers, web search, voice, memory, and desktop behavior.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="border-b border-slate-800 px-6 py-4">
-          <div className="flex flex-wrap gap-2">
-            {SETTINGS_SECTIONS.map((section) => (
-              <Button
-                key={section.id}
-                type="button"
-                variant="outline"
-                onClick={() => onSettingsSectionChange(section.id)}
-                className={cn(
-                  "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                  settingsSection === section.id &&
-                    "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                )}
-              >
-                {section.label}
-              </Button>
-            ))}
-          </div>
-        </div>
+        <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-[11rem_minmax(0,1fr)]">
+          <nav className="border-b border-slate-800 px-4 py-3 md:border-r md:border-b-0 md:px-3 md:py-4">
+            <div className="flex gap-2 overflow-x-auto md:grid md:overflow-visible">
+              {SETTINGS_SECTIONS.map((section) => (
+                <Button
+                  key={section.id}
+                  type="button"
+                  variant="outline"
+                  onClick={() => onSettingsSectionChange(section.id)}
+                  className={cn(
+                    "h-9 shrink-0 justify-start rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100 md:w-full",
+                    settingsSection === section.id &&
+                      "border-sky-500/30 bg-sky-500/10 text-sky-100",
+                  )}
+                >
+                  {section.label}
+                </Button>
+              ))}
+            </div>
+          </nav>
 
-        <ScrollArea className="min-h-0 flex-1" type="always">
-          <div className="grid gap-6 px-6 py-6 pr-8">
-            {settingsSection === "providers" ? (
-              <div className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-                <div className="grid gap-1">
-                  <p className="text-sm font-semibold text-slate-100">
-                    Model providers
-                  </p>
-                  <p className="text-sm leading-6 text-slate-400">
-                    Save the API keys the desktop shell can reuse for model
-                    access.
-                  </p>
-                </div>
-
+          <ScrollArea className="h-full min-h-0" type="always">
+            <div className="grid min-h-full gap-4 px-5 py-5 pr-7">
+              {settingsSection === "providers" ? (
+                <SettingsCard title="Model provider keys">
                 <div className="flex flex-wrap gap-2">
                   {USER_API_KEY_PROVIDER_ORDER.map((provider) => (
                     <Button
@@ -323,20 +426,11 @@ export const SettingsDialog = ({
                     {providerSetup.message.text}
                   </p>
                 ) : null}
-              </div>
+              </SettingsCard>
             ) : null}
 
             {settingsSection === "web-search" ? (
-              <div className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-                <div className="grid gap-1">
-                  <p className="text-sm font-semibold text-slate-100">
-                    Web search
-                  </p>
-                  <p className="text-sm leading-6 text-slate-400">
-                    Choose one active provider at a time. The executor hides web
-                    search until the active provider has a configured key.
-                  </p>
-                </div>
+              <SettingsCard title="Web search">
 
                 <div className="grid gap-2">
                   <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
@@ -439,20 +533,11 @@ export const SettingsDialog = ({
                     {webSearchSetup.message.text}
                   </p>
                 ) : null}
-              </div>
+              </SettingsCard>
             ) : null}
 
             {settingsSection === "memory" ? (
-              <div className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-                <div className="grid gap-1">
-                  <p className="text-sm font-semibold text-slate-100">
-                    Global memory
-                  </p>
-                  <p className="text-sm leading-6 text-slate-400">
-                    Cross-session facts the assistant can reuse later. Keep this
-                    off if you want every session to start fresh.
-                  </p>
-                </div>
+              <SettingsCard title="Global memory">
 
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -491,11 +576,7 @@ export const SettingsDialog = ({
                   </Badge>
                 </div>
 
-                {memorySetup.settings.entries.length === 0 ? (
-                  <p className="text-sm leading-6 text-slate-500">
-                    No global memories have been saved yet.
-                  </p>
-                ) : (
+                {memorySetup.settings.entries.length > 0 ? (
                   <div className="grid gap-2">
                     {memorySetup.settings.entries.map((entry) => (
                       <div
@@ -506,7 +587,7 @@ export const SettingsDialog = ({
                       </div>
                     ))}
                   </div>
-                )}
+                ) : null}
 
                 {memorySetup.message ? (
                   <p
@@ -520,195 +601,81 @@ export const SettingsDialog = ({
                     {memorySetup.message.text}
                   </p>
                 ) : null}
-              </div>
+              </SettingsCard>
             ) : null}
 
             {settingsSection === "desktop" ? (
-              <div className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-                <div className="grid gap-1">
-                  <p className="text-sm font-semibold text-slate-100">
-                    Desktop assistant
-                  </p>
-                  <p className="text-sm leading-6 text-slate-400">
-                    Configure startup behavior, the floating assistant bubble, and the quick voice-command overlay.
-                  </p>
-                </div>
-
-                <div className="grid gap-2">
-                  <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                    Launch on sign-in
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
+              <SettingsCard title="Desktop assistant">
+                <div className="grid gap-3 xl:grid-cols-2">
+                  <SettingPanel label="Launch on sign-in">
+                    <ChoiceButtons
+                      value={desktopDraft.autostartEnabled ? "enabled" : "disabled"}
+                      options={[
+                        { value: "enabled", label: "Enabled" },
+                        { value: "disabled", label: "Disabled" },
+                      ]}
                       disabled={desktopSetup.saving}
-                      onClick={() => {
+                      onChange={(value) => {
                         setDesktopDraft({
                           ...desktopDraft,
-                          autostartEnabled: true,
+                          autostartEnabled: value === "enabled",
                         });
                       }}
-                      className={cn(
-                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                        desktopSetup.settings.autostartEnabled &&
-                          "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                      )}
-                    >
-                      Enabled
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
+                    />
+                  </SettingPanel>
+
+                  <SettingPanel label="Startup behavior">
+                    <ChoiceButtons
+                      value={desktopAutostartMode}
+                      options={[
+                        { value: "window", label: "Open window" },
+                        { value: "minimized", label: "Start minimized" },
+                        { value: "tray", label: "Start in tray" },
+                      ]}
                       disabled={desktopSetup.saving}
-                      onClick={() => {
+                      onChange={(mode) => {
+                        setDesktopDraft(
+                          applyDesktopAutostartMode(desktopDraft, mode),
+                        );
+                      }}
+                    />
+                  </SettingPanel>
+
+                  <SettingPanel label="Floating bubble">
+                    <ChoiceButtons
+                      value={desktopDraft.assistantBubbleEnabled ? "enabled" : "disabled"}
+                      options={[
+                        { value: "enabled", label: "Enabled" },
+                        { value: "disabled", label: "Disabled" },
+                      ]}
+                      disabled={desktopSetup.saving}
+                      onChange={(value) => {
                         setDesktopDraft({
                           ...desktopDraft,
-                          autostartEnabled: false,
+                          assistantBubbleEnabled: value === "enabled",
                         });
                       }}
-                      className={cn(
-                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                        !desktopSetup.settings.autostartEnabled &&
-                          "border-slate-600 bg-slate-900 text-slate-100",
-                      )}
-                    >
-                      Disabled
-                    </Button>
-                  </div>
-                </div>
+                    />
+                  </SettingPanel>
 
-                <Separator className="bg-slate-800" />
-
-                <div className="grid gap-2">
-                  <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                    Autostart launch mode
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {([
-                      ["window", "Open window"],
-                      ["minimized", "Start minimized"],
-                      ["tray", "Start in tray"],
-                    ] as const).map(([mode, label]) => (
-                      <Button
-                        key={mode}
-                        type="button"
-                        variant="outline"
-                        disabled={desktopSetup.saving}
-                        onClick={() => {
-                          setDesktopDraft(
-                            applyDesktopAutostartMode(desktopDraft, mode),
-                          );
-                        }}
-                        className={cn(
-                          "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                          desktopAutostartMode === mode &&
-                            "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                        )}
-                      >
-                        {label}
-                      </Button>
-                    ))}
-                  </div>
-                  <p className="text-sm leading-6 text-slate-400">
-                    Tray launch wins over minimized. The tray menu provides Show, Hide to tray, and Quit actions while the app is running.
-                  </p>
-                </div>
-
-                <Separator className="bg-slate-800" />
-
-                <div className="grid gap-3">
-                  <div className="grid gap-1">
-                    <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                      Floating assistant bubble
-                    </p>
-                    <p className="text-sm leading-6 text-slate-400">
-                      Keep a lightweight always-on-top bubble available near the bottom-right corner of the monitor you are currently using.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
+                  <SettingPanel label="Fullscreen apps">
+                    <ChoiceButtons
+                      value={desktopDraft.assistantBubbleHideWhenFullscreen ? "hide" : "show"}
+                      options={[
+                        { value: "hide", label: "Hide bubble" },
+                        { value: "show", label: "Keep visible" },
+                      ]}
                       disabled={desktopSetup.saving}
-                      onClick={() => {
+                      onChange={(value) => {
                         setDesktopDraft({
                           ...desktopDraft,
-                          assistantBubbleEnabled: true,
+                          assistantBubbleHideWhenFullscreen: value === "hide",
                         });
                       }}
-                      className={cn(
-                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                        desktopDraft.assistantBubbleEnabled &&
-                          "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                      )}
-                    >
-                      Enabled
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={desktopSetup.saving}
-                      onClick={() => {
-                        setDesktopDraft({
-                          ...desktopDraft,
-                          assistantBubbleEnabled: false,
-                        });
-                      }}
-                      className={cn(
-                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                        !desktopDraft.assistantBubbleEnabled &&
-                          "border-slate-600 bg-slate-900 text-slate-100",
-                      )}
-                    >
-                      Disabled
-                    </Button>
-                  </div>
+                    />
+                  </SettingPanel>
 
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={desktopSetup.saving}
-                      onClick={() => {
-                        setDesktopDraft({
-                          ...desktopDraft,
-                          assistantBubbleHideWhenFullscreen: true,
-                        });
-                      }}
-                      className={cn(
-                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                        desktopDraft.assistantBubbleHideWhenFullscreen &&
-                          "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                      )}
-                    >
-                      Hide over fullscreen apps
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={desktopSetup.saving}
-                      onClick={() => {
-                        setDesktopDraft({
-                          ...desktopDraft,
-                          assistantBubbleHideWhenFullscreen: false,
-                        });
-                      }}
-                      className={cn(
-                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                        !desktopDraft.assistantBubbleHideWhenFullscreen &&
-                          "border-slate-600 bg-slate-900 text-slate-100",
-                      )}
-                    >
-                      Keep visible
-                    </Button>
-                  </div>
-
-                  <div className="grid gap-2 md:max-w-xs">
-                    <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                      Right-click hide duration
-                    </p>
+                  <SettingPanel label="Hide duration">
                     <Input
                       type="number"
                       min="2"
@@ -723,113 +690,64 @@ export const SettingsDialog = ({
                           ),
                         });
                       }}
-                      className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+                      className="h-10 max-w-28 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
                     />
-                    <p className="text-sm leading-6 text-slate-400">
-                      Right-clicking the bubble hides it briefly so you can click whatever is underneath it.
-                    </p>
-                  </div>
-                </div>
+                  </SettingPanel>
 
-                <Separator className="bg-slate-800" />
-
-                <div className="grid gap-3">
-                  <div className="grid gap-1">
-                    <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                      Quick voice command
-                    </p>
-                    <p className="text-sm leading-6 text-slate-400">
-                      Launch a small recording overlay from anywhere, stop automatically after silence, and send the transcript to the protected Quick Tasks session.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
+                  <SettingPanel label="Quick Voice">
+                    <ChoiceButtons
+                      value={desktopDraft.quickVoiceEnabled ? "enabled" : "disabled"}
+                      options={[
+                        { value: "enabled", label: "Enabled" },
+                        { value: "disabled", label: "Disabled" },
+                      ]}
                       disabled={desktopSetup.saving}
-                      onClick={() => {
+                      onChange={(value) => {
                         setDesktopDraft({
                           ...desktopDraft,
-                          quickVoiceEnabled: true,
+                          quickVoiceEnabled: value === "enabled",
                         });
                       }}
-                      className={cn(
-                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                        desktopDraft.quickVoiceEnabled &&
-                          "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                      )}
-                    >
-                      Enabled
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={desktopSetup.saving}
-                      onClick={() => {
+                    />
+                  </SettingPanel>
+
+                  <SettingPanel label="Global shortcut">
+                    <Input
+                      type="text"
+                      value={desktopDraft.quickVoiceShortcut}
+                      onChange={(event) => {
                         setDesktopDraft({
                           ...desktopDraft,
-                          quickVoiceEnabled: false,
+                          quickVoiceShortcut: event.target.value,
                         });
                       }}
-                      className={cn(
-                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                        !desktopDraft.quickVoiceEnabled &&
-                          "border-slate-600 bg-slate-900 text-slate-100",
-                      )}
-                    >
-                      Disabled
-                    </Button>
-                  </div>
+                      placeholder="CommandOrControl+Alt+V"
+                      autoComplete="off"
+                      spellCheck={false}
+                      className="h-10 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+                    />
+                  </SettingPanel>
 
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="grid gap-2">
-                      <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                        Global shortcut
-                      </p>
-                      <Input
-                        type="text"
-                        value={desktopDraft.quickVoiceShortcut}
-                        onChange={(event) => {
-                          setDesktopDraft({
-                            ...desktopDraft,
-                            quickVoiceShortcut: event.target.value,
-                          });
-                        }}
-                        placeholder="CommandOrControl+Alt+V"
-                        autoComplete="off"
-                        spellCheck={false}
-                        className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
-                      />
-                    </div>
+                  <SettingPanel label="Silence timeout">
+                    <Input
+                      type="number"
+                      min="0.8"
+                      max="8"
+                      step="0.1"
+                      value={desktopDraft.quickVoiceSilenceSeconds}
+                      onChange={(event) => {
+                        setDesktopDraft({
+                          ...desktopDraft,
+                          quickVoiceSilenceSeconds: Number(
+                            event.target.value,
+                          ),
+                        });
+                      }}
+                      className="h-10 max-w-28 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+                    />
+                  </SettingPanel>
 
-                    <div className="grid gap-2">
-                      <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                        Silence timeout (seconds)
-                      </p>
-                      <Input
-                        type="number"
-                        min="0.8"
-                        max="8"
-                        step="0.1"
-                        value={desktopDraft.quickVoiceSilenceSeconds}
-                        onChange={(event) => {
-                          setDesktopDraft({
-                            ...desktopDraft,
-                            quickVoiceSilenceSeconds: Number(
-                              event.target.value,
-                            ),
-                          });
-                        }}
-                        className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2 md:max-w-xs">
-                    <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                      Quick Tasks message cap
-                    </p>
+                  <SettingPanel label="Quick Tasks cap">
                     <Input
                       type="number"
                       min="10"
@@ -842,17 +760,14 @@ export const SettingsDialog = ({
                           quickVoiceMaxMessages: Number(event.target.value),
                         });
                       }}
-                      className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+                      className="h-10 max-w-28 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
                     />
-                    <p className="text-sm leading-6 text-slate-400">
-                      Older quick-task messages are trimmed automatically once the protected session reaches this size.
-                    </p>
-                  </div>
+                  </SettingPanel>
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
                   <p className="text-sm leading-6 text-slate-400">
-                    Changes here update the desktop surfaces and the quick voice shortcut for every open window.
+                    {desktopDraftDirty ? "Unsaved desktop changes" : "Desktop settings are up to date"}
                   </p>
                   <Button
                     type="button"
@@ -878,64 +793,141 @@ export const SettingsDialog = ({
                     {desktopSetup.message.text}
                   </p>
                 ) : null}
-              </div>
+              </SettingsCard>
             ) : null}
 
             {settingsSection === "voice" ? (
-              <div className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-                <div className="grid gap-1">
-                  <p className="text-sm font-semibold text-slate-100">
-                    Speak to text
-                  </p>
-                  <p className="text-sm leading-6 text-slate-400">
-                    Push-to-talk recordings are transcribed into plain text and
-                    inserted into the current draft, so the final chat bubble
-                    stays text-only.
-                  </p>
-                </div>
+              <SettingsCard title="Voice">
+                <div className="grid gap-3 xl:grid-cols-2">
+                  <SettingPanel label="Speak to text" className="xl:col-span-2">
+                    <ChoiceButtons
+                      value={voiceSetup.speechToTextProvider}
+                      options={([
+                        "none",
+                        ...USER_SPEECH_TO_TEXT_PROVIDER_ORDER,
+                      ] as const).map((provider) => ({
+                        value: provider,
+                        label: getSpeechToTextProviderLabel(provider),
+                        ariaLabel: `Speak to text provider ${getSpeechToTextProviderLabel(provider)}`,
+                      }))}
+                      disabled={voiceSetup.speechToTextProviderSaving}
+                      onChange={(provider) => {
+                        void voiceSetup.onSpeechToTextProviderChange(provider);
+                      }}
+                    />
+                  </SettingPanel>
 
-                <div className="grid gap-2">
-                  <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                    Active speech-to-text provider
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {([
-                      "none",
-                      ...USER_SPEECH_TO_TEXT_PROVIDER_ORDER,
-                    ] as const).map((provider) => (
-                      <Button
-                        key={provider}
-                        type="button"
-                        variant="outline"
-                        aria-label={`Speak to text provider ${getSpeechToTextProviderLabel(provider)}`}
-                        disabled={voiceSetup.speechToTextProviderSaving}
-                        onClick={() => {
-                          void voiceSetup.onSpeechToTextProviderChange(provider);
-                        }}
-                        className={cn(
-                          "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                          voiceSetup.speechToTextProvider === provider &&
-                            "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                        )}
-                      >
-                        {getSpeechToTextProviderLabel(provider)}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
+                  <SettingPanel label="Speech keys" className="xl:col-span-2">
+                    <div className="flex flex-wrap gap-2">
+                      {voiceSetup.speechToTextProviderAvailability.map((provider) => (
+                        <Badge
+                          key={provider.provider}
+                          className={cn(
+                            "border-slate-700 bg-slate-950",
+                            getVoiceProviderAvailabilityTone(provider.configured),
+                          )}
+                        >
+                          {getProviderLabel(provider.provider)} {provider.configured ? "configured" : "missing key"}
+                        </Badge>
+                      ))}
+                    </div>
+                  </SettingPanel>
 
-                <div className="flex flex-wrap gap-2">
-                  {voiceSetup.speechToTextProviderAvailability.map((provider) => (
-                    <Badge
-                      key={provider.provider}
-                      className={cn(
-                        "border-slate-700 bg-slate-950",
-                        getVoiceProviderAvailabilityTone(provider.configured),
+                  <SettingPanel label="Voice provider" className="xl:col-span-2">
+                    <ChoiceButtons
+                      value={voiceSetup.aiProvider}
+                      options={(["none", ...USER_VOICE_AI_PROVIDER_ORDER] as const).map(
+                        (provider) => ({
+                          value: provider,
+                          label: getVoiceAiProviderLabel(provider),
+                        }),
                       )}
-                    >
-                      {getProviderLabel(provider.provider)} {provider.configured ? "configured" : "missing key"}
-                    </Badge>
-                  ))}
+                      disabled={voiceSetup.aiProviderSaving}
+                      onChange={(provider) => {
+                        void voiceSetup.onAiProviderChange(provider);
+                      }}
+                    />
+                  </SettingPanel>
+
+                  <SettingPanel label="Voice keys" className="xl:col-span-2">
+                    <div className="flex flex-wrap gap-2">
+                      {voiceSetup.aiProviderAvailability.map((provider) => (
+                        <Badge
+                          key={provider.provider}
+                          className={cn(
+                            "border-slate-700 bg-slate-950",
+                            getVoiceProviderAvailabilityTone(provider.configured),
+                          )}
+                        >
+                          {getProviderLabel(provider.provider as UserVoiceAiProvider)} {provider.configured ? "configured" : "missing key"}
+                        </Badge>
+                      ))}
+                    </div>
+                  </SettingPanel>
+
+                  <SettingPanel label="Replies">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ChoiceButtons
+                        value={voiceSetup.autoSpeakResponses ? "auto" : "manual"}
+                        options={[
+                          { value: "auto", label: "Auto-read new replies" },
+                          { value: "manual", label: "Manual only" },
+                        ]}
+                        onChange={(value) => {
+                          voiceSetup.onAutoSpeakResponsesChange(value === "auto");
+                        }}
+                      />
+                      <Badge className="border-slate-700 bg-slate-950 text-slate-300">
+                        {voiceSetup.supported ? "Ready" : "Unavailable"}
+                      </Badge>
+                    </div>
+                  </SettingPanel>
+
+                  {voiceSetup.systemVoicesSupported ? (
+                    <>
+                      <SettingPanel label="System voice">
+                        <select
+                          value={voiceSetup.preferredVoiceURI ?? ""}
+                          onChange={(event) => {
+                            const nextValue = event.target.value.trim();
+
+                            voiceSetup.onPreferredVoiceChange(
+                              nextValue.length > 0 ? nextValue : null,
+                            );
+                          }}
+                          className="h-10 w-full rounded-2xl border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none transition-colors focus:border-sky-500/40"
+                        >
+                          <option value="">System default</option>
+                          {voiceSetup.voiceOptions.map((voice) => (
+                            <option key={voice.voiceURI} value={voice.voiceURI}>
+                              {voice.label}
+                            </option>
+                          ))}
+                        </select>
+                      </SettingPanel>
+
+                      <SettingPanel label="Speech rate">
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="0.8"
+                            max="1.4"
+                            step="0.05"
+                            value={voiceSetup.rate}
+                            onChange={(event) => {
+                              voiceSetup.onRateChange(
+                                Number(event.target.value),
+                              );
+                            }}
+                            className="min-w-0 flex-1 accent-sky-400"
+                          />
+                          <span className="w-12 text-right text-xs text-slate-400">
+                            {voiceSetup.rate.toFixed(2)}×
+                          </span>
+                        </div>
+                      </SettingPanel>
+                    </>
+                  ) : null}
                 </div>
 
                 {voiceSetup.speechToTextProviderMessage ? (
@@ -951,65 +943,6 @@ export const SettingsDialog = ({
                   </p>
                 ) : null}
 
-                <p className="text-sm leading-6 text-slate-400">
-                  {voiceSetup.speechToTextAvailabilityDescription}
-                </p>
-
-                <Separator className="bg-slate-800" />
-
-                <div className="grid gap-1">
-                  <p className="text-sm font-semibold text-slate-100">
-                    Voice replies
-                  </p>
-                  <p className="text-sm leading-6 text-slate-400">
-                    Use AI-generated speech when a provider is selected. If no
-                    AI voice is available, machdoch falls back to the current
-                    WebView’s system voices when supported.
-                  </p>
-                </div>
-
-                <div className="grid gap-2">
-                  <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                    AI voice provider
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {(["none", ...USER_VOICE_AI_PROVIDER_ORDER] as const).map(
-                      (provider) => (
-                        <Button
-                          key={provider}
-                          type="button"
-                          variant="outline"
-                          disabled={voiceSetup.aiProviderSaving}
-                          onClick={() => {
-                            void voiceSetup.onAiProviderChange(provider);
-                          }}
-                          className={cn(
-                            "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                            voiceSetup.aiProvider === provider &&
-                              "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                          )}
-                        >
-                          {getVoiceAiProviderLabel(provider)}
-                        </Button>
-                      ),
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {voiceSetup.aiProviderAvailability.map((provider) => (
-                    <Badge
-                      key={provider.provider}
-                      className={cn(
-                        "border-slate-700 bg-slate-950",
-                        getVoiceProviderAvailabilityTone(provider.configured),
-                      )}
-                    >
-                      {getProviderLabel(provider.provider as UserVoiceAiProvider)} {provider.configured ? "configured" : "missing key"}
-                    </Badge>
-                  ))}
-                </div>
-
                 {voiceSetup.aiProviderMessage ? (
                   <p
                     className={cn(
@@ -1022,106 +955,11 @@ export const SettingsDialog = ({
                     {voiceSetup.aiProviderMessage.text}
                   </p>
                 ) : null}
-
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      voiceSetup.onAutoSpeakResponsesChange(true);
-                    }}
-                    className={cn(
-                      "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                      voiceSetup.autoSpeakResponses &&
-                        "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                    )}
-                  >
-                    Auto-read new replies
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      voiceSetup.onAutoSpeakResponsesChange(false);
-                    }}
-                    className={cn(
-                      "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                      !voiceSetup.autoSpeakResponses &&
-                        "border-slate-600 bg-slate-900 text-slate-100",
-                    )}
-                  >
-                    Manual only
-                  </Button>
-                  <Badge className="border-slate-700 bg-slate-950 text-slate-300">
-                    {voiceSetup.supported ? "Ready" : "Unavailable"}
-                  </Badge>
-                </div>
-
-                <p className="text-sm leading-6 text-slate-400">
-                  {voiceSetup.availabilityDescription}
-                </p>
-
-                {voiceSetup.systemVoicesSupported ? (
-                  <>
-                    <Separator className="bg-slate-800" />
-
-                    <div className="grid gap-2">
-                      <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                        System voice fallback
-                      </p>
-                      <select
-                        value={voiceSetup.preferredVoiceURI ?? ""}
-                        onChange={(event) => {
-                          const nextValue = event.target.value.trim();
-
-                          voiceSetup.onPreferredVoiceChange(
-                            nextValue.length > 0 ? nextValue : null,
-                          );
-                        }}
-                        className="h-11 w-full rounded-2xl border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none transition-colors focus:border-sky-500/40"
-                      >
-                        <option value="">System default</option>
-                        {voiceSetup.voiceOptions.map((voice) => (
-                          <option key={voice.voiceURI} value={voice.voiceURI}>
-                            {voice.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid gap-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                          System speech rate
-                        </p>
-                        <span className="text-xs text-slate-400">
-                          {voiceSetup.rate.toFixed(2)}×
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.8"
-                        max="1.4"
-                        step="0.05"
-                        value={voiceSetup.rate}
-                        onChange={(event) => {
-                          voiceSetup.onRateChange(
-                            Number(event.target.value),
-                          );
-                        }}
-                        className="w-full accent-sky-400"
-                      />
-                      <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span>Slower</span>
-                        <span>Faster</span>
-                      </div>
-                    </div>
-                  </>
-                ) : null}
-              </div>
+              </SettingsCard>
             ) : null}
           </div>
         </ScrollArea>
+      </div>
       </div>
     </DialogContent>
   );

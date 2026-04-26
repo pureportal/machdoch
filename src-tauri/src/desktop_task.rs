@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     env, fs,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
@@ -49,6 +50,23 @@ pub struct DesktopTaskRunRequest {
     model: Option<String>,
     conversation_context: Option<Value>,
     task_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DroppedPathEntry {
+    path: String,
+    kind: String,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DroppedPathsResolution {
+    entries: Vec<DroppedPathEntry>,
+    workspace_root: Option<String>,
 }
 
 struct CliCommandOptions<'a> {
@@ -144,6 +162,79 @@ fn write_conversation_context_file(conversation_context: &Value) -> Result<PathB
 fn cleanup_temporary_file(path: Option<&PathBuf>) {
     if let Some(path) = path {
         let _ = fs::remove_file(path);
+    }
+}
+
+fn format_path_for_ui(path: &Path) -> String {
+    path.display().to_string()
+}
+
+fn classify_dropped_path(raw_path: &str) -> Option<DroppedPathEntry> {
+    let normalized_path = raw_path.trim();
+
+    if normalized_path.is_empty() {
+        return None;
+    }
+
+    let candidate_path = PathBuf::from(normalized_path);
+    let display_path = candidate_path
+        .canonicalize()
+        .unwrap_or_else(|_| candidate_path.clone());
+    let metadata = fs::metadata(&display_path).or_else(|_| fs::metadata(&candidate_path));
+    let kind = metadata
+        .as_ref()
+        .map(|metadata| {
+            if metadata.is_dir() {
+                "directory"
+            } else if metadata.is_file() {
+                "file"
+            } else {
+                "other"
+            }
+        })
+        .unwrap_or("other")
+        .to_string();
+    let name = display_path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| format_path_for_ui(&display_path));
+    let parent = display_path.parent().map(format_path_for_ui);
+
+    Some(DroppedPathEntry {
+        path: format_path_for_ui(&display_path),
+        kind,
+        name,
+        parent,
+    })
+}
+
+fn resolve_dropped_paths_sync(paths: Vec<String>) -> DroppedPathsResolution {
+    let mut seen_paths = HashSet::new();
+    let mut entries = Vec::new();
+
+    for path in paths {
+        let Some(entry) = classify_dropped_path(&path) else {
+            continue;
+        };
+        let dedupe_key = entry.path.to_lowercase();
+
+        if !seen_paths.insert(dedupe_key) {
+            continue;
+        }
+
+        entries.push(entry);
+    }
+
+    let workspace_root = entries
+        .iter()
+        .find(|entry| entry.kind == "directory")
+        .map(|entry| entry.path.clone())
+        .or_else(|| entries.iter().find_map(|entry| entry.parent.clone()));
+
+    DroppedPathsResolution {
+        entries,
+        workspace_root,
     }
 }
 
@@ -601,4 +692,11 @@ pub async fn open_workspace_path(
     })
     .await
     .map_err(|error| format!("The workspace path opener stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn resolve_dropped_paths(paths: Vec<String>) -> Result<DroppedPathsResolution, String> {
+    tauri::async_runtime::spawn_blocking(move || resolve_dropped_paths_sync(paths))
+        .await
+        .map_err(|error| format!("The dropped path resolver stopped unexpectedly. {error}"))
 }

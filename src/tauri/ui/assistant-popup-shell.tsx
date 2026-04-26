@@ -2,14 +2,18 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ArrowUpRight,
   Bot,
+  BrainCircuit,
   CheckCircle2,
   Cog,
   LoaderCircle,
   Mic,
+  Monitor,
+  Paperclip,
   SendHorizonal,
   Sparkles,
   Square,
   Trash2,
+  WandSparkles,
   X,
   Zap,
 } from "lucide-react";
@@ -18,7 +22,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
   type JSX,
   type KeyboardEvent,
 } from "react";
@@ -29,6 +32,7 @@ import {
 } from "./chat-session.model";
 import { getRenderedMessageContent } from "./chat-session/_helpers/execution-message.tsx";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
+import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { MessageMarkdown } from "./chat-session/components/message-markdown";
 import { SettingsDialog } from "./chat-session/components/settings-dialog";
 import { Button } from "./components/ui/button";
@@ -169,7 +173,7 @@ const QuickTaskActivity = ({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 px-5 py-3">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 px-5 py-3 [@media(max-height:620px)]:px-4 [@media(max-height:620px)]:py-2">
         <div
           className={cn(
             "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium",
@@ -209,23 +213,18 @@ const QuickTaskActivity = ({
 
       <ScrollArea className="min-h-0 flex-1">
         {recentMessages.length === 0 ? (
-          <div className="flex min-h-full items-center justify-center px-6 py-10 text-center">
-            <div className="grid gap-4">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl border border-sky-400/20 bg-sky-400/10 text-sky-100">
+          <div className="flex min-h-full items-center justify-center px-6 py-10 text-center [@media(max-height:620px)]:py-5">
+            <div className="grid gap-4 [@media(max-height:620px)]:gap-3">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl border border-sky-400/20 bg-sky-400/10 text-sky-100 [@media(max-height:620px)]:h-12 [@media(max-height:620px)]:w-12 [@media(max-height:620px)]:rounded-2xl">
                 <Sparkles className="h-6 w-6" />
               </div>
-              <div className="grid gap-1">
-                <h2 className="text-base font-semibold text-white">
-                  Quick tasks, no planning board
-                </h2>
-                <p className="max-w-xs text-sm leading-6 text-slate-400">
-                  Send a small task here and keep the main chat for larger work.
-                </p>
-              </div>
+              <h2 className="text-base font-semibold text-white">
+                Quick tasks, no planning board
+              </h2>
             </div>
           </div>
         ) : (
-          <div className="grid gap-3 px-5 py-5">
+          <div className="grid gap-3 px-5 py-5 [@media(max-height:620px)]:px-4 [@media(max-height:620px)]:py-3">
             {recentMessages.map((message) => (
               <QuickTaskMessage key={message.id} message={message} />
             ))}
@@ -241,22 +240,19 @@ const QuickTaskComposer = ({
 }: {
   controller: ReturnType<typeof useChatSessionController>;
 }): JSX.Element => {
-  const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const quickTaskComposer = controller.quickTaskComposer;
   const quickVoiceEnabled =
     controller.settingsDialog.desktopSetup.settings.quickVoiceEnabled;
-  const canSend = draft.trim().length > 0;
+  const canSend = quickTaskComposer.draft.trim().length > 0;
   const sendQuickTask = useCallback((): void => {
-    const normalizedDraft = draft.trim();
-
-    if (!normalizedDraft) {
+    if (!quickTaskComposer.draft.trim()) {
       return;
     }
 
-    controller.submitQuickVoiceCommand(normalizedDraft);
-    setDraft("");
+    quickTaskComposer.onSend();
     inputRef.current?.focus();
-  }, [controller, draft]);
+  }, [quickTaskComposer]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -264,17 +260,96 @@ const QuickTaskComposer = ({
 
   return (
     <form
-      className="grid gap-2.5"
+      className="grid gap-2.5 [@media(max-height:620px)]:gap-2"
       onSubmit={(event) => {
         event.preventDefault();
         sendQuickTask();
       }}
     >
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          aria-label="Autopilot"
+          aria-pressed={quickTaskComposer.autopilotEnabled}
+          onClick={() =>
+            quickTaskComposer.onAutopilotChange(
+              !quickTaskComposer.autopilotEnabled,
+            )
+          }
+          className={cn(
+            "h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100",
+            quickTaskComposer.autopilotEnabled &&
+              "border-violet-500/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
+          )}
+        >
+          <WandSparkles className="h-3.5 w-3.5" />
+          Autopilot
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          aria-label="Document attachments"
+          onClick={() => {
+            void quickTaskComposer.onSelectAttachments();
+          }}
+          className="h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100"
+        >
+          <Paperclip className="h-3.5 w-3.5" />
+          Documents
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          aria-label="Global Memory"
+          aria-pressed={quickTaskComposer.globalMemoryEnabled}
+          disabled={!quickTaskComposer.globalMemoryAvailable}
+          onClick={() =>
+            quickTaskComposer.onGlobalMemoryChange(
+              !quickTaskComposer.globalMemoryEnabled,
+            )
+          }
+          className={cn(
+            "h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:cursor-not-allowed disabled:border-dashed disabled:bg-slate-950/40 disabled:text-slate-600 disabled:opacity-100",
+            quickTaskComposer.globalMemoryEnabled &&
+              quickTaskComposer.globalMemoryAvailable &&
+              "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
+          )}
+        >
+          <BrainCircuit className="h-3.5 w-3.5" />
+          Memory
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          aria-label="UI Control"
+          aria-pressed={quickTaskComposer.uiControlEnabled}
+          disabled={!quickTaskComposer.uiControlAvailable}
+          onClick={() =>
+            quickTaskComposer.onUiControlChange(
+              !quickTaskComposer.uiControlEnabled,
+            )
+          }
+          className={cn(
+            "h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:cursor-not-allowed disabled:border-dashed disabled:bg-slate-950/40 disabled:text-slate-600 disabled:opacity-100",
+            quickTaskComposer.uiControlEnabled &&
+              quickTaskComposer.uiControlAvailable &&
+              "border-violet-500/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
+          )}
+        >
+          <Monitor className="h-3.5 w-3.5" />
+          UI
+        </Button>
+      </div>
+
       <Textarea
         ref={inputRef}
         aria-label="Quick chat composer"
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
+        value={quickTaskComposer.draft}
+        onChange={(event) => quickTaskComposer.onDraftChange(event.target.value)}
         onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
@@ -282,7 +357,7 @@ const QuickTaskComposer = ({
           }
         }}
         placeholder="Quick task…"
-        className="max-h-32 min-h-16 resize-none overflow-y-auto rounded-2xl border-slate-800/90 bg-slate-900/60 px-4 py-3 text-sm text-slate-100 shadow-inner shadow-black/10 placeholder:text-slate-500 focus-visible:border-sky-400/40 focus-visible:ring-2 focus-visible:ring-sky-500/20"
+        className="max-h-32 min-h-16 resize-none overflow-y-auto rounded-2xl border-slate-800/90 bg-slate-900/60 px-4 py-3 text-sm text-slate-100 shadow-inner shadow-black/10 placeholder:text-slate-500 focus-visible:border-sky-400/40 focus-visible:ring-2 focus-visible:ring-sky-500/20 [@media(max-height:620px)]:max-h-20 [@media(max-height:620px)]:min-h-12 [@media(max-height:620px)]:py-2.5"
       />
 
       <div className="flex items-center justify-between gap-2 px-0.5">
@@ -322,6 +397,7 @@ const QuickTaskComposer = ({
 export const AssistantPopupShell = (): JSX.Element => {
   const controller = useChatSessionController({
     enableSessionAutoProfile: false,
+    fileDropTarget: "quick-task",
   });
 
   return (
@@ -329,17 +405,22 @@ export const AssistantPopupShell = (): JSX.Element => {
       open={controller.catalogOpen}
       onOpenChange={controller.setCatalogOpen}
     >
-      <div className="fixed inset-0 flex flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/98 text-slate-100 shadow-none">
-        <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+      <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/98 text-slate-100 shadow-none">
+        <FileDropOverlay
+          active={controller.fileDrop.isActive}
+          label="Attach to quick task"
+          compact
+        />
+
+        <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 [@media(max-height:620px)]:py-2">
           <div className="min-w-0 flex items-center gap-3">
-            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-sky-400/25 bg-sky-400/10 text-sky-100">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-sky-400/25 bg-sky-400/10 text-sky-100 [@media(max-height:620px)]:h-9 [@media(max-height:620px)]:w-9">
               <Zap className="h-5 w-5" />
             </span>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-white">
                 Quick Chat
               </p>
-              <p className="truncate text-xs text-slate-500">Small task lane</p>
             </div>
           </div>
 
@@ -383,7 +464,7 @@ export const AssistantPopupShell = (): JSX.Element => {
 
         {controller.isDesktop && !controller.hasAnyProvider ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-3xl border border-sky-400/20 bg-sky-400/10 text-sky-100">
+            <div className="flex h-14 w-14 items-center justify-center rounded-3xl border border-sky-400/20 bg-sky-400/10 text-sky-100 [@media(max-height:620px)]:h-12 [@media(max-height:620px)]:w-12 [@media(max-height:620px)]:rounded-2xl">
               <Sparkles className="h-6 w-6" />
             </div>
             <p className="max-w-sm text-sm leading-6 text-slate-400">
@@ -407,7 +488,7 @@ export const AssistantPopupShell = (): JSX.Element => {
               }}
             />
 
-            <footer className="border-t border-slate-800/80 bg-slate-950/90 px-5 py-4">
+            <footer className="border-t border-slate-800/80 bg-slate-950/90 px-5 py-4 [@media(max-height:620px)]:px-4 [@media(max-height:620px)]:py-3">
               <QuickTaskComposer controller={controller} />
             </footer>
           </>

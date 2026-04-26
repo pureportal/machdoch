@@ -10,7 +10,10 @@ import {
 } from "lucide-react";
 import type { JSX, KeyboardEvent } from "react";
 import type { RunMode } from "../../../../core/types.js";
-import type { ChatSessionRecord } from "../../chat-session.model";
+import {
+  isQuickVoiceSession,
+  type ChatSessionRecord,
+} from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
@@ -89,6 +92,7 @@ export const SessionComposer = ({
   onCancel,
   isExecuting,
 }: SessionComposerProps): JSX.Element => {
+  const showSessionMemoryButton = !isQuickVoiceSession(activeSession);
   const speechInputActionLabel = !speechInput.browserSupported
     ? "Speech input unavailable"
     : speechInput.transcribing
@@ -138,20 +142,22 @@ export const SessionComposer = ({
           {composerWorkspaceLabel}
         </Button>
 
-        <MemoryShortcutButton
-          label="Session memory"
-          description={sessionMemoryDescription}
-          pressed={activeSession.sessionMemoryEnabled}
-          onClick={() =>
-            onSessionMemoryEnabledChange(!activeSession.sessionMemoryEnabled)
-          }
-          icon={<Brain className="h-4 w-4" />}
-          className={cn(
-            activeSession.sessionMemoryEnabled
-              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15 hover:text-white"
-              : undefined,
-          )}
-        />
+        {showSessionMemoryButton ? (
+          <MemoryShortcutButton
+            label="Session memory"
+            description={sessionMemoryDescription}
+            pressed={activeSession.sessionMemoryEnabled}
+            onClick={() =>
+              onSessionMemoryEnabledChange(!activeSession.sessionMemoryEnabled)
+            }
+            icon={<Brain className="h-4 w-4" />}
+            className={cn(
+              activeSession.sessionMemoryEnabled
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15 hover:text-white"
+                : undefined,
+            )}
+          />
+        ) : null}
 
         <MemoryShortcutButton
           label="Global memory"

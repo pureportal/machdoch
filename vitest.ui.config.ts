@@ -11,6 +11,9 @@ export default defineConfig({
       "@tauri-apps/api/event": fileURLToPath(
         new URL("./src/tauri/ui/test/tauri-test-mocks.ts", import.meta.url),
       ),
+      "@tauri-apps/api/window": fileURLToPath(
+        new URL("./src/tauri/ui/test/tauri-test-mocks.ts", import.meta.url),
+      ),
       "@tauri-apps/plugin-dialog": fileURLToPath(
         new URL("./src/tauri/ui/test/tauri-test-mocks.ts", import.meta.url),
       ),

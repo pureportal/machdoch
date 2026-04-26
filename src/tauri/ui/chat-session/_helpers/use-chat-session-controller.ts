@@ -1,10 +1,12 @@
 import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow, type DragDropEvent } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
+  useState,
   type KeyboardEvent,
   type MouseEvent,
 } from "react";
@@ -38,8 +40,10 @@ import {
   cancelDesktopTask,
   loadUserMemorySettings,
   openWorkspacePath,
+  resolveDroppedPaths,
   runDesktopTask,
   subscribeToDesktopTaskProgress,
+  type DroppedPathEntry,
 } from "../../runtime";
 import {
   appendThinkingProgressLine,
@@ -104,9 +108,71 @@ const clampQuickVoiceMessageLimit = (value: number): number => {
   return Math.min(200, Math.max(10, Math.round(value)));
 };
 
+type FileDropTarget = "active-session" | "quick-task";
+
+type DialogSelection = string | string[] | null;
+
+const appendDraftBlock = (draft: string, block: string): string => {
+  const normalizedBlock = block.trim();
+
+  if (!normalizedBlock) {
+    return draft;
+  }
+
+  const normalizedDraft = draft.trimEnd();
+
+  return normalizedDraft ? `${normalizedDraft}\n\n${normalizedBlock}` : normalizedBlock;
+};
+
+const formatDroppedPathKind = (entry: DroppedPathEntry): string => {
+  switch (entry.kind) {
+    case "directory":
+      return "folder";
+    case "file":
+      return "file";
+    case "other":
+    default:
+      return "path";
+  }
+};
+
+const createDroppedPathsDraftBlock = (
+  entries: DroppedPathEntry[],
+): string => {
+  if (entries.length === 0) {
+    return "";
+  }
+
+  if (entries.length === 1) {
+    const [entry] = entries;
+
+    if (!entry) {
+      return "";
+    }
+
+    return `Use this ${formatDroppedPathKind(entry)}: "${entry.path}"`;
+  }
+
+  return [
+    "Use these paths:",
+    ...entries.map(
+      (entry) => `- ${formatDroppedPathKind(entry)}: "${entry.path}"`,
+    ),
+  ].join("\n");
+};
+
+const normalizeDialogSelection = (selection: DialogSelection): string[] => {
+  if (!selection) {
+    return [];
+  }
+
+  return Array.isArray(selection) ? selection : [selection];
+};
+
 export interface UseChatSessionControllerOptions {
   isolateActiveSession?: boolean;
   enableSessionAutoProfile?: boolean;
+  fileDropTarget?: FileDropTarget;
 }
 
 export const useChatSessionController = (
@@ -118,6 +184,8 @@ export const useChatSessionController = (
   });
   const activeDesktopTasksRef = useRef<Map<string, string>>(new Map());
   const ignoredDesktopTaskIdsRef = useRef<Set<string>>(new Set());
+  const [quickTaskDraft, setQuickTaskDraft] = useState("");
+  const [isFileDropActive, setIsFileDropActive] = useState(false);
   const runtime = useChatSessionRuntime({
     catalogOpen: state.catalogOpen,
     activeSessionProvider: state.activeSession.provider,
@@ -211,6 +279,19 @@ export const useChatSessionController = (
       : "Let machdoch inspect the desktop, capture windows, and drive mouse and keyboard when GUI automation is available."
     : (uiControlAvailability?.reason ??
       "Desktop UI control is unavailable for this workspace or environment right now.");
+  const quickTaskMode = quickTaskSession?.mode ?? state.activeSession.mode;
+  const quickTaskEffectiveRunMode = getEffectiveSessionMode(
+    quickTaskMode,
+    runtime.runtimeSnapshot,
+  );
+  const quickTaskUseGlobalMemory =
+    quickTaskSession?.useGlobalMemory ?? state.activeSession.useGlobalMemory;
+  const quickTaskUiControlEnabled =
+    quickTaskSession?.uiControlEnabled ?? state.activeSession.uiControlEnabled;
+  const quickTaskGlobalMemoryAvailable =
+    runtime.userMemorySettings.globalEnabled;
+  const quickTaskGlobalMemoryEnabled =
+    quickTaskGlobalMemoryAvailable && quickTaskUseGlobalMemory;
 
   const handleOpenSettings = (section: SettingsSection = "providers"): void => {
     state.setSettingsSection(section);
@@ -830,55 +911,242 @@ export const useChatSessionController = (
     }
   };
 
-  const buildQuickVoiceSessionSnapshot = useCallback((): ChatSessionRecord => {
-    const existingQuickVoiceSession = state.shellState.sessions.find(
-      isQuickVoiceSession,
-    );
-    const baseSession =
-      existingQuickVoiceSession ??
-      createSession({
-        id: crypto.randomUUID(),
+  const createQuickTaskSessionSnapshot = useCallback(
+    (existingQuickTaskSession: ChatSessionRecord | null): ChatSessionRecord => {
+      const baseSession =
+        existingQuickTaskSession ??
+        createSession({
+          id: crypto.randomUUID(),
+          specialSession: QUICK_VOICE_SESSION_KIND,
+          workspace: state.activeSession.workspace,
+          provider: state.activeSession.provider,
+          model: state.activeSession.model,
+          ...(state.activeSession.profile
+            ? { profile: state.activeSession.profile }
+            : {}),
+          ...(state.activeSession.mode ? { mode: state.activeSession.mode } : {}),
+          useGlobalMemory: state.activeSession.useGlobalMemory,
+          uiControlEnabled: state.activeSession.uiControlEnabled,
+        });
+      const nextSession: ChatSessionRecord = {
+        ...baseSession,
         specialSession: QUICK_VOICE_SESSION_KIND,
+        workspace: baseSession.workspace ?? state.activeSession.workspace,
+        provider: state.activeSession.provider,
+        model: state.activeSession.model,
+        sessionMemoryEnabled: false,
+        sessionMemory: [],
+        updatedAt: Date.now(),
+      };
+
+      const profile = baseSession.profile ?? state.activeSession.profile;
+      const mode = baseSession.mode ?? state.activeSession.mode;
+
+      if (profile) {
+        nextSession.profile = profile;
+      } else {
+        delete nextSession.profile;
+      }
+
+      if (mode) {
+        nextSession.mode = mode;
+      } else {
+        delete nextSession.mode;
+      }
+
+      delete nextSession.archivedAt;
+      delete nextSession.manualTitle;
+
+      return nextSession;
+    },
+    [
+      state.activeSession.mode,
+      state.activeSession.model,
+      state.activeSession.profile,
+      state.activeSession.provider,
+      state.activeSession.uiControlEnabled,
+      state.activeSession.useGlobalMemory,
+      state.activeSession.workspace,
+    ],
+  );
+
+  const updateQuickTaskSession = useCallback(
+    (updater: (session: ChatSessionRecord) => ChatSessionRecord): void => {
+      state.applyShellState((prev) => {
+        const existingQuickTaskSession =
+          prev.sessions.find(isQuickVoiceSession) ?? null;
+        const baseSession = createQuickTaskSessionSnapshot(
+          existingQuickTaskSession,
+        );
+        const nextSession = updater(baseSession);
+
+        if (!existingQuickTaskSession) {
+          return {
+            ...prev,
+            sessions: [nextSession, ...prev.sessions],
+          };
+        }
+
+        return {
+          ...prev,
+          sessions: prev.sessions.map((session) =>
+            session.id === existingQuickTaskSession.id ? nextSession : session,
+          ),
+        };
       });
-    const nextSession: ChatSessionRecord = {
-      ...baseSession,
-      specialSession: QUICK_VOICE_SESSION_KIND,
-      workspace: state.activeSession.workspace,
-      provider: state.activeSession.provider,
-      model: state.activeSession.model,
-      sessionMemoryEnabled: state.activeSession.sessionMemoryEnabled,
-      useGlobalMemory: state.activeSession.useGlobalMemory,
-      uiControlEnabled: state.activeSession.uiControlEnabled,
-      updatedAt: Date.now(),
+    },
+    [createQuickTaskSessionSnapshot, state.applyShellState],
+  );
+
+  const buildQuickVoiceSessionSnapshot = useCallback((): ChatSessionRecord => {
+    return createQuickTaskSessionSnapshot(quickTaskSession);
+  }, [createQuickTaskSessionSnapshot, quickTaskSession]);
+
+  const handleQuickTaskAutopilotChange = useCallback(
+    (enabled: boolean): void => {
+      updateQuickTaskSession((session) => ({
+        ...session,
+        mode: enabled ? "auto" : "ask",
+        updatedAt: Date.now(),
+      }));
+    },
+    [updateQuickTaskSession],
+  );
+
+  const handleQuickTaskGlobalMemoryChange = useCallback(
+    (enabled: boolean): void => {
+      updateQuickTaskSession((session) => ({
+        ...session,
+        useGlobalMemory: enabled,
+        updatedAt: Date.now(),
+      }));
+    },
+    [updateQuickTaskSession],
+  );
+
+  const handleQuickTaskUiControlChange = useCallback(
+    (enabled: boolean): void => {
+      updateQuickTaskSession((session) => ({
+        ...session,
+        uiControlEnabled: enabled,
+        updatedAt: Date.now(),
+      }));
+    },
+    [updateQuickTaskSession],
+  );
+
+  const handleAttachPaths = useCallback(
+    async (paths: string[], target: FileDropTarget): Promise<void> => {
+      const resolution = await resolveDroppedPaths(paths);
+      const draftBlock = createDroppedPathsDraftBlock(resolution.entries);
+
+      if (!draftBlock) {
+        return;
+      }
+
+      if (target === "quick-task") {
+        setQuickTaskDraft((draft) => appendDraftBlock(draft, draftBlock));
+
+        if (resolution.workspaceRoot) {
+          updateQuickTaskSession((session) => ({
+            ...session,
+            workspace: resolution.workspaceRoot,
+            updatedAt: Date.now(),
+          }));
+        }
+
+        return;
+      }
+
+      state.setPromptHistoryIndex(null);
+      state.setDraftBeforeHistory("");
+      state.setDraftValue(appendDraftBlock(state.activeSession.draft, draftBlock));
+
+      if (resolution.workspaceRoot) {
+        state.updateActiveSession((session) => ({
+          ...session,
+          workspace: resolution.workspaceRoot,
+          updatedAt: Date.now(),
+        }));
+      }
+    },
+    [
+      state.activeSession.draft,
+      state.setDraftBeforeHistory,
+      state.setDraftValue,
+      state.setPromptHistoryIndex,
+      state.updateActiveSession,
+      updateQuickTaskSession,
+    ],
+  );
+
+  const handleSelectAttachments = useCallback(
+    async (target: FileDropTarget): Promise<void> => {
+      if (!isDesktop) {
+        await handleAttachPaths(["/mock/document.txt"], target);
+        return;
+      }
+
+      try {
+        const selected = (await open({
+          directory: false,
+          multiple: true,
+          title: "Select Documents",
+        })) as DialogSelection;
+
+        await handleAttachPaths(normalizeDialogSelection(selected), target);
+      } catch (error) {
+        console.error("Failed to select document attachments", error);
+      }
+    },
+    [handleAttachPaths, isDesktop],
+  );
+
+  useEffect(() => {
+    const fileDropTarget = options.fileDropTarget;
+
+    if (!fileDropTarget || !isDesktop) {
+      setIsFileDropActive(false);
+      return;
+    }
+
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+
+    void getCurrentWindow()
+      .onDragDropEvent((event: { payload: DragDropEvent }) => {
+        const payload = event.payload;
+
+        if (payload.type === "enter" || payload.type === "over") {
+          setIsFileDropActive(true);
+          return;
+        }
+
+        if (payload.type === "leave") {
+          setIsFileDropActive(false);
+          return;
+        }
+
+        setIsFileDropActive(false);
+        void handleAttachPaths(payload.paths, fileDropTarget);
+      })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+          return;
+        }
+
+        unsubscribe = unlisten;
+      })
+      .catch((error) => {
+        console.error("Failed to subscribe to dropped files", error);
+      });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
     };
-
-    if (state.activeSession.profile) {
-      nextSession.profile = state.activeSession.profile;
-    } else {
-      delete nextSession.profile;
-    }
-
-    if (state.activeSession.mode) {
-      nextSession.mode = state.activeSession.mode;
-    } else {
-      delete nextSession.mode;
-    }
-
-    delete nextSession.archivedAt;
-    delete nextSession.manualTitle;
-
-    return nextSession;
-  }, [
-    state.activeSession.mode,
-    state.activeSession.model,
-    state.activeSession.profile,
-    state.activeSession.provider,
-    state.activeSession.sessionMemoryEnabled,
-    state.activeSession.uiControlEnabled,
-    state.activeSession.useGlobalMemory,
-    state.activeSession.workspace,
-    state.shellState.sessions,
-  ]);
+  }, [handleAttachPaths, isDesktop, options.fileDropTarget]);
 
   const submitTaskToSession = useCallback(
     (options: {
@@ -894,6 +1162,7 @@ export const useChatSessionController = (
       }
 
       const { sessionSnapshot } = options;
+      const isQuickTaskSessionSnapshot = isQuickVoiceSession(sessionSnapshot);
       const taskId = crypto.randomUUID();
       const sessionId = sessionSnapshot.id;
       const sessionWorkspace = sessionSnapshot.workspace;
@@ -966,7 +1235,12 @@ export const useChatSessionController = (
             provider: sessionSnapshot.provider,
             model: sessionSnapshot.model,
             draft: options.clearDraft ? "" : sessionWithoutArchive.draft,
-            sessionMemoryEnabled: sessionSnapshot.sessionMemoryEnabled,
+            sessionMemoryEnabled: isQuickTaskSessionSnapshot
+              ? false
+              : sessionSnapshot.sessionMemoryEnabled,
+            sessionMemory: isQuickTaskSessionSnapshot
+              ? []
+              : sessionWithoutArchive.sessionMemory,
             useGlobalMemory: sessionSnapshot.useGlobalMemory,
             uiControlEnabled: sessionSnapshot.uiControlEnabled,
             updatedAt: nextUpdatedAt,
@@ -1082,7 +1356,7 @@ export const useChatSessionController = (
               (update) => update.scope === "global",
             ) ?? false;
 
-          if (sessionMemoryUpdates.length > 0) {
+          if (!isQuickTaskSessionSnapshot && sessionMemoryUpdates.length > 0) {
             state.updateSessionById(sessionId, (session) => {
               return applySessionMessageLimit({
                 ...session,
@@ -1169,6 +1443,17 @@ export const useChatSessionController = (
     [buildQuickVoiceSessionSnapshot, submitTaskToSession],
   );
 
+  const handleQuickTaskDraftSend = useCallback((): void => {
+    const normalizedDraft = quickTaskDraft.trim();
+
+    if (!normalizedDraft) {
+      return;
+    }
+
+    submitQuickVoiceCommand(normalizedDraft);
+    setQuickTaskDraft("");
+  }, [quickTaskDraft, submitQuickVoiceCommand]);
+
   const clearQuickTaskHistory = useCallback((): void => {
     const quickTaskSessionId = quickTaskSession?.id ?? null;
 
@@ -1226,6 +1511,7 @@ export const useChatSessionController = (
           ...session,
           messages: [],
           promptHistory: [],
+          sessionMemoryEnabled: false,
           sessionMemory: [],
           updatedAt: nextUpdatedAt,
         };
@@ -1261,6 +1547,9 @@ export const useChatSessionController = (
     isDesktop,
     submitQuickVoiceCommand,
     clearQuickTaskHistory,
+    fileDrop: {
+      isActive: isFileDropActive,
+    },
     quickTask: {
       session: quickTaskSession,
       visibleMessages: quickTaskVisibleMessages,
@@ -1314,6 +1603,12 @@ export const useChatSessionController = (
       renameValue: state.renameValue,
       canRenameSession: canRenameSession(state.activeSession),
       canDeleteSession: canDeleteSession(state.activeSession),
+      showClearSessionHistory: isQuickVoiceSession(state.activeSession),
+      canClearSessionHistory:
+        isQuickVoiceSession(state.activeSession) &&
+        (state.activeSession.messages.length > 0 ||
+          state.activeSession.promptHistory.length > 0 ||
+          state.activeSession.sessionMemory.length > 0),
       activeRunModeLabel: activeRunModeMeta.label,
       activeRunModeBadgeClassName: activeRunModeMeta.badgeClassName,
       isUsingWorkspaceDefaultMode,
@@ -1330,6 +1625,7 @@ export const useChatSessionController = (
         state.setRenameValue(currentSessionTitle);
         state.setIsRenamingSession(true);
       },
+      onClearSessionHistory: clearQuickTaskHistory,
       onDeleteSession: () => deleteSession(state.activeSession.id),
     },
     conversation: {
@@ -1379,6 +1675,20 @@ export const useChatSessionController = (
       onSend: handleSend,
       onCancel: handleCancel,
       isExecuting: getSessionOverviewStatus(state.activeSession) === "running",
+    },
+    quickTaskComposer: {
+      draft: quickTaskDraft,
+      autopilotEnabled: quickTaskEffectiveRunMode === "auto",
+      globalMemoryAvailable: quickTaskGlobalMemoryAvailable,
+      globalMemoryEnabled: quickTaskGlobalMemoryEnabled,
+      uiControlAvailable: isUiControlAvailable,
+      uiControlEnabled: isUiControlAvailable && quickTaskUiControlEnabled,
+      onAutopilotChange: handleQuickTaskAutopilotChange,
+      onSelectAttachments: () => handleSelectAttachments("quick-task"),
+      onGlobalMemoryChange: handleQuickTaskGlobalMemoryChange,
+      onUiControlChange: handleQuickTaskUiControlChange,
+      onDraftChange: setQuickTaskDraft,
+      onSend: handleQuickTaskDraftSend,
     },
     settingsDialog: {
       settingsSection: state.settingsSection,
