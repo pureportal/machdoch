@@ -967,13 +967,13 @@ describe("ChatSession component", () => {
   );
 
   it(
-    "switches settings sections with navbar buttons and keeps saved keys hidden",
+    "switches settings sections with navbar buttons and shows saved web-search key value",
     async () => {
       const loadUserWebSearchSettingsSpy = vi
         .spyOn(runtime, "loadUserWebSearchSettings")
         .mockResolvedValue({
           activeProvider: "perplexity",
-          apiKeys: { perplexity: "pplx-real-key-1234567890" },
+          apiKeys: { perplexity: "perplexity-user-key-1234567890" },
           providerAvailability: [
             { provider: "perplexity", configured: true },
             { provider: "tavily", configured: false },
@@ -991,17 +991,20 @@ describe("ChatSession component", () => {
       expect(
         await screen.findByText(/Active web search provider/i),
       ).toBeDefined();
-      expect(
-        screen.getByPlaceholderText(/Paste your Perplexity API key/i),
-      ).toBeDefined();
-      expect(
-        (
-          screen.getByPlaceholderText(
-            /Paste your Perplexity API key/i,
-          ) as HTMLInputElement
-        ).value,
-      ).toBe("");
-      expect(screen.queryByText(/Missing key/i)).toBeNull();
+
+      const keyInput = await screen.findByDisplayValue(
+        "perplexity-user-key-1234567890",
+      );
+
+      expect((keyInput as HTMLInputElement).type).toBe("password");
+
+      fireEvent.click(
+        screen.getByRole("button", { name: /Show Perplexity API key/i }),
+      );
+
+      expect((keyInput as HTMLInputElement).type).toBe("text");
+      expect(screen.queryByText(/^Saved$/i)).toBeNull();
+      expect(screen.queryByText(/^Missing$/i)).toBeNull();
 
       fireEvent.click(screen.getByRole("button", { name: /^Memory$/i }));
 
@@ -1671,16 +1674,33 @@ describe("ChatSession component", () => {
     SLOW_UI_TEST_TIMEOUT_MS,
   );
 
-  it("keeps saved provider API keys hidden when settings open", async () => {
+  it("shows saved provider API key value in settings", async () => {
+    const loadUserProviderApiKeysSpy = vi
+      .spyOn(runtime, "loadUserProviderApiKeys")
+      .mockResolvedValue({
+        openai: "openai-user-key-1234567890",
+        google: "google-user-key-1234567890",
+      });
+
     render(<ChatSession />);
 
     fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
 
-    const input = (await screen.findByPlaceholderText(
-      /Paste your OpenAI API key/i,
-    )) as HTMLInputElement;
+    const input = await screen.findByDisplayValue(
+      "openai-user-key-1234567890",
+    );
 
-    expect(input.value).toBe("");
+    expect((input as HTMLInputElement).type).toBe("password");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Show OpenAI API key/i }),
+    );
+
+    expect((input as HTMLInputElement).type).toBe("text");
+    expect(screen.queryByText(/^Saved$/i)).toBeNull();
+    expect(screen.queryByText(/^Missing$/i)).toBeNull();
+
+    loadUserProviderApiKeysSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("shrinks the Quick Chat popup above the bubble on short screens", async () => {

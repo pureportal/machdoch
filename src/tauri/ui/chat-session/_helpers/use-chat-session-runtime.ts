@@ -9,6 +9,7 @@ import {
 import { getProviderLabel } from "../../model-catalog";
 import {
   loadGlobalProviderAvailability,
+  loadUserProviderApiKeys,
   loadUserDesktopSettings,
   loadUserSpeechToTextSettings,
   loadUserMemorySettings,
@@ -223,6 +224,7 @@ export const useChatSessionRuntime = (
 
       setWebSearchActiveProvider(settings.activeProvider);
       setWebSearchSetupProvider(nextKeyProvider);
+      setWebSearchSetupKeys(settings.apiKeys);
     },
     [],
   );
@@ -506,10 +508,52 @@ export const useChatSessionRuntime = (
       return;
     }
 
+    let cancelled = false;
+
+    void loadGlobalProviderAvailability()
+      .then((data) => {
+        if (!cancelled) {
+          setGlobalProviders(data);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("Failed to load global provider availability", error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [options.catalogOpen]);
+
+  useEffect(() => {
+    if (!options.catalogOpen) {
+      return;
+    }
+
+    let cancelled = false;
+
     setProviderSetupProvider(options.activeSessionProvider);
     setProviderSetupKeys({});
     setProviderSetupKey("");
     setProviderSetupMessage(null);
+
+    void loadUserProviderApiKeys()
+      .then((apiKeys) => {
+        if (!cancelled) {
+          setProviderSetupKeys(apiKeys);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("Failed to load user provider API keys", error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [options.activeSessionProvider, options.catalogOpen]);
 
   useEffect(() => {
@@ -693,12 +737,12 @@ export const useChatSessionRuntime = (
       setGlobalProviders(nextProviders);
       setProviderSetupKeys((prev) => ({
         ...prev,
-        [providerSetupProvider]: "",
+        [providerSetupProvider]: normalizedKey,
       }));
-      setProviderSetupKey("");
+      setProviderSetupKey(normalizedKey);
       setProviderSetupMessage({
         tone: "success",
-        text: `${getProviderLabel(providerSetupProvider)} is ready to use.`,
+        text: `${getProviderLabel(providerSetupProvider)} API key saved.`,
       });
 
       await refreshWorkspaceRuntimeSnapshot(
@@ -866,12 +910,13 @@ export const useChatSessionRuntime = (
       applyLoadedWebSearchSettings(settings);
       setWebSearchSetupKeys((prev) => ({
         ...prev,
-        [webSearchSetupProvider]: "",
+        ...settings.apiKeys,
+        [webSearchSetupProvider]: normalizedKey,
       }));
-      setWebSearchSetupKey("");
+      setWebSearchSetupKey(normalizedKey);
       setWebSearchSetupMessage({
         tone: "success",
-        text: `${getWebSearchProviderLabel(webSearchSetupProvider)} is ready for web search.`,
+        text: `${getWebSearchProviderLabel(webSearchSetupProvider)} API key saved.`,
       });
 
       await refreshWorkspaceRuntimeSnapshot(

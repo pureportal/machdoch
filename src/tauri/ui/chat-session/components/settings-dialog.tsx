@@ -299,15 +299,29 @@ export const SettingsDialog = ({
   const [desktopDraft, setDesktopDraft] = useState<UserDesktopSettings>(
     desktopSetup.settings,
   );
+  const [providerKeyVisible, setProviderKeyVisible] = useState(false);
+  const [webSearchKeyVisible, setWebSearchKeyVisible] = useState(false);
 
   useEffect(() => {
     setDesktopDraft(desktopSetup.settings);
   }, [desktopSetup.settings]);
 
+  useEffect(() => {
+    setProviderKeyVisible(false);
+  }, [providerSetup.provider]);
+
+  useEffect(() => {
+    setWebSearchKeyVisible(false);
+  }, [webSearchSetup.provider]);
+
   const desktopAutostartMode = getDesktopAutostartMode(desktopDraft);
   const desktopDraftDirty = hasDesktopSettingsDraftChanges(
     desktopDraft,
     desktopSetup.settings,
+  );
+  const selectedProviderLabel = getProviderLabel(providerSetup.provider);
+  const selectedWebSearchProviderLabel = getWebSearchProviderLabel(
+    webSearchSetup.provider,
   );
 
   return (
@@ -367,7 +381,7 @@ export const SettingsDialog = ({
 
                 <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                   <Input
-                    type="text"
+                    type={providerKeyVisible ? "text" : "password"}
                     value={providerSetup.keyValue}
                     onChange={(event) => {
                       providerSetup.onKeyChange(event.target.value);
@@ -378,12 +392,22 @@ export const SettingsDialog = ({
                         void providerSetup.onSave();
                       }
                     }}
-                    placeholder={`Paste your ${getProviderLabel(providerSetup.provider)} API key`}
+                    placeholder={`Paste your ${selectedProviderLabel} API key`}
                     autoComplete="off"
                     spellCheck={false}
                     className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
                   />
                   <div className="flex items-center gap-2 md:justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      aria-label={`${providerKeyVisible ? "Hide" : "Show"} ${selectedProviderLabel} API key`}
+                      onClick={() => setProviderKeyVisible((visible) => !visible)}
+                      disabled={!providerSetup.keyValue.trim()}
+                      className="h-11 rounded-2xl border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-50"
+                    >
+                      {providerKeyVisible ? "Hide" : "Show"}
+                    </Button>
                     <Button
                       type="button"
                       variant="ghost"
@@ -491,7 +515,7 @@ export const SettingsDialog = ({
 
                 <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                   <Input
-                    type="text"
+                    type={webSearchKeyVisible ? "text" : "password"}
                     value={webSearchSetup.keyValue}
                     onChange={(event) => {
                       webSearchSetup.onKeyChange(event.target.value);
@@ -502,23 +526,35 @@ export const SettingsDialog = ({
                         void webSearchSetup.onSave();
                       }
                     }}
-                    placeholder={`Paste your ${getWebSearchProviderLabel(webSearchSetup.provider)} API key`}
+                    placeholder={`Paste your ${selectedWebSearchProviderLabel} API key`}
                     autoComplete="off"
                     spellCheck={false}
                     className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
                   />
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      void webSearchSetup.onSave();
-                    }}
-                    disabled={
-                      !webSearchSetup.keyValue.trim() || webSearchSetup.saving
-                    }
-                    className="h-11 rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500 disabled:opacity-50"
-                  >
-                    {webSearchSetup.saving ? "Saving…" : "Save key"}
-                  </Button>
+                  <div className="flex items-center gap-2 md:justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      aria-label={`${webSearchKeyVisible ? "Hide" : "Show"} ${selectedWebSearchProviderLabel} API key`}
+                      onClick={() => setWebSearchKeyVisible((visible) => !visible)}
+                      disabled={!webSearchSetup.keyValue.trim()}
+                      className="h-11 rounded-2xl border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-50"
+                    >
+                      {webSearchKeyVisible ? "Hide" : "Show"}
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        void webSearchSetup.onSave();
+                      }}
+                      disabled={
+                        !webSearchSetup.keyValue.trim() || webSearchSetup.saving
+                      }
+                      className="h-11 rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500 disabled:opacity-50"
+                    >
+                      {webSearchSetup.saving ? "Saving…" : "Save key"}
+                    </Button>
+                  </div>
                 </div>
 
                 {webSearchSetup.message ? (
