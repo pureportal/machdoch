@@ -1,10 +1,10 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentModelStartParams } from "./types.ts";
 import { executeTask } from "./execution.ts";
 import type {
   AgentModelAdapter,
+  AgentModelStartParams,
   CustomizationDiscoveryResult,
   ProviderAvailability,
   RunMode,
@@ -737,7 +737,9 @@ describe("executeTask", () => {
         });
       },
       continueTurn: (): Promise<never> => {
-        throw new Error("The hanging adapter should never continue after timing out.");
+        throw new Error(
+          "The hanging adapter should never continue after timing out.",
+        );
       },
     };
 
@@ -756,4 +758,75 @@ describe("executeTask", () => {
     expect(result.reason).toContain("25ms");
     expect(result.outputSections.at(-1)?.title).toBe("Execution limit");
   }, 10_000);
+
+  it("guards against repeated identical failing tool calls in model-driven execution", async () => {
+    const workspaceRoot = await createWorkspace();
+    const observedToolOutputs: string[] = [];
+    let continueCount = 0;
+
+    const loopingAdapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "",
+        toolCalls: [
+          {
+            id: "call-1",
+            name: "read_file",
+            arguments: {
+              path: "missing.txt",
+              startLine: 1,
+              endLine: 5,
+            },
+          },
+        ],
+      }),
+      continueTurn: async ({ toolResults }) => {
+        observedToolOutputs.push(toolResults[0]?.output ?? "");
+        continueCount += 1;
+
+        if (continueCount < 3) {
+          return {
+            text: "",
+            toolCalls: [
+              {
+                id: `call-${continueCount + 1}`,
+                name: "read_file",
+                arguments: {
+                  path: "missing.txt",
+                  startLine: 1,
+                  endLine: 5,
+                },
+              },
+            ],
+          };
+        }
+
+        return {
+          text: "Changed strategy after repeated failures.",
+          toolCalls: [],
+        };
+      },
+    };
+
+    const result = await executeTask(
+      "Inspect missing.txt until you find a clue.",
+      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: loopingAdapter,
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(observedToolOutputs).toHaveLength(3);
+    expect(observedToolOutputs[2]).toContain("Do not retry it unchanged");
+    expect(
+      result.outputSections.some(
+        (section) =>
+          section.title === "Tool retry guard" &&
+          section.lines.some((line) =>
+            line.includes("already failed 2 consecutive time(s)"),
+          ),
+      ),
+    ).toBe(true);
+  });
 });

@@ -1,5 +1,5 @@
 import { Cog, TerminalSquare } from "lucide-react";
-import type { JSX } from "react";
+import { Suspense, lazy, type JSX } from "react";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
@@ -7,7 +7,6 @@ import { ProviderEmptyState } from "./chat-session/components/provider-empty-sta
 import { SessionComposer } from "./chat-session/components/session-composer";
 import { SessionHeader } from "./chat-session/components/session-header";
 import { SessionsSidebar } from "./chat-session/components/sessions-sidebar";
-import { SettingsDialog } from "./chat-session/components/settings-dialog";
 import { ShellTitlebar } from "./chat-session/components/shell-titlebar";
 import { Button } from "./components/ui/button";
 import { Dialog } from "./components/ui/dialog";
@@ -19,6 +18,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./components/ui/tooltip";
+
+const SettingsDialog = lazy(async () => {
+  const module = await import("./chat-session/components/settings-dialog");
+
+  return {
+    default: module.SettingsDialog,
+  };
+});
 
 export const ChatSession = (): JSX.Element => {
   const controller = useChatSessionController({
@@ -92,17 +99,21 @@ export const ChatSession = (): JSX.Element => {
           </div>
         </div>
 
-        <SettingsDialog
-          settingsSection={controller.settingsDialog.settingsSection}
-          onSettingsSectionChange={
-            controller.settingsDialog.onSettingsSectionChange
-          }
-          providerSetup={controller.settingsDialog.providerSetup}
-          webSearchSetup={controller.settingsDialog.webSearchSetup}
-          memorySetup={controller.settingsDialog.memorySetup}
-          desktopSetup={controller.settingsDialog.desktopSetup}
-          voiceSetup={controller.settingsDialog.voiceSetup}
-        />
+        {controller.catalogOpen ? (
+          <Suspense fallback={null}>
+            <SettingsDialog
+              settingsSection={controller.settingsDialog.settingsSection}
+              onSettingsSectionChange={
+                controller.settingsDialog.onSettingsSectionChange
+              }
+              providerSetup={controller.settingsDialog.providerSetup}
+              webSearchSetup={controller.settingsDialog.webSearchSetup}
+              memorySetup={controller.settingsDialog.memorySetup}
+              desktopSetup={controller.settingsDialog.desktopSetup}
+              voiceSetup={controller.settingsDialog.voiceSetup}
+            />
+          </Suspense>
+        ) : null}
       </Dialog>
     </TooltipProvider>
   );

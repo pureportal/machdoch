@@ -7,6 +7,7 @@ import type {
   TaskAutopilotReport,
   TaskExecutionSection,
 } from "../types.js";
+import { inferTaskStrategyProfile } from "./agent-runtime-executor-prompts.js";
 import { coerceString, coerceStringArray } from "./agent-runtime-shared.js";
 import type { ExecutorCycleOutcome } from "./agent-runtime-types.js";
 import { limitText } from "./runtime-text.js";
@@ -182,6 +183,17 @@ const createSectionTranscript = (
   );
 };
 
+const createTraceTranscript = (
+  traceLines: string[],
+  maxChars = 4_000,
+): string => {
+  if (traceLines.length === 0) {
+    return "(no tool trace recorded)";
+  }
+
+  return limitText(traceLines.join("\n"), maxChars);
+};
+
 export const createAutopilotMonitorSystemPrompt = (
   config: RuntimeConfig,
 ): string => {
@@ -189,6 +201,15 @@ export const createAutopilotMonitorSystemPrompt = (
     "<role>You are Machdoch Monitor, a separate validator agent that judges whether the executor fully satisfied the user's request.</role>",
     "<review_contract>Be strict about grounded evidence. Do not accept work because it sounds plausible. If requirements are partially satisfied, not verified, or only implied, choose continue. Call the structured report_autopilot_decision tool exactly once.</review_contract>",
     "<safety_rules>Only use `complete` when the user's request is fully satisfied within the current workspace and tool policy boundaries. Prefer a continuation request over a false positive. Required actions must be concrete, minimal, and testable.</safety_rules>",
+    [
+      "<review_dimensions>",
+      "1. Request coverage: every explicit user requirement must be satisfied, including requested research, comparison, or best-practice review.",
+      "2. Grounded evidence: acceptance requires concrete support from tool outputs, fetched documents, file changes, command output, or other observable results.",
+      "3. Verification: for code or behavior changes, require the strongest relevant verification that was feasible; if it is missing or only implied, prefer continue.",
+      "4. Recovery and efficiency: if the trace shows repeated identical failing tool calls or an unchanged strategy after errors, require a different approach before acceptance.",
+      "5. Constraints and safety: continue when instructions, approvals, or policy boundaries were skipped or only partially satisfied.",
+      "</review_dimensions>",
+    ].join("\n"),
     [
       "<runtime>",
       `Workspace root: ${config.workspaceRoot}`,
@@ -206,6 +227,7 @@ export const createAutopilotMonitorUserPrompt = (
   cycleResult: ExecutorCycleOutcome,
   priorDecisions: TaskAutopilotDecision[],
 ): string => {
+  const strategyProfile = inferTaskStrategyProfile(task, taskContext);
   const priorDecisionLines =
     priorDecisions.length > 0
       ? priorDecisions.flatMap((decision) => [
@@ -228,7 +250,10 @@ export const createAutopilotMonitorUserPrompt = (
     `<executor_summary>${cycleResult.result.summary}</executor_summary>`,
     `<executed_tools>${cycleResult.result.executedTools.join(", ") || "none"}</executed_tools>`,
     `<assistant_answer>${cycleResult.loopState.lastAssistantText ?? "(none)"}</assistant_answer>`,
+    `<tool_trace>${createTraceTranscript(cycleResult.loopState.traceLines)}</tool_trace>`,
     `<prior_validator_history>${priorDecisionLines.join("\n")}</prior_validator_history>`,
+    `<research_expectation>${strategyProfile.requireResearch ? "The task explicitly asks for current external guidance or best-practice research, so acceptance requires grounded evidence that such research happened when the required tools were available." : "No explicit external-research requirement was detected from the task itself."}</research_expectation>`,
+    `<verification_expectation>${strategyProfile.requireVerification ? "Expect concrete verification evidence proportionate to the task, especially for code changes, fixes, or claimed improvements." : "Verification is still preferred when feasible, but the task may be primarily explanatory."}</verification_expectation>`,
     `<grounded_evidence>${createSectionTranscript(cycleResult.result.outputSections)}</grounded_evidence>`,
     "<decision_rule>Return `continue` if any user requirement appears incomplete, unverified, or contradicted by the evidence. Return `complete` only when the evidence shows the task is done as requested.</decision_rule>",
   ].join("\n\n");

@@ -104,7 +104,7 @@ export const createShellNetworkToolDefinitions = (
       spec: {
         name: "run_shell_command",
         description:
-          "Run a shell command inside the workspace. Use this only when filesystem tools are insufficient and you need real command output for verification or build/test steps.",
+          "Run a shell command inside the workspace. Use this only when filesystem tools are insufficient and you need real command output for verification, build/test steps, or other grounded runtime checks. Prefer focused, non-interactive commands with predictable output.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -317,11 +317,13 @@ export const createShellNetworkToolDefinitions = (
             toolResult: {
               callId: crypto.randomUUID(),
               name: "start_detached_command",
-              output: limitText([
-                `Command: ${command}`,
-                `Launch mode: detached`,
-                `Error: ${message}`,
-              ].join("\n")),
+              output: limitText(
+                [
+                  `Command: ${command}`,
+                  `Launch mode: detached`,
+                  `Error: ${message}`,
+                ].join("\n"),
+              ),
               isError: true,
             },
             sections: [
@@ -346,7 +348,7 @@ export const createShellNetworkToolDefinitions = (
       spec: {
         name: "fetch_url",
         description:
-          "Fetch an HTTP or HTTPS URL and return a text preview. Use this when the task explicitly requires a web page or remote API response.",
+          "Fetch an HTTP or HTTPS URL and return a text preview. Use this when the task explicitly requires a web page or remote API response, especially after search_web or when the user provides a specific URL. Prefer primary sources over secondary summaries.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -445,7 +447,7 @@ export const createShellNetworkToolDefinitions = (
     spec: {
       name: "search_web",
       description:
-        "Search the public web with the active provider and return ranked results plus concise snippets.",
+        "Search the public web with the active provider and return ranked results plus concise snippets. Use focused queries, prefer official or maintainer-authored sources, and fetch primary pages before making specific claims.",
       inputSchema: {
         type: "object",
         additionalProperties: false,

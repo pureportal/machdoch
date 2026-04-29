@@ -18,6 +18,8 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -34,12 +36,19 @@ import { getRenderedMessageContent } from "./chat-session/_helpers/execution-mes
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { MessageMarkdown } from "./chat-session/components/message-markdown";
-import { SettingsDialog } from "./chat-session/components/settings-dialog";
 import { Button } from "./components/ui/button";
 import { Dialog } from "./components/ui/dialog";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { Textarea } from "./components/ui/textarea";
 import { cn } from "./lib/utils";
+
+const SettingsDialog = lazy(async () => {
+  const module = await import("./chat-session/components/settings-dialog");
+
+  return {
+    default: module.SettingsDialog,
+  };
+});
 
 const QUICK_TASK_HISTORY_LIMIT = 6;
 
@@ -61,9 +70,7 @@ const getQuickTaskStatusLabel = (status: SessionOverviewStatus): string => {
   }
 };
 
-const getQuickTaskStatusClassName = (
-  status: SessionOverviewStatus,
-): string => {
+const getQuickTaskStatusClassName = (status: SessionOverviewStatus): string => {
   switch (status) {
     case "running":
       return "border-amber-400/25 bg-amber-400/10 text-amber-100";
@@ -349,7 +356,9 @@ const QuickTaskComposer = ({
         ref={inputRef}
         aria-label="Quick chat composer"
         value={quickTaskComposer.draft}
-        onChange={(event) => quickTaskComposer.onDraftChange(event.target.value)}
+        onChange={(event) =>
+          quickTaskComposer.onDraftChange(event.target.value)
+        }
         onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
@@ -453,7 +462,9 @@ export const AssistantPopupShell = (): JSX.Element => {
               size="icon"
               aria-label="Hide quick chat"
               onClick={() => {
-                void getCurrentWindow().hide().catch(() => undefined);
+                void getCurrentWindow()
+                  .hide()
+                  .catch(() => undefined);
               }}
               className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
             >
@@ -495,17 +506,21 @@ export const AssistantPopupShell = (): JSX.Element => {
         )}
       </div>
 
-      <SettingsDialog
-        settingsSection={controller.settingsDialog.settingsSection}
-        onSettingsSectionChange={
-          controller.settingsDialog.onSettingsSectionChange
-        }
-        providerSetup={controller.settingsDialog.providerSetup}
-        webSearchSetup={controller.settingsDialog.webSearchSetup}
-        memorySetup={controller.settingsDialog.memorySetup}
-        desktopSetup={controller.settingsDialog.desktopSetup}
-        voiceSetup={controller.settingsDialog.voiceSetup}
-      />
+      {controller.catalogOpen ? (
+        <Suspense fallback={null}>
+          <SettingsDialog
+            settingsSection={controller.settingsDialog.settingsSection}
+            onSettingsSectionChange={
+              controller.settingsDialog.onSettingsSectionChange
+            }
+            providerSetup={controller.settingsDialog.providerSetup}
+            webSearchSetup={controller.settingsDialog.webSearchSetup}
+            memorySetup={controller.settingsDialog.memorySetup}
+            desktopSetup={controller.settingsDialog.desktopSetup}
+            voiceSetup={controller.settingsDialog.voiceSetup}
+          />
+        </Suspense>
+      ) : null}
     </Dialog>
   );
 };

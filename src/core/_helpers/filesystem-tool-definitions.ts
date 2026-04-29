@@ -147,7 +147,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
       spec: {
         name: "read_file",
         description:
-          "Read a workspace file with 1-based line numbers. Use this before editing an existing file.",
+          "Read a workspace file with 1-based line numbers. Use this before editing an existing file, and prefer focused line ranges or a workspace search first when you need to narrow a large file.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -289,7 +289,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
       spec: {
         name: "search_workspace",
         description:
-          "Search text across workspace files and return matching file:line results. Use this to find symbols, strings, or configuration references.",
+          "Search text across workspace files and return matching file:line results. Prefer this before broad directory walks or many file reads when you need to find symbols, strings, or configuration references quickly.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -501,7 +501,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
       spec: {
         name: "replace_in_file",
         description:
-          "Replace exact text in an existing workspace file. Use this for targeted edits after reading the file first.",
+          "Replace exact text in an existing workspace file. Use this for targeted edits after reading the file first, and choose a unique exact match instead of guessing when multiple occurrences exist.",
         inputSchema: {
           type: "object",
           additionalProperties: false,

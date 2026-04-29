@@ -25,6 +25,7 @@ import {
 } from "./_helpers/agent-runtime-shared.js";
 import {
   MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
+  MAX_CONSECUTIVE_IDENTICAL_TOOL_ERRORS,
   MAX_EXECUTOR_TURNS,
   type AgentLoopState,
   type ExecutorContinuationRequest,
@@ -41,7 +42,7 @@ import {
   type PreparedConversationPromptContext,
 } from "./_helpers/conversation-prompt-context.js";
 import { createProviderAdapter } from "./_helpers/provider-adapters.js";
-import { compactTraceText } from "./_helpers/runtime-text.js";
+import { compactTraceText, stringifyUnknown } from "./_helpers/runtime-text.js";
 import type {
   AgentModelAdapter,
   AgentModelToolResult,
@@ -191,6 +192,35 @@ const throwIfExecutionAborted = (signal: AbortSignal | undefined): void => {
   );
 };
 
+const stableSerializeValue = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableSerializeValue(entry)).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+      .map(
+        ([key, entryValue]) =>
+          `${JSON.stringify(key)}:${stableSerializeValue(entryValue)}`,
+      )
+      .join(",")}}`;
+  }
+
+  try {
+    return JSON.stringify(value) ?? "null";
+  } catch {
+    return stringifyUnknown(value);
+  }
+};
+
+const createToolCallSignature = (
+  name: string,
+  args: Record<string, unknown>,
+): string => {
+  return `${name}:${stableSerializeValue(args)}`;
+};
+
 const runExecutorCycle = async (
   task: string,
   config: RuntimeConfig,
@@ -279,6 +309,12 @@ const runExecutorCycle = async (
     tools: toolSpecs,
     ...(signal ? { signal } : {}),
   });
+  let lastConsecutiveToolError:
+    | {
+        signature: string;
+        count: number;
+      }
+    | undefined;
 
   for (let turnIndex = 0; turnIndex < MAX_EXECUTOR_TURNS; turnIndex += 1) {
     throwIfExecutionAborted(signal);
@@ -405,6 +441,34 @@ const runExecutorCycle = async (
     for (const call of turn.toolCalls) {
       throwIfExecutionAborted(signal);
 
+      const callSignature = createToolCallSignature(call.name, call.arguments);
+
+      if (
+        lastConsecutiveToolError?.signature === callSignature &&
+        lastConsecutiveToolError.count >= MAX_CONSECUTIVE_IDENTICAL_TOOL_ERRORS
+      ) {
+        const repeatedFailureMessage = `The tool call \`${call.name}\` with the same arguments already failed ${lastConsecutiveToolError.count} consecutive time(s) in this executor iteration. Do not retry it unchanged. Change the arguments, inspect more context, switch tools, or explain the blocker.`;
+
+        toolResults.push({
+          callId: call.id,
+          name: call.name,
+          output: repeatedFailureMessage,
+          isError: true,
+        });
+        loopState.traceLines.push(
+          `tool_guard: prevented repeated failing call ${call.name} after ${lastConsecutiveToolError.count} consecutive identical error(s).`,
+        );
+        loopState.outputSections.push({
+          title: "Tool retry guard",
+          lines: [repeatedFailureMessage],
+        });
+        lastConsecutiveToolError = {
+          signature: callSignature,
+          count: lastConsecutiveToolError.count + 1,
+        };
+        continue;
+      }
+
       const executionOutcome = await executeToolCall(
         task,
         config,
@@ -433,6 +497,21 @@ const runExecutorCycle = async (
 
       if (!result) {
         continue;
+      }
+
+      if (result.toolResult.isError) {
+        lastConsecutiveToolError =
+          lastConsecutiveToolError?.signature === callSignature
+            ? {
+                signature: callSignature,
+                count: lastConsecutiveToolError.count + 1,
+              }
+            : {
+                signature: callSignature,
+                count: 1,
+              };
+      } else {
+        lastConsecutiveToolError = undefined;
       }
 
       toolResults.push(result.toolResult);

@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+/// <reference types="vitest/globals" />
 import { rankTaskMatchText, tokenizeTaskMatchText } from "./task-context.ts";
 
 describe("tokenizeTaskMatchText", () => {
   it("drops stop words, short tokens, and duplicates", () => {
     expect(
-      tokenizeTaskMatchText("Update the React UI with the react task-context panel"),
+      tokenizeTaskMatchText(
+        "Update the React UI with the react task-context panel",
+      ),
     ).toEqual(["react", "task", "context", "panel"]);
   });
 });

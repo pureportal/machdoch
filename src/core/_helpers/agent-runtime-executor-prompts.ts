@@ -6,10 +6,103 @@ import type {
 import type { ExecutorContinuationRequest } from "./agent-runtime-types.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
 
-const hasTool = (
-  tools: AgentModelToolSpec[],
-  toolName: string,
-): boolean => {
+const BROAD_REASONING_TASK_PATTERN =
+  /\b(debug|diagnos(?:e|is)|investigat(?:e|ion)|root cause|analy(?:ze|sis)|compare|research|benchmark|best\s+practices?|optimi(?:se|ze|sation|zation)|performance|security|architecture|design|redesign|migration|workflow|agent|autopilot|orchestrat(?:e|ion)|refactor|whole|entire|system|multi(?:ple|-)?step|multi(?:ple|-)?file)\b/i;
+const EXTERNAL_RESEARCH_PATTERN =
+  /\b(research|online|web|internet|best\s+practices?|official|docs?|documentation|guide|latest|recent|current|release\s+notes?|changelog|benchmark|compare)\b/i;
+const CHANGE_OR_VALIDATION_TASK_PATTERN =
+  /\b(fix|implement|build|create|change|update|edit|modify|refactor|rewrite|repair|improve|optimi(?:se|ze)|debug|test|validate|verify|benchmark)\b/i;
+
+export interface TaskStrategyProfile {
+  reasoningEffort: "low" | "medium" | "high";
+  requirePlanning: boolean;
+  requireResearch: boolean;
+  requireVerification: boolean;
+  signals: string[];
+}
+
+const createTaskSignalText = (
+  task: string,
+  taskContext: ResolvedTaskContext,
+  continuationRequest?: ExecutorContinuationRequest,
+): string => {
+  return [
+    task,
+    taskContext.effectiveTask,
+    continuationRequest?.rationale,
+    continuationRequest?.missingRequirements.join(" "),
+    continuationRequest?.requiredActions.join(" "),
+  ]
+    .filter((part): part is string => typeof part === "string")
+    .join(" ");
+};
+
+export const inferTaskStrategyProfile = (
+  task: string,
+  taskContext: ResolvedTaskContext,
+  continuationRequest?: ExecutorContinuationRequest,
+): TaskStrategyProfile => {
+  const signalText = createTaskSignalText(
+    task,
+    taskContext,
+    continuationRequest,
+  );
+  const signals: string[] = [];
+  let score = 0;
+
+  if (BROAD_REASONING_TASK_PATTERN.test(signalText)) {
+    score += 2;
+    signals.push("task looks broad, ambiguous, or reasoning-heavy");
+  }
+
+  if (task.trim().split(/\s+/u).length >= 18) {
+    score += 1;
+    signals.push("task description is long enough to suggest multiple steps");
+  }
+
+  if (taskContext.workspacePaths.length >= 2) {
+    score += 1;
+    signals.push("multiple workspace paths are in play");
+  }
+
+  if (taskContext.applicableInstructions.length >= 2) {
+    score += 1;
+    signals.push("several task-specific instructions apply");
+  }
+
+  if (continuationRequest) {
+    score += 2;
+    signals.push("monitor feedback requires another executor iteration");
+  }
+
+  const requireResearch = EXTERNAL_RESEARCH_PATTERN.test(signalText);
+
+  if (requireResearch) {
+    score += 1;
+    signals.push("task asks for current external guidance or best practices");
+  }
+
+  const reasoningEffort: TaskStrategyProfile["reasoningEffort"] =
+    score >= 4 ? "high" : score >= 2 ? "medium" : "low";
+  const requirePlanning =
+    continuationRequest !== undefined || reasoningEffort !== "low";
+  const requireVerification =
+    continuationRequest !== undefined ||
+    CHANGE_OR_VALIDATION_TASK_PATTERN.test(signalText) ||
+    taskContext.suggestedTools.some(
+      (tool) => tool === "shell" || tool === "git" || tool === "packages",
+    );
+
+  return {
+    reasoningEffort,
+    requirePlanning,
+    requireResearch,
+    requireVerification,
+    signals,
+  };
+};
+
+const hasTool = (tools: AgentModelToolSpec[], toolName: string): boolean => {
   return tools.some((tool) => tool.name === toolName);
 };
 
@@ -21,6 +114,7 @@ const createResearchContract = (tools: AgentModelToolSpec[]): string => {
     return [
       "<research_contract>",
       "When the task would benefit from current external knowledge, do not be shy about researching first.",
+      "If the user explicitly asks for online investigation, recent guidance, best practices, release notes, or official documentation, web research is mandatory before you make specific claims.",
       "Use `search_web` proactively for official documentation, best practices, version-sensitive APIs, breaking changes, security guidance, release notes, ambiguous runtime errors, and framework or library behavior that may have changed since your training cutoff.",
       canFetchUrl
         ? "After you find promising sources, use `fetch_url` to inspect the underlying documentation or page before making specific claims."
@@ -41,6 +135,33 @@ const createResearchContract = (tools: AgentModelToolSpec[]): string => {
   ].join("\n");
 };
 
+const createStrategyProfileSection = (profile: TaskStrategyProfile): string => {
+  return [
+    "<strategy_profile>",
+    `reasoning effort: ${profile.reasoningEffort}`,
+    `plan before acting: ${profile.requirePlanning ? "required" : "optional"}`,
+    `external research before conclusions: ${profile.requireResearch ? "required when tools are available" : "only when the task clearly needs it"}`,
+    `verification before completion: ${profile.requireVerification ? "required" : "still expected when feasible"}`,
+    profile.signals.length > 0
+      ? `signals: ${profile.signals.join("; ")}`
+      : "signals: none triggered",
+    "</strategy_profile>",
+  ].join("\n");
+};
+
+const createExecutionPlaybookSection = (): string => {
+  return [
+    "<execution_playbook>",
+    "1. Before the first non-trivial action, identify the goal, constraints, success checks, and the highest-value next step.",
+    "2. For complex work, operate in a quiet discover -> plan -> execute -> verify loop instead of jumping straight into edits or shell commands.",
+    "3. Prefer narrow, high-signal tool calls: search before broad reads, targeted reads before edits, exact edits before whole-file rewrites, and focused commands before long shell scripts.",
+    "4. When tool results contradict your assumptions, update the plan immediately rather than defending the old plan.",
+    "5. If the same tool call fails twice in a row, do not retry it unchanged; change the arguments, switch tools, gather more context, or explain the blocker.",
+    "6. Before completion, cross-check every explicit user requirement, applicable instruction, and monitor feedback item against the gathered evidence.",
+    "</execution_playbook>",
+  ].join("\n");
+};
+
 export const createExecutorSystemPrompt = (
   config: RuntimeConfig,
   taskContext: ResolvedTaskContext,
@@ -48,6 +169,11 @@ export const createExecutorSystemPrompt = (
   conversationContext: PreparedConversationPromptContext,
   continuationRequest?: ExecutorContinuationRequest,
 ): string => {
+  const strategyProfile = inferTaskStrategyProfile(
+    taskContext.task,
+    taskContext,
+    continuationRequest,
+  );
   const instructionLines =
     taskContext.applicableInstructions.length > 0
       ? taskContext.applicableInstructions.map(
@@ -65,6 +191,8 @@ export const createExecutorSystemPrompt = (
     "<role>You are Machdoch Executor, a local-first autonomous workspace agent responsible for doing the work rather than grading it.</role>",
     "<mission>Keep working until the task is complete, blocked by a real runtime limitation, or paused for approval. Use tools instead of guessing, and never claim a change, command, or fetched result unless a tool actually produced it.</mission>",
     "<operating_principles>Prefer low-risk inspection before edits. Before editing an existing file, inspect it first. Use create_file only for brand-new files and replace_in_file for targeted edits. If a tool returns an error, adapt and continue instead of stopping immediately.</operating_principles>",
+    createStrategyProfileSection(strategyProfile),
+    createExecutionPlaybookSection(),
     createResearchContract(tools),
     config.mode === "auto"
       ? "<autopilot_contract>You are running in Autopilot mode. A separate monitor agent will review every claimed completion. Before you stop, gather concrete verification evidence from tool results. If monitor feedback is provided, treat every missing requirement and required action as mandatory for the next iteration.</autopilot_contract>"
@@ -125,7 +253,7 @@ export const createExecutorSystemPrompt = (
           .filter((line): line is string => typeof line === "string")
           .join("\n")
       : undefined,
-    "<final_response_contract>When the task is complete, call `submit_final_response` exactly once and make it the only tool call in that turn. The markdown must stay compact, use standard Markdown, prefer short bullet lists over long prose, and only mention files or checks that are grounded in actual tool output. Put workspace file references in `relatedFiles` instead of inventing inline file URLs.</final_response_contract>",
+    "<final_response_contract>When the task is complete, call `submit_final_response` exactly once and make it the only tool call in that turn. The markdown must stay compact, use standard Markdown, prefer short bullet lists over long prose, and only mention files or checks that are grounded in actual tool output. Put workspace file references in `relatedFiles` instead of inventing inline file URLs. Before submitting it, mentally cross-check goal coverage, evidence, verification, and unresolved risks.</final_response_contract>",
     "<completion_requirements>Only stop when the user request is actually satisfied and you have tool-grounded evidence for that conclusion. Do not end with freeform prose alone when you can return the structured final response.</completion_requirements>",
   ]
     .filter((section): section is string => typeof section === "string")

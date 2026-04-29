@@ -21,7 +21,7 @@ export const createFinalResponseTool = (): AgentModelToolSpec => {
   return {
     name: FINAL_RESPONSE_TOOL_NAME,
     description:
-      "Submit the final user-facing response after the task is actually complete. Call this exactly once, as the only tool in the turn, when no further execution is required.",
+      "Submit the final user-facing response after the task is actually complete. Call this exactly once, as the only tool in the turn, when no further execution is required and every explicit user requirement has been covered as far as the gathered evidence allows.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
