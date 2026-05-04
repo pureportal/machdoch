@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "build:cli-bundle": "node scripts/build-cli-bundle.mjs",
     "build:ui": "vite build --config vite.ui.config.ts",
+    "version:bump": "node scripts/bump-version.mjs",
     "lint": "eslint src vite.ui.config.ts vitest.config.ts vitest.ui.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "typecheck:ui": "tsc -p tsconfig.ui.json --noEmit",
