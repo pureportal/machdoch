@@ -20,6 +20,13 @@ const RECORDING_MIME_CANDIDATES = [
   "audio/ogg;codecs=opus",
   "audio/ogg",
 ] as const;
+const MIN_RECORDED_AUDIO_BYTES = 512;
+const MIN_RECORDED_AUDIO_DURATION_SECONDS = 0.25;
+const MIN_RECORDED_SPEECH_RMS = 0.0035;
+const MIN_RECORDED_SPEECH_PEAK = 0.025;
+
+export const NO_SPEECH_DETECTED_MESSAGE =
+  "No voice was detected. Check the selected microphone and try again.";
 
 export const canUseSpeechInput = (): boolean => {
   return (
@@ -209,6 +216,70 @@ export const prepareAudioBlob = async (
   }
 
   return convertBlobToWav(blob);
+};
+
+const isNoSpeechDetectedError = (error: unknown): boolean => {
+  return (
+    error instanceof Error && error.message === NO_SPEECH_DETECTED_MESSAGE
+  );
+};
+
+export const assertRecordedSpeechDetected = async (
+  blob: Blob,
+): Promise<void> => {
+  if (blob.size < MIN_RECORDED_AUDIO_BYTES) {
+    throw new Error(NO_SPEECH_DETECTED_MESSAGE);
+  }
+
+  if (typeof AudioContext === "undefined") {
+    return;
+  }
+
+  const audioContext = new AudioContext();
+
+  try {
+    const audioData = await blob.arrayBuffer();
+    const decodedAudio = await audioContext.decodeAudioData(audioData.slice(0));
+
+    if (decodedAudio.duration < MIN_RECORDED_AUDIO_DURATION_SECONDS) {
+      throw new Error(NO_SPEECH_DETECTED_MESSAGE);
+    }
+
+    let peak = 0;
+    let sampleCount = 0;
+    let sumSquares = 0;
+
+    for (
+      let channelIndex = 0;
+      channelIndex < decodedAudio.numberOfChannels;
+      channelIndex += 1
+    ) {
+      const channelData = decodedAudio.getChannelData(channelIndex);
+
+      for (const sample of channelData) {
+        const absoluteSample = Math.abs(sample);
+
+        peak = Math.max(peak, absoluteSample);
+        sumSquares += sample * sample;
+        sampleCount += 1;
+      }
+    }
+
+    const rms = sampleCount > 0 ? Math.sqrt(sumSquares / sampleCount) : 0;
+
+    if (
+      rms < MIN_RECORDED_SPEECH_RMS &&
+      peak < MIN_RECORDED_SPEECH_PEAK
+    ) {
+      throw new Error(NO_SPEECH_DETECTED_MESSAGE);
+    }
+  } catch (error) {
+    if (isNoSpeechDetectedError(error)) {
+      throw error;
+    }
+  } finally {
+    void audioContext.close().catch(() => undefined);
+  }
 };
 
 export const convertBlobToBase64 = async (blob: Blob): Promise<string> => {

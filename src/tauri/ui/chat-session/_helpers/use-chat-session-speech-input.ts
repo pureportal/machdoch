@@ -6,6 +6,7 @@ import {
 	type UserSpeechToTextProvider,
 	type UserSpeechToTextSettings,
 } from "../../runtime";
+import { assertRecordedSpeechDetected } from "./speech-audio";
 
 const GOOGLE_SUPPORTED_MIME_TYPES = new Set([
 	"audio/wav",
@@ -55,18 +56,6 @@ const canUseSpeechInput = (): boolean => {
 
 const normalizeMimeType = (mimeType: string | null | undefined): string => {
 	return mimeType?.split(";")[0]?.trim().toLowerCase() ?? "";
-};
-
-const getSpeechInputLanguageCode = (): string | undefined => {
-	const candidate =
-		typeof navigator !== "undefined" ? navigator.language?.trim() : "";
-
-	if (!candidate) {
-		return undefined;
-	}
-
-	const primaryLanguageCode = candidate.split(/[-_]/u)[0]?.trim();
-	return primaryLanguageCode || undefined;
 };
 
 const getConfiguredProvider = (
@@ -337,14 +326,12 @@ export const useChatSessionSpeechInput = (
 			streamRef.current = null;
 			chunksRef.current = [];
 
+			await assertRecordedSpeechDetected(recordedBlob);
 			const preparedBlob = await prepareAudioBlob(recordedBlob, provider);
 			const transcription = await transcribeUserSpeechAudio({
 				provider,
 				audioBase64: await convertBlobToBase64(preparedBlob),
 				mimeType: normalizeMimeType(preparedBlob.type) || "audio/wav",
-				...(getSpeechInputLanguageCode()
-					? { languageCode: getSpeechInputLanguageCode() }
-					: {}),
 			});
 			const transcriptText = transcription.text.trim();
 

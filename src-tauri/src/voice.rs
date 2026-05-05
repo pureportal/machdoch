@@ -15,7 +15,7 @@ const OPENAI_TTS_INSTRUCTIONS: &str =
 const OPENAI_MAX_INPUT_CHARS: usize = 4096;
 const OPENAI_STT_ENDPOINT: &str = "https://api.openai.com/v1/audio/transcriptions";
 const OPENAI_STT_MODEL: &str = "gpt-4o-transcribe";
-const OPENAI_STT_PROMPT: &str = "Transcribe this short push-to-talk instruction for a desktop AI assistant. Preserve punctuation, filenames, CLI flags, code symbols, and product names when they are clear. Return only the transcript.";
+const OPENAI_STT_PROMPT: &str = "Transcribe this short push-to-talk instruction for a desktop AI assistant. Preserve punctuation, filenames, CLI flags, code symbols, and product names when they are clear. If no intelligible speech is present, return an empty transcript. Return only the transcript.";
 const OPENAI_MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 
 const GOOGLE_TTS_ENDPOINT: &str =
@@ -27,7 +27,7 @@ const GOOGLE_PCM_SAMPLE_RATE_HZ: u32 = 24_000;
 const GOOGLE_PCM_CHANNELS: u16 = 1;
 const GOOGLE_PCM_BITS_PER_SAMPLE: u16 = 16;
 const GOOGLE_TTS_RETRY_COUNT: usize = 2;
-const GOOGLE_STT_SYSTEM_INSTRUCTION: &str = "You are a speech-to-text transcription service for a desktop AI assistant. Return only the spoken transcript as plain text. Preserve punctuation, filenames, CLI flags, code symbols, and product names when they are clear. Do not summarize, explain, or add speaker labels.";
+const GOOGLE_STT_SYSTEM_INSTRUCTION: &str = "You are a speech-to-text transcription service for a desktop AI assistant. Return only the spoken transcript as plain text. Preserve punctuation, filenames, CLI flags, code symbols, and product names when they are clear. If no intelligible speech is present, return an empty transcript. Do not summarize, explain, or add speaker labels.";
 const GOOGLE_MAX_INLINE_AUDIO_BYTES: usize = 20 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize)]
@@ -220,11 +220,11 @@ fn create_google_prompt(text: &str, rate: Option<f64>) -> String {
 fn create_google_transcription_prompt(language_code: Option<&str>) -> String {
     if let Some(language_code) = normalize_language_code(language_code) {
         return format!(
-            "Generate an accurate transcript of the spoken audio. The most likely spoken language code is {language_code}. Return only the transcript text."
+            "Generate an accurate transcript of the spoken audio. The most likely spoken language code is {language_code}. If no intelligible speech is present, return an empty transcript. Return only the transcript text."
         );
     }
 
-    "Generate an accurate transcript of the spoken audio. Return only the transcript text."
+    "Generate an accurate transcript of the spoken audio. If no intelligible speech is present, return an empty transcript. Return only the transcript text."
         .to_string()
 }
 

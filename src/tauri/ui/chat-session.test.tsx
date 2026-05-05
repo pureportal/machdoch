@@ -1027,10 +1027,10 @@ describe("ChatSession component", () => {
 
     const launchPanel = screen
       .getByText(/^Launch on sign-in$/i)
-      .closest(".rounded-2xl");
+      .closest("[data-setting-panel]");
     const startupPanel = screen
       .getByText(/^Startup behavior$/i)
-      .closest(".rounded-2xl");
+      .closest("[data-setting-panel]");
 
     expect(launchPanel).not.toBeNull();
     expect(startupPanel).not.toBeNull();
@@ -1964,6 +1964,16 @@ describe("ChatSession component", () => {
       ).toHaveProperty("disabled", false);
     });
 
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Session model: OpenAI GPT-5.4 mini/i,
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Choose OpenAI GPT-5.5/i,
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Autopilot" }));
     fireEvent.click(screen.getByRole("button", { name: "UI Control" }));
 
@@ -1982,6 +1992,8 @@ describe("ChatSession component", () => {
       null,
       "Summarize the attached notes",
       expect.objectContaining({
+        provider: "openai",
+        model: "gpt-5.5",
         mode: "auto",
         conversationContext: expect.objectContaining({
           sessionMemoryEnabled: false,
@@ -1994,6 +2006,169 @@ describe("ChatSession component", () => {
 
     loadUserMemorySettingsSpy.mockRestore();
     loadWorkspaceRuntimeSnapshotSpy.mockRestore();
+    runDesktopTaskSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("cancels a running Quick Tasks session from the main window", async () => {
+    const baseState = createInitialShellState();
+    const quickSession = createSession({
+      id: "quick-main-running-session",
+      specialSession: QUICK_VOICE_SESSION_KIND,
+      updatedAt: 1_713_260_010_000,
+      messages: [
+        {
+          id: "quick-main-running-user",
+          taskId: "quick-main-running-task",
+          role: "user",
+          content: "Summarize the focused window",
+          createdAt: 1_713_260_000_000,
+        },
+      ],
+    });
+    const cancelDesktopTaskSpy = vi
+      .spyOn(runtime, "cancelDesktopTask")
+      .mockResolvedValue(undefined);
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: quickSession.id,
+      sessions: [baseState.sessions[0], quickSession],
+    });
+
+    render(<ChatSession />);
+
+    fireEvent.click(
+      await screen.findByRole(
+        "button",
+        { name: "Cancel task" },
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+      ),
+    );
+
+    await waitFor(() => {
+      expect(cancelDesktopTaskSpy).toHaveBeenCalledWith(
+        "quick-main-running-task",
+      );
+    });
+    expect(screen.getByText(/Cancellation requested/i)).toBeDefined();
+
+    cancelDesktopTaskSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("shows a cancel action for running Quick Chat tasks in the popup", async () => {
+    const runDesktopTaskSpy = vi
+      .spyOn(runtime, "runDesktopTask")
+      .mockImplementation(
+        () => new Promise<DesktopTaskRunResponse>(() => {}),
+      );
+    const cancelDesktopTaskSpy = vi
+      .spyOn(runtime, "cancelDesktopTask")
+      .mockResolvedValue(undefined);
+
+    render(<AssistantPopupShell />);
+
+    const input = await screen.findByPlaceholderText(/Quick task/i);
+
+    fireEvent.change(input, {
+      target: { value: "Count the apples" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
+
+    await waitFor(() => {
+      expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+    });
+
+    const taskId = runDesktopTaskSpy.mock.calls[0]?.[2]?.taskId;
+
+    expect(typeof taskId).toBe("string");
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Cancel quick task",
+      }),
+    ).toBeDefined();
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Cancel running quick task",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(cancelDesktopTaskSpy).toHaveBeenCalledWith(taskId);
+    });
+
+    cancelDesktopTaskSpy.mockRestore();
+    runDesktopTaskSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("keeps the Quick Chat model independent from the helper window active session", async () => {
+    const baseState = createInitialShellState();
+    const mainSession = createSession({
+      id: "main-model-session",
+      provider: "openai",
+      model: "gpt-5.4",
+      updatedAt: 1_713_260_000_000,
+    });
+    const quickSession = createSession({
+      id: "quick-model-session",
+      specialSession: QUICK_VOICE_SESSION_KIND,
+      provider: "openai",
+      model: "gpt-5.5",
+      updatedAt: 1_713_260_010_000,
+    });
+    const runDesktopTaskSpy = vi
+      .spyOn(runtime, "runDesktopTask")
+      .mockResolvedValue({
+        execution: createMockExecutionFixture(
+          "Use the selected quick model",
+          "/mock/home/path",
+        ),
+      });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: mainSession.id,
+      sessions: [mainSession, quickSession],
+    });
+
+    render(<AssistantPopupShell />);
+
+    expect(
+      await screen.findByRole("button", {
+        name: /Session model: OpenAI GPT-5.5/i,
+      }),
+    ).toBeDefined();
+
+    const input = await screen.findByPlaceholderText(/Quick task/i);
+
+    fireEvent.change(input, {
+      target: { value: "Use the selected quick model" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
+
+    await waitFor(() => {
+      expect(runDesktopTaskSpy).toHaveBeenCalledWith(
+        null,
+        "Use the selected quick model",
+        expect.objectContaining({
+          provider: "openai",
+          model: "gpt-5.5",
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      const storedState = JSON.parse(
+        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "null",
+      ) as ShellPersistedState | null;
+      const storedQuickSession = storedState?.sessions.find(
+        (session) => session.specialSession === QUICK_VOICE_SESSION_KIND,
+      );
+
+      expect(storedQuickSession?.model).toBe("gpt-5.5");
+    });
+
     runDesktopTaskSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
@@ -2057,6 +2232,9 @@ describe("ChatSession component", () => {
             resolveTask = resolve;
           }),
       );
+    const cancelDesktopTaskSpy = vi
+      .spyOn(runtime, "cancelDesktopTask")
+      .mockResolvedValue(undefined);
 
     render(<AssistantPopupShell />);
 
@@ -2076,6 +2254,12 @@ describe("ChatSession component", () => {
     expect(clearButton).toHaveProperty("disabled", false);
 
     fireEvent.click(clearButton);
+
+    await waitFor(() => {
+      expect(cancelDesktopTaskSpy).toHaveBeenCalledWith(
+        runDesktopTaskSpy.mock.calls[0]?.[2]?.taskId,
+      );
+    });
 
     await waitFor(() => {
       expect(screen.queryByText(/Count the apples/i)).toBeNull();
@@ -2099,6 +2283,7 @@ describe("ChatSession component", () => {
     expect(screen.queryByText(/Preview only/i)).toBeNull();
     expect(screen.queryByText(/Count the apples/i)).toBeNull();
 
+    cancelDesktopTaskSpy.mockRestore();
     runDesktopTaskSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 });

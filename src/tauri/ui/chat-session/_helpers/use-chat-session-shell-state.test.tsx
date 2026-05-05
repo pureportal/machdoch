@@ -150,6 +150,61 @@ describe("useChatSessionShellState", () => {
     });
   });
 
+  it("keeps newer session model selections when helper windows persist other session updates", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-model-race",
+      manualTitle: "Model race",
+      provider: "openai",
+      model: "gpt-5.4",
+      updatedAt: 1,
+    });
+    const storedState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    };
+
+    storeShellState(storedState);
+
+    const { result } = renderHook(() => useChatSessionShellState());
+    await flushShellHydration();
+
+    storeShellState({
+      ...storedState,
+      sessions: [
+        {
+          ...session,
+          model: "gpt-5.5",
+          updatedAt: 10,
+        },
+      ],
+    });
+
+    act(() => {
+      result.current.updateSessionById(session.id, (currentSession) => ({
+        ...currentSession,
+        messages: [
+          ...currentSession.messages,
+          {
+            id: "helper-message",
+            role: "user",
+            content: "Persisted from helper",
+            createdAt: 20,
+          },
+        ],
+        updatedAt: 20,
+      }));
+    });
+
+    await waitFor(() => {
+      const persisted = loadStoredShellState();
+
+      expect(persisted.sessions[0]?.model).toBe("gpt-5.5");
+      expect(persisted.sessions[0]?.messages).toHaveLength(1);
+    });
+  });
+
   it("keeps the window-local active session stable when persisted activeSessionId changes", async () => {
     const baseState = createInitialShellState();
     const firstSession = createSession({

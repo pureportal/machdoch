@@ -6,6 +6,7 @@ import {
   isTauriMock,
 } from "./test/tauri-test-mocks";
 import {
+  cancelDesktopTask,
   detectFullscreenWindowOnMonitor,
   loadDesktopLaunchId,
   resolveDroppedPaths,
@@ -104,6 +105,16 @@ describe("desktop runtime fullscreen detection", () => {
         mode: "ask",
         taskId: "task-123",
       },
+    });
+  });
+
+  it("passes desktop task cancellation through the Rust command", async () => {
+    invokeMock.mockResolvedValueOnce(undefined);
+
+    await cancelDesktopTask("task-123");
+
+    expect(invokeMock).toHaveBeenCalledWith("cancel_desktop_task", {
+      taskId: "task-123",
     });
   });
 });

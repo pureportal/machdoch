@@ -55,6 +55,45 @@ const areShellFragmentsEqual = (left: unknown, right: unknown): boolean => {
   return serializeShellFragment(left) === serializeShellFragment(right);
 };
 
+const mergeSessionRuntimeSelection = (
+  primarySession: ChatSessionRecord,
+  localSession: ChatSessionRecord,
+  baseSession: ChatSessionRecord,
+  latestSession: ChatSessionRecord,
+): ChatSessionRecord => {
+  const localProviderChanged = localSession.provider !== baseSession.provider;
+  const latestProviderChanged = latestSession.provider !== baseSession.provider;
+  const localModelChanged = localSession.model !== baseSession.model;
+  const latestModelChanged = latestSession.model !== baseSession.model;
+  let mergedSession = primarySession;
+
+  if (!localProviderChanged && latestProviderChanged) {
+    mergedSession = {
+      ...mergedSession,
+      provider: latestSession.provider,
+    };
+  } else if (localProviderChanged && !latestProviderChanged) {
+    mergedSession = {
+      ...mergedSession,
+      provider: localSession.provider,
+    };
+  }
+
+  if (!localModelChanged && latestModelChanged) {
+    mergedSession = {
+      ...mergedSession,
+      model: latestSession.model,
+    };
+  } else if (localModelChanged && !latestModelChanged) {
+    mergedSession = {
+      ...mergedSession,
+      model: localSession.model,
+    };
+  }
+
+  return mergedSession;
+};
+
 const mergeShellStateForPersistence = (
   localState: ShellPersistedState,
   baseState: ShellPersistedState,
@@ -115,9 +154,19 @@ const mergeShellStateForPersistence = (
     const localTimestamp = getSessionPersistenceTimestamp(localSession);
     const latestTimestamp = getSessionPersistenceTimestamp(latestSession);
 
+    const primarySession =
+      localTimestamp >= latestTimestamp ? localSession : latestSession;
+
     mergedSessionsById.set(
       sessionId,
-      localTimestamp >= latestTimestamp ? localSession : latestSession,
+      baseSession
+        ? mergeSessionRuntimeSelection(
+            primarySession,
+            localSession,
+            baseSession,
+            latestSession,
+          )
+        : primarySession,
     );
   }
 

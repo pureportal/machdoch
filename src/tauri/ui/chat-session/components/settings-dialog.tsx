@@ -1,4 +1,14 @@
-import { ArrowUpRight } from "lucide-react";
+import {
+  ArrowUpRight,
+  Brain,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Monitor,
+  Search,
+  Volume2,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useState, type JSX, type ReactNode } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -10,7 +20,6 @@ import {
 } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import { ScrollArea } from "../../components/ui/scroll-area";
-import { Separator } from "../../components/ui/separator";
 import { cn } from "../../lib/utils";
 import { getProviderLabel } from "../../model-catalog";
 import {
@@ -23,7 +32,6 @@ import {
   type SpeechToTextProviderAvailability,
   type UserApiKeyProvider,
   type UserMemorySettings,
-  type UserVoiceAiProvider,
   type VoiceAiProvider,
   type VoiceProviderAvailability,
   type UserWebSearchApiKeyProvider,
@@ -35,6 +43,14 @@ import {
   getWebSearchProviderLabel,
   type SettingsSection,
 } from "../_helpers/session-shell.ts";
+
+const SETTINGS_SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
+  providers: KeyRound,
+  "web-search": Search,
+  voice: Volume2,
+  memory: Brain,
+  desktop: Monitor,
+};
 
 export interface SettingsStatusMessage {
   tone: "success" | "error";
@@ -114,12 +130,6 @@ const getVoiceAiProviderLabel = (provider: VoiceAiProvider): string => {
   return provider === "none" ? "System voices only" : getProviderLabel(provider);
 };
 
-const getVoiceProviderAvailabilityTone = (
-  configured: boolean,
-): string => {
-  return configured ? "text-emerald-300" : "text-slate-400";
-};
-
 interface SettingsCardProps {
   title: string;
   description?: string;
@@ -136,17 +146,17 @@ const SettingsCard = ({
   return (
     <section
       className={cn(
-        "grid min-h-full content-start gap-4 rounded-3xl border border-slate-800 bg-slate-900/45 p-5",
+        "grid content-start",
         className,
       )}
     >
-      <div className="grid gap-1">
-        <h3 className="text-sm font-semibold text-slate-100">{title}</h3>
+      <div className="grid gap-1 border-b border-slate-800/80 pb-4">
+        <h3 className="text-base font-semibold text-slate-100">{title}</h3>
         {description ? (
           <p className="text-sm leading-6 text-slate-400">{description}</p>
         ) : null}
       </div>
-      {children}
+      <div className="grid gap-0">{children}</div>
     </section>
   );
 };
@@ -168,13 +178,14 @@ const SettingPanel = ({
 }: SettingPanelProps): JSX.Element => {
   return (
     <div
+      data-setting-panel
       className={cn(
-        "grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/55 p-4 md:grid-cols-[minmax(9rem,0.8fr)_minmax(0,1.2fr)] md:items-center",
+        "grid gap-3 border-b border-slate-800/75 py-4 last:border-b-0 md:grid-cols-[12rem_minmax(0,1fr)] md:items-center",
         className,
       )}
     >
       <div className="grid gap-1">
-        <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
+        <p className="text-sm font-medium text-slate-300">
           {label}
         </p>
         {detail ? (
@@ -190,6 +201,7 @@ interface ChoiceOption<TValue extends string> {
   value: TValue;
   label: string;
   ariaLabel?: string;
+  disabled?: boolean;
 }
 
 interface ChoiceButtonsProps<TValue extends string> {
@@ -206,7 +218,7 @@ function ChoiceButtons<TValue extends string>({
   onChange,
 }: ChoiceButtonsProps<TValue>): JSX.Element {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="inline-flex max-w-full flex-nowrap overflow-x-auto rounded-md border border-slate-800 bg-slate-950/90 p-0.5 [scrollbar-width:thin]">
       {options.map((option) => {
         const selected = value === option.value;
 
@@ -217,11 +229,12 @@ function ChoiceButtons<TValue extends string>({
             variant="outline"
             aria-label={option.ariaLabel}
             aria-pressed={selected}
-            disabled={disabled}
+            disabled={disabled || option.disabled}
             onClick={() => onChange(option.value)}
             className={cn(
-              "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-              selected && "border-sky-500/30 bg-sky-500/10 text-sky-100",
+              "h-8 shrink-0 rounded-[5px] border-transparent bg-transparent px-3 text-xs text-slate-300 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40",
+              selected &&
+                "border-sky-500/30 bg-sky-500/15 text-sky-100 hover:bg-sky-500/20",
             )}
           >
             {option.label}
@@ -231,6 +244,29 @@ function ChoiceButtons<TValue extends string>({
     </div>
   );
 }
+
+const SettingsStatus = ({
+  message,
+}: {
+  message: SettingsStatusMessage | null;
+}): JSX.Element | null => {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <p
+      className={cn(
+        "rounded-lg border px-3 py-2 text-sm leading-5",
+        message.tone === "error"
+          ? "border-rose-500/20 bg-rose-500/10 text-rose-200"
+          : "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
+      )}
+    >
+      {message.text}
+    </p>
+  );
+};
 
 export interface SettingsDialogProps {
   settingsSection: SettingsSection;
@@ -323,11 +359,23 @@ export const SettingsDialog = ({
   const selectedWebSearchProviderLabel = getWebSearchProviderLabel(
     webSearchSetup.provider,
   );
+  const speechToTextProviderConfigured = new Map(
+    voiceSetup.speechToTextProviderAvailability.map((provider) => [
+      provider.provider,
+      provider.configured,
+    ]),
+  );
+  const aiVoiceProviderConfigured = new Map(
+    voiceSetup.aiProviderAvailability.map((provider) => [
+      provider.provider,
+      provider.configured,
+    ]),
+  );
 
   return (
-    <DialogContent className="h-[min(760px,calc(100vh-32px))] w-[min(1080px,calc(100vw-32px))] max-w-none gap-0 overflow-hidden rounded-3xl border-slate-800 bg-slate-950/96 p-0 text-slate-100 shadow-2xl sm:max-w-none">
-      <div className="flex h-full min-h-0 flex-col overflow-hidden">
-        <DialogHeader className="border-b border-slate-800 px-6 py-4 text-left">
+    <DialogContent className="max-h-[min(720px,calc(100vh-28px))] w-[min(980px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none">
+      <div className="flex max-h-[min(720px,calc(100vh-28px))] min-h-[420px] flex-col overflow-hidden">
+        <DialogHeader className="border-b border-slate-800/80 px-5 py-4 pr-12 text-left">
           <DialogTitle className="text-xl font-semibold text-white">
             Settings
           </DialogTitle>
@@ -336,288 +384,246 @@ export const SettingsDialog = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-[11rem_minmax(0,1fr)]">
-          <nav className="border-b border-slate-800 px-4 py-3 md:border-r md:border-b-0 md:px-3 md:py-4">
-            <div className="flex gap-2 overflow-x-auto md:grid md:overflow-visible">
-              {SETTINGS_SECTIONS.map((section) => (
-                <Button
-                  key={section.id}
-                  type="button"
-                  variant="outline"
-                  onClick={() => onSettingsSectionChange(section.id)}
-                  className={cn(
-                    "h-9 shrink-0 justify-start rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100 md:w-full",
-                    settingsSection === section.id &&
-                      "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                  )}
-                >
-                  {section.label}
-                </Button>
-              ))}
+        <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-[12rem_minmax(0,1fr)]">
+          <nav className="border-b border-slate-800/80 bg-slate-950/80 px-3 py-3 md:border-r md:border-b-0">
+            <div className="flex gap-1 overflow-x-auto md:grid md:overflow-visible">
+              {SETTINGS_SECTIONS.map((section) => {
+                const SectionIcon = SETTINGS_SECTION_ICONS[section.id];
+
+                return (
+                  <Button
+                    key={section.id}
+                    type="button"
+                    variant="ghost"
+                    onClick={() => onSettingsSectionChange(section.id)}
+                    className={cn(
+                      "h-9 shrink-0 justify-start rounded-lg border border-transparent bg-transparent px-3 text-sm text-slate-400 hover:border-slate-800 hover:bg-slate-900/70 hover:text-slate-100 md:w-full",
+                      settingsSection === section.id &&
+                        "border-sky-500/25 bg-sky-500/10 text-sky-100",
+                    )}
+                  >
+                    <SectionIcon className="h-4 w-4" />
+                    <span>{section.label}</span>
+                  </Button>
+                );
+              })}
             </div>
           </nav>
 
-          <ScrollArea className="h-full min-h-0" type="always">
-            <div className="grid min-h-full gap-4 px-5 py-5 pr-7">
+          <ScrollArea
+            className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:w-3 [&_[data-slot=scroll-area-scrollbar]]:border-l [&_[data-slot=scroll-area-scrollbar]]:border-l-slate-800 [&_[data-slot=scroll-area-scrollbar]]:bg-slate-950/80 [&_[data-slot=scroll-area-thumb]]:bg-slate-600/80 [&_[data-slot=scroll-area-thumb]]:hover:bg-slate-500"
+            type="always"
+          >
+            <div className="grid content-start gap-5 px-6 py-5 pr-10">
               {settingsSection === "providers" ? (
                 <SettingsCard title="Model provider keys">
-                <div className="flex flex-wrap gap-2">
-                  {USER_API_KEY_PROVIDER_ORDER.map((provider) => (
-                    <Button
-                      key={provider}
-                      type="button"
-                      variant="outline"
-                      onClick={() => providerSetup.onProviderChange(provider)}
-                      className={cn(
-                        "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                        providerSetup.provider === provider &&
-                          "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                      )}
-                    >
-                      {getProviderLabel(provider)}
-                    </Button>
-                  ))}
-                </div>
+                  <SettingPanel label="Provider">
+                    <ChoiceButtons
+                      value={providerSetup.provider}
+                      options={USER_API_KEY_PROVIDER_ORDER.map((provider) => ({
+                        value: provider,
+                        label: getProviderLabel(provider),
+                      }))}
+                      onChange={providerSetup.onProviderChange}
+                    />
+                  </SettingPanel>
 
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                  <Input
-                    type={providerKeyVisible ? "text" : "password"}
-                    value={providerSetup.keyValue}
-                    onChange={(event) => {
-                      providerSetup.onKeyChange(event.target.value);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void providerSetup.onSave();
-                      }
-                    }}
-                    placeholder={`Paste your ${selectedProviderLabel} API key`}
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
-                  />
-                  <div className="flex items-center gap-2 md:justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      aria-label={`${providerKeyVisible ? "Hide" : "Show"} ${selectedProviderLabel} API key`}
-                      onClick={() => setProviderKeyVisible((visible) => !visible)}
-                      disabled={!providerSetup.keyValue.trim()}
-                      className="h-11 rounded-2xl border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-50"
-                    >
-                      {providerKeyVisible ? "Hide" : "Show"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Open ${getProviderLabel(providerSetup.provider)} API key settings`}
-                      title={`Open ${getProviderLabel(providerSetup.provider)} API key settings`}
-                      onClick={() => {
-                        void providerSetup.onOpenProviderPortal(
-                          providerSetup.provider,
-                        );
-                      }}
-                      className="h-11 w-11 rounded-2xl border border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-                    >
-                      <ArrowUpRight className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        void providerSetup.onSave();
-                      }}
-                      disabled={
-                        !providerSetup.keyValue.trim() || providerSetup.saving
-                      }
-                      className="h-11 rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500 disabled:opacity-50"
-                    >
-                      {providerSetup.saving ? "Saving…" : "Save key"}
-                    </Button>
-                  </div>
-                </div>
+                  <SettingPanel label={`${selectedProviderLabel} API key`}>
+                    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                      <Input
+                        type={providerKeyVisible ? "text" : "password"}
+                        value={providerSetup.keyValue}
+                        onChange={(event) => {
+                          providerSetup.onKeyChange(event.target.value);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void providerSetup.onSave();
+                          }
+                        }}
+                        placeholder={`Paste your ${selectedProviderLabel} API key`}
+                        autoComplete="off"
+                        spellCheck={false}
+                        className="h-10 rounded-lg border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
+                      />
+                      <div className="flex items-center gap-2 md:justify-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          aria-label={`${providerKeyVisible ? "Hide" : "Show"} ${selectedProviderLabel} API key`}
+                          title={`${providerKeyVisible ? "Hide" : "Show"} ${selectedProviderLabel} API key`}
+                          onClick={() =>
+                            setProviderKeyVisible((visible) => !visible)
+                          }
+                          disabled={!providerSetup.keyValue.trim()}
+                          className="h-10 w-10 rounded-lg border-slate-800 bg-slate-950 text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40"
+                        >
+                          {providerKeyVisible ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Open ${getProviderLabel(providerSetup.provider)} API key settings`}
+                          title={`Open ${getProviderLabel(providerSetup.provider)} API key settings`}
+                          onClick={() => {
+                            void providerSetup.onOpenProviderPortal(
+                              providerSetup.provider,
+                            );
+                          }}
+                          className="h-10 w-10 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+                        >
+                          <ArrowUpRight className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            void providerSetup.onSave();
+                          }}
+                          disabled={
+                            !providerSetup.keyValue.trim() ||
+                            providerSetup.saving
+                          }
+                          className="h-10 rounded-lg bg-sky-600 px-4 text-sm text-white hover:bg-sky-500 disabled:opacity-40"
+                        >
+                          {providerSetup.saving ? "Saving..." : "Save key"}
+                        </Button>
+                      </div>
+                    </div>
+                  </SettingPanel>
 
-                {providerSetup.message ? (
-                  <p
-                    className={cn(
-                      "text-xs leading-6",
-                      providerSetup.message.tone === "error"
-                        ? "text-rose-300"
-                        : "text-emerald-300",
-                    )}
-                  >
-                    {providerSetup.message.text}
-                  </p>
-                ) : null}
-              </SettingsCard>
+                  <SettingsStatus message={providerSetup.message} />
+                </SettingsCard>
             ) : null}
 
             {settingsSection === "web-search" ? (
               <SettingsCard title="Web search">
+                <SettingPanel label="Active web search provider">
+                  <ChoiceButtons
+                    value={webSearchSetup.activeProvider}
+                    options={(
+                      ["none", ...USER_WEB_SEARCH_PROVIDER_ORDER] as const
+                    ).map((provider) => ({
+                      value: provider,
+                      label: getWebSearchProviderLabel(provider),
+                    }))}
+                    disabled={webSearchSetup.saving}
+                    onChange={(provider) => {
+                      void webSearchSetup.onActiveProviderChange(provider);
+                    }}
+                  />
+                </SettingPanel>
 
-                <div className="grid gap-2">
-                  <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                    Active web search provider
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {(["none", ...USER_WEB_SEARCH_PROVIDER_ORDER] as const).map(
-                      (provider) => (
-                        <Button
-                          key={provider}
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            void webSearchSetup.onActiveProviderChange(
-                              provider,
-                            );
-                          }}
-                          disabled={webSearchSetup.saving}
-                          className={cn(
-                            "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                            webSearchSetup.activeProvider === provider &&
-                              "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                          )}
-                        >
-                          {getWebSearchProviderLabel(provider)}
-                        </Button>
-                      ),
-                    )}
-                  </div>
-                </div>
+                <SettingPanel label="API keys">
+                  <ChoiceButtons
+                    value={webSearchSetup.provider}
+                    options={USER_WEB_SEARCH_PROVIDER_ORDER.map((provider) => ({
+                      value: provider,
+                      label: getWebSearchProviderLabel(provider),
+                    }))}
+                    onChange={webSearchSetup.onProviderChange}
+                  />
+                </SettingPanel>
 
-                <Separator className="bg-slate-800" />
-
-                <div className="grid gap-2">
-                  <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                    API keys
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {USER_WEB_SEARCH_PROVIDER_ORDER.map((provider) => (
+                <SettingPanel label={`${selectedWebSearchProviderLabel} API key`}>
+                  <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                    <Input
+                      type={webSearchKeyVisible ? "text" : "password"}
+                      value={webSearchSetup.keyValue}
+                      onChange={(event) => {
+                        webSearchSetup.onKeyChange(event.target.value);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void webSearchSetup.onSave();
+                        }
+                      }}
+                      placeholder={`Paste your ${selectedWebSearchProviderLabel} API key`}
+                      autoComplete="off"
+                      spellCheck={false}
+                      className="h-10 rounded-lg border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
+                    />
+                    <div className="flex items-center gap-2 md:justify-end">
                       <Button
-                        key={provider}
                         type="button"
                         variant="outline"
+                        size="icon"
+                        aria-label={`${webSearchKeyVisible ? "Hide" : "Show"} ${selectedWebSearchProviderLabel} API key`}
+                        title={`${webSearchKeyVisible ? "Hide" : "Show"} ${selectedWebSearchProviderLabel} API key`}
                         onClick={() =>
-                          webSearchSetup.onProviderChange(provider)
+                          setWebSearchKeyVisible((visible) => !visible)
                         }
-                        className={cn(
-                          "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                          webSearchSetup.provider === provider &&
-                            "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                        )}
+                        disabled={!webSearchSetup.keyValue.trim()}
+                        className="h-10 w-10 rounded-lg border-slate-800 bg-slate-950 text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40"
                       >
-                        {getWebSearchProviderLabel(provider)}
+                        {webSearchKeyVisible ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
                       </Button>
-                    ))}
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          void webSearchSetup.onSave();
+                        }}
+                        disabled={
+                          !webSearchSetup.keyValue.trim() ||
+                          webSearchSetup.saving
+                        }
+                        className="h-10 rounded-lg bg-sky-600 px-4 text-sm text-white hover:bg-sky-500 disabled:opacity-40"
+                      >
+                        {webSearchSetup.saving ? "Saving..." : "Save key"}
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                </SettingPanel>
 
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                  <Input
-                    type={webSearchKeyVisible ? "text" : "password"}
-                    value={webSearchSetup.keyValue}
-                    onChange={(event) => {
-                      webSearchSetup.onKeyChange(event.target.value);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void webSearchSetup.onSave();
-                      }
-                    }}
-                    placeholder={`Paste your ${selectedWebSearchProviderLabel} API key`}
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="h-11 rounded-2xl border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
-                  />
-                  <div className="flex items-center gap-2 md:justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      aria-label={`${webSearchKeyVisible ? "Hide" : "Show"} ${selectedWebSearchProviderLabel} API key`}
-                      onClick={() => setWebSearchKeyVisible((visible) => !visible)}
-                      disabled={!webSearchSetup.keyValue.trim()}
-                      className="h-11 rounded-2xl border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-50"
-                    >
-                      {webSearchKeyVisible ? "Hide" : "Show"}
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        void webSearchSetup.onSave();
-                      }}
-                      disabled={
-                        !webSearchSetup.keyValue.trim() || webSearchSetup.saving
-                      }
-                      className="h-11 rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500 disabled:opacity-50"
-                    >
-                      {webSearchSetup.saving ? "Saving…" : "Save key"}
-                    </Button>
-                  </div>
-                </div>
-
-                {webSearchSetup.message ? (
-                  <p
-                    className={cn(
-                      "text-xs leading-6",
-                      webSearchSetup.message.tone === "error"
-                        ? "text-rose-300"
-                        : "text-emerald-300",
-                    )}
-                  >
-                    {webSearchSetup.message.text}
-                  </p>
-                ) : null}
+                <SettingsStatus message={webSearchSetup.message} />
               </SettingsCard>
             ) : null}
 
             {settingsSection === "memory" ? (
               <SettingsCard title="Global memory">
-
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={memorySetup.saving}
-                    onClick={() => {
-                      void memorySetup.onGlobalEnabledChange(true);
-                    }}
-                    className={cn(
-                      "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                      memorySetup.settings.globalEnabled &&
-                        "border-sky-500/30 bg-sky-500/10 text-sky-100",
-                    )}
-                  >
-                    Enabled
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={memorySetup.saving}
-                    onClick={() => {
-                      void memorySetup.onGlobalEnabledChange(false);
-                    }}
-                    className={cn(
-                      "h-9 rounded-full border-slate-800 bg-slate-950 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                      !memorySetup.settings.globalEnabled &&
-                        "border-slate-600 bg-slate-900 text-slate-100",
-                    )}
-                  >
-                    Disabled
-                  </Button>
-                  <Badge className="border-slate-700 bg-slate-950 text-slate-300">
-                    {memorySetup.settings.entries.length} saved fact
-                    {memorySetup.settings.entries.length === 1 ? "" : "s"}
-                  </Badge>
-                </div>
+                <SettingPanel label="Status">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ChoiceButtons
+                      value={
+                        memorySetup.settings.globalEnabled
+                          ? "enabled"
+                          : "disabled"
+                      }
+                      options={[
+                        { value: "enabled", label: "Enabled" },
+                        { value: "disabled", label: "Disabled" },
+                      ]}
+                      disabled={memorySetup.saving}
+                      onChange={(value) => {
+                        void memorySetup.onGlobalEnabledChange(
+                          value === "enabled",
+                        );
+                      }}
+                    />
+                    <Badge className="h-8 rounded-md border-slate-700 bg-slate-950 px-3 text-slate-300">
+                      {memorySetup.settings.entries.length} saved fact
+                      {memorySetup.settings.entries.length === 1 ? "" : "s"}
+                    </Badge>
+                  </div>
+                </SettingPanel>
 
                 {memorySetup.settings.entries.length > 0 ? (
                   <div className="grid gap-2">
                     {memorySetup.settings.entries.map((entry) => (
                       <div
                         key={entry.id}
-                        className="rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm leading-6 text-slate-300"
+                        className="rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm leading-6 text-slate-300"
                       >
                         {entry.content}
                       </div>
@@ -625,24 +631,13 @@ export const SettingsDialog = ({
                   </div>
                 ) : null}
 
-                {memorySetup.message ? (
-                  <p
-                    className={cn(
-                      "text-xs leading-6",
-                      memorySetup.message.tone === "error"
-                        ? "text-rose-300"
-                        : "text-emerald-300",
-                    )}
-                  >
-                    {memorySetup.message.text}
-                  </p>
-                ) : null}
+                <SettingsStatus message={memorySetup.message} />
               </SettingsCard>
             ) : null}
 
             {settingsSection === "desktop" ? (
               <SettingsCard title="Desktop assistant">
-                <div className="grid gap-3 xl:grid-cols-2">
+                <div className="grid gap-0">
                   <SettingPanel label="Launch on sign-in">
                     <ChoiceButtons
                       value={desktopDraft.autostartEnabled ? "enabled" : "disabled"}
@@ -726,7 +721,7 @@ export const SettingsDialog = ({
                           ),
                         });
                       }}
-                      className="h-10 max-w-28 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+                      className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
                     />
                   </SettingPanel>
 
@@ -760,7 +755,7 @@ export const SettingsDialog = ({
                       placeholder="CommandOrControl+Alt+V"
                       autoComplete="off"
                       spellCheck={false}
-                      className="h-10 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+                      className="h-10 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
                     />
                   </SettingPanel>
 
@@ -779,7 +774,7 @@ export const SettingsDialog = ({
                           ),
                         });
                       }}
-                      className="h-10 max-w-28 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+                      className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
                     />
                   </SettingPanel>
 
@@ -796,12 +791,12 @@ export const SettingsDialog = ({
                           quickVoiceMaxMessages: Number(event.target.value),
                         });
                       }}
-                      className="h-10 max-w-28 rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+                      className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
                     />
                   </SettingPanel>
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
                   <p className="text-sm leading-6 text-slate-400">
                     {desktopDraftDirty ? "Unsaved desktop changes" : "Desktop settings are up to date"}
                   </p>
@@ -811,31 +806,20 @@ export const SettingsDialog = ({
                       void desktopSetup.onSave(desktopDraft);
                     }}
                     disabled={desktopSetup.saving || !desktopDraftDirty}
-                    className="h-11 rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500 disabled:opacity-50"
+                    className="h-10 rounded-lg bg-sky-600 px-4 text-sm text-white hover:bg-sky-500 disabled:opacity-40"
                   >
-                    {desktopSetup.saving ? "Saving…" : "Save desktop settings"}
+                    {desktopSetup.saving ? "Saving..." : "Save desktop settings"}
                   </Button>
                 </div>
 
-                {desktopSetup.message ? (
-                  <p
-                    className={cn(
-                      "text-xs leading-6",
-                      desktopSetup.message.tone === "error"
-                        ? "text-rose-300"
-                        : "text-emerald-300",
-                    )}
-                  >
-                    {desktopSetup.message.text}
-                  </p>
-                ) : null}
+                <SettingsStatus message={desktopSetup.message} />
               </SettingsCard>
             ) : null}
 
             {settingsSection === "voice" ? (
               <SettingsCard title="Voice">
-                <div className="grid gap-3 xl:grid-cols-2">
-                  <SettingPanel label="Speak to text" className="xl:col-span-2">
+                <div className="grid gap-0">
+                  <SettingPanel label="Speak to text">
                     <ChoiceButtons
                       value={voiceSetup.speechToTextProvider}
                       options={([
@@ -845,6 +829,9 @@ export const SettingsDialog = ({
                         value: provider,
                         label: getSpeechToTextProviderLabel(provider),
                         ariaLabel: `Speak to text provider ${getSpeechToTextProviderLabel(provider)}`,
+                        disabled:
+                          provider !== "none" &&
+                          !speechToTextProviderConfigured.get(provider),
                       }))}
                       disabled={voiceSetup.speechToTextProviderSaving}
                       onChange={(provider) => {
@@ -853,29 +840,16 @@ export const SettingsDialog = ({
                     />
                   </SettingPanel>
 
-                  <SettingPanel label="Speech keys" className="xl:col-span-2">
-                    <div className="flex flex-wrap gap-2">
-                      {voiceSetup.speechToTextProviderAvailability.map((provider) => (
-                        <Badge
-                          key={provider.provider}
-                          className={cn(
-                            "border-slate-700 bg-slate-950",
-                            getVoiceProviderAvailabilityTone(provider.configured),
-                          )}
-                        >
-                          {getProviderLabel(provider.provider)} {provider.configured ? "configured" : "missing key"}
-                        </Badge>
-                      ))}
-                    </div>
-                  </SettingPanel>
-
-                  <SettingPanel label="Voice provider" className="xl:col-span-2">
+                  <SettingPanel label="Voice provider">
                     <ChoiceButtons
                       value={voiceSetup.aiProvider}
                       options={(["none", ...USER_VOICE_AI_PROVIDER_ORDER] as const).map(
                         (provider) => ({
                           value: provider,
                           label: getVoiceAiProviderLabel(provider),
+                          disabled:
+                            provider !== "none" &&
+                            !aiVoiceProviderConfigured.get(provider),
                         }),
                       )}
                       disabled={voiceSetup.aiProviderSaving}
@@ -883,22 +857,6 @@ export const SettingsDialog = ({
                         void voiceSetup.onAiProviderChange(provider);
                       }}
                     />
-                  </SettingPanel>
-
-                  <SettingPanel label="Voice keys" className="xl:col-span-2">
-                    <div className="flex flex-wrap gap-2">
-                      {voiceSetup.aiProviderAvailability.map((provider) => (
-                        <Badge
-                          key={provider.provider}
-                          className={cn(
-                            "border-slate-700 bg-slate-950",
-                            getVoiceProviderAvailabilityTone(provider.configured),
-                          )}
-                        >
-                          {getProviderLabel(provider.provider as UserVoiceAiProvider)} {provider.configured ? "configured" : "missing key"}
-                        </Badge>
-                      ))}
-                    </div>
                   </SettingPanel>
 
                   <SettingPanel label="Replies">
@@ -913,7 +871,7 @@ export const SettingsDialog = ({
                           voiceSetup.onAutoSpeakResponsesChange(value === "auto");
                         }}
                       />
-                      <Badge className="border-slate-700 bg-slate-950 text-slate-300">
+                      <Badge className="h-8 rounded-md border-slate-700 bg-slate-950 px-3 text-slate-300">
                         {voiceSetup.supported ? "Ready" : "Unavailable"}
                       </Badge>
                     </div>
@@ -931,7 +889,7 @@ export const SettingsDialog = ({
                               nextValue.length > 0 ? nextValue : null,
                             );
                           }}
-                          className="h-10 w-full rounded-2xl border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none transition-colors focus:border-sky-500/40"
+                          className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none transition-colors focus:border-sky-500/40"
                         >
                           <option value="">System default</option>
                           {voiceSetup.voiceOptions.map((voice) => (
@@ -958,7 +916,7 @@ export const SettingsDialog = ({
                             className="min-w-0 flex-1 accent-sky-400"
                           />
                           <span className="w-12 text-right text-xs text-slate-400">
-                            {voiceSetup.rate.toFixed(2)}×
+                            {voiceSetup.rate.toFixed(2)}x
                           </span>
                         </div>
                       </SettingPanel>
@@ -966,31 +924,8 @@ export const SettingsDialog = ({
                   ) : null}
                 </div>
 
-                {voiceSetup.speechToTextProviderMessage ? (
-                  <p
-                    className={cn(
-                      "text-xs leading-6",
-                      voiceSetup.speechToTextProviderMessage.tone === "error"
-                        ? "text-rose-300"
-                        : "text-emerald-300",
-                    )}
-                  >
-                    {voiceSetup.speechToTextProviderMessage.text}
-                  </p>
-                ) : null}
-
-                {voiceSetup.aiProviderMessage ? (
-                  <p
-                    className={cn(
-                      "text-xs leading-6",
-                      voiceSetup.aiProviderMessage.tone === "error"
-                        ? "text-rose-300"
-                        : "text-emerald-300",
-                    )}
-                  >
-                    {voiceSetup.aiProviderMessage.text}
-                  </p>
-                ) : null}
+                <SettingsStatus message={voiceSetup.speechToTextProviderMessage} />
+                <SettingsStatus message={voiceSetup.aiProviderMessage} />
               </SettingsCard>
             ) : null}
           </div>

@@ -304,6 +304,62 @@ jobs:
 
           printf "paths<<EOF\n%s\nEOF\n" "$(printf "%s\n" "${files[@]}")" >> "$GITHUB_OUTPUT"
 
+      - name: Create stable release aliases
+        id: aliases
+        shell: bash
+        run: |
+          rm -rf release-aliases
+          mkdir -p release-aliases
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+
+            case "$file" in
+              *.msi)
+                cp "$file" release-aliases/machdoch-windows-x64.msi
+                ;;
+              *-setup.exe)
+                cp "$file" release-aliases/machdoch-windows-x64-setup.exe
+                ;;
+              *.deb)
+                cp "$file" release-aliases/machdoch-linux-amd64.deb
+                ;;
+              *.rpm)
+                cp "$file" release-aliases/machdoch-linux-x86_64.rpm
+                ;;
+              *.AppImage)
+                cp "$file" release-aliases/machdoch-linux-amd64.AppImage
+                ;;
+              *)
+                echo "No stable alias configured for $file"
+                ;;
+            esac
+          done <<'EOF'
+          ${{ steps.bundles.outputs.paths }}
+          EOF
+
+          mapfile -t aliases < <(find release-aliases -maxdepth 1 -type f | sort)
+
+          if [ ${#aliases[@]} -eq 0 ]; then
+            echo "No stable release aliases were created."
+            exit 1
+          fi
+
+          printf "paths<<EOF\n%s\nEOF\n" "$(printf "%s\n" "${aliases[@]}")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload stable release aliases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
+        shell: bash
+        run: |
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            gh release upload "$TAG_NAME" "$file" --clobber
+          done <<'EOF'
+          ${{ steps.aliases.outputs.paths }}
+          EOF
+
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:
@@ -316,13 +372,17 @@ jobs:
         if: ${{ github.event.repository.visibility == 'public' }}
         uses: actions/attest-build-provenance@v3
         with:
-          subject-path: ${{ steps.bundles.outputs.paths }}
+          subject-path: |
+            ${{ steps.bundles.outputs.paths }}
+            ${{ steps.aliases.outputs.paths }}
 
       - name: Attest SBOM
         if: ${{ github.event.repository.visibility == 'public' }}
         uses: actions/attest-sbom@v3
         with:
-          subject-path: ${{ steps.bundles.outputs.paths }}
+          subject-path: |
+            ${{ steps.bundles.outputs.paths }}
+            ${{ steps.aliases.outputs.paths }}
           sbom-path: sbom-${{ matrix.platform }}.spdx.json
 
   publish-release:

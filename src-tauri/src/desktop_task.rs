@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     env, fs,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
@@ -23,7 +23,19 @@ const DESKTOP_TASK_PROGRESS_EVENT: &str = "desktop-task-progress";
 const DESKTOP_TASK_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
 const DESKTOP_TASK_WAIT_POLL_MS: u64 = 250;
 
-pub struct DesktopTaskCancelMap(pub Mutex<std::collections::HashMap<String, Arc<AtomicBool>>>);
+#[derive(Default)]
+pub struct DesktopTaskCancelState {
+    active: HashMap<String, Arc<AtomicBool>>,
+    pending: HashSet<String>,
+}
+
+pub struct DesktopTaskCancelMap(pub Mutex<DesktopTaskCancelState>);
+
+impl Default for DesktopTaskCancelMap {
+    fn default() -> Self {
+        Self(Mutex::new(DesktopTaskCancelState::default()))
+    }
+}
 
 #[cfg(target_os = "windows")]
 const DETACHED_PROCESS: u32 = 0x00000008;
@@ -648,9 +660,11 @@ pub async fn cancel_desktop_task(
     state: tauri::State<'_, DesktopTaskCancelMap>,
     task_id: String,
 ) -> Result<(), String> {
-    if let Ok(map) = state.0.lock() {
-        if let Some(cancel_flag) = map.get(&task_id) {
+    if let Ok(mut cancel_state) = state.0.lock() {
+        if let Some(cancel_flag) = cancel_state.active.get(&task_id) {
             cancel_flag.store(true, Ordering::SeqCst);
+        } else {
+            cancel_state.pending.insert(task_id);
         }
     }
     Ok(())
@@ -665,10 +679,15 @@ pub async fn run_desktop_task(
 ) -> Result<DesktopTaskRunResponse, String> {
     let window_label = window.label().to_string();
     let cancel_flag = Arc::new(AtomicBool::new(false));
+    let task_id = request.task_id.clone();
 
     if let Some(id) = &request.task_id {
-        if let Ok(mut map) = state.0.lock() {
-            map.insert(id.clone(), cancel_flag.clone());
+        if let Ok(mut cancel_state) = state.0.lock() {
+            if cancel_state.pending.remove(id) {
+                cancel_flag.store(true, Ordering::SeqCst);
+            }
+
+            cancel_state.active.insert(id.clone(), cancel_flag.clone());
         }
     }
 
@@ -676,9 +695,16 @@ pub async fn run_desktop_task(
         execute_desktop_task(app_handle, window_label, request, cancel_flag)
     })
     .await
-    .map_err(|error| format!("The desktop task bridge stopped unexpectedly. {error}"))?;
+    .map_err(|error| format!("The desktop task bridge stopped unexpectedly. {error}"));
 
-    result
+    if let Some(id) = &task_id {
+        if let Ok(mut cancel_state) = state.0.lock() {
+            cancel_state.active.remove(id);
+            cancel_state.pending.remove(id);
+        }
+    }
+
+    result?
 }
 
 #[tauri::command]

@@ -21,6 +21,7 @@
 - [Highlights](#highlights)
 - [What exists today](#what-exists-today)
 - [Tooling reality check](#tooling-reality-check)
+- [Install guide](#install-guide)
 - [Quick start](#quick-start)
 - [Useful commands](#useful-commands)
 - [Shipped customizations](#shipped-customizations)
@@ -64,6 +65,94 @@ These are the tool categories the runtime can actually execute today.
 | `browser` | 🔜 Planned | Registered in the tool surface, but there is no dedicated browser-driver backend yet. |
 | `git` | 🔜 Planned | Registered in the tool surface, but there is no first-class Git executor. Use shell-based Git workflows for now. |
 | `packages` | 🔜 Planned | Registered in the tool surface, but package installs/updates still go through the shell. |
+
+## Install guide
+
+Release downloads: <https://github.com/pureportal/machdoch/releases/latest>
+
+### Recommended: desktop installer
+
+Download the latest release asset for your platform.
+
+### Windows setup installer
+
+```powershell
+Invoke-WebRequest -Uri https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64-setup.exe -OutFile machdoch-setup.exe
+Start-Process .\machdoch-setup.exe -Wait
+```
+
+### Windows MSI package
+
+```powershell
+Invoke-WebRequest -Uri https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64.msi -OutFile machdoch.msi
+msiexec /i .\machdoch.msi
+```
+
+### Debian/Ubuntu package
+
+```bash
+wget -O machdoch.deb https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.deb
+sudo apt install ./machdoch.deb
+```
+
+### Fedora/RHEL/openSUSE package
+
+```bash
+wget -O machdoch.rpm https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-x86_64.rpm
+sudo dnf install ./machdoch.rpm
+```
+
+### Linux AppImage
+
+```bash
+wget -O machdoch.AppImage https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.AppImage
+chmod +x machdoch.AppImage
+./machdoch.AppImage
+```
+
+### From a checkout
+
+```bash
+git clone https://github.com/pureportal/machdoch.git
+cd machdoch
+npm ci
+npm test
+npm run dev -- tools
+npm run dev -- "scan this workspace and explain the setup"
+```
+
+Use `npm install` instead of `npm ci` only when you intentionally want to update `package-lock.json`.
+
+### Build or link locally
+
+```bash
+npm run build
+npm link
+machdoch inspect
+machdoch tools
+machdoch "summarize this project"
+```
+
+For the desktop shell, install Rust stable and the normal Tauri system dependencies, then run:
+
+```bash
+npm run tauri:dev
+```
+
+To build local installer bundles:
+
+```bash
+npm run tauri:build
+```
+
+### Configure a provider
+
+The full model-driven agent loop needs an OpenAI, Anthropic, or Google key. The desktop app exposes this in settings; the CLI can persist it in the user-scoped config file:
+
+```bash
+machdoch --set-api --provider openai --key YOUR_OPENAI_API_KEY
+machdoch config
+```
 
 ## Quick start
 

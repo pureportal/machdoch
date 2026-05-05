@@ -391,6 +391,27 @@ const getLatestUserTaskId = (messages: ChatSessionMessage[]): string | null => {
   return latestTask?.taskId ?? null;
 };
 
+const getLatestTerminalAgentMessageForTask = (
+  messages: ChatSessionMessage[],
+  taskId: string,
+): ChatSessionMessage | null => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+
+    if (getMessageTaskId(message) !== taskId) {
+      continue;
+    }
+
+    if (message.role !== "agent" || message.source?.kind === "preview") {
+      continue;
+    }
+
+    return message;
+  }
+
+  return null;
+};
+
 export const isSessionArchived = (session: ChatSessionRecord): boolean => {
   return typeof session.archivedAt === "number";
 };
@@ -422,22 +443,10 @@ export const getSessionOverviewStatus = (
     return "empty";
   }
 
-  let latestTerminalAgentMessage: ChatSessionMessage | null = null;
-
-  for (let index = session.messages.length - 1; index >= 0; index -= 1) {
-    const message = session.messages[index];
-
-    if (getMessageTaskId(message) !== latestUserTaskId) {
-      continue;
-    }
-
-    if (message.role !== "agent" || message.source?.kind === "preview") {
-      continue;
-    }
-
-    latestTerminalAgentMessage = message;
-    break;
-  }
+  const latestTerminalAgentMessage = getLatestTerminalAgentMessageForTask(
+    session.messages,
+    latestUserTaskId,
+  );
 
   if (!latestTerminalAgentMessage) {
     return "running";
@@ -467,6 +476,34 @@ export const getSessionOverviewStatus = (
   }
 
   return "done";
+};
+
+export const getLatestRunningTaskId = (
+  session: ChatSessionRecord,
+): string | null => {
+  const latestUserTaskId = getLatestUserTaskId(session.messages);
+
+  if (!latestUserTaskId) {
+    return null;
+  }
+
+  const latestTerminalAgentMessage = getLatestTerminalAgentMessageForTask(
+    session.messages,
+    latestUserTaskId,
+  );
+
+  if (!latestTerminalAgentMessage) {
+    return latestUserTaskId;
+  }
+
+  if (
+    latestTerminalAgentMessage.source?.kind === "thinking" &&
+    latestTerminalAgentMessage.source.thinking.status === "running"
+  ) {
+    return latestUserTaskId;
+  }
+
+  return null;
 };
 
 const getInterruptedTaskIds = (

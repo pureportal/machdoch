@@ -36,6 +36,7 @@ import { getRenderedMessageContent } from "./chat-session/_helpers/execution-mes
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { MessageMarkdown } from "./chat-session/components/message-markdown";
+import { SessionModelPicker } from "./chat-session/components/session-model-picker";
 import { Button } from "./components/ui/button";
 import { Dialog } from "./components/ui/dialog";
 import { ScrollArea } from "./components/ui/scroll-area";
@@ -156,10 +157,12 @@ const QuickTaskMessage = ({
 
 const QuickTaskActivity = ({
   quickTask,
+  onCancelRunningTask,
   onClearHistory,
   onOpenMain,
 }: {
   quickTask: ReturnType<typeof useChatSessionController>["quickTask"];
+  onCancelRunningTask: () => void;
   onClearHistory: () => void;
   onOpenMain: () => void;
 }): JSX.Element => {
@@ -192,6 +195,20 @@ const QuickTaskActivity = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {quickTask.status === "running" ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label="Cancel running quick task"
+              onClick={onCancelRunningTask}
+              className="h-8 rounded-full border border-rose-500/20 bg-rose-500/10 px-3 text-xs text-rose-100 hover:bg-rose-500/15 hover:text-white"
+            >
+              Cancel
+              <Square className="h-3.5 w-3.5 fill-current" />
+            </Button>
+          ) : null}
+
           <Button
             type="button"
             variant="ghost"
@@ -251,9 +268,11 @@ const QuickTaskComposer = ({
   const quickTaskComposer = controller.quickTaskComposer;
   const quickVoiceEnabled =
     controller.settingsDialog.desktopSetup.settings.quickVoiceEnabled;
-  const canSend = quickTaskComposer.draft.trim().length > 0;
+  const canSend =
+    quickTaskComposer.draft.trim().length > 0 &&
+    !quickTaskComposer.isExecuting;
   const sendQuickTask = useCallback((): void => {
-    if (!quickTaskComposer.draft.trim()) {
+    if (!quickTaskComposer.draft.trim() || quickTaskComposer.isExecuting) {
       return;
     }
 
@@ -274,6 +293,13 @@ const QuickTaskComposer = ({
       }}
     >
       <div className="flex flex-wrap items-center gap-2">
+        <SessionModelPicker
+          chooserProviders={quickTaskComposer.chooserProviders}
+          activeProvider={quickTaskComposer.provider}
+          activeModel={quickTaskComposer.model}
+          onSessionModelSelection={quickTaskComposer.onModelSelection}
+        />
+
         <Button
           type="button"
           variant="outline"
@@ -385,19 +411,32 @@ const QuickTaskComposer = ({
           Voice
         </Button>
 
-        <Button
-          type="submit"
-          variant="outline"
-          disabled={!canSend}
-          className={cn(
-            "h-8 rounded-full border-slate-800/90 bg-slate-900/70 px-4 text-xs text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:bg-transparent disabled:text-slate-600 disabled:opacity-100",
-            canSend &&
-              "border-sky-400/30 bg-sky-400/15 text-sky-50 hover:bg-sky-400/20 hover:text-white",
-          )}
-        >
-          Send
-          <SendHorizonal className="h-4 w-4" />
-        </Button>
+        {quickTaskComposer.isExecuting ? (
+          <Button
+            type="button"
+            variant="outline"
+            aria-label="Cancel quick task"
+            onClick={quickTaskComposer.onCancel}
+            className="h-8 rounded-full border-rose-500/25 bg-rose-500/10 px-4 text-xs text-rose-100 shadow-none hover:bg-rose-500/15 hover:text-white"
+          >
+            Cancel
+            <Square className="h-3.5 w-3.5 fill-current" />
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            variant="outline"
+            disabled={!canSend}
+            className={cn(
+              "h-8 rounded-full border-slate-800/90 bg-slate-900/70 px-4 text-xs text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:bg-transparent disabled:text-slate-600 disabled:opacity-100",
+              canSend &&
+                "border-sky-400/30 bg-sky-400/15 text-sky-50 hover:bg-sky-400/20 hover:text-white",
+            )}
+          >
+            Send
+            <SendHorizonal className="h-4 w-4" />
+          </Button>
+        )}
       </div>
     </form>
   );
@@ -493,6 +532,7 @@ export const AssistantPopupShell = (): JSX.Element => {
           <>
             <QuickTaskActivity
               quickTask={controller.quickTask}
+              onCancelRunningTask={controller.quickTaskComposer.onCancel}
               onClearHistory={controller.clearQuickTaskHistory}
               onOpenMain={() => {
                 void revealMainWindow();

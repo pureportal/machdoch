@@ -3,6 +3,7 @@ import {
   createInitialShellState,
   createSession,
   createVisibleConversationMessages,
+  getLatestRunningTaskId,
   getSessionOverviewStatus,
   normalizeShellState,
   recoverInterruptedTasksForLaunch,
@@ -144,6 +145,43 @@ describe("getSessionOverviewStatus", () => {
     });
 
     expect(getSessionOverviewStatus(session)).toBe("waiting");
+  });
+});
+
+describe("getLatestRunningTaskId", () => {
+  it("returns the latest task id only while that task is still running", () => {
+    const runningSession = createSession({
+      messages: [
+        {
+          id: "user-task-1",
+          taskId: "task-1",
+          role: "user",
+          content: "finish this task",
+          createdAt: 1,
+        },
+      ],
+    });
+
+    expect(getLatestRunningTaskId(runningSession)).toBe("task-1");
+
+    const completedSession = createSession({
+      messages: [
+        ...runningSession.messages,
+        {
+          id: "agent-task-1",
+          taskId: "task-1",
+          role: "agent",
+          content: "done",
+          createdAt: 2,
+          source: {
+            kind: "execution",
+            execution: createMockExecutionFixture("finish this task"),
+          },
+        },
+      ],
+    });
+
+    expect(getLatestRunningTaskId(completedSession)).toBeNull();
   });
 });
 

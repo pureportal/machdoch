@@ -21,6 +21,7 @@ import {
   canRenameSession,
   createSession,
   createVisibleConversationMessages,
+  getLatestRunningTaskId,
   getSessionOverviewStatus,
   getSessionTitle,
   isQuickVoiceSession,
@@ -292,6 +293,9 @@ export const useChatSessionController = (
     runtime.userMemorySettings.globalEnabled;
   const quickTaskGlobalMemoryEnabled =
     quickTaskGlobalMemoryAvailable && quickTaskUseGlobalMemory;
+  const quickTaskProvider =
+    quickTaskSession?.provider ?? state.activeSession.provider;
+  const quickTaskModel = quickTaskSession?.model ?? state.activeSession.model;
 
   const handleOpenSettings = (section: SettingsSection = "providers"): void => {
     state.setSettingsSection(section);
@@ -894,21 +898,47 @@ export const useChatSessionController = (
     );
   };
 
-  const handleCancel = (): void => {
+  const getActiveDesktopTaskIdForSession = useCallback((sessionId: string): string | null => {
     let targetTaskId: string | null = null;
 
-    for (const [taskId, sessionId] of activeDesktopTasksRef.current.entries()) {
-      if (sessionId === state.activeSession.id) {
+    for (const [
+      taskId,
+      activeSessionId,
+    ] of activeDesktopTasksRef.current.entries()) {
+      if (activeSessionId === sessionId) {
         targetTaskId = taskId;
-        break;
       }
     }
 
-    if (targetTaskId) {
+    return targetTaskId;
+  }, []);
+
+  const requestTaskCancellation = useCallback(
+    (session: ChatSessionRecord): void => {
+      const targetTaskId =
+        getActiveDesktopTaskIdForSession(session.id) ??
+        getLatestRunningTaskId(session);
+
+      if (!targetTaskId) {
+        return;
+      }
+
+      updateThinkingTrace(session.id, targetTaskId, (trace) => {
+        return appendThinkingProgressLine(
+          trace,
+          "[cancelled] Cancellation requested.",
+        );
+      });
+
       void cancelDesktopTask(targetTaskId).catch((error) => {
         console.error("Failed to cancel desktop task:", error);
       });
-    }
+    },
+    [getActiveDesktopTaskIdForSession, updateThinkingTrace],
+  );
+
+  const handleCancel = (): void => {
+    requestTaskCancellation(state.activeSession);
   };
 
   const createQuickTaskSessionSnapshot = useCallback(
@@ -932,8 +962,8 @@ export const useChatSessionController = (
         ...baseSession,
         specialSession: QUICK_VOICE_SESSION_KIND,
         workspace: baseSession.workspace ?? state.activeSession.workspace,
-        provider: state.activeSession.provider,
-        model: state.activeSession.model,
+        provider: baseSession.provider,
+        model: baseSession.model,
         sessionMemoryEnabled: false,
         sessionMemory: [],
         updatedAt: Date.now(),
@@ -1011,6 +1041,41 @@ export const useChatSessionController = (
       }));
     },
     [updateQuickTaskSession],
+  );
+
+  const handleQuickTaskModelSelection = useCallback(
+    (provider: RuntimeProvider, model: string): void => {
+      state.applyShellState((prev) => {
+        const existingQuickTaskSession =
+          prev.sessions.find(isQuickVoiceSession) ?? null;
+        const baseSession = createQuickTaskSessionSnapshot(
+          existingQuickTaskSession,
+        );
+        const nextSession: ChatSessionRecord = {
+          ...baseSession,
+          provider,
+          model,
+          updatedAt: Date.now(),
+        };
+
+        return {
+          ...prev,
+          lastSelectedProvider: provider,
+          lastSelectedModelByProvider: {
+            ...prev.lastSelectedModelByProvider,
+            [provider]: model,
+          },
+          sessions: existingQuickTaskSession
+            ? prev.sessions.map((session) =>
+                session.id === existingQuickTaskSession.id
+                  ? nextSession
+                  : session,
+              )
+            : [nextSession, ...prev.sessions],
+        };
+      });
+    },
+    [createQuickTaskSessionSnapshot, state.applyShellState],
   );
 
   const handleQuickTaskGlobalMemoryChange = useCallback(
@@ -1454,18 +1519,23 @@ export const useChatSessionController = (
     setQuickTaskDraft("");
   }, [quickTaskDraft, submitQuickVoiceCommand]);
 
+  const handleQuickTaskCancel = useCallback((): void => {
+    if (!quickTaskSession) {
+      return;
+    }
+
+    requestTaskCancellation(quickTaskSession);
+  }, [quickTaskSession, requestTaskCancellation]);
+
   const clearQuickTaskHistory = useCallback((): void => {
     const quickTaskSessionId = quickTaskSession?.id ?? null;
 
     if (quickTaskSessionId) {
       const quickTaskIds = new Set<string>();
-      const isQuickTaskRunning =
-        getSessionOverviewStatus(quickTaskSession) === "running";
+      const latestRunningQuickTaskId = getLatestRunningTaskId(quickTaskSession);
 
-      if (isQuickTaskRunning) {
-        for (const message of quickTaskSession.messages) {
-          quickTaskIds.add(message.taskId ?? message.id);
-        }
+      if (latestRunningQuickTaskId) {
+        quickTaskIds.add(latestRunningQuickTaskId);
       }
 
       for (const [
@@ -1478,13 +1548,13 @@ export const useChatSessionController = (
 
         quickTaskIds.add(taskId);
         activeDesktopTasksRef.current.delete(taskId);
-        void cancelDesktopTask(taskId).catch((error) => {
-          console.error("Failed to cancel cleared quick task:", error);
-        });
       }
 
       for (const taskId of quickTaskIds) {
         ignoredDesktopTaskIdsRef.current.add(taskId);
+        void cancelDesktopTask(taskId).catch((error) => {
+          console.error("Failed to cancel cleared quick task:", error);
+        });
       }
     }
 
@@ -1678,17 +1748,25 @@ export const useChatSessionController = (
     },
     quickTaskComposer: {
       draft: quickTaskDraft,
+      chooserProviders: providerChooserState.chooserProviders,
+      provider: quickTaskProvider,
+      model: quickTaskModel,
       autopilotEnabled: quickTaskEffectiveRunMode === "auto",
       globalMemoryAvailable: quickTaskGlobalMemoryAvailable,
       globalMemoryEnabled: quickTaskGlobalMemoryEnabled,
       uiControlAvailable: isUiControlAvailable,
       uiControlEnabled: isUiControlAvailable && quickTaskUiControlEnabled,
+      isExecuting: quickTaskSession
+        ? getSessionOverviewStatus(quickTaskSession) === "running"
+        : false,
+      onModelSelection: handleQuickTaskModelSelection,
       onAutopilotChange: handleQuickTaskAutopilotChange,
       onSelectAttachments: () => handleSelectAttachments("quick-task"),
       onGlobalMemoryChange: handleQuickTaskGlobalMemoryChange,
       onUiControlChange: handleQuickTaskUiControlChange,
       onDraftChange: setQuickTaskDraft,
       onSend: handleQuickTaskDraftSend,
+      onCancel: handleQuickTaskCancel,
     },
     settingsDialog: {
       settingsSection: state.settingsSection,

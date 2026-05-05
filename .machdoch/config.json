@@ -3,7 +3,7 @@
   "defaultMode": "ask",
   "enabledTools": ["filesystem", "shell", "network"],
   "provider": "openai",
-  "model": "gpt-5.1-mini",
+  "model": "gpt-5.4-mini",
   "offline": false,
   "profiles": {
     "workspace": {

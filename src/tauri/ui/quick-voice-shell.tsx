@@ -23,10 +23,11 @@ import {
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import {
   canUseSpeechInput,
+  assertRecordedSpeechDetected,
   convertBlobToBase64,
   getConfiguredSpeechToTextProvider,
   getRecordingErrorMessage,
-  getSpeechInputLanguageCode,
+  NO_SPEECH_DETECTED_MESSAGE,
   normalizeAudioMimeType,
   prepareAudioBlob,
   resolveRecorderMimeType,
@@ -40,7 +41,8 @@ import {
 import { Button } from "./components/ui/button";
 import { cn } from "./lib/utils";
 
-const VOICE_ACTIVITY_THRESHOLD = 0.035;
+const VOICE_ACTIVITY_THRESHOLD = 0.012;
+const VOICE_ACTIVITY_FRAME_COUNT = 2;
 
 export const QuickVoiceShell = (): JSX.Element => {
   const controller = useChatSessionController({
@@ -73,6 +75,7 @@ export const QuickVoiceShell = (): JSX.Element => {
   const monitoringIntervalRef = useRef<number | null>(null);
   const recordingStartedAtRef = useRef(0);
   const lastSpeechTimestampRef = useRef(0);
+  const speechFrameCountRef = useRef(0);
   const detectedSpeechRef = useRef(false);
   const finalizingRef = useRef(false);
   const hideTimeoutRef = useRef<number | null>(null);
@@ -103,6 +106,7 @@ export const QuickVoiceShell = (): JSX.Element => {
     recorderRef.current = null;
     streamRef.current = null;
     chunksRef.current = [];
+    speechFrameCountRef.current = 0;
     detectedSpeechRef.current = false;
     finalizingRef.current = false;
   }, [clearMonitoring]);
@@ -126,6 +130,29 @@ export const QuickVoiceShell = (): JSX.Element => {
 
     await setWindowPosition(getCurrentWindow(), layout.quickVoicePosition);
   }, []);
+
+  const cancelRecordingWithStatus = useCallback(
+    (message: string): void => {
+      const recorder = recorderRef.current;
+
+      if (recorder && recorder.state !== "inactive") {
+        recorder.ondataavailable = null;
+        recorder.onerror = null;
+
+        try {
+          recorder.stop();
+        } catch {
+          // Ignore stop races while cancelling a silent recording.
+        }
+      }
+
+      cleanupRecording();
+      setRecording(false);
+      setTranscribing(false);
+      setStatusText(message);
+    },
+    [cleanupRecording],
+  );
 
   const finalizeRecording = useCallback(async (): Promise<void> => {
     const recorder = recorderRef.current;
@@ -161,12 +188,15 @@ export const QuickVoiceShell = (): JSX.Element => {
       recorderRef.current = null;
       streamRef.current = null;
       chunksRef.current = [];
-      const preparedBlob = await prepareAudioBlob(recordedBlob, configuredProvider);
+      await assertRecordedSpeechDetected(recordedBlob);
+      const preparedBlob = await prepareAudioBlob(
+        recordedBlob,
+        configuredProvider,
+      );
       const transcription = await transcribeUserSpeechAudio({
         provider: configuredProvider,
         audioBase64: await convertBlobToBase64(preparedBlob),
         mimeType: normalizeAudioMimeType(preparedBlob.type) || "audio/wav",
-        languageCode: getSpeechInputLanguageCode(),
       });
       const transcriptText = transcription.text.trim();
 
@@ -258,6 +288,7 @@ export const QuickVoiceShell = (): JSX.Element => {
       analyserRef.current = analyser;
       recordingStartedAtRef.current = Date.now();
       lastSpeechTimestampRef.current = recordingStartedAtRef.current;
+      speechFrameCountRef.current = 0;
       detectedSpeechRef.current = false;
       finalizingRef.current = false;
       setRecording(true);
@@ -289,11 +320,14 @@ export const QuickVoiceShell = (): JSX.Element => {
         setLevel(rms);
 
         if (rms >= VOICE_ACTIVITY_THRESHOLD) {
-          detectedSpeechRef.current = true;
+          speechFrameCountRef.current += 1;
+          detectedSpeechRef.current =
+            speechFrameCountRef.current >= VOICE_ACTIVITY_FRAME_COUNT;
           lastSpeechTimestampRef.current = Date.now();
           return;
         }
 
+        speechFrameCountRef.current = 0;
         const now = Date.now();
 
         if (
@@ -308,7 +342,7 @@ export const QuickVoiceShell = (): JSX.Element => {
           !detectedSpeechRef.current &&
           now - recordingStartedAtRef.current >= noSpeechTimeoutMs
         ) {
-          void finalizeRecording();
+          cancelRecordingWithStatus(NO_SPEECH_DETECTED_MESSAGE);
         }
       }, 120);
     } catch (error) {
@@ -320,6 +354,7 @@ export const QuickVoiceShell = (): JSX.Element => {
   }, [
     browserSupported,
     cleanupRecording,
+    cancelRecordingWithStatus,
     configuredProvider,
     desktopSettings.quickVoiceEnabled,
     desktopSettings.quickVoiceSilenceSeconds,
@@ -379,7 +414,7 @@ export const QuickVoiceShell = (): JSX.Element => {
         : desktopSettings.quickVoiceShortcut;
   const compactStatusTone =
     statusText &&
-    (/failed|disabled|unavailable|required|no speech|error/i.test(statusText)
+    (/failed|disabled|unavailable|required|no speech|no voice|error/i.test(statusText)
       ? "error"
       : /sent/i.test(statusText)
         ? "success"
