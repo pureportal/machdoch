@@ -18,7 +18,7 @@ const createConfig = (enabledTools: ToolName[]): RuntimeConfig => {
     mode: "ask",
     enabledTools,
     provider: "unconfigured",
-    model: "gpt-5.4-mini",
+    model: "gpt-5.5",
     offline: false,
     compatibility: {
       discoverGithubCustomizations: false,
@@ -253,7 +253,7 @@ describe("previewTaskRun", () => {
 
     customizations.prompts[0] = {
       ...debugBuildPrompt,
-      model: "gpt-5.4-mini",
+      model: "gpt-5.5",
     };
 
     const preview = previewTaskRun(
@@ -266,7 +266,7 @@ describe("previewTaskRun", () => {
     expect(preview.suggestedTools).toEqual(["filesystem", "shell"]);
     expect(
       preview.notes.some((note) =>
-        note.includes("prefers model `gpt-5.4-mini`"),
+        note.includes("prefers model `gpt-5.5`"),
       ),
     ).toBe(true);
   });

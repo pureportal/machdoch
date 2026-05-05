@@ -19,7 +19,7 @@ const createRuntimeConfig = (
     mode: "ask",
     enabledTools: ["filesystem", "network"],
     provider: "openai",
-    model: "gpt-5.4-mini",
+    model: "gpt-5.5",
     offline: false,
     compatibility: {
       discoverGithubCustomizations: false,

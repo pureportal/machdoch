@@ -74,7 +74,7 @@ describe("loadRuntimeConfig", () => {
     expect(config.mode).toBe("ask");
     expect(config.enabledTools).toEqual(["filesystem", "shell"]);
     expect(config.provider).toBe("unconfigured");
-    expect(config.model).toBe("gpt-5.4-mini");
+    expect(config.model).toBe("gpt-5.5");
     expect(config.offline).toBe(false);
     expect(config.compatibility.discoverGithubCustomizations).toBe(false);
   });

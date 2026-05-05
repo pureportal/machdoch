@@ -10,7 +10,7 @@ use tauri_plugin_autostart::ManagerExt as _;
 
 use crate::ui_control::UiControlAvailability;
 
-const DEFAULT_MODEL: &str = "gpt-5.4-mini";
+const DEFAULT_MODEL: &str = "gpt-5.5";
 const PLACEHOLDER_TOKENS: [&str; 3] = ["YOUR_", "CHANGE_ME", "PLACEHOLDER"];
 const KNOWN_SAMPLE_SECRET_VALUES: [&str; 6] = [
     "sk-user-config",

@@ -232,7 +232,7 @@ export const getDefaultModelForProvider = (
       return "gemini-2.5-flash";
     case "openai":
     default:
-      return "gpt-5.4-mini";
+      return "gpt-5.5";
   }
 };
 

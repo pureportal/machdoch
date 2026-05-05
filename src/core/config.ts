@@ -32,7 +32,7 @@ const VALID_TOOLS: ToolName[] = [
 ];
 
 const DEFAULT_TOOLS: ToolName[] = ["filesystem", "shell"];
-const DEFAULT_MODEL = "gpt-5.4-mini";
+const DEFAULT_MODEL = "gpt-5.5";
 const WORKSPACE_CONFIG_DIRECTORY = ".machdoch";
 const WORKSPACE_CONFIG_FILE_NAME = "config.json";
 const VALID_MODEL_PROVIDERS: Exclude<ModelProvider, "unconfigured">[] = [

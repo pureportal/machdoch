@@ -11,7 +11,7 @@ const createRuntimeConfig = (
     mode: "ask",
     enabledTools: ["filesystem", "shell"],
     provider: "unconfigured",
-    model: "gpt-5.4-mini",
+    model: "gpt-5.5",
     offline: false,
     compatibility: {
       discoverGithubCustomizations: false,

@@ -249,7 +249,7 @@ const createRuntimeSnapshot = (
     mode: "ask",
     enabledTools: ["filesystem", "shell"],
     provider: "openai",
-    model: "gpt-5.4-mini",
+    model: "gpt-5.5",
     offline: false,
     compatibility: {
       discoverGithubCustomizations: false,
@@ -621,7 +621,7 @@ describe("ChatSession component", () => {
             model:
               profile === "offline"
                 ? "claude-sonnet-4-20250514"
-                : "gpt-5.4-mini",
+                : "gpt-5.5",
             providerAvailability: [
               { provider: "openai", configured: true },
               { provider: "anthropic", configured: true },
@@ -1966,7 +1966,7 @@ describe("ChatSession component", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: /Session model: OpenAI GPT-5.4 mini/i,
+        name: /Session model: OpenAI GPT-5.5/i,
       }),
     );
     fireEvent.click(
