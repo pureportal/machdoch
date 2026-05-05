@@ -88,23 +88,6 @@ export const createAutopilotMonitorTool = (): AgentModelToolSpec => {
   };
 };
 
-const extractJsonCandidate = (value: string): string | undefined => {
-  const trimmed = value.trim();
-
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-    return trimmed;
-  }
-
-  const startIndex = trimmed.indexOf("{");
-  const endIndex = trimmed.lastIndexOf("}");
-
-  if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
-    return undefined;
-  }
-
-  return trimmed.slice(startIndex, endIndex + 1);
-};
-
 const parseAutopilotDecisionRecord = (
   record: Record<string, unknown>,
   pass: number,
@@ -145,30 +128,9 @@ export const parseAutopilotDecisionFromTurn = (
     (call) => call.name === AUTOPILOT_MONITOR_TOOL_NAME,
   );
 
-  if (toolCall) {
-    return parseAutopilotDecisionRecord(toolCall.arguments, pass);
-  }
-
-  const jsonCandidate = extractJsonCandidate(turn.text);
-
-  if (!jsonCandidate) {
-    return undefined;
-  }
-
-  try {
-    const parsed = JSON.parse(jsonCandidate) as unknown;
-
-    if (typeof parsed !== "object" || parsed === null) {
-      return undefined;
-    }
-
-    return parseAutopilotDecisionRecord(
-      parsed as Record<string, unknown>,
-      pass,
-    );
-  } catch {
-    return undefined;
-  }
+  return toolCall
+    ? parseAutopilotDecisionRecord(toolCall.arguments, pass)
+    : undefined;
 };
 
 const createSectionTranscript = (
@@ -208,6 +170,7 @@ export const createAutopilotMonitorSystemPrompt = (
       "3. Verification: for code or behavior changes, require the strongest relevant verification that was feasible; if it is missing or only implied, prefer continue.",
       "4. Recovery and efficiency: if the trace shows repeated identical failing tool calls or an unchanged strategy after errors, require a different approach before acceptance.",
       "5. Constraints and safety: continue when instructions, approvals, or policy boundaries were skipped or only partially satisfied.",
+      "6. User-input blockers: do not accept a candidate whose main result is asking the user for missing information instead of completing the requested task.",
       "</review_dimensions>",
     ].join("\n"),
     [

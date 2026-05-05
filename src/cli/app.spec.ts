@@ -2,13 +2,13 @@ import type { TaskExecutionProgress } from "../core/types.ts";
 import { formatExecutionProgressLines, parseCliArgs } from "./app.ts";
 
 describe("parseCliArgs", () => {
-  it("returns help when no command or task was provided", () => {
+  it("enters interactive chat when no command or task was provided", () => {
     expect(
       parseCliArgs([], {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toEqual({
-      command: "help",
+      command: "chat",
       json: false,
       verbose: false,
       workspaceRoot: "C:/workspace",
@@ -49,13 +49,13 @@ describe("parseCliArgs", () => {
     });
   });
 
-  it("treats unknown leading positionals as a task for the run command", () => {
+  it("treats unknown leading positionals as the initial interactive chat task", () => {
     expect(
       parseCliArgs(["show", "profiles", "-v"], {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toEqual({
-      command: "run",
+      command: "chat",
       task: "show profiles",
       json: false,
       verbose: true,
@@ -95,6 +95,20 @@ describe("parseCliArgs", () => {
       command: "run",
       task: "create a dockerfile for nginx",
       model: "gpt-4.5",
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
+  it("uses --task as an initial interactive chat task unless --quick is set", () => {
+    expect(
+      parseCliArgs(["--task", "create a dockerfile for nginx"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "chat",
+      task: "create a dockerfile for nginx",
       json: false,
       verbose: false,
       workspaceRoot: "C:/workspace",

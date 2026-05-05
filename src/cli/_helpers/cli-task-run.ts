@@ -412,28 +412,25 @@ export const runInteractiveChat = async (
   });
 
   try {
-    while (true) {
-      const nextTask = (await interfaceHandle.question("machdoch> ")).trim();
+    const createCurrentConversationContext = (): TaskConversationContext => ({
+      history: sessionState.history,
+      sessionMemory: sessionState.sessionMemory,
+      sessionMemoryEnabled: sessionState.sessionMemoryEnabled,
+      ...(sessionState.globalMemoryEnabled !== undefined
+        ? { globalMemoryEnabled: sessionState.globalMemoryEnabled }
+        : {}),
+      ...(sessionState.globalMemory !== undefined
+        ? { globalMemory: sessionState.globalMemory }
+        : {}),
+      ...(sessionState.uiControlEnabled !== undefined
+        ? { uiControlEnabled: sessionState.uiControlEnabled }
+        : {}),
+      ...(sessionState.uiControl !== undefined
+        ? { uiControl: sessionState.uiControl }
+        : {}),
+    });
 
-      if (nextTask.length === 0) {
-        continue;
-      }
-
-      if (
-        nextTask === "/exit" ||
-        nextTask === "exit" ||
-        nextTask === "/quit" ||
-        nextTask === "quit"
-      ) {
-        break;
-      }
-
-      if (nextTask === "/help") {
-        printInteractiveChatHelp();
-        writeStdoutLine();
-        continue;
-      }
-
+    const executeChatTask = async (nextTask: string): Promise<void> => {
       const { execution } = await printTaskPreview(
         {
           ...args,
@@ -441,23 +438,7 @@ export const runInteractiveChat = async (
           task: nextTask,
         },
         {
-          conversationContext: {
-            history: sessionState.history,
-            sessionMemory: sessionState.sessionMemory,
-            sessionMemoryEnabled: sessionState.sessionMemoryEnabled,
-            ...(sessionState.globalMemoryEnabled !== undefined
-              ? { globalMemoryEnabled: sessionState.globalMemoryEnabled }
-              : {}),
-            ...(sessionState.globalMemory !== undefined
-              ? { globalMemory: sessionState.globalMemory }
-              : {}),
-            ...(sessionState.uiControlEnabled !== undefined
-              ? { uiControlEnabled: sessionState.uiControlEnabled }
-              : {}),
-            ...(sessionState.uiControl !== undefined
-              ? { uiControl: sessionState.uiControl }
-              : {}),
-          },
+          conversationContext: createCurrentConversationContext(),
         },
       );
 
@@ -490,7 +471,38 @@ export const runInteractiveChat = async (
           MAX_SESSION_MEMORY_ENTRIES,
         );
       }
+    };
 
+    const initialTask = args.task?.trim();
+
+    if (initialTask) {
+      await executeChatTask(initialTask);
+      writeStdoutLine();
+    }
+
+    while (true) {
+      const nextTask = (await interfaceHandle.question("machdoch> ")).trim();
+
+      if (nextTask.length === 0) {
+        continue;
+      }
+
+      if (
+        nextTask === "/exit" ||
+        nextTask === "exit" ||
+        nextTask === "/quit" ||
+        nextTask === "quit"
+      ) {
+        break;
+      }
+
+      if (nextTask === "/help") {
+        printInteractiveChatHelp();
+        writeStdoutLine();
+        continue;
+      }
+
+      await executeChatTask(nextTask);
       writeStdoutLine();
     }
   } finally {

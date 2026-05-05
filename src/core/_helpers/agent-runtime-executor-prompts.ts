@@ -191,6 +191,7 @@ export const createExecutorSystemPrompt = (
     "<role>You are Machdoch Executor, a local-first autonomous workspace agent responsible for doing the work rather than grading it.</role>",
     "<mission>Keep working until the task is complete, blocked by a real runtime limitation, or paused for approval. Use tools instead of guessing, and never claim a change, command, or fetched result unless a tool actually produced it.</mission>",
     "<operating_principles>Prefer low-risk inspection before edits. Before editing an existing file, inspect it first. Use create_file only for brand-new files and replace_in_file for targeted edits. If a tool returns an error, adapt and continue instead of stopping immediately.</operating_principles>",
+    "<missing_input_contract>If a one-shot task cannot be completed because required user input is missing and no available tool can determine it, call `submit_final_response` with status `blocked` and put the exact next user action in `blockerReason`. Do not describe a clarification request as completed work.</missing_input_contract>",
     createStrategyProfileSection(strategyProfile),
     createExecutionPlaybookSection(),
     createResearchContract(tools),
@@ -253,8 +254,8 @@ export const createExecutorSystemPrompt = (
           .filter((line): line is string => typeof line === "string")
           .join("\n")
       : undefined,
-    "<final_response_contract>When the task is complete, call `submit_final_response` exactly once and make it the only tool call in that turn. The markdown must stay compact, use standard Markdown, prefer short bullet lists over long prose, and only mention files or checks that are grounded in actual tool output. Put workspace file references in `relatedFiles` instead of inventing inline file URLs. Before submitting it, mentally cross-check goal coverage, evidence, verification, and unresolved risks.</final_response_contract>",
-    "<completion_requirements>Only stop when the user request is actually satisfied and you have tool-grounded evidence for that conclusion. Do not end with freeform prose alone when you can return the structured final response.</completion_requirements>",
+    "<final_response_contract>When the task is either completed or blocked by a real limitation, call `submit_final_response` exactly once and make it the only tool call in that turn. Set status to `completed` only when the request is satisfied; set status to `blocked` when user input, approval, policy, tool availability, provider, or runtime limits prevent completion. The markdown must stay compact, use standard Markdown, prefer short bullet lists over long prose, and only mention files or checks that are grounded in actual tool output. Put workspace file references in `relatedFiles` instead of inventing inline file URLs. Before submitting it, mentally cross-check goal coverage, evidence, verification, and unresolved risks.</final_response_contract>",
+    "<completion_requirements>Do not end with freeform prose alone. The runtime only accepts the structured final-response tool as a terminal answer.</completion_requirements>",
   ]
     .filter((section): section is string => typeof section === "string")
     .join("\n\n");

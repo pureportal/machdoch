@@ -19,6 +19,8 @@ export const TASK_EXECUTION_TIMEOUT_MS = 20 * 60 * 1_000;
 export const TASK_EXECUTION_TIMEOUT_REASON_PREFIX =
   "Execution stopped after exceeding the safety timeout";
 
+export type TaskFinalResponseStatus = "completed" | "blocked";
+
 export interface AgentLoopState {
   executedTools: ToolName[];
   outputSections: TaskExecutionSection[];
@@ -28,8 +30,15 @@ export interface AgentLoopState {
   finalResponse?: TaskExecutionNarrative;
 }
 
-export interface TaskFinalResponsePayload extends TaskExecutionNarrative {
+export interface TaskFinalResponsePayload {
+  status: TaskFinalResponseStatus;
+  blockerReason: string;
   summary: string;
+  markdown: string;
+  highlights: string[];
+  relatedFiles: TaskExecutionNarrative["relatedFiles"];
+  verification: string[];
+  followUps: string[];
 }
 
 export interface ModelDrivenExecutionParams {

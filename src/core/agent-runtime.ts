@@ -155,6 +155,20 @@ const finalizeBlockedResult = (
   );
 };
 
+const finalizeUnstructuredModelResponseResult = (
+  task: string,
+  config: RuntimeConfig,
+  loopState: AgentLoopState,
+): TaskExecutionResult => {
+  return finalizeBlockedResult(
+    task,
+    config,
+    loopState,
+    "The model-driven execution stopped without submitting a structured final response.",
+    "The executor must finish by calling `submit_final_response` with status `completed` or `blocked`.",
+  );
+};
+
 const finalizeApprovalResult = (
   task: string,
   config: RuntimeConfig,
@@ -336,7 +350,11 @@ const runExecutorCycle = async (
 
       return {
         loopState,
-        result: finalizeExecutedResult(task, config, loopState),
+        result: finalizeUnstructuredModelResponseResult(
+          task,
+          config,
+          loopState,
+        ),
       };
     }
 
@@ -413,7 +431,7 @@ const runExecutorCycle = async (
       };
       loopState.lastAssistantText = parsedPayload.markdown;
       loopState.traceLines.push(
-        `${FINAL_RESPONSE_TOOL_NAME}: ${compactTraceText(parsedPayload.summary)}`,
+        `${FINAL_RESPONSE_TOOL_NAME}(${parsedPayload.status}): ${compactTraceText(parsedPayload.summary)}`,
       );
 
       await emitAgentProgress(
@@ -427,12 +445,21 @@ const runExecutorCycle = async (
 
       return {
         loopState,
-        result: finalizeExecutedResult(
-          task,
-          config,
-          loopState,
-          parsedPayload.summary,
-        ),
+        result:
+          parsedPayload.status === "blocked"
+            ? finalizeBlockedResult(
+                task,
+                config,
+                loopState,
+                parsedPayload.summary,
+                parsedPayload.blockerReason,
+              )
+            : finalizeExecutedResult(
+                task,
+                config,
+                loopState,
+                parsedPayload.summary,
+              ),
       };
     }
 

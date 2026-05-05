@@ -35,6 +35,10 @@ const TOOL_REGISTRY: ToolDefinition[] = [
       "online",
       "internet",
       "web search",
+      "weather",
+      "forecast",
+      "temperature",
+      "current conditions",
     ],
   },
   {

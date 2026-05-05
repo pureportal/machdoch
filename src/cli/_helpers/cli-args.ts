@@ -196,13 +196,14 @@ export const getHelpText = (): string => {
   return `machdoch
 
 Usage:
+  machdoch [--mode <safe|ask|auto>]
   machdoch <task>
+  machdoch --task <task> [--mode <safe|ask|auto>]
   machdoch run <task>
   machdoch --quick --task <task> [--mode <safe|ask|auto>]
   machdoch --set-api --provider <openai|anthropic|google> --key <value>
   machdoch --set-global-memory <on|off>
   machdoch --runtime-provider <openai|anthropic|google>
-  machdoch --task <task> [--mode <safe|ask|auto>] [--quick] [--model <name>]
   machdoch --model <name>
   machdoch --default-model <name>
   machdoch inspect [--json]
@@ -211,7 +212,7 @@ Usage:
   machdoch profiles [--json]
 
 Options:
-  --mode <safe|ask|auto>  Override the runtime mode for this command.
+  --mode <safe|ask|auto>  Override the runtime mode for this command or chat session.
   --quick                 Force a one-shot task run that exits at a terminal state. Use --mode to choose safe, ask, or auto.
   --set-api               Save a provider API key into the user-scoped Machdoch config file.
   --provider <name>       Provider name for --set-api (openai, anthropic, google).
@@ -233,8 +234,10 @@ Options:
   --verbose, -v           Print execution-state progress during \`machdoch run\`.
   -h, --help              Show help.
 
-During \`machdoch run\`, press Ctrl+C to request cancellation after the current execution step.
-Interactive chat mode starts when no task is provided but runtime options such as --model are set.
+Default CLI mode is interactive and keeps running until /exit, /quit, or Ctrl+C.
+\`machdoch <task>\` and \`machdoch --task <text>\` start interactive chat with an initial task.
+Use \`machdoch run <task>\` or \`machdoch --quick --task <text>\` for one-shot execution that exits.
+During a task run, press Ctrl+C to request cancellation after the current execution step.
 `;
 };
 
@@ -552,7 +555,7 @@ export const parseCliArgs = (
       return createParsedArgs(
         {
           ...sharedOptions,
-          command: "run",
+          command: quickRunRequested ? "run" : "chat",
         },
         { task: rawTask },
       );
@@ -564,24 +567,9 @@ export const parseCliArgs = (
       );
     }
 
-    if (
-      rawModel ||
-      resolvedMode ||
-      rawProfile ||
-      rawRuntimeProvider ||
-      sessionMemoryEnabled !== undefined ||
-      rawGlobalMemory ||
-      rawConversationContextFile
-    ) {
-      return createParsedArgs({
-        ...sharedOptions,
-        command: "chat",
-      });
-    }
-
     return createParsedArgs({
       ...sharedOptions,
-      command: "help",
+      command: "chat",
     });
   }
 
@@ -639,7 +627,7 @@ export const parseCliArgs = (
   return createParsedArgs(
     {
       ...sharedOptions,
-      command: "run",
+      command: quickRunRequested ? "run" : "chat",
     },
     { task },
   );

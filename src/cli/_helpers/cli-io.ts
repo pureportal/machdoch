@@ -76,29 +76,54 @@ export const attachCancellationHandlers = (
   };
 };
 
-export const printExecutionSummary = (execution: TaskExecutionResult): void => {
-  writeStdoutLine(`task: ${execution.task}`);
-  writeStdoutLine(`mode: ${execution.mode}`);
-  writeStdoutLine(`execution status: ${execution.status}`);
-  writeStdoutLine(`summary: ${execution.summary}`);
-  writeStdoutLine(
+export const getExecutionResultMarkdown = (
+  execution: TaskExecutionResult,
+): string | undefined => {
+  const responseMarkdown = execution.response?.markdown.trim();
+
+  return responseMarkdown || undefined;
+};
+
+export const formatExecutionSummaryLines = (
+  execution: TaskExecutionResult,
+): string[] => {
+  const resultMarkdown = getExecutionResultMarkdown(execution);
+  const lines = [
+    `task: ${execution.task}`,
+    `mode: ${execution.mode}`,
+    `execution status: ${execution.status}`,
+    `summary: ${execution.summary}`,
     `executed tools: ${execution.executedTools.length > 0 ? execution.executedTools.join(", ") : "none"}`,
-  );
+  ];
 
   if (execution.reason) {
-    writeStdoutLine(`reason: ${execution.reason}`);
+    lines.push(`reason: ${execution.reason}`);
   }
 
   if (execution.autopilot) {
-    writeStdoutLine(
+    lines.push(
       `autopilot: executor iterations=${execution.autopilot.executorIterations}, validator passes=${execution.autopilot.validatorPasses}, continuation requests=${execution.autopilot.continuationCount}`,
     );
   }
 
   for (const section of execution.outputSections) {
-    writeStdoutLine(`${section.title.toLowerCase()}:`);
+    lines.push(`${section.title.toLowerCase()}:`);
     for (const line of section.lines) {
-      writeStdoutLine(`  - ${line}`);
+      lines.push(`  - ${line}`);
     }
+  }
+
+  if (resultMarkdown) {
+    lines.push("");
+    lines.push("result:");
+    lines.push(...resultMarkdown.replace(/\r\n/g, "\n").split("\n"));
+  }
+
+  return lines;
+};
+
+export const printExecutionSummary = (execution: TaskExecutionResult): void => {
+  for (const line of formatExecutionSummaryLines(execution)) {
+    writeStdoutLine(line);
   }
 };

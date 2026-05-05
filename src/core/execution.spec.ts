@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { executeTask } from "./execution.ts";
 import type {
   AgentModelAdapter,
+  AgentModelToolCall,
   AgentModelStartParams,
   CustomizationDiscoveryResult,
   ProviderAvailability,
@@ -62,6 +63,26 @@ const emptyCustomizations = (
     instructions: [],
     prompts: [],
     skills: [],
+  };
+};
+
+const createFinalResponseToolCall = (
+  overrides: Partial<Record<string, unknown>> = {},
+): AgentModelToolCall => {
+  return {
+    id: "final-response",
+    name: "submit_final_response",
+    arguments: {
+      summary: "Completed the model-driven task.",
+      status: "completed",
+      blockerReason: "",
+      markdown: "Completed the model-driven task.",
+      highlights: [],
+      relatedFiles: [],
+      verification: [],
+      followUps: [],
+      ...overrides,
+    },
   };
 };
 
@@ -687,6 +708,82 @@ describe("executeTask", () => {
     );
   });
 
+  it("uses structured final-response status for blocked user-input requests", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const clarificationAdapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "",
+        toolCalls: [
+          createFinalResponseToolCall({
+            summary: "A location is required before weather can be checked.",
+            status: "blocked",
+            blockerReason:
+              "Ask the user for a city, ZIP/postal code, or coordinates.",
+            markdown:
+              "I need a location to answer that. Please send a city, ZIP/postal code, or coordinates.",
+          }),
+        ],
+      }),
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The clarification adapter should not continue.");
+      },
+    };
+
+    const result = await executeTask(
+      "What is the weather?",
+      createConfig(workspaceRoot, "auto", ["filesystem", "network"]),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: clarificationAdapter,
+      },
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.reason).toBe(
+      "Ask the user for a city, ZIP/postal code, or coordinates.",
+    );
+    expect(result.response?.markdown).toContain("I need a location");
+    expect(
+      result.outputSections.some(
+        (section) => section.title === "Agent answer",
+      ),
+    ).toBe(false);
+  });
+
+  it("blocks unstructured model answers instead of classifying prose", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const unstructuredAdapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "I need a location to answer that.",
+        toolCalls: [],
+      }),
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The unstructured adapter should not continue.");
+      },
+    };
+
+    const result = await executeTask(
+      "What is the weather?",
+      createConfig(workspaceRoot, "auto", ["filesystem", "network"]),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: unstructuredAdapter,
+      },
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.summary).toContain("structured final response");
+    expect(result.reason).toContain("submit_final_response");
+    expect(result.response).toBeUndefined();
+    expect(
+      result.outputSections.some(
+        (section) => section.title === "Agent answer",
+      ),
+    ).toBe(true);
+  });
+
   it("truncates top-level workspace summaries when many entries are present", async () => {
     const workspaceRoot = await createWorkspace();
 
@@ -801,8 +898,13 @@ describe("executeTask", () => {
         }
 
         return {
-          text: "Changed strategy after repeated failures.",
-          toolCalls: [],
+          text: "",
+          toolCalls: [
+            createFinalResponseToolCall({
+              summary: "Changed strategy after repeated failures.",
+              markdown: "Changed strategy after repeated failures.",
+            }),
+          ],
         };
       },
     };

@@ -33,7 +33,7 @@
 ## Highlights
 
 - shared TypeScript runtime for config/env loading, tool-policy resolution, memory, deterministic execution, and model-driven execution
-- runnable Node.js CLI with `run`, `inspect`, `config`, `tools`, `profiles`, and provider/memory setup helpers
+- runnable Node.js CLI with interactive chat by default, one-shot `run`/`--quick`, `inspect`, `config`, `tools`, `profiles`, and provider/memory setup helpers
 - Tauri + React desktop shell with persisted sessions, workspace selection, provider/model/profile/mode controls, and progress streaming
 - provider adapters for OpenAI, Anthropic, and Google, plus optional Perplexity/Tavily web search when configured
 - desktop voice I/O plus a UI-control bridge for screenshots, windows, input automation, and richer native control support on Windows
@@ -44,7 +44,7 @@
 | Area | Status | What it means |
 | --- | --- | --- |
 | Shared runtime | 🟡 Partly implemented | `src/core` loads `.machdoch/config.json` and `.env`, discovers instructions/prompts/skills, resolves tool policies, manages memory, previews deterministic tasks, and can run provider-backed tool loops with an autopilot validator pass. |
-| CLI | 🟡 Partly implemented | The CLI exposes `run`, `inspect`, `config`, `tools`, `profiles`, `--set-api`, `--default-model`, and `--set-global-memory`. Interactive chat works in a real TTY. |
+| CLI | 🟡 Partly implemented | The CLI opens interactive chat by default in a real TTY, supports one-shot `run`/`--quick` task execution, and exposes `inspect`, `config`, `tools`, `profiles`, `--set-api`, `--default-model`, and `--set-global-memory`. |
 | Desktop shell | 🟡 Partly implemented | The Tauri + React app persists sessions, remembers provider/model/profile/mode choices, streams task progress, and includes tray/autostart behavior. |
 | Customization system | 🟡 Partly implemented | Native `.machdoch` instructions, prompts, skills, and profiles work today. GitHub-style compatibility discovery exists, but it is opt-in and disabled by default. |
 | Providers + desktop extras | 🟡 Partly implemented | OpenAI, Anthropic, and Google adapters are wired in. Voice and desktop UI control are desktop-only capabilities. |
@@ -118,7 +118,7 @@ cd machdoch
 npm ci
 npm test
 npm run dev -- tools
-npm run dev -- "scan this workspace and explain the setup"
+npm run dev -- --quick "scan this workspace and explain the setup"
 ```
 
 Use `npm install` instead of `npm ci` only when you intentionally want to update `package-lock.json`.
@@ -130,7 +130,7 @@ npm run build
 npm link
 machdoch inspect
 machdoch tools
-machdoch "summarize this project"
+machdoch --quick "summarize this project"
 ```
 
 For the desktop shell, install Rust stable and the normal Tauri system dependencies, then run:
@@ -167,7 +167,7 @@ machdoch config
 npm install
 npm test
 npm run dev -- tools
-npm run dev -- "scan this workspace and explain the setup"
+npm run dev -- --quick "scan this workspace and explain the setup"
 ```
 
 ### Run the desktop shell
@@ -183,13 +183,15 @@ npm run build
 npm link
 machdoch inspect
 machdoch tools
-machdoch "summarize this project"
+machdoch --quick "summarize this project"
 ```
 
 ## Useful commands
 
 | Goal | Command |
 | --- | --- |
+| Start interactive CLI chat | `npm run dev` |
+| Run a one-shot task | `npm run dev -- --quick "summarize this project"` |
 | Inspect resolved runtime config | `npm run inspect` |
 | Print CLI config help | `npm run dev -- config` |
 | List available tools | `npm run dev -- tools` |

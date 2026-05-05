@@ -7,6 +7,7 @@ import type {
 import {
   createAutopilotMonitorSystemPrompt,
   createAutopilotMonitorUserPrompt,
+  parseAutopilotDecisionFromTurn,
 } from "./agent-runtime-autopilot.ts";
 import type { ExecutorCycleOutcome } from "./agent-runtime-types.js";
 
@@ -111,5 +112,48 @@ describe("autopilot monitor prompts", () => {
     );
     expect(prompt).toContain("<verification_expectation>");
     expect(prompt).toContain("concrete verification evidence");
+  });
+
+  it("requires the structured monitor tool call instead of parsing JSON from prose", () => {
+    expect(
+      parseAutopilotDecisionFromTurn(
+        {
+          text: JSON.stringify({
+            decision: "complete",
+            confidence: "high",
+            rationale: "Looks done.",
+            missingRequirements: [],
+            requiredActions: [],
+          }),
+          toolCalls: [],
+        },
+        1,
+      ),
+    ).toBeUndefined();
+
+    expect(
+      parseAutopilotDecisionFromTurn(
+        {
+          text: "",
+          toolCalls: [
+            {
+              id: "monitor-1",
+              name: "report_autopilot_decision",
+              arguments: {
+                decision: "complete",
+                confidence: "high",
+                rationale: "Looks done.",
+                missingRequirements: [],
+                requiredActions: [],
+              },
+            },
+          ],
+        },
+        1,
+      ),
+    ).toMatchObject({
+      decision: "complete",
+      confidence: "high",
+    });
   });
 });

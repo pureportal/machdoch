@@ -56,6 +56,13 @@ describe("inferSuggestedTools", () => {
     ).toEqual(["git"]);
   });
 
+  it("uses network for current weather and forecast requests", () => {
+    expect(inferSuggestedTools("What is the weather?")).toEqual(["network"]);
+    expect(inferSuggestedTools("show the forecast for Berlin")).toEqual([
+      "network",
+    ]);
+  });
+
   it("prefers filesystem-only suggestions for deterministic read-only inspection tasks", () => {
     expect(inferSuggestedTools("show profiles")).toEqual(["filesystem"]);
     expect(inferSuggestedTools("inspect config")).toEqual(["filesystem"]);

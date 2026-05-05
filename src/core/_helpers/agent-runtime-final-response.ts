@@ -21,7 +21,7 @@ export const createFinalResponseTool = (): AgentModelToolSpec => {
   return {
     name: FINAL_RESPONSE_TOOL_NAME,
     description:
-      "Submit the final user-facing response after the task is actually complete. Call this exactly once, as the only tool in the turn, when no further execution is required and every explicit user requirement has been covered as far as the gathered evidence allows.",
+      "Submit the final user-facing response when the task is either completed or blocked by a real limitation. Call this exactly once, as the only tool in the turn, when no further execution is possible or required.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -30,6 +30,17 @@ export const createFinalResponseTool = (): AgentModelToolSpec => {
           type: "string",
           description:
             "A concise plain-text completion summary for the activity feed and task card.",
+        },
+        status: {
+          type: "string",
+          enum: ["completed", "blocked"],
+          description:
+            "Use `completed` only when the task is actually satisfied. Use `blocked` when execution cannot continue because user input, approval, tool availability, policy, provider, or runtime limits prevent completion.",
+        },
+        blockerReason: {
+          type: "string",
+          description:
+            "When status is `blocked`, explain the concrete blocker and the next required action. Use an empty string when status is `completed`.",
         },
         markdown: {
           type: "string",
@@ -81,6 +92,8 @@ export const createFinalResponseTool = (): AgentModelToolSpec => {
       },
       required: [
         "summary",
+        "status",
+        "blockerReason",
         "markdown",
         "highlights",
         "relatedFiles",
@@ -95,6 +108,11 @@ export const parseFinalResponsePayload = (
   record: Record<string, unknown>,
 ): TaskFinalResponsePayload | undefined => {
   const summary = coerceString(record, "summary");
+  const status = record.status;
+  const blockerReason =
+    typeof record.blockerReason === "string"
+      ? record.blockerReason.trim()
+      : undefined;
   const markdown = coerceString(record, "markdown");
   const highlights = coerceStringArray(record, "highlights");
   const relatedFiles = coerceFileReferenceArray(record, "relatedFiles");
@@ -103,6 +121,9 @@ export const parseFinalResponsePayload = (
 
   if (
     !summary ||
+    (status !== "completed" && status !== "blocked") ||
+    blockerReason === undefined ||
+    (status === "blocked" && blockerReason.length === 0) ||
     !markdown ||
     !highlights ||
     !relatedFiles ||
@@ -113,6 +134,8 @@ export const parseFinalResponsePayload = (
   }
 
   return {
+    status,
+    blockerReason,
     summary,
     markdown,
     highlights,
@@ -126,7 +149,6 @@ export const createFinalResponseSections = (
   response: TaskExecutionNarrative,
 ): TaskExecutionSection[] => {
   return [
-    createTextSection("Agent response", limitText(response.markdown)),
     ...(response.highlights.length > 0
       ? [
           {
