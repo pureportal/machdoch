@@ -1,9 +1,4 @@
-import {
-  chromium,
-  type Browser,
-  type BrowserContext,
-  type Page,
-} from "playwright-core";
+import type { Browser, BrowserContext, Page } from "playwright-core";
 import {
   coerceBoolean,
   coerceInteger,
@@ -183,6 +178,7 @@ const launchInstalledChromium = async (
     ? [requestedChannel]
     : getDefaultBrowserChannels();
   const errors: string[] = [];
+  const { chromium } = await import("playwright-core");
 
   for (const channel of channels) {
     try {
