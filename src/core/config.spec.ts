@@ -67,6 +67,9 @@ describe("loadRuntimeConfig", () => {
 
     expect(config.activeProfile).toBeUndefined();
     expect(config.workspaceConfigPath).toBeUndefined();
+    expect(config.userConfigPath).toBe(
+      join(workspaceRoot, ".user-config", "user-config.json"),
+    );
     expect(config.availableProfiles).toEqual([]);
     expect(config.mode).toBe("ask");
     expect(config.enabledTools).toEqual(["filesystem", "shell"]);

@@ -1,3 +1,4 @@
+import process from "node:process";
 import type {
   RuntimeProfileSummary,
   TaskExecutionProgress,
@@ -77,6 +78,31 @@ export const createDiscoveryOptions = (
   return discoverGithubCustomizations
     ? { discoverGithubCustomizations: true }
     : undefined;
+};
+
+export const createUserConfigSummaryLines = (
+  userConfigPath: string | undefined,
+  options?: {
+    env?: NodeJS.ProcessEnv;
+    getuid?: () => number;
+  },
+): string[] => {
+  const lines = [`user config: ${userConfigPath?.trim() || "unknown"}`];
+  const env = options?.env ?? process.env;
+  const getuid =
+    options?.getuid ??
+    (typeof process.getuid === "function"
+      ? process.getuid.bind(process)
+      : undefined);
+  const sudoUser = env.SUDO_USER?.trim();
+
+  if (getuid?.() === 0 && sudoUser && sudoUser !== "root") {
+    lines.push(
+      `sudo notice: running as root via sudo for ${sudoUser}; this may inspect root's user config. Run without sudo to inspect ${sudoUser}'s normal config.`,
+    );
+  }
+
+  return lines;
 };
 
 export const createBodyPreviewLines = (

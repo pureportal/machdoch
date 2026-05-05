@@ -1,5 +1,6 @@
 import type { TaskExecutionProgress } from "../core/types.ts";
 import { formatExecutionProgressLines, parseCliArgs } from "./app.ts";
+import { createUserConfigSummaryLines } from "./_helpers/cli-output.ts";
 
 describe("parseCliArgs", () => {
   it("enters interactive chat when no command or task was provided", () => {
@@ -372,6 +373,26 @@ describe("formatExecutionProgressLines", () => {
 
     expect(formatExecutionProgressLines(progress)).toEqual([
       "Preparing the task...",
+    ]);
+  });
+});
+
+describe("createUserConfigSummaryLines", () => {
+  it("prints the resolved user config path", () => {
+    expect(
+      createUserConfigSummaryLines("/home/ane/.config/machdoch/user-config.json"),
+    ).toEqual(["user config: /home/ane/.config/machdoch/user-config.json"]);
+  });
+
+  it("warns when sudo may point at root's user config", () => {
+    expect(
+      createUserConfigSummaryLines("/root/.config/machdoch/user-config.json", {
+        env: { SUDO_USER: "ane" },
+        getuid: () => 0,
+      }),
+    ).toEqual([
+      "user config: /root/.config/machdoch/user-config.json",
+      "sudo notice: running as root via sudo for ane; this may inspect root's user config. Run without sudo to inspect ane's normal config.",
     ]);
   });
 });

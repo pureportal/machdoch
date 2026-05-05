@@ -110,100 +110,92 @@ chmod +x machdoch.AppImage
 ./machdoch.AppImage
 ```
 
-### From a checkout
+## Quick start
 
-```bash
-git clone https://github.com/pureportal/machdoch.git
-cd machdoch
-npm ci
-npm test
-npm run dev -- tools
-npm run dev -- --quick "scan this workspace and explain the setup"
-```
+### Requirements
 
-Use `npm install` instead of `npm ci` only when you intentionally want to update `package-lock.json`.
-
-### Build or link locally
-
-```bash
-npm run build
-npm link
-machdoch inspect
-machdoch tools
-machdoch --quick "summarize this project"
-```
-
-For the desktop shell, install Rust stable and the normal Tauri system dependencies, then run:
-
-```bash
-npm run tauri:dev
-```
-
-To build local installer bundles:
-
-```bash
-npm run tauri:build
-```
+- an installed `machdoch` desktop app or CLI
+- an OpenAI, Anthropic, or Google API key for the full model-driven agent loop
+- Microsoft Edge or Google Chrome if you want first-class browser automation via `playwright-core`
 
 ### Configure a provider
 
-The full model-driven agent loop needs an OpenAI, Anthropic, or Google key. The desktop app exposes this in settings; the CLI can persist it in the user-scoped config file:
+The desktop app exposes provider setup in settings. The CLI can also persist a key in the user-scoped config file:
 
 ```bash
 machdoch --set-api --provider openai --key YOUR_OPENAI_API_KEY
 machdoch config
 ```
 
-## Quick start
-
-### Requirements
-
-- Node.js `>= 20.10`
-- Microsoft Edge or Google Chrome if you want first-class browser automation via `playwright-core`
-- Rust stable and the normal Tauri system dependencies only if you want to run or build the desktop shell
-
-### Install and try the CLI
+### Try the CLI
 
 ```bash
-npm install
-npm test
-npm run dev -- tools
-npm run dev -- --quick "scan this workspace and explain the setup"
-```
-
-### Run the desktop shell
-
-```bash
-npm run tauri:dev
-```
-
-### Optional global CLI flow during development
-
-```bash
-npm run build
-npm link
+machdoch --help
 machdoch inspect
 machdoch tools
-machdoch --quick "summarize this project"
+machdoch --quick "scan this workspace and explain the setup"
 ```
 
 ## Useful commands
 
+The examples below assume `machdoch` is installed and available on your `PATH`. They work from Windows PowerShell and Linux shells unless the command contains an OS-specific path.
+
+### CLI tasks
+
 | Goal | Command |
 | --- | --- |
-| Start interactive CLI chat | `npm run dev` |
-| Run a one-shot task | `npm run dev -- --quick "summarize this project"` |
-| Inspect resolved runtime config | `npm run inspect` |
-| Print CLI config help | `npm run dev -- config` |
-| List available tools | `npm run dev -- tools` |
-| List available profiles | `npm run dev -- profiles` |
-| Run the core test suite | `npm test` |
-| Run desktop/UI tests | `npm run test:ui` |
-| Generate coverage | `npm run coverage` |
-| Lint the TypeScript code | `npm run lint` |
-| Type-check the shared runtime + CLI | `npm run typecheck` |
-| Type-check the desktop UI | `npm run typecheck:ui` |
-| Start the desktop app in development | `npm run tauri:dev` |
+| Start interactive chat | `machdoch` |
+| Start chat with an initial task | `machdoch "summarize this project"` |
+| Start chat with an explicit task flag | `machdoch --task "summarize this project"` |
+| Run a one-shot task | `machdoch run "summarize this project"` |
+| Run a one-shot task with `--quick` | `machdoch --quick "summarize this project"` |
+| Show CLI help | `machdoch --help` |
+
+Interactive chat supports `/help`, `/exit`, `/quit`, and Ctrl+C.
+
+### Runtime overrides
+
+| Goal | Command |
+| --- | --- |
+| Use a different model for one chat session | `machdoch --model <model-name>` |
+| Use a different model for one task | `machdoch --model <model-name> run "review this repo"` |
+| Persist the workspace default model | `machdoch --default-model <model-name>` |
+| Use a specific runtime provider | `machdoch --runtime-provider <provider> run "review this repo"` |
+| Use a provider and model together | `machdoch --runtime-provider openai --model <model-name> run "review this repo"` |
+| Use a specific run mode | `machdoch --mode <mode> run "review this repo"` |
+| Use a named profile | `machdoch --profile safe-review run "review this repo"` |
+| Run against another workspace | `machdoch --cwd <path> config` |
+
+Valid runtime providers are `openai`, `anthropic`, and `google`. Valid modes are `safe`, `ask`, and `auto`.
+
+For model selection, the effective order is `--model`, then the selected profile or workspace `.machdoch/config.json`, then `MACHDOCH_MODEL`, then the built-in default. `--default-model` writes the workspace default to `.machdoch/config.json`; it does not change the user-scoped config file.
+
+### Setup and inspection
+
+| Goal | Command |
+| --- | --- |
+| Save an OpenAI API key | `machdoch --set-api --provider openai --key YOUR_OPENAI_API_KEY` |
+| Save an Anthropic API key | `machdoch --set-api --provider anthropic --key YOUR_ANTHROPIC_API_KEY` |
+| Save a Google API key | `machdoch --set-api --provider google --key YOUR_GOOGLE_API_KEY` |
+| Inspect resolved runtime config | `machdoch config` |
+| Print resolved runtime config as JSON | `machdoch config --json` |
+| Inspect discovered customizations | `machdoch inspect` |
+| Inspect discovered customizations as JSON | `machdoch inspect --json` |
+| List available tools and policies | `machdoch tools` |
+| List tools as JSON | `machdoch tools --json` |
+| List available profiles | `machdoch profiles` |
+| List profiles as JSON | `machdoch profiles --json` |
+
+### Memory and context
+
+| Goal | Command |
+| --- | --- |
+| Enable cross-session global memory | `machdoch --set-global-memory on` |
+| Disable cross-session global memory | `machdoch --set-global-memory off` |
+| Disable per-session memory for one run | `machdoch --session-memory off run "summarize this project"` |
+| Force global memory on for one run | `machdoch --global-memory on run "summarize this project"` |
+| Force global memory off for one run | `machdoch --global-memory off run "summarize this project"` |
+| Use a saved conversation context JSON file | `machdoch --conversation-context-file ./context.json run "continue"` |
 
 ## Shipped customizations
 
@@ -242,6 +234,8 @@ If `compatibility.discoverGithubCustomizations` is enabled, the runtime can also
 Provider keys, web-search settings, voice settings, desktop settings, and global memory are stored in a user-scoped config file rather than inside the workspace.
 
 Web search can be enabled from the desktop settings page or by storing provider keys under `webSearch.apiKeys` in the user config. Supported providers are `perplexity`, `tavily`, and `serper`; the runtime also honors `MACHDOCH_WEB_SEARCH_PROVIDER` plus `PERPLEXITY_API_KEY`, `TAVILY_API_KEY`, and `SERPER_API_KEY` environment overrides.
+
+When running `machdoch` through `sudo`, the CLI may inspect root's user-scoped config instead of the invoking user's config. Run `machdoch config` without `sudo` to inspect your normal saved provider keys, or preserve `MACHDOCH_USER_CONFIG_DIR` or the relevant API key environment variables deliberately.
 
 Default locations:
 

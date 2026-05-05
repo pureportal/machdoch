@@ -228,6 +228,8 @@ Options:
                           Enable or disable per-session memory for this run or chat session.
   --global-memory <inherit|on|off>
                           Override cross-session global memory for this run or chat session.
+  --conversation-context-file <path>
+                          Load conversation history and memory context from a JSON file.
   --profile <name>        Use a named profile from .machdoch/config.json.
   --cwd <path>            Use a different workspace root.
   --json                  Print machine-readable JSON.

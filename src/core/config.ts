@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { normalizeOptionalString } from "../common/_helpers/normalize-optional-string.js";
 import {
+  getUserConfigPath,
   hasConfiguredValue,
   loadUserWebSearchSettings,
   loadWorkspaceEnv,
@@ -333,6 +334,7 @@ export const loadRuntimeConfig = async (
   return {
     workspaceRoot,
     ...(path ? { workspaceConfigPath: path } : {}),
+    userConfigPath: getUserConfigPath(),
     ...(activeProfile ? { activeProfile } : {}),
     availableProfiles,
     mode,

@@ -61,6 +61,7 @@ export interface RuntimeWebSearchConfig {
 export interface RuntimeConfig {
   workspaceRoot: string;
   workspaceConfigPath?: string;
+  userConfigPath?: string;
   activeProfile?: string;
   availableProfiles: RuntimeProfileSummary[];
   mode: RunMode;

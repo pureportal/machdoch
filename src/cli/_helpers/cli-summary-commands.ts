@@ -14,7 +14,11 @@ import { createToolDefinitions } from "../../core/_helpers/agent-tools.js";
 import type { ToolName } from "../../core/types.js";
 import type { ParsedCliArgs } from "./cli-args.js";
 import { writeStdoutLine } from "./cli-io.js";
-import { createDiscoveryOptions, formatProfileLine } from "./cli-output.js";
+import {
+  createDiscoveryOptions,
+  createUserConfigSummaryLines,
+  formatProfileLine,
+} from "./cli-output.js";
 
 export const printConfigSummary = async (
   args: ParsedCliArgs,
@@ -41,6 +45,12 @@ export const printConfigSummary = async (
     );
 
   writeStdoutLine(`workspace: ${config.workspaceRoot}`);
+  writeStdoutLine(
+    `workspace config: ${config.workspaceConfigPath ?? "not present"}`,
+  );
+  for (const line of createUserConfigSummaryLines(config.userConfigPath)) {
+    writeStdoutLine(line);
+  }
   writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
   writeStdoutLine(`mode: ${config.mode}`);
   writeStdoutLine(`provider: ${config.provider}`);
