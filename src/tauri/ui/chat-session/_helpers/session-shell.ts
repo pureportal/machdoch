@@ -296,6 +296,7 @@ export const WEB_SEARCH_PROVIDER_LABELS: Record<WebSearchProvider, string> = {
   none: "None",
   perplexity: "Perplexity",
   tavily: "Tavily",
+  serper: "Serper",
 };
 
 export const getWebSearchProviderLabel = (

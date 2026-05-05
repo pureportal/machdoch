@@ -27,6 +27,7 @@ const ISOLATED_ENV_KEYS = [
   "GOOGLE_API_KEY",
   "PERPLEXITY_API_KEY",
   "TAVILY_API_KEY",
+  "SERPER_API_KEY",
   "MACHDOCH_MODE",
   "MACHDOCH_MODEL",
   "MACHDOCH_OFFLINE",
@@ -179,9 +180,30 @@ describe("user config API key helpers", () => {
     expect(availability).toEqual([
       { provider: "perplexity", configured: true },
       { provider: "tavily", configured: false },
+      { provider: "serper", configured: false },
     ]);
     expect(settings.activeProvider).toBe("perplexity");
     expect(settings.apiKeys.perplexity).toBe("pplx-test-key-1234567890");
+  });
+
+  it("persists Serper as a web-search provider", async () => {
+    isolateEnvironment();
+    const configDirectory = await createWorkspace();
+    process.env.MACHDOCH_USER_CONFIG_DIR = configDirectory;
+
+    await saveUserWebSearchApiKey("serper", "serper-test-key-1234567890");
+    await saveUserWebSearchActiveProvider("serper");
+
+    const env = await loadWorkspaceEnv(configDirectory);
+    const settings = await loadUserWebSearchSettings();
+
+    expect(env.SERPER_API_KEY).toBe("serper-test-key-1234567890");
+    expect(settings.activeProvider).toBe("serper");
+    expect(settings.providerAvailability).toEqual([
+      { provider: "perplexity", configured: false },
+      { provider: "tavily", configured: false },
+      { provider: "serper", configured: true },
+    ]);
   });
 
   it("persists cross-session global memory settings and deduplicates entries", async () => {

@@ -7,6 +7,7 @@ const DEFAULT_MAX_RESULTS = 5;
 const MAX_RESULTS_LIMIT = 10;
 const PERPLEXITY_SEARCH_URL = "https://api.perplexity.ai/search";
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
+const SERPER_SEARCH_URL = "https://google.serper.dev/search";
 
 export interface WebSearchResult {
   title: string;
@@ -169,6 +170,74 @@ const runTavilySearch = async (
   };
 };
 
+const runSerperSearch = async (
+  apiKey: string,
+  query: string,
+  maxResults: number,
+): Promise<WebSearchResponse> => {
+  const response = await fetch(SERPER_SEARCH_URL, {
+    method: "POST",
+    headers: {
+      "X-API-KEY": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      q: query,
+      num: maxResults,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Serper web search request failed: ${await formatHttpError(response)}`,
+    );
+  }
+
+  const payload = (await response.json()) as {
+    answerBox?: {
+      answer?: unknown;
+      snippet?: unknown;
+    };
+    knowledgeGraph?: {
+      description?: unknown;
+    };
+    organic?: Array<{
+      title?: unknown;
+      link?: unknown;
+      snippet?: unknown;
+      date?: unknown;
+    }>;
+  };
+  const summary =
+    coerceString(payload.answerBox?.answer) ??
+    coerceString(payload.answerBox?.snippet) ??
+    coerceString(payload.knowledgeGraph?.description);
+
+  return {
+    provider: "serper",
+    query,
+    ...(summary ? { summary } : {}),
+    results: (payload.organic ?? []).flatMap((result) => {
+      const title = coerceString(result.title);
+      const url = coerceString(result.link);
+      const date = coerceString(result.date);
+
+      if (!title || !url) {
+        return [];
+      }
+
+      return [
+        {
+          title,
+          url,
+          snippet: coerceString(result.snippet) ?? "No snippet was returned.",
+          ...(date ? { date } : {}),
+        },
+      ];
+    }),
+  };
+};
+
 export const getConfiguredWebSearchProvider = (
   config: Pick<RuntimeConfig, "webSearch">,
 ): ActiveWebSearchProvider | undefined => {
@@ -222,6 +291,16 @@ export const executeWebSearch = async (
       }
 
       return runTavilySearch(apiKey, normalizedQuery, normalizedMaxResults);
+    }
+
+    case "serper": {
+      const apiKey = coerceString(env.SERPER_API_KEY);
+
+      if (!apiKey || !hasConfiguredValue(apiKey)) {
+        throw new Error("Serper web search is not configured for this runtime.");
+      }
+
+      return runSerperSearch(apiKey, normalizedQuery, normalizedMaxResults);
     }
   }
 };

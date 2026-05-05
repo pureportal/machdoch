@@ -20,7 +20,7 @@ import {
 
 export type UserApiKeyProvider = RuntimeProvider;
 
-export type WebSearchProvider = "none" | "perplexity" | "tavily";
+export type WebSearchProvider = "none" | "perplexity" | "tavily" | "serper";
 
 export type VoiceAiProvider = "none" | "openai" | "google";
 
@@ -66,6 +66,7 @@ export const USER_API_KEY_PROVIDER_PORTAL_URLS: Record<
 export const USER_WEB_SEARCH_PROVIDER_ORDER: UserWebSearchApiKeyProvider[] = [
   "perplexity",
   "tavily",
+  "serper",
 ];
 
 export type UserProviderApiKeys = Partial<Record<UserApiKeyProvider, string>>;

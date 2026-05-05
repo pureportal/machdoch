@@ -22,6 +22,7 @@ const KNOWN_SAMPLE_SECRET_VALUES = new Set([
   "pplx-live",
   "tvly-live",
   "tavily-live",
+  "serper-live",
 ]);
 const USER_CONFIG_FILE_NAME = "user-config.json";
 const WORKSPACE_ENV_FILE_NAME = ".env";
@@ -36,6 +37,7 @@ const PROVIDER_ENV_KEY_BY_PROVIDER: Record<UserApiProvider, string> = {
 const WEB_SEARCH_ENV_KEY_BY_PROVIDER: Record<UserWebSearchProvider, string> = {
   perplexity: "PERPLEXITY_API_KEY",
   tavily: "TAVILY_API_KEY",
+  serper: "SERPER_API_KEY",
 };
 const RUNTIME_ENV_KEYS = [
   "MACHDOCH_MODE",
@@ -48,6 +50,7 @@ const USER_API_PROVIDERS: UserApiProvider[] = ["openai", "anthropic", "google"];
 const USER_WEB_SEARCH_PROVIDERS: UserWebSearchProvider[] = [
   "perplexity",
   "tavily",
+  "serper",
 ];
 
 interface UserWebSearchConfigFile {
@@ -234,6 +237,7 @@ export const loadWorkspaceEnv = async (
     "GOOGLE_API_KEY",
     "PERPLEXITY_API_KEY",
     "TAVILY_API_KEY",
+    "SERPER_API_KEY",
   ]) {
     const value = normalizeOptionalString(process.env[key]);
 
@@ -364,7 +368,9 @@ export const saveUserWebSearchApiKey = async (
   const normalizedApiKey = normalizeOptionalString(apiKey);
 
   if (!normalizedProvider || !isUserWebSearchProvider(normalizedProvider)) {
-    throw new Error("Expected provider to be one of perplexity or tavily.");
+    throw new Error(
+      "Expected provider to be one of perplexity, tavily, or serper.",
+    );
   }
 
   if (!normalizedApiKey) {
@@ -395,7 +401,7 @@ export const saveUserWebSearchActiveProvider = async (
 ): Promise<string> => {
   if (!isWebSearchProvider(provider)) {
     throw new Error(
-      "Expected the active web search provider to be one of none, perplexity, or tavily.",
+      "Expected the active web search provider to be one of none, perplexity, tavily, or serper.",
     );
   }
 

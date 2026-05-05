@@ -14,7 +14,7 @@ export type ToolPolicyDecision = "allow" | "ask" | "blocked";
 
 export type ModelProvider = "openai" | "anthropic" | "google" | "unconfigured";
 
-export type WebSearchProvider = "none" | "perplexity" | "tavily";
+export type WebSearchProvider = "none" | "perplexity" | "tavily" | "serper";
 
 export type FrontmatterValue = string | number | boolean | string[];
 

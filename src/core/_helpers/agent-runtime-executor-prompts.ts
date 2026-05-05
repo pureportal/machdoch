@@ -114,6 +114,7 @@ const createResearchContract = (tools: AgentModelToolSpec[]): string => {
     return [
       "<research_contract>",
       "When the task would benefit from current external knowledge, do not be shy about researching first.",
+      "Because `search_web` is configured for this run, strongly prefer using it before non-trivial implementation, debugging, dependency, API, security, research, or best-practice work unless the task is purely local and version-insensitive.",
       "If the user explicitly asks for online investigation, recent guidance, best practices, release notes, or official documentation, web research is mandatory before you make specific claims.",
       "Use `search_web` proactively for official documentation, best practices, version-sensitive APIs, breaking changes, security guidance, release notes, ambiguous runtime errors, and framework or library behavior that may have changed since your training cutoff.",
       canFetchUrl

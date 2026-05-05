@@ -12,6 +12,7 @@ import {
   type AgentToolExecutionResult,
   type ConversationMemoryRuntime,
 } from "./agent-tools-shared.js";
+import { createBrowserToolDefinitions } from "./browser-tool-definitions.js";
 import { createFilesystemToolDefinitions } from "./filesystem-tool-definitions.js";
 import { createGitToolDefinitions } from "./git-tool-definitions.js";
 import { createMemoryToolDefinitions } from "./memory-tool-definitions.js";
@@ -126,6 +127,7 @@ export const createToolDefinitions = (
     ...createFilesystemToolDefinitions(),
     ...createGitToolDefinitions(),
     ...createPackageToolDefinitions(),
+    ...createBrowserToolDefinitions(),
     ...createShellNetworkToolDefinitions(config),
     ...createMemoryToolDefinitions(memory),
     ...createDesktopUiToolDefinitions(uiControl),

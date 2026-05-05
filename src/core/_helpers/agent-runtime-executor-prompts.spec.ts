@@ -88,6 +88,9 @@ describe("createExecutorSystemPrompt", () => {
       "When the task would benefit from current external knowledge, do not be shy about researching first.",
     );
     expect(prompt).toContain("Use `search_web` proactively");
+    expect(prompt).toContain(
+      "Because `search_web` is configured for this run, strongly prefer using it before non-trivial implementation",
+    );
     expect(prompt).toContain("official docs");
     expect(prompt).toContain(
       "use `fetch_url` to inspect the underlying documentation",

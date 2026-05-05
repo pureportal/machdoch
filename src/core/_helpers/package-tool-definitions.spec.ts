@@ -168,6 +168,11 @@ describe("createPackageToolDefinitions", () => {
         backingTool: "packages",
       },
       {
+        name: "audit_node_package_dependencies",
+        riskLevel: "medium",
+        backingTool: "packages",
+      },
+      {
         name: "install_node_packages",
         riskLevel: "high",
         backingTool: "packages",
@@ -205,6 +210,7 @@ describe("createPackageToolDefinitions", () => {
     expect(result.toolResult.isError).toBeUndefined();
     expect(result.toolResult.output).toContain("Package: demo-package");
     expect(result.toolResult.output).toContain("Manager: npm");
+    expect(result.toolResult.output).toContain("Manager source: lockfile");
     expect(result.toolResult.output).toContain("Scripts: build, test");
     expect(result.toolResult.output).toContain("lockfileVersion=3");
     expect(execFileMock).not.toHaveBeenCalled();
@@ -279,11 +285,102 @@ describe("createPackageToolDefinitions", () => {
     expect(result.toolResult.isError).toBeUndefined();
     expect(result.toolResult.output).toContain("Outdated dependencies: 1");
     expect(result.toolResult.output).toContain(
-      "react · current=19.0.0 · wanted=19.2.5 · latest=19.2.5",
+      "react - current=19.0.0 - wanted=19.2.5 - latest=19.2.5",
     );
     expect(execFileMock).toHaveBeenCalledWith(
       "npm",
       ["outdated", "--json"],
+      expect.objectContaining({
+        cwd: workspaceRoot,
+      }),
+      expect.any(Function),
+    );
+  });
+
+  it("checks pnpm outdated metadata using pnpm JSON output", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    await createPackageJson(workspaceRoot, {
+      packageManager: "pnpm@10.0.0",
+    });
+    queueCommandResponses({
+      stdout: JSON.stringify([
+        {
+          name: "vite",
+          current: "8.0.0",
+          wanted: "8.0.8",
+          latest: "8.0.8",
+          dependencyType: "devDependencies",
+        },
+      ]),
+    });
+
+    const result = await getPackageTool("check_node_package_outdated").execute(
+      { maxResults: 5 },
+      createExecutionContext(workspaceRoot),
+    );
+
+    expect(result.toolResult.isError).toBeUndefined();
+    expect(result.toolResult.output).toContain("Manager: pnpm");
+    expect(result.toolResult.output).toContain("vite - current=8.0.0");
+    expect(execFileMock).toHaveBeenCalledWith(
+      "pnpm",
+      ["outdated", "--format", "json"],
+      expect.objectContaining({
+        cwd: workspaceRoot,
+      }),
+      expect.any(Function),
+    );
+  });
+
+  it("summarizes npm audit JSON without treating vulnerabilities as command failures", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    await createPackageJson(workspaceRoot);
+    queueCommandResponses({
+      error: createExecError("npm audit", ""),
+      stdout: JSON.stringify({
+        metadata: {
+          vulnerabilities: {
+            info: 0,
+            low: 0,
+            moderate: 0,
+            high: 1,
+            critical: 0,
+            total: 1,
+          },
+        },
+        vulnerabilities: {
+          vite: {
+            severity: "high",
+            range: "<8.0.8",
+            via: [{ title: "Vite dev server exposure" }],
+            fixAvailable: true,
+          },
+        },
+      }),
+    });
+
+    const result = await getPackageTool(
+      "audit_node_package_dependencies",
+    ).execute(
+      {
+        auditLevel: "moderate",
+        productionOnly: true,
+        maxResults: 5,
+      },
+      createExecutionContext(workspaceRoot),
+    );
+
+    expect(result.toolResult.isError).toBeUndefined();
+    expect(result.toolResult.output).toContain("Vulnerabilities: 1");
+    expect(result.toolResult.output).toContain(
+      "Severity counts: info=0, low=0, moderate=0, high=1, critical=0",
+    );
+    expect(result.toolResult.output).toContain("vite (high)");
+    expect(execFileMock).toHaveBeenCalledWith(
+      "npm",
+      ["audit", "--json", "--audit-level=moderate", "--production"],
       expect.objectContaining({
         cwd: workspaceRoot,
       }),
@@ -340,6 +437,56 @@ describe("createPackageToolDefinitions", () => {
     expect(execFileMock).not.toHaveBeenCalled();
   });
 
+  it("rejects Git and remote package specs", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    await createPackageJson(workspaceRoot);
+
+    for (const packageSpec of [
+      "github:owner/repo",
+      "alias@github:owner/repo",
+      "alias@file:../outside-package",
+      "zod@https://registry.npmjs.org/zod/-/zod-3.21.4.tgz",
+    ]) {
+      const result = await getPackageTool("install_node_packages").execute(
+        { packages: [packageSpec] },
+        createExecutionContext(workspaceRoot),
+      );
+
+      expect(result.toolResult.isError).toBe(true);
+      expect(result.toolResult.output).toContain("Git specs");
+    }
+
+    expect(execFileMock).not.toHaveBeenCalled();
+  });
+
+  it("uses bun lockfile-only installs when bun is the detected manager", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    await createPackageJson(workspaceRoot, {
+      packageManager: "bun@1.2.0",
+    });
+    queueCommandResponses({ stdout: "saved lockfile" });
+
+    const result = await getPackageTool("install_node_packages").execute(
+      {
+        packages: ["vite@latest"],
+        lockfileOnly: true,
+      },
+      createExecutionContext(workspaceRoot),
+    );
+
+    expect(result.toolResult.isError).toBeUndefined();
+    expect(execFileMock).toHaveBeenCalledWith(
+      "bun",
+      ["add", "--lockfile-only", "vite@latest"],
+      expect.objectContaining({
+        cwd: workspaceRoot,
+      }),
+      expect.any(Function),
+    );
+  });
+
   it("resolves package.json files inside nested workspace packages", async () => {
     const workspaceRoot = await createWorkspace();
     const packageRoot = join(workspaceRoot, "packages", "app");
@@ -358,5 +505,45 @@ describe("createPackageToolDefinitions", () => {
     expect(result.toolResult.isError).toBeUndefined();
     expect(result.toolResult.output).toContain("Package: nested-app");
     expect(result.toolResult.output).toContain("Manager: pnpm");
+  });
+
+  it("discovers declared package workspaces during inspection", async () => {
+    const workspaceRoot = await createWorkspace();
+    const appRoot = join(workspaceRoot, "packages", "app");
+    const libRoot = join(workspaceRoot, "packages", "lib");
+
+    await mkdir(appRoot, { recursive: true });
+    await mkdir(libRoot, { recursive: true });
+    await createPackageJson(workspaceRoot, {
+      workspaces: ["packages/*"],
+    });
+    await createPackageJson(appRoot, {
+      name: "workspace-app",
+      scripts: {
+        test: "vitest",
+      },
+    });
+    await createPackageJson(libRoot, {
+      name: "workspace-lib",
+      private: false,
+      dependencies: {
+        zod: "^4.0.0",
+      },
+    });
+
+    const result = await getPackageTool("inspect_node_package").execute(
+      {},
+      createExecutionContext(workspaceRoot),
+    );
+
+    expect(result.toolResult.isError).toBeUndefined();
+    expect(result.toolResult.output).toContain("Workspace patterns: packages/*");
+    expect(result.toolResult.output).toContain("Workspace packages: 2");
+    expect(result.toolResult.output).toContain(
+      "packages/app: workspace-app",
+    );
+    expect(result.toolResult.output).toContain(
+      "packages/lib: workspace-lib",
+    );
   });
 });

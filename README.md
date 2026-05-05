@@ -14,7 +14,7 @@
 `machdoch` is a pre-alpha operating-system AI agent prototype with a shared TypeScript runtime, a runnable Node.js CLI, and a Tauri + React desktop shell. The repo already contains real runtime, CLI, desktop, customization, provider, and packaging code — the main gap is between the broader product vision and the narrower set of executor backends that exist today.
 
 > [!IMPORTANT]
-> `machdoch` is already real software, not just a mock shell. Filesystem, shell, network, Git, package-manager, memory, and desktop UI-control workflows exist today. At the same time, `browser` is still a registered category without a dedicated browser-driver backend, so those workflows currently fall back to shell-based approaches or remain planned.
+> `machdoch` is already real software, not just a mock shell. Filesystem, shell, network, browser, Git, package-manager, memory, and desktop UI-control workflows exist today. The browser backend uses installed Chrome or Edge channels through `playwright-core`; it does not download bundled browser binaries.
 
 ## Table of contents
 
@@ -35,7 +35,7 @@
 - shared TypeScript runtime for config/env loading, tool-policy resolution, memory, deterministic execution, and model-driven execution
 - runnable Node.js CLI with interactive chat by default, one-shot `run`/`--quick`, `inspect`, `config`, `tools`, `profiles`, and provider/memory setup helpers
 - Tauri + React desktop shell with persisted sessions, workspace selection, provider/model/profile/mode controls, and progress streaming
-- provider adapters for OpenAI, Anthropic, and Google, plus optional Perplexity/Tavily web search when configured
+- provider adapters for OpenAI, Anthropic, and Google, plus optional Perplexity/Tavily/Serper web search when configured
 - desktop voice I/O plus a UI-control bridge for screenshots, windows, input automation, and richer native control support on Windows
 - GitHub Actions workflows that build Windows and Linux installers, generate SBOMs, and attest build provenance
 
@@ -59,10 +59,10 @@ These are the tool categories the runtime can actually execute today.
 | --- | --- | --- |
 | `filesystem` | ✅ Done | Lists directories, reads files, searches the workspace, creates files, and performs targeted replacement inside the workspace boundary. |
 | `shell` | ✅ Done | Runs shell commands in the workspace and can launch detached processes under policy control. |
-| `network` | 🟡 Partly implemented | URL fetches are supported, and web search works when Perplexity or Tavily is configured. |
+| `network` | 🟡 Partly implemented | URL fetches are supported, and web search works when Perplexity, Tavily, or Serper is configured. |
 | Memory tools | ✅ Done | Session and global memory helpers can persist short facts. |
 | Desktop UI control | 🟡 Partly implemented | Supports monitor/window enumeration, screenshots, clicks, drags, typing, key presses, and window waits. Windows also has richer native control-handle support. |
-| `browser` | 🔜 Planned | Registered in the tool surface, but there is no dedicated browser-driver backend yet. |
+| `browser` | ✅ Done | First-class Playwright-backed sessions for installed Chrome/Edge channels, navigation, text inspection, screenshots, selector clicks, text input, and session cleanup. |
 | `git` | ✅ Done | First-class local executor for status, diff summaries, recent log inspection, and local commits. Remote operations still go through shell workflows for now. |
 | `packages` | ✅ Done | First-class Node package backend for manifest inspection, package scripts, npm outdated checks, and dependency installs. Python/Cargo/etc. package flows still go through shell workflows for now. |
 
@@ -159,6 +159,7 @@ machdoch config
 ### Requirements
 
 - Node.js `>= 20.10`
+- Microsoft Edge or Google Chrome if you want first-class browser automation via `playwright-core`
 - Rust stable and the normal Tauri system dependencies only if you want to run or build the desktop shell
 
 ### Install and try the CLI
@@ -224,7 +225,7 @@ This repo already includes a working `.machdoch/` example:
 The sample configuration:
 
 - defaults to the `workspace` profile in `ask` mode
-- enables `filesystem`, `shell`, `network`, `git`, and `packages`
+- enables `filesystem`, `shell`, `network`, `browser`, `git`, and `packages`
 - includes example profiles `workspace`, `safe-review`, and `local-model`
 - keeps GitHub-style compatibility discovery disabled by default
 
@@ -239,6 +240,8 @@ If `compatibility.discoverGithubCustomizations` is enabled, the runtime can also
 ## User-scoped configuration
 
 Provider keys, web-search settings, voice settings, desktop settings, and global memory are stored in a user-scoped config file rather than inside the workspace.
+
+Web search can be enabled from the desktop settings page or by storing provider keys under `webSearch.apiKeys` in the user config. Supported providers are `perplexity`, `tavily`, and `serper`; the runtime also honors `MACHDOCH_WEB_SEARCH_PROVIDER` plus `PERPLEXITY_API_KEY`, `TAVILY_API_KEY`, and `SERPER_API_KEY` environment overrides.
 
 Default locations:
 
@@ -257,7 +260,7 @@ Default locations:
 
 The following are still roadmap items rather than working features:
 
-- dedicated browser-driver automation
+- bundled/browser-download management and richer browser profile controls
 - broader package-manager coverage beyond Node projects
 - headless/server mode
 - local-model integrations such as Ollama, LM Studio, and Jan

@@ -43,6 +43,7 @@ const VALID_WEB_SEARCH_PROVIDERS: WebSearchProvider[] = [
   "none",
   "perplexity",
   "tavily",
+  "serper",
 ];
 
 /**
@@ -248,6 +249,10 @@ const getWebSearchProviderAvailability = (
     {
       provider: "tavily",
       configured: hasConfiguredValue(env.TAVILY_API_KEY),
+    },
+    {
+      provider: "serper",
+      configured: hasConfiguredValue(env.SERPER_API_KEY),
     },
   ];
 };

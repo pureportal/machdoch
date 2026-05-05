@@ -12,12 +12,13 @@ use crate::ui_control::UiControlAvailability;
 
 const DEFAULT_MODEL: &str = "gpt-5.4-mini";
 const PLACEHOLDER_TOKENS: [&str; 3] = ["YOUR_", "CHANGE_ME", "PLACEHOLDER"];
-const KNOWN_SAMPLE_SECRET_VALUES: [&str; 5] = [
+const KNOWN_SAMPLE_SECRET_VALUES: [&str; 6] = [
     "sk-user-config",
     "sk-live",
     "pplx-live",
     "tvly-live",
     "tavily-live",
+    "serper-live",
 ];
 const DEFAULT_TOOLS: [&str; 2] = ["filesystem", "shell"];
 const VALID_TOOLS: [&str; 6] = [
@@ -31,9 +32,9 @@ const VALID_TOOLS: [&str; 6] = [
 const VALID_MODEL_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
 const USER_CONFIG_FILE_NAME: &str = "user-config.json";
 const USER_API_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
-const USER_WEB_SEARCH_PROVIDERS: [&str; 2] = ["perplexity", "tavily"];
+const USER_WEB_SEARCH_PROVIDERS: [&str; 3] = ["perplexity", "tavily", "serper"];
 const USER_AUDIO_AI_PROVIDERS: [&str; 2] = ["openai", "google"];
-const VALID_WEB_SEARCH_PROVIDERS: [&str; 3] = ["none", "perplexity", "tavily"];
+const VALID_WEB_SEARCH_PROVIDERS: [&str; 4] = ["none", "perplexity", "tavily", "serper"];
 const VALID_AUDIO_AI_PROVIDERS: [&str; 3] = ["none", "openai", "google"];
 const MAX_GLOBAL_MEMORY_ENTRIES: usize = 40;
 const MAX_MEMORY_CONTENT_LENGTH: usize = 280;
@@ -430,6 +431,7 @@ fn apply_process_env_overrides(values: &mut HashMap<String, String>) {
         "GOOGLE_API_KEY",
         "PERPLEXITY_API_KEY",
         "TAVILY_API_KEY",
+        "SERPER_API_KEY",
         "MACHDOCH_MODEL",
         "MACHDOCH_MODE",
         "MACHDOCH_PROFILE",
@@ -673,6 +675,10 @@ fn merge_user_web_search_api_keys_into_env(
         values.insert("TAVILY_API_KEY".to_string(), value.clone());
     }
 
+    if let Some(value) = api_keys.get("serper") {
+        values.insert("SERPER_API_KEY".to_string(), value.clone());
+    }
+
     Ok(())
 }
 
@@ -763,6 +769,10 @@ fn get_web_search_provider_availability(
         WebSearchProviderAvailability {
             provider: "tavily".to_string(),
             configured: has_configured_value(env.get("TAVILY_API_KEY").map(String::as_str)),
+        },
+        WebSearchProviderAvailability {
+            provider: "serper".to_string(),
+            configured: has_configured_value(env.get("SERPER_API_KEY").map(String::as_str)),
         },
     ]
 }
@@ -1041,13 +1051,14 @@ pub(crate) fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>
 }
 
 fn save_user_web_search_api_key_value(provider: &str, api_key: &str) -> Result<PathBuf, String> {
-    let normalized_provider = normalize_optional_string(Some(provider))
-        .ok_or_else(|| "Expected provider to be one of perplexity or tavily.".to_string())?;
+    let normalized_provider = normalize_optional_string(Some(provider)).ok_or_else(|| {
+        "Expected provider to be one of perplexity, tavily, or serper.".to_string()
+    })?;
     let normalized_api_key = normalize_optional_string(Some(api_key))
         .ok_or_else(|| "Expected a non-empty API key.".to_string())?;
 
     if !is_user_web_search_provider(&normalized_provider) {
-        return Err("Expected provider to be one of perplexity or tavily.".to_string());
+        return Err("Expected provider to be one of perplexity, tavily, or serper.".to_string());
     }
 
     let (mut config, config_path) = load_user_config_file()?;
@@ -1072,11 +1083,14 @@ fn save_user_web_search_api_key_value(provider: &str, api_key: &str) -> Result<P
 }
 
 fn save_user_web_search_active_provider_value(provider: &str) -> Result<PathBuf, String> {
-    let normalized_provider = normalize_optional_string(Some(provider))
-        .ok_or_else(|| "Expected provider to be one of none, perplexity, or tavily.".to_string())?;
+    let normalized_provider = normalize_optional_string(Some(provider)).ok_or_else(|| {
+        "Expected provider to be one of none, perplexity, tavily, or serper.".to_string()
+    })?;
 
     if !is_valid_web_search_provider(&normalized_provider) {
-        return Err("Expected provider to be one of none, perplexity, or tavily.".to_string());
+        return Err(
+            "Expected provider to be one of none, perplexity, tavily, or serper.".to_string(),
+        );
     }
 
     let (mut config, config_path) = load_user_config_file()?;
