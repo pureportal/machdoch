@@ -231,7 +231,7 @@ Options:
   --profile <name>        Use a named profile from .machdoch/config.json.
   --cwd <path>            Use a different workspace root.
   --json                  Print machine-readable JSON.
-  --verbose, -v           Print execution-state progress during \`machdoch run\`.
+  --verbose, -v           Print compact progress updates during \`machdoch run\`.
   -h, --help              Show help.
 
 Default CLI mode is interactive and keeps running until /exit, /quit, or Ctrl+C.

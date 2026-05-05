@@ -2,8 +2,53 @@ import process from "node:process";
 import type {
   TaskExecutionProgressHandler,
   TaskExecutionResult,
+  TaskExecutionSection,
+  TaskExecutionState,
 } from "../../core/types.js";
 import { formatExecutionProgressLines } from "./cli-output.js";
+
+const TERMINAL_PROGRESS_STATES: ReadonlySet<TaskExecutionState> = new Set([
+  "completed",
+  "approval-required",
+  "blocked",
+  "unsupported",
+  "cancelled",
+]);
+
+const INTERNAL_OUTPUT_SECTION_TITLES: ReadonlySet<string> = new Set([
+  "Autopilot audit",
+  "Instruction context",
+  "Prompt context",
+  "Task context",
+  "Tool trace",
+]);
+
+const splitMarkdownLines = (markdown: string): string[] => {
+  return markdown.replace(/\r\n/g, "\n").split("\n");
+};
+
+const createStatusFallbackLine = (execution: TaskExecutionResult): string => {
+  switch (execution.status) {
+    case "executed":
+      return execution.summary;
+    case "approval-required":
+      return `Approval required: ${execution.summary}`;
+    case "blocked":
+      return `Blocked: ${execution.summary}`;
+    case "cancelled":
+      return `Cancelled: ${execution.summary}`;
+    case "unsupported":
+      return `Cannot continue: ${execution.summary}`;
+  }
+};
+
+const getVisibleOutputSections = (
+  sections: TaskExecutionSection[],
+): TaskExecutionSection[] => {
+  return sections.filter(
+    (section) => !INTERNAL_OUTPUT_SECTION_TITLES.has(section.title),
+  );
+};
 
 export const writeStdoutLine = (line = ""): void => {
   process.stdout.write(`${line}\n`);
@@ -19,20 +64,20 @@ export const createVerboseProgressReporter = (
   let previousSnapshotKey = "";
 
   return (progress): void => {
-    const snapshotKey = [
-      progress.state,
-      progress.message,
-      progress.reason ?? "",
-      progress.executedTools.join(","),
-    ].join("|");
+    if (TERMINAL_PROGRESS_STATES.has(progress.state)) {
+      return;
+    }
 
-    if (snapshotKey === previousSnapshotKey) {
+    const lines = formatExecutionProgressLines(progress);
+    const snapshotKey = lines.join("|");
+
+    if (lines.length === 0 || snapshotKey === previousSnapshotKey) {
       return;
     }
 
     previousSnapshotKey = snapshotKey;
 
-    for (const line of formatExecutionProgressLines(progress)) {
+    for (const line of lines) {
       writeLine(`machdoch: ${line}`);
     }
   };
@@ -88,35 +133,27 @@ export const formatExecutionSummaryLines = (
   execution: TaskExecutionResult,
 ): string[] => {
   const resultMarkdown = getExecutionResultMarkdown(execution);
-  const lines = [
-    `task: ${execution.task}`,
-    `mode: ${execution.mode}`,
-    `execution status: ${execution.status}`,
-    `summary: ${execution.summary}`,
-    `executed tools: ${execution.executedTools.length > 0 ? execution.executedTools.join(", ") : "none"}`,
-  ];
-
-  if (execution.reason) {
-    lines.push(`reason: ${execution.reason}`);
-  }
-
-  if (execution.autopilot) {
-    lines.push(
-      `autopilot: executor iterations=${execution.autopilot.executorIterations}, validator passes=${execution.autopilot.validatorPasses}, continuation requests=${execution.autopilot.continuationCount}`,
-    );
-  }
-
-  for (const section of execution.outputSections) {
-    lines.push(`${section.title.toLowerCase()}:`);
-    for (const line of section.lines) {
-      lines.push(`  - ${line}`);
-    }
-  }
 
   if (resultMarkdown) {
-    lines.push("");
-    lines.push("result:");
-    lines.push(...resultMarkdown.replace(/\r\n/g, "\n").split("\n"));
+    return splitMarkdownLines(resultMarkdown);
+  }
+
+  const visibleSections = getVisibleOutputSections(execution.outputSections);
+  const lines = [createStatusFallbackLine(execution)];
+
+  if (execution.reason && execution.status !== "executed") {
+    lines.push(`Reason: ${execution.reason}`);
+  }
+
+  for (const section of visibleSections) {
+    if (lines.length > 0) {
+      lines.push("");
+    }
+
+    lines.push(`${section.title}:`);
+    for (const line of section.lines) {
+      lines.push(line);
+    }
   }
 
   return lines;

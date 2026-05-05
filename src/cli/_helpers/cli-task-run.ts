@@ -25,10 +25,7 @@ import {
   writeStderrLine,
   writeStdoutLine,
 } from "./cli-io.js";
-import {
-  createBodyPreviewLines,
-  createDiscoveryOptions,
-} from "./cli-output.js";
+import { createDiscoveryOptions } from "./cli-output.js";
 
 const fail = (message: string): never => {
   throw new Error(message);
@@ -194,165 +191,18 @@ export const printTaskPreview = async (
       return { execution };
     }
 
-    writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
     printExecutionSummary(execution);
     return { execution };
   }
 
-  const preview = previewTaskRun(task, config, customizations);
-
   if (args.json) {
+    const preview = previewTaskRun(task, config, customizations);
     writeStdoutLine(JSON.stringify({ execution, preview }, null, 2));
     return { execution, preview };
   }
 
-  writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
   printExecutionSummary(execution);
-  writeStdoutLine();
-
-  writeStdoutLine(`task: ${preview.task}`);
-  writeStdoutLine(`mode: ${preview.mode}`);
-  writeStdoutLine(`summary: ${preview.summary}`);
-  writeStdoutLine(`suggested tools: ${preview.suggestedTools.join(", ")}`);
-  writeStdoutLine(
-    `blocked tools: ${preview.blockedTools.length > 0 ? preview.blockedTools.join(", ") : "none"}`,
-  );
-  writeStdoutLine(
-    `customizations: ${preview.customizationCounts.instructions} instruction(s), ${preview.customizationCounts.prompts} prompt(s), ${preview.customizationCounts.skills} skill(s)`,
-  );
-  writeStdoutLine("tool policy:");
-  for (const policy of preview.toolPolicies) {
-    writeStdoutLine(
-      `  - ${policy.tool.name} [${policy.tool.riskLevel}] -> ${policy.decision}`,
-    );
-  }
-
-  if (preview.invokedPrompt) {
-    writeStdoutLine("invoked prompt:");
-    writeStdoutLine(
-      `  - ${preview.invokedPrompt.name} (${preview.invokedPrompt.path})`,
-    );
-
-    if (preview.invokedPrompt.description) {
-      writeStdoutLine(`    ${preview.invokedPrompt.description}`);
-    }
-
-    writeStdoutLine(
-      `    arguments: ${preview.invokedPrompt.arguments.length > 0 ? preview.invokedPrompt.arguments : "none"}`,
-    );
-
-    if (preview.invokedPrompt.agent) {
-      writeStdoutLine(`    agent: ${preview.invokedPrompt.agent}`);
-    }
-
-    if (preview.invokedPrompt.model) {
-      writeStdoutLine(`    model: ${preview.invokedPrompt.model}`);
-    }
-
-    if (preview.invokedPrompt.tools.length > 0) {
-      writeStdoutLine(`    tools: ${preview.invokedPrompt.tools.join(", ")}`);
-    }
-
-    if (preview.invokedPrompt.expectedInputs.length > 0) {
-      writeStdoutLine(
-        `    inputs: ${preview.invokedPrompt.expectedInputs.join(", ")}`,
-      );
-    }
-
-    const resolvedInputEntries = Object.entries(
-      preview.invokedPrompt.inputValues,
-    );
-
-    if (resolvedInputEntries.length > 0) {
-      writeStdoutLine("    resolved inputs:");
-
-      for (const [name, value] of resolvedInputEntries) {
-        writeStdoutLine(`      ${name}=${value}`);
-      }
-    }
-
-    if (preview.invokedPrompt.missingInputs.length > 0) {
-      writeStdoutLine(
-        `    missing inputs: ${preview.invokedPrompt.missingInputs.join(", ")}`,
-      );
-    }
-
-    const promptBodyPreviewLines = createBodyPreviewLines(
-      preview.invokedPrompt.resolvedBody,
-    );
-
-    if (promptBodyPreviewLines.length > 0) {
-      writeStdoutLine("    resolved body preview:");
-
-      for (const line of promptBodyPreviewLines) {
-        writeStdoutLine(`      ${line}`);
-      }
-    }
-  }
-
-  if (preview.applicableInstructions.length > 0) {
-    writeStdoutLine("applicable instructions:");
-    for (const instruction of preview.applicableInstructions) {
-      const prioritySuffix =
-        instruction.priority !== 0 ? ` [priority ${instruction.priority}]` : "";
-
-      writeStdoutLine(
-        `  - ${instruction.name} (${instruction.path})${prioritySuffix}`,
-      );
-      writeStdoutLine(`    ${instruction.reason}`);
-
-      const instructionBodyPreviewLines = createBodyPreviewLines(
-        instruction.body,
-        4,
-      );
-
-      if (instructionBodyPreviewLines.length > 0) {
-        writeStdoutLine("    body preview:");
-
-        for (const line of instructionBodyPreviewLines) {
-          writeStdoutLine(`      ${line}`);
-        }
-      }
-    }
-  }
-
-  if (preview.suggestedPrompts.length > 0) {
-    writeStdoutLine("suggested prompts:");
-    for (const prompt of preview.suggestedPrompts) {
-      writeStdoutLine(`  - ${prompt.name} (${prompt.path})`);
-      writeStdoutLine(`    ${prompt.reason}`);
-    }
-  }
-
-  if (preview.suggestedSkills.length > 0) {
-    writeStdoutLine("suggested skills:");
-    for (const skill of preview.suggestedSkills) {
-      writeStdoutLine(`  - ${skill.name} (${skill.path})`);
-      writeStdoutLine(`    ${skill.reason}`);
-    }
-  }
-
-  if (preview.warnings.length > 0) {
-    writeStdoutLine("warnings:");
-    for (const warning of preview.warnings) {
-      writeStdoutLine(`  - ${warning}`);
-    }
-  }
-
-  if (preview.notes.length > 0) {
-    writeStdoutLine("notes:");
-    for (const note of preview.notes) {
-      writeStdoutLine(`  - ${note}`);
-    }
-  }
-
-  writeStdoutLine("plan:");
-  preview.steps.forEach((step, index) => {
-    writeStdoutLine(`  ${index + 1}. ${step.title}`);
-    writeStdoutLine(`     ${step.description}`);
-  });
-
-  return { execution, preview };
+  return { execution };
 };
 
 const printInteractiveChatHelp = (): void => {
@@ -382,28 +232,20 @@ export const runInteractiveChat = async (
   );
   const memorySettings = await loadUserMemorySettings();
   const baseConversationContext = await resolveConversationContext(args);
-  const {
-    effectiveGlobalMemoryEnabled,
-    ...sessionState
-  }: InteractiveChatSessionState & {
-    effectiveGlobalMemoryEnabled: boolean;
-  } = createInteractiveChatSessionState(
+  const sessionState = createInteractiveChatSessionState(
     baseConversationContext,
     memorySettings.globalEnabled,
   );
 
-  writeStdoutLine(`workspace: ${config.workspaceRoot}`);
-  writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
-  writeStdoutLine(`mode: ${config.mode}`);
-  writeStdoutLine(`model: ${config.model}`);
+  const profileSuffix = config.activeProfile
+    ? `, profile ${config.activeProfile}`
+    : "";
   writeStdoutLine(
-    `session memory: ${sessionState.sessionMemoryEnabled ? "enabled" : "disabled"}`,
+    `machdoch chat (${config.mode}, ${config.model}${profileSuffix})`,
   );
   writeStdoutLine(
-    `global memory: ${effectiveGlobalMemoryEnabled ? "enabled" : "disabled"}`,
+    "Type a task and press Enter. Use /help for commands, /exit to quit.",
   );
-  writeStdoutLine("Type a task and press Enter. Use /exit to quit.");
-  printInteractiveChatHelp();
   writeStdoutLine();
 
   const interfaceHandle = createInterface({

@@ -25,7 +25,7 @@ const createExecution = (
 };
 
 describe("formatExecutionSummaryLines", () => {
-  it("prints the user-facing result as the final block", () => {
+  it("prints only the user-facing result when a structured response exists", () => {
     const lines = formatExecutionSummaryLines(
       createExecution({
         response: {
@@ -38,16 +38,10 @@ describe("formatExecutionSummaryLines", () => {
       }),
     );
 
-    expect(lines.indexOf("autopilot audit:")).toBeLessThan(
-      lines.indexOf("result:"),
-    );
-    expect(lines.slice(-2)).toEqual([
-      "result:",
-      "I need a location to answer that.",
-    ]);
+    expect(lines).toEqual(["I need a location to answer that."]);
   });
 
-  it("does not synthesize a result block without a structured response", () => {
+  it("keeps fallback output concise without internal sections", () => {
     const lines = formatExecutionSummaryLines(
       createExecution({
         outputSections: [
@@ -55,11 +49,19 @@ describe("formatExecutionSummaryLines", () => {
             title: "Agent answer",
             lines: ["1: I need a location to answer that."],
           },
+          {
+            title: "Tool trace",
+            lines: ["tool_call: read_file(...)"],
+          },
         ],
       }),
     );
 
-    expect(lines).toContain("agent answer:");
-    expect(lines).not.toContain("result:");
+    expect(lines).toEqual([
+      "Blocked: I need a location to answer that.",
+      "",
+      "Agent answer:",
+      "1: I need a location to answer that.",
+    ]);
   });
 });

@@ -4,30 +4,59 @@ import type {
   TaskExecutionState,
 } from "../../core/types.js";
 
-const TERMINAL_PROGRESS_STATES: ReadonlySet<TaskExecutionState> = new Set([
-  "completed",
-  "approval-required",
-  "blocked",
-  "unsupported",
-  "cancelled",
-]);
-
 const DEFAULT_BODY_PREVIEW_LINES = 8;
 
 export const formatExecutionProgressLines = (
   progress: TaskExecutionProgress,
 ): string[] => {
-  const lines = [`[${progress.state}] ${progress.message}`];
+  const terminalPrefixes: Record<
+    Extract<
+      TaskExecutionState,
+      | "completed"
+      | "approval-required"
+      | "blocked"
+      | "unsupported"
+      | "cancelled"
+    >,
+    string
+  > = {
+    completed: "Done",
+    "approval-required": "Approval required",
+    blocked: "Needs input",
+    unsupported: "Cannot continue",
+    cancelled: "Cancelled",
+  };
 
-  if (progress.reason) {
-    lines.push(`reason: ${progress.reason}`);
+  if (progress.state in terminalPrefixes) {
+    const prefix =
+      terminalPrefixes[
+        progress.state as keyof typeof terminalPrefixes
+      ];
+    const lines = [`${prefix}: ${progress.message}`];
+
+    if (progress.reason) {
+      lines.push(`Reason: ${progress.reason}`);
+    }
+
+    if (progress.executedTools.length > 0) {
+      lines.push(`Tools used: ${progress.executedTools.join(", ")}`);
+    }
+
+    return lines;
   }
 
-  if (
-    progress.executedTools.length > 0 &&
-    TERMINAL_PROGRESS_STATES.has(progress.state)
-  ) {
-    lines.push(`tools: ${progress.executedTools.join(", ")}`);
+  if (progress.state === "verifying" || progress.state === "monitoring") {
+    return ["Checking the result..."];
+  }
+
+  if (progress.state === "executing") {
+    return ["Working on it..."];
+  }
+
+  const lines = ["Preparing the task..."];
+
+  if (progress.reason) {
+    lines.push(`Reason: ${progress.reason}`);
   }
 
   return lines;

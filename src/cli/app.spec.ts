@@ -352,9 +352,9 @@ describe("formatExecutionProgressLines", () => {
     };
 
     expect(formatExecutionProgressLines(progress)).toEqual([
-      "[completed] Executed a safe file inspection.",
-      "reason: Verification passed.",
-      "tools: filesystem",
+      "Done: Executed a safe file inspection.",
+      "Reason: Verification passed.",
+      "Tools used: filesystem",
     ]);
   });
 
@@ -371,7 +371,7 @@ describe("formatExecutionProgressLines", () => {
     };
 
     expect(formatExecutionProgressLines(progress)).toEqual([
-      "[resolving-context] Resolve prompt inputs, workspace paths, and applicable instructions.",
+      "Preparing the task...",
     ]);
   });
 });
