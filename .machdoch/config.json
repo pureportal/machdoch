@@ -1,7 +1,7 @@
 {
   "defaultProfile": "workspace",
   "defaultMode": "ask",
-  "enabledTools": ["filesystem", "shell", "network"],
+  "enabledTools": ["filesystem", "shell", "network", "git", "packages"],
   "provider": "openai",
   "model": "gpt-5.4-mini",
   "offline": false,

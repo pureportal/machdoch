@@ -10,6 +10,8 @@ import {
 } from "../../core/env.js";
 import { resolveToolPolicies } from "../../core/policy.js";
 import { getToolRegistry } from "../../core/tools.js";
+import { createToolDefinitions } from "../../core/_helpers/agent-tools.js";
+import type { ToolName } from "../../core/types.js";
 import type { ParsedCliArgs } from "./cli-args.js";
 import { writeStdoutLine } from "./cli-io.js";
 import { createDiscoveryOptions, formatProfileLine } from "./cli-output.js";
@@ -115,6 +117,20 @@ export const printToolSummary = async (args: ParsedCliArgs): Promise<void> => {
     args.runtimeProvider,
   );
   const toolPolicies = resolveToolPolicies(config);
+  const agentTools = createToolDefinitions(config, {
+    sessionEnabled: false,
+    sessionEntries: [],
+    globalEnabled: false,
+    globalEntries: [],
+  });
+  const agentToolsByBackingTool = new Map(
+    getToolRegistry().map((tool) => [
+      tool.name,
+      agentTools
+        .filter((agentTool) => agentTool.backingTool === tool.name)
+        .sort((left, right) => left.spec.name.localeCompare(right.spec.name)),
+    ] satisfies [ToolName, typeof agentTools]),
+  );
 
   if (args.json) {
     writeStdoutLine(JSON.stringify(toolPolicies, null, 2));
@@ -125,6 +141,7 @@ export const printToolSummary = async (args: ParsedCliArgs): Promise<void> => {
   writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
   writeStdoutLine(`mode: ${config.mode}`);
   writeStdoutLine(`registered tools: ${getToolRegistry().length}`);
+  writeStdoutLine(`agent tools: ${agentTools.length}`);
 
   for (const policy of toolPolicies) {
     writeStdoutLine(
@@ -132,6 +149,18 @@ export const printToolSummary = async (args: ParsedCliArgs): Promise<void> => {
     );
     writeStdoutLine(`  ${policy.tool.description}`);
     writeStdoutLine(`  ${policy.reason}`);
+
+    const backingAgentTools = agentToolsByBackingTool.get(policy.tool.name);
+
+    if (backingAgentTools && backingAgentTools.length > 0) {
+      writeStdoutLine("  agent tools:");
+
+      for (const agentTool of backingAgentTools) {
+        writeStdoutLine(
+          `    - ${agentTool.spec.name} [${agentTool.riskLevel}]`,
+        );
+      }
+    }
   }
 };
 

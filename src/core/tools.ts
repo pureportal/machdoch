@@ -61,9 +61,22 @@ const TOOL_REGISTRY: ToolDefinition[] = [
     name: "packages",
     title: "Packages",
     description:
-      "Install or update npm, pnpm, pip, cargo, or other package manager dependencies.",
+      "Inspect package manifests, run package scripts, and install or update dependencies.",
     riskLevel: "high",
-    keywords: ["install", "package", "npm", "pnpm", "pip", "cargo"],
+    keywords: [
+      "install",
+      "package",
+      "packages",
+      "dependency",
+      "dependencies",
+      "package.json",
+      "npm",
+      "pnpm",
+      "yarn",
+      "bun",
+      "pip",
+      "cargo",
+    ],
   },
 ];
 

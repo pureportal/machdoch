@@ -13,7 +13,9 @@ import {
   type ConversationMemoryRuntime,
 } from "./agent-tools-shared.js";
 import { createFilesystemToolDefinitions } from "./filesystem-tool-definitions.js";
+import { createGitToolDefinitions } from "./git-tool-definitions.js";
 import { createMemoryToolDefinitions } from "./memory-tool-definitions.js";
+import { createPackageToolDefinitions } from "./package-tool-definitions.js";
 import {
   compactTraceText,
   createTextSection,
@@ -122,6 +124,8 @@ export const createToolDefinitions = (
 ): AgentToolDefinition[] => {
   return [
     ...createFilesystemToolDefinitions(),
+    ...createGitToolDefinitions(),
+    ...createPackageToolDefinitions(),
     ...createShellNetworkToolDefinitions(config),
     ...createMemoryToolDefinitions(memory),
     ...createDesktopUiToolDefinitions(uiControl),

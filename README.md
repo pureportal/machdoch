@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/branding/logo.png" alt="machdoch logo" width="180" />
+  <img src="./assets/branding/logo.png" alt="machdoch logo" width="120" />
   <h1>machdoch</h1>
   <p><strong>Local-first OS AI agent for CLI and desktop.</strong></p>
   <p>Shared TypeScript runtime • Node.js CLI • Tauri + React desktop shell</p>
@@ -7,14 +7,14 @@
 
 <p align="center">
   <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-orange" />
-  <img alt="Node.js >=20.10" src="https://img.shields.io/badge/node-%E2%89%A520.10-339933?logo=node.js&amp;logoColor=white" />
+  <img alt="Node.js 20.10 or newer" src="https://img.shields.io/badge/node-%3E%3D20.10-339933?logo=nodedotjs&amp;logoColor=white" />
   <img alt="Tauri v2" src="https://img.shields.io/badge/tauri-v2-24C8DB?logo=tauri&amp;logoColor=white" />
 </p>
 
 `machdoch` is a pre-alpha operating-system AI agent prototype with a shared TypeScript runtime, a runnable Node.js CLI, and a Tauri + React desktop shell. The repo already contains real runtime, CLI, desktop, customization, provider, and packaging code — the main gap is between the broader product vision and the narrower set of executor backends that exist today.
 
 > [!IMPORTANT]
-> `machdoch` is already real software, not just a mock shell. Filesystem, shell, network, memory, and desktop UI-control workflows exist today. At the same time, `browser`, `git`, and `packages` are still registered categories without dedicated executor backends, so those workflows currently fall back to shell-based approaches or remain planned.
+> `machdoch` is already real software, not just a mock shell. Filesystem, shell, network, Git, package-manager, memory, and desktop UI-control workflows exist today. At the same time, `browser` is still a registered category without a dedicated browser-driver backend, so those workflows currently fall back to shell-based approaches or remain planned.
 
 ## Table of contents
 
@@ -63,8 +63,8 @@ These are the tool categories the runtime can actually execute today.
 | Memory tools | ✅ Done | Session and global memory helpers can persist short facts. |
 | Desktop UI control | 🟡 Partly implemented | Supports monitor/window enumeration, screenshots, clicks, drags, typing, key presses, and window waits. Windows also has richer native control-handle support. |
 | `browser` | 🔜 Planned | Registered in the tool surface, but there is no dedicated browser-driver backend yet. |
-| `git` | 🔜 Planned | Registered in the tool surface, but there is no first-class Git executor. Use shell-based Git workflows for now. |
-| `packages` | 🔜 Planned | Registered in the tool surface, but package installs/updates still go through the shell. |
+| `git` | ✅ Done | First-class local executor for status, diff summaries, recent log inspection, and local commits. Remote operations still go through shell workflows for now. |
+| `packages` | ✅ Done | First-class Node package backend for manifest inspection, package scripts, npm outdated checks, and dependency installs. Python/Cargo/etc. package flows still go through shell workflows for now. |
 
 ## Install guide
 
@@ -224,7 +224,7 @@ This repo already includes a working `.machdoch/` example:
 The sample configuration:
 
 - defaults to the `workspace` profile in `ask` mode
-- enables `filesystem`, `shell`, and `network`
+- enables `filesystem`, `shell`, `network`, `git`, and `packages`
 - includes example profiles `workspace`, `safe-review`, and `local-model`
 - keeps GitHub-style compatibility discovery disabled by default
 
@@ -258,7 +258,7 @@ Default locations:
 The following are still roadmap items rather than working features:
 
 - dedicated browser-driver automation
-- first-class Git and package-manager tool backends
+- broader package-manager coverage beyond Node projects
 - headless/server mode
 - local-model integrations such as Ollama, LM Studio, and Jan
 - diff viewer, standalone timeline/approval surfaces, and notifications

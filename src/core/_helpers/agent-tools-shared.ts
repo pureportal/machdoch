@@ -66,7 +66,7 @@ export const normalizeWorkspacePath = (value: string): string => {
   const normalized = value
     .replace(/\\/g, "/")
     .replace(/^\.\//u, "")
-    .replace(/^\/+ /u, "")
+    .replace(/^\/+/u, "")
     .replace(/\/+/gu, "/")
     .replace(/\/$/u, "");
 
