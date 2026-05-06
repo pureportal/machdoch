@@ -13,22 +13,64 @@
  */
 
 :root {
+    --app-slate-50: hsl(220 28% 98%);
+    --app-slate-100: hsl(220 24% 95%);
+    --app-slate-200: hsl(220 18% 88%);
+    --app-slate-300: hsl(220 14% 80%);
+    --app-slate-400: hsl(220 10% 70%);
+    --app-slate-500: hsl(218 9% 58%);
+    --app-slate-600: hsl(218 10% 46%);
+    --app-slate-700: hsl(218 11% 36%);
+    --app-slate-800: hsl(220 12% 29%);
+    --app-slate-900: hsl(220 14% 14%);
+    --app-slate-950: hsl(220 16% 8%);
 
-    --sidebar: hsl(0 0% 98%);
+    --app-sky-50: hsl(188 86% 96%);
+    --app-sky-100: hsl(188 86% 93%);
+    --app-sky-200: hsl(190 88% 86%);
+    --app-sky-300: hsl(190 86% 76%);
+    --app-sky-400: hsl(193 82% 66%);
+    --app-sky-500: hsl(196 72% 36%);
+    --app-sky-600: hsl(196 72% 34%);
+    --app-sky-700: hsl(197 68% 29%);
+    --app-sky-800: hsl(198 64% 22%);
+    --app-sky-900: hsl(198 62% 16%);
+    --app-sky-950: hsl(198 64% 10%);
 
-    --sidebar-foreground: hsl(240 5.3% 26.1%);
+    --app-emerald-100: hsl(153 72% 92%);
+    --app-emerald-200: hsl(153 64% 82%);
+    --app-emerald-300: hsl(156 58% 70%);
+    --app-emerald-400: hsl(157 56% 56%);
+    --app-emerald-500: hsl(158 58% 43%);
 
-    --sidebar-primary: hsl(240 5.9% 10%);
+    --app-violet-100: hsl(263 82% 94%);
+    --app-violet-200: hsl(262 72% 87%);
+    --app-violet-300: hsl(262 64% 78%);
+    --app-violet-400: hsl(262 52% 56%);
+    --app-violet-500: hsl(262 52% 52%);
+    --app-violet-950: hsl(263 44% 15%);
 
-    --sidebar-primary-foreground: hsl(0 0% 98%);
+    --app-amber-100: hsl(42 92% 91%);
+    --app-amber-200: hsl(42 84% 78%);
+    --app-amber-300: hsl(40 80% 66%);
+    --app-amber-400: hsl(39 78% 58%);
+    --app-amber-500: hsl(38 78% 50%);
 
-    --sidebar-accent: hsl(240 4.8% 95.9%);
+    --app-rose-100: hsl(352 96% 94%);
+    --app-rose-200: hsl(352 88% 88%);
+    --app-rose-300: hsl(352 80% 78%);
+    --app-rose-400: hsl(352 72% 65%);
+    --app-rose-500: hsl(348 67% 48%);
+    --app-red-500: hsl(4 70% 43%);
 
-    --sidebar-accent-foreground: hsl(240 5.9% 10%);
-
-    --sidebar-border: hsl(220 13% 91%);
-
-    --sidebar-ring: hsl(217.2 91.2% 59.8%);
+    --sidebar: var(--app-slate-50);
+    --sidebar-foreground: hsl(220 12% 26%);
+    --sidebar-primary: var(--app-slate-900);
+    --sidebar-primary-foreground: var(--app-slate-50);
+    --sidebar-accent: hsl(220 20% 94%);
+    --sidebar-accent-foreground: var(--app-slate-900);
+    --sidebar-border: hsl(220 18% 86%);
+    --sidebar-ring: var(--app-sky-500);
 }
 
 /*
@@ -36,22 +78,14 @@
  */
 
 .dark {
-
-    --sidebar: hsl(240 5.9% 10%);
-
-    --sidebar-foreground: hsl(240 4.8% 95.9%);
-
-    --sidebar-primary: hsl(224.3 76.3% 48%);
-
-    --sidebar-primary-foreground: hsl(0 0% 100%);
-
-    --sidebar-accent: hsl(240 3.7% 15.9%);
-
-    --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
-
-    --sidebar-border: hsl(240 3.7% 15.9%);
-
-    --sidebar-ring: hsl(217.2 91.2% 59.8%);
+    --sidebar: var(--app-slate-950);
+    --sidebar-foreground: var(--app-slate-100);
+    --sidebar-primary: var(--app-sky-500);
+    --sidebar-primary-foreground: white;
+    --sidebar-accent: var(--app-slate-900);
+    --sidebar-accent-foreground: var(--app-slate-100);
+    --sidebar-border: var(--app-slate-800);
+    --sidebar-ring: var(--app-sky-400);
 }
 
 /*
@@ -59,6 +93,55 @@
  */
 
 @theme inline {
+    --color-slate-50: var(--app-slate-50);
+    --color-slate-100: var(--app-slate-100);
+    --color-slate-200: var(--app-slate-200);
+    --color-slate-300: var(--app-slate-300);
+    --color-slate-400: var(--app-slate-400);
+    --color-slate-500: var(--app-slate-500);
+    --color-slate-600: var(--app-slate-600);
+    --color-slate-700: var(--app-slate-700);
+    --color-slate-800: var(--app-slate-800);
+    --color-slate-900: var(--app-slate-900);
+    --color-slate-950: var(--app-slate-950);
+
+    --color-sky-50: var(--app-sky-50);
+    --color-sky-100: var(--app-sky-100);
+    --color-sky-200: var(--app-sky-200);
+    --color-sky-300: var(--app-sky-300);
+    --color-sky-400: var(--app-sky-400);
+    --color-sky-500: var(--app-sky-500);
+    --color-sky-600: var(--app-sky-600);
+    --color-sky-700: var(--app-sky-700);
+    --color-sky-800: var(--app-sky-800);
+    --color-sky-900: var(--app-sky-900);
+    --color-sky-950: var(--app-sky-950);
+
+    --color-emerald-100: var(--app-emerald-100);
+    --color-emerald-200: var(--app-emerald-200);
+    --color-emerald-300: var(--app-emerald-300);
+    --color-emerald-400: var(--app-emerald-400);
+    --color-emerald-500: var(--app-emerald-500);
+
+    --color-violet-100: var(--app-violet-100);
+    --color-violet-200: var(--app-violet-200);
+    --color-violet-300: var(--app-violet-300);
+    --color-violet-400: var(--app-violet-400);
+    --color-violet-500: var(--app-violet-500);
+    --color-violet-950: var(--app-violet-950);
+
+    --color-amber-100: var(--app-amber-100);
+    --color-amber-200: var(--app-amber-200);
+    --color-amber-300: var(--app-amber-300);
+    --color-amber-400: var(--app-amber-400);
+    --color-amber-500: var(--app-amber-500);
+
+    --color-rose-100: var(--app-rose-100);
+    --color-rose-200: var(--app-rose-200);
+    --color-rose-300: var(--app-rose-300);
+    --color-rose-400: var(--app-rose-400);
+    --color-rose-500: var(--app-rose-500);
+    --color-red-500: var(--app-red-500);
 
     --color-sidebar: var(--sidebar);
 
@@ -75,6 +158,24 @@
     --color-sidebar-border: var(--sidebar-border);
 
     --color-sidebar-ring: var(--sidebar-ring);
+}
+
+html,
+body,
+#root {
+    min-height: 100%;
+}
+
+body {
+    margin: 0;
+    background: transparent;
+    color: var(--app-slate-100);
+}
+
+::selection {
+    background-color: var(--app-sky-500);
+    background-color: color-mix(in srgb, var(--app-sky-400) 32%, transparent);
+    color: white;
 }
 
 /* Scrollbar styling */
@@ -95,7 +196,7 @@
 }
 
 .dark ::-webkit-scrollbar-thumb {
-    background-color: hsl(240 3.7% 25%);
+    background-color: var(--app-slate-700);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -103,5 +204,5 @@
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(240 3.7% 35%);
+    background-color: var(--app-slate-600);
 }

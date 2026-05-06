@@ -150,7 +150,7 @@ export const createSession = (
 
 export const getSessionTitle = (session: ChatSessionRecord): string => {
   if (session.specialSession === QUICK_VOICE_SESSION_KIND) {
-    return "Quick Tasks";
+    return "Quick Chat";
   }
 
   if (session.manualTitle?.trim()) {
@@ -506,8 +506,25 @@ export const getLatestRunningTaskId = (
   return null;
 };
 
+const normalizeTaskIdSet = (
+  taskIds: Iterable<string> | undefined,
+): Set<string> => {
+  const normalizedTaskIds = new Set<string>();
+
+  for (const taskId of taskIds ?? []) {
+    const normalizedTaskId = taskId.trim();
+
+    if (normalizedTaskId) {
+      normalizedTaskIds.add(normalizedTaskId);
+    }
+  }
+
+  return normalizedTaskIds;
+};
+
 const getInterruptedTaskIds = (
   messages: ChatSessionMessage[],
+  activeTaskIds: ReadonlySet<string>,
 ): Set<string> => {
   const taskIdsWithUserMessage = new Set<string>();
   const latestTerminalAgentMessageByTaskId = new Map<
@@ -537,6 +554,10 @@ const getInterruptedTaskIds = (
   const interruptedTaskIds = new Set<string>();
 
   for (const taskId of taskIdsWithUserMessage) {
+    if (activeTaskIds.has(taskId)) {
+      continue;
+    }
+
     const latestTerminalAgentMessage =
       latestTerminalAgentMessageByTaskId.get(taskId);
 
@@ -574,8 +595,12 @@ const createInterruptedTaskCrashMessage = (
 const recoverInterruptedSessionTasks = (
   session: ChatSessionRecord,
   timestamp: number,
+  activeTaskIds: ReadonlySet<string>,
 ): ChatSessionRecord => {
-  const interruptedTaskIds = getInterruptedTaskIds(session.messages);
+  const interruptedTaskIds = getInterruptedTaskIds(
+    session.messages,
+    activeTaskIds,
+  );
 
   if (interruptedTaskIds.size === 0) {
     return session;
@@ -645,16 +670,26 @@ export const recoverInterruptedTasksForLaunch = (
   state: ShellPersistedState,
   launchId: string | null | undefined,
   timestamp = Date.now(),
+  activeTaskIds?: Iterable<string>,
 ): ShellPersistedState => {
   const normalizedLaunchId = launchId?.trim();
+  const activeTaskIdSet = normalizeTaskIdSet(activeTaskIds);
 
-  if (!normalizedLaunchId || state.lastRecoveredLaunchId === normalizedLaunchId) {
+  if (
+    !normalizedLaunchId ||
+    (activeTaskIds === undefined &&
+      state.lastRecoveredLaunchId === normalizedLaunchId)
+  ) {
     return state;
   }
 
   let didRecoverInterruptedTasks = false;
   const sessions = state.sessions.map((session) => {
-    const recoveredSession = recoverInterruptedSessionTasks(session, timestamp);
+    const recoveredSession = recoverInterruptedSessionTasks(
+      session,
+      timestamp,
+      activeTaskIdSet,
+    );
 
     if (recoveredSession !== session) {
       didRecoverInterruptedTasks = true;

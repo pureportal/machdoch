@@ -27,7 +27,10 @@ import {
   saveShellState,
   subscribeToShellStateChanged,
 } from "../../lib/shell-store";
-import { loadDesktopLaunchId } from "../../runtime";
+import {
+  loadActiveDesktopTaskIds,
+  loadDesktopLaunchId,
+} from "../../runtime";
 import {
   type SessionScopeFilter,
   type SessionStatusFilter,
@@ -476,8 +479,9 @@ export const useChatSessionShellState = (
     void Promise.all([
       loadShellState(initialShellStateRef.current),
       loadDesktopLaunchId(),
+      loadActiveDesktopTaskIds(),
     ])
-      .then(([value, launchId]) => {
+      .then(([value, launchId, activeDesktopTaskIds]) => {
         if (cancelled) {
           return;
         }
@@ -490,6 +494,8 @@ export const useChatSessionShellState = (
         const recoveredShellState = recoverInterruptedTasksForLaunch(
           normalizedShellState,
           launchId,
+          Date.now(),
+          activeDesktopTaskIds ?? undefined,
         );
 
         if (

@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { MouseEvent } from "react";
+import { hideTransientAssistantWindows } from "../../assistant-surface";
 
 export const stopTitlebarEvent = (
   event: MouseEvent<HTMLButtonElement>,
@@ -47,6 +48,7 @@ export const closeDesktopWindow = async (): Promise<void> => {
   }
 
   try {
+    await hideTransientAssistantWindows();
     await getCurrentWindow().close();
   } catch (error) {
     console.error("Failed to close window", error);

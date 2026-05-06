@@ -12,6 +12,7 @@ const FALLBACK_USER_DESKTOP_SETTINGS: UserDesktopSettings = {
   assistantBubbleEnabled: true,
   assistantBubbleHideWhenFullscreen: true,
   assistantBubbleTemporarilyHideSeconds: 6,
+  aiContextMaxMessages: 60,
   quickVoiceEnabled: true,
   quickVoiceShortcut: "CommandOrControl+Alt+V",
   quickVoiceSilenceSeconds: 1.8,
@@ -29,12 +30,18 @@ export const useUserDesktopSettings = (): UserDesktopSettings => {
 
     void loadUserDesktopSettings().then((loadedSettings) => {
       if (!disposed) {
-        setSettings(loadedSettings);
+        setSettings({
+          ...FALLBACK_USER_DESKTOP_SETTINGS,
+          ...loadedSettings,
+        });
       }
     });
 
     void subscribeToDesktopSettingsChanged((nextSettings) => {
-      setSettings(nextSettings);
+      setSettings({
+        ...FALLBACK_USER_DESKTOP_SETTINGS,
+        ...nextSettings,
+      });
     }).then((unlisten) => {
       if (disposed) {
         unlisten();

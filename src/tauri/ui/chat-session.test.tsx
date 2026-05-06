@@ -1067,6 +1067,76 @@ describe("ChatSession component", () => {
     saveUserDesktopSettingsSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
+  it("normalizes desktop numeric settings before saving", async () => {
+    const saveUserDesktopSettingsSpy = vi
+      .spyOn(runtime, "saveUserDesktopSettings")
+      .mockImplementation(async (settings) => settings);
+
+    render(<ChatSession />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Desktop$/i }));
+
+    const hideDurationPanel = screen
+      .getByText(/^Hide duration$/i)
+      .closest("[data-setting-panel]");
+    const aiContextPanel = screen
+      .getByText(/^AI context cap$/i)
+      .closest("[data-setting-panel]");
+    const shortcutPanel = screen
+      .getByText(/^Global shortcut$/i)
+      .closest("[data-setting-panel]");
+    const silencePanel = screen
+      .getByText(/^Silence timeout$/i)
+      .closest("[data-setting-panel]");
+    const quickChatPanel = screen
+      .getByText(/^Quick Chat cap$/i)
+      .closest("[data-setting-panel]");
+
+    expect(hideDurationPanel).not.toBeNull();
+    expect(aiContextPanel).not.toBeNull();
+    expect(shortcutPanel).not.toBeNull();
+    expect(silencePanel).not.toBeNull();
+    expect(quickChatPanel).not.toBeNull();
+
+    fireEvent.change(
+      within(hideDurationPanel as HTMLElement).getByRole("spinbutton"),
+      { target: { value: "99" } },
+    );
+    fireEvent.change(
+      within(aiContextPanel as HTMLElement).getByRole("spinbutton"),
+      { target: { value: "999" } },
+    );
+    fireEvent.change(
+      within(shortcutPanel as HTMLElement).getByRole("textbox"),
+      { target: { value: "   " } },
+    );
+    fireEvent.change(
+      within(silencePanel as HTMLElement).getByRole("spinbutton"),
+      { target: { value: "0.1" } },
+    );
+    fireEvent.change(
+      within(quickChatPanel as HTMLElement).getByRole("spinbutton"),
+      { target: { value: "999" } },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Save desktop settings/i }));
+
+    await waitFor(() => {
+      expect(saveUserDesktopSettingsSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assistantBubbleTemporarilyHideSeconds: 30,
+          aiContextMaxMessages: 200,
+          quickVoiceShortcut: "CommandOrControl+Alt+V",
+          quickVoiceSilenceSeconds: 0.8,
+          quickVoiceMaxMessages: 200,
+        }),
+      );
+    });
+
+    saveUserDesktopSettingsSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
   it(
     "saves the selected AI voice provider from global settings",
     async () => {
@@ -1281,6 +1351,62 @@ describe("ChatSession component", () => {
       expect.objectContaining({ id: "agent-reply-1" }),
     );
     expect(onStopSpeaking).not.toHaveBeenCalled();
+  });
+
+  it("shows the AI context cutoff before the first included message", () => {
+    render(
+      <ConversationFeed
+        visibleMessages={[
+          {
+            id: "message-1",
+            role: "user",
+            content: "First",
+          },
+          {
+            id: "message-2",
+            role: "agent",
+            content: "Second",
+          },
+          {
+            id: "message-3",
+            role: "user",
+            content: "Third",
+          },
+          {
+            id: "message-4",
+            role: "agent",
+            content: "Fourth",
+          },
+        ]}
+        aiContextMessageLimit={2}
+        bottomRef={{ current: null }}
+        onOpenWorkspaceFile={() => {}}
+        voicePlayback={{
+          supported: false,
+          speakingMessageId: null,
+          onSpeakMessage: () => {},
+          onStopSpeaking: () => {},
+        }}
+      />,
+    );
+
+    const cutoff = screen.getByRole("separator", {
+      name: /AI context starts here/i,
+    });
+
+    expect(cutoff.textContent).toContain("last 2 messages");
+    expect(
+      Boolean(
+        screen.getByText("Second").compareDocumentPosition(cutoff) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
+    expect(
+      Boolean(
+        cutoff.compareDocumentPosition(screen.getByText("Third")) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
   });
 
   it(
@@ -1728,7 +1854,7 @@ describe("ChatSession component", () => {
     expect(layout?.popupSize.height).toBe(720);
   });
 
-  it("clears Quick Chat history from the popup", async () => {
+  it("omits duplicate Quick Chat activity actions from the popup", async () => {
     const baseState = createInitialShellState();
     const quickSession = createSession({
       id: "quick-chat-session",
@@ -1777,34 +1903,16 @@ describe("ChatSession component", () => {
       ),
     ).toBeDefined();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Clear Quick Chat history" }),
-    );
-
-    await waitFor(() => {
-      expect(screen.queryByText(/Summarize open windows/i)).toBeNull();
-      expect(screen.getByText(/Quick tasks, no planning board/i)).toBeDefined();
-    });
-
-    await waitFor(() => {
-      const storedState = JSON.parse(
-        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "null",
-      ) as ShellPersistedState | null;
-      const storedQuickSession = storedState?.sessions.find(
-        (session) => session.specialSession === QUICK_VOICE_SESSION_KIND,
-      );
-
-      expect(storedQuickSession).toMatchObject({
-        id: "quick-chat-session",
-        specialSession: QUICK_VOICE_SESSION_KIND,
-        messages: [],
-        promptHistory: [],
-        sessionMemory: [],
-      });
-    });
+    expect(
+      screen.queryByRole("button", { name: "Clear Quick Chat history" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Cancel running Quick Chat" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open Main" })).toBeNull();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
-  it("clears Quick Tasks history from the main window header", async () => {
+  it("clears Quick Chat history from the main window header", async () => {
     const baseState = createInitialShellState();
     const quickSession = createSession({
       id: "quick-main-session",
@@ -1849,13 +1957,13 @@ describe("ChatSession component", () => {
     ).toBeNull();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Clear Quick Tasks history" }),
+      screen.getByRole("button", { name: "Clear Quick Chat history" }),
     );
 
     await waitFor(() => {
       expect(screen.queryByText(/Inspect the focused app/i)).toBeNull();
       expect(
-        screen.getByRole("button", { name: "Clear Quick Tasks history" }),
+        screen.getByRole("button", { name: "Clear Quick Chat history" }),
       ).toHaveProperty("disabled", true);
     });
   }, SLOW_UI_TEST_TIMEOUT_MS);
@@ -1969,6 +2077,14 @@ describe("ChatSession component", () => {
         name: /Session model: OpenAI GPT-5.5/i,
       }),
     );
+    expect(
+      await screen.findByText(
+        /Latest flagship frontier model for complex reasoning/i,
+      ),
+    ).toBeDefined();
+    expect(
+      (await screen.findAllByText(/Best for: Deep coding, planning/i)).length,
+    ).toBeGreaterThan(0);
     fireEvent.click(
       await screen.findByRole("button", {
         name: /Choose OpenAI GPT-5.5/i,
@@ -1977,7 +2093,7 @@ describe("ChatSession component", () => {
     fireEvent.click(screen.getByRole("button", { name: "Autopilot" }));
     fireEvent.click(screen.getByRole("button", { name: "UI Control" }));
 
-    const input = await screen.findByPlaceholderText(/Quick task/i);
+    const input = await screen.findByPlaceholderText(/Quick Chat/i);
 
     fireEvent.change(input, {
       target: { value: "Summarize the attached notes" },
@@ -2009,7 +2125,7 @@ describe("ChatSession component", () => {
     runDesktopTaskSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
-  it("cancels a running Quick Tasks session from the main window", async () => {
+  it("cancels a running Quick Chat session from the main window", async () => {
     const baseState = createInitialShellState();
     const quickSession = createSession({
       id: "quick-main-running-session",
@@ -2055,7 +2171,7 @@ describe("ChatSession component", () => {
     cancelDesktopTaskSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
-  it("shows a cancel action for running Quick Chat tasks in the popup", async () => {
+  it("cancels running Quick Chat tasks from the popup composer", async () => {
     const runDesktopTaskSpy = vi
       .spyOn(runtime, "runDesktopTask")
       .mockImplementation(
@@ -2067,7 +2183,7 @@ describe("ChatSession component", () => {
 
     render(<AssistantPopupShell />);
 
-    const input = await screen.findByPlaceholderText(/Quick task/i);
+    const input = await screen.findByPlaceholderText(/Quick Chat/i);
 
     fireEvent.change(input, {
       target: { value: "Count the apples" },
@@ -2084,13 +2200,18 @@ describe("ChatSession component", () => {
 
     expect(
       await screen.findByRole("button", {
-        name: "Cancel quick task",
+        name: "Cancel Quick Chat",
       }),
     ).toBeDefined();
+    expect(
+      screen.queryByRole("button", {
+        name: "Cancel running Quick Chat",
+      }),
+    ).toBeNull();
 
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Cancel running quick task",
+        name: "Cancel Quick Chat",
       }),
     );
 
@@ -2140,7 +2261,7 @@ describe("ChatSession component", () => {
       }),
     ).toBeDefined();
 
-    const input = await screen.findByPlaceholderText(/Quick task/i);
+    const input = await screen.findByPlaceholderText(/Quick Chat/i);
 
     fireEvent.change(input, {
       target: { value: "Use the selected quick model" },
@@ -2199,7 +2320,7 @@ describe("ChatSession component", () => {
       position: { x: 10, y: 10 },
     });
 
-    expect(screen.getByText(/Attach to quick task/i)).toBeDefined();
+    expect(screen.getByText(/Attach to Quick Chat/i)).toBeDefined();
 
     emitWindowDropEvent({
       type: "drop",
@@ -2208,7 +2329,7 @@ describe("ChatSession component", () => {
     });
 
     const input = (await screen.findByPlaceholderText(
-      /Quick task/i,
+      /Quick Chat/i,
     )) as HTMLTextAreaElement;
 
     await waitFor(() => {
@@ -2224,6 +2345,12 @@ describe("ChatSession component", () => {
 
   it("clears running Quick Chat history without restoring the completed task", async () => {
     let resolveTask: ((value: DesktopTaskRunResponse) => void) | null = null;
+    const baseState = createInitialShellState();
+    const quickSession = createSession({
+      id: "quick-running-clear-session",
+      specialSession: QUICK_VOICE_SESSION_KIND,
+      updatedAt: 1_713_260_010_000,
+    });
     const runDesktopTaskSpy = vi
       .spyOn(runtime, "runDesktopTask")
       .mockImplementation(
@@ -2236,23 +2363,32 @@ describe("ChatSession component", () => {
       .spyOn(runtime, "cancelDesktopTask")
       .mockResolvedValue(undefined);
 
-    render(<AssistantPopupShell />);
+    storeShellState({
+      ...baseState,
+      activeSessionId: quickSession.id,
+      sessions: [baseState.sessions[0], quickSession],
+    });
 
-    const input = await screen.findByPlaceholderText(/Quick task/i);
+    render(<ChatSession />);
+
+    const input = await screen.findByPlaceholderText(
+      /What should machdoch do next\?/i,
+    );
 
     fireEvent.change(input, {
       target: { value: "Count the apples" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
     expect(await screen.findByText(/Count the apples/i)).toBeDefined();
 
-    const clearButton = screen.getByRole("button", {
+    const clearButton = await screen.findByRole("button", {
       name: "Clear Quick Chat history",
     });
 
-    expect(clearButton).toHaveProperty("disabled", false);
-
+    await waitFor(() => {
+      expect(clearButton).toHaveProperty("disabled", false);
+    });
     fireEvent.click(clearButton);
 
     await waitFor(() => {
@@ -2263,7 +2399,7 @@ describe("ChatSession component", () => {
 
     await waitFor(() => {
       expect(screen.queryByText(/Count the apples/i)).toBeNull();
-      expect(screen.getByText(/Quick tasks, no planning board/i)).toBeDefined();
+      expect(screen.getByText(/Ready to automate/i)).toBeDefined();
     });
 
     vi.useFakeTimers();

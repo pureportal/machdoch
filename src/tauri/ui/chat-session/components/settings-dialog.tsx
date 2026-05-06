@@ -303,6 +303,97 @@ const applyDesktopAutostartMode = (
   };
 };
 
+const DEFAULT_QUICK_VOICE_SHORTCUT = "CommandOrControl+Alt+V";
+
+const clampFiniteNumber = (
+  value: number,
+  min: number,
+  max: number,
+  fallback: number,
+): number => {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, value));
+};
+
+const clampIntegerSetting = (
+  value: number,
+  min: number,
+  max: number,
+  fallback: number,
+): number => {
+  return Math.round(clampFiniteNumber(value, min, max, fallback));
+};
+
+const clampDecimalSetting = (
+  value: number,
+  min: number,
+  max: number,
+  fallback: number,
+  decimals: number,
+): number => {
+  const clampedValue = clampFiniteNumber(value, min, max, fallback);
+
+  return Number(clampedValue.toFixed(decimals));
+};
+
+const parseIntegerSettingInput = (
+  value: string,
+  min: number,
+  max: number,
+  fallback: number,
+): number => {
+  return clampIntegerSetting(Number(value), min, max, fallback);
+};
+
+const parseDecimalSettingInput = (
+  value: string,
+  min: number,
+  max: number,
+  fallback: number,
+  decimals: number,
+): number => {
+  return clampDecimalSetting(Number(value), min, max, fallback, decimals);
+};
+
+const normalizeDesktopSettingsDraft = (
+  settings: UserDesktopSettings,
+): UserDesktopSettings => {
+  const quickVoiceShortcut = settings.quickVoiceShortcut.trim();
+
+  return {
+    ...settings,
+    assistantBubbleTemporarilyHideSeconds: clampIntegerSetting(
+      settings.assistantBubbleTemporarilyHideSeconds,
+      2,
+      30,
+      6,
+    ),
+    aiContextMaxMessages: clampIntegerSetting(
+      settings.aiContextMaxMessages,
+      1,
+      200,
+      60,
+    ),
+    quickVoiceShortcut: quickVoiceShortcut || DEFAULT_QUICK_VOICE_SHORTCUT,
+    quickVoiceSilenceSeconds: clampDecimalSetting(
+      settings.quickVoiceSilenceSeconds,
+      0.8,
+      8,
+      1.8,
+      1,
+    ),
+    quickVoiceMaxMessages: clampIntegerSetting(
+      settings.quickVoiceMaxMessages,
+      10,
+      200,
+      50,
+    ),
+  };
+};
+
 const hasDesktopSettingsDraftChanges = (
   left: UserDesktopSettings,
   right: UserDesktopSettings,
@@ -316,6 +407,7 @@ const hasDesktopSettingsDraftChanges = (
       right.assistantBubbleHideWhenFullscreen ||
     left.assistantBubbleTemporarilyHideSeconds !==
       right.assistantBubbleTemporarilyHideSeconds ||
+    left.aiContextMaxMessages !== right.aiContextMaxMessages ||
     left.quickVoiceEnabled !== right.quickVoiceEnabled ||
     left.quickVoiceShortcut !== right.quickVoiceShortcut ||
     left.quickVoiceSilenceSeconds !== right.quickVoiceSilenceSeconds ||
@@ -716,8 +808,33 @@ export const SettingsDialog = ({
                       onChange={(event) => {
                         setDesktopDraft({
                           ...desktopDraft,
-                          assistantBubbleTemporarilyHideSeconds: Number(
+                          assistantBubbleTemporarilyHideSeconds: parseIntegerSettingInput(
                             event.target.value,
+                            2,
+                            30,
+                            desktopDraft.assistantBubbleTemporarilyHideSeconds,
+                          ),
+                        });
+                      }}
+                      className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
+                    />
+                  </SettingPanel>
+
+                  <SettingPanel label="AI context cap">
+                    <Input
+                      type="number"
+                      min="1"
+                      max="200"
+                      step="1"
+                      value={desktopDraft.aiContextMaxMessages}
+                      onChange={(event) => {
+                        setDesktopDraft({
+                          ...desktopDraft,
+                          aiContextMaxMessages: parseIntegerSettingInput(
+                            event.target.value,
+                            1,
+                            200,
+                            desktopDraft.aiContextMaxMessages,
                           ),
                         });
                       }}
@@ -769,8 +886,12 @@ export const SettingsDialog = ({
                       onChange={(event) => {
                         setDesktopDraft({
                           ...desktopDraft,
-                          quickVoiceSilenceSeconds: Number(
+                          quickVoiceSilenceSeconds: parseDecimalSettingInput(
                             event.target.value,
+                            0.8,
+                            8,
+                            desktopDraft.quickVoiceSilenceSeconds,
+                            1,
                           ),
                         });
                       }}
@@ -778,7 +899,7 @@ export const SettingsDialog = ({
                     />
                   </SettingPanel>
 
-                  <SettingPanel label="Quick Tasks cap">
+                  <SettingPanel label="Quick Chat cap">
                     <Input
                       type="number"
                       min="10"
@@ -788,7 +909,12 @@ export const SettingsDialog = ({
                       onChange={(event) => {
                         setDesktopDraft({
                           ...desktopDraft,
-                          quickVoiceMaxMessages: Number(event.target.value),
+                          quickVoiceMaxMessages: parseIntegerSettingInput(
+                            event.target.value,
+                            10,
+                            200,
+                            desktopDraft.quickVoiceMaxMessages,
+                          ),
                         });
                       }}
                       className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
@@ -803,7 +929,9 @@ export const SettingsDialog = ({
                   <Button
                     type="button"
                     onClick={() => {
-                      void desktopSetup.onSave(desktopDraft);
+                      void desktopSetup.onSave(
+                        normalizeDesktopSettingsDraft(desktopDraft),
+                      );
                     }}
                     disabled={desktopSetup.saving || !desktopDraftDirty}
                     className="h-10 rounded-lg bg-sky-600 px-4 text-sm text-white hover:bg-sky-500 disabled:opacity-40"

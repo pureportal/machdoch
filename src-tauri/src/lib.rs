@@ -76,6 +76,7 @@ pub fn run() {
             desktop_shell::detect_fullscreen_window_on_monitor,
             desktop_shell::get_desktop_launch_id,
             desktop_task::cancel_desktop_task,
+            desktop_task::get_active_desktop_task_ids,
             desktop_task::open_workspace_path,
             desktop_task::resolve_dropped_paths,
             desktop_task::run_desktop_task,

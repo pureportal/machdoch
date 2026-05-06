@@ -51,6 +51,7 @@ import {
   createInitialThinkingTrace,
 } from "../../task-thinking.model";
 import { getExecutionMessageContent } from "./execution-message.tsx";
+import { clampAiContextMessageLimit } from "./ai-context-window";
 import {
   createConversationContextFromSession,
   getEffectiveSessionMode,
@@ -296,6 +297,9 @@ export const useChatSessionController = (
   const quickTaskProvider =
     quickTaskSession?.provider ?? state.activeSession.provider;
   const quickTaskModel = quickTaskSession?.model ?? state.activeSession.model;
+  const aiContextMessageLimit = clampAiContextMessageLimit(
+    runtime.userDesktopSettings.aiContextMaxMessages,
+  );
 
   const handleOpenSettings = (section: SettingsSection = "providers"): void => {
     state.setSettingsSection(section);
@@ -1237,6 +1241,7 @@ export const useChatSessionController = (
         sessionSnapshot,
         runtime.userMemorySettings.globalEnabled,
         uiControlAvailability,
+        aiContextMessageLimit,
       );
       const taskRunPromise = runDesktopTask(sessionWorkspace, normalizedTask, {
         conversationContext: taskConversationContext,
@@ -1473,6 +1478,7 @@ export const useChatSessionController = (
       runtime.applyLoadedUserMemorySettings,
       runtime.refreshWorkspaceRuntimeSnapshot,
       runtime.runtimeSnapshot,
+      aiContextMessageLimit,
       runtime.userMemorySettings.globalEnabled,
       state.activeSession.id,
       state.applyShellState,
@@ -1553,7 +1559,7 @@ export const useChatSessionController = (
       for (const taskId of quickTaskIds) {
         ignoredDesktopTaskIdsRef.current.add(taskId);
         void cancelDesktopTask(taskId).catch((error) => {
-          console.error("Failed to cancel cleared quick task:", error);
+          console.error("Failed to cancel cleared Quick Chat task:", error);
         });
       }
     }
@@ -1700,6 +1706,7 @@ export const useChatSessionController = (
     },
     conversation: {
       visibleMessages: state.visibleMessages,
+      aiContextMessageLimit,
       bottomRef: state.bottomRef,
       onOpenWorkspaceFile: handleOpenWorkspaceFile,
       voicePlayback: {

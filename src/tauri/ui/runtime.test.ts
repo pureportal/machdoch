@@ -8,6 +8,7 @@ import {
 import {
   cancelDesktopTask,
   detectFullscreenWindowOnMonitor,
+  loadActiveDesktopTaskIds,
   loadDesktopLaunchId,
   resolveDroppedPaths,
   runDesktopTask,
@@ -51,6 +52,23 @@ describe("desktop runtime fullscreen detection", () => {
 
     await expect(loadDesktopLaunchId()).resolves.toBe("launch-123");
     expect(invokeMock).toHaveBeenCalledWith("get_desktop_launch_id");
+  });
+
+  it("loads active desktop task IDs through the Tauri runtime", async () => {
+    invokeMock.mockResolvedValueOnce(["task-2", "task-1"]);
+
+    await expect(loadActiveDesktopTaskIds()).resolves.toEqual([
+      "task-2",
+      "task-1",
+    ]);
+    expect(invokeMock).toHaveBeenCalledWith("get_active_desktop_task_ids");
+  });
+
+  it("returns no active desktop task snapshot when Tauri commands are unavailable", async () => {
+    disableInvokeMock();
+
+    await expect(loadActiveDesktopTaskIds()).resolves.toBeNull();
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 
   it("resolves dropped paths through the Rust command", async () => {

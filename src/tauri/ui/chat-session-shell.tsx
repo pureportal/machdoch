@@ -46,7 +46,7 @@ export const ChatSession = (): JSX.Element => {
             label="Attach to task"
           />
 
-          <div className="flex min-h-0 flex-1 w-full overflow-hidden bg-[#050816]">
+          <div className="flex min-h-0 flex-1 w-full overflow-hidden bg-slate-950">
             <aside className="z-10 flex w-20 shrink-0 flex-col items-center justify-between border-r border-slate-900 bg-slate-950 py-6">
               <div className="flex flex-col items-center gap-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 shadow-lg shadow-sky-500/10">
@@ -82,7 +82,7 @@ export const ChatSession = (): JSX.Element => {
                 onOpenSettings={controller.openProviderSettings}
               />
             ) : (
-              <main className="flex min-h-0 flex-1 flex-col bg-[#050816]">
+              <main className="flex min-h-0 flex-1 flex-col bg-slate-950">
                 <SessionHeader {...controller.header} />
 
                 <ScrollArea className="min-h-0 flex-1" type="always">

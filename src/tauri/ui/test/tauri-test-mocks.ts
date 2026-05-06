@@ -37,6 +37,7 @@ export const openMock = vi.fn().mockResolvedValue("/mocked/tauri/path");
 export const openUrlMock = vi.fn().mockResolvedValue(undefined);
 export const desktopEventListeners = new Map<string, DesktopEventHandler>();
 export const windowDragDropListeners = new Set<WindowEventHandler<DragDropEvent>>();
+export const windowFocusChangedListeners = new Set<WindowEventHandler<boolean>>();
 export const listenMock = vi.fn(
   async (eventName: string, handler: DesktopEventHandler) => {
     desktopEventListeners.set(eventName, handler);
@@ -81,6 +82,13 @@ const createWindowHandle = (label: string) => ({
       };
     },
   ),
+  onFocusChanged: vi.fn(async (handler: WindowEventHandler<boolean>) => {
+    windowFocusChangedListeners.add(handler);
+
+    return () => {
+      windowFocusChangedListeners.delete(handler);
+    };
+  }),
   setFocus: vi.fn().mockResolvedValue(undefined),
   setPosition: vi.fn().mockResolvedValue(undefined),
   setSize: vi.fn().mockResolvedValue(undefined),

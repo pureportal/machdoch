@@ -10,7 +10,7 @@ export const ProviderEmptyState = ({
   onOpenSettings,
 }: ProviderEmptyStateProps): JSX.Element => {
   return (
-    <main className="z-20 flex min-h-0 flex-1 flex-col items-center justify-center bg-[#050816] px-6 py-12 text-center shadow-inner shadow-black/80">
+    <main className="z-20 flex min-h-0 flex-1 flex-col items-center justify-center bg-slate-950 px-6 py-12 text-center shadow-inner shadow-black/80">
       <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-red-500/20 bg-red-500/10">
         <AlertCircle className="h-10 w-10 text-red-500" />
       </div>

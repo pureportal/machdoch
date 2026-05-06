@@ -12,15 +12,12 @@ import {
   WandSparkles,
 } from "lucide-react";
 import type {
-  ConversationHistoryEntry,
   RunMode,
   TaskConversationContext,
   UiControlAvailability,
 } from "../../../../core/types.js";
 import {
-  createVisibleConversationMessages,
   isQuickVoiceSession,
-  type ChatSessionMessage,
   type ChatSessionRecord,
   type SessionOverviewStatus,
 } from "../../chat-session.model";
@@ -32,7 +29,10 @@ import {
   type UserWebSearchSettings,
   type WebSearchProvider,
 } from "../../runtime";
-import { getRenderedMessageContent } from "./execution-message.tsx";
+import {
+  createAiContextHistory,
+  DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
+} from "./ai-context-window";
 
 export type SettingsSection =
   | "providers"
@@ -323,44 +323,13 @@ export const createEmptyUserMemorySettings = (): UserMemorySettings => {
   };
 };
 
-const createConversationHistoryEntry = (
-  message: ChatSessionMessage,
-): ConversationHistoryEntry | undefined => {
-  const content = getRenderedMessageContent(message).trim();
-
-  if (content.length === 0) {
-    return undefined;
-  }
-
-  const role: ConversationHistoryEntry["role"] =
-    message.role === "agent" ? "assistant" : "user";
-
-  return {
-    role,
-    content,
-    ...(typeof message.createdAt === "number"
-      ? { createdAt: message.createdAt }
-      : {}),
-  };
-};
-
-const isConversationHistoryEntry = (
-  entry: ConversationHistoryEntry | undefined,
-): entry is ConversationHistoryEntry => {
-  return entry !== undefined;
-};
-
 export const createConversationContextFromSession = (
   session: ChatSessionRecord,
   globalMemoryEnabled: boolean,
   uiControl?: UiControlAvailability,
+  maxHistoryMessages: unknown = DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
 ): TaskConversationContext => {
-  const history: ConversationHistoryEntry[] = createVisibleConversationMessages(
-    session.messages,
-  )
-    .map(createConversationHistoryEntry)
-    .filter(isConversationHistoryEntry)
-    .slice(-60);
+  const history = createAiContextHistory(session.messages, maxHistoryMessages);
 
   return {
     history,

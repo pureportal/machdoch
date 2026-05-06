@@ -102,6 +102,31 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("supports desktop bridge JSON one-shot invocations with --task", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--quick",
+          "--json",
+          "--verbose",
+          "--cwd",
+          "C:/workspace",
+          "--task",
+          "How is the weather?",
+        ],
+        {
+          currentWorkingDirectory: "C:/fallback",
+        },
+      ),
+    ).toEqual({
+      command: "run",
+      task: "How is the weather?",
+      json: true,
+      verbose: true,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
   it("uses --task as an initial interactive chat task unless --quick is set", () => {
     expect(
       parseCliArgs(["--task", "create a dockerfile for nginx"], {

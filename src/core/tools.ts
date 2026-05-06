@@ -9,7 +9,25 @@ const TOOL_REGISTRY: ToolDefinition[] = [
     description:
       "Read and modify files or folders inside allowed workspace boundaries.",
     riskLevel: "low",
-    keywords: ["file", "folder", "directory", "read", "write", "rename"],
+    keywords: [
+      "bug",
+      "code",
+      "edit",
+      "file",
+      "fix",
+      "folder",
+      "directory",
+      "implement",
+      "logic",
+      "modify",
+      "patch",
+      "read",
+      "refactor",
+      "rename",
+      "rewrite",
+      "source",
+      "write",
+    ],
   },
   {
     name: "shell",
@@ -17,7 +35,21 @@ const TOOL_REGISTRY: ToolDefinition[] = [
     description:
       "Run shell commands, scripts, and terminal workflows on the local machine.",
     riskLevel: "high",
-    keywords: ["command", "terminal", "shell", "script", "run"],
+    keywords: [
+      "build",
+      "check",
+      "command",
+      "compile",
+      "lint",
+      "run",
+      "script",
+      "shell",
+      "terminal",
+      "test",
+      "typecheck",
+      "validate",
+      "verify",
+    ],
   },
   {
     name: "network",
@@ -31,6 +63,13 @@ const TOOL_REGISTRY: ToolDefinition[] = [
       "fetch",
       "download",
       "request",
+      "research",
+      "recent",
+      "current",
+      "latest",
+      "documentation",
+      "docs",
+      "release notes",
       "url",
       "online",
       "internet",
@@ -55,7 +94,18 @@ const TOOL_REGISTRY: ToolDefinition[] = [
     description:
       "Inspect and modify repository state, branches, commits, and diffs.",
     riskLevel: "medium",
-    keywords: ["git", "commit", "branch", "pull request", "repo"],
+    keywords: [
+      "git",
+      "commit",
+      "branch",
+      "changes",
+      "diff",
+      "pull request",
+      "repo",
+      "repository",
+      "status",
+      "worktree",
+    ],
   },
   {
     name: "packages",
@@ -87,6 +137,13 @@ const uniqueTools = (tools: ToolName[]): ToolName[] => {
   return Array.from(new Set(tools));
 };
 
+const CODE_CHANGE_TASK_PATTERN =
+  /\b(add|build|change|code|debug|edit|fix|implement|improve|modify|patch|refactor|repair|rewrite)\b/i;
+
+const needsWorkspaceEditAndVerification = (task: string): boolean => {
+  return CODE_CHANGE_TASK_PATTERN.test(task);
+};
+
 /**
  * Returns a defensive copy of the built-in tool registry.
  */
@@ -115,12 +172,15 @@ export const inferSuggestedTools = (task: string): ToolName[] => {
       ? [tool.name]
       : [],
   );
+  const inferredTools = needsWorkspaceEditAndVerification(task)
+    ? uniqueTools(["filesystem", "shell", ...matchedTools])
+    : matchedTools;
 
-  if (matchedTools.length === 0) {
+  if (inferredTools.length === 0) {
     return ["filesystem", "shell"];
   }
 
-  return uniqueTools(matchedTools);
+  return uniqueTools(inferredTools);
 };
 
 /**

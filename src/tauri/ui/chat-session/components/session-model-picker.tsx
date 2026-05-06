@@ -68,7 +68,7 @@ export const SessionModelPicker = ({
         >
           <Bot className="h-3.5 w-3.5 text-sky-300" />
           <span className="min-w-0 truncate">
-            {getProviderLabel(activeProvider)} · {activeModelLabel}
+            {getProviderLabel(activeProvider)} / {activeModelLabel}
           </span>
           <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
         </Button>
@@ -85,7 +85,7 @@ export const SessionModelPicker = ({
                 Session model
               </p>
               <p className="mt-1 truncate text-sm font-semibold text-slate-100">
-                {getProviderLabel(activeProvider)} · {activeModelLabel}
+                {getProviderLabel(activeProvider)} / {activeModelLabel}
               </p>
             </div>
             {activeModelMeta ? (
@@ -160,7 +160,7 @@ export const SessionModelPicker = ({
                         handleSessionModelSelection(selectedProvider, model.id)
                       }
                       className={cn(
-                        "group flex w-full items-center gap-2 rounded-2xl border px-2.5 py-2 text-left transition-all",
+                        "group grid w-full grid-cols-[auto_minmax(0,1fr)] gap-2 rounded-xl border px-3 py-2.5 text-left transition-all",
                         isSelected
                           ? "border-sky-500/35 bg-sky-500/10 text-sky-100 shadow-[0_0_18px_rgba(14,165,233,0.12)]"
                           : "border-slate-800 bg-slate-900/65 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
@@ -168,7 +168,7 @@ export const SessionModelPicker = ({
                     >
                       <span
                         className={cn(
-                          "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+                          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors",
                           isSelected
                             ? "border-sky-400/30 bg-sky-400/15 text-sky-200"
                             : "border-slate-700 bg-transparent group-hover:border-slate-500",
@@ -177,16 +177,26 @@ export const SessionModelPicker = ({
                         {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
                       </span>
 
-                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-100">
-                        {model.label}
-                      </span>
-                      <span
-                        className={cn(
-                          "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                          MODEL_STAGE_CLASSES[model.stage],
-                        )}
-                      >
-                        {MODEL_STAGE_LABELS[model.stage]}
+                      <span className="grid min-w-0 gap-1">
+                        <span className="flex min-w-0 items-center justify-between gap-2">
+                          <span className="min-w-0 truncate text-sm font-semibold text-slate-100">
+                            {model.label}
+                          </span>
+                          <span
+                            className={cn(
+                              "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                              MODEL_STAGE_CLASSES[model.stage],
+                            )}
+                          >
+                            {MODEL_STAGE_LABELS[model.stage]}
+                          </span>
+                        </span>
+                        <span className="line-clamp-2 text-xs leading-5 text-slate-400">
+                          {model.description}
+                        </span>
+                        <span className="line-clamp-2 text-[11px] leading-4 text-slate-500">
+                          Best for: {model.bestFor}
+                        </span>
                       </span>
                     </button>
                   );

@@ -128,6 +128,7 @@ export interface UserDesktopSettings {
   assistantBubbleEnabled: boolean;
   assistantBubbleHideWhenFullscreen: boolean;
   assistantBubbleTemporarilyHideSeconds: number;
+  aiContextMaxMessages: number;
   quickVoiceEnabled: boolean;
   quickVoiceShortcut: string;
   quickVoiceSilenceSeconds: number;
@@ -321,6 +322,7 @@ const createDefaultUserDesktopSettings = (): UserDesktopSettings => {
     assistantBubbleEnabled: true,
     assistantBubbleHideWhenFullscreen: true,
     assistantBubbleTemporarilyHideSeconds: 6,
+    aiContextMaxMessages: 60,
     quickVoiceEnabled: true,
     quickVoiceShortcut: "CommandOrControl+Alt+V",
     quickVoiceSilenceSeconds: 1.8,
@@ -519,6 +521,19 @@ export const loadDesktopLaunchId = async (): Promise<string | null> => {
     "Failed to load desktop launch ID",
     () => null,
   );
+};
+
+export const loadActiveDesktopTaskIds = async (): Promise<string[] | null> => {
+  if (!canInvokeTauriCommands()) {
+    return null;
+  }
+
+  try {
+    return await tauriCore.invoke<string[]>("get_active_desktop_task_ids");
+  } catch (error) {
+    console.error("Failed to load active desktop task IDs", error);
+    return null;
+  }
 };
 
 export const saveUserGlobalMemoryEnabled = async (

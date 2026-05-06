@@ -42,7 +42,7 @@ export const FRONTIER_PROVIDER_CATALOG: CatalogProvider[] = [
   {
     id: "openai",
     label: "OpenAI",
-    docsUrl: "https://developers.openai.com/api/docs/models",
+    docsUrl: "https://developers.openai.com/api/docs/models/all",
     supportedInApp: true,
     note:
       "Official OpenAI docs recommend gpt-5.5 as the flagship frontier model, with GPT-5.4 mini and nano variants for lower latency and cost.",
@@ -80,10 +80,10 @@ export const FRONTIER_PROVIDER_CATALOG: CatalogProvider[] = [
   {
     id: "anthropic",
     label: "Anthropic",
-    docsUrl: "https://platform.claude.com/docs/en/docs/about-claude/models/overview",
+    docsUrl: "https://platform.claude.com/docs/en/about-claude/models/overview",
     supportedInApp: true,
     note:
-      "Anthropic’s official models overview highlights Claude Opus 4.6 as the most intelligent broadly available model, with Sonnet 4.6 as the best speed/intelligence blend.",
+      "Anthropic's official models overview highlights Claude Opus 4.6 as the most intelligent broadly available model, with Sonnet 4.6 as the best speed/intelligence blend.",
     models: [
       {
         id: "claude-opus-4-6",
@@ -111,16 +111,16 @@ export const FRONTIER_PROVIDER_CATALOG: CatalogProvider[] = [
   {
     id: "google",
     label: "Google",
-    docsUrl: "https://firebase.google.com/docs/ai-logic/models",
+    docsUrl: "https://ai.google.dev/gemini-api/docs/models",
     supportedInApp: true,
     note:
-      "Google’s Firebase AI Logic docs recommend explicit stable model names for production. Gemini 2.5 models are stable today, while Gemini 3.x options are still preview-stage.",
+      "Google's Gemini API docs recommend explicit stable model names for production. Gemini 2.5 models are stable today, while Gemini 3.x options are still preview-stage.",
     models: [
       {
         id: "gemini-2.5-pro",
         label: "Gemini 2.5 Pro",
         stage: "stable",
-        description: "Google’s stable advanced reasoning model in the Gemini 2.5 family.",
+        description: "Google's stable advanced reasoning model in the Gemini 2.5 family.",
         bestFor: "Complex multimodal reasoning and larger coding workflows.",
       },
       {
@@ -159,7 +159,7 @@ export const FRONTIER_PROVIDER_CATALOG: CatalogProvider[] = [
     docsUrl: "https://docs.x.ai/developers/models",
     supportedInApp: false,
     note:
-      "xAI’s current flagship docs page centers on Grok 4.20 and emphasizes tool-enabled, high-speed agentic workflows.",
+      "xAI's current flagship docs page centers on Grok 4.20 and emphasizes tool-enabled, high-speed agentic workflows.",
     models: [
       {
         id: "grok-4.20",
@@ -176,7 +176,7 @@ export const FRONTIER_PROVIDER_CATALOG: CatalogProvider[] = [
     docsUrl: "https://docs.mistral.ai/getting-started/models/",
     supportedInApp: false,
     note:
-      "Mistral’s 2026 model lineup spans generalist, reasoning, coding, and audio-specialist families, with several strong open models.",
+      "Mistral's 2026 model lineup spans generalist, reasoning, coding, and audio-specialist families, with several strong open models.",
     models: [
       {
         id: "mistral-large-3",

@@ -136,6 +136,7 @@ pub struct UserDesktopSettings {
     pub(crate) assistant_bubble_enabled: bool,
     pub(crate) assistant_bubble_hide_when_fullscreen: bool,
     pub(crate) assistant_bubble_temporarily_hide_seconds: u32,
+    pub(crate) ai_context_max_messages: u32,
     pub(crate) quick_voice_enabled: bool,
     pub(crate) quick_voice_shortcut: String,
     pub(crate) quick_voice_silence_seconds: f64,
@@ -225,6 +226,7 @@ struct UserDesktopConfigFile {
     assistant_bubble_enabled: Option<bool>,
     assistant_bubble_hide_when_fullscreen: Option<bool>,
     assistant_bubble_temporarily_hide_seconds: Option<u32>,
+    ai_context_max_messages: Option<u32>,
     quick_voice_enabled: Option<bool>,
     quick_voice_shortcut: Option<String>,
     quick_voice_silence_seconds: Option<f64>,
@@ -275,6 +277,10 @@ fn clamp_quick_voice_message_limit(value: u32) -> u32 {
     value.clamp(10, 200)
 }
 
+fn clamp_ai_context_message_limit(value: u32) -> u32 {
+    value.clamp(1, 200)
+}
+
 fn normalize_quick_voice_shortcut(value: Option<&str>) -> String {
     normalize_optional_string(value)
         .unwrap_or_else(|| crate::desktop_shell::DEFAULT_QUICK_VOICE_SHORTCUT.to_string())
@@ -307,6 +313,7 @@ fn normalize_user_desktop_settings_input(
         assistant_bubble_temporarily_hide_seconds: clamp_assistant_bubble_hide_seconds(
             settings.assistant_bubble_temporarily_hide_seconds,
         ),
+        ai_context_max_messages: clamp_ai_context_message_limit(settings.ai_context_max_messages),
         quick_voice_enabled: settings.quick_voice_enabled,
         quick_voice_shortcut,
         quick_voice_silence_seconds: clamp_quick_voice_silence_seconds(
@@ -1037,6 +1044,9 @@ pub(crate) fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>
                 .assistant_bubble_temporarily_hide_seconds
                 .unwrap_or(6),
         ),
+        ai_context_max_messages: clamp_ai_context_message_limit(
+            config.desktop.ai_context_max_messages.unwrap_or(60),
+        ),
         quick_voice_enabled: config.desktop.quick_voice_enabled.unwrap_or(true),
         quick_voice_shortcut: resolve_quick_voice_shortcut(
             config.desktop.quick_voice_shortcut.as_deref(),
@@ -1170,6 +1180,7 @@ fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Manager<R>>(
         Some(normalized_settings.assistant_bubble_hide_when_fullscreen);
     config.desktop.assistant_bubble_temporarily_hide_seconds =
         Some(normalized_settings.assistant_bubble_temporarily_hide_seconds);
+    config.desktop.ai_context_max_messages = Some(normalized_settings.ai_context_max_messages);
     config.desktop.quick_voice_enabled = Some(normalized_settings.quick_voice_enabled);
     config.desktop.quick_voice_shortcut = Some(normalized_settings.quick_voice_shortcut.clone());
     config.desktop.quick_voice_silence_seconds =

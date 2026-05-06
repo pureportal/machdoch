@@ -113,4 +113,55 @@ describe("session shell helpers", () => {
     expect(context.uiControlEnabled).toBe(true);
     expect(context.uiControl).toEqual(uiControl);
   });
+
+  it("limits conversation context to the configured latest messages", () => {
+    const session = createSession({
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          content: "First request",
+          createdAt: 1,
+        },
+        {
+          id: "agent-1",
+          role: "agent",
+          content: "First reply",
+          createdAt: 2,
+        },
+        {
+          id: "user-2",
+          role: "user",
+          content: "Second request",
+          createdAt: 3,
+        },
+        {
+          id: "agent-2",
+          role: "agent",
+          content: "Second reply",
+          createdAt: 4,
+        },
+      ],
+    });
+
+    const context = createConversationContextFromSession(
+      session,
+      true,
+      undefined,
+      2,
+    );
+
+    expect(context.history).toEqual([
+      {
+        role: "user",
+        content: "Second request",
+        createdAt: 3,
+      },
+      {
+        role: "assistant",
+        content: "Second reply",
+        createdAt: 4,
+      },
+    ]);
+  });
 });

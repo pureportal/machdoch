@@ -296,6 +296,105 @@ describe("recoverInterruptedTasksForLaunch", () => {
     expect(recovered.sessions).toBe(baseState.sessions);
   });
 
+  it("keeps persisted running tasks alive when the desktop runtime still reports them active", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-with-live-task",
+      messages: [
+        {
+          id: "task-1-user",
+          taskId: "task-1",
+          role: "user",
+          content: "answer the live task",
+          createdAt: 1,
+        },
+        {
+          id: "task-1-thinking",
+          taskId: "task-1",
+          role: "agent",
+          content: "",
+          createdAt: 2,
+          source: {
+            kind: "thinking",
+            thinking: createInitialThinkingTrace("ask", 2),
+          },
+        },
+      ],
+    });
+
+    const recovered = recoverInterruptedTasksForLaunch(
+      {
+        ...baseState,
+        activeSessionId: session.id,
+        sessions: [session],
+      },
+      "launch-live",
+      100,
+      ["task-1"],
+    );
+    const recoveredSession = recovered.sessions[0];
+
+    expect(recoveredSession).toBeDefined();
+    expect(getSessionOverviewStatus(recoveredSession!)).toBe("running");
+    expect(recoveredSession!.messages.map((message) => message.id)).toEqual([
+      "task-1-user",
+      "task-1-thinking",
+    ]);
+  });
+
+  it("marks stale running tasks even after the launch was already recovered when no active task remains", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-with-same-launch-stale-task",
+      messages: [
+        {
+          id: "task-1-user",
+          taskId: "task-1",
+          role: "user",
+          content: "answer the stale task",
+          createdAt: 1,
+        },
+        {
+          id: "task-1-thinking",
+          taskId: "task-1",
+          role: "agent",
+          content: "",
+          createdAt: 2,
+          source: {
+            kind: "thinking",
+            thinking: createInitialThinkingTrace("ask", 2),
+          },
+        },
+      ],
+    });
+
+    const recovered = recoverInterruptedTasksForLaunch(
+      {
+        ...baseState,
+        activeSessionId: session.id,
+        lastRecoveredLaunchId: "launch-current",
+        sessions: [session],
+      },
+      "launch-current",
+      100,
+      [],
+    );
+    const recoveredSession = recovered.sessions[0];
+
+    expect(recoveredSession).toBeDefined();
+    expect(getSessionOverviewStatus(recoveredSession!)).toBe("crashed");
+    expect(
+      recoveredSession!.messages.some(
+        (message) => message.id === "task-1-thinking",
+      ),
+    ).toBe(false);
+    expect(
+      recoveredSession!.messages.filter((message) =>
+        message.content.startsWith("**Task crashed.**"),
+      ),
+    ).toHaveLength(1);
+  });
+
   it("removes orphaned running thinking panels when the task already has a crash marker", () => {
     const baseState = createInitialShellState();
     const session = createSession({

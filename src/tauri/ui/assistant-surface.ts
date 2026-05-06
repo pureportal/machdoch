@@ -237,18 +237,35 @@ const applyAssistantPopupLayout = async (
   );
 };
 
-export const hideAssistantPopup = async (): Promise<void> => {
-  const popupWindow = await getWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL);
+const hideWindowByLabel = async (
+  label: string,
+  description: string,
+): Promise<void> => {
+  const window = await getWindowByLabel(label);
 
-  if (!popupWindow) {
+  if (!window) {
     return;
   }
 
   try {
-    await popupWindow.hide();
+    await window.hide();
   } catch (error) {
-    console.error("Failed to hide the assistant popup", error);
+    console.error(`Failed to hide ${description}`, error);
   }
+};
+
+export const hideAssistantPopup = async (): Promise<void> => {
+  await hideWindowByLabel(
+    ASSISTANT_POPUP_WINDOW_LABEL,
+    "the assistant popup",
+  );
+};
+
+export const hideTransientAssistantWindows = async (): Promise<void> => {
+  await Promise.all([
+    hideAssistantPopup(),
+    hideWindowByLabel(QUICK_VOICE_WINDOW_LABEL, "the Quick Voice window"),
+  ]);
 };
 
 export const syncAssistantPopupPosition = async (): Promise<void> => {

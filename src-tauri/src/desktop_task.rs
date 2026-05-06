@@ -117,6 +117,7 @@ fn format_command_failure(stderr: &str, stdout: &str) -> String {
 
 fn build_cli_args(options: CliCommandOptions<'_>) -> Vec<String> {
     let mut args = vec![
+        "--quick".to_string(),
         "--json".to_string(),
         "--verbose".to_string(),
         "--cwd".to_string(),
@@ -671,6 +672,21 @@ pub async fn cancel_desktop_task(
 }
 
 #[tauri::command]
+pub async fn get_active_desktop_task_ids(
+    state: tauri::State<'_, DesktopTaskCancelMap>,
+) -> Result<Vec<String>, String> {
+    let cancel_state = state.0.lock().map_err(|_| {
+        "Unable to inspect active desktop tasks because the task registry lock is unavailable."
+            .to_string()
+    })?;
+    let mut task_ids = cancel_state.active.keys().cloned().collect::<Vec<_>>();
+
+    task_ids.sort();
+
+    Ok(task_ids)
+}
+
+#[tauri::command]
 pub async fn run_desktop_task(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, DesktopTaskCancelMap>,
@@ -725,4 +741,27 @@ pub async fn resolve_dropped_paths(paths: Vec<String>) -> Result<DroppedPathsRes
     tauri::async_runtime::spawn_blocking(move || resolve_dropped_paths_sync(paths))
         .await
         .map_err(|error| format!("The dropped path resolver stopped unexpectedly. {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_cli_args, CliCommandOptions};
+
+    #[test]
+    fn desktop_cli_args_force_one_shot_json_execution() {
+        let args = build_cli_args(CliCommandOptions {
+            workspace_root: "C:/workspace",
+            task: "How is the weather?",
+            mode: Some("ask"),
+            profile: None,
+            provider: Some("openai"),
+            model: Some("gpt-5.2"),
+            conversation_context_file: None,
+        });
+
+        assert_eq!(args[0], "--quick");
+        assert!(args.contains(&"--json".to_string()));
+        assert!(args.contains(&"--task".to_string()));
+        assert!(args.contains(&"How is the weather?".to_string()));
+    }
 }

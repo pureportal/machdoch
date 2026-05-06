@@ -119,6 +119,7 @@ const createEmptyUserDesktopSettings = (): UserDesktopSettings => {
     assistantBubbleEnabled: true,
     assistantBubbleHideWhenFullscreen: true,
     assistantBubbleTemporarilyHideSeconds: 6,
+    aiContextMaxMessages: 60,
     quickVoiceEnabled: true,
     quickVoiceShortcut: "CommandOrControl+Alt+V",
     quickVoiceSilenceSeconds: 1.8,
@@ -238,7 +239,10 @@ export const useChatSessionRuntime = (
 
   const applyLoadedUserDesktopSettings = useCallback(
     (settings: UserDesktopSettings): void => {
-      setUserDesktopSettings(settings);
+      setUserDesktopSettings({
+        ...createEmptyUserDesktopSettings(),
+        ...settings,
+      });
     },
     [],
   );

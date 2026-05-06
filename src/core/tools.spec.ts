@@ -63,6 +63,14 @@ describe("inferSuggestedTools", () => {
     ]);
   });
 
+  it("keeps coding and verification tools when the task also asks for online research", () => {
+    expect(
+      inferSuggestedTools(
+        "Research online before you implement better logic in the project",
+      ),
+    ).toEqual(["filesystem", "shell", "network"]);
+  });
+
   it("prefers filesystem-only suggestions for deterministic read-only inspection tasks", () => {
     expect(inferSuggestedTools("show profiles")).toEqual(["filesystem"]);
     expect(inferSuggestedTools("inspect config")).toEqual(["filesystem"]);

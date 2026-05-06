@@ -1,9 +1,9 @@
+import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ArrowUpRight,
   Bot,
   BrainCircuit,
-  CheckCircle2,
   Cog,
   LoaderCircle,
   Mic,
@@ -12,7 +12,6 @@ import {
   SendHorizonal,
   Sparkles,
   Square,
-  Trash2,
   WandSparkles,
   X,
   Zap,
@@ -28,10 +27,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { revealMainWindow, showQuickVoiceWindow } from "./assistant-surface";
-import {
-  type ChatSessionMessage,
-  type SessionOverviewStatus,
-} from "./chat-session.model";
+import { type ChatSessionMessage } from "./chat-session.model";
 import { getRenderedMessageContent } from "./chat-session/_helpers/execution-message.tsx";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
@@ -52,61 +48,7 @@ const SettingsDialog = lazy(async () => {
 });
 
 const QUICK_TASK_HISTORY_LIMIT = 6;
-
-const getQuickTaskStatusLabel = (status: SessionOverviewStatus): string => {
-  switch (status) {
-    case "running":
-      return "Running";
-    case "waiting":
-      return "Needs approval";
-    case "failed":
-      return "Needs attention";
-    case "crashed":
-      return "Crashed";
-    case "done":
-      return "Done";
-    case "empty":
-    default:
-      return "Ready";
-  }
-};
-
-const getQuickTaskStatusClassName = (status: SessionOverviewStatus): string => {
-  switch (status) {
-    case "running":
-      return "border-amber-400/25 bg-amber-400/10 text-amber-100";
-    case "waiting":
-      return "border-violet-400/25 bg-violet-400/10 text-violet-100";
-    case "failed":
-    case "crashed":
-      return "border-rose-400/25 bg-rose-400/10 text-rose-100";
-    case "done":
-      return "border-emerald-400/25 bg-emerald-400/10 text-emerald-100";
-    case "empty":
-    default:
-      return "border-sky-400/25 bg-sky-400/10 text-sky-100";
-  }
-};
-
-const QuickTaskStatusIcon = ({
-  status,
-}: {
-  status: SessionOverviewStatus;
-}): JSX.Element => {
-  if (status === "running") {
-    return <LoaderCircle className="h-3.5 w-3.5 animate-spin" />;
-  }
-
-  if (status === "done") {
-    return <CheckCircle2 className="h-3.5 w-3.5" />;
-  }
-
-  if (status === "failed" || status === "crashed") {
-    return <Square className="h-3 w-3 fill-current" />;
-  }
-
-  return <Zap className="h-3.5 w-3.5" />;
-};
+const QUICK_WINDOW_BLUR_HIDE_DELAY_MS = 100;
 
 const QuickTaskMessage = ({
   message,
@@ -120,7 +62,7 @@ const QuickTaskMessage = ({
       <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
         <div className="flex items-center gap-2">
           <LoaderCircle className="h-4 w-4 animate-spin" />
-          <span className="font-medium">Working on the quick task</span>
+          <span className="font-medium">Working in Quick Chat</span>
         </div>
       </div>
     );
@@ -143,7 +85,7 @@ const QuickTaskMessage = ({
     >
       <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold tracking-[0.22em] text-slate-500 uppercase">
         {isUser ? <Zap className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
-        {isUser ? "Quick task" : "Result"}
+        {isUser ? "Quick Chat" : "Result"}
       </div>
 
       {isUser ? (
@@ -157,14 +99,8 @@ const QuickTaskMessage = ({
 
 const QuickTaskActivity = ({
   quickTask,
-  onCancelRunningTask,
-  onClearHistory,
-  onOpenMain,
 }: {
   quickTask: ReturnType<typeof useChatSessionController>["quickTask"];
-  onCancelRunningTask: () => void;
-  onClearHistory: () => void;
-  onOpenMain: () => void;
 }): JSX.Element => {
   const recentMessages = useMemo(() => {
     return quickTask.visibleMessages
@@ -183,58 +119,6 @@ const QuickTaskActivity = ({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 px-5 py-3 [@media(max-height:620px)]:px-4 [@media(max-height:620px)]:py-2">
-        <div
-          className={cn(
-            "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium",
-            getQuickTaskStatusClassName(quickTask.status),
-          )}
-        >
-          <QuickTaskStatusIcon status={quickTask.status} />
-          {getQuickTaskStatusLabel(quickTask.status)}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {quickTask.status === "running" ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label="Cancel running quick task"
-              onClick={onCancelRunningTask}
-              className="h-8 rounded-full border border-rose-500/20 bg-rose-500/10 px-3 text-xs text-rose-100 hover:bg-rose-500/15 hover:text-white"
-            >
-              Cancel
-              <Square className="h-3.5 w-3.5 fill-current" />
-            </Button>
-          ) : null}
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-label="Clear Quick Chat history"
-            disabled={!quickTask.canClearHistory}
-            onClick={onClearHistory}
-            className="h-8 rounded-full px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100 disabled:text-slate-700 disabled:opacity-100"
-          >
-            Clear
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onOpenMain}
-            className="h-8 rounded-full px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-          >
-            Open Main
-            <ArrowUpRight className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
-
       <ScrollArea className="min-h-0 flex-1">
         {recentMessages.length === 0 ? (
           <div className="flex min-h-full items-center justify-center px-6 py-10 text-center [@media(max-height:620px)]:py-5">
@@ -243,7 +127,7 @@ const QuickTaskActivity = ({
                 <Sparkles className="h-6 w-6" />
               </div>
               <h2 className="text-base font-semibold text-white">
-                Quick tasks, no planning board
+                Quick Chat, no planning board
               </h2>
             </div>
           </div>
@@ -391,7 +275,7 @@ const QuickTaskComposer = ({
             sendQuickTask();
           }
         }}
-        placeholder="Quick task…"
+        placeholder="Quick Chat..."
         className="max-h-32 min-h-16 resize-none overflow-y-auto rounded-2xl border-slate-800/90 bg-slate-900/60 px-4 py-3 text-sm text-slate-100 shadow-inner shadow-black/10 placeholder:text-slate-500 focus-visible:border-sky-400/40 focus-visible:ring-2 focus-visible:ring-sky-500/20 [@media(max-height:620px)]:max-h-20 [@media(max-height:620px)]:min-h-12 [@media(max-height:620px)]:py-2.5"
       />
 
@@ -415,7 +299,7 @@ const QuickTaskComposer = ({
           <Button
             type="button"
             variant="outline"
-            aria-label="Cancel quick task"
+            aria-label="Cancel Quick Chat"
             onClick={quickTaskComposer.onCancel}
             className="h-8 rounded-full border-rose-500/25 bg-rose-500/10 px-4 text-xs text-rose-100 shadow-none hover:bg-rose-500/15 hover:text-white"
           >
@@ -448,6 +332,62 @@ export const AssistantPopupShell = (): JSX.Element => {
     fileDropTarget: "quick-task",
   });
 
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+
+    const currentWindow = getCurrentWindow();
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+    let hideTimeoutId: number | undefined;
+
+    const clearPendingHide = (): void => {
+      if (hideTimeoutId === undefined) {
+        return;
+      }
+
+      window.clearTimeout(hideTimeoutId);
+      hideTimeoutId = undefined;
+    };
+
+    void currentWindow
+      .onFocusChanged((event) => {
+        clearPendingHide();
+
+        if (event.payload) {
+          return;
+        }
+
+        hideTimeoutId = window.setTimeout(() => {
+          hideTimeoutId = undefined;
+
+          if (disposed) {
+            return;
+          }
+
+          void currentWindow.hide().catch(() => undefined);
+        }, QUICK_WINDOW_BLUR_HIDE_DELAY_MS);
+      })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+          return;
+        }
+
+        unsubscribe = unlisten;
+      })
+      .catch((error) => {
+        console.error("Failed to subscribe to Quick Chat focus changes", error);
+      });
+
+    return () => {
+      disposed = true;
+      clearPendingHide();
+      unsubscribe?.();
+    };
+  }, []);
+
   return (
     <Dialog
       open={controller.catalogOpen}
@@ -456,7 +396,7 @@ export const AssistantPopupShell = (): JSX.Element => {
       <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/98 text-slate-100 shadow-none">
         <FileDropOverlay
           active={controller.fileDrop.isActive}
-          label="Attach to quick task"
+          label="Attach to Quick Chat"
           compact
         />
 
@@ -518,7 +458,7 @@ export const AssistantPopupShell = (): JSX.Element => {
               <Sparkles className="h-6 w-6" />
             </div>
             <p className="max-w-sm text-sm leading-6 text-slate-400">
-              Add a model provider key before sending quick tasks.
+              Add a model provider key before using Quick Chat.
             </p>
             <Button
               type="button"
@@ -532,11 +472,6 @@ export const AssistantPopupShell = (): JSX.Element => {
           <>
             <QuickTaskActivity
               quickTask={controller.quickTask}
-              onCancelRunningTask={controller.quickTaskComposer.onCancel}
-              onClearHistory={controller.clearQuickTaskHistory}
-              onOpenMain={() => {
-                void revealMainWindow();
-              }}
             />
 
             <footer className="border-t border-slate-800/80 bg-slate-950/90 px-5 py-4 [@media(max-height:620px)]:px-4 [@media(max-height:620px)]:py-3">
