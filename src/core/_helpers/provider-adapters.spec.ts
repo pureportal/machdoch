@@ -1,8 +1,10 @@
 /// <reference types="vitest/globals" />
 import { getEventListeners } from "node:events";
 import {
+  createAnthropicToolSelection,
   createAnthropicUserContent,
   createGeminiUserMessage,
+  createOpenAIResponseToolSelection,
   createOpenAIUserInput,
   createProviderRequestSignal,
   normalizeGeminiResponse,
@@ -78,6 +80,24 @@ describe("normalizeOpenAIStrictInputSchema", () => {
 
     expect(normalized.required).toEqual([]);
     expect(normalized.properties).toEqual({});
+  });
+});
+
+describe("provider tool selection", () => {
+  it("requires OpenAI Responses to use one tool per turn", () => {
+    expect(createOpenAIResponseToolSelection()).toEqual({
+      parallel_tool_calls: false,
+      tool_choice: "required",
+    });
+  });
+
+  it("requires Anthropic Messages to use one tool per turn", () => {
+    expect(createAnthropicToolSelection()).toEqual({
+      tool_choice: {
+        type: "any",
+        disable_parallel_tool_use: true,
+      },
+    });
   });
 });
 

@@ -190,6 +190,18 @@ const createOpenAITools = (tools: AgentModelToolSpec[]) => {
   }));
 };
 
+export const createOpenAIResponseToolSelection = () => ({
+  parallel_tool_calls: false,
+  tool_choice: "required" as const,
+});
+
+export const createAnthropicToolSelection = () => ({
+  tool_choice: {
+    type: "any" as const,
+    disable_parallel_tool_use: true,
+  },
+});
+
 const hasImageInputs = (
   imageInputs: AgentModelImageInput[] | undefined,
 ): imageInputs is AgentModelImageInput[] => {
@@ -541,7 +553,7 @@ class OpenAIResponsesAdapter implements AgentModelAdapter {
           instructions: params.systemPrompt,
           input: createOpenAIUserInput(params),
           tools: createOpenAITools(params.tools),
-          parallel_tool_calls: false,
+          ...createOpenAIResponseToolSelection(),
         }, {
           timeout: TASK_EXECUTION_TIMEOUT_MS,
           ...(requestSignal ? { signal: requestSignal } : {}),
@@ -574,7 +586,7 @@ class OpenAIResponsesAdapter implements AgentModelAdapter {
             output: createOpenAIFunctionCallOutput(toolResult),
           })),
           tools: createOpenAITools(this.tools),
-          parallel_tool_calls: false,
+          ...createOpenAIResponseToolSelection(),
         }, {
           timeout: TASK_EXECUTION_TIMEOUT_MS,
           ...(requestSignal ? { signal: requestSignal } : {}),
@@ -664,6 +676,7 @@ class AnthropicMessagesAdapter implements AgentModelAdapter {
           system: params.systemPrompt,
           messages: this.messages,
           tools: createAnthropicTools(params.tools),
+          ...createAnthropicToolSelection(),
         }, {
           timeout: TASK_EXECUTION_TIMEOUT_MS,
           ...(requestSignal ? { signal: requestSignal } : {}),
@@ -707,6 +720,7 @@ class AnthropicMessagesAdapter implements AgentModelAdapter {
           system: startParams.systemPrompt,
           messages: this.messages,
           tools: createAnthropicTools(this.tools),
+          ...createAnthropicToolSelection(),
         }, {
           timeout: TASK_EXECUTION_TIMEOUT_MS,
           ...(requestSignal ? { signal: requestSignal } : {}),
