@@ -12,6 +12,7 @@ import {
   loadDesktopLaunchId,
   resolveDroppedPaths,
   runDesktopTask,
+  saveUserSpeechToTextInputDevice,
 } from "./runtime";
 
 describe("desktop runtime fullscreen detection", () => {
@@ -112,6 +113,7 @@ describe("desktop runtime fullscreen detection", () => {
     });
 
     await runDesktopTask(" C:\\Docs ", " Inspect notes ", {
+      imagePaths: [" C:\\Docs\\screen.png "],
       mode: "ask",
       taskId: "task-123",
     });
@@ -120,6 +122,7 @@ describe("desktop runtime fullscreen detection", () => {
       request: {
         workspaceRoot: "C:\\Docs",
         task: "Inspect notes",
+        imagePaths: ["C:\\Docs\\screen.png"],
         mode: "ask",
         taskId: "task-123",
       },
@@ -134,5 +137,23 @@ describe("desktop runtime fullscreen detection", () => {
     expect(invokeMock).toHaveBeenCalledWith("cancel_desktop_task", {
       taskId: "task-123",
     });
+  });
+
+  it("saves the speech input device through the Rust command", async () => {
+    invokeMock.mockResolvedValueOnce({
+      activeProvider: "openai",
+      inputDeviceId: "mic-2",
+      providerAvailability: [],
+    });
+
+    await expect(saveUserSpeechToTextInputDevice(" mic-2 ")).resolves.toEqual({
+      activeProvider: "openai",
+      inputDeviceId: "mic-2",
+      providerAvailability: [],
+    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      "save_user_speech_to_text_input_device",
+      { inputDeviceId: "mic-2" },
+    );
   });
 });

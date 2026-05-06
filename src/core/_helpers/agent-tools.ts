@@ -17,6 +17,7 @@ import { createFilesystemToolDefinitions } from "./filesystem-tool-definitions.j
 import { createGitToolDefinitions } from "./git-tool-definitions.js";
 import { createMemoryToolDefinitions } from "./memory-tool-definitions.js";
 import { createPackageToolDefinitions } from "./package-tool-definitions.js";
+import { createUtilityToolDefinitions } from "./utility-tool-definitions.js";
 import {
   compactTraceText,
   createTextSection,
@@ -127,6 +128,7 @@ export const createToolDefinitions = (
     ...createFilesystemToolDefinitions(),
     ...createGitToolDefinitions(),
     ...createPackageToolDefinitions(),
+    ...createUtilityToolDefinitions(),
     ...createBrowserToolDefinitions(),
     ...createShellNetworkToolDefinitions(config),
     ...createMemoryToolDefinitions(memory),

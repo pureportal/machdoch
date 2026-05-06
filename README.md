@@ -65,6 +65,7 @@ These are the tool categories the runtime can actually execute today.
 | `browser` | ✅ Done | First-class Playwright-backed sessions for installed Chrome/Edge channels, navigation, text inspection, screenshots, selector clicks, text input, and session cleanup. |
 | `git` | ✅ Done | First-class local executor for status, diff summaries, recent log inspection, and local commits. Remote operations still go through shell workflows for now. |
 | `packages` | ✅ Done | First-class Node package backend for manifest inspection, package scripts, npm outdated checks, and dependency installs. Python/Cargo/etc. package flows still go through shell workflows for now. |
+| `utilities` | ✅ Done | Low-risk function calls for generated values such as UUIDs and random strings without shell access. |
 
 ## Install guide
 
@@ -149,6 +150,8 @@ The examples below assume `machdoch` is installed and available on your `PATH`. 
 | Start chat with an explicit task flag | `machdoch --task "summarize this project"` |
 | Run a one-shot task | `machdoch run "summarize this project"` |
 | Run a one-shot task with `--quick` | `machdoch --quick "summarize this project"` |
+| Run with selected context paths | `machdoch --context README.md --context src/core run "summarize these"` |
+| Run with image attachments | `machdoch --image screenshot.png --quick "describe this UI"` |
 | Show CLI help | `machdoch --help` |
 
 Interactive chat supports `/help`, `/exit`, `/quit`, and Ctrl+C.
@@ -196,6 +199,8 @@ For model selection, the effective order is `--model`, then the selected profile
 | Force global memory on for one run | `machdoch --global-memory on run "summarize this project"` |
 | Force global memory off for one run | `machdoch --global-memory off run "summarize this project"` |
 | Use a saved conversation context JSON file | `machdoch --conversation-context-file ./context.json run "continue"` |
+| Add files or folders as task context | `machdoch --context README.md --context src/core --quick "review this context"` |
+| Attach images for a vision-capable model | `machdoch --image ./screen.png --image ./mockup.webp run "compare these"` |
 
 ## Shipped customizations
 
@@ -217,7 +222,7 @@ This repo already includes a working `.machdoch/` example:
 The sample configuration:
 
 - defaults to the `workspace` profile in `ask` mode
-- enables `filesystem`, `shell`, `network`, `browser`, `git`, and `packages`
+- enables `filesystem`, `shell`, `network`, `browser`, `git`, `packages`, and `utilities`
 - includes example profiles `workspace`, `safe-review`, and `local-model`
 - keeps GitHub-style compatibility discovery disabled by default
 

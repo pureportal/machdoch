@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
+import { isAbsolute, resolve } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 import { loadRuntimeConfig } from "../../core/config.js";
@@ -6,13 +7,22 @@ import { discoverCustomizations } from "../../core/customizations.js";
 import { loadUserMemorySettings } from "../../core/env.js";
 import { createTaskExecutionController } from "../../core/execution.js";
 import {
+  createImageInputUnsupportedModelMessage,
+  getImageInputMediaTypeForPath,
+  getSupportedImageInputExtensions,
+  modelSupportsImageInput,
+  providerSupportsImageInputMediaType,
+} from "../../core/model-capabilities.js";
+import {
   MAX_SESSION_MEMORY_ENTRIES,
   mergeConversationMemoryEntries,
 } from "../../core/memory.js";
 import { previewTaskRun } from "../../core/task-runner.js";
 import type {
   ConversationHistoryEntry,
+  AgentModelImageInput,
   ConversationMemoryEntry,
+  RuntimeConfig,
   TaskConversationContext,
   TaskExecutionResult,
   TaskRunPreview,
@@ -31,6 +41,13 @@ const fail = (message: string): never => {
   throw new Error(message);
 };
 
+type CliContextPathKind = "file" | "folder" | "path";
+
+interface CliContextPathEntry {
+  path: string;
+  kind: CliContextPathKind;
+}
+
 export interface InteractiveChatSessionState {
   history: ConversationHistoryEntry[];
   sessionMemory: ConversationMemoryEntry[];
@@ -47,6 +64,151 @@ const loadConversationContextFromFile = async (
   const raw = await readFile(filePath, "utf8");
 
   return JSON.parse(raw) as TaskConversationContext;
+};
+
+const classifyContextPath = async (
+  contextPath: string,
+  workspaceRoot: string,
+): Promise<CliContextPathEntry> => {
+  const normalizedPath = contextPath.trim();
+  const resolvedPath = isAbsolute(normalizedPath)
+    ? normalizedPath
+    : resolve(workspaceRoot, normalizedPath);
+
+  try {
+    const metadata = await stat(resolvedPath);
+
+    if (metadata.isDirectory()) {
+      return { path: normalizedPath, kind: "folder" };
+    }
+
+    if (metadata.isFile()) {
+      return { path: normalizedPath, kind: "file" };
+    }
+  } catch {
+    // Keep unknown paths as explicit references instead of failing before the
+    // executor can decide how to handle them.
+  }
+
+  return { path: normalizedPath, kind: "path" };
+};
+
+export const createContextPathsTaskBlock = async (
+  contextPaths: string[] | undefined,
+  workspaceRoot: string,
+): Promise<string> => {
+  const entries = await Promise.all(
+    (contextPaths ?? [])
+      .map((contextPath) => contextPath.trim())
+      .filter((contextPath) => contextPath.length > 0)
+      .map((contextPath) => classifyContextPath(contextPath, workspaceRoot)),
+  );
+
+  if (entries.length === 0) {
+    return "";
+  }
+
+  if (entries.length === 1) {
+    const [entry] = entries;
+
+    if (!entry) {
+      return "";
+    }
+
+    return `Use this ${entry.kind}: "${entry.path}"`;
+  }
+
+  return [
+    "Use these paths:",
+    ...entries.map((entry) => `- ${entry.kind}: "${entry.path}"`),
+  ].join("\n");
+};
+
+export const applyContextPathsToTask = async (
+  task: string,
+  contextPaths: string[] | undefined,
+  workspaceRoot: string,
+): Promise<string> => {
+  const normalizedTask = task.trim();
+  const contextBlock = await createContextPathsTaskBlock(
+    contextPaths,
+    workspaceRoot,
+  );
+
+  if (!contextBlock) {
+    return normalizedTask;
+  }
+
+  return `${normalizedTask}\n\n${contextBlock}`;
+};
+
+export const createImageInputsFromPaths = async (
+  imagePaths: string[] | undefined,
+  workspaceRoot: string,
+  config: Pick<RuntimeConfig, "model" | "provider">,
+): Promise<AgentModelImageInput[]> => {
+  const normalizedPaths = (imagePaths ?? [])
+    .map((imagePath) => imagePath.trim())
+    .filter((imagePath) => imagePath.length > 0);
+
+  if (normalizedPaths.length === 0) {
+    return [];
+  }
+
+  if (!modelSupportsImageInput(config.provider, config.model)) {
+    fail(createImageInputUnsupportedModelMessage(config.provider, config.model));
+  }
+
+  return await Promise.all(
+    normalizedPaths.map(async (imagePath) => {
+      const resolvedPath = isAbsolute(imagePath)
+        ? imagePath
+        : resolve(workspaceRoot, imagePath);
+      const mediaType =
+        getImageInputMediaTypeForPath(imagePath) ??
+        getImageInputMediaTypeForPath(resolvedPath);
+
+      const imageMediaType: AgentModelImageInput["mediaType"] =
+        mediaType ??
+        fail(
+          `Unsupported image attachment format for \`${imagePath}\`. Supported extensions for provider \`${config.provider}\`: ${getSupportedImageInputExtensions(
+            config.provider,
+          ).join(", ")}.`,
+        );
+
+      if (
+        !providerSupportsImageInputMediaType(config.provider, imageMediaType)
+      ) {
+        const supportedExtensions = getSupportedImageInputExtensions(
+          config.provider,
+        ).join(", ");
+
+        fail(
+          `Unsupported image attachment format for \`${imagePath}\`. Supported extensions for provider \`${config.provider}\`: ${supportedExtensions}.`,
+        );
+      }
+
+      const metadata = await stat(resolvedPath).catch((error: unknown) =>
+        fail(
+          `Unable to read image attachment \`${imagePath}\`: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        ),
+      );
+
+      if (!metadata.isFile()) {
+        fail(`Expected image attachment \`${imagePath}\` to be a file.`);
+      }
+
+      const fileContents = await readFile(resolvedPath);
+
+      return {
+        path: resolvedPath,
+        mediaType: imageMediaType,
+        data: fileContents.toString("base64"),
+      };
+    }),
+  );
 };
 
 export const resolveConversationContext = async (
@@ -139,7 +301,11 @@ export const printTaskPreview = async (
   execution: TaskExecutionResult;
   preview?: TaskRunPreview;
 }> => {
-  const task = args.task ?? fail("No task was provided.");
+  const task = await applyContextPathsToTask(
+    args.task ?? fail("No task was provided."),
+    args.contextPaths,
+    args.workspaceRoot,
+  );
   const conversationContext = await resolveConversationContext(
     args,
     options?.conversationContext,
@@ -151,6 +317,11 @@ export const printTaskPreview = async (
     args.profile,
     args.model,
     args.runtimeProvider,
+  );
+  const imageInputs = await createImageInputsFromPaths(
+    args.imagePaths,
+    args.workspaceRoot,
+    config,
   );
   const customizations = await discoverCustomizations(
     args.workspaceRoot,
@@ -167,6 +338,7 @@ export const printTaskPreview = async (
           }
         : {}),
       ...(conversationContext ? { conversationContext } : {}),
+      ...(imageInputs.length > 0 ? { imageInputs } : {}),
     },
   );
   const detachCancellationHandlers = attachCancellationHandlers(controller, {

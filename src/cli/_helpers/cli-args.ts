@@ -30,6 +30,8 @@ export interface ParsedCliArgs {
   globalMemoryEnabled?: boolean;
   setGlobalMemoryEnabled?: boolean;
   conversationContextFile?: string;
+  contextPaths?: string[];
+  imagePaths?: string[];
   json: boolean;
   verbose: boolean;
   workspaceRoot: string;
@@ -77,6 +79,8 @@ const createParsedArgs = (
     | "globalMemoryEnabled"
     | "setGlobalMemoryEnabled"
     | "conversationContextFile"
+    | "contextPaths"
+    | "imagePaths"
   >,
   options?: {
     mode?: RunMode;
@@ -90,6 +94,8 @@ const createParsedArgs = (
     globalMemoryEnabled?: boolean;
     setGlobalMemoryEnabled?: boolean;
     conversationContextFile?: string;
+    contextPaths?: string[];
+    imagePaths?: string[];
     task?: string;
   },
 ): ParsedCliArgs => {
@@ -116,6 +122,12 @@ const createParsedArgs = (
     ...(options?.conversationContextFile
       ? { conversationContextFile: options.conversationContextFile }
       : {}),
+    ...(options?.contextPaths && options.contextPaths.length > 0
+      ? { contextPaths: options.contextPaths }
+      : {}),
+    ...(options?.imagePaths && options.imagePaths.length > 0
+      ? { imagePaths: options.imagePaths }
+      : {}),
     ...(options?.task ? { task: options.task } : {}),
   };
 };
@@ -132,6 +144,8 @@ const createSharedParsedOptions = (options: {
   sessionMemoryEnabled?: boolean;
   globalMemoryEnabled?: boolean;
   conversationContextFile?: string;
+  contextPaths?: string[];
+  imagePaths?: string[];
 }): Omit<ParsedCliArgs, "command" | "task"> => {
   return {
     json: options.json,
@@ -152,6 +166,12 @@ const createSharedParsedOptions = (options: {
       : {}),
     ...(options.conversationContextFile
       ? { conversationContextFile: options.conversationContextFile }
+      : {}),
+    ...(options.contextPaths && options.contextPaths.length > 0
+      ? { contextPaths: options.contextPaths }
+      : {}),
+    ...(options.imagePaths && options.imagePaths.length > 0
+      ? { imagePaths: options.imagePaths }
       : {}),
   };
 };
@@ -177,6 +197,46 @@ const parseMemoryOverride = (
   }
 
   return value === "on";
+};
+
+const normalizeContextPaths = (
+  values: string[] | undefined,
+): string[] | undefined => {
+  if (values === undefined) {
+    return undefined;
+  }
+
+  const normalizedPaths = values.flatMap((value) => {
+    const normalized = normalizeOptionalString(value);
+
+    return normalized ? [normalized] : [];
+  });
+
+  if (normalizedPaths.length === 0) {
+    fail("Expected --context to be followed by a file or folder path.");
+  }
+
+  return Array.from(new Set(normalizedPaths));
+};
+
+const normalizeImagePaths = (
+  values: string[] | undefined,
+): string[] | undefined => {
+  if (values === undefined) {
+    return undefined;
+  }
+
+  const normalizedPaths = values.flatMap((value) => {
+    const normalized = normalizeOptionalString(value);
+
+    return normalized ? [normalized] : [];
+  });
+
+  if (normalizedPaths.length === 0) {
+    fail("Expected --image to be followed by an image file path.");
+  }
+
+  return Array.from(new Set(normalizedPaths));
 };
 
 const assertNoAdditionalPositionals = (
@@ -230,6 +290,8 @@ Options:
                           Override cross-session global memory for this run or chat session.
   --conversation-context-file <path>
                           Load conversation history and memory context from a JSON file.
+  --context <path>        Add a file or folder path as task context. Repeat for multiple paths.
+  --image <path>          Attach an image for a vision-capable model to read. Repeat for multiple images.
   --profile <name>        Use a named profile from .machdoch/config.json.
   --cwd <path>            Use a different workspace root.
   --json                  Print machine-readable JSON.
@@ -270,6 +332,8 @@ export const parseCliArgs = (
         "session-memory"?: string;
         "global-memory"?: string;
         "conversation-context-file"?: string;
+        context?: string[];
+        image?: string[];
         profile?: string;
         cwd?: string;
       }
@@ -296,6 +360,8 @@ export const parseCliArgs = (
         "session-memory": { type: "string" },
         "global-memory": { type: "string" },
         "conversation-context-file": { type: "string" },
+        context: { type: "string", multiple: true },
+        image: { type: "string", multiple: true },
         profile: { type: "string" },
         cwd: { type: "string" },
       },
@@ -334,6 +400,8 @@ export const parseCliArgs = (
   const rawConversationContextFile = normalizeOptionalString(
     values?.["conversation-context-file"],
   );
+  const rawContextPaths = normalizeContextPaths(values?.context);
+  const rawImagePaths = normalizeImagePaths(values?.image);
   const rawProfile = normalizeOptionalString(values?.profile);
 
   if (values?.mode !== undefined && !rawMode) {
@@ -422,6 +490,14 @@ export const parseCliArgs = (
     fail("Use either positional task text or --task, not both.");
   }
 
+  if (rawDefaultModel && rawContextPaths) {
+    fail("--default-model cannot be combined with --context.");
+  }
+
+  if (rawDefaultModel && rawImagePaths) {
+    fail("--default-model cannot be combined with --image.");
+  }
+
   if (rawDefaultModel && (rawTask || positionals.length > 0)) {
     fail("--default-model cannot be combined with a task.");
   }
@@ -452,7 +528,9 @@ export const parseCliArgs = (
       quickRunRequested ||
       sessionMemoryEnabled !== undefined ||
       globalMemoryEnabled !== undefined ||
-      rawConversationContextFile
+      rawConversationContextFile ||
+      rawContextPaths ||
+      rawImagePaths
     ) {
       fail(
         "--set-api cannot be combined with tasks or runtime override options.",
@@ -496,6 +574,8 @@ export const parseCliArgs = (
     ...(rawConversationContextFile
       ? { conversationContextFile: rawConversationContextFile }
       : {}),
+    ...(rawContextPaths ? { contextPaths: rawContextPaths } : {}),
+    ...(rawImagePaths ? { imagePaths: rawImagePaths } : {}),
   });
 
   if (setGlobalMemoryEnabled !== undefined) {
@@ -510,7 +590,9 @@ export const parseCliArgs = (
       quickRunRequested ||
       sessionMemoryEnabled !== undefined ||
       globalMemoryEnabled !== undefined ||
-      rawConversationContextFile
+      rawConversationContextFile ||
+      rawContextPaths ||
+      rawImagePaths
     ) {
       fail(
         "--set-global-memory cannot be combined with tasks or runtime override options.",

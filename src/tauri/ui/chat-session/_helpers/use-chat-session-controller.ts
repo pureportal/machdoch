@@ -14,6 +14,12 @@ import {
   MAX_SESSION_MEMORY_ENTRIES,
   mergeConversationMemoryEntries,
 } from "../../../../core/memory.js";
+import {
+  createImageInputUnsupportedModelMessage,
+  getImageInputMediaTypeForPath,
+  getSupportedImageInputExtensions,
+  modelSupportsImageInput,
+} from "../../../../core/model-capabilities.js";
 import type { RunMode, TaskExecutionResult } from "../../../../core/types.js";
 import {
   canArchiveSession,
@@ -28,6 +34,8 @@ import {
   isSessionArchived,
   QUICK_VOICE_SESSION_KIND,
   sortSessionsByUpdatedAt,
+  type ChatSessionContextAttachment,
+  type ChatSessionContextAttachmentKind,
   type ChatSessionMessage,
   type ChatSessionRecord,
   type ShellPersistedState,
@@ -75,6 +83,7 @@ import { useChatSessionRuntime } from "./use-chat-session-runtime";
 import { useChatSessionSpeechInput } from "./use-chat-session-speech-input";
 import { useChatSessionShellState } from "./use-chat-session-shell-state";
 import { useChatSessionVoice } from "./use-chat-session-voice";
+import { useSpeechInputDevices } from "./use-speech-input-devices";
 
 const formatTaskExecutionError = (error: unknown): string => {
   const detail = error instanceof Error ? error.message : String(error);
@@ -112,6 +121,8 @@ const clampQuickVoiceMessageLimit = (value: number): number => {
 
 type FileDropTarget = "active-session" | "quick-task";
 
+type AttachmentSelectionKind = "files" | "folders" | "images";
+
 type DialogSelection = string | string[] | null;
 
 const appendDraftBlock = (draft: string, block: string): string => {
@@ -126,41 +137,161 @@ const appendDraftBlock = (draft: string, block: string): string => {
   return normalizedDraft ? `${normalizedDraft}\n\n${normalizedBlock}` : normalizedBlock;
 };
 
-const formatDroppedPathKind = (entry: DroppedPathEntry): string => {
+const normalizeDroppedPathKind = (
+  entry: DroppedPathEntry,
+): ChatSessionContextAttachmentKind => {
   switch (entry.kind) {
+    case "directory":
+      return "directory";
+    case "file":
+      return getImageInputMediaTypeForPath(entry.path) ? "image" : "file";
+    case "other":
+    default:
+      return "other";
+  }
+};
+
+const formatContextAttachmentKind = (
+  attachment: Pick<ChatSessionContextAttachment, "kind">,
+): string => {
+  switch (attachment.kind) {
     case "directory":
       return "folder";
     case "file":
       return "file";
+    case "image":
+      return "image";
     case "other":
     default:
       return "path";
   }
 };
 
-const createDroppedPathsDraftBlock = (
-  entries: DroppedPathEntry[],
+const createContextAttachment = (
+  entry: DroppedPathEntry,
+): ChatSessionContextAttachment => {
+  const parent = entry.parent?.trim();
+
+  return {
+    id: crypto.randomUUID(),
+    path: entry.path,
+    kind: normalizeDroppedPathKind(entry),
+    name: entry.name,
+    ...(parent ? { parent } : {}),
+  };
+};
+
+const mergeContextAttachments = (
+  existing: ChatSessionContextAttachment[],
+  incoming: ChatSessionContextAttachment[],
+): ChatSessionContextAttachment[] => {
+  const seenPaths = new Set(
+    existing.map((attachment) => attachment.path.toLowerCase()),
+  );
+  const merged = [...existing];
+
+  for (const attachment of incoming) {
+    const dedupeKey = attachment.path.toLowerCase();
+
+    if (seenPaths.has(dedupeKey)) {
+      continue;
+    }
+
+    seenPaths.add(dedupeKey);
+    merged.push(attachment);
+  }
+
+  return merged;
+};
+
+const createContextAttachmentsTaskBlock = (
+  attachments: ChatSessionContextAttachment[],
 ): string => {
-  if (entries.length === 0) {
+  if (attachments.length === 0) {
     return "";
   }
 
-  if (entries.length === 1) {
-    const [entry] = entries;
+  if (attachments.length === 1) {
+    const [attachment] = attachments;
 
-    if (!entry) {
+    if (!attachment) {
       return "";
     }
 
-    return `Use this ${formatDroppedPathKind(entry)}: "${entry.path}"`;
+    return `Use this ${formatContextAttachmentKind(attachment)}: "${attachment.path}"`;
   }
 
   return [
     "Use these paths:",
-    ...entries.map(
-      (entry) => `- ${formatDroppedPathKind(entry)}: "${entry.path}"`,
+    ...attachments.map(
+      (attachment) =>
+        `- ${formatContextAttachmentKind(attachment)}: "${attachment.path}"`,
     ),
   ].join("\n");
+};
+
+const appendContextAttachmentsToTask = (
+  task: string,
+  attachments: ChatSessionContextAttachment[],
+): string => {
+  return appendDraftBlock(task, createContextAttachmentsTaskBlock(attachments));
+};
+
+const getImageAttachmentPaths = (
+  attachments: ChatSessionContextAttachment[],
+): string[] => {
+  return attachments
+    .filter((attachment) => attachment.kind === "image")
+    .map((attachment) => attachment.path);
+};
+
+const areContextAttachmentsEqual = (
+  left: ChatSessionContextAttachment[],
+  right: ChatSessionContextAttachment[],
+): boolean => {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((attachment, index) => {
+    const otherAttachment = right[index];
+
+    return (
+      otherAttachment !== undefined &&
+      attachment.path === otherAttachment.path &&
+      attachment.kind === otherAttachment.kind
+    );
+  });
+};
+
+const createPromptHistoryUpdate = (
+  session: Pick<ChatSessionRecord, "promptHistory" | "promptContextHistory">,
+  task: string,
+  attachments: ChatSessionContextAttachment[],
+): Pick<ChatSessionRecord, "promptHistory" | "promptContextHistory"> => {
+  const alignedPromptContextHistory = session.promptHistory.map(
+    (_entry, index) => session.promptContextHistory[index] ?? [],
+  );
+  const latestTask = session.promptHistory.at(-1);
+  const latestAttachments = alignedPromptContextHistory.at(-1) ?? [];
+
+  if (
+    latestTask === task &&
+    areContextAttachmentsEqual(latestAttachments, attachments)
+  ) {
+    return {
+      promptHistory: session.promptHistory,
+      promptContextHistory: alignedPromptContextHistory,
+    };
+  }
+
+  return {
+    promptHistory: [...session.promptHistory, task].slice(-40),
+    promptContextHistory: [
+      ...alignedPromptContextHistory,
+      attachments,
+    ].slice(-40),
+  };
 };
 
 const normalizeDialogSelection = (selection: DialogSelection): string[] => {
@@ -187,6 +318,12 @@ export const useChatSessionController = (
   const activeDesktopTasksRef = useRef<Map<string, string>>(new Map());
   const ignoredDesktopTaskIdsRef = useRef<Set<string>>(new Set());
   const [quickTaskDraft, setQuickTaskDraft] = useState("");
+  const [quickTaskContextAttachments, setQuickTaskContextAttachments] =
+    useState<ChatSessionContextAttachment[]>([]);
+  const [
+    draftContextAttachmentsBeforeHistory,
+    setDraftContextAttachmentsBeforeHistory,
+  ] = useState<ChatSessionContextAttachment[]>([]);
   const [isFileDropActive, setIsFileDropActive] = useState(false);
   const runtime = useChatSessionRuntime({
     catalogOpen: state.catalogOpen,
@@ -242,6 +379,9 @@ export const useChatSessionController = (
     settings: runtime.userSpeechToTextSettings,
     onTranscript: handleSpeechTranscript,
   });
+  const speechInputDevices = useSpeechInputDevices(
+    state.catalogOpen && state.settingsSection === "voice",
+  );
   const isDesktop = isTauri();
   const providerChooserState = createProviderChooserState({
     isDesktop,
@@ -269,10 +409,26 @@ export const useChatSessionController = (
   const defaultRunMode = runtime.runtimeSnapshot?.mode ?? "ask";
   const isUsingWorkspaceDefaultMode = !state.activeSession.mode;
   const hasActiveWorkspace = state.activeSession.workspace !== null;
+  const activeSessionImageInputSupported = modelSupportsImageInput(
+    state.activeSession.provider,
+    state.activeSession.model,
+  );
+  const activeSessionImageAttachmentPaths = getImageAttachmentPaths(
+    state.activeSession.draftContextAttachments,
+  );
+  const activeSessionImageInputError =
+    activeSessionImageAttachmentPaths.length > 0 &&
+    !activeSessionImageInputSupported
+      ? createImageInputUnsupportedModelMessage(
+          state.activeSession.provider,
+          state.activeSession.model,
+        )
+      : null;
   const canSendMessage =
     Boolean(state.activeSession.draft.trim()) &&
     !speechInput.recording &&
-    !speechInput.transcribing;
+    !speechInput.transcribing &&
+    !activeSessionImageInputError;
   const uiControlAvailability = runtime.runtimeSnapshot?.uiControl;
   const isUiControlAvailable = uiControlAvailability?.available === true;
   const uiControlDescription = isUiControlAvailable
@@ -297,6 +453,24 @@ export const useChatSessionController = (
   const quickTaskProvider =
     quickTaskSession?.provider ?? state.activeSession.provider;
   const quickTaskModel = quickTaskSession?.model ?? state.activeSession.model;
+  const quickTaskImageInputSupported = modelSupportsImageInput(
+    quickTaskProvider,
+    quickTaskModel,
+  );
+  const quickTaskImageAttachmentPaths = getImageAttachmentPaths(
+    quickTaskContextAttachments,
+  );
+  const quickTaskImageInputError =
+    quickTaskImageAttachmentPaths.length > 0 && !quickTaskImageInputSupported
+      ? createImageInputUnsupportedModelMessage(quickTaskProvider, quickTaskModel)
+      : null;
+  const quickTaskCanSend =
+    Boolean(quickTaskDraft.trim()) &&
+    !quickTaskImageInputError &&
+    !(
+      quickTaskSession &&
+      getSessionOverviewStatus(quickTaskSession) === "running"
+    );
   const aiContextMessageLimit = clampAiContextMessageLimit(
     runtime.userDesktopSettings.aiContextMaxMessages,
   );
@@ -845,6 +1019,7 @@ export const useChatSessionController = (
   const handleDraftChange = (value: string): void => {
     state.setPromptHistoryIndex(null);
     state.setDraftBeforeHistory("");
+    setDraftContextAttachmentsBeforeHistory([]);
     state.setDraftValue(value);
   };
 
@@ -864,16 +1039,30 @@ export const useChatSessionController = (
     if (event.key === "ArrowUp") {
       if (state.promptHistoryIndex === null) {
         state.setDraftBeforeHistory(state.activeSession.draft);
+        setDraftContextAttachmentsBeforeHistory(
+          state.activeSession.draftContextAttachments,
+        );
 
         const nextIndex = state.activeSession.promptHistory.length - 1;
         state.setPromptHistoryIndex(nextIndex);
         state.setDraftValue(state.activeSession.promptHistory[nextIndex]);
+        state.updateActiveSession((session) => ({
+          ...session,
+          draftContextAttachments:
+            session.promptContextHistory[nextIndex] ?? [],
+          updatedAt: Date.now(),
+        }));
         return;
       }
 
       const nextIndex = Math.max(state.promptHistoryIndex - 1, 0);
       state.setPromptHistoryIndex(nextIndex);
       state.setDraftValue(state.activeSession.promptHistory[nextIndex]);
+      state.updateActiveSession((session) => ({
+        ...session,
+        draftContextAttachments: session.promptContextHistory[nextIndex] ?? [],
+        updatedAt: Date.now(),
+      }));
       return;
     }
 
@@ -887,11 +1076,22 @@ export const useChatSessionController = (
       state.setPromptHistoryIndex(null);
       state.setDraftValue(state.draftBeforeHistory);
       state.setDraftBeforeHistory("");
+      state.updateActiveSession((session) => ({
+        ...session,
+        draftContextAttachments: draftContextAttachmentsBeforeHistory,
+        updatedAt: Date.now(),
+      }));
+      setDraftContextAttachmentsBeforeHistory([]);
       return;
     }
 
     state.setPromptHistoryIndex(nextIndex);
     state.setDraftValue(state.activeSession.promptHistory[nextIndex]);
+    state.updateActiveSession((session) => ({
+      ...session,
+      draftContextAttachments: session.promptContextHistory[nextIndex] ?? [],
+      updatedAt: Date.now(),
+    }));
   };
 
   const handleOpenWorkspaceFile = (relativePath: string): void => {
@@ -1107,14 +1307,16 @@ export const useChatSessionController = (
   const handleAttachPaths = useCallback(
     async (paths: string[], target: FileDropTarget): Promise<void> => {
       const resolution = await resolveDroppedPaths(paths);
-      const draftBlock = createDroppedPathsDraftBlock(resolution.entries);
+      const attachments = resolution.entries.map(createContextAttachment);
 
-      if (!draftBlock) {
+      if (attachments.length === 0) {
         return;
       }
 
       if (target === "quick-task") {
-        setQuickTaskDraft((draft) => appendDraftBlock(draft, draftBlock));
+        setQuickTaskContextAttachments((currentAttachments) =>
+          mergeContextAttachments(currentAttachments, attachments),
+        );
 
         if (resolution.workspaceRoot) {
           updateQuickTaskSession((session) => ({
@@ -1129,7 +1331,15 @@ export const useChatSessionController = (
 
       state.setPromptHistoryIndex(null);
       state.setDraftBeforeHistory("");
-      state.setDraftValue(appendDraftBlock(state.activeSession.draft, draftBlock));
+      setDraftContextAttachmentsBeforeHistory([]);
+      state.updateActiveSession((session) => ({
+        ...session,
+        draftContextAttachments: mergeContextAttachments(
+          session.draftContextAttachments,
+          attachments,
+        ),
+        updatedAt: Date.now(),
+      }));
 
       if (resolution.workspaceRoot) {
         state.updateActiveSession((session) => ({
@@ -1140,9 +1350,7 @@ export const useChatSessionController = (
       }
     },
     [
-      state.activeSession.draft,
       state.setDraftBeforeHistory,
-      state.setDraftValue,
       state.setPromptHistoryIndex,
       state.updateActiveSession,
       updateQuickTaskSession,
@@ -1150,25 +1358,136 @@ export const useChatSessionController = (
   );
 
   const handleSelectAttachments = useCallback(
-    async (target: FileDropTarget): Promise<void> => {
-      if (!isDesktop) {
-        await handleAttachPaths(["/mock/document.txt"], target);
+    async (
+      target: FileDropTarget,
+      selectionKind: AttachmentSelectionKind,
+    ): Promise<void> => {
+      const targetProvider =
+        target === "quick-task"
+          ? quickTaskProvider
+          : state.activeSession.provider;
+      const targetModel =
+        target === "quick-task" ? quickTaskModel : state.activeSession.model;
+
+      if (
+        selectionKind === "images" &&
+        !modelSupportsImageInput(targetProvider, targetModel)
+      ) {
+        console.error(
+          createImageInputUnsupportedModelMessage(targetProvider, targetModel),
+        );
         return;
       }
 
+      if (!isDesktop) {
+        await handleAttachPaths(
+          [
+            selectionKind === "folders"
+              ? "/mock/context-folder"
+              : selectionKind === "images"
+                ? "/mock/screenshot.png"
+                : "/mock/document.txt",
+          ],
+          target,
+        );
+        return;
+      }
+
+      const selectingFolders = selectionKind === "folders";
+      const selectingImages = selectionKind === "images";
+
       try {
         const selected = (await open({
-          directory: false,
+          directory: selectingFolders,
           multiple: true,
-          title: "Select Documents",
+          title: selectingFolders
+            ? "Add Folders as Context"
+            : selectingImages
+              ? "Add Images as Context"
+              : "Add Files as Context",
+          ...(selectingImages
+            ? {
+                filters: [
+                  {
+                    name: "Images",
+                    extensions: getSupportedImageInputExtensions(
+                      targetProvider,
+                    ),
+                  },
+                ],
+              }
+            : {}),
         })) as DialogSelection;
 
         await handleAttachPaths(normalizeDialogSelection(selected), target);
       } catch (error) {
-        console.error("Failed to select document attachments", error);
+        console.error("Failed to select context attachments", error);
       }
     },
-    [handleAttachPaths, isDesktop],
+    [
+      handleAttachPaths,
+      isDesktop,
+      quickTaskModel,
+      quickTaskProvider,
+      state.activeSession.model,
+      state.activeSession.provider,
+    ],
+  );
+
+  const handleRemoveContextAttachment = useCallback(
+    (target: FileDropTarget, attachmentId: string): void => {
+      if (target === "quick-task") {
+        setQuickTaskContextAttachments((attachments) =>
+          attachments.filter((attachment) => attachment.id !== attachmentId),
+        );
+        return;
+      }
+
+      state.setPromptHistoryIndex(null);
+      state.setDraftBeforeHistory("");
+      setDraftContextAttachmentsBeforeHistory([]);
+      state.updateActiveSession((session) => ({
+        ...session,
+        draftContextAttachments: session.draftContextAttachments.filter(
+          (attachment) => attachment.id !== attachmentId,
+        ),
+        updatedAt: Date.now(),
+      }));
+    },
+    [
+      state.setDraftBeforeHistory,
+      state.setPromptHistoryIndex,
+      state.updateActiveSession,
+    ],
+  );
+
+  const handleClearContextAttachments = useCallback(
+    (target: FileDropTarget): void => {
+      if (target === "quick-task") {
+        setQuickTaskContextAttachments([]);
+        return;
+      }
+
+      state.setPromptHistoryIndex(null);
+      state.setDraftBeforeHistory("");
+      setDraftContextAttachmentsBeforeHistory([]);
+      state.updateActiveSession((session) => {
+        if (session.draftContextAttachments.length === 0) {
+          return session;
+        }
+
+        return {
+          ...session,
+          draftContextAttachments: [],
+          updatedAt: Date.now(),
+        };
+      });
+    },
+    [
+      state.setDraftBeforeHistory,
+      state.setPromptHistoryIndex,
+      state.updateActiveSession,
+    ],
   );
 
   useEffect(() => {
@@ -1221,6 +1540,7 @@ export const useChatSessionController = (
     (options: {
       sessionSnapshot: ChatSessionRecord;
       task: string;
+      contextAttachments: ChatSessionContextAttachment[];
       clearDraft: boolean;
       activateSession: boolean;
     }): void => {
@@ -1230,6 +1550,12 @@ export const useChatSessionController = (
         return;
       }
 
+      const contextAttachments = options.contextAttachments;
+      const executionTask = appendContextAttachmentsToTask(
+        normalizedTask,
+        contextAttachments,
+      );
+      const imagePaths = getImageAttachmentPaths(contextAttachments);
       const { sessionSnapshot } = options;
       const isQuickTaskSessionSnapshot = isQuickVoiceSession(sessionSnapshot);
       const taskId = crypto.randomUUID();
@@ -1243,8 +1569,9 @@ export const useChatSessionController = (
         uiControlAvailability,
         aiContextMessageLimit,
       );
-      const taskRunPromise = runDesktopTask(sessionWorkspace, normalizedTask, {
+      const taskRunPromise = runDesktopTask(sessionWorkspace, executionTask, {
         conversationContext: taskConversationContext,
+        ...(imagePaths.length > 0 ? { imagePaths } : {}),
         model: sessionSnapshot.model,
         ...(sessionProfile ? { profile: sessionProfile } : {}),
         provider: sessionSnapshot.provider,
@@ -1293,18 +1620,20 @@ export const useChatSessionController = (
           sessionFound = true;
 
           const sessionWithoutArchive = removeSessionArchiveFlag(session);
-          const nextPromptHistory =
-            sessionWithoutArchive.promptHistory.at(-1) === normalizedTask
-              ? sessionWithoutArchive.promptHistory
-              : [...sessionWithoutArchive.promptHistory, normalizedTask].slice(
-                  -40,
-                );
+          const nextPromptHistory = createPromptHistoryUpdate(
+            sessionWithoutArchive,
+            normalizedTask,
+            contextAttachments,
+          );
           const nextSession: ChatSessionRecord = {
             ...sessionWithoutArchive,
             workspace: sessionSnapshot.workspace,
             provider: sessionSnapshot.provider,
             model: sessionSnapshot.model,
             draft: options.clearDraft ? "" : sessionWithoutArchive.draft,
+            draftContextAttachments: options.clearDraft
+              ? []
+              : sessionWithoutArchive.draftContextAttachments,
             sessionMemoryEnabled: isQuickTaskSessionSnapshot
               ? false
               : sessionSnapshot.sessionMemoryEnabled,
@@ -1320,11 +1649,12 @@ export const useChatSessionController = (
                 id: crypto.randomUUID(),
                 taskId,
                 role: "user",
-                content: normalizedTask,
+                content: executionTask,
                 createdAt: Date.now(),
               },
             ],
-            promptHistory: nextPromptHistory,
+            promptHistory: nextPromptHistory.promptHistory,
+            promptContextHistory: nextPromptHistory.promptContextHistory,
           };
 
           if (sessionSnapshot.profile) {
@@ -1355,13 +1685,17 @@ export const useChatSessionController = (
         });
 
         if (!sessionFound) {
-          const nextPromptHistory =
-            sessionSnapshot.promptHistory.at(-1) === normalizedTask
-              ? sessionSnapshot.promptHistory
-              : [...sessionSnapshot.promptHistory, normalizedTask].slice(-40);
+          const nextPromptHistory = createPromptHistoryUpdate(
+            sessionSnapshot,
+            normalizedTask,
+            contextAttachments,
+          );
           const insertedSession = applySessionMessageLimit({
             ...sessionSnapshot,
             draft: options.clearDraft ? "" : sessionSnapshot.draft,
+            draftContextAttachments: options.clearDraft
+              ? []
+              : sessionSnapshot.draftContextAttachments,
             updatedAt: nextUpdatedAt,
             messages: [
               ...sessionSnapshot.messages,
@@ -1369,11 +1703,12 @@ export const useChatSessionController = (
                 id: crypto.randomUUID(),
                 taskId,
                 role: "user",
-                content: normalizedTask,
+                content: executionTask,
                 createdAt: Date.now(),
               },
             ],
-            promptHistory: nextPromptHistory,
+            promptHistory: nextPromptHistory.promptHistory,
+            promptContextHistory: nextPromptHistory.promptContextHistory,
           });
 
           return {
@@ -1497,7 +1832,10 @@ export const useChatSessionController = (
   );
 
   const submitQuickVoiceCommand = useCallback(
-    (transcript: string): void => {
+    (
+      transcript: string,
+      contextAttachments: ChatSessionContextAttachment[] = [],
+    ): void => {
       const normalizedTranscript = transcript.trim();
 
       if (!normalizedTranscript) {
@@ -1507,6 +1845,7 @@ export const useChatSessionController = (
       submitTaskToSession({
         sessionSnapshot: buildQuickVoiceSessionSnapshot(),
         task: normalizedTranscript,
+        contextAttachments,
         clearDraft: true,
         activateSession: false,
       });
@@ -1517,13 +1856,19 @@ export const useChatSessionController = (
   const handleQuickTaskDraftSend = useCallback((): void => {
     const normalizedDraft = quickTaskDraft.trim();
 
-    if (!normalizedDraft) {
+    if (!normalizedDraft || quickTaskImageInputError) {
       return;
     }
 
-    submitQuickVoiceCommand(normalizedDraft);
+    submitQuickVoiceCommand(normalizedDraft, quickTaskContextAttachments);
     setQuickTaskDraft("");
-  }, [quickTaskDraft, submitQuickVoiceCommand]);
+    setQuickTaskContextAttachments([]);
+  }, [
+    quickTaskContextAttachments,
+    quickTaskDraft,
+    quickTaskImageInputError,
+    submitQuickVoiceCommand,
+  ]);
 
   const handleQuickTaskCancel = useCallback((): void => {
     if (!quickTaskSession) {
@@ -1575,6 +1920,7 @@ export const useChatSessionController = (
         const hasHistory =
           session.messages.length > 0 ||
           session.promptHistory.length > 0 ||
+          session.promptContextHistory.length > 0 ||
           session.sessionMemory.length > 0;
 
         if (!hasHistory) {
@@ -1587,6 +1933,7 @@ export const useChatSessionController = (
           ...session,
           messages: [],
           promptHistory: [],
+          promptContextHistory: [],
           sessionMemoryEnabled: false,
           sessionMemory: [],
           updatedAt: nextUpdatedAt,
@@ -1607,13 +1954,14 @@ export const useChatSessionController = (
   const handleSend = (): void => {
     const task = state.activeSession.draft.trim();
 
-    if (!task) {
+    if (!task || activeSessionImageInputError) {
       return;
     }
 
     submitTaskToSession({
       sessionSnapshot: state.activeSession,
       task,
+      contextAttachments: state.activeSession.draftContextAttachments,
       clearDraft: true,
       activateSession: true,
     });
@@ -1626,6 +1974,15 @@ export const useChatSessionController = (
     fileDrop: {
       isActive: isFileDropActive,
     },
+    voiceInputOverlay: {
+      visible: speechInput.recording || speechInput.transcribing,
+      recording: speechInput.recording,
+      transcribing: speechInput.transcribing,
+      level: speechInput.level,
+      statusText: speechInput.statusText,
+      statusTone: speechInput.statusTone,
+      onAction: handleSpeechInputAction,
+    },
     quickTask: {
       session: quickTaskSession,
       visibleMessages: quickTaskVisibleMessages,
@@ -1633,6 +1990,7 @@ export const useChatSessionController = (
         quickTaskSession &&
           (quickTaskSession.messages.length > 0 ||
             quickTaskSession.promptHistory.length > 0 ||
+            quickTaskSession.promptContextHistory.length > 0 ||
             quickTaskSession.sessionMemory.length > 0),
       ),
       status: quickTaskSession
@@ -1684,6 +2042,7 @@ export const useChatSessionController = (
         isQuickVoiceSession(state.activeSession) &&
         (state.activeSession.messages.length > 0 ||
           state.activeSession.promptHistory.length > 0 ||
+          state.activeSession.promptContextHistory.length > 0 ||
           state.activeSession.sessionMemory.length > 0),
       activeRunModeLabel: activeRunModeMeta.label,
       activeRunModeBadgeClassName: activeRunModeMeta.badgeClassName,
@@ -1708,6 +2067,8 @@ export const useChatSessionController = (
       visibleMessages: state.visibleMessages,
       aiContextMessageLimit,
       bottomRef: state.bottomRef,
+      showScrollToNewestButton: state.showScrollToNewestButton,
+      onScrollToNewest: state.scrollToNewest,
       onOpenWorkspaceFile: handleOpenWorkspaceFile,
       voicePlayback: {
         supported: voice.supported,
@@ -1731,6 +2092,14 @@ export const useChatSessionController = (
       isGlobalMemoryAvailable: memorySummaryState.isGlobalMemoryAvailable,
       isGlobalMemoryActive: memorySummaryState.isGlobalMemoryActive,
       isUiControlAvailable,
+      contextAttachments: state.activeSession.draftContextAttachments,
+      imageInputSupported: activeSessionImageInputSupported,
+      imageInputDisabledReason: activeSessionImageInputSupported
+        ? null
+        : createImageInputUnsupportedModelMessage(
+            state.activeSession.provider,
+            state.activeSession.model,
+          ),
       speechInput: {
         browserSupported: speechInput.browserSupported,
         enabled: speechInput.enabled,
@@ -1741,12 +2110,23 @@ export const useChatSessionController = (
         onAction: handleSpeechInputAction,
       },
       canSendMessage,
+      sendDisabledReason: activeSessionImageInputError,
       onSelectFolder: handleSelectFolder,
       onSessionModelSelection: handleSessionModelSelection,
       onSessionModeSelection: handleSessionModeSelection,
       onSessionMemoryEnabledChange: handleSessionMemoryEnabledChange,
       onUseGlobalMemoryChange: handleUseGlobalMemoryChange,
       onUiControlEnabledChange: handleUiControlEnabledChange,
+      onSelectContextFiles: () =>
+        handleSelectAttachments("active-session", "files"),
+      onSelectContextFolders: () =>
+        handleSelectAttachments("active-session", "folders"),
+      onSelectContextImages: () =>
+        handleSelectAttachments("active-session", "images"),
+      onRemoveContextAttachment: (attachmentId: string) =>
+        handleRemoveContextAttachment("active-session", attachmentId),
+      onClearContextAttachments: () =>
+        handleClearContextAttachments("active-session"),
       onDraftChange: handleDraftChange,
       onComposerHistoryNavigation: handleComposerHistoryNavigation,
       onSend: handleSend,
@@ -1763,12 +2143,31 @@ export const useChatSessionController = (
       globalMemoryEnabled: quickTaskGlobalMemoryEnabled,
       uiControlAvailable: isUiControlAvailable,
       uiControlEnabled: isUiControlAvailable && quickTaskUiControlEnabled,
+      contextAttachments: quickTaskContextAttachments,
+      imageInputSupported: quickTaskImageInputSupported,
+      imageInputDisabledReason: quickTaskImageInputSupported
+        ? null
+        : createImageInputUnsupportedModelMessage(
+            quickTaskProvider,
+            quickTaskModel,
+          ),
+      canSend: quickTaskCanSend,
+      sendDisabledReason: quickTaskImageInputError,
       isExecuting: quickTaskSession
         ? getSessionOverviewStatus(quickTaskSession) === "running"
         : false,
       onModelSelection: handleQuickTaskModelSelection,
       onAutopilotChange: handleQuickTaskAutopilotChange,
-      onSelectAttachments: () => handleSelectAttachments("quick-task"),
+      onSelectContextFiles: () =>
+        handleSelectAttachments("quick-task", "files"),
+      onSelectContextFolders: () =>
+        handleSelectAttachments("quick-task", "folders"),
+      onSelectContextImages: () =>
+        handleSelectAttachments("quick-task", "images"),
+      onRemoveContextAttachment: (attachmentId: string) =>
+        handleRemoveContextAttachment("quick-task", attachmentId),
+      onClearContextAttachments: () =>
+        handleClearContextAttachments("quick-task"),
       onGlobalMemoryChange: handleQuickTaskGlobalMemoryChange,
       onUiControlChange: handleQuickTaskUiControlChange,
       onDraftChange: setQuickTaskDraft,
@@ -1822,6 +2221,14 @@ export const useChatSessionController = (
         speechToTextProviderAvailability:
           runtime.userSpeechToTextSettings.providerAvailability,
         speechToTextProviderSaving: runtime.speechToTextSetupSaving,
+        speechInputDeviceId: runtime.userSpeechToTextSettings.inputDeviceId,
+        speechInputDevicesSupported: speechInputDevices.supported,
+        speechInputDevicesRefreshing: speechInputDevices.refreshing,
+        speechInputDeviceSaving: runtime.speechInputDeviceSaving,
+        speechInputDevices: speechInputDevices.devices,
+        speechInputDeviceMessage: speechInputDevices.errorText
+          ? { tone: "error", text: speechInputDevices.errorText }
+          : null,
         speechToTextProviderMessage: runtime.speechToTextSetupMessage,
         aiProvider: runtime.userVoiceSettings.activeProvider,
         aiProviderAvailability: runtime.userVoiceSettings.providerAvailability,
@@ -1832,6 +2239,8 @@ export const useChatSessionController = (
         voiceOptions: voice.voiceOptions,
         onSpeechToTextProviderChange:
           runtime.handleSpeechToTextActiveProviderSave,
+        onSpeechInputDeviceChange: runtime.handleSpeechToTextInputDeviceSave,
+        onRefreshSpeechInputDevices: speechInputDevices.refresh,
         onAiProviderChange: runtime.handleVoiceActiveProviderSave,
         onAutoSpeakResponsesChange: voice.setAutoSpeakResponses,
         onPreferredVoiceChange: voice.setPreferredVoiceURI,

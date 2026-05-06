@@ -1,4 +1,4 @@
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   currentMonitor,
   cursorPosition,
@@ -307,6 +307,16 @@ export const toggleAssistantPopup = async (
 };
 
 export const revealMainWindow = async (): Promise<void> => {
+  if (isTauri()) {
+    try {
+      await invoke("reveal_main_window");
+    } catch (error) {
+      console.error("Failed to reveal the main window", error);
+    }
+
+    return;
+  }
+
   const mainWindow = await getWindowByLabel(MAIN_WINDOW_LABEL);
 
   if (!mainWindow) {

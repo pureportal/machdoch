@@ -102,6 +102,73 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("parses repeated task context paths for quick one-shot invocations", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--quick",
+          "--context",
+          "README.md",
+          "--context",
+          "src/core",
+          "--task",
+          "summarize the selected context",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "run",
+      task: "summarize the selected context",
+      contextPaths: ["README.md", "src/core"],
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
+  it("parses repeated image attachments for quick one-shot invocations", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--quick",
+          "--image",
+          "screen.png",
+          "--image",
+          "mockup.webp",
+          "--task",
+          "describe the screenshots",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "run",
+      task: "describe the screenshots",
+      imagePaths: ["screen.png", "mockup.webp"],
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
+  it("parses task context paths on explicit run commands", () => {
+    expect(
+      parseCliArgs(["run", "--context", "src/core", "review", "the code"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "run",
+      task: "review the code",
+      contextPaths: ["src/core"],
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
   it("supports desktop bridge JSON one-shot invocations with --task", () => {
     expect(
       parseCliArgs(
@@ -135,6 +202,20 @@ describe("parseCliArgs", () => {
     ).toEqual({
       command: "chat",
       task: "create a dockerfile for nginx",
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
+  it("allows context paths to seed interactive chat without an initial task", () => {
+    expect(
+      parseCliArgs(["--context", "docs/brief.md"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "chat",
+      contextPaths: ["docs/brief.md"],
       json: false,
       verbose: false,
       workspaceRoot: "C:/workspace",
@@ -353,6 +434,12 @@ describe("parseCliArgs", () => {
     ).toThrow(
       "Expected --global-memory to be followed by inherit, on, or off.",
     );
+
+    expect(() =>
+      parseCliArgs(["--image", ""], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("Expected --image to be followed by an image file path.");
   });
 
   it("rejects extra positionals for summary commands instead of silently ignoring them", () => {

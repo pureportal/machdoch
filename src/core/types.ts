@@ -6,7 +6,8 @@ export type ToolName =
   | "network"
   | "browser"
   | "git"
-  | "packages";
+  | "packages"
+  | "utilities";
 
 export type ToolRiskLevel = "low" | "medium" | "high";
 
@@ -229,6 +230,21 @@ export interface AgentModelToolResult {
   isError?: boolean;
 }
 
+export type AgentModelImageMediaType =
+  | "image/png"
+  | "image/jpeg"
+  | "image/webp"
+  | "image/gif"
+  | "image/heic"
+  | "image/heif";
+
+export interface AgentModelImageInput {
+  path: string;
+  mediaType: AgentModelImageMediaType;
+  data: string;
+  detail?: "low" | "high" | "auto" | "original";
+}
+
 export interface AgentModelTurn {
   text: string;
   toolCalls: AgentModelToolCall[];
@@ -239,6 +255,7 @@ export interface AgentModelStartParams {
   model: string;
   systemPrompt: string;
   userPrompt: string;
+  imageInputs?: AgentModelImageInput[];
   tools: AgentModelToolSpec[];
   signal?: AbortSignal | undefined;
 }
@@ -389,6 +406,7 @@ export interface TaskExecutionOptions {
   modelAdapter?: AgentModelAdapter;
   monitorModelAdapter?: AgentModelAdapter;
   conversationContext?: TaskConversationContext;
+  imageInputs?: AgentModelImageInput[];
   maxDurationMs?: number;
 }
 

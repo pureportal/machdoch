@@ -4,6 +4,7 @@ import { useChatSessionController } from "./chat-session/_helpers/use-chat-sessi
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { ProviderEmptyState } from "./chat-session/components/provider-empty-state";
+import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
 import { SessionComposer } from "./chat-session/components/session-composer";
 import { SessionHeader } from "./chat-session/components/session-header";
 import { SessionsSidebar } from "./chat-session/components/sessions-sidebar";
@@ -12,6 +13,7 @@ import { Button } from "./components/ui/button";
 import { Dialog } from "./components/ui/dialog";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { Separator } from "./components/ui/separator";
+import { VoiceInputOverlay } from "./components/voice-input-overlay";
 import {
   Tooltip,
   TooltipContent,
@@ -45,6 +47,25 @@ export const ChatSession = (): JSX.Element => {
             active={controller.fileDrop.isActive}
             label="Attach to task"
           />
+
+          {controller.voiceInputOverlay.visible ? (
+            <div className="absolute inset-0 z-50 overflow-hidden bg-slate-950/96 backdrop-blur-xl">
+              <VoiceInputOverlay
+                title="Voice input"
+                recording={controller.voiceInputOverlay.recording}
+                transcribing={controller.voiceInputOverlay.transcribing}
+                level={controller.voiceInputOverlay.level}
+                statusText={controller.voiceInputOverlay.statusText}
+                statusTone={controller.voiceInputOverlay.statusTone}
+                primaryActionDisabled={
+                  controller.voiceInputOverlay.transcribing
+                }
+                onPrimaryAction={controller.voiceInputOverlay.onAction}
+                className="rounded-xl border border-slate-800/70 bg-slate-950/96"
+                headerClassName="px-8"
+              />
+            </div>
+          ) : null}
 
           <div className="flex min-h-0 flex-1 w-full overflow-hidden bg-slate-950">
             <aside className="z-10 flex w-20 shrink-0 flex-col items-center justify-between border-r border-slate-900 bg-slate-950 py-6">
@@ -85,9 +106,16 @@ export const ChatSession = (): JSX.Element => {
               <main className="flex min-h-0 flex-1 flex-col bg-slate-950">
                 <SessionHeader {...controller.header} />
 
-                <ScrollArea className="min-h-0 flex-1" type="always">
-                  <ConversationFeed {...controller.conversation} />
-                </ScrollArea>
+                <div className="relative min-h-0 flex-1">
+                  <ScrollArea className="h-full" type="always">
+                    <ConversationFeed {...controller.conversation} />
+                  </ScrollArea>
+                  <ScrollToNewestButton
+                    visible={controller.conversation.showScrollToNewestButton}
+                    onClick={controller.conversation.onScrollToNewest}
+                    className="bottom-4 left-1/2 -translate-x-1/2"
+                  />
+                </div>
 
                 <footer className="border-t border-slate-900/80 bg-slate-950/40 px-8 pb-5 pt-3 backdrop-blur-xl">
                   <div className="mx-auto w-full max-w-5xl">

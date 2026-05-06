@@ -54,8 +54,8 @@ describe("resolveToolPolicies", () => {
 
   it("uses risk-aware approvals in ask mode", () => {
     const policies = resolveToolPolicies(
-      createConfig("ask", ["filesystem", "shell", "network"]),
-      ["filesystem", "shell", "network", "git"],
+      createConfig("ask", ["filesystem", "shell", "network", "utilities"]),
+      ["filesystem", "shell", "network", "git", "utilities"],
     );
 
     expect(
@@ -67,6 +67,7 @@ describe("resolveToolPolicies", () => {
       shell: "ask",
       network: "ask",
       git: "blocked",
+      utilities: "allow",
     });
   });
 

@@ -4,11 +4,9 @@ import {
   ArrowUpRight,
   Bot,
   BrainCircuit,
-  Cog,
   LoaderCircle,
   Mic,
   Monitor,
-  Paperclip,
   SendHorizonal,
   Sparkles,
   Square,
@@ -17,8 +15,6 @@ import {
   Zap,
 } from "lucide-react";
 import {
-  Suspense,
-  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -30,22 +26,19 @@ import { revealMainWindow, showQuickVoiceWindow } from "./assistant-surface";
 import { type ChatSessionMessage } from "./chat-session.model";
 import { getRenderedMessageContent } from "./chat-session/_helpers/execution-message.tsx";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
+import { useNewestMessageScroll } from "./chat-session/_helpers/use-newest-message-scroll";
+import {
+  ContextAttachmentMenuButton,
+  ContextAttachmentsList,
+} from "./chat-session/components/context-attachments";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { MessageMarkdown } from "./chat-session/components/message-markdown";
+import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
 import { SessionModelPicker } from "./chat-session/components/session-model-picker";
 import { Button } from "./components/ui/button";
-import { Dialog } from "./components/ui/dialog";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { Textarea } from "./components/ui/textarea";
 import { cn } from "./lib/utils";
-
-const SettingsDialog = lazy(async () => {
-  const module = await import("./chat-session/components/settings-dialog");
-
-  return {
-    default: module.SettingsDialog,
-  };
-});
 
 const QUICK_TASK_HISTORY_LIMIT = 6;
 const QUICK_WINDOW_BLUR_HIDE_DELAY_MS = 100;
@@ -116,9 +109,13 @@ const QuickTaskActivity = ({
       })
       .slice(-QUICK_TASK_HISTORY_LIMIT);
   }, [quickTask.visibleMessages]);
+  const newestMessageScroll = useNewestMessageScroll({
+    resetKey: quickTask.session?.id ?? "quick-chat-empty",
+    contentKey: recentMessages,
+  });
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       <ScrollArea className="min-h-0 flex-1">
         {recentMessages.length === 0 ? (
           <div className="flex min-h-full items-center justify-center px-6 py-10 text-center [@media(max-height:620px)]:py-5">
@@ -136,9 +133,18 @@ const QuickTaskActivity = ({
             {recentMessages.map((message) => (
               <QuickTaskMessage key={message.id} message={message} />
             ))}
+            <div
+              ref={newestMessageScroll.bottomRef}
+              className="h-px shrink-0"
+            />
           </div>
         )}
       </ScrollArea>
+      <ScrollToNewestButton
+        visible={newestMessageScroll.showScrollToNewestButton}
+        onClick={newestMessageScroll.scrollToNewest}
+        className="right-4 bottom-3 h-9 w-9"
+      />
     </section>
   );
 };
@@ -152,11 +158,9 @@ const QuickTaskComposer = ({
   const quickTaskComposer = controller.quickTaskComposer;
   const quickVoiceEnabled =
     controller.settingsDialog.desktopSetup.settings.quickVoiceEnabled;
-  const canSend =
-    quickTaskComposer.draft.trim().length > 0 &&
-    !quickTaskComposer.isExecuting;
+  const canSend = quickTaskComposer.canSend;
   const sendQuickTask = useCallback((): void => {
-    if (!quickTaskComposer.draft.trim() || quickTaskComposer.isExecuting) {
+    if (!quickTaskComposer.canSend) {
       return;
     }
 
@@ -176,151 +180,162 @@ const QuickTaskComposer = ({
         sendQuickTask();
       }}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <SessionModelPicker
-          chooserProviders={quickTaskComposer.chooserProviders}
-          activeProvider={quickTaskComposer.provider}
-          activeModel={quickTaskComposer.model}
-          onSessionModelSelection={quickTaskComposer.onModelSelection}
-        />
-
-        <Button
-          type="button"
-          variant="outline"
-          aria-label="Autopilot"
-          aria-pressed={quickTaskComposer.autopilotEnabled}
-          onClick={() =>
-            quickTaskComposer.onAutopilotChange(
-              !quickTaskComposer.autopilotEnabled,
-            )
-          }
-          className={cn(
-            "h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100",
-            quickTaskComposer.autopilotEnabled &&
-              "border-violet-500/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
-          )}
-        >
-          <WandSparkles className="h-3.5 w-3.5" />
-          Autopilot
-        </Button>
-
-        <Button
-          type="button"
-          variant="outline"
-          aria-label="Document attachments"
-          onClick={() => {
-            void quickTaskComposer.onSelectAttachments();
-          }}
-          className="h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100"
-        >
-          <Paperclip className="h-3.5 w-3.5" />
-          Documents
-        </Button>
-
-        <Button
-          type="button"
-          variant="outline"
-          aria-label="Global Memory"
-          aria-pressed={quickTaskComposer.globalMemoryEnabled}
-          disabled={!quickTaskComposer.globalMemoryAvailable}
-          onClick={() =>
-            quickTaskComposer.onGlobalMemoryChange(
-              !quickTaskComposer.globalMemoryEnabled,
-            )
-          }
-          className={cn(
-            "h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:cursor-not-allowed disabled:border-dashed disabled:bg-slate-950/40 disabled:text-slate-600 disabled:opacity-100",
-            quickTaskComposer.globalMemoryEnabled &&
-              quickTaskComposer.globalMemoryAvailable &&
-              "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
-          )}
-        >
-          <BrainCircuit className="h-3.5 w-3.5" />
-          Memory
-        </Button>
-
-        <Button
-          type="button"
-          variant="outline"
-          aria-label="UI Control"
-          aria-pressed={quickTaskComposer.uiControlEnabled}
-          disabled={!quickTaskComposer.uiControlAvailable}
-          onClick={() =>
-            quickTaskComposer.onUiControlChange(
-              !quickTaskComposer.uiControlEnabled,
-            )
-          }
-          className={cn(
-            "h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:cursor-not-allowed disabled:border-dashed disabled:bg-slate-950/40 disabled:text-slate-600 disabled:opacity-100",
-            quickTaskComposer.uiControlEnabled &&
-              quickTaskComposer.uiControlAvailable &&
-              "border-violet-500/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
-          )}
-        >
-          <Monitor className="h-3.5 w-3.5" />
-          UI
-        </Button>
-      </div>
-
-      <Textarea
-        ref={inputRef}
-        aria-label="Quick chat composer"
-        value={quickTaskComposer.draft}
-        onChange={(event) =>
-          quickTaskComposer.onDraftChange(event.target.value)
-        }
-        onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            sendQuickTask();
-          }
-        }}
-        placeholder="Quick Chat..."
-        className="max-h-32 min-h-16 resize-none overflow-y-auto rounded-2xl border-slate-800/90 bg-slate-900/60 px-4 py-3 text-sm text-slate-100 shadow-inner shadow-black/10 placeholder:text-slate-500 focus-visible:border-sky-400/40 focus-visible:ring-2 focus-visible:ring-sky-500/20 [@media(max-height:620px)]:max-h-20 [@media(max-height:620px)]:min-h-12 [@media(max-height:620px)]:py-2.5"
+      <ContextAttachmentsList
+        attachments={quickTaskComposer.contextAttachments}
+        onRemove={quickTaskComposer.onRemoveContextAttachment}
+        onClearAll={quickTaskComposer.onClearContextAttachments}
+        compact
       />
 
-      <div className="flex items-center justify-between gap-2 px-0.5">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-label="Start quick voice command"
-          disabled={!quickVoiceEnabled}
-          onClick={() => {
-            void showQuickVoiceWindow();
+      <div className="overflow-hidden rounded-2xl border border-slate-800/90 bg-slate-900/60 shadow-inner shadow-black/10 focus-within:border-sky-400/40 focus-within:ring-2 focus-within:ring-sky-500/20">
+        <Textarea
+          ref={inputRef}
+          aria-label="Quick chat composer"
+          value={quickTaskComposer.draft}
+          onChange={(event) =>
+            quickTaskComposer.onDraftChange(event.target.value)
+          }
+          onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              sendQuickTask();
+            }
           }}
-          className="h-8 rounded-full border border-violet-400/15 bg-violet-400/10 px-3 text-xs text-violet-100 hover:bg-violet-400/15 hover:text-white disabled:border-slate-800/80 disabled:bg-transparent disabled:text-slate-600 disabled:opacity-100"
-        >
-          <Mic className="h-4 w-4" />
-          Voice
-        </Button>
+          placeholder="Quick Chat..."
+          className="max-h-32 min-h-16 resize-none overflow-y-auto border-0 bg-transparent px-4 py-3 text-sm text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 [@media(max-height:620px)]:max-h-20 [@media(max-height:620px)]:min-h-12 [@media(max-height:620px)]:py-2.5"
+        />
 
-        {quickTaskComposer.isExecuting ? (
-          <Button
-            type="button"
-            variant="outline"
-            aria-label="Cancel Quick Chat"
-            onClick={quickTaskComposer.onCancel}
-            className="h-8 rounded-full border-rose-500/25 bg-rose-500/10 px-4 text-xs text-rose-100 shadow-none hover:bg-rose-500/15 hover:text-white"
-          >
-            Cancel
-            <Square className="h-3.5 w-3.5 fill-current" />
-          </Button>
-        ) : (
-          <Button
-            type="submit"
-            variant="outline"
-            disabled={!canSend}
-            className={cn(
-              "h-8 rounded-full border-slate-800/90 bg-slate-900/70 px-4 text-xs text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:bg-transparent disabled:text-slate-600 disabled:opacity-100",
-              canSend &&
-                "border-sky-400/30 bg-sky-400/15 text-sky-50 hover:bg-sky-400/20 hover:text-white",
+        <div className="flex items-center gap-2 border-t border-slate-800/75 px-2.5 py-2">
+          <ContextAttachmentMenuButton
+            onSelectFiles={quickTaskComposer.onSelectContextFiles}
+            onSelectFolders={quickTaskComposer.onSelectContextFolders}
+            onSelectImages={quickTaskComposer.onSelectContextImages}
+            imageInputDisabled={!quickTaskComposer.imageInputSupported}
+            imageInputDisabledReason={
+              quickTaskComposer.imageInputDisabledReason
+            }
+            menuSide="bottom"
+            className="h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100"
+            iconClassName="h-3.5 w-3.5"
+          />
+
+          <div className="min-w-0 flex-1 [&>button]:h-8 [&>button]:w-full [&>button]:max-w-none [&>button]:justify-start">
+            <SessionModelPicker
+              chooserProviders={quickTaskComposer.chooserProviders}
+              activeProvider={quickTaskComposer.provider}
+              activeModel={quickTaskComposer.model}
+              onSessionModelSelection={quickTaskComposer.onModelSelection}
+            />
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              aria-label="Autopilot"
+              title="Autopilot"
+              aria-pressed={quickTaskComposer.autopilotEnabled}
+              onClick={() =>
+                quickTaskComposer.onAutopilotChange(
+                  !quickTaskComposer.autopilotEnabled,
+                )
+              }
+              className={cn(
+                "h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 p-0 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100",
+                quickTaskComposer.autopilotEnabled &&
+                  "border-violet-500/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
+              )}
+            >
+              <WandSparkles className="h-3.5 w-3.5" />
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              aria-label="Global Memory"
+              title="Memory"
+              aria-pressed={quickTaskComposer.globalMemoryEnabled}
+              disabled={!quickTaskComposer.globalMemoryAvailable}
+              onClick={() =>
+                quickTaskComposer.onGlobalMemoryChange(
+                  !quickTaskComposer.globalMemoryEnabled,
+                )
+              }
+              className={cn(
+                "h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 p-0 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:cursor-not-allowed disabled:border-dashed disabled:bg-slate-950/40 disabled:text-slate-600 disabled:opacity-100",
+                quickTaskComposer.globalMemoryEnabled &&
+                  quickTaskComposer.globalMemoryAvailable &&
+                  "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
+              )}
+            >
+              <BrainCircuit className="h-3.5 w-3.5" />
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              aria-label="UI Control"
+              title="UI control"
+              aria-pressed={quickTaskComposer.uiControlEnabled}
+              disabled={!quickTaskComposer.uiControlAvailable}
+              onClick={() =>
+                quickTaskComposer.onUiControlChange(
+                  !quickTaskComposer.uiControlEnabled,
+                )
+              }
+              className={cn(
+                "h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 p-0 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:cursor-not-allowed disabled:border-dashed disabled:bg-slate-950/40 disabled:text-slate-600 disabled:opacity-100",
+                quickTaskComposer.uiControlEnabled &&
+                  quickTaskComposer.uiControlAvailable &&
+                  "border-violet-500/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
+              )}
+            >
+              <Monitor className="h-3.5 w-3.5" />
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label="Start quick voice command"
+              title="Voice"
+              disabled={!quickVoiceEnabled}
+              onClick={() => {
+                void showQuickVoiceWindow();
+              }}
+              className="h-8 w-8 rounded-full border border-violet-400/15 bg-violet-400/10 p-0 text-violet-100 hover:bg-violet-400/15 hover:text-white disabled:border-slate-800/80 disabled:bg-transparent disabled:text-slate-600 disabled:opacity-100"
+            >
+              <Mic className="h-4 w-4" />
+            </Button>
+
+            {quickTaskComposer.isExecuting ? (
+              <Button
+                type="button"
+                variant="outline"
+                aria-label="Cancel Quick Chat"
+                title="Cancel"
+                onClick={quickTaskComposer.onCancel}
+                className="h-8 w-8 rounded-full border-rose-500/25 bg-rose-500/10 p-0 text-rose-100 shadow-none hover:bg-rose-500/15 hover:text-white"
+              >
+                <Square className="h-3.5 w-3.5 fill-current" />
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                variant="outline"
+                aria-label="Send"
+                disabled={!canSend}
+                title={quickTaskComposer.sendDisabledReason ?? "Send"}
+                className={cn(
+                  "h-8 w-8 rounded-full border-slate-800/90 bg-slate-950/70 p-0 text-slate-500 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:bg-transparent disabled:text-slate-600 disabled:opacity-100",
+                  canSend &&
+                    "border-sky-400/30 bg-sky-400/15 text-sky-50 hover:bg-sky-400/20 hover:text-white",
+                )}
+              >
+                <SendHorizonal className="h-4 w-4" />
+              </Button>
             )}
-          >
-            Send
-            <SendHorizonal className="h-4 w-4" />
-          </Button>
-        )}
+          </div>
+        </div>
       </div>
     </form>
   );
@@ -389,10 +404,7 @@ export const AssistantPopupShell = (): JSX.Element => {
   }, []);
 
   return (
-    <Dialog
-      open={controller.catalogOpen}
-      onOpenChange={controller.setCatalogOpen}
-    >
+    <>
       <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/98 text-slate-100 shadow-none">
         <FileDropOverlay
           active={controller.fileDrop.isActive}
@@ -413,16 +425,6 @@ export const AssistantPopupShell = (): JSX.Element => {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Open settings"
-              onClick={controller.openProviderSettings}
-              className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-            >
-              <Cog className="h-4 w-4" />
-            </Button>
             <Button
               type="button"
               variant="ghost"
@@ -462,10 +464,12 @@ export const AssistantPopupShell = (): JSX.Element => {
             </p>
             <Button
               type="button"
-              onClick={controller.openProviderSettings}
+              onClick={() => {
+                void revealMainWindow();
+              }}
               className="rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500"
             >
-              Open settings
+              Open full app
             </Button>
           </div>
         ) : (
@@ -480,22 +484,6 @@ export const AssistantPopupShell = (): JSX.Element => {
           </>
         )}
       </div>
-
-      {controller.catalogOpen ? (
-        <Suspense fallback={null}>
-          <SettingsDialog
-            settingsSection={controller.settingsDialog.settingsSection}
-            onSettingsSectionChange={
-              controller.settingsDialog.onSettingsSectionChange
-            }
-            providerSetup={controller.settingsDialog.providerSetup}
-            webSearchSetup={controller.settingsDialog.webSearchSetup}
-            memorySetup={controller.settingsDialog.memorySetup}
-            desktopSetup={controller.settingsDialog.desktopSetup}
-            voiceSetup={controller.settingsDialog.voiceSetup}
-          />
-        </Suspense>
-      ) : null}
-    </Dialog>
+    </>
   );
 };

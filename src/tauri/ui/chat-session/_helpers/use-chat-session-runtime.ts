@@ -18,6 +18,7 @@ import {
   loadWorkspaceRuntimeSnapshot,
   openUserProviderApiKeyPortal,
   saveUserSpeechToTextActiveProvider,
+  saveUserSpeechToTextInputDevice,
   saveUserDesktopSettings,
   saveUserGlobalMemoryEnabled,
   saveUserVoiceActiveProvider,
@@ -70,6 +71,7 @@ export interface ChatSessionRuntimeController {
   voiceSetupMessage: SettingsStatusMessage | null;
   userSpeechToTextSettings: UserSpeechToTextSettings;
   speechToTextSetupSaving: boolean;
+  speechInputDeviceSaving: boolean;
   speechToTextSetupMessage: SettingsStatusMessage | null;
   webSearchActiveProvider: WebSearchProvider;
   webSearchSetupProvider: UserWebSearchApiKeyProvider;
@@ -96,6 +98,9 @@ export interface ChatSessionRuntimeController {
   handleVoiceActiveProviderSave: (provider: VoiceAiProvider) => Promise<void>;
   handleSpeechToTextActiveProviderSave: (
     provider: SpeechToTextProvider,
+  ) => Promise<void>;
+  handleSpeechToTextInputDeviceSave: (
+    inputDeviceId: string | null,
   ) => Promise<void>;
   handleWebSearchActiveProviderSave: (
     provider: WebSearchProvider,
@@ -187,9 +192,11 @@ export const useChatSessionRuntime = (
     UserSpeechToTextSettings
   >({
     activeProvider: "none",
+    inputDeviceId: null,
     providerAvailability: [],
   });
   const [speechToTextSetupSaving, setSpeechToTextSetupSaving] = useState(false);
+  const [speechInputDeviceSaving, setSpeechInputDeviceSaving] = useState(false);
   const [speechToTextSetupMessage, setSpeechToTextSetupMessage] =
     useState<SettingsStatusMessage | null>(null);
   const [webSearchActiveProvider, setWebSearchActiveProvider] =
@@ -256,7 +263,10 @@ export const useChatSessionRuntime = (
 
   const applyLoadedUserSpeechToTextSettings = useCallback(
     (settings: UserSpeechToTextSettings): void => {
-      setUserSpeechToTextSettings(settings);
+      setUserSpeechToTextSettings({
+        ...settings,
+        inputDeviceId: settings.inputDeviceId?.trim() || null,
+      });
     },
     [],
   );
@@ -403,6 +413,7 @@ export const useChatSessionRuntime = (
         console.error("Failed to load user speech-to-text settings", error);
         applyLoadedUserSpeechToTextSettings({
           activeProvider: "none",
+          inputDeviceId: null,
           providerAvailability: USER_SPEECH_TO_TEXT_PROVIDER_ORDER.map(
             (provider) => ({
               provider,
@@ -854,6 +865,54 @@ export const useChatSessionRuntime = (
     [applyLoadedUserSpeechToTextSettings],
   );
 
+  const handleSpeechToTextInputDeviceSave = useCallback(
+    async (inputDeviceId: string | null): Promise<void> => {
+      const normalizedInputDeviceId = inputDeviceId?.trim() || null;
+
+      if (!isTauri()) {
+        applyLoadedUserSpeechToTextSettings({
+          ...userSpeechToTextSettings,
+          inputDeviceId: normalizedInputDeviceId,
+        });
+        setSpeechToTextSetupMessage({
+          tone: "success",
+          text: normalizedInputDeviceId
+            ? "Voice input device saved."
+            : "Voice input will use the system default microphone.",
+        });
+        return;
+      }
+
+      setSpeechInputDeviceSaving(true);
+      setSpeechToTextSetupMessage(null);
+
+      try {
+        const settings = await saveUserSpeechToTextInputDevice(
+          normalizedInputDeviceId,
+        );
+
+        applyLoadedUserSpeechToTextSettings(settings);
+        setSpeechToTextSetupMessage({
+          tone: "success",
+          text: normalizedInputDeviceId
+            ? "Voice input device saved."
+            : "Voice input will use the system default microphone.",
+        });
+      } catch (error) {
+        setSpeechToTextSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "The voice input device could not be saved.",
+        });
+      } finally {
+        setSpeechInputDeviceSaving(false);
+      }
+    },
+    [applyLoadedUserSpeechToTextSettings, userSpeechToTextSettings],
+  );
+
   const handleWebSearchActiveProviderSave = useCallback(
     async (provider: WebSearchProvider): Promise<void> => {
       setWebSearchSetupSaving(true);
@@ -1036,6 +1095,7 @@ export const useChatSessionRuntime = (
     voiceSetupMessage,
     userSpeechToTextSettings,
     speechToTextSetupSaving,
+    speechInputDeviceSaving,
     speechToTextSetupMessage,
     webSearchActiveProvider,
     webSearchSetupProvider,
@@ -1056,6 +1116,7 @@ export const useChatSessionRuntime = (
     handleProviderSetupSave,
     handleVoiceActiveProviderSave,
     handleSpeechToTextActiveProviderSave,
+    handleSpeechToTextInputDeviceSave,
     handleWebSearchActiveProviderSave,
     handleWebSearchSetupProviderChange,
     handleWebSearchSetupKeyChange,

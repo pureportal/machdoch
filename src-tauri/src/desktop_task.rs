@@ -61,6 +61,7 @@ pub struct DesktopTaskRunRequest {
     provider: Option<String>,
     model: Option<String>,
     conversation_context: Option<Value>,
+    image_paths: Option<Vec<String>>,
     task_id: Option<String>,
 }
 
@@ -89,6 +90,7 @@ struct CliCommandOptions<'a> {
     provider: Option<&'a str>,
     model: Option<&'a str>,
     conversation_context_file: Option<&'a Path>,
+    image_paths: &'a [String],
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -149,6 +151,11 @@ fn build_cli_args(options: CliCommandOptions<'_>) -> Vec<String> {
     if let Some(conversation_context_file) = options.conversation_context_file {
         args.push("--conversation-context-file".to_string());
         args.push(conversation_context_file.display().to_string());
+    }
+
+    for image_path in options.image_paths {
+        args.push("--image".to_string());
+        args.push(image_path.to_string());
     }
 
     args
@@ -413,6 +420,7 @@ fn execute_desktop_task(
         provider,
         model,
         conversation_context,
+        image_paths,
         task_id,
     } = request;
     let workspace_path = resolve_workspace_root_path(&workspace_root)?;
@@ -442,6 +450,7 @@ fn execute_desktop_task(
         provider: normalized_provider.as_deref(),
         model: normalized_model.as_deref(),
         conversation_context_file: conversation_context_path.as_deref(),
+        image_paths: image_paths.as_deref().unwrap_or(&[]),
     });
     let mut cli_command = crate::shared_cli::create_shared_cli_command(&cli_args)?;
 
@@ -757,11 +766,38 @@ mod tests {
             provider: Some("openai"),
             model: Some("gpt-5.2"),
             conversation_context_file: None,
+            image_paths: &[],
         });
 
         assert_eq!(args[0], "--quick");
         assert!(args.contains(&"--json".to_string()));
         assert!(args.contains(&"--task".to_string()));
         assert!(args.contains(&"How is the weather?".to_string()));
+    }
+
+    #[test]
+    fn desktop_cli_args_forward_image_paths() {
+        let image_paths = vec![
+            "C:/workspace/screenshot.png".to_string(),
+            "C:/workspace/mockup.webp".to_string(),
+        ];
+        let args = build_cli_args(CliCommandOptions {
+            workspace_root: "C:/workspace",
+            task: "Describe the images",
+            mode: None,
+            profile: None,
+            provider: Some("openai"),
+            model: Some("gpt-5.5"),
+            conversation_context_file: None,
+            image_paths: &image_paths,
+        });
+
+        assert_eq!(
+            args.windows(2)
+                .filter(|pair| pair[0] == "--image")
+                .map(|pair| pair[1].clone())
+                .collect::<Vec<_>>(),
+            image_paths,
+        );
     }
 }

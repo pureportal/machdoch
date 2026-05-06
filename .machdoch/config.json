@@ -7,7 +7,8 @@
     "network",
     "browser",
     "git",
-    "packages"
+    "packages",
+    "utilities"
   ],
   "provider": "openai",
   "model": "gpt-5.5",
@@ -20,7 +21,7 @@
     "safe-review": {
       "description": "Read-focused review mode with approval gates and limited tools.",
       "mode": "safe",
-      "enabledTools": ["filesystem", "git"]
+      "enabledTools": ["filesystem", "git", "utilities"]
     },
     "local-model": {
       "description": "Prefer an alternate experimental provider profile.",

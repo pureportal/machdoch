@@ -29,9 +29,10 @@ const VALID_TOOLS: ToolName[] = [
   "browser",
   "git",
   "packages",
+  "utilities",
 ];
 
-const DEFAULT_TOOLS: ToolName[] = ["filesystem", "shell"];
+const DEFAULT_TOOLS: ToolName[] = ["filesystem", "shell", "utilities"];
 const DEFAULT_MODEL = "gpt-5.5";
 const WORKSPACE_CONFIG_DIRECTORY = ".machdoch";
 const WORKSPACE_CONFIG_FILE_NAME = "config.json";

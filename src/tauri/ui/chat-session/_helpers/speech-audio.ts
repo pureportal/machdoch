@@ -28,6 +28,11 @@ const MIN_RECORDED_SPEECH_PEAK = 0.025;
 export const NO_SPEECH_DETECTED_MESSAGE =
   "No voice was detected. Check the selected microphone and try again.";
 
+export interface SpeechInputDeviceOption {
+  deviceId: string;
+  label: string;
+}
+
 export const canUseSpeechInput = (): boolean => {
   return (
     typeof navigator !== "undefined" &&
@@ -36,10 +41,69 @@ export const canUseSpeechInput = (): boolean => {
   );
 };
 
+export const canEnumerateSpeechInputDevices = (): boolean => {
+  return (
+    typeof navigator !== "undefined" &&
+    typeof navigator.mediaDevices?.enumerateDevices === "function"
+  );
+};
+
 export const normalizeAudioMimeType = (
   mimeType: string | null | undefined,
 ): string => {
   return mimeType?.split(";")[0]?.trim().toLowerCase() ?? "";
+};
+
+export const createSpeechInputAudioConstraints = (
+  inputDeviceId?: string | null,
+): MediaTrackConstraints => {
+  const constraints: MediaTrackConstraints = {
+    channelCount: 1,
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  };
+  const normalizedInputDeviceId = inputDeviceId?.trim();
+
+  if (normalizedInputDeviceId) {
+    constraints.deviceId = { exact: normalizedInputDeviceId };
+  }
+
+  return constraints;
+};
+
+export const listSpeechInputDevices = async (): Promise<
+  SpeechInputDeviceOption[]
+> => {
+  if (!canEnumerateSpeechInputDevices()) {
+    return [];
+  }
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const seenDeviceIds = new Set<string>();
+  let audioInputIndex = 0;
+
+  return devices.flatMap((device) => {
+    if (device.kind !== "audioinput") {
+      return [];
+    }
+
+    const deviceId = device.deviceId.trim();
+
+    if (!deviceId || deviceId === "default" || seenDeviceIds.has(deviceId)) {
+      return [];
+    }
+
+    seenDeviceIds.add(deviceId);
+    audioInputIndex += 1;
+
+    return [
+      {
+        deviceId,
+        label: device.label.trim() || `Microphone ${audioInputIndex}`,
+      },
+    ];
+  });
 };
 
 export const getSpeechInputLanguageCode = (): string | undefined => {

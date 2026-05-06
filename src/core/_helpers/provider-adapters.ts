@@ -16,6 +16,7 @@ import OpenAI from "openai";
 import { hasConfiguredValue, loadWorkspaceEnv } from "../env.js";
 import { TASK_EXECUTION_TIMEOUT_MS } from "./agent-runtime-types.js";
 import type {
+  AgentModelImageInput,
   AgentModelAdapter,
   AgentModelContinueParams,
   AgentModelStartParams,
@@ -187,6 +188,80 @@ const createOpenAITools = (tools: AgentModelToolSpec[]) => {
     parameters: normalizeOpenAIStrictInputSchema(tool.inputSchema),
     strict: true,
   }));
+};
+
+const hasImageInputs = (
+  imageInputs: AgentModelImageInput[] | undefined,
+): imageInputs is AgentModelImageInput[] => {
+  return Array.isArray(imageInputs) && imageInputs.length > 0;
+};
+
+export const createOpenAIUserInput = (
+  params: Pick<AgentModelStartParams, "imageInputs" | "userPrompt">,
+) => {
+  if (!hasImageInputs(params.imageInputs)) {
+    return params.userPrompt;
+  }
+
+  return [
+    {
+      role: "user" as const,
+      content: [
+        {
+          type: "input_text" as const,
+          text: params.userPrompt,
+        },
+        ...params.imageInputs.map((imageInput) => ({
+          type: "input_image" as const,
+          detail: imageInput.detail ?? "auto",
+          image_url: `data:${imageInput.mediaType};base64,${imageInput.data}`,
+        })),
+      ],
+    },
+  ];
+};
+
+export const createAnthropicUserContent = (
+  params: Pick<AgentModelStartParams, "imageInputs" | "userPrompt">,
+): AnthropicMessageParam["content"] => {
+  if (!hasImageInputs(params.imageInputs)) {
+    return params.userPrompt;
+  }
+
+  return [
+    ...params.imageInputs.map((imageInput) => ({
+      type: "image" as const,
+      source: {
+        type: "base64" as const,
+        media_type: imageInput.mediaType,
+        data: imageInput.data,
+      },
+    })),
+    {
+      type: "text" as const,
+      text: params.userPrompt,
+    },
+  ] as AnthropicMessageParam["content"];
+};
+
+export const createGeminiUserMessage = (
+  params: Pick<AgentModelStartParams, "imageInputs" | "userPrompt">,
+): string | Part[] => {
+  if (!hasImageInputs(params.imageInputs)) {
+    return params.userPrompt;
+  }
+
+  return [
+    ...params.imageInputs.map((imageInput) => ({
+      inlineData: {
+        data: imageInput.data,
+        mimeType: imageInput.mediaType,
+      },
+    })),
+    {
+      text: params.userPrompt,
+    },
+  ];
 };
 
 const createAnthropicTools = (tools: AgentModelToolSpec[]): AnthropicTool[] => {
@@ -410,7 +485,7 @@ class OpenAIResponsesAdapter implements AgentModelAdapter {
     const response = await this.client.responses.create({
       model: params.model,
       instructions: params.systemPrompt,
-      input: params.userPrompt,
+      input: createOpenAIUserInput(params),
       tools: createOpenAITools(params.tools),
       parallel_tool_calls: false,
     }, {
@@ -516,7 +591,7 @@ class AnthropicMessagesAdapter implements AgentModelAdapter {
     this.messages.length = 0;
     this.messages.push({
       role: "user",
-      content: params.userPrompt,
+      content: createAnthropicUserContent(params),
     });
 
     const message = await this.client.messages.create({
@@ -653,7 +728,7 @@ class GeminiChatAdapter implements AgentModelAdapter {
     this.startParams = params;
 
     const response = await this.chat.sendMessage({
-      message: params.userPrompt,
+      message: createGeminiUserMessage(params),
       config: {
         systemInstruction: params.systemPrompt,
         ...this.createConfig(params.tools),

@@ -1,12 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  ArrowUpRight,
-  AudioWaveform,
-  LoaderCircle,
-  Mic,
-  Square,
-  X,
-} from "lucide-react";
+import { ArrowUpRight, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -25,6 +18,7 @@ import {
   canUseSpeechInput,
   assertRecordedSpeechDetected,
   convertBlobToBase64,
+  createSpeechInputAudioConstraints,
   getConfiguredSpeechToTextProvider,
   getRecordingErrorMessage,
   NO_SPEECH_DETECTED_MESSAGE,
@@ -39,7 +33,7 @@ import {
   type UserSpeechToTextSettings,
 } from "./runtime";
 import { Button } from "./components/ui/button";
-import { cn } from "./lib/utils";
+import { VoiceInputOverlay } from "./components/voice-input-overlay";
 
 const VOICE_ACTIVITY_THRESHOLD = 0.012;
 const VOICE_ACTIVITY_FRAME_COUNT = 2;
@@ -51,10 +45,12 @@ export const QuickVoiceShell = (): JSX.Element => {
   const speechToTextSettings = useMemo<UserSpeechToTextSettings>(() => {
     return {
       activeProvider: controller.settingsDialog.voiceSetup.speechToTextProvider,
+      inputDeviceId: controller.settingsDialog.voiceSetup.speechInputDeviceId,
       providerAvailability:
         controller.settingsDialog.voiceSetup.speechToTextProviderAvailability,
     };
   }, [
+    controller.settingsDialog.voiceSetup.speechInputDeviceId,
     controller.settingsDialog.voiceSetup.speechToTextProvider,
     controller.settingsDialog.voiceSetup.speechToTextProviderAvailability,
   ]);
@@ -252,12 +248,9 @@ export const QuickVoiceShell = (): JSX.Element => {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
+        audio: createSpeechInputAudioConstraints(
+          speechToTextSettings.inputDeviceId,
+        ),
       });
       const recorderMimeType = resolveRecorderMimeType();
       const recorder = recorderMimeType
@@ -360,6 +353,7 @@ export const QuickVoiceShell = (): JSX.Element => {
     desktopSettings.quickVoiceSilenceSeconds,
     finalizeRecording,
     recording,
+    speechToTextSettings.inputDeviceId,
     transcribing,
   ]);
 
@@ -398,13 +392,6 @@ export const QuickVoiceShell = (): JSX.Element => {
     void syncQuickVoiceWindowPosition();
   }, [syncQuickVoiceWindowPosition]);
 
-  const compactStatus =
-    statusText ??
-    (transcribing
-      ? "Transcribing…"
-      : recording
-        ? "Listening…"
-        : null);
   const idleBadgeText = !desktopSettings.quickVoiceEnabled
     ? "Disabled"
     : !browserSupported
@@ -412,24 +399,29 @@ export const QuickVoiceShell = (): JSX.Element => {
       : !configuredProvider
         ? "STT required"
         : desktopSettings.quickVoiceShortcut;
-  const compactStatusTone =
-    statusText &&
-    (/failed|disabled|unavailable|required|no speech|no voice|error/i.test(statusText)
-      ? "error"
-      : /sent/i.test(statusText)
-        ? "success"
-        : "info");
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-transparent">
-      <div className="flex h-full w-full flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/98 text-slate-100 shadow-none">
-        <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-sky-400" />
-            <p className="text-sm font-semibold text-white">Quick Voice</p>
-          </div>
+      <VoiceInputOverlay
+        title="Quick Voice"
+        recording={recording}
+        transcribing={transcribing}
+        level={level}
+        statusText={statusText}
+        idleBadgeText={idleBadgeText}
+        showIdleStartAction
+        primaryActionDisabled={transcribing}
+        onPrimaryAction={() => {
+          if (recording) {
+            void finalizeRecording();
+            return;
+          }
 
-          <div className="flex items-center gap-2">
+          void startRecording();
+        }}
+        className="rounded-3xl border border-slate-800"
+        headerActions={
+          <>
             <Button
               type="button"
               variant="ghost"
@@ -454,101 +446,9 @@ export const QuickVoiceShell = (): JSX.Element => {
             >
               <X className="h-4 w-4" />
             </Button>
-          </div>
-        </header>
-
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-4 text-center">
-          <button
-            type="button"
-            aria-label={recording ? "Stop recording" : "Start recording"}
-            disabled={transcribing}
-            onClick={() => {
-              if (recording) {
-                void finalizeRecording();
-                return;
-              }
-
-              void startRecording();
-            }}
-            className={cn(
-              "relative flex h-24 w-24 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-sky-100 shadow-none outline-none transition-colors duration-150 focus-visible:ring-0",
-              recording && "border-rose-500/40 bg-rose-500/10 text-rose-200",
-              transcribing && "border-amber-500/30 bg-amber-500/10 text-amber-100",
-              !recording && !transcribing && "hover:border-sky-500/40 hover:bg-slate-800",
-            )}
-          >
-            <span
-              className={cn(
-                "absolute h-full w-full rounded-full bg-sky-500/6 transition-transform duration-150",
-                recording && "animate-ping",
-              )}
-            />
-            <span
-              className="absolute h-18 w-18 rounded-full bg-sky-500/10 transition-transform duration-150"
-              style={{
-                transform: `scale(${1 + Math.min(level, 0.2) * 1.9})`,
-              }}
-            />
-            <span className="relative z-10 flex h-16 w-16 items-center justify-center rounded-full bg-slate-950/90">
-              {transcribing ? (
-                <LoaderCircle className="h-6 w-6 animate-spin" />
-              ) : recording ? (
-                <Square className="h-5 w-5 fill-current" />
-              ) : (
-                <AudioWaveform className="h-6 w-6" />
-              )}
-            </span>
-          </button>
-
-          <div className="grid gap-2">
-            <p className="text-base font-semibold text-white">
-              {transcribing
-                ? "Transcribing"
-                : recording
-                  ? "Listening"
-                  : "Ready"}
-            </p>
-
-            {compactStatus ? (
-              <p
-                className={cn(
-                  "max-w-xs text-sm",
-                  compactStatusTone === "error"
-                    ? "text-rose-300"
-                    : compactStatusTone === "success"
-                      ? "text-emerald-300"
-                      : "text-slate-400",
-                )}
-              >
-                {compactStatus}
-              </p>
-            ) : null}
-
-            {!recording && !transcribing ? (
-              <div className="flex items-center justify-center">
-                <span className="rounded-full border border-slate-800 bg-slate-900/80 px-3 py-1 text-xs text-slate-400">
-                  {idleBadgeText}
-                </span>
-              </div>
-            ) : null}
-          </div>
-
-          {!recording && !transcribing ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                void startRecording();
-              }}
-              className="rounded-full border border-slate-800 bg-slate-900/70 px-4 text-slate-200 hover:bg-slate-800 hover:text-white"
-            >
-              <Mic className="h-4 w-4" />
-              Start
-            </Button>
-          ) : null}
-        </div>
-      </div>
+          </>
+        }
+      />
     </div>
   );
 };

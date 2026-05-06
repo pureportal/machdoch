@@ -36,14 +36,13 @@ export const SessionModePicker = ({
           variant="outline"
           aria-label={`Execution mode: ${activeRunModeMeta.label}`}
           className={cn(
-            "h-8 rounded-full border px-3 text-xs font-medium shadow-none",
+            "h-8 w-8 rounded-full border p-0 text-xs font-medium shadow-none",
             activeRunModeMeta.triggerClassName,
           )}
         >
           <ActiveRunModeIcon
-            className={cn("mr-2 h-3.5 w-3.5", activeRunModeMeta.iconClassName)}
+            className={cn("h-3.5 w-3.5", activeRunModeMeta.iconClassName)}
           />
-          {activeRunModeMeta.label}
         </Button>
       </PopoverTrigger>
       <PopoverContent

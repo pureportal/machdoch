@@ -63,6 +63,15 @@ describe("inferSuggestedTools", () => {
     ]);
   });
 
+  it("uses utilities for generated UUIDs and random strings", () => {
+    expect(inferSuggestedTools("generate a UUID for this fixture")).toEqual([
+      "utilities",
+    ]);
+    expect(inferSuggestedTools("create a random string token")).toEqual([
+      "utilities",
+    ]);
+  });
+
   it("keeps coding and verification tools when the task also asks for online research", () => {
     expect(
       inferSuggestedTools(

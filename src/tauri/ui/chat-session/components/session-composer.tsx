@@ -12,6 +12,7 @@ import type { JSX, KeyboardEvent } from "react";
 import type { RunMode } from "../../../../core/types.js";
 import {
   isQuickVoiceSession,
+  type ChatSessionContextAttachment,
   type ChatSessionRecord,
 } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
@@ -19,6 +20,10 @@ import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import type { RuntimeProvider } from "../../model-catalog";
 import type { RUN_MODE_META } from "../_helpers/session-shell";
+import {
+  ContextAttachmentMenuButton,
+  ContextAttachmentsList,
+} from "./context-attachments";
 import { MemoryShortcutButton } from "./memory-shortcut-button";
 import { SessionModePicker } from "./session-mode-picker";
 import { SessionModelPicker } from "./session-model-picker";
@@ -38,6 +43,9 @@ export interface SessionComposerProps {
   isGlobalMemoryAvailable: boolean;
   isGlobalMemoryActive: boolean;
   isUiControlAvailable: boolean;
+  contextAttachments: ChatSessionContextAttachment[];
+  imageInputSupported: boolean;
+  imageInputDisabledReason: string | null;
   speechInput: {
     browserSupported: boolean;
     enabled: boolean;
@@ -48,12 +56,18 @@ export interface SessionComposerProps {
     onAction: () => void;
   };
   canSendMessage: boolean;
+  sendDisabledReason: string | null;
   onSelectFolder: () => Promise<void>;
   onSessionModelSelection: (provider: RuntimeProvider, model: string) => void;
   onSessionModeSelection: (mode: RunMode | null) => void;
   onSessionMemoryEnabledChange: (enabled: boolean) => void;
   onUseGlobalMemoryChange: (enabled: boolean) => void;
   onUiControlEnabledChange: (enabled: boolean) => void;
+  onSelectContextFiles: () => Promise<void>;
+  onSelectContextFolders: () => Promise<void>;
+  onSelectContextImages: () => Promise<void>;
+  onRemoveContextAttachment: (attachmentId: string) => void;
+  onClearContextAttachments: () => void;
   onDraftChange: (value: string) => void;
   onComposerHistoryNavigation: (
     event: KeyboardEvent<HTMLTextAreaElement>,
@@ -78,14 +92,23 @@ export const SessionComposer = ({
   isGlobalMemoryAvailable,
   isGlobalMemoryActive,
   isUiControlAvailable,
+  contextAttachments,
+  imageInputSupported,
+  imageInputDisabledReason,
   speechInput,
   canSendMessage,
+  sendDisabledReason,
   onSelectFolder,
   onSessionModelSelection,
   onSessionModeSelection,
   onSessionMemoryEnabledChange,
   onUseGlobalMemoryChange,
   onUiControlEnabledChange,
+  onSelectContextFiles,
+  onSelectContextFolders,
+  onSelectContextImages,
+  onRemoveContextAttachment,
+  onClearContextAttachments,
   onDraftChange,
   onComposerHistoryNavigation,
   onSend,
@@ -197,13 +220,30 @@ export const SessionComposer = ({
       </div>
 
       <div className="mt-3 grid gap-2">
+        <ContextAttachmentsList
+          attachments={contextAttachments}
+          onRemove={onRemoveContextAttachment}
+          onClearAll={onClearContextAttachments}
+        />
+
         <form
-          className="flex items-end gap-3"
+          className="flex items-center gap-3"
           onSubmit={(event) => {
             event.preventDefault();
             onSend();
           }}
         >
+          <ContextAttachmentMenuButton
+            onSelectFiles={onSelectContextFiles}
+            onSelectFolders={onSelectContextFolders}
+            onSelectImages={onSelectContextImages}
+            imageInputDisabled={!imageInputSupported}
+            imageInputDisabledReason={imageInputDisabledReason}
+            menuSide="top"
+            className="h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100"
+            iconClassName="h-4 w-4"
+          />
+
           <Textarea
             aria-label="Task composer"
             value={activeSession.draft}
@@ -271,6 +311,7 @@ export const SessionComposer = ({
               variant="outline"
               size="icon"
               aria-label="Send message"
+              title={sendDisabledReason ?? "Send message"}
               disabled={!canSendMessage}
               className={cn(
                 "h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-100",

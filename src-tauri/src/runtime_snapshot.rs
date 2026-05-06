@@ -20,14 +20,15 @@ const KNOWN_SAMPLE_SECRET_VALUES: [&str; 6] = [
     "tavily-live",
     "serper-live",
 ];
-const DEFAULT_TOOLS: [&str; 2] = ["filesystem", "shell"];
-const VALID_TOOLS: [&str; 6] = [
+const DEFAULT_TOOLS: [&str; 3] = ["filesystem", "shell", "utilities"];
+const VALID_TOOLS: [&str; 7] = [
     "filesystem",
     "shell",
     "network",
     "browser",
     "git",
     "packages",
+    "utilities",
 ];
 const VALID_MODEL_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
 const USER_CONFIG_FILE_NAME: &str = "user-config.json";
@@ -117,6 +118,7 @@ pub struct UserVoiceSettings {
 #[serde(rename_all = "camelCase")]
 pub struct UserSpeechToTextSettings {
     active_provider: String,
+    input_device_id: Option<String>,
     provider_availability: Vec<AudioProviderAvailability>,
 }
 
@@ -216,6 +218,7 @@ struct UserVoiceConfigFile {
 #[serde(rename_all = "camelCase")]
 struct UserSpeechToTextConfigFile {
     active_provider: Option<String>,
+    input_device_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -996,6 +999,9 @@ fn load_user_speech_to_text_settings() -> Result<UserSpeechToTextSettings, Strin
         active_provider: resolve_audio_active_provider(
             config.speech_to_text.active_provider.as_deref(),
         ),
+        input_device_id: normalize_optional_string(
+            config.speech_to_text.input_device_id.as_deref(),
+        ),
         provider_availability: get_audio_provider_availability(&env),
     })
 }
@@ -1149,6 +1155,18 @@ fn save_user_speech_to_text_active_provider_value(provider: &str) -> Result<Path
     let (mut config, config_path) = load_user_config_file()?;
 
     config.speech_to_text.active_provider = Some(normalized_provider);
+
+    write_user_config_file(&config, &config_path)?;
+
+    Ok(config_path)
+}
+
+fn save_user_speech_to_text_input_device_value(
+    input_device_id: Option<&str>,
+) -> Result<PathBuf, String> {
+    let (mut config, config_path) = load_user_config_file()?;
+
+    config.speech_to_text.input_device_id = normalize_optional_string(input_device_id);
 
     write_user_config_file(&config, &config_path)?;
 
@@ -1313,6 +1331,14 @@ pub async fn save_user_speech_to_text_active_provider(
     provider: String,
 ) -> Result<UserSpeechToTextSettings, String> {
     save_user_speech_to_text_active_provider_value(&provider)?;
+    load_user_speech_to_text_settings()
+}
+
+#[tauri::command]
+pub async fn save_user_speech_to_text_input_device(
+    input_device_id: Option<String>,
+) -> Result<UserSpeechToTextSettings, String> {
+    save_user_speech_to_text_input_device_value(input_device_id.as_deref())?;
     load_user_speech_to_text_settings()
 }
 

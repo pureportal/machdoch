@@ -239,6 +239,7 @@ const runTaskExecutionStateMachine = async (
             ...(options.conversationContext
               ? { conversationContext: options.conversationContext }
               : {}),
+            ...(options.imageInputs ? { imageInputs: options.imageInputs } : {}),
             ...(options.modelAdapter
               ? { modelAdapter: options.modelAdapter }
               : {}),

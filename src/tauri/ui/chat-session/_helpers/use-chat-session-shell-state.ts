@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -37,6 +36,7 @@ import {
   type SettingsSection,
 } from "./session-shell";
 import { filterSessions } from "./session-shell-view-model";
+import { useNewestMessageScroll } from "./use-newest-message-scroll";
 
 const serializeShellFragment = (value: unknown): string => {
   return JSON.stringify(value);
@@ -257,6 +257,8 @@ export interface ChatSessionShellStateController {
   promptHistoryIndex: number | null;
   draftBeforeHistory: string;
   bottomRef: RefObject<HTMLDivElement | null>;
+  showScrollToNewestButton: boolean;
+  scrollToNewest: () => void;
   setCatalogOpen: Dispatch<SetStateAction<boolean>>;
   setSettingsSection: Dispatch<SetStateAction<SettingsSection>>;
   setActiveSessionId: (sessionId: string) => void;
@@ -319,9 +321,6 @@ export const useChatSessionShellState = (
   const persistedMutationRevisionRef = useRef(0);
   const persistInFlightRef = useRef(false);
   const persistQueuedRef = useRef(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const lastScrollHeightRef = useRef<number | null>(null);
-  const lastScrollSessionIdRef = useRef<string | null>(null);
   const scheduledTimeoutsRef = useRef<number[]>([]);
 
   const resolvedActiveSessionId = useMemo(() => {
@@ -371,6 +370,10 @@ export const useChatSessionShellState = (
   const visibleMessages = useMemo(() => {
     return createVisibleConversationMessages(activeSession.messages);
   }, [activeSession.messages]);
+  const newestMessageScroll = useNewestMessageScroll({
+    resetKey: activeSession.id,
+    contentKey: visibleMessages,
+  });
 
   const sortedSessions = useMemo(() => {
     return sortSessionsByUpdatedAt(shellState.sessions);
@@ -407,41 +410,6 @@ export const useChatSessionShellState = (
       document.documentElement.classList.remove("dark");
     };
   }, []);
-
-  useLayoutEffect(() => {
-    const bottomElement = bottomRef.current;
-
-    if (!bottomElement) {
-      return;
-    }
-
-    const scrollViewport = bottomElement.closest<HTMLElement>(
-      '[data-slot="scroll-area-viewport"]',
-    );
-
-    if (!scrollViewport) {
-      bottomElement.scrollIntoView({ block: "end" });
-      return;
-    }
-
-    const previousScrollHeight =
-      lastScrollSessionIdRef.current === activeSession.id
-        ? lastScrollHeightRef.current
-        : null;
-    const wasNearBottom =
-      previousScrollHeight === null ||
-      previousScrollHeight -
-        scrollViewport.scrollTop -
-        scrollViewport.clientHeight <=
-        96;
-
-    lastScrollSessionIdRef.current = activeSession.id;
-    lastScrollHeightRef.current = scrollViewport.scrollHeight;
-
-    if (wasNearBottom) {
-      scrollViewport.scrollTop = scrollViewport.scrollHeight;
-    }
-  }, [activeSession.id, visibleMessages]);
 
   useEffect(() => {
     const sessionIds = new Set(
@@ -721,7 +689,9 @@ export const useChatSessionShellState = (
     renameValue,
     promptHistoryIndex,
     draftBeforeHistory,
-    bottomRef,
+    bottomRef: newestMessageScroll.bottomRef,
+    showScrollToNewestButton: newestMessageScroll.showScrollToNewestButton,
+    scrollToNewest: newestMessageScroll.scrollToNewest,
     setCatalogOpen,
     setSettingsSection,
     setActiveSessionId,

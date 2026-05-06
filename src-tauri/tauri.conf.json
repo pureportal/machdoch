@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "machdoch",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "identifier": "com.machdoch.desktop",
   "build": {
     "beforeDevCommand": {
@@ -32,6 +32,7 @@
         "center": true,
         "visible": false,
         "resizable": true,
+        "skipTaskbar": false,
         "decorations": false,
         "transparent": false
       },

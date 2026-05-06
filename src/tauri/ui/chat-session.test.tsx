@@ -572,9 +572,11 @@ describe("ChatSession component", () => {
         screen.getByRole("button", { name: /Choose Autopilot/i }),
       );
 
-      expect(
-        screen.getByRole("button", { name: /Execution mode: Autopilot/i }),
-      ).toBeDefined();
+      const modeButton = screen.getByRole("button", {
+        name: /Execution mode: Autopilot/i,
+      });
+      expect(modeButton).toBeDefined();
+      expect(within(modeButton).queryByText(/Autopilot/i)).toBeNull();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -2014,15 +2016,370 @@ describe("ChatSession component", () => {
     ) as HTMLTextAreaElement;
 
     await waitFor(() => {
-      expect(input.value).toContain("C:\\Docs\\plan.md");
-      expect(input.value).toContain("C:\\Docs\\references");
+      expect(screen.getByText("plan.md")).toBeDefined();
+      expect(screen.getByText("references")).toBeDefined();
     });
+    expect(input.value).not.toContain("C:\\Docs\\plan.md");
+    expect(input.value).not.toContain("C:\\Docs\\references");
     expect(resolveDroppedPathsSpy).toHaveBeenCalledWith([
       "C:\\Docs\\plan.md",
       "C:\\Docs\\references",
     ]);
 
+    fireEvent.click(screen.getByRole("button", { name: "Remove plan.md" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("plan.md")).toBeNull();
+    });
+
     resolveDroppedPathsSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("adds selected files to the main composer and attaches them on send", async () => {
+    openMock.mockResolvedValue(["C:\\Docs\\plan.md"]);
+    const resolveDroppedPathsSpy = vi
+      .spyOn(runtime, "resolveDroppedPaths")
+      .mockResolvedValue({
+        workspaceRoot: "C:\\Docs",
+        entries: [
+          {
+            path: "C:\\Docs\\plan.md",
+            kind: "file",
+            name: "plan.md",
+            parent: "C:\\Docs",
+          },
+        ],
+      });
+    const runDesktopTaskSpy = vi.spyOn(runtime, "runDesktopTask").mockResolvedValue({
+      execution: createMockExecutionFixture(
+        'Summarize the plan\n\nUse this file: "C:\\Docs\\plan.md"',
+        "C:\\Docs",
+      ),
+    });
+
+    render(<ChatSession />);
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Add context" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Files/i }));
+
+    const input = screen.getByPlaceholderText(
+      /What should machdoch do next\?/i,
+    ) as HTMLTextAreaElement;
+
+    await waitFor(() => {
+      expect(screen.getByText("plan.md")).toBeDefined();
+    });
+    expect(input.value).not.toContain("C:\\Docs\\plan.md");
+    expect(openMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        directory: false,
+        multiple: true,
+        title: "Add Files as Context",
+      }),
+    );
+    expect(resolveDroppedPathsSpy).toHaveBeenCalledWith(["C:\\Docs\\plan.md"]);
+
+    fireEvent.change(input, {
+      target: { value: "Summarize the plan" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => {
+      expect(runDesktopTaskSpy).toHaveBeenCalledWith(
+        "C:\\Docs",
+        'Summarize the plan\n\nUse this file: "C:\\Docs\\plan.md"',
+        expect.objectContaining({
+          model: expect.any(String),
+          provider: expect.any(String),
+        }),
+      );
+      expect(screen.queryByText("plan.md")).toBeNull();
+    });
+
+    resolveDroppedPathsSpy.mockRestore();
+    runDesktopTaskSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("adds selected folders to the main composer from the add context menu", async () => {
+    openMock.mockResolvedValue(["C:\\Docs\\references"]);
+    const resolveDroppedPathsSpy = vi
+      .spyOn(runtime, "resolveDroppedPaths")
+      .mockResolvedValue({
+        workspaceRoot: "C:\\Docs\\references",
+        entries: [
+          {
+            path: "C:\\Docs\\references",
+            kind: "directory",
+            name: "references",
+            parent: "C:\\Docs",
+          },
+        ],
+      });
+
+    render(<ChatSession />);
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Add context" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Folders/i }));
+
+    await waitFor(() => {
+      const attachedContext = screen.getByRole("list", {
+        name: "Attached context",
+      });
+
+      expect(within(attachedContext).getByText("references")).toBeDefined();
+      expect(within(attachedContext).getByText("folder")).toBeDefined();
+    });
+    expect(openMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        directory: true,
+        multiple: true,
+        title: "Add Folders as Context",
+      }),
+    );
+    expect(resolveDroppedPathsSpy).toHaveBeenCalledWith([
+      "C:\\Docs\\references",
+    ]);
+
+    resolveDroppedPathsSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("adds selected images to the main composer and sends them as image inputs", async () => {
+    openMock.mockResolvedValue(["C:\\Docs\\screen.png"]);
+    const resolveDroppedPathsSpy = vi
+      .spyOn(runtime, "resolveDroppedPaths")
+      .mockResolvedValue({
+        workspaceRoot: "C:\\Docs",
+        entries: [
+          {
+            path: "C:\\Docs\\screen.png",
+            kind: "file",
+            name: "screen.png",
+            parent: "C:\\Docs",
+          },
+        ],
+      });
+    const runDesktopTaskSpy = vi.spyOn(runtime, "runDesktopTask").mockResolvedValue({
+      execution: createMockExecutionFixture(
+        'Describe the screenshot\n\nUse this image: "C:\\Docs\\screen.png"',
+        "C:\\Docs",
+      ),
+    });
+
+    render(<ChatSession />);
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Add context" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Images/i }));
+
+    const input = screen.getByPlaceholderText(
+      /What should machdoch do next\?/i,
+    ) as HTMLTextAreaElement;
+
+    await waitFor(() => {
+      const attachedContext = screen.getByRole("list", {
+        name: "Attached context",
+      });
+
+      expect(within(attachedContext).getByText("screen.png")).toBeDefined();
+      expect(within(attachedContext).getByText("image")).toBeDefined();
+    });
+    expect(openMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        directory: false,
+        filters: [
+          expect.objectContaining({
+            name: "Images",
+            extensions: expect.arrayContaining(["png", "jpg", "webp"]),
+          }),
+        ],
+        multiple: true,
+        title: "Add Images as Context",
+      }),
+    );
+
+    fireEvent.change(input, {
+      target: { value: "Describe the screenshot" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => {
+      expect(runDesktopTaskSpy).toHaveBeenCalledWith(
+        "C:\\Docs",
+        'Describe the screenshot\n\nUse this image: "C:\\Docs\\screen.png"',
+        expect.objectContaining({
+          imagePaths: ["C:\\Docs\\screen.png"],
+        }),
+      );
+    });
+
+    resolveDroppedPathsSpy.mockRestore();
+    runDesktopTaskSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("removes all attached context from the main composer", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "clear-all-context-session",
+      draftContextAttachments: [
+        {
+          id: "file-attachment",
+          path: "C:\\Docs\\plan.md",
+          kind: "file",
+          name: "plan.md",
+          parent: "C:\\Docs",
+        },
+        {
+          id: "folder-attachment",
+          path: "C:\\Docs\\references",
+          kind: "directory",
+          name: "references",
+          parent: "C:\\Docs",
+        },
+        {
+          id: "image-attachment",
+          path: "C:\\Docs\\screen.png",
+          kind: "image",
+          name: "screen.png",
+          parent: "C:\\Docs",
+        },
+      ],
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    render(<ChatSession />);
+
+    await waitFor(() => {
+      expect(screen.getByText("plan.md")).toBeDefined();
+      expect(screen.getByText("references")).toBeDefined();
+      expect(screen.getByText("screen.png")).toBeDefined();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove all attached context" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText("plan.md")).toBeNull();
+      expect(screen.queryByText("references")).toBeNull();
+      expect(screen.queryByText("screen.png")).toBeNull();
+    });
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("disables image sending when the active model cannot read images", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "unsupported-image-model-session",
+      draft: "Describe this",
+      model: "gpt-3.5-turbo",
+      draftContextAttachments: [
+        {
+          id: "screen-attachment",
+          path: "C:\\Docs\\screen.png",
+          kind: "image",
+          name: "screen.png",
+          parent: "C:\\Docs",
+        },
+      ],
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    render(<ChatSession />);
+
+    expect(screen.getByRole("button", { name: "Send message" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Add context" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+
+    expect(
+      (await screen.findByRole("menuitem", { name: /Images/i })).getAttribute(
+        "aria-disabled",
+      ),
+    ).toBe("true");
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("restores attached context with composer history navigation", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "history-context-session",
+      draft: "Continue current review",
+      draftContextAttachments: [
+        {
+          id: "current-attachment",
+          path: "C:\\Docs\\current.txt",
+          kind: "file",
+          name: "current.txt",
+          parent: "C:\\Docs",
+        },
+      ],
+      promptHistory: ["Review the plan"],
+      promptContextHistory: [
+        [
+          {
+            id: "history-attachment",
+            path: "C:\\Docs\\plan.md",
+            kind: "file",
+            name: "plan.md",
+            parent: "C:\\Docs",
+          },
+        ],
+      ],
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    render(<ChatSession />);
+
+    const input = (await screen.findByPlaceholderText(
+      /What should machdoch do next\?/i,
+    )) as HTMLTextAreaElement;
+
+    await waitFor(() => {
+      expect(input.value).toBe("Continue current review");
+      expect(screen.getByText("current.txt")).toBeDefined();
+    });
+
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+
+    await waitFor(() => {
+      expect(input.value).toBe("Review the plan");
+      expect(screen.getByText("plan.md")).toBeDefined();
+      expect(screen.queryByText("current.txt")).toBeNull();
+    });
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+
+    await waitFor(() => {
+      expect(input.value).toBe("Continue current review");
+      expect(screen.getByText("current.txt")).toBeDefined();
+      expect(screen.queryByText("plan.md")).toBeNull();
+    });
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("sends Quick Chat tasks with compact controls and session memory disabled", async () => {
@@ -2333,12 +2690,199 @@ describe("ChatSession component", () => {
     )) as HTMLTextAreaElement;
 
     await waitFor(() => {
-      expect(input.value).toContain("C:\\Docs\\quick-note.txt");
+      expect(screen.getByText("quick-note.txt")).toBeDefined();
     });
+    expect(input.value).not.toContain("C:\\Docs\\quick-note.txt");
 
     expect(resolveDroppedPathsSpy).toHaveBeenCalledWith([
       "C:\\Docs\\quick-note.txt",
     ]);
+
+    resolveDroppedPathsSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("adds selected files to the Quick Chat composer from the add context button", async () => {
+    openMock.mockResolvedValue(["C:\\Docs\\quick-note.txt"]);
+    const resolveDroppedPathsSpy = vi
+      .spyOn(runtime, "resolveDroppedPaths")
+      .mockResolvedValue({
+        workspaceRoot: "C:\\Docs",
+        entries: [
+          {
+            path: "C:\\Docs\\quick-note.txt",
+            kind: "file",
+            name: "quick-note.txt",
+            parent: "C:\\Docs",
+          },
+        ],
+      });
+    const runDesktopTaskSpy = vi
+      .spyOn(runtime, "runDesktopTask")
+      .mockResolvedValue({
+        execution: createMockExecutionFixture(
+          'Summarize it\n\nUse this file: "C:\\Docs\\quick-note.txt"',
+          "C:\\Docs",
+        ),
+      });
+
+    render(<AssistantPopupShell />);
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Add context" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Files/i }));
+
+    const input = (await screen.findByPlaceholderText(
+      /Quick Chat/i,
+    )) as HTMLTextAreaElement;
+
+    await waitFor(() => {
+      expect(screen.getByText("quick-note.txt")).toBeDefined();
+    });
+    expect(input.value).not.toContain("C:\\Docs\\quick-note.txt");
+    expect(openMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        directory: false,
+        multiple: true,
+        title: "Add Files as Context",
+      }),
+    );
+    expect(resolveDroppedPathsSpy).toHaveBeenCalledWith([
+      "C:\\Docs\\quick-note.txt",
+    ]);
+
+    fireEvent.change(input, {
+      target: { value: "Summarize it" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
+
+    await waitFor(() => {
+      expect(runDesktopTaskSpy).toHaveBeenCalledWith(
+        "C:\\Docs",
+        'Summarize it\n\nUse this file: "C:\\Docs\\quick-note.txt"',
+        expect.objectContaining({
+          provider: expect.any(String),
+          model: expect.any(String),
+        }),
+      );
+      expect(screen.queryByText("quick-note.txt")).toBeNull();
+    });
+
+    resolveDroppedPathsSpy.mockRestore();
+    runDesktopTaskSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("adds selected images to the Quick Chat composer and sends them as image inputs", async () => {
+    openMock.mockResolvedValue(["C:\\Docs\\quick-screen.png"]);
+    const resolveDroppedPathsSpy = vi
+      .spyOn(runtime, "resolveDroppedPaths")
+      .mockResolvedValue({
+        workspaceRoot: "C:\\Docs",
+        entries: [
+          {
+            path: "C:\\Docs\\quick-screen.png",
+            kind: "file",
+            name: "quick-screen.png",
+            parent: "C:\\Docs",
+          },
+        ],
+      });
+    const runDesktopTaskSpy = vi
+      .spyOn(runtime, "runDesktopTask")
+      .mockResolvedValue({
+        execution: createMockExecutionFixture(
+          'Describe it\n\nUse this image: "C:\\Docs\\quick-screen.png"',
+          "C:\\Docs",
+        ),
+      });
+
+    render(<AssistantPopupShell />);
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Add context" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Images/i }));
+
+    const input = (await screen.findByPlaceholderText(
+      /Quick Chat/i,
+    )) as HTMLTextAreaElement;
+
+    await waitFor(() => {
+      expect(screen.getByText("quick-screen.png")).toBeDefined();
+      expect(screen.getByText("image")).toBeDefined();
+    });
+    expect(openMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        directory: false,
+        multiple: true,
+        title: "Add Images as Context",
+      }),
+    );
+
+    fireEvent.change(input, {
+      target: { value: "Describe it" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
+
+    await waitFor(() => {
+      expect(runDesktopTaskSpy).toHaveBeenCalledWith(
+        "C:\\Docs",
+        'Describe it\n\nUse this image: "C:\\Docs\\quick-screen.png"',
+        expect.objectContaining({
+          imagePaths: ["C:\\Docs\\quick-screen.png"],
+        }),
+      );
+    });
+
+    resolveDroppedPathsSpy.mockRestore();
+    runDesktopTaskSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("removes all attached context from the Quick Chat composer", async () => {
+    openMock.mockResolvedValue(["C:\\Docs\\quick-note.txt"]);
+    const resolveDroppedPathsSpy = vi
+      .spyOn(runtime, "resolveDroppedPaths")
+      .mockResolvedValue({
+        workspaceRoot: "C:\\Docs",
+        entries: [
+          {
+            path: "C:\\Docs\\quick-note.txt",
+            kind: "file",
+            name: "quick-note.txt",
+            parent: "C:\\Docs",
+          },
+          {
+            path: "C:\\Docs\\quick-screen.png",
+            kind: "file",
+            name: "quick-screen.png",
+            parent: "C:\\Docs",
+          },
+        ],
+      });
+
+    render(<AssistantPopupShell />);
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Add context" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Files/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("quick-note.txt")).toBeDefined();
+      expect(screen.getByText("quick-screen.png")).toBeDefined();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove all attached context" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText("quick-note.txt")).toBeNull();
+      expect(screen.queryByText("quick-screen.png")).toBeNull();
+    });
 
     resolveDroppedPathsSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);

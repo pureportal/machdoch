@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import {
   afterEach,
   beforeAll,
@@ -45,6 +45,15 @@ afterEach(() => {
 });
 
 describe("AssistantPopupShell", () => {
+  it("does not expose settings in the Quick Chat window", () => {
+    render(<AssistantPopupShell />);
+
+    expect(
+      screen.queryByRole("button", { name: /open settings/i }),
+    ).toBeNull();
+    expect(screen.queryByText(/^settings$/i)).toBeNull();
+  });
+
   it("hides the Quick Chat window when it loses focus", async () => {
     render(<AssistantPopupShell />);
 

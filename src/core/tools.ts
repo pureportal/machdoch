@@ -128,6 +128,23 @@ const TOOL_REGISTRY: ToolDefinition[] = [
       "cargo",
     ],
   },
+  {
+    name: "utilities",
+    title: "Utilities",
+    description:
+      "Generate deterministic utility values such as UUIDs and random strings without invoking the shell.",
+    riskLevel: "low",
+    keywords: [
+      "uuid",
+      "guid",
+      "random string",
+      "random token",
+      "random identifier",
+      "random id",
+      "nonce",
+      "alphanumeric",
+    ],
+  },
 ];
 
 /**

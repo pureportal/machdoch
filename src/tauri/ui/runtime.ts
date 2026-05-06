@@ -113,6 +113,7 @@ export interface UserVoiceSettings {
 
 export interface UserSpeechToTextSettings {
   activeProvider: SpeechToTextProvider;
+  inputDeviceId: string | null;
   providerAvailability: SpeechToTextProviderAvailability[];
 }
 
@@ -303,6 +304,7 @@ const createSpeechToTextAvailabilitySnapshot = (
 const createDefaultUserSpeechToTextSettings = (): UserSpeechToTextSettings => {
   return {
     activeProvider: "none",
+    inputDeviceId: null,
     providerAvailability: createSpeechToTextAvailabilitySnapshot([]),
   };
 };
@@ -715,6 +717,28 @@ export const saveUserSpeechToTextActiveProvider = async (
   }
 };
 
+export const saveUserSpeechToTextInputDevice = async (
+  inputDeviceId: string | null,
+): Promise<UserSpeechToTextSettings> => {
+  const normalizedInputDeviceId = inputDeviceId?.trim() || null;
+
+  if (!canInvokeTauriCommands()) {
+    return {
+      ...createDefaultUserSpeechToTextSettings(),
+      inputDeviceId: normalizedInputDeviceId,
+    };
+  }
+
+  try {
+    return await tauriCore.invoke<UserSpeechToTextSettings>(
+      "save_user_speech_to_text_input_device",
+      { inputDeviceId: normalizedInputDeviceId },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
 export const synthesizeUserVoiceAudio = async (options: {
   provider: UserVoiceAiProvider;
   text: string;
@@ -825,6 +849,7 @@ export const runDesktopTask = async (
   task: string,
   context: {
     conversationContext?: TaskConversationContext;
+    imagePaths?: string[];
     mode?: RuntimeSnapshot["mode"];
     model?: string;
     profile?: string;
@@ -840,6 +865,9 @@ export const runDesktopTask = async (
   }
 
   const normalizedModel = context.model?.trim();
+  const normalizedImagePaths = (context.imagePaths ?? [])
+    .map((imagePath) => imagePath.trim())
+    .filter((imagePath) => imagePath.length > 0);
   const normalizedMode = context.mode;
   const normalizedProfile = context.profile?.trim();
   const normalizedProvider = context.provider;
@@ -866,6 +894,9 @@ export const runDesktopTask = async (
         ...(normalizedTaskId ? { taskId: normalizedTaskId } : {}),
         ...(normalizedProvider ? { provider: normalizedProvider } : {}),
         ...(normalizedModel ? { model: normalizedModel } : {}),
+        ...(normalizedImagePaths.length > 0
+          ? { imagePaths: normalizedImagePaths }
+          : {}),
         ...(context.conversationContext
           ? { conversationContext: context.conversationContext }
           : {}),

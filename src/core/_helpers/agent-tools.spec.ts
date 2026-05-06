@@ -56,6 +56,13 @@ describe("resolveActionDecision", () => {
     expect(
       resolveActionDecision(createRuntimeConfig(), "shell", "high").decision,
     ).toBe("ask");
+    expect(
+      resolveActionDecision(
+        createRuntimeConfig({ enabledTools: ["utilities"] }),
+        "utilities",
+        "low",
+      ).decision,
+    ).toBe("allow");
   });
 
   it("allows enabled tools in auto mode", () => {

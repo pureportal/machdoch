@@ -1,4 +1,12 @@
-import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInitialShellState, createSession } from "../../chat-session.model";
 import { useChatSessionShellState } from "./use-chat-session-shell-state";
@@ -35,12 +43,79 @@ const loadStoredShellState = (): ReturnType<typeof createInitialShellState> => {
   >;
 };
 
+interface ScrollMetrics {
+  clientHeight: number;
+  scrollHeight: number;
+}
+
+let resizeObserverMocks: ResizeObserverMock[] = [];
+
+class ResizeObserverMock implements ResizeObserver {
+  active = true;
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn(() => {
+    this.active = false;
+  });
+
+  constructor(readonly callback: ResizeObserverCallback) {
+    resizeObserverMocks.push(this);
+  }
+}
+
+const triggerActiveResizeObservers = (): void => {
+  act(() => {
+    for (const observer of resizeObserverMocks) {
+      if (observer.active) {
+        observer.callback([], observer);
+      }
+    }
+  });
+};
+
+const renderScrollHarness = (metrics: ScrollMetrics): void => {
+  const ScrollHarness = () => {
+    const controller = useChatSessionShellState();
+
+    return (
+      <div
+        data-testid="scroll-viewport"
+        data-slot="scroll-area-viewport"
+        ref={(node) => {
+          if (!node) {
+            return;
+          }
+
+          Object.defineProperties(node, {
+            clientHeight: {
+              configurable: true,
+              get: () => metrics.clientHeight,
+            },
+            scrollHeight: {
+              configurable: true,
+              get: () => metrics.scrollHeight,
+            },
+          });
+        }}
+      >
+        <div>
+          <div ref={controller.bottomRef} />
+        </div>
+      </div>
+    );
+  };
+
+  render(<ScrollHarness />);
+};
+
 beforeAll(() => {
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
 });
 
 beforeEach(() => {
   cleanup();
+  resizeObserverMocks = [];
+  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
   window.localStorage.clear();
 });
 
@@ -321,5 +396,102 @@ describe("useChatSessionShellState", () => {
 
     expect(result.current.activeSessionId).toBe(secondSession.id);
     expect(result.current.activeSession.id).toBe(secondSession.id);
+  });
+
+  it("keeps the scroll viewport pinned to the newest message when content grows after render", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-scroll-resize",
+      manualTitle: "Scroll resize",
+      updatedAt: 1,
+      messages: [
+        {
+          id: "scroll-user",
+          role: "user",
+          content: "Start",
+          createdAt: 1,
+        },
+        {
+          id: "scroll-agent",
+          role: "agent",
+          content: "Working",
+          createdAt: 2,
+        },
+      ],
+    });
+    const metrics: ScrollMetrics = {
+      clientHeight: 500,
+      scrollHeight: 1_000,
+    };
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    renderScrollHarness(metrics);
+    await flushShellHydration();
+
+    const viewport = screen.getByTestId("scroll-viewport");
+
+    await waitFor(() => {
+      expect(viewport.scrollTop).toBe(500);
+    });
+
+    metrics.scrollHeight = 1_250;
+    triggerActiveResizeObservers();
+
+    expect(viewport.scrollTop).toBe(750);
+  });
+
+  it("does not force the scroll viewport to newest after the user scrolls away", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-scroll-away",
+      manualTitle: "Scroll away",
+      updatedAt: 1,
+      messages: [
+        {
+          id: "scroll-away-user",
+          role: "user",
+          content: "Start",
+          createdAt: 1,
+        },
+        {
+          id: "scroll-away-agent",
+          role: "agent",
+          content: "Working",
+          createdAt: 2,
+        },
+      ],
+    });
+    const metrics: ScrollMetrics = {
+      clientHeight: 500,
+      scrollHeight: 1_000,
+    };
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    renderScrollHarness(metrics);
+    await flushShellHydration();
+
+    const viewport = screen.getByTestId("scroll-viewport");
+
+    await waitFor(() => {
+      expect(viewport.scrollTop).toBe(500);
+    });
+
+    viewport.scrollTop = 240;
+    fireEvent.scroll(viewport);
+
+    metrics.scrollHeight = 1_250;
+    triggerActiveResizeObservers();
+
+    expect(viewport.scrollTop).toBe(240);
   });
 });

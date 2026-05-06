@@ -5,6 +5,7 @@ import {
   EyeOff,
   KeyRound,
   Monitor,
+  RefreshCw,
   Search,
   Volume2,
   type LucideIcon,
@@ -38,6 +39,7 @@ import {
   type WebSearchProvider,
 } from "../../runtime";
 import type { ChatSessionVoiceOption } from "../_helpers/use-chat-session-voice";
+import type { SpeechInputDeviceOption } from "../_helpers/speech-audio";
 import {
   SETTINGS_SECTIONS,
   getWebSearchProviderLabel,
@@ -103,6 +105,12 @@ export interface VoiceSettingsControls {
   speechToTextProvider: SpeechToTextProvider;
   speechToTextProviderAvailability: SpeechToTextProviderAvailability[];
   speechToTextProviderSaving: boolean;
+  speechInputDeviceId: string | null;
+  speechInputDevicesSupported: boolean;
+  speechInputDevicesRefreshing: boolean;
+  speechInputDeviceSaving: boolean;
+  speechInputDevices: SpeechInputDeviceOption[];
+  speechInputDeviceMessage: SettingsStatusMessage | null;
   speechToTextProviderMessage: SettingsStatusMessage | null;
   aiProvider: VoiceAiProvider;
   aiProviderAvailability: VoiceProviderAvailability[];
@@ -114,6 +122,10 @@ export interface VoiceSettingsControls {
   onSpeechToTextProviderChange: (
     provider: SpeechToTextProvider,
   ) => Promise<void> | void;
+  onSpeechInputDeviceChange: (
+    inputDeviceId: string | null,
+  ) => Promise<void> | void;
+  onRefreshSpeechInputDevices: () => Promise<void> | void;
   onAiProviderChange: (provider: VoiceAiProvider) => Promise<void> | void;
   onAutoSpeakResponsesChange: (enabled: boolean) => void;
   onPreferredVoiceChange: (voiceURI: string | null) => void;
@@ -463,6 +475,11 @@ export const SettingsDialog = ({
       provider.configured,
     ]),
   );
+  const selectedSpeechInputDeviceMissing =
+    voiceSetup.speechInputDeviceId !== null &&
+    !voiceSetup.speechInputDevices.some(
+      (device) => device.deviceId === voiceSetup.speechInputDeviceId,
+    );
 
   return (
     <DialogContent className="max-h-[min(720px,calc(100vh-28px))] w-[min(980px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none">
@@ -968,6 +985,62 @@ export const SettingsDialog = ({
                     />
                   </SettingPanel>
 
+                  <SettingPanel label="Input device">
+                    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                      <select
+                        aria-label="Voice input device"
+                        value={voiceSetup.speechInputDeviceId ?? ""}
+                        disabled={
+                          !voiceSetup.speechInputDevicesSupported ||
+                          voiceSetup.speechInputDeviceSaving
+                        }
+                        onChange={(event) => {
+                          const nextValue = event.target.value.trim();
+
+                          void voiceSetup.onSpeechInputDeviceChange(
+                            nextValue.length > 0 ? nextValue : null,
+                          );
+                        }}
+                        className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none transition-colors focus:border-sky-500/40 disabled:opacity-50"
+                      >
+                        <option value="">System default</option>
+                        {selectedSpeechInputDeviceMissing ? (
+                          <option value={voiceSetup.speechInputDeviceId ?? ""}>
+                            Selected microphone unavailable
+                          </option>
+                        ) : null}
+                        {voiceSetup.speechInputDevices.map((device) => (
+                          <option key={device.deviceId} value={device.deviceId}>
+                            {device.label}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        aria-label="Refresh microphone devices"
+                        title="Refresh microphone devices"
+                        onClick={() => {
+                          void voiceSetup.onRefreshSpeechInputDevices();
+                        }}
+                        disabled={
+                          !voiceSetup.speechInputDevicesSupported ||
+                          voiceSetup.speechInputDevicesRefreshing
+                        }
+                        className="h-10 w-10 rounded-lg border-slate-800 bg-slate-950 text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40"
+                      >
+                        <RefreshCw
+                          className={cn(
+                            "h-4 w-4",
+                            voiceSetup.speechInputDevicesRefreshing &&
+                              "animate-spin",
+                          )}
+                        />
+                      </Button>
+                    </div>
+                  </SettingPanel>
+
                   <SettingPanel label="Voice provider">
                     <ChoiceButtons
                       value={voiceSetup.aiProvider}
@@ -988,21 +1061,16 @@ export const SettingsDialog = ({
                   </SettingPanel>
 
                   <SettingPanel label="Replies">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <ChoiceButtons
-                        value={voiceSetup.autoSpeakResponses ? "auto" : "manual"}
-                        options={[
-                          { value: "auto", label: "Auto-read new replies" },
-                          { value: "manual", label: "Manual only" },
-                        ]}
-                        onChange={(value) => {
-                          voiceSetup.onAutoSpeakResponsesChange(value === "auto");
-                        }}
-                      />
-                      <Badge className="h-8 rounded-md border-slate-700 bg-slate-950 px-3 text-slate-300">
-                        {voiceSetup.supported ? "Ready" : "Unavailable"}
-                      </Badge>
-                    </div>
+                    <ChoiceButtons
+                      value={voiceSetup.autoSpeakResponses ? "auto" : "manual"}
+                      options={[
+                        { value: "auto", label: "Auto-read new replies" },
+                        { value: "manual", label: "Manual only" },
+                      ]}
+                      onChange={(value) => {
+                        voiceSetup.onAutoSpeakResponsesChange(value === "auto");
+                      }}
+                    />
                   </SettingPanel>
 
                   {voiceSetup.systemVoicesSupported ? (
@@ -1053,6 +1121,7 @@ export const SettingsDialog = ({
                 </div>
 
                 <SettingsStatus message={voiceSetup.speechToTextProviderMessage} />
+                <SettingsStatus message={voiceSetup.speechInputDeviceMessage} />
                 <SettingsStatus message={voiceSetup.aiProviderMessage} />
               </SettingsCard>
             ) : null}

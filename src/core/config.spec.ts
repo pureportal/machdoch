@@ -72,7 +72,11 @@ describe("loadRuntimeConfig", () => {
     );
     expect(config.availableProfiles).toEqual([]);
     expect(config.mode).toBe("ask");
-    expect(config.enabledTools).toEqual(["filesystem", "shell"]);
+    expect(config.enabledTools).toEqual([
+      "filesystem",
+      "shell",
+      "utilities",
+    ]);
     expect(config.provider).toBe("unconfigured");
     expect(config.model).toBe("gpt-5.5");
     expect(config.offline).toBe(false);

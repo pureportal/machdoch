@@ -381,6 +381,11 @@ pub(crate) fn show_quick_voice_window<R: Runtime>(
     Ok(())
 }
 
+#[tauri::command]
+pub fn reveal_main_window(app: AppHandle) {
+    show_main_window(&app);
+}
+
 fn hide_transient_assistant_windows<R: Runtime, M: Manager<R>>(app: &M) {
     for label in [ASSISTANT_POPUP_WINDOW_LABEL, QUICK_VOICE_WINDOW_LABEL] {
         if let Some(window) = app.get_webview_window(label) {

@@ -3,7 +3,12 @@ import type {
   TaskConversationContext,
 } from "../../core/types.ts";
 import type { ParsedCliArgs } from "./cli-args.ts";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
+  applyContextPathsToTask,
+  createImageInputsFromPaths,
   createInteractiveChatSessionState,
   resolveConversationContext,
 } from "./cli-task-run.ts";
@@ -36,6 +41,25 @@ const createArgs = (
     ...overrides,
   };
 };
+
+const workspacesToClean: string[] = [];
+
+const createWorkspace = async (): Promise<string> => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-cli-context-"));
+  workspacesToClean.push(workspaceRoot);
+
+  return workspaceRoot;
+};
+
+afterEach(async () => {
+  await Promise.all(
+    workspacesToClean
+      .splice(0)
+      .map((workspaceRoot) =>
+        rm(workspaceRoot, { recursive: true, force: true }),
+      ),
+  );
+});
 
 describe("resolveConversationContext", () => {
   it("returns undefined when neither a base context nor CLI overrides exist", async () => {
@@ -80,6 +104,85 @@ describe("resolveConversationContext", () => {
       sessionMemoryEnabled: false,
       globalMemoryEnabled: false,
     });
+  });
+});
+
+describe("applyContextPathsToTask", () => {
+  it("appends GUI-style file and folder context references to a task", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    await mkdir(join(workspaceRoot, "docs"), { recursive: true });
+    await writeFile(join(workspaceRoot, "README.md"), "# machdoch\n");
+
+    await expect(
+      applyContextPathsToTask(
+        "Summarize the selected context",
+        ["README.md", "docs", "missing-target"],
+        workspaceRoot,
+      ),
+    ).resolves.toBe(
+      [
+        "Summarize the selected context",
+        "",
+        "Use these paths:",
+        '- file: "README.md"',
+        '- folder: "docs"',
+        '- path: "missing-target"',
+      ].join("\n"),
+    );
+  });
+
+  it("returns the trimmed task when no context paths were provided", async () => {
+    await expect(
+      applyContextPathsToTask("  Summarize the repo  ", undefined, "C:/repo"),
+    ).resolves.toBe("Summarize the repo");
+  });
+});
+
+describe("createImageInputsFromPaths", () => {
+  it("loads image attachments as base64 inputs for a vision-capable model", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    await writeFile(join(workspaceRoot, "screen.png"), Buffer.from("image"));
+
+    await expect(
+      createImageInputsFromPaths(["screen.png"], workspaceRoot, {
+        provider: "openai",
+        model: "gpt-5.5",
+      }),
+    ).resolves.toEqual([
+      {
+        path: join(workspaceRoot, "screen.png"),
+        mediaType: "image/png",
+        data: Buffer.from("image").toString("base64"),
+      },
+    ]);
+  });
+
+  it("rejects image attachments for text-only models", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    await writeFile(join(workspaceRoot, "screen.png"), Buffer.from("image"));
+
+    await expect(
+      createImageInputsFromPaths(["screen.png"], workspaceRoot, {
+        provider: "openai",
+        model: "gpt-3.5-turbo",
+      }),
+    ).rejects.toThrow("does not support reading image attachments");
+  });
+
+  it("rejects provider-unsupported image formats", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    await writeFile(join(workspaceRoot, "photo.heic"), Buffer.from("image"));
+
+    await expect(
+      createImageInputsFromPaths(["photo.heic"], workspaceRoot, {
+        provider: "openai",
+        model: "gpt-5.5",
+      }),
+    ).rejects.toThrow("Unsupported image attachment format");
   });
 });
 

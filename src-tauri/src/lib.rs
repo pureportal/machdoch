@@ -75,6 +75,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             desktop_shell::detect_fullscreen_window_on_monitor,
             desktop_shell::get_desktop_launch_id,
+            desktop_shell::reveal_main_window,
             desktop_task::cancel_desktop_task,
             desktop_task::get_active_desktop_task_ids,
             desktop_task::open_workspace_path,
@@ -92,6 +93,7 @@ pub fn run() {
             runtime_snapshot::save_user_global_memory_enabled,
             runtime_snapshot::save_user_provider_api_key,
             runtime_snapshot::save_user_speech_to_text_active_provider,
+            runtime_snapshot::save_user_speech_to_text_input_device,
             runtime_snapshot::save_user_voice_active_provider,
             runtime_snapshot::save_user_web_search_active_provider,
             runtime_snapshot::save_user_web_search_api_key,

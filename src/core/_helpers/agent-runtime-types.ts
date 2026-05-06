@@ -3,6 +3,7 @@ import type {
   ResolvedTaskContext,
   RuntimeConfig,
   TaskConversationContext,
+  AgentModelImageInput,
   TaskExecutionMemoryUpdate,
   TaskExecutionNarrative,
   TaskExecutionProgressHandler,
@@ -47,6 +48,7 @@ export interface ModelDrivenExecutionParams {
   taskContext: ResolvedTaskContext;
   contextSections: TaskExecutionSection[];
   conversationContext?: TaskConversationContext;
+  imageInputs?: AgentModelImageInput[];
   modelAdapter?: AgentModelAdapter;
   monitorModelAdapter?: AgentModelAdapter;
   onStateChange?: TaskExecutionProgressHandler;

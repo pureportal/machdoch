@@ -11,6 +11,20 @@ export type ChatSessionMessageSource = TaskPanelSource | TaskThinkingSource;
 
 export type ChatSessionSpecialKind = "quick-voice";
 
+export type ChatSessionContextAttachmentKind =
+  | "file"
+  | "directory"
+  | "image"
+  | "other";
+
+export interface ChatSessionContextAttachment {
+  id: string;
+  path: string;
+  kind: ChatSessionContextAttachmentKind;
+  name: string;
+  parent?: string;
+}
+
 export interface ChatSessionMessage {
   id: string;
   taskId?: string;
@@ -32,9 +46,11 @@ export interface ChatSessionRecord {
   model: string;
   mode?: RunMode;
   draft: string;
+  draftContextAttachments: ChatSessionContextAttachment[];
   manualTitle?: string;
   messages: ChatSessionMessage[];
   promptHistory: string[];
+  promptContextHistory: ChatSessionContextAttachment[][];
   sessionMemoryEnabled: boolean;
   useGlobalMemory: boolean;
   uiControlEnabled: boolean;
@@ -74,6 +90,12 @@ const MAX_VOICE_RATE = 1.4;
 const SPECIAL_SESSION_KINDS = ["quick-voice"] as const;
 const RUN_MODES: RunMode[] = ["safe", "ask", "auto"];
 const RUNTIME_PROVIDERS: RuntimeProvider[] = ["openai", "anthropic", "google"];
+const CONTEXT_ATTACHMENT_KINDS: ChatSessionContextAttachmentKind[] = [
+  "file",
+  "directory",
+  "image",
+  "other",
+];
 
 export const QUICK_VOICE_SESSION_KIND: ChatSessionSpecialKind = "quick-voice";
 
@@ -112,6 +134,85 @@ const isSpecialSessionKind = (
   );
 };
 
+const isContextAttachmentKind = (
+  value: unknown,
+): value is ChatSessionContextAttachmentKind => {
+  return (
+    typeof value === "string" &&
+    CONTEXT_ATTACHMENT_KINDS.includes(value as ChatSessionContextAttachmentKind)
+  );
+};
+
+const getFallbackAttachmentName = (path: string): string => {
+  const name = path.replace(/\\/gu, "/").split("/").filter(Boolean).at(-1);
+
+  return name?.trim() || path;
+};
+
+const normalizeContextAttachments = (
+  value: unknown,
+  idPrefix: string,
+): ChatSessionContextAttachment[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seenPaths = new Set<string>();
+  const attachments: ChatSessionContextAttachment[] = [];
+
+  for (const [index, entry] of value.entries()) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+
+    const candidate = entry as Partial<ChatSessionContextAttachment>;
+    const path = typeof candidate.path === "string" ? candidate.path.trim() : "";
+
+    if (!path) {
+      continue;
+    }
+
+    const dedupeKey = path.toLowerCase();
+
+    if (seenPaths.has(dedupeKey)) {
+      continue;
+    }
+
+    seenPaths.add(dedupeKey);
+    attachments.push({
+      id:
+        typeof candidate.id === "string" && candidate.id.trim()
+          ? candidate.id.trim()
+          : `${idPrefix}-${index}`,
+      path,
+      kind: isContextAttachmentKind(candidate.kind)
+        ? candidate.kind
+        : "other",
+      name:
+        typeof candidate.name === "string" && candidate.name.trim()
+          ? candidate.name.trim()
+          : getFallbackAttachmentName(path),
+      ...(typeof candidate.parent === "string" && candidate.parent.trim()
+        ? { parent: candidate.parent.trim() }
+        : {}),
+    });
+  }
+
+  return attachments;
+};
+
+const normalizePromptContextHistory = (
+  value: unknown,
+): ChatSessionContextAttachment[][] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((entry, index) =>
+    normalizeContextAttachments(entry, `history-context-${index}`),
+  );
+};
+
 export const createSession = (
   overrides: Partial<ChatSessionRecord> = {},
 ): ChatSessionRecord => {
@@ -136,9 +237,11 @@ export const createSession = (
     model: overrides.model ?? getDefaultModelForProvider(provider),
     ...(overrides.mode ? { mode: overrides.mode } : {}),
     draft: overrides.draft ?? "",
+    draftContextAttachments: overrides.draftContextAttachments ?? [],
     ...(overrides.manualTitle ? { manualTitle: overrides.manualTitle } : {}),
     messages: overrides.messages ?? [],
     promptHistory: overrides.promptHistory ?? [],
+    promptContextHistory: overrides.promptContextHistory ?? [],
     sessionMemoryEnabled: isQuickTaskSession
       ? false
       : (overrides.sessionMemoryEnabled ?? true),
@@ -238,6 +341,13 @@ const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord =
       typeof session.manualTitle === "string" ? session.manualTitle : undefined,
     messages: Array.isArray(session.messages) ? session.messages : [],
     promptHistory: normalizePromptHistoryEntries(session.promptHistory),
+    promptContextHistory: normalizePromptContextHistory(
+      session.promptContextHistory,
+    ),
+    draftContextAttachments: normalizeContextAttachments(
+      session.draftContextAttachments,
+      `draft-context-${session.id}`,
+    ),
     sessionMemoryEnabled: isQuickTaskSession
       ? false
       : session.sessionMemoryEnabled !== false,

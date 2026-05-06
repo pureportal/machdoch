@@ -170,7 +170,7 @@ Rules.
       join(workspaceRoot, ".machdoch", "prompts", "review.prompt.md"),
       `---
 description: Review the workspace
-tools: [terminal, bash, website, terminal, unknown]
+tools: [terminal, bash, website, uuid, terminal, unknown]
 ---
 Prompt body.
 `,
@@ -198,7 +198,7 @@ Prompt body.
         name: "review",
         description: "Review the workspace",
         inputs: [],
-        tools: ["shell", "browser"],
+        tools: ["shell", "browser", "utilities"],
         body: "Prompt body.",
       },
     ]);

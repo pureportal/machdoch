@@ -6,7 +6,10 @@ import {
 	type UserSpeechToTextProvider,
 	type UserSpeechToTextSettings,
 } from "../../runtime";
-import { assertRecordedSpeechDetected } from "./speech-audio";
+import {
+	assertRecordedSpeechDetected,
+	createSpeechInputAudioConstraints,
+} from "./speech-audio";
 
 const GOOGLE_SUPPORTED_MIME_TYPES = new Set([
 	"audio/wav",
@@ -24,6 +27,7 @@ const RECORDING_MIME_CANDIDATES = [
 	"audio/ogg;codecs=opus",
 	"audio/ogg",
 ] as const;
+const VOICE_LEVEL_MONITOR_INTERVAL_MS = 120;
 
 export type SpeechInputStatusTone = "success" | "error" | "info";
 
@@ -40,6 +44,7 @@ export interface ChatSessionSpeechInputController {
 	configuredProvider: UserSpeechToTextProvider | null;
 	recording: boolean;
 	transcribing: boolean;
+	level: number;
 	statusText: string | null;
 	statusTone: SpeechInputStatusTone | null;
 	availabilityDescription: string;
@@ -275,9 +280,13 @@ export const useChatSessionSpeechInput = (
 	const [statusTone, setStatusTone] = useState<SpeechInputStatusTone | null>(
 		null,
 	);
+	const [level, setLevel] = useState(0);
 	const recorderRef = useRef<MediaRecorder | null>(null);
 	const streamRef = useRef<MediaStream | null>(null);
 	const chunksRef = useRef<Blob[]>([]);
+	const audioContextRef = useRef<AudioContext | null>(null);
+	const analyserRef = useRef<AnalyserNode | null>(null);
+	const monitoringIntervalRef = useRef<number | null>(null);
 	const recordingSessionIdRef = useRef<string>(options.activeSessionId);
 	const recordingProviderRef = useRef<UserSpeechToTextProvider | null>(null);
 
@@ -289,6 +298,67 @@ export const useChatSessionSpeechInput = (
 		);
 	}, [browserSupported, configuredProvider, options.settings]);
 
+	const clearMonitoring = useCallback((): void => {
+		if (monitoringIntervalRef.current !== null) {
+			window.clearInterval(monitoringIntervalRef.current);
+			monitoringIntervalRef.current = null;
+		}
+
+		setLevel(0);
+		analyserRef.current = null;
+
+		if (audioContextRef.current) {
+			void audioContextRef.current.close().catch(() => undefined);
+			audioContextRef.current = null;
+		}
+	}, []);
+
+	const startLevelMonitoring = useCallback(
+		(stream: MediaStream): void => {
+			clearMonitoring();
+
+			if (typeof AudioContext === "undefined") {
+				return;
+			}
+
+			try {
+				const audioContext = new AudioContext();
+				audioContextRef.current = audioContext;
+
+				const analyser = audioContext.createAnalyser();
+				analyser.fftSize = 1024;
+				analyser.smoothingTimeConstant = 0.85;
+
+				const source = audioContext.createMediaStreamSource(stream);
+				source.connect(analyser);
+
+				analyserRef.current = analyser;
+
+				const analyserData = new Uint8Array(analyser.fftSize);
+
+				monitoringIntervalRef.current = window.setInterval(() => {
+					if (!analyserRef.current) {
+						return;
+					}
+
+					analyserRef.current.getByteTimeDomainData(analyserData);
+
+					let sumSquares = 0;
+
+					for (const sample of analyserData) {
+						const normalizedSample = sample / 128 - 1;
+						sumSquares += normalizedSample * normalizedSample;
+					}
+
+					setLevel(Math.sqrt(sumSquares / analyserData.length));
+				}, VOICE_LEVEL_MONITOR_INTERVAL_MS);
+			} catch {
+				clearMonitoring();
+			}
+		},
+		[clearMonitoring],
+	);
+
 	const finalizeRecording = useCallback(async (): Promise<void> => {
 		const recorder = recorderRef.current;
 		const stream = streamRef.current;
@@ -298,6 +368,7 @@ export const useChatSessionSpeechInput = (
 			return;
 		}
 
+		clearMonitoring();
 		setRecording(false);
 		setTranscribing(true);
 		setStatusTone("info");
@@ -347,6 +418,7 @@ export const useChatSessionSpeechInput = (
 			recorderRef.current = null;
 			streamRef.current = null;
 			chunksRef.current = [];
+			clearMonitoring();
 			setStatusTone("error");
 			setStatusText(
 				error instanceof Error
@@ -357,7 +429,7 @@ export const useChatSessionSpeechInput = (
 			recordingProviderRef.current = null;
 			setTranscribing(false);
 		}
-	}, [options]);
+	}, [clearMonitoring, options]);
 
 	const startRecording = useCallback(async (): Promise<void> => {
 		if (!browserSupported) {
@@ -376,12 +448,9 @@ export const useChatSessionSpeechInput = (
 
 		try {
 			const stream = await navigator.mediaDevices.getUserMedia({
-				audio: {
-					channelCount: 1,
-					echoCancellation: true,
-					noiseSuppression: true,
-					autoGainControl: true,
-				},
+				audio: createSpeechInputAudioConstraints(
+					options.settings.inputDeviceId,
+				),
 			});
 			const recorderMimeType = resolveRecorderMimeType();
 			const recorder = recorderMimeType
@@ -397,6 +466,7 @@ export const useChatSessionSpeechInput = (
 					chunksRef.current.push(event.data);
 				}
 			};
+			startLevelMonitoring(stream);
 			recorderRef.current = recorder;
 			streamRef.current = stream;
 			recordingSessionIdRef.current = options.activeSessionId;
@@ -411,12 +481,20 @@ export const useChatSessionSpeechInput = (
 			setRecording(false);
 			setTranscribing(false);
 			recorderRef.current = null;
+			clearMonitoring();
 			stopMediaStream(streamRef.current);
 			streamRef.current = null;
 			chunksRef.current = [];
 			recordingProviderRef.current = null;
 		}
-	}, [browserSupported, configuredProvider, options.activeSessionId]);
+	}, [
+		browserSupported,
+		clearMonitoring,
+		configuredProvider,
+		options.activeSessionId,
+		options.settings.inputDeviceId,
+		startLevelMonitoring,
+	]);
 
 	const toggleRecording = useCallback((): void => {
 		if (transcribing) {
@@ -443,13 +521,14 @@ export const useChatSessionSpeechInput = (
 				}
 			}
 
+			clearMonitoring();
 			stopMediaStream(streamRef.current);
 			recorderRef.current = null;
 			streamRef.current = null;
 			chunksRef.current = [];
 			recordingProviderRef.current = null;
 		};
-	}, []);
+	}, [clearMonitoring]);
 
 	return {
 		browserSupported,
@@ -458,6 +537,7 @@ export const useChatSessionSpeechInput = (
 		configuredProvider,
 		recording,
 		transcribing,
+		level,
 		statusText,
 		statusTone,
 		availabilityDescription,

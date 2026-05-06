@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertRecordedSpeechDetected,
+  createSpeechInputAudioConstraints,
+  listSpeechInputDevices,
   NO_SPEECH_DETECTED_MESSAGE,
 } from "./speech-audio";
 
@@ -56,5 +58,51 @@ describe("speech audio helpers", () => {
         new Blob([new Uint8Array(2_048)], { type: "audio/webm" }),
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it("adds the selected microphone to audio constraints", () => {
+    expect(createSpeechInputAudioConstraints("mic-2")).toEqual({
+      channelCount: 1,
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      deviceId: { exact: "mic-2" },
+    });
+  });
+
+  it("lists selectable microphone devices", async () => {
+    const enumerateDevices = vi.fn(async () => [
+      {
+        kind: "audioinput",
+        deviceId: "default",
+        label: "Default Microphone",
+      },
+      {
+        kind: "audioinput",
+        deviceId: "mic-1",
+        label: "Desk Microphone",
+      },
+      {
+        kind: "audioinput",
+        deviceId: "mic-2",
+        label: "",
+      },
+      {
+        kind: "videoinput",
+        deviceId: "camera-1",
+        label: "Camera",
+      },
+    ] as MediaDeviceInfo[]);
+
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        enumerateDevices,
+      },
+    });
+
+    await expect(listSpeechInputDevices()).resolves.toEqual([
+      { deviceId: "mic-1", label: "Desk Microphone" },
+      { deviceId: "mic-2", label: "Microphone 2" },
+    ]);
   });
 });
