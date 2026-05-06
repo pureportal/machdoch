@@ -48,6 +48,27 @@ describe("resolveActionDecision", () => {
     expect(decision.reason).toContain("Safe mode");
   });
 
+  it("allows read-only actions and pauses writes in plan mode", () => {
+    expect(
+      resolveActionDecision(
+        createRuntimeConfig({ mode: "plan" }),
+        "filesystem",
+        "low",
+        { effect: "read" },
+      ).decision,
+    ).toBe("allow");
+
+    const writeDecision = resolveActionDecision(
+      createRuntimeConfig({ mode: "plan" }),
+      "filesystem",
+      "low",
+      { effect: "write" },
+    );
+
+    expect(writeDecision.decision).toBe("ask");
+    expect(writeDecision.reason).toContain("Plan mode");
+  });
+
   it("allows only low-risk enabled tools in ask mode", () => {
     expect(
       resolveActionDecision(createRuntimeConfig(), "filesystem", "low")

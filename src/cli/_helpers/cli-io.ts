@@ -9,6 +9,7 @@ import { formatExecutionProgressLines } from "./cli-output.js";
 
 const TERMINAL_PROGRESS_STATES: ReadonlySet<TaskExecutionState> = new Set([
   "completed",
+  "planned",
   "approval-required",
   "blocked",
   "unsupported",
@@ -29,6 +30,8 @@ const splitMarkdownLines = (markdown: string): string[] => {
 
 const createStatusFallbackLine = (execution: TaskExecutionResult): string => {
   switch (execution.status) {
+    case "planned":
+      return `Plan ready: ${execution.summary}`;
     case "executed":
       return execution.summary;
     case "approval-required":

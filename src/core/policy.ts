@@ -14,6 +14,22 @@ const getDecisionForEnabledTool = (
   tool: ToolDefinition,
   mode: RuntimeConfig["mode"],
 ): { decision: ToolPolicyDecision; reason: string } => {
+  if (mode === "plan") {
+    if (tool.name === "utilities") {
+      return {
+        decision: "allow",
+        reason:
+          "Plan mode allows deterministic utility helpers because they do not inspect or mutate external state.",
+      };
+    }
+
+    return {
+      decision: "ask",
+      reason:
+        "Plan mode permits read-only sub-actions but pauses before state-changing or ambiguous actions until the plan is validated.",
+    };
+  }
+
   if (mode === "safe") {
     return {
       decision: "ask",

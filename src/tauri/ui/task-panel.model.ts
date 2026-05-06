@@ -73,6 +73,8 @@ const createModeTone = (mode: string): TaskPanelTone => {
   switch (mode) {
     case "auto":
       return "success";
+    case "plan":
+      return "info";
     case "safe":
       return "warning";
     default:
@@ -84,6 +86,8 @@ const createStatusTone = (
   status: TaskExecutionResult["status"],
 ): TaskPanelTone => {
   switch (status) {
+    case "planned":
+      return "info";
     case "executed":
       return "success";
     case "approval-required":

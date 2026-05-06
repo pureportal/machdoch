@@ -3,6 +3,7 @@ import {
   Brain,
   Eye,
   EyeOff,
+  Gauge,
   KeyRound,
   Monitor,
   RefreshCw,
@@ -25,6 +26,7 @@ import { cn } from "../../lib/utils";
 import { getProviderLabel } from "../../model-catalog";
 import {
   USER_API_KEY_PROVIDER_ORDER,
+  type UserAgentLimitsSettings,
   type UserDesktopSettings,
   USER_SPEECH_TO_TEXT_PROVIDER_ORDER,
   USER_VOICE_AI_PROVIDER_ORDER,
@@ -49,6 +51,7 @@ import {
 const SETTINGS_SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   providers: KeyRound,
   "web-search": Search,
+  agent: Gauge,
   voice: Volume2,
   memory: Brain,
   desktop: Monitor,
@@ -94,6 +97,13 @@ export interface DesktopSettingsControls {
   saving: boolean;
   message: SettingsStatusMessage | null;
   onSave: (settings: UserDesktopSettings) => Promise<void> | void;
+}
+
+export interface AgentLimitsSettingsControls {
+  settings: UserAgentLimitsSettings;
+  saving: boolean;
+  message: SettingsStatusMessage | null;
+  onSave: (settings: UserAgentLimitsSettings) => Promise<void> | void;
 }
 
 export interface VoiceSettingsControls {
@@ -285,6 +295,7 @@ export interface SettingsDialogProps {
   onSettingsSectionChange: (section: SettingsSection) => void;
   providerSetup: ProviderSetupControls;
   webSearchSetup: WebSearchSetupControls;
+  agentLimitsSetup: AgentLimitsSettingsControls;
   memorySetup: MemorySettingsControls;
   desktopSetup: DesktopSettingsControls;
   voiceSetup: VoiceSettingsControls;
@@ -406,6 +417,21 @@ const normalizeDesktopSettingsDraft = (
   };
 };
 
+const normalizeAgentLimitsDraft = (
+  settings: UserAgentLimitsSettings,
+): UserAgentLimitsSettings => {
+  return {
+    infinite: settings.infinite,
+    executorTurns: clampIntegerSetting(settings.executorTurns, 1, 1000, 64),
+    autopilotExecutorIterations: clampIntegerSetting(
+      settings.autopilotExecutorIterations,
+      1,
+      100,
+      16,
+    ),
+  };
+};
+
 const hasDesktopSettingsDraftChanges = (
   left: UserDesktopSettings,
   right: UserDesktopSettings,
@@ -427,11 +453,23 @@ const hasDesktopSettingsDraftChanges = (
   );
 };
 
+const hasAgentLimitsDraftChanges = (
+  left: UserAgentLimitsSettings,
+  right: UserAgentLimitsSettings,
+): boolean => {
+  return (
+    left.infinite !== right.infinite ||
+    left.executorTurns !== right.executorTurns ||
+    left.autopilotExecutorIterations !== right.autopilotExecutorIterations
+  );
+};
+
 export const SettingsDialog = ({
   settingsSection,
   onSettingsSectionChange,
   providerSetup,
   webSearchSetup,
+  agentLimitsSetup,
   memorySetup,
   desktopSetup,
   voiceSetup,
@@ -439,12 +477,18 @@ export const SettingsDialog = ({
   const [desktopDraft, setDesktopDraft] = useState<UserDesktopSettings>(
     desktopSetup.settings,
   );
+  const [agentLimitsDraft, setAgentLimitsDraft] =
+    useState<UserAgentLimitsSettings>(agentLimitsSetup.settings);
   const [providerKeyVisible, setProviderKeyVisible] = useState(false);
   const [webSearchKeyVisible, setWebSearchKeyVisible] = useState(false);
 
   useEffect(() => {
     setDesktopDraft(desktopSetup.settings);
   }, [desktopSetup.settings]);
+
+  useEffect(() => {
+    setAgentLimitsDraft(agentLimitsSetup.settings);
+  }, [agentLimitsSetup.settings]);
 
   useEffect(() => {
     setProviderKeyVisible(false);
@@ -458,6 +502,11 @@ export const SettingsDialog = ({
   const desktopDraftDirty = hasDesktopSettingsDraftChanges(
     desktopDraft,
     desktopSetup.settings,
+  );
+  const normalizedAgentLimitsDraft = normalizeAgentLimitsDraft(agentLimitsDraft);
+  const agentLimitsDraftDirty = hasAgentLimitsDraftChanges(
+    normalizedAgentLimitsDraft,
+    agentLimitsSetup.settings,
   );
   const selectedProviderLabel = getProviderLabel(providerSetup.provider);
   const selectedWebSearchProviderLabel = getWebSearchProviderLabel(
@@ -696,6 +745,113 @@ export const SettingsDialog = ({
                 </SettingPanel>
 
                 <SettingsStatus message={webSearchSetup.message} />
+              </SettingsCard>
+            ) : null}
+
+            {settingsSection === "agent" ? (
+              <SettingsCard title="Agent loop limits">
+                <div className="grid gap-0">
+                  <SettingPanel
+                    label="Limit mode"
+                    detail="The wall-clock safety timeout still applies."
+                  >
+                    <ChoiceButtons
+                      value={agentLimitsDraft.infinite ? "infinite" : "finite"}
+                      options={[
+                        { value: "finite", label: "Finite" },
+                        { value: "infinite", label: "Infinite" },
+                      ]}
+                      disabled={agentLimitsSetup.saving}
+                      onChange={(value) => {
+                        setAgentLimitsDraft({
+                          ...agentLimitsDraft,
+                          infinite: value === "infinite",
+                        });
+                      }}
+                    />
+                  </SettingPanel>
+
+                  <SettingPanel
+                    label="Executor turns"
+                    detail="Model/tool turns inside one executor cycle."
+                  >
+                    <Input
+                      type="number"
+                      min="1"
+                      max="1000"
+                      step="1"
+                      value={agentLimitsDraft.executorTurns}
+                      disabled={
+                        agentLimitsSetup.saving || agentLimitsDraft.infinite
+                      }
+                      onChange={(event) => {
+                        setAgentLimitsDraft({
+                          ...agentLimitsDraft,
+                          executorTurns: parseIntegerSettingInput(
+                            event.target.value,
+                            1,
+                            1000,
+                            agentLimitsDraft.executorTurns,
+                          ),
+                        });
+                      }}
+                      className="h-10 max-w-32 rounded-lg border-slate-800 bg-slate-950 text-slate-100 disabled:opacity-50"
+                    />
+                  </SettingPanel>
+
+                  <SettingPanel
+                    label="Autopilot iterations"
+                    detail="Executor cycles allowed after monitor feedback."
+                  >
+                    <Input
+                      type="number"
+                      min="1"
+                      max="100"
+                      step="1"
+                      value={agentLimitsDraft.autopilotExecutorIterations}
+                      disabled={
+                        agentLimitsSetup.saving || agentLimitsDraft.infinite
+                      }
+                      onChange={(event) => {
+                        setAgentLimitsDraft({
+                          ...agentLimitsDraft,
+                          autopilotExecutorIterations:
+                            parseIntegerSettingInput(
+                              event.target.value,
+                              1,
+                              100,
+                              agentLimitsDraft.autopilotExecutorIterations,
+                            ),
+                        });
+                      }}
+                      className="h-10 max-w-32 rounded-lg border-slate-800 bg-slate-950 text-slate-100 disabled:opacity-50"
+                    />
+                  </SettingPanel>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
+                  <p className="text-sm leading-6 text-slate-400">
+                    {agentLimitsDraftDirty
+                      ? "Unsaved agent limit changes"
+                      : "Agent loop limits are up to date"}
+                  </p>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      void agentLimitsSetup.onSave(normalizedAgentLimitsDraft);
+                    }}
+                    disabled={
+                      agentLimitsSetup.saving || !agentLimitsDraftDirty
+                    }
+                    className="h-10 rounded-lg bg-sky-600 px-4 text-sm text-white hover:bg-sky-500 disabled:opacity-40"
+                  >
+                    {agentLimitsSetup.saving
+                      ? "Saving..."
+                      : "Save agent limits"}
+                  </Button>
+                </div>
+
+                <SettingsStatus message={agentLimitsSetup.message} />
               </SettingsCard>
             ) : null}
 

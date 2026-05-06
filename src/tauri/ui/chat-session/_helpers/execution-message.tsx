@@ -12,6 +12,8 @@ export const createFallbackExecutionMarkdown = (
     "The task completed without a detailed summary.";
 
   switch (execution.status) {
+    case "planned":
+      return `**Plan ready.** ${summary}`;
     case "executed":
       return `**Done.** ${summary}`;
     case "approval-required":
@@ -88,6 +90,8 @@ const createExecutionThinkingTone = (
   status: TaskExecutionResult["status"],
 ): TaskThinkingTrace["entries"][number]["tone"] => {
   switch (status) {
+    case "planned":
+      return "info";
     case "executed":
       return "success";
     case "approval-required":
@@ -105,6 +109,8 @@ const createExecutionThinkingLabel = (
   status: TaskExecutionResult["status"],
 ): string => {
   switch (status) {
+    case "planned":
+      return "Plan ready";
     case "executed":
       return "Completed";
     case "approval-required":

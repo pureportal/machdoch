@@ -31,6 +31,16 @@ const MAX_UI_WINDOW_RESULTS = 40;
 const MAX_UI_WAIT_TIMEOUT_MS = 30_000;
 const MAX_UI_WAIT_POLL_INTERVAL_MS = 5_000;
 
+const READ_ONLY_DESKTOP_UI_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "list_ui_monitors",
+  "capture_ui_screen",
+  "list_ui_windows",
+  "capture_ui_window",
+  "wait_for_ui_duration",
+  "wait_for_ui_window",
+  "list_windows_controls",
+]);
+
 const sleep = async (milliseconds: number): Promise<void> => {
   await new Promise((resolve) => {
     setTimeout(resolve, milliseconds);
@@ -208,7 +218,7 @@ const buildDesktopUiToolDefinitions = (
 ): AgentToolDefinition[] => {
   const availableUiControl = assertUiControlAvailable(uiControl);
 
-  const toolDefinitions: AgentToolDefinition[] = [];
+  const toolDefinitions: Array<Omit<AgentToolDefinition, "effect">> = [];
 
   if (availableUiControl.supportsWindowEnumeration) {
     toolDefinitions.push(
@@ -1280,7 +1290,12 @@ const buildDesktopUiToolDefinitions = (
     );
   }
 
-  return toolDefinitions;
+  return toolDefinitions.map((definition) => ({
+    ...definition,
+    effect: READ_ONLY_DESKTOP_UI_TOOL_NAMES.has(definition.spec.name)
+      ? "read"
+      : "external-side-effect",
+  }));
 };
 
 export const createDesktopUiToolDefinitions = (

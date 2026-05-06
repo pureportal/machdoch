@@ -1,4 +1,4 @@
-export type RunMode = "safe" | "ask" | "auto";
+export type RunMode = "plan" | "safe" | "ask" | "auto";
 
 export type ToolName =
   | "filesystem"
@@ -13,6 +13,12 @@ export type ToolRiskLevel = "low" | "medium" | "high";
 
 export type ToolPolicyDecision = "allow" | "ask" | "blocked";
 
+export type ToolCallEffect =
+  | "read"
+  | "write"
+  | "external-read"
+  | "external-side-effect";
+
 export type ModelProvider = "openai" | "anthropic" | "google" | "unconfigured";
 
 export type WebSearchProvider = "none" | "perplexity" | "tavily" | "serper";
@@ -23,6 +29,17 @@ export interface WorkspaceCompatibilityConfig {
   discoverGithubCustomizations?: boolean;
 }
 
+export interface RuntimeAgentLimitOverrides {
+  infinite?: boolean;
+  executorTurns?: number;
+  autopilotExecutorIterations?: number;
+}
+
+export interface RuntimeAgentLimits {
+  executorTurns: number | null;
+  autopilotExecutorIterations: number | null;
+}
+
 export interface WorkspaceProfileConfig {
   description?: string;
   mode?: RunMode;
@@ -30,6 +47,7 @@ export interface WorkspaceProfileConfig {
   provider?: Exclude<ModelProvider, "unconfigured">;
   model?: string;
   offline?: boolean;
+  agentLimits?: RuntimeAgentLimitOverrides;
   compatibility?: WorkspaceCompatibilityConfig;
 }
 
@@ -40,6 +58,7 @@ export interface WorkspaceConfigFile {
   provider?: Exclude<ModelProvider, "unconfigured">;
   model?: string;
   offline?: boolean;
+  agentLimits?: RuntimeAgentLimitOverrides;
   compatibility?: WorkspaceCompatibilityConfig;
   profiles?: Record<string, WorkspaceProfileConfig>;
 }
@@ -70,6 +89,7 @@ export interface RuntimeConfig {
   provider: ModelProvider;
   model: string;
   offline: boolean;
+  agentLimits?: RuntimeAgentLimits;
   compatibility: WorkspaceCompatibilityConfig;
   providerAvailability: ProviderAvailability[];
   webSearch: RuntimeWebSearchConfig;
@@ -334,9 +354,11 @@ export type TaskExecutionState =
   | "resolving-context"
   | "checking-inputs"
   | "checking-policies"
+  | "planning"
   | "executing"
   | "verifying"
   | "monitoring"
+  | "planned"
   | "completed"
   | "approval-required"
   | "blocked"
@@ -344,6 +366,7 @@ export type TaskExecutionState =
   | "cancelled";
 
 export type TaskExecutionStatus =
+  | "planned"
   | "executed"
   | "approval-required"
   | "blocked"
@@ -383,7 +406,7 @@ export interface TaskAutopilotReport {
   executorIterations: number;
   validatorPasses: number;
   continuationCount: number;
-  maxExecutorIterations: number;
+  maxExecutorIterations: number | null;
   decisions: TaskAutopilotDecision[];
 }
 

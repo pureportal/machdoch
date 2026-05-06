@@ -14,7 +14,7 @@
 `machdoch` is a pre-alpha desktop app and command-line agent that runs against a local workspace. It can chat interactively, run one-shot tasks, attach files/folders/images as context, remember useful facts, control installed browsers, inspect or edit files, run shell workflows, use Git, work with Node package projects, and use desktop voice or UI-control features when available.
 
 > [!IMPORTANT]
-> `machdoch` can read and modify local files and run local tools when those tools are enabled. Use `safe` or `ask` mode when you want approval prompts before higher-risk actions.
+> `machdoch` can read and modify local files and run local tools when those tools are enabled. Use `plan` mode when you want read-only investigation and an approval plan before changes, or `safe`/`ask` mode when you want approval prompts before higher-risk actions.
 
 ## Contents
 
@@ -112,9 +112,10 @@ The examples below assume the `machdoch` CLI is installed and available on your 
 | Run a one-shot task | `machdoch run "summarize this project"` |
 | Run a one-shot task with `--quick` | `machdoch --quick --task "summarize this project"` |
 | Run with progress lines | `machdoch --verbose run "review this workspace"` |
+| Produce a read-only plan | `machdoch --mode plan run "refactor the auth flow"` |
 | Show help | `machdoch --help` |
 
-Interactive chat supports `/help` and exits with `/exit`, `/quit`, or Ctrl+C. During a one-shot task, Ctrl+C requests cancellation after the current execution step.
+Interactive chat supports `/help`, `/plan <task>`, and exits with `/exit`, `/quit`, or Ctrl+C. During a one-shot task, Ctrl+C requests cancellation after the current execution step.
 
 ### Setup And Inspection
 
@@ -138,11 +139,13 @@ Add `--json` to `config`, `inspect`, `tools`, or `profiles` for machine-readable
 | Use a specific model | `machdoch --model gpt-5.5 run "review this repo"` |
 | Persist the workspace default model | `machdoch --default-model gpt-5.5` |
 | Use a specific provider | `machdoch --runtime-provider openai run "review this repo"` |
-| Use a specific mode | `machdoch --mode safe run "review this repo"` |
+| Use a specific mode | `machdoch --mode plan run "review this repo"` |
 | Use a named profile | `machdoch --profile safe-review run "review this repo"` |
+| Raise loop limits for one run | `machdoch --executor-turns 128 --autopilot-iterations 24 run "finish this task"` |
+| Disable loop-count limits | `machdoch --infinite run "finish this task"` |
 | Use another workspace | `machdoch --cwd <path> config` |
 
-Valid runtime providers are `openai`, `anthropic`, and `google`. Valid modes are `safe`, `ask`, and `auto`.
+Valid runtime providers are `openai`, `anthropic`, and `google`. Valid modes are `plan`, `safe`, `ask`, and `auto`.
 
 Model selection order is:
 
@@ -152,6 +155,7 @@ Model selection order is:
 4. the built-in default
 
 `--default-model` writes the workspace default to `.machdoch/config.json`.
+`--infinite` disables executor turn and Autopilot iteration caps for the command, while the wall-clock safety timeout still applies.
 
 ### Context And Memory
 
@@ -172,6 +176,7 @@ Image attachments require a model that supports image input. Supported image for
 
 `machdoch` uses modes to decide when local tools may run:
 
+- `plan`: read-only investigation is allowed, but file writes, memory writes, installs, commits, browser session/navigation/input, desktop input, detached commands, and ambiguous shell commands pause before execution so you can validate the proposed plan first.
 - `safe`: every enabled tool action requires approval.
 - `ask`: low-risk enabled tools can run automatically; medium- and high-risk actions require approval.
 - `auto`: enabled tools can run automatically within the workspace policy.
@@ -211,7 +216,7 @@ Workspace customization lives under `.machdoch/`:
       SKILL.md
 ```
 
-`config.json` can set the default profile, mode, provider, model, enabled tools, offline behavior, and compatibility discovery:
+`config.json` can set the default profile, mode, provider, model, enabled tools, offline behavior, agent loop limits, and compatibility discovery:
 
 ```json
 {
@@ -229,10 +234,19 @@ Workspace customization lives under `.machdoch/`:
   "provider": "openai",
   "model": "gpt-5.5",
   "offline": false,
+  "agentLimits": {
+    "executorTurns": 64,
+    "autopilotExecutorIterations": 16
+  },
   "profiles": {
     "workspace": {
       "description": "Default interactive workspace profile.",
       "mode": "ask"
+    },
+    "plan-review": {
+      "description": "Read-only planning before implementation.",
+      "mode": "plan",
+      "enabledTools": ["filesystem", "shell", "git", "packages", "utilities"]
     },
     "safe-review": {
       "description": "Read-focused review mode with approval gates and limited tools.",
@@ -286,6 +300,9 @@ Environment variables can also configure the runtime:
 | `MACHDOCH_PROFILE` | Default profile override |
 | `MACHDOCH_OFFLINE` | Set to `true` to force offline behavior |
 | `MACHDOCH_WEB_SEARCH_PROVIDER` | Active web-search provider override |
+| `MACHDOCH_EXECUTOR_TURNS` | Per-executor model turn limit override |
+| `MACHDOCH_AUTOPILOT_ITERATIONS` | Autopilot continuation limit override |
+| `MACHDOCH_INFINITE` | Set to `true` or `1` to disable loop-count limits |
 | `MACHDOCH_USER_CONFIG_DIR` | Override the user config directory |
 
 When running through `sudo`, `machdoch` may read root's user config instead of your normal user config. Run `machdoch config` without `sudo`, or pass the relevant environment variables deliberately.

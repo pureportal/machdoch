@@ -8,9 +8,14 @@ import {
   normalizeConversationMemoryEntries,
   rememberConversationMemoryEntry,
 } from "./memory.js";
+import {
+  DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
+  DEFAULT_MAX_EXECUTOR_TURNS,
+} from "./_helpers/agent-runtime-types.js";
 import type {
   ConversationMemoryEntry,
   ProviderAvailability,
+  RuntimeAgentLimitOverrides,
   WebSearchProvider,
   WebSearchProviderAvailability,
 } from "./types.js";
@@ -45,6 +50,9 @@ const RUNTIME_ENV_KEYS = [
   "MACHDOCH_OFFLINE",
   "MACHDOCH_PROFILE",
   "MACHDOCH_WEB_SEARCH_PROVIDER",
+  "MACHDOCH_EXECUTOR_TURNS",
+  "MACHDOCH_AUTOPILOT_ITERATIONS",
+  "MACHDOCH_INFINITE",
 ] as const;
 const USER_API_PROVIDERS: UserApiProvider[] = ["openai", "anthropic", "google"];
 const USER_WEB_SEARCH_PROVIDERS: UserWebSearchProvider[] = [
@@ -63,9 +71,16 @@ interface UserMemoryConfigFile {
   entries?: ConversationMemoryEntry[];
 }
 
+export interface UserAgentLimitsSettings {
+  infinite: boolean;
+  executorTurns: number;
+  autopilotExecutorIterations: number;
+}
+
 interface UserConfigFile {
   apiKeys?: Partial<Record<UserApiProvider, string>>;
   webSearch?: UserWebSearchConfigFile;
+  agentLimits?: RuntimeAgentLimitOverrides;
   memory?: UserMemoryConfigFile;
 }
 
@@ -137,6 +152,33 @@ const isUserWebSearchProvider = (
   value: string,
 ): value is UserWebSearchProvider => {
   return USER_WEB_SEARCH_PROVIDERS.includes(value as UserWebSearchProvider);
+};
+
+const normalizePositiveIntegerSetting = (
+  value: unknown,
+  fallback: number,
+): number => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.trunc(value));
+};
+
+const normalizeUserAgentLimitsSettings = (
+  settings: RuntimeAgentLimitOverrides | undefined,
+): UserAgentLimitsSettings => {
+  return {
+    infinite: settings?.infinite === true,
+    executorTurns: normalizePositiveIntegerSetting(
+      settings?.executorTurns,
+      DEFAULT_MAX_EXECUTOR_TURNS,
+    ),
+    autopilotExecutorIterations: normalizePositiveIntegerSetting(
+      settings?.autopilotExecutorIterations,
+      DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
+    ),
+  };
 };
 
 /**
@@ -467,6 +509,31 @@ export const loadUserWebSearchSettings = async (): Promise<{
     apiKeys,
     providerAvailability: await getUserWebSearchProviderAvailability(),
   };
+};
+
+/**
+ * Loads saved user-scoped agent loop limit settings.
+ */
+export const loadUserAgentLimitsSettings =
+  async (): Promise<UserAgentLimitsSettings> => {
+    const { config } = await loadUserConfigFile();
+
+    return normalizeUserAgentLimitsSettings(config.agentLimits);
+  };
+
+/**
+ * Persists user-scoped agent loop limit settings.
+ */
+export const saveUserAgentLimitsSettings = async (
+  settings: UserAgentLimitsSettings,
+): Promise<string> => {
+  const { config } = await loadUserConfigFile();
+  const normalizedSettings = normalizeUserAgentLimitsSettings(settings);
+
+  return saveUserConfigFile({
+    ...config,
+    agentLimits: normalizedSettings,
+  });
 };
 
 /**

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { sortEntryNames } from "../../common/_helpers/sort-entry-names.js";
+import { resolveRuntimeAgentLimits } from "./agent-runtime-types.js";
 import { resolveToolPolicies } from "../policy.js";
 import type { CreateFilePathReference } from "../task-paths.js";
 import type {
@@ -25,6 +26,10 @@ interface PackageSnapshot {
 
 const formatCommaSeparatedValues = (values: string[]): string => {
   return values.length > 0 ? values.join(", ") : "none";
+};
+
+const formatAgentLimit = (limit: number | null): string => {
+  return limit === null ? "infinite" : String(limit);
 };
 
 const toTitleCase = (value: string): string => {
@@ -288,6 +293,7 @@ export const createRuntimeConfigSection = (
       (entry) =>
         entry.provider === config.webSearch.activeProvider && entry.configured,
     );
+  const agentLimits = resolveRuntimeAgentLimits(config);
 
   return {
     title: "Runtime config",
@@ -301,6 +307,8 @@ export const createRuntimeConfigSection = (
       `model: ${config.model}`,
       `offline: ${config.offline ? "true" : "false"}`,
       `enabled tools: ${formatCommaSeparatedValues(config.enabledTools)}`,
+      `executor turns: ${formatAgentLimit(agentLimits.executorTurns)}`,
+      `autopilot iterations: ${formatAgentLimit(agentLimits.autopilotExecutorIterations)}`,
       `web search provider: ${config.webSearch.activeProvider}`,
       `web search status: ${activeWebSearchConfigured ? "available" : "hidden"}`,
       `github compatibility discovery: ${config.compatibility.discoverGithubCustomizations ? "enabled" : "disabled"}`,

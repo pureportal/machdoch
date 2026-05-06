@@ -136,6 +136,7 @@ export const ChatSession = (): JSX.Element => {
               }
               providerSetup={controller.settingsDialog.providerSetup}
               webSearchSetup={controller.settingsDialog.webSearchSetup}
+              agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}
               memorySetup={controller.settingsDialog.memorySetup}
               desktopSetup={controller.settingsDialog.desktopSetup}
               voiceSetup={controller.settingsDialog.voiceSetup}

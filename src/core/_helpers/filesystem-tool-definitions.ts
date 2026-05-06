@@ -46,6 +46,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "filesystem",
       riskLevel: "low",
+      effect: "read",
       execute: async (args, context) => {
         const requestedPath = coerceString(args, "path");
         const maxEntries = coerceInteger(args, "maxEntries");
@@ -172,6 +173,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "filesystem",
       riskLevel: "low",
+      effect: "read",
       execute: async (args, context) => {
         const requestedPath = coerceString(args, "path");
         const startLine = coerceInteger(args, "startLine");
@@ -315,6 +317,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "filesystem",
       riskLevel: "low",
+      effect: "read",
       execute: async (args, context) => {
         const query = coerceString(args, "query");
         const isRegex = coerceBoolean(args, "isRegex");
@@ -440,6 +443,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "filesystem",
       riskLevel: "low",
+      effect: "write",
       execute: async (args, context) => {
         const requestedPath = coerceString(args, "path");
         const content =
@@ -529,6 +533,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "filesystem",
       riskLevel: "low",
+      effect: "write",
       execute: async (args, context) => {
         const requestedPath = coerceString(args, "path");
         const oldText =

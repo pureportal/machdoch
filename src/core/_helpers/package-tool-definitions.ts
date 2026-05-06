@@ -1463,6 +1463,7 @@ export const createPackageToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "packages",
       riskLevel: "low",
+      effect: "read",
       execute: async (args, context) => {
         try {
           const project = await resolvePackageProject(
@@ -1604,6 +1605,7 @@ export const createPackageToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "packages",
       riskLevel: "high",
+      effect: "external-side-effect",
       execute: async (args, context) => {
         const script = coerceString(args, "script");
         const scriptArgs = normalizeScriptArgs(args.args);
@@ -1718,6 +1720,7 @@ export const createPackageToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "packages",
       riskLevel: "medium",
+      effect: "external-read",
       execute: async (args, context) => {
         const maxResults = coerceBoundedInteger(
           args,
@@ -1863,6 +1866,7 @@ export const createPackageToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "packages",
       riskLevel: "medium",
+      effect: "external-read",
       execute: async (args, context) => {
         const auditLevel = coerceAuditLevel(args);
         const maxResults = coerceBoundedInteger(
@@ -2015,6 +2019,7 @@ export const createPackageToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "packages",
       riskLevel: "high",
+      effect: "write",
       execute: async (args, context) => {
         const packageSpecs = normalizePackageSpecs(args.packages);
 

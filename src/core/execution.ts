@@ -266,7 +266,9 @@ const runTaskExecutionStateMachine = async (
 
           if (modelDrivenResult) {
             const terminalState: TaskExecutionState =
-              modelDrivenResult.status === "executed"
+              modelDrivenResult.status === "planned"
+                ? "planned"
+                : modelDrivenResult.status === "executed"
                 ? "completed"
                 : modelDrivenResult.status === "approval-required"
                   ? "approval-required"
@@ -344,7 +346,15 @@ const runTaskExecutionStateMachine = async (
           );
         }
 
-        if (runtime.filesystemPolicy.decision === "ask") {
+        const canPlanModeRunReadOnlyFilesystemInspection =
+          config.mode === "plan" &&
+          !runtime.createFileTarget &&
+          (runtime.explicitPathReference || runtime.inspectionTarget);
+
+        if (
+          runtime.filesystemPolicy.decision === "ask" &&
+          !canPlanModeRunReadOnlyFilesystemInspection
+        ) {
           return emitTerminalResult(
             task,
             config,

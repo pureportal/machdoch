@@ -21,6 +21,7 @@ export interface ConversationFeedProps {
   visibleMessages: ChatSessionMessage[];
   aiContextMessageLimit?: number;
   bottomRef: RefObject<HTMLDivElement | null>;
+  onApprovePlan: (message: ChatSessionMessage) => void;
   onOpenWorkspaceFile: (relativePath: string) => void;
   voicePlayback: {
     supported: boolean;
@@ -34,6 +35,7 @@ export const ConversationFeed = ({
   visibleMessages,
   aiContextMessageLimit = DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
   bottomRef,
+  onApprovePlan,
   onOpenWorkspaceFile,
   voicePlayback,
 }: ConversationFeedProps): JSX.Element => {
@@ -190,6 +192,7 @@ export const ConversationFeed = ({
                 {message.source?.kind === "execution" ? (
                   <ExecutionInsightRow
                     execution={message.source.execution}
+                    onApprovePlan={() => onApprovePlan(message)}
                     onOpenWorkspaceFile={onOpenWorkspaceFile}
                   />
                 ) : null}

@@ -892,7 +892,7 @@ const sortUniqueLines = (
 };
 
 export const createUtilityToolDefinitions = (): AgentToolDefinition[] => {
-  return [
+  const definitions: Array<Omit<AgentToolDefinition, "effect">> = [
     {
       spec: {
         name: "generate_uuid",
@@ -2260,4 +2260,9 @@ export const createUtilityToolDefinitions = (): AgentToolDefinition[] => {
       },
     },
   ];
+
+  return definitions.map((definition) => ({
+    ...definition,
+    effect: "read",
+  }));
 };

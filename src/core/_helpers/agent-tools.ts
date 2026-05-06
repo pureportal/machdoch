@@ -2,6 +2,7 @@ import type {
   AgentModelToolCall,
   RuntimeConfig,
   TaskExecutionSection,
+  ToolCallEffect,
   ToolName,
   ToolRiskLevel,
   UiControlRuntimeInfo,
@@ -44,16 +45,48 @@ export interface AgentLoopSnapshot {
   traceLines: string[];
 }
 
+const PLAN_MODE_READ_EFFECTS: ReadonlySet<ToolCallEffect> = new Set([
+  "read",
+  "external-read",
+]);
+
+const isPlanModeReadOnlyEffect = (effect: ToolCallEffect): boolean => {
+  return PLAN_MODE_READ_EFFECTS.has(effect);
+};
+
 export const resolveActionDecision = (
   config: RuntimeConfig,
   tool: ToolName,
   riskLevel: ToolRiskLevel,
+  options: {
+    effect?: ToolCallEffect;
+    isReadOnlyInPlanMode?: boolean;
+  } = {},
 ): { decision: "allow" | "ask" | "blocked"; reason: string } => {
   if (!config.enabledTools.includes(tool)) {
     return {
       decision: "blocked",
       reason:
         "This tool is not enabled in `.machdoch/config.json`, so the runtime refused to execute it.",
+    };
+  }
+
+  if (config.mode === "plan") {
+    if (
+      (options.effect && isPlanModeReadOnlyEffect(options.effect)) ||
+      options.isReadOnlyInPlanMode === true
+    ) {
+      return {
+        decision: "allow",
+        reason:
+          "Plan mode allows read-only information gathering before a proposed plan is approved.",
+      };
+    }
+
+    return {
+      decision: "ask",
+      reason:
+        "Plan mode pauses before state-changing or ambiguous actions so the user can validate the plan first.",
     };
   }
 
@@ -164,6 +197,16 @@ export const executeToolCall = async (
     config,
     toolDefinition.backingTool,
     toolDefinition.riskLevel,
+    {
+      effect: toolDefinition.effect,
+      ...(toolDefinition.isReadOnlyInPlanMode
+        ? {
+            isReadOnlyInPlanMode: toolDefinition.isReadOnlyInPlanMode(
+              call.arguments,
+            ),
+          }
+        : {}),
+    },
   );
 
   if (actionDecision.decision === "ask") {

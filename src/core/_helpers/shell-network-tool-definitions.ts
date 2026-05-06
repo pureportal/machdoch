@@ -26,6 +26,48 @@ const WINDOWS_POWERSHELL_BOOTSTRAP_LINES = [
   "$PSDefaultParameterValues['Invoke-RestMethod:UseBasicParsing'] = $true",
 ] as const;
 
+const WRITE_LIKE_SHELL_PATTERN =
+  /\b(?:add-content|clear-content|copy|cp|del|erase|git\s+(?:add|apply|checkout|clean|commit|merge|pull|push|rebase|reset|restore|switch)|mkdir|move|mv|new-item|npm\s+(?:ci|exec|i|install|link|publish|run|test|uninstall|update)|pnpm\s+(?:add|exec|i|install|publish|remove|run|test|update)|remove-item|rm|rmdir|set-content|touch|yarn\s+(?:add|exec|install|publish|remove|run|test|upgrade))\b/i;
+const SHELL_CONTROL_OPERATOR_PATTERN = /(?:&&?|\|\|?|\r|\n|;|<|>>?|`|\$\()/u;
+const SHELL_WRITE_OPTION_PATTERN =
+  /(?:^|\s)(?:--output(?:=|\s+)|--open-files-in-pager(?:=|\s+)|--pre(?:=|\s+))/iu;
+const SHELL_OUT_OF_WORKSPACE_PATH_PATTERN =
+  /(?:^|\s|["'])(?:[A-Za-z]:[\\/]|\\\\|\/|~[\\/]|\.{2}(?:[\\/]|$)|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%)/u;
+const READ_ONLY_SHELL_PATTERNS: ReadonlyArray<RegExp> = [
+  /^(?:dir|ls|pwd)\b/i,
+  /^(?:cat|type)\s+/i,
+  /^(?:get-childitem|gci|get-content|gc|select-string)\b/i,
+  /^(?:rg|grep|findstr)\b/i,
+  /^git\s+(?:branch|diff|grep|log|ls-files|show|status)\b/i,
+  /^(?:npm|pnpm|yarn|bun)\s+(?:info|list|ls|outdated|view|why)\b/i,
+  /^(?:node|npm|pnpm|yarn|bun|cargo|rustc|python|python3|pip|pip3)\s+(?:--version|-v|version)\b/i,
+];
+
+export const isReadOnlyShellCommand = (
+  args: Record<string, unknown>,
+): boolean => {
+  const command = coerceString(args, "command");
+
+  if (!command) {
+    return false;
+  }
+
+  const normalizedCommand = command.trim();
+
+  if (
+    SHELL_CONTROL_OPERATOR_PATTERN.test(normalizedCommand) ||
+    WRITE_LIKE_SHELL_PATTERN.test(normalizedCommand) ||
+    SHELL_WRITE_OPTION_PATTERN.test(normalizedCommand) ||
+    SHELL_OUT_OF_WORKSPACE_PATH_PATTERN.test(normalizedCommand)
+  ) {
+    return false;
+  }
+
+  return READ_ONLY_SHELL_PATTERNS.some((pattern) =>
+    pattern.test(normalizedCommand),
+  );
+};
+
 export const resolveShellCommandInvocation = (
   command: string,
   platform: NodeJS.Platform = process.platform,
@@ -119,6 +161,8 @@ export const createShellNetworkToolDefinitions = (
       },
       backingTool: "shell",
       riskLevel: "high",
+      effect: "external-side-effect",
+      isReadOnlyInPlanMode: isReadOnlyShellCommand,
       execute: async (args, context) => {
         const command = coerceString(args, "command");
 
@@ -260,6 +304,7 @@ export const createShellNetworkToolDefinitions = (
       },
       backingTool: "shell",
       riskLevel: "high",
+      effect: "external-side-effect",
       execute: async (args, context) => {
         const command = coerceString(args, "command");
 
@@ -363,6 +408,7 @@ export const createShellNetworkToolDefinitions = (
       },
       backingTool: "network",
       riskLevel: "medium",
+      effect: "external-read",
       execute: async (args) => {
         const url = coerceString(args, "url");
 
@@ -469,6 +515,7 @@ export const createShellNetworkToolDefinitions = (
     },
     backingTool: "network",
     riskLevel: "medium",
+    effect: "external-read",
     execute: async (args, context) => {
       const query = coerceString(args, "query");
       const maxResults = coerceInteger(args, "maxResults");

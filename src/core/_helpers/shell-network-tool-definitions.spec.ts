@@ -15,6 +15,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 import { EventEmitter } from "node:events";
 import {
+  isReadOnlyShellCommand,
   resolveShellCommandInvocation,
   startDetachedShellCommand,
 } from "./shell-network-tool-definitions.ts";
@@ -105,5 +106,59 @@ describe("resolveShellCommandInvocation", () => {
 
     await expect(launchPromise).rejects.toThrow("spawn sh ENOENT");
     expect(child.unref).not.toHaveBeenCalled();
+  });
+});
+
+describe("isReadOnlyShellCommand", () => {
+  it("allows simple inspection commands", () => {
+    expect(isReadOnlyShellCommand({ command: "rg plan src" })).toBe(true);
+    expect(isReadOnlyShellCommand({ command: "git status --short" })).toBe(
+      true,
+    );
+    expect(isReadOnlyShellCommand({ command: "Get-Content README.md" })).toBe(
+      true,
+    );
+  });
+
+  it("rejects pipelines, redirection, and command chaining", () => {
+    expect(
+      isReadOnlyShellCommand({
+        command: "dir | Tee-Object plan-mode-check.txt",
+      }),
+    ).toBe(false);
+    expect(
+      isReadOnlyShellCommand({ command: "rg plan src > plan-mode-check.txt" }),
+    ).toBe(false);
+    expect(
+      isReadOnlyShellCommand({ command: "git status; npm test" }),
+    ).toBe(false);
+  });
+
+  it("rejects commands with write-capable options", () => {
+    expect(
+      isReadOnlyShellCommand({
+        command: "git diff --output=plan-mode-check.patch",
+      }),
+    ).toBe(false);
+    expect(
+      isReadOnlyShellCommand({
+        command: "rg plan src --pre node",
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects obvious out-of-workspace path forms", () => {
+    expect(
+      isReadOnlyShellCommand({
+        command: "Get-Content C:\\Users\\someone\\.ssh\\id_rsa",
+      }),
+    ).toBe(false);
+    expect(
+      isReadOnlyShellCommand({ command: "cat ../outside-workspace.txt" }),
+    ).toBe(false);
+    expect(isReadOnlyShellCommand({ command: "ls /etc" })).toBe(false);
+    expect(
+      isReadOnlyShellCommand({ command: "type %USERPROFILE%\\.ssh\\config" }),
+    ).toBe(false);
   });
 });

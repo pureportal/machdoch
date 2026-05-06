@@ -10,6 +10,7 @@ import { getProviderLabel } from "../../model-catalog";
 import {
   loadGlobalProviderAvailability,
   loadUserProviderApiKeys,
+  loadUserAgentLimitsSettings,
   loadUserDesktopSettings,
   loadUserSpeechToTextSettings,
   loadUserMemorySettings,
@@ -20,6 +21,7 @@ import {
   saveUserSpeechToTextActiveProvider,
   saveUserSpeechToTextInputDevice,
   saveUserDesktopSettings,
+  saveUserAgentLimitsSettings,
   saveUserGlobalMemoryEnabled,
   saveUserVoiceActiveProvider,
   saveUserProviderApiKey,
@@ -31,6 +33,7 @@ import {
   type RuntimeProviderAvailability,
   type RuntimeSnapshot,
   type UserSpeechToTextSettings,
+  type UserAgentLimitsSettings,
   type UserDesktopSettings,
   type SpeechToTextProvider,
   type UserApiKeyProvider,
@@ -81,6 +84,9 @@ export interface ChatSessionRuntimeController {
   userDesktopSettings: UserDesktopSettings;
   desktopSetupSaving: boolean;
   desktopSetupMessage: SettingsStatusMessage | null;
+  userAgentLimitsSettings: UserAgentLimitsSettings;
+  agentLimitsSetupSaving: boolean;
+  agentLimitsSetupMessage: SettingsStatusMessage | null;
   userMemorySettings: UserMemorySettings;
   memorySetupSaving: boolean;
   memorySetupMessage: SettingsStatusMessage | null;
@@ -111,8 +117,14 @@ export interface ChatSessionRuntimeController {
   handleWebSearchSetupKeyChange: (value: string) => void;
   handleWebSearchSetupSave: () => Promise<void>;
   handleDesktopSettingsSave: (settings: UserDesktopSettings) => Promise<void>;
+  handleAgentLimitsSettingsSave: (
+    settings: UserAgentLimitsSettings,
+  ) => Promise<void>;
   handleGlobalMemoryEnabledSave: (enabled: boolean) => Promise<void>;
   applyLoadedUserDesktopSettings: (settings: UserDesktopSettings) => void;
+  applyLoadedUserAgentLimitsSettings: (
+    settings: UserAgentLimitsSettings,
+  ) => void;
   applyLoadedUserMemorySettings: (settings: UserMemorySettings) => void;
 }
 
@@ -129,6 +141,14 @@ const createEmptyUserDesktopSettings = (): UserDesktopSettings => {
     quickVoiceShortcut: "CommandOrControl+Alt+V",
     quickVoiceSilenceSeconds: 1.8,
     quickVoiceMaxMessages: 50,
+  };
+};
+
+const createEmptyUserAgentLimitsSettings = (): UserAgentLimitsSettings => {
+  return {
+    infinite: false,
+    executorTurns: 64,
+    autopilotExecutorIterations: 16,
   };
 };
 
@@ -163,6 +183,16 @@ const getDesktopSettingsSavedMessage = (
   return `Desktop assistant settings saved. Login launches will open normally${
     surfacesDescription.length > 0 ? ` with ${surfacesDescription}.` : "."
   }`;
+};
+
+const getAgentLimitsSettingsSavedMessage = (
+  settings: UserAgentLimitsSettings,
+): string => {
+  if (settings.infinite) {
+    return "Agent loop limits saved. Executor and Autopilot loop counts are unlimited; the safety timeout still applies.";
+  }
+
+  return `Agent loop limits saved. Executor turns: ${settings.executorTurns}; Autopilot iterations: ${settings.autopilotExecutorIterations}.`;
 };
 
 export const useChatSessionRuntime = (
@@ -214,6 +244,11 @@ export const useChatSessionRuntime = (
   const [desktopSetupSaving, setDesktopSetupSaving] = useState(false);
   const [desktopSetupMessage, setDesktopSetupMessage] =
     useState<SettingsStatusMessage | null>(null);
+  const [userAgentLimitsSettings, setUserAgentLimitsSettings] =
+    useState<UserAgentLimitsSettings>(createEmptyUserAgentLimitsSettings());
+  const [agentLimitsSetupSaving, setAgentLimitsSetupSaving] = useState(false);
+  const [agentLimitsSetupMessage, setAgentLimitsSetupMessage] =
+    useState<SettingsStatusMessage | null>(null);
   const [userMemorySettings, setUserMemorySettings] =
     useState<UserMemorySettings>(createEmptyUserMemorySettings());
   const [memorySetupSaving, setMemorySetupSaving] = useState(false);
@@ -248,6 +283,16 @@ export const useChatSessionRuntime = (
     (settings: UserDesktopSettings): void => {
       setUserDesktopSettings({
         ...createEmptyUserDesktopSettings(),
+        ...settings,
+      });
+    },
+    [],
+  );
+
+  const applyLoadedUserAgentLimitsSettings = useCallback(
+    (settings: UserAgentLimitsSettings): void => {
+      setUserAgentLimitsSettings({
+        ...createEmptyUserAgentLimitsSettings(),
         ...settings,
       });
     },
@@ -449,6 +494,26 @@ export const useChatSessionRuntime = (
   }, [applyLoadedUserDesktopSettings]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    void loadUserAgentLimitsSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          applyLoadedUserAgentLimitsSettings(settings);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("Failed to load user agent limit settings", error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLoadedUserAgentLimitsSettings]);
+
+  useEffect(() => {
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
 
@@ -497,6 +562,37 @@ export const useChatSessionRuntime = (
       cancelled = true;
     };
   }, [applyLoadedUserDesktopSettings, options.catalogOpen]);
+
+  useEffect(() => {
+    if (!options.catalogOpen) {
+      return;
+    }
+
+    let cancelled = false;
+
+    setAgentLimitsSetupMessage(null);
+
+    void loadUserAgentLimitsSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          applyLoadedUserAgentLimitsSettings(settings);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        console.error("Failed to load user agent limit settings", error);
+        applyLoadedUserAgentLimitsSettings(
+          createEmptyUserAgentLimitsSettings(),
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLoadedUserAgentLimitsSettings, options.catalogOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1043,6 +1139,44 @@ export const useChatSessionRuntime = (
     [applyLoadedUserDesktopSettings],
   );
 
+  const handleAgentLimitsSettingsSave = useCallback(
+    async (settings: UserAgentLimitsSettings): Promise<void> => {
+      setAgentLimitsSetupSaving(true);
+      setAgentLimitsSetupMessage(null);
+
+      try {
+        const nextSettings = await saveUserAgentLimitsSettings(settings);
+
+        applyLoadedUserAgentLimitsSettings(nextSettings);
+        setAgentLimitsSetupMessage({
+          tone: "success",
+          text: getAgentLimitsSettingsSavedMessage(nextSettings),
+        });
+
+        await refreshWorkspaceRuntimeSnapshot(
+          options.activeSessionWorkspace,
+          options.activeSessionProfile,
+        );
+      } catch (error) {
+        setAgentLimitsSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "Agent loop limits could not be updated.",
+        });
+      } finally {
+        setAgentLimitsSetupSaving(false);
+      }
+    },
+    [
+      applyLoadedUserAgentLimitsSettings,
+      options.activeSessionProfile,
+      options.activeSessionWorkspace,
+      refreshWorkspaceRuntimeSnapshot,
+    ],
+  );
+
   const handleGlobalMemoryEnabledSave = useCallback(
     async (enabled: boolean): Promise<void> => {
       if (!isTauri()) {
@@ -1105,6 +1239,9 @@ export const useChatSessionRuntime = (
     userDesktopSettings,
     desktopSetupSaving,
     desktopSetupMessage,
+    userAgentLimitsSettings,
+    agentLimitsSetupSaving,
+    agentLimitsSetupMessage,
     userMemorySettings,
     memorySetupSaving,
     memorySetupMessage,
@@ -1122,8 +1259,10 @@ export const useChatSessionRuntime = (
     handleWebSearchSetupKeyChange,
     handleWebSearchSetupSave,
     handleDesktopSettingsSave,
+    handleAgentLimitsSettingsSave,
     handleGlobalMemoryEnabledSave,
     applyLoadedUserDesktopSettings,
+    applyLoadedUserAgentLimitsSettings,
     applyLoadedUserMemorySettings,
   };
 };

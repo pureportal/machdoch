@@ -1543,6 +1543,7 @@ export const useChatSessionController = (
       contextAttachments: ChatSessionContextAttachment[];
       clearDraft: boolean;
       activateSession: boolean;
+      modeOverride?: RunMode;
     }): void => {
       const normalizedTask = options.task.trim();
 
@@ -1562,7 +1563,7 @@ export const useChatSessionController = (
       const sessionId = sessionSnapshot.id;
       const sessionWorkspace = sessionSnapshot.workspace;
       const sessionProfile = sessionSnapshot.profile;
-      const sessionMode = sessionSnapshot.mode;
+      const sessionMode = options.modeOverride ?? sessionSnapshot.mode;
       const taskConversationContext = createConversationContextFromSession(
         sessionSnapshot,
         runtime.userMemorySettings.globalEnabled,
@@ -1579,7 +1580,7 @@ export const useChatSessionController = (
         taskId,
       });
       const nextRunMode = getEffectiveSessionMode(
-        sessionSnapshot.mode,
+        sessionMode,
         runtime.runtimeSnapshot,
       );
       let taskFailureReported = false;
@@ -1831,6 +1832,43 @@ export const useChatSessionController = (
     ],
   );
 
+  const handleApprovePlan = useCallback(
+    (message: ChatSessionMessage): void => {
+      if (
+        message.source?.kind !== "execution" ||
+        message.source.execution.status !== "planned"
+      ) {
+        return;
+      }
+
+      const sourceSession =
+        state.shellState.sessions.find((session) =>
+          session.messages.some((entry) => entry.id === message.id),
+        ) ?? state.activeSession;
+      const execution = message.source.execution;
+      const approvedPlan = execution.response?.markdown.trim();
+      const approvalTask = [
+        "Implement this approved plan.",
+        "",
+        "Original task:",
+        execution.task,
+        ...(approvedPlan
+          ? ["", "Approved plan:", approvedPlan]
+          : ["", "Plan summary:", execution.summary]),
+      ].join("\n");
+
+      submitTaskToSession({
+        sessionSnapshot: sourceSession,
+        task: approvalTask,
+        contextAttachments: [],
+        clearDraft: false,
+        activateSession: true,
+        modeOverride: "ask",
+      });
+    },
+    [state.activeSession, state.shellState.sessions, submitTaskToSession],
+  );
+
   const submitQuickVoiceCommand = useCallback(
     (
       transcript: string,
@@ -2069,6 +2107,7 @@ export const useChatSessionController = (
       bottomRef: state.bottomRef,
       showScrollToNewestButton: state.showScrollToNewestButton,
       onScrollToNewest: state.scrollToNewest,
+      onApprovePlan: handleApprovePlan,
       onOpenWorkspaceFile: handleOpenWorkspaceFile,
       voicePlayback: {
         supported: voice.supported,
@@ -2209,6 +2248,12 @@ export const useChatSessionController = (
         saving: runtime.desktopSetupSaving,
         message: runtime.desktopSetupMessage,
         onSave: runtime.handleDesktopSettingsSave,
+      },
+      agentLimitsSetup: {
+        settings: runtime.userAgentLimitsSettings,
+        saving: runtime.agentLimitsSetupSaving,
+        message: runtime.agentLimitsSetupMessage,
+        onSave: runtime.handleAgentLimitsSettingsSave,
       },
       voiceSetup: {
         supported: voice.supported,

@@ -1,11 +1,43 @@
 /// <reference types="vitest/globals" />
+import { getEventListeners } from "node:events";
 import {
   createAnthropicUserContent,
   createGeminiUserMessage,
   createOpenAIUserInput,
+  createProviderRequestSignal,
   normalizeGeminiResponse,
   normalizeOpenAIStrictInputSchema,
 } from "./provider-adapters.js";
+
+describe("createProviderRequestSignal", () => {
+  it("cleans up the parent abort listener after each request", () => {
+    const controller = new AbortController();
+
+    for (let index = 0; index < 12; index += 1) {
+      const requestSignal = createProviderRequestSignal(controller.signal);
+
+      expect(requestSignal.signal).toBeDefined();
+      expect(requestSignal.signal).not.toBe(controller.signal);
+      expect(getEventListeners(controller.signal, "abort")).toHaveLength(1);
+
+      requestSignal.cleanup();
+
+      expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+    }
+  });
+
+  it("forwards parent aborts to the request signal", () => {
+    const controller = new AbortController();
+    const requestSignal = createProviderRequestSignal(controller.signal);
+    const reason = new Error("Stop request.");
+
+    controller.abort(reason);
+
+    expect(requestSignal.signal?.aborted).toBe(true);
+    expect(requestSignal.signal?.reason).toBe(reason);
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+  });
+});
 
 describe("normalizeOpenAIStrictInputSchema", () => {
   it("makes optional properties nullable while requiring every declared key", () => {

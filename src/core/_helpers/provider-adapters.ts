@@ -288,6 +288,57 @@ const createGeminiTools = (tools: AgentModelToolSpec[]) => {
   ];
 };
 
+export const createProviderRequestSignal = (
+  sourceSignal: AbortSignal | undefined,
+): {
+  signal?: AbortSignal;
+  cleanup: () => void;
+} => {
+  if (!sourceSignal) {
+    return {
+      cleanup: (): void => {},
+    };
+  }
+
+  const abortController = new AbortController();
+  const forwardAbort = (): void => {
+    if (!abortController.signal.aborted) {
+      abortController.abort(sourceSignal.reason);
+    }
+  };
+
+  if (sourceSignal.aborted) {
+    forwardAbort();
+
+    return {
+      signal: abortController.signal,
+      cleanup: (): void => {},
+    };
+  }
+
+  sourceSignal.addEventListener("abort", forwardAbort, { once: true });
+
+  return {
+    signal: abortController.signal,
+    cleanup: (): void => {
+      sourceSignal.removeEventListener("abort", forwardAbort);
+    },
+  };
+};
+
+const withProviderRequestSignal = async <T>(
+  sourceSignal: AbortSignal | undefined,
+  execute: (requestSignal: AbortSignal | undefined) => Promise<T>,
+): Promise<T> => {
+  const requestSignal = createProviderRequestSignal(sourceSignal);
+
+  try {
+    return await execute(requestSignal.signal);
+  } finally {
+    requestSignal.cleanup();
+  }
+};
+
 const normalizeToolResultContent = (
   toolResult: AgentModelToolResult,
 ): AgentModelToolResultContent[] => {
@@ -482,16 +533,20 @@ class OpenAIResponsesAdapter implements AgentModelAdapter {
   async startTurn(params: AgentModelStartParams): Promise<AgentModelTurn> {
     this.startParams = params;
 
-    const response = await this.client.responses.create({
-      model: params.model,
-      instructions: params.systemPrompt,
-      input: createOpenAIUserInput(params),
-      tools: createOpenAITools(params.tools),
-      parallel_tool_calls: false,
-    }, {
-      timeout: TASK_EXECUTION_TIMEOUT_MS,
-      ...(params.signal ? { signal: params.signal } : {}),
-    });
+    const response = await withProviderRequestSignal(
+      params.signal,
+      async (requestSignal) =>
+        this.client.responses.create({
+          model: params.model,
+          instructions: params.systemPrompt,
+          input: createOpenAIUserInput(params),
+          tools: createOpenAITools(params.tools),
+          parallel_tool_calls: false,
+        }, {
+          timeout: TASK_EXECUTION_TIMEOUT_MS,
+          ...(requestSignal ? { signal: requestSignal } : {}),
+        }),
+    );
 
     this.previousResponseId = response.id;
     return this.normalizeResponse(response);
@@ -504,21 +559,27 @@ class OpenAIResponsesAdapter implements AgentModelAdapter {
       throw new Error("The OpenAI adapter cannot continue before it starts.");
     }
 
-    const response = await this.client.responses.create({
-      model: this.startParams.model,
-      instructions: this.startParams.systemPrompt,
-      previous_response_id: this.previousResponseId,
-      input: params.toolResults.map((toolResult) => ({
-        type: "function_call_output" as const,
-        call_id: toolResult.callId,
-        output: createOpenAIFunctionCallOutput(toolResult),
-      })),
-      tools: createOpenAITools(this.tools),
-      parallel_tool_calls: false,
-    }, {
-      timeout: TASK_EXECUTION_TIMEOUT_MS,
-      ...(params.signal ? { signal: params.signal } : {}),
-    });
+    const startParams = this.startParams;
+    const previousResponseId = this.previousResponseId;
+    const response = await withProviderRequestSignal(
+      params.signal,
+      async (requestSignal) =>
+        this.client.responses.create({
+          model: startParams.model,
+          instructions: startParams.systemPrompt,
+          previous_response_id: previousResponseId,
+          input: params.toolResults.map((toolResult) => ({
+            type: "function_call_output" as const,
+            call_id: toolResult.callId,
+            output: createOpenAIFunctionCallOutput(toolResult),
+          })),
+          tools: createOpenAITools(this.tools),
+          parallel_tool_calls: false,
+        }, {
+          timeout: TASK_EXECUTION_TIMEOUT_MS,
+          ...(requestSignal ? { signal: requestSignal } : {}),
+        }),
+    );
 
     this.previousResponseId = response.id;
     return this.normalizeResponse(response);
@@ -594,16 +655,20 @@ class AnthropicMessagesAdapter implements AgentModelAdapter {
       content: createAnthropicUserContent(params),
     });
 
-    const message = await this.client.messages.create({
-      model: params.model,
-      max_tokens: 4_096,
-      system: params.systemPrompt,
-      messages: this.messages,
-      tools: createAnthropicTools(params.tools),
-    }, {
-      timeout: TASK_EXECUTION_TIMEOUT_MS,
-      ...(params.signal ? { signal: params.signal } : {}),
-    });
+    const message = await withProviderRequestSignal(
+      params.signal,
+      async (requestSignal) =>
+        this.client.messages.create({
+          model: params.model,
+          max_tokens: 4_096,
+          system: params.systemPrompt,
+          messages: this.messages,
+          tools: createAnthropicTools(params.tools),
+        }, {
+          timeout: TASK_EXECUTION_TIMEOUT_MS,
+          ...(requestSignal ? { signal: requestSignal } : {}),
+        }),
+    );
 
     this.messages.push({
       role: "assistant",
@@ -622,6 +687,7 @@ class AnthropicMessagesAdapter implements AgentModelAdapter {
       );
     }
 
+    const startParams = this.startParams;
     this.messages.push({
       role: "user",
       content: params.toolResults.map((toolResult) => ({
@@ -632,16 +698,20 @@ class AnthropicMessagesAdapter implements AgentModelAdapter {
       })) as AnthropicMessageParam["content"],
     });
 
-    const message = await this.client.messages.create({
-      model: this.startParams.model,
-      max_tokens: 4_096,
-      system: this.startParams.systemPrompt,
-      messages: this.messages,
-      tools: createAnthropicTools(this.tools),
-    }, {
-      timeout: TASK_EXECUTION_TIMEOUT_MS,
-      ...(params.signal ? { signal: params.signal } : {}),
-    });
+    const message = await withProviderRequestSignal(
+      params.signal,
+      async (requestSignal) =>
+        this.client.messages.create({
+          model: startParams.model,
+          max_tokens: 4_096,
+          system: startParams.systemPrompt,
+          messages: this.messages,
+          tools: createAnthropicTools(this.tools),
+        }, {
+          timeout: TASK_EXECUTION_TIMEOUT_MS,
+          ...(requestSignal ? { signal: requestSignal } : {}),
+        }),
+    );
 
     this.messages.push({
       role: "assistant",
@@ -727,17 +797,21 @@ class GeminiChatAdapter implements AgentModelAdapter {
   async startTurn(params: AgentModelStartParams): Promise<AgentModelTurn> {
     this.startParams = params;
 
-    const response = await this.chat.sendMessage({
-      message: createGeminiUserMessage(params),
-      config: {
-        systemInstruction: params.systemPrompt,
-        ...this.createConfig(params.tools),
-        httpOptions: {
-          timeout: TASK_EXECUTION_TIMEOUT_MS,
-        },
-        ...(params.signal ? { abortSignal: params.signal } : {}),
-      },
-    });
+    const response = await withProviderRequestSignal(
+      params.signal,
+      async (requestSignal) =>
+        this.chat.sendMessage({
+          message: createGeminiUserMessage(params),
+          config: {
+            systemInstruction: params.systemPrompt,
+            ...this.createConfig(params.tools),
+            httpOptions: {
+              timeout: TASK_EXECUTION_TIMEOUT_MS,
+            },
+            ...(requestSignal ? { abortSignal: requestSignal } : {}),
+          },
+        }),
+    );
 
     return this.normalizeResponse(response);
   }
@@ -749,24 +823,29 @@ class GeminiChatAdapter implements AgentModelAdapter {
       throw new Error("The Gemini adapter cannot continue before it starts.");
     }
 
-    const response = await this.chat.sendMessage({
-      message: params.toolResults.map((toolResult) =>
-        createPartFromFunctionResponse(
-          toolResult.callId,
-          toolResult.name,
-          createGeminiFunctionResponsePayload(toolResult),
-          createGeminiFunctionResponseParts(toolResult),
-        ),
-      ),
-      config: {
-        systemInstruction: this.startParams.systemPrompt,
-        ...this.createConfig(this.tools),
-        httpOptions: {
-          timeout: TASK_EXECUTION_TIMEOUT_MS,
-        },
-        ...(params.signal ? { abortSignal: params.signal } : {}),
-      },
-    });
+    const startParams = this.startParams;
+    const response = await withProviderRequestSignal(
+      params.signal,
+      async (requestSignal) =>
+        this.chat.sendMessage({
+          message: params.toolResults.map((toolResult) =>
+            createPartFromFunctionResponse(
+              toolResult.callId,
+              toolResult.name,
+              createGeminiFunctionResponsePayload(toolResult),
+              createGeminiFunctionResponseParts(toolResult),
+            ),
+          ),
+          config: {
+            systemInstruction: startParams.systemPrompt,
+            ...this.createConfig(this.tools),
+            httpOptions: {
+              timeout: TASK_EXECUTION_TIMEOUT_MS,
+            },
+            ...(requestSignal ? { abortSignal: requestSignal } : {}),
+          },
+        }),
+    );
 
     return this.normalizeResponse(response);
   }

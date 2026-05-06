@@ -17,10 +17,15 @@ export const AUTOPILOT_MONITOR_TOOL_NAME = "report_autopilot_decision";
 export const createAutopilotAuditSection = (
   report: TaskAutopilotReport,
 ): TaskExecutionSection => {
+  const maxExecutorIterations =
+    report.maxExecutorIterations === null
+      ? "unlimited"
+      : String(report.maxExecutorIterations);
+
   return {
     title: "Autopilot audit",
     lines: [
-      `executor iterations: ${report.executorIterations}/${report.maxExecutorIterations}`,
+      `executor iterations: ${report.executorIterations}/${maxExecutorIterations}`,
       `validator passes: ${report.validatorPasses}`,
       `validator continuation requests: ${report.continuationCount}`,
       ...report.decisions.flatMap((decision) => [

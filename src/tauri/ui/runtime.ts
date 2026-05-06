@@ -122,6 +122,12 @@ export interface UserMemorySettings {
   entries: ConversationMemoryEntry[];
 }
 
+export interface UserAgentLimitsSettings {
+  infinite: boolean;
+  executorTurns: number;
+  autopilotExecutorIterations: number;
+}
+
 export interface UserDesktopSettings {
   autostartEnabled: boolean;
   autostartMinimized: boolean;
@@ -177,16 +183,22 @@ export interface RuntimeCompatibilityConfig {
   discoverGithubCustomizations: boolean;
 }
 
+export interface RuntimeAgentLimits {
+  executorTurns: number | null;
+  autopilotExecutorIterations: number | null;
+}
+
 export interface RuntimeSnapshot {
   workspaceRoot: string;
   workspaceConfigPath?: string;
   activeProfile?: string;
   availableProfiles: RuntimeProfileSummary[];
-  mode: "safe" | "ask" | "auto";
+  mode: "plan" | "safe" | "ask" | "auto";
   enabledTools: string[];
   provider: RuntimeProvider | "unconfigured";
   model: string;
   offline: boolean;
+  agentLimits: RuntimeAgentLimits;
   compatibility: RuntimeCompatibilityConfig;
   providerAvailability: RuntimeProviderAvailability[];
   webSearch: RuntimeWebSearchConfig;
@@ -206,6 +218,10 @@ export interface DesktopTaskProgressEvent {
 
 const DEFAULT_MOCK_WORKSPACE_ROOT = "/mock/home/path";
 const DESKTOP_TASK_PROGRESS_EVENT = "desktop-task-progress";
+const DEFAULT_MAX_EXECUTOR_TURNS = 64;
+const DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS = 16;
+const MAX_CONFIGURED_EXECUTOR_TURNS = 1_000;
+const MAX_CONFIGURED_AUTOPILOT_ITERATIONS = 100;
 
 const canListenToDesktopTaskProgress = (): boolean => {
   const importMeta = import.meta as ImportMeta & {
@@ -313,6 +329,49 @@ const createDefaultUserMemorySettings = (): UserMemorySettings => {
   return {
     globalEnabled: false,
     entries: [],
+  };
+};
+
+const clampIntegerSetting = (
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, Math.round(value)));
+};
+
+const createDefaultUserAgentLimitsSettings =
+  (): UserAgentLimitsSettings => {
+    return {
+      infinite: false,
+      executorTurns: DEFAULT_MAX_EXECUTOR_TURNS,
+      autopilotExecutorIterations:
+        DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
+    };
+  };
+
+const normalizeUserAgentLimitsSettings = (
+  settings: UserAgentLimitsSettings,
+): UserAgentLimitsSettings => {
+  return {
+    infinite: settings.infinite === true,
+    executorTurns: clampIntegerSetting(
+      settings.executorTurns,
+      1,
+      MAX_CONFIGURED_EXECUTOR_TURNS,
+      DEFAULT_MAX_EXECUTOR_TURNS,
+    ),
+    autopilotExecutorIterations: clampIntegerSetting(
+      settings.autopilotExecutorIterations,
+      1,
+      MAX_CONFIGURED_AUTOPILOT_ITERATIONS,
+      DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
+    ),
   };
 };
 
@@ -516,6 +575,15 @@ export const loadUserMemorySettings = async (): Promise<UserMemorySettings> => {
   );
 };
 
+export const loadUserAgentLimitsSettings =
+  async (): Promise<UserAgentLimitsSettings> => {
+    return loadTauriValueOrFallback(
+      "get_user_agent_limits_settings",
+      createDefaultUserAgentLimitsSettings,
+      "Failed to load user agent limit settings",
+    );
+  };
+
 export const loadDesktopLaunchId = async (): Promise<string | null> => {
   return loadTauriValueOrFallback<string | null>(
     "get_desktop_launch_id",
@@ -579,6 +647,25 @@ export const saveUserDesktopSettings = async (
 
     await emitDesktopSettingsChanged(nextSettings);
     return nextSettings;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const saveUserAgentLimitsSettings = async (
+  settings: UserAgentLimitsSettings,
+): Promise<UserAgentLimitsSettings> => {
+  const normalizedSettings = normalizeUserAgentLimitsSettings(settings);
+
+  if (!canInvokeTauriCommands()) {
+    return normalizedSettings;
+  }
+
+  try {
+    return await tauriCore.invoke<UserAgentLimitsSettings>(
+      "save_user_agent_limits_settings",
+      { settings: normalizedSettings },
+    );
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }

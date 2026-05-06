@@ -131,47 +131,56 @@ describe("createBrowserToolDefinitions", () => {
         name: definition.spec.name,
         riskLevel: definition.riskLevel,
         backingTool: definition.backingTool,
+        effect: definition.effect,
       })),
     ).toEqual([
       {
         name: "start_browser_session",
         riskLevel: "high",
         backingTool: "browser",
+        effect: "external-side-effect",
       },
       {
         name: "navigate_browser_page",
         riskLevel: "medium",
         backingTool: "browser",
+        effect: "external-side-effect",
       },
       {
         name: "read_browser_page",
         riskLevel: "low",
         backingTool: "browser",
+        effect: "read",
       },
       {
         name: "capture_browser_page",
         riskLevel: "low",
         backingTool: "browser",
+        effect: "read",
       },
       {
         name: "click_browser_selector",
         riskLevel: "high",
         backingTool: "browser",
+        effect: "external-side-effect",
       },
       {
         name: "type_browser_text",
         riskLevel: "high",
         backingTool: "browser",
+        effect: "external-side-effect",
       },
       {
         name: "list_browser_sessions",
         riskLevel: "low",
         backingTool: "browser",
+        effect: "read",
       },
       {
         name: "close_browser_session",
         riskLevel: "low",
         backingTool: "browser",
+        effect: "external-side-effect",
       },
     ]);
   });

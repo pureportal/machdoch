@@ -11,6 +11,7 @@ import {
 import { resolveToolPolicies } from "../../core/policy.js";
 import { getToolRegistry } from "../../core/tools.js";
 import { createToolDefinitions } from "../../core/_helpers/agent-tools.js";
+import { resolveRuntimeAgentLimits } from "../../core/_helpers/agent-runtime-types.js";
 import type { ToolName } from "../../core/types.js";
 import type { ParsedCliArgs } from "./cli-args.js";
 import { writeStdoutLine } from "./cli-io.js";
@@ -29,8 +30,12 @@ export const printConfigSummary = async (
     args.profile,
     args.model,
     args.runtimeProvider,
+    args.agentLimits,
   );
   const memorySettings = await loadUserMemorySettings();
+  const agentLimits = resolveRuntimeAgentLimits(config);
+  const formatLimit = (limit: number | null): string =>
+    limit === null ? "infinite" : String(limit);
 
   if (args.json) {
     writeStdoutLine(JSON.stringify(config, null, 2));
@@ -57,6 +62,10 @@ export const printConfigSummary = async (
   writeStdoutLine(`model: ${config.model}`);
   writeStdoutLine(`offline: ${config.offline ? "true" : "false"}`);
   writeStdoutLine(`enabled tools: ${config.enabledTools.join(", ")}`);
+  writeStdoutLine(`executor turns: ${formatLimit(agentLimits.executorTurns)}`);
+  writeStdoutLine(
+    `autopilot iterations: ${formatLimit(agentLimits.autopilotExecutorIterations)}`,
+  );
   writeStdoutLine(`web search provider: ${config.webSearch.activeProvider}`);
   writeStdoutLine(
     `web search status: ${activeWebSearchConfigured ? "available" : "hidden"}`,
@@ -88,6 +97,7 @@ export const printCustomizationSummary = async (
     args.profile,
     args.model,
     args.runtimeProvider,
+    args.agentLimits,
   );
   const customizations = await discoverCustomizations(
     args.workspaceRoot,
@@ -125,6 +135,7 @@ export const printToolSummary = async (args: ParsedCliArgs): Promise<void> => {
     args.profile,
     args.model,
     args.runtimeProvider,
+    args.agentLimits,
   );
   const toolPolicies = resolveToolPolicies(config);
   const agentTools = createToolDefinitions(config, {
@@ -183,6 +194,7 @@ export const printProfileSummary = async (
     args.profile,
     args.model,
     args.runtimeProvider,
+    args.agentLimits,
   );
 
   if (args.json) {

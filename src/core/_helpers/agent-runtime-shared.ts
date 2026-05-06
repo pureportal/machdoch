@@ -11,6 +11,7 @@ import type { AgentLoopState } from "./agent-runtime-types.js";
 const isTerminalAgentProgressState = (state: TaskExecutionState): boolean => {
   return (
     state === "completed" ||
+    state === "planned" ||
     state === "approval-required" ||
     state === "blocked" ||
     state === "unsupported" ||

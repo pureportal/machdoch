@@ -71,6 +71,24 @@ describe("resolveToolPolicies", () => {
     });
   });
 
+  it("keeps plan mode approval-first for stateful tool categories", () => {
+    const policies = resolveToolPolicies(
+      createConfig("plan", ["filesystem", "network", "utilities"]),
+      ["filesystem", "network", "utilities"],
+    );
+
+    expect(
+      Object.fromEntries(
+        policies.map((policy) => [policy.tool.name, policy.decision]),
+      ),
+    ).toEqual({
+      filesystem: "ask",
+      network: "ask",
+      utilities: "allow",
+    });
+    expect(policies[0]?.reason).toContain("Plan mode");
+  });
+
   it("requires approval for every enabled tool in safe mode and allows enabled tools in auto mode", () => {
     const safePolicies = resolveToolPolicies(
       createConfig("safe", ["filesystem", "git"]),

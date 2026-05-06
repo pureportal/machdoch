@@ -5,12 +5,15 @@ import { normalizeOptionalString } from "../common/_helpers/normalize-optional-s
 import {
   getUserConfigPath,
   hasConfiguredValue,
+  loadUserAgentLimitsSettings,
   loadUserWebSearchSettings,
   loadWorkspaceEnv,
 } from "./env.js";
+import { normalizeAgentLimitOverrides } from "./_helpers/agent-runtime-types.js";
 import type {
   ModelProvider,
   ProviderAvailability,
+  RuntimeAgentLimitOverrides,
   RunMode,
   RuntimeConfig,
   RuntimeProfileSummary,
@@ -21,7 +24,7 @@ import type {
   WorkspaceProfileConfig,
 } from "./types.js";
 
-const VALID_MODES: RunMode[] = ["safe", "ask", "auto"];
+const VALID_MODES: RunMode[] = ["plan", "safe", "ask", "auto"];
 const VALID_TOOLS: ToolName[] = [
   "filesystem",
   "shell",
@@ -204,6 +207,10 @@ const mergeProfileIntoConfig = (
     ...(config.compatibility ?? {}),
     ...(profile.compatibility ?? {}),
   };
+  const agentLimits = {
+    ...(config.agentLimits ?? {}),
+    ...(profile.agentLimits ?? {}),
+  };
 
   return {
     ...config,
@@ -214,6 +221,7 @@ const mergeProfileIntoConfig = (
     ...(typeof profile.offline === "boolean"
       ? { offline: profile.offline }
       : {}),
+    ...(Object.keys(agentLimits).length > 0 ? { agentLimits } : {}),
     ...(Object.keys(compatibility).length > 0 ? { compatibility } : {}),
   };
 };
@@ -291,6 +299,42 @@ const resolveWebSearchActiveProvider = (
   return configuredProvider;
 };
 
+const parsePositiveIntegerEnv = (
+  value: string | undefined,
+): number | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+
+  return Math.max(1, Math.trunc(parsed));
+};
+
+const parseAgentLimitsFromEnv = (
+  env: Record<string, string>,
+): RuntimeAgentLimitOverrides | undefined => {
+  const infinite =
+    env.MACHDOCH_INFINITE === "true" || env.MACHDOCH_INFINITE === "1";
+  const executorTurns = parsePositiveIntegerEnv(env.MACHDOCH_EXECUTOR_TURNS);
+  const autopilotExecutorIterations = parsePositiveIntegerEnv(
+    env.MACHDOCH_AUTOPILOT_ITERATIONS,
+  );
+  const limits: RuntimeAgentLimitOverrides = {
+    ...(infinite ? { infinite } : {}),
+    ...(executorTurns !== undefined ? { executorTurns } : {}),
+    ...(autopilotExecutorIterations !== undefined
+      ? { autopilotExecutorIterations }
+      : {}),
+  };
+
+  return Object.keys(limits).length > 0 ? limits : undefined;
+};
+
 /**
  * Loads the effective runtime configuration for a workspace, including
  * environment variables, workspace config, profile overrides, and provider
@@ -302,9 +346,11 @@ export const loadRuntimeConfig = async (
   overrideProfile?: string,
   overrideModel?: string,
   overrideProvider?: Exclude<ModelProvider, "unconfigured">,
+  overrideAgentLimits?: RuntimeAgentLimitOverrides,
 ): Promise<RuntimeConfig> => {
   const env = await loadWorkspaceEnv(workspaceRoot);
   const userWebSearchSettings = await loadUserWebSearchSettings();
+  const userAgentLimitsSettings = await loadUserAgentLimitsSettings();
   const { config, path } = await loadWorkspaceConfigFile(workspaceRoot);
   const availableProfiles = getAvailableProfiles(config.profiles);
   const { activeProfile, profile } = resolveProfile(
@@ -331,6 +377,12 @@ export const loadRuntimeConfig = async (
     DEFAULT_MODEL;
   const offline =
     env.MACHDOCH_OFFLINE === "true" ? true : (effectiveConfig.offline ?? false);
+  const agentLimits = normalizeAgentLimitOverrides(
+    overrideAgentLimits ??
+      parseAgentLimitsFromEnv(env) ??
+      effectiveConfig.agentLimits,
+    normalizeAgentLimitOverrides(userAgentLimitsSettings),
+  );
 
   return {
     workspaceRoot,
@@ -343,6 +395,7 @@ export const loadRuntimeConfig = async (
     provider,
     model,
     offline,
+    agentLimits,
     compatibility: {
       discoverGithubCustomizations:
         effectiveConfig.compatibility?.discoverGithubCustomizations ?? false,

@@ -251,6 +251,10 @@ const createRuntimeSnapshot = (
     provider: "openai",
     model: "gpt-5.5",
     offline: false,
+    agentLimits: {
+      executorTurns: 64,
+      autopilotExecutorIterations: 16,
+    },
     compatibility: {
       discoverGithubCustomizations: false,
     },

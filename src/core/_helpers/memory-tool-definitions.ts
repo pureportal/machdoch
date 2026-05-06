@@ -38,6 +38,7 @@ export const createMemoryToolDefinitions = (
       },
       backingTool: "filesystem",
       riskLevel: "low",
+      effect: "write",
       execute: async (args, context) => {
         const fact = coerceString(args, "fact");
 
@@ -106,6 +107,7 @@ export const createMemoryToolDefinitions = (
       },
       backingTool: "filesystem",
       riskLevel: "low",
+      effect: "write",
       execute: async (args, context) => {
         const fact = coerceString(args, "fact");
 

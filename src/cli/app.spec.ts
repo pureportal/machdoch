@@ -262,6 +262,51 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("parses agent loop limit overrides", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--executor-turns",
+          "128",
+          "--autopilot-iterations",
+          "24",
+          "run",
+          "fix",
+          "the",
+          "bug",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "run",
+      task: "fix the bug",
+      agentLimits: {
+        executorTurns: 128,
+        autopilotExecutorIterations: 24,
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(["--infinite", "--task", "keep working"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "chat",
+      task: "keep working",
+      agentLimits: {
+        infinite: true,
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
   it("parses persistent global-memory updates", () => {
     expect(
       parseCliArgs(["--set-global-memory", "on"], {
@@ -285,6 +330,19 @@ describe("parseCliArgs", () => {
       command: "run",
       task: "show README.md",
       mode: "safe",
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(["--quick", "--mode", "plan", "--task", "fix the bug"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "run",
+      task: "fix the bug",
+      mode: "plan",
       json: false,
       verbose: false,
       workspaceRoot: "C:/workspace",
@@ -386,7 +444,7 @@ describe("parseCliArgs", () => {
       parseCliArgs(["--mode", "loud"], {
         currentWorkingDirectory: "C:/workspace",
       }),
-    ).toThrow("Expected --mode to be followed by safe, ask, or auto.");
+    ).toThrow("Expected --mode to be followed by plan, safe, ask, or auto.");
 
     expect(() =>
       parseCliArgs(["run"], {
@@ -440,6 +498,20 @@ describe("parseCliArgs", () => {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toThrow("Expected --image to be followed by an image file path.");
+
+    expect(() =>
+      parseCliArgs(["--executor-turns", "0", "run", "inspect", "config"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("Expected --executor-turns to be followed by a positive integer.");
+
+    expect(() =>
+      parseCliArgs(["--infinite", "--executor-turns", "128"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow(
+      "--infinite cannot be combined with finite loop limit overrides.",
+    );
   });
 
   it("rejects extra positionals for summary commands instead of silently ignoring them", () => {

@@ -11,6 +11,10 @@ use tauri_plugin_autostart::ManagerExt as _;
 use crate::ui_control::UiControlAvailability;
 
 const DEFAULT_MODEL: &str = "gpt-5.5";
+const DEFAULT_MAX_EXECUTOR_TURNS: u32 = 64;
+const DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS: u32 = 16;
+const MAX_CONFIGURED_EXECUTOR_TURNS: u32 = 1_000;
+const MAX_CONFIGURED_AUTOPILOT_ITERATIONS: u32 = 100;
 const PLACEHOLDER_TOKENS: [&str; 3] = ["YOUR_", "CHANGE_ME", "PLACEHOLDER"];
 const KNOWN_SAMPLE_SECRET_VALUES: [&str; 6] = [
     "sk-user-config",
@@ -52,6 +56,7 @@ pub struct RuntimeSnapshot {
     provider: String,
     model: String,
     offline: bool,
+    agent_limits: RuntimeAgentLimits,
     compatibility: RuntimeCompatibilityConfig,
     provider_availability: Vec<ProviderAvailability>,
     web_search: RuntimeWebSearchConfig,
@@ -62,6 +67,13 @@ pub struct RuntimeSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeCompatibilityConfig {
     discover_github_customizations: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeAgentLimits {
+    executor_turns: Option<u32>,
+    autopilot_executor_iterations: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -131,6 +143,14 @@ pub struct UserMemorySettings {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UserAgentLimitsSettings {
+    infinite: bool,
+    executor_turns: u32,
+    autopilot_executor_iterations: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserDesktopSettings {
     pub(crate) autostart_enabled: bool,
     pub(crate) autostart_minimized: bool,
@@ -160,6 +180,7 @@ struct WorkspaceConfigFile {
     provider: Option<String>,
     model: Option<String>,
     offline: Option<bool>,
+    agent_limits: Option<UserAgentLimitsConfigFile>,
     compatibility: Option<WorkspaceCompatibilityConfig>,
     #[serde(default)]
     profiles: HashMap<String, WorkspaceProfileConfig>,
@@ -174,6 +195,7 @@ struct WorkspaceProfileConfig {
     provider: Option<String>,
     model: Option<String>,
     offline: Option<bool>,
+    agent_limits: Option<UserAgentLimitsConfigFile>,
     compatibility: Option<WorkspaceCompatibilityConfig>,
 }
 
@@ -196,6 +218,8 @@ struct UserConfigFile {
     speech_to_text: UserSpeechToTextConfigFile,
     #[serde(default)]
     desktop: UserDesktopConfigFile,
+    #[serde(default)]
+    agent_limits: UserAgentLimitsConfigFile,
     #[serde(default)]
     memory: UserMemoryConfigFile,
 }
@@ -234,6 +258,14 @@ struct UserDesktopConfigFile {
     quick_voice_shortcut: Option<String>,
     quick_voice_silence_seconds: Option<f64>,
     quick_voice_max_messages: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct UserAgentLimitsConfigFile {
+    infinite: Option<bool>,
+    executor_turns: Option<u32>,
+    autopilot_executor_iterations: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -282,6 +314,108 @@ fn clamp_quick_voice_message_limit(value: u32) -> u32 {
 
 fn clamp_ai_context_message_limit(value: u32) -> u32 {
     value.clamp(1, 200)
+}
+
+fn clamp_executor_turn_limit(value: u32) -> u32 {
+    value.clamp(1, MAX_CONFIGURED_EXECUTOR_TURNS)
+}
+
+fn clamp_autopilot_iteration_limit(value: u32) -> u32 {
+    value.clamp(1, MAX_CONFIGURED_AUTOPILOT_ITERATIONS)
+}
+
+fn normalize_user_agent_limits_settings(
+    settings: &UserAgentLimitsConfigFile,
+) -> UserAgentLimitsSettings {
+    UserAgentLimitsSettings {
+        infinite: settings.infinite.unwrap_or(false),
+        executor_turns: settings
+            .executor_turns
+            .map(clamp_executor_turn_limit)
+            .unwrap_or(DEFAULT_MAX_EXECUTOR_TURNS),
+        autopilot_executor_iterations: settings
+            .autopilot_executor_iterations
+            .map(clamp_autopilot_iteration_limit)
+            .unwrap_or(DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS),
+    }
+}
+
+fn normalize_user_agent_limits_settings_input(
+    settings: &UserAgentLimitsSettings,
+) -> UserAgentLimitsSettings {
+    UserAgentLimitsSettings {
+        infinite: settings.infinite,
+        executor_turns: clamp_executor_turn_limit(settings.executor_turns),
+        autopilot_executor_iterations: clamp_autopilot_iteration_limit(
+            settings.autopilot_executor_iterations,
+        ),
+    }
+}
+
+fn resolve_runtime_agent_limits(
+    user_config: &UserConfigFile,
+    workspace_config: &WorkspaceConfigFile,
+    profile: Option<&WorkspaceProfileConfig>,
+    env: &HashMap<String, String>,
+) -> RuntimeAgentLimits {
+    let user_settings = normalize_user_agent_limits_settings(&user_config.agent_limits);
+    let configured_limits = profile
+        .and_then(|entry| entry.agent_limits.as_ref())
+        .or(workspace_config.agent_limits.as_ref());
+    let mut infinite = user_settings.infinite;
+    let mut executor_turns = user_settings.executor_turns;
+    let mut autopilot_executor_iterations = user_settings.autopilot_executor_iterations;
+
+    if let Some(configured_limits) = configured_limits {
+        if let Some(configured_infinite) = configured_limits.infinite {
+            infinite = configured_infinite;
+        }
+
+        if let Some(configured_executor_turns) = configured_limits.executor_turns {
+            infinite = false;
+            executor_turns = clamp_executor_turn_limit(configured_executor_turns);
+        }
+
+        if let Some(configured_autopilot_iterations) =
+            configured_limits.autopilot_executor_iterations
+        {
+            infinite = false;
+            autopilot_executor_iterations =
+                clamp_autopilot_iteration_limit(configured_autopilot_iterations);
+        }
+    }
+
+    if matches!(
+        env.get("MACHDOCH_INFINITE").map(String::as_str),
+        Some("true" | "1")
+    ) {
+        infinite = true;
+    }
+
+    if let Some(value) = env
+        .get("MACHDOCH_EXECUTOR_TURNS")
+        .and_then(|value| value.trim().parse::<u32>().ok())
+    {
+        infinite = false;
+        executor_turns = clamp_executor_turn_limit(value);
+    }
+
+    if let Some(value) = env
+        .get("MACHDOCH_AUTOPILOT_ITERATIONS")
+        .and_then(|value| value.trim().parse::<u32>().ok())
+    {
+        infinite = false;
+        autopilot_executor_iterations = clamp_autopilot_iteration_limit(value);
+    }
+
+    RuntimeAgentLimits {
+        executor_turns: if infinite { None } else { Some(executor_turns) },
+        autopilot_executor_iterations: if infinite {
+            None
+        } else {
+            Some(autopilot_executor_iterations)
+        },
+    }
 }
 
 fn normalize_quick_voice_shortcut(value: Option<&str>) -> String {
@@ -447,6 +581,9 @@ fn apply_process_env_overrides(values: &mut HashMap<String, String>) {
         "MACHDOCH_PROFILE",
         "MACHDOCH_OFFLINE",
         "MACHDOCH_WEB_SEARCH_PROVIDER",
+        "MACHDOCH_EXECUTOR_TURNS",
+        "MACHDOCH_AUTOPILOT_ITERATIONS",
+        "MACHDOCH_INFINITE",
     ] {
         if let Ok(value) = env::var(key) {
             values.insert(key.to_string(), value);
@@ -843,7 +980,7 @@ fn resolve_web_search_active_provider(
 }
 
 fn is_valid_mode(value: Option<&str>) -> bool {
-    matches!(value.map(str::trim), Some("safe" | "ask" | "auto"))
+    matches!(value.map(str::trim), Some("plan" | "safe" | "ask" | "auto"))
 }
 
 fn get_available_profiles(
@@ -1184,6 +1321,28 @@ fn save_user_global_memory_enabled_value(enabled: bool) -> Result<PathBuf, Strin
     Ok(config_path)
 }
 
+fn load_user_agent_limits_settings() -> Result<UserAgentLimitsSettings, String> {
+    let (config, _) = load_user_config_file()?;
+
+    Ok(normalize_user_agent_limits_settings(&config.agent_limits))
+}
+
+fn save_user_agent_limits_settings_value(
+    settings: &UserAgentLimitsSettings,
+) -> Result<PathBuf, String> {
+    let normalized_settings = normalize_user_agent_limits_settings_input(settings);
+    let (mut config, config_path) = load_user_config_file()?;
+
+    config.agent_limits.infinite = Some(normalized_settings.infinite);
+    config.agent_limits.executor_turns = Some(normalized_settings.executor_turns);
+    config.agent_limits.autopilot_executor_iterations =
+        Some(normalized_settings.autopilot_executor_iterations);
+
+    write_user_config_file(&config, &config_path)?;
+
+    Ok(config_path)
+}
+
 fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Manager<R>>(
     manager: &M,
     settings: &UserDesktopSettings,
@@ -1275,6 +1434,11 @@ pub async fn get_user_memory_settings() -> Result<UserMemorySettings, String> {
 }
 
 #[tauri::command]
+pub async fn get_user_agent_limits_settings() -> Result<UserAgentLimitsSettings, String> {
+    load_user_agent_limits_settings()
+}
+
+#[tauri::command]
 pub async fn save_user_desktop_settings(
     app: tauri::AppHandle,
     settings: UserDesktopSettings,
@@ -1346,6 +1510,14 @@ pub async fn save_user_speech_to_text_input_device(
 pub async fn save_user_global_memory_enabled(enabled: bool) -> Result<UserMemorySettings, String> {
     save_user_global_memory_enabled_value(enabled)?;
     load_user_memory_settings()
+}
+
+#[tauri::command]
+pub async fn save_user_agent_limits_settings(
+    settings: UserAgentLimitsSettings,
+) -> Result<UserAgentLimitsSettings, String> {
+    save_user_agent_limits_settings_value(&settings)?;
+    load_user_agent_limits_settings()
 }
 
 #[tauri::command]
@@ -1421,6 +1593,7 @@ pub async fn get_runtime_snapshot(
         provider,
         model,
         offline,
+        agent_limits: resolve_runtime_agent_limits(&user_config, &config, profile, &env),
         compatibility: resolve_compatibility(&config, profile),
         provider_availability,
         web_search: RuntimeWebSearchConfig {

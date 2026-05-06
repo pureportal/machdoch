@@ -24,9 +24,8 @@ import {
   upsertMemoryUpdate,
 } from "./_helpers/agent-runtime-shared.js";
 import {
-  MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
   MAX_CONSECUTIVE_IDENTICAL_TOOL_ERRORS,
-  MAX_EXECUTOR_TURNS,
+  resolveRuntimeAgentLimits,
   type AgentLoopState,
   type ExecutorContinuationRequest,
   type ExecutorCycleOutcome,
@@ -97,7 +96,7 @@ const finalizeExecutedResult = (
   return createExecutionResult({
     task,
     mode: config.mode,
-    status: "executed",
+    status: config.mode === "plan" ? "planned" : "executed",
     summary:
       summaryOverride?.trim() ||
       normalizeFinalSummary(
@@ -298,10 +297,12 @@ const runExecutorCycle = async (
   await emitAgentProgress(
     task,
     config,
-    "executing",
-    continuationRequest
-      ? `Executor iteration ${executorIteration} started with monitor feedback from continuation ${continuationRequest.continuationIndex}.`
-      : "Executor iteration 1 started.",
+    config.mode === "plan" ? "planning" : "executing",
+    config.mode === "plan"
+      ? "Plan mode started read-only investigation."
+      : continuationRequest
+        ? `Executor iteration ${executorIteration} started with monitor feedback from continuation ${continuationRequest.continuationIndex}.`
+        : "Executor iteration 1 started.",
     loopState,
     onStateChange,
   );
@@ -316,6 +317,7 @@ const runExecutorCycle = async (
       continuationRequest,
     ),
     userPrompt: createExecutorUserPrompt(
+      config,
       task,
       taskContext,
       conversationContext,
@@ -332,8 +334,12 @@ const runExecutorCycle = async (
       }
     | undefined;
 
-  for (let turnIndex = 0; turnIndex < MAX_EXECUTOR_TURNS; turnIndex += 1) {
+  const executorTurnLimit = resolveRuntimeAgentLimits(config).executorTurns;
+  let turnIndex = 0;
+
+  while (executorTurnLimit === null || turnIndex < executorTurnLimit) {
     throwIfExecutionAborted(signal);
+    turnIndex += 1;
 
     if (turn.text.trim()) {
       loopState.lastAssistantText = turn.text.trim();
@@ -439,8 +445,10 @@ const runExecutorCycle = async (
       await emitAgentProgress(
         task,
         config,
-        "verifying",
-        `Executor iteration ${executorIteration} submitted a structured final response for validation.`,
+        config.mode === "plan" ? "planned" : "verifying",
+        config.mode === "plan"
+          ? "Plan mode submitted a proposed plan for approval."
+          : `Executor iteration ${executorIteration} submitted a structured final response for validation.`,
         loopState,
         onStateChange,
       );
@@ -578,7 +586,7 @@ const runExecutorCycle = async (
       config,
       loopState,
       "The model-driven execution loop hit its turn limit before reaching a final answer.",
-      `Stopped after ${MAX_EXECUTOR_TURNS} turns to avoid an infinite loop.`,
+      `Stopped after ${executorTurnLimit} turns to avoid an infinite loop.`,
     ),
   };
 };
@@ -679,6 +687,8 @@ const runModelDrivenLoop = async (
   );
   let executorIterations = 1;
   const decisions: TaskAutopilotDecision[] = [];
+  const autopilotExecutorIterationLimit =
+    resolveRuntimeAgentLimits(config).autopilotExecutorIterations;
 
   if (config.mode !== "auto" || cycleResult.result.status !== "executed") {
     return cycleResult.result;
@@ -691,7 +701,7 @@ const runModelDrivenLoop = async (
       continuationCount: decisions.filter(
         (decision) => decision.decision === "continue",
       ).length,
-      maxExecutorIterations: MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
+      maxExecutorIterations: autopilotExecutorIterationLimit,
       decisions: [...decisions],
     });
 
@@ -730,7 +740,10 @@ const runModelDrivenLoop = async (
       return attachAutopilotReport(cycleResult.result, autopilotReport);
     }
 
-    if (executorIterations >= MAX_AUTOPILOT_EXECUTOR_ITERATIONS) {
+    if (
+      autopilotExecutorIterationLimit !== null &&
+      executorIterations >= autopilotExecutorIterationLimit
+    ) {
       return attachAutopilotReport(
         finalizeBlockedResult(
           task,

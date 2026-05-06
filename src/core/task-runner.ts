@@ -129,7 +129,9 @@ const createPlanSteps = (
   invokedPrompt?: ResolvedPromptInvocation,
 ): TaskPlanStep[] => {
   const approvalStepDescription =
-    config.mode === "safe"
+    config.mode === "plan"
+      ? "Gather read-only evidence, draft the proposed changes, and pause for validation before any write, install, commit, UI input, or ambiguous command."
+      : config.mode === "safe"
       ? "Do not execute actions automatically. Pause for explicit confirmation before any state-changing step."
       : config.mode === "ask"
         ? "Request approval before risky actions, especially shell execution, writes, package installs, and elevated access."
@@ -249,6 +251,12 @@ export const previewTaskRun = (
   if (taskContext.approvalRequiredTools.length > 0) {
     notes.push(
       `These relevant tools would require approval in ${config.mode} mode: ${taskContext.approvalRequiredTools.join(", ")}.`,
+    );
+  }
+
+  if (config.mode === "plan") {
+    notes.push(
+      "Plan mode allows read-only investigation and returns a proposed plan instead of making changes.",
     );
   }
 

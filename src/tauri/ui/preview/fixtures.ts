@@ -512,35 +512,76 @@ const createUnsupportedExecutionResponse = (): NonNullable<
   };
 };
 
+const createPlannedExecutionResponse = (): NonNullable<
+  TaskExecutionResult["response"]
+> => {
+  return {
+    markdown: [
+      "**Plan ready.**",
+      "",
+      "1. Inspect the relevant workspace files and current runtime context.",
+      "2. Apply the smallest required edit only after approval.",
+      "3. Run focused verification and report any remaining blockers.",
+    ].join("\n"),
+    highlights: [
+      "No files were changed in plan mode.",
+      "Changing actions stay behind explicit approval.",
+    ],
+    relatedFiles: [],
+    verification: ["Prepared a read-only execution plan."],
+    followUps: ["Approve the plan by rerunning the task in ask or autopilot mode."],
+  };
+};
+
 export const createMockExecutionFixture = (
   task = DEFAULT_EXECUTION_TASK,
   workspacePath = DEFAULT_WORKSPACE_ROOT,
   context: FixtureModelContext = {},
 ): TaskExecutionResult => {
   const normalizedTask = normalizeTask(task, DEFAULT_EXECUTION_TASK);
-  const status: TaskExecutionStatus = supportsMockExecution(normalizedTask)
-    ? "executed"
-    : "unsupported";
+  const status: TaskExecutionStatus =
+    context.mode === "plan"
+      ? "planned"
+      : supportsMockExecution(normalizedTask)
+        ? "executed"
+        : "unsupported";
 
   return {
     task: normalizedTask,
     mode: context.mode ?? "ask",
     status,
     summary:
-      status === "executed"
+      status === "planned"
+        ? "Plan mode prepared proposed next steps without changing the workspace."
+        : status === "executed"
         ? "This request matches a read-only execution path that already exists in the shared core, so the desktop shell can render a representative result shape."
         : "This task stays in preview mode because the deterministic executor only covers read-only workspace and explicit file or directory inspection flows today.",
     executedTools: status === "executed" ? ["filesystem"] : [],
     reason:
-      status === "executed"
+      status === "planned"
+        ? "Plan mode stops before state-changing actions."
+        : status === "executed"
         ? "Representative data only until the desktop shell is connected to the shared core executor."
         : "Broader task types still fall back to preview mode in the current desktop scaffold.",
     response:
-      status === "executed"
+      status === "planned"
+        ? createPlannedExecutionResponse()
+        : status === "executed"
         ? createExecutedExecutionResponse(workspacePath)
         : createUnsupportedExecutionResponse(),
     outputSections:
-      status === "executed"
+      status === "planned"
+        ? [
+            {
+              title: "Plan mode",
+              lines: [
+                `task: ${normalizedTask}`,
+                "result: proposed plan only",
+                "workspace changes: none",
+              ],
+            },
+          ]
+        : status === "executed"
         ? createExecutedExecutionSections(
             normalizedTask,
             workspacePath,

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { executeTask } from "./execution.ts";
@@ -751,6 +751,117 @@ describe("executeTask", () => {
     ).toBe(false);
   });
 
+  it("returns planned instead of executed for model-driven plan mode completions", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const planningAdapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "",
+        toolCalls: [
+          createFinalResponseToolCall({
+            summary: "Plan is ready for approval.",
+            markdown:
+              "Plan is ready.\n\n1. Inspect files.\n2. Apply the targeted edit after approval.\n3. Run focused tests.",
+          }),
+        ],
+      }),
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The planning adapter should not continue.");
+      },
+    };
+
+    const result = await executeTask(
+      "Plan a safe implementation.",
+      createConfig(workspaceRoot, "plan", ["filesystem", "shell"]),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: planningAdapter,
+      },
+    );
+
+    expect(result.status).toBe("planned");
+    expect(result.summary).toBe("Plan is ready for approval.");
+    expect(result.response?.markdown).toContain("Apply the targeted edit");
+    expect(result.executedTools).toEqual([]);
+  });
+
+  it("pauses before mutating tool calls in plan mode", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const mutatingAdapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "",
+        toolCalls: [
+          {
+            id: "create-1",
+            name: "create_file",
+            arguments: {
+              path: "planned-change.txt",
+              content: "not yet",
+            },
+          },
+        ],
+      }),
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The mutating adapter should pause before continuing.");
+      },
+    };
+
+    const result = await executeTask(
+      "Create planned-change.txt after approval.",
+      createConfig(workspaceRoot, "plan", ["filesystem"]),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: mutatingAdapter,
+      },
+    );
+
+    expect(result.status).toBe("approval-required");
+    expect(result.summary).toContain("requires approval");
+    await expect(stat(join(workspaceRoot, "planned-change.txt"))).rejects.toThrow();
+  });
+
+  it("pauses before out-of-workspace shell reads in plan mode", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const shellAdapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "",
+        toolCalls: [
+          {
+            id: "shell-1",
+            name: "run_shell_command",
+            arguments: {
+              command: "Get-Content C:\\Users\\someone\\.ssh\\id_rsa",
+            },
+          },
+        ],
+      }),
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The shell adapter should pause before continuing.");
+      },
+    };
+
+    const result = await executeTask(
+      "Inspect a sensitive file through shell.",
+      createConfig(workspaceRoot, "plan", ["shell"]),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: shellAdapter,
+      },
+    );
+
+    expect(result.status).toBe("approval-required");
+    expect(result.summary).toContain("requires approval");
+    expect(
+      result.outputSections.some(
+        (section) =>
+          section.title === "Requested arguments" &&
+          section.lines.some((line) => line.includes("C:\\Users")),
+      ),
+    ).toBe(true);
+  });
+
   it("blocks unstructured model answers instead of classifying prose", async () => {
     const workspaceRoot = await createWorkspace();
 
@@ -782,6 +893,56 @@ describe("executeTask", () => {
         (section) => section.title === "Agent answer",
       ),
     ).toBe(true);
+  });
+
+  it("uses configured executor turn limits for model-driven execution", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const loopingAdapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "",
+        toolCalls: [
+          {
+            id: "call-1",
+            name: "read_file",
+            arguments: {
+              path: "missing.txt",
+            },
+          },
+        ],
+      }),
+      continueTurn: async () => ({
+        text: "",
+        toolCalls: [
+          {
+            id: "call-loop",
+            name: "read_file",
+            arguments: {
+              path: "missing.txt",
+            },
+          },
+        ],
+      }),
+    };
+
+    const result = await executeTask(
+      "Loop until the runtime stops the executor.",
+      {
+        ...createConfig(workspaceRoot, "ask", ["filesystem"]),
+        agentLimits: {
+          executorTurns: 2,
+          autopilotExecutorIterations: 16,
+        },
+      },
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: loopingAdapter,
+      },
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.summary).toContain("turn limit");
+    expect(result.reason).toContain("Stopped after 2 turns");
   });
 
   it("truncates top-level workspace summaries when many entries are present", async () => {

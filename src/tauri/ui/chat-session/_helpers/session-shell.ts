@@ -2,6 +2,7 @@ import {
   Archive,
   Check,
   CircleDashed,
+  ClipboardList,
   Inbox,
   ListFilter,
   LoaderCircle,
@@ -37,6 +38,7 @@ import {
 export type SettingsSection =
   | "providers"
   | "web-search"
+  | "agent"
   | "voice"
   | "memory"
   | "desktop";
@@ -49,6 +51,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
 }> = [
   { id: "providers", label: "Providers" },
   { id: "web-search", label: "Web search" },
+  { id: "agent", label: "Agent" },
   { id: "voice", label: "Voice" },
   { id: "memory", label: "Memory" },
   { id: "desktop", label: "Desktop" },
@@ -67,12 +70,24 @@ export const MODEL_STAGE_CLASSES: Record<CatalogModelStage, string> = {
 };
 
 export const RUN_MODE_ORDER = [
+  "plan",
   "safe",
   "ask",
   "auto",
 ] as const satisfies ReadonlyArray<RunMode>;
 
 export const RUN_MODE_META = {
+  plan: {
+    label: "Plan mode",
+    description:
+      "Research first, propose steps, and pause before changing files or running ambiguous commands.",
+    icon: ClipboardList,
+    triggerClassName:
+      "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
+    selectedClassName: "border-sky-500/30 bg-sky-500/10 text-sky-100",
+    iconClassName: "text-sky-300",
+    badgeClassName: "border-sky-500/20 bg-sky-500/10 text-sky-200",
+  },
   safe: {
     label: "Safe mode",
     description: "Keep each run read-only or otherwise low-risk.",

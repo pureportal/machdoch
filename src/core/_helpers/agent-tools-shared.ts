@@ -7,6 +7,7 @@ import type {
   ConversationMemoryEntry,
   TaskExecutionMemoryUpdate,
   TaskExecutionSection,
+  ToolCallEffect,
   ToolName,
   ToolRiskLevel,
   UiControlRuntimeInfo,
@@ -56,6 +57,8 @@ export interface AgentToolDefinition {
   spec: AgentModelToolSpec;
   backingTool: ToolName;
   riskLevel: ToolRiskLevel;
+  effect: ToolCallEffect;
+  isReadOnlyInPlanMode?: (args: Record<string, unknown>) => boolean;
   execute: (
     args: Record<string, unknown>,
     context: AgentToolExecutionContext,

@@ -270,6 +270,7 @@ export const createGitToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "git",
       riskLevel: "low",
+      effect: "read",
       execute: async (args, context) => {
         const maxEntries = coerceBoundedInteger(
           args,
@@ -383,6 +384,7 @@ export const createGitToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "git",
       riskLevel: "low",
+      effect: "read",
       execute: async (args, context) => {
         const scope = coerceString(args, "scope") ?? "unstaged";
         const maxFiles = coerceBoundedInteger(
@@ -516,6 +518,7 @@ export const createGitToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "git",
       riskLevel: "low",
+      effect: "read",
       execute: async (args, context) => {
         const maxCommits = coerceBoundedInteger(
           args,
@@ -618,6 +621,7 @@ export const createGitToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "git",
       riskLevel: "medium",
+      effect: "write",
       execute: async (args, context) => {
         const message = coerceString(args, "message");
 

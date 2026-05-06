@@ -320,6 +320,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "browser",
       riskLevel: "high",
+      effect: "external-side-effect",
       execute: async (args) => {
         const requestedChannel = coerceString(args, "channel");
 
@@ -456,6 +457,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "browser",
       riskLevel: "medium",
+      effect: "external-side-effect",
       execute: async (args) => {
         const sessionId = coerceString(args, "sessionId");
 
@@ -546,6 +548,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "browser",
       riskLevel: "low",
+      effect: "read",
       execute: async (args) => {
         const sessionId = coerceString(args, "sessionId");
 
@@ -634,6 +637,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "browser",
       riskLevel: "low",
+      effect: "read",
       execute: async (args) => {
         const sessionId = coerceString(args, "sessionId");
 
@@ -726,6 +730,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "browser",
       riskLevel: "high",
+      effect: "external-side-effect",
       execute: async (args) => {
         const sessionId = coerceString(args, "sessionId");
         const selector = coerceSelector(args);
@@ -812,6 +817,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "browser",
       riskLevel: "high",
+      effect: "external-side-effect",
       execute: async (args) => {
         const sessionId = coerceString(args, "sessionId");
         const selector = coerceSelector(args);
@@ -894,6 +900,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "browser",
       riskLevel: "low",
+      effect: "read",
       execute: async () => {
         const lines = [...browserSessions.values()].map(formatSessionLine);
 
@@ -942,6 +949,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
       },
       backingTool: "browser",
       riskLevel: "low",
+      effect: "external-side-effect",
       execute: async (args) => {
         const closeAll = coerceBoolean(args, "closeAll") ?? false;
         const sessionId = coerceString(args, "sessionId");

@@ -14,6 +14,7 @@ export const formatExecutionProgressLines = (
     Extract<
       TaskExecutionState,
       | "completed"
+      | "planned"
       | "approval-required"
       | "blocked"
       | "unsupported"
@@ -22,6 +23,7 @@ export const formatExecutionProgressLines = (
     string
   > = {
     completed: "Done",
+    planned: "Plan ready",
     "approval-required": "Approval required",
     blocked: "Needs input",
     unsupported: "Cannot continue",
@@ -52,6 +54,10 @@ export const formatExecutionProgressLines = (
 
   if (progress.state === "executing") {
     return ["Working on it..."];
+  }
+
+  if (progress.state === "planning") {
+    return ["Planning the work..."];
   }
 
   const lines = ["Preparing the task..."];

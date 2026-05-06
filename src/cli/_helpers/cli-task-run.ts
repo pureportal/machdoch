@@ -317,6 +317,7 @@ export const printTaskPreview = async (
     args.profile,
     args.model,
     args.runtimeProvider,
+    args.agentLimits,
   );
   const imageInputs = await createImageInputsFromPaths(
     args.imagePaths,
@@ -357,7 +358,11 @@ export const printTaskPreview = async (
     process.exitCode = 130;
   }
 
-  if (execution.status === "executed" || execution.status === "cancelled") {
+  if (
+    execution.status === "planned" ||
+    execution.status === "executed" ||
+    execution.status === "cancelled"
+  ) {
     if (args.json) {
       writeStdoutLine(JSON.stringify({ execution }, null, 2));
       return { execution };
@@ -380,6 +385,7 @@ export const printTaskPreview = async (
 const printInteractiveChatHelp = (): void => {
   writeStdoutLine("interactive commands:");
   writeStdoutLine("  /help  Show this help");
+  writeStdoutLine("  /plan <task>  Produce a read-only approval plan");
   writeStdoutLine("  /exit  Leave interactive mode");
   writeStdoutLine("  /quit  Leave interactive mode");
 };
@@ -401,6 +407,7 @@ export const runInteractiveChat = async (
     args.profile,
     args.model,
     args.runtimeProvider,
+    args.agentLimits,
   );
   const memorySettings = await loadUserMemorySettings();
   const baseConversationContext = await resolveConversationContext(args);
@@ -444,12 +451,16 @@ export const runInteractiveChat = async (
         : {}),
     });
 
-    const executeChatTask = async (nextTask: string): Promise<void> => {
+    const executeChatTask = async (
+      nextTask: string,
+      modeOverride = args.mode,
+    ): Promise<void> => {
       const { execution } = await printTaskPreview(
         {
           ...args,
           command: "run",
           task: nextTask,
+          ...(modeOverride ? { mode: modeOverride } : {}),
         },
         {
           conversationContext: createCurrentConversationContext(),
@@ -512,6 +523,26 @@ export const runInteractiveChat = async (
 
       if (nextTask === "/help") {
         printInteractiveChatHelp();
+        writeStdoutLine();
+        continue;
+      }
+
+      if (nextTask === "/plan") {
+        writeStdoutLine("Usage: /plan <task>");
+        writeStdoutLine();
+        continue;
+      }
+
+      if (nextTask.startsWith("/plan ")) {
+        const planTask = nextTask.slice("/plan ".length).trim();
+
+        if (planTask.length === 0) {
+          writeStdoutLine("Usage: /plan <task>");
+          writeStdoutLine();
+          continue;
+        }
+
+        await executeChatTask(planTask, "plan");
         writeStdoutLine();
         continue;
       }

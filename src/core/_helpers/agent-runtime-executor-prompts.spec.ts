@@ -161,4 +161,19 @@ describe("createExecutorSystemPrompt", () => {
       "web research is mandatory before you make specific claims",
     );
   });
+
+  it("adds a strict read-only contract in plan mode", () => {
+    const prompt = createExecutorSystemPrompt(
+      createRuntimeConfig({ mode: "plan" }),
+      createTaskContext(),
+      [createTool("read_file"), createTool("create_file")],
+      createConversationContext(),
+    );
+
+    expect(prompt).toContain("<plan_mode_contract>");
+    expect(prompt).toContain("produce a concrete implementation plan");
+    expect(prompt).toContain("Do not call file-write");
+    expect(prompt).toContain("status `completed`");
+    expect(prompt).toContain("runtime will surface that as a planned result");
+  });
 });

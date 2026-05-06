@@ -60,6 +60,7 @@ export const createInvariantViolationResult = (
 const isTerminalExecutionState = (state: TaskExecutionState): boolean => {
   return (
     state === "completed" ||
+    state === "planned" ||
     state === "approval-required" ||
     state === "blocked" ||
     state === "unsupported" ||

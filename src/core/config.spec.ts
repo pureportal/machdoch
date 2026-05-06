@@ -14,6 +14,9 @@ const ISOLATED_ENV_KEYS = [
   "MACHDOCH_OFFLINE",
   "MACHDOCH_PROFILE",
   "MACHDOCH_USER_CONFIG_DIR",
+  "MACHDOCH_EXECUTOR_TURNS",
+  "MACHDOCH_AUTOPILOT_ITERATIONS",
+  "MACHDOCH_INFINITE",
 ] as const;
 
 const createWorkspace = async (): Promise<string> => {
@@ -80,6 +83,10 @@ describe("loadRuntimeConfig", () => {
     expect(config.provider).toBe("unconfigured");
     expect(config.model).toBe("gpt-5.5");
     expect(config.offline).toBe(false);
+    expect(config.agentLimits).toEqual({
+      executorTurns: 64,
+      autopilotExecutorIterations: 16,
+    });
     expect(config.compatibility.discoverGithubCustomizations).toBe(false);
   });
 
@@ -205,6 +212,76 @@ describe("loadRuntimeConfig", () => {
       config.providerAvailability.find((entry) => entry.provider === "openai")
         ?.configured,
     ).toBe(true);
+  });
+
+  it("loads agent loop limits from user config, workspace config, environment, and overrides", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    await mkdir(join(workspaceRoot, ".user-config"), { recursive: true });
+    await writeFile(
+      join(workspaceRoot, ".user-config", "user-config.json"),
+      JSON.stringify(
+        {
+          agentLimits: {
+            executorTurns: 96,
+            autopilotExecutorIterations: 18,
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    expect((await loadRuntimeConfig(workspaceRoot)).agentLimits).toEqual({
+      executorTurns: 96,
+      autopilotExecutorIterations: 18,
+    });
+
+    await mkdir(join(workspaceRoot, ".machdoch"), { recursive: true });
+    await writeFile(
+      join(workspaceRoot, ".machdoch", "config.json"),
+      JSON.stringify(
+        {
+          agentLimits: {
+            executorTurns: 128,
+            autopilotExecutorIterations: 24,
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    expect((await loadRuntimeConfig(workspaceRoot)).agentLimits).toEqual({
+      executorTurns: 128,
+      autopilotExecutorIterations: 24,
+    });
+
+    process.env.MACHDOCH_INFINITE = "true";
+    expect((await loadRuntimeConfig(workspaceRoot)).agentLimits).toEqual({
+      executorTurns: null,
+      autopilotExecutorIterations: null,
+    });
+
+    expect(
+      (
+        await loadRuntimeConfig(
+          workspaceRoot,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          {
+            executorTurns: 256,
+            autopilotExecutorIterations: 32,
+          },
+        )
+      ).agentLimits,
+    ).toEqual({
+      executorTurns: 256,
+      autopilotExecutorIterations: 32,
+    });
   });
 
   it("throws a helpful error for unknown profile names", async () => {

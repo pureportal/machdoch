@@ -88,7 +88,7 @@ const DEFAULT_VOICE_RATE = 1;
 const MIN_VOICE_RATE = 0.8;
 const MAX_VOICE_RATE = 1.4;
 const SPECIAL_SESSION_KINDS = ["quick-voice"] as const;
-const RUN_MODES: RunMode[] = ["safe", "ask", "auto"];
+const RUN_MODES: RunMode[] = ["plan", "safe", "ask", "auto"];
 const RUNTIME_PROVIDERS: RuntimeProvider[] = ["openai", "anthropic", "google"];
 const CONTEXT_ATTACHMENT_KINDS: ChatSessionContextAttachmentKind[] = [
   "file",

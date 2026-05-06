@@ -2,7 +2,11 @@ import process from "node:process";
 import { parseArgs as parseNodeArgs } from "node:util";
 import { normalizeOptionalString } from "../../common/_helpers/normalize-optional-string.js";
 import type { UserApiProvider } from "../../core/env.js";
-import type { ModelProvider, RunMode } from "../../core/types.js";
+import type {
+  ModelProvider,
+  RuntimeAgentLimitOverrides,
+  RunMode,
+} from "../../core/types.js";
 
 export type CommandName =
   | "run"
@@ -29,6 +33,7 @@ export interface ParsedCliArgs {
   sessionMemoryEnabled?: boolean;
   globalMemoryEnabled?: boolean;
   setGlobalMemoryEnabled?: boolean;
+  agentLimits?: RuntimeAgentLimitOverrides;
   conversationContextFile?: string;
   contextPaths?: string[];
   imagePaths?: string[];
@@ -37,7 +42,13 @@ export interface ParsedCliArgs {
   workspaceRoot: string;
 }
 
-const VALID_MODES: ReadonlySet<RunMode> = new Set(["safe", "ask", "auto"]);
+const VALID_MODES: ReadonlySet<RunMode> = new Set([
+  "plan",
+  "safe",
+  "ask",
+  "auto",
+]);
+const VALID_MODE_DESCRIPTION = "plan, safe, ask, or auto";
 const VALID_PROVIDERS: ReadonlySet<UserApiProvider> = new Set([
   "openai",
   "anthropic",
@@ -78,6 +89,7 @@ const createParsedArgs = (
     | "sessionMemoryEnabled"
     | "globalMemoryEnabled"
     | "setGlobalMemoryEnabled"
+    | "agentLimits"
     | "conversationContextFile"
     | "contextPaths"
     | "imagePaths"
@@ -93,6 +105,7 @@ const createParsedArgs = (
     sessionMemoryEnabled?: boolean;
     globalMemoryEnabled?: boolean;
     setGlobalMemoryEnabled?: boolean;
+    agentLimits?: RuntimeAgentLimitOverrides;
     conversationContextFile?: string;
     contextPaths?: string[];
     imagePaths?: string[];
@@ -119,6 +132,7 @@ const createParsedArgs = (
     ...(options?.setGlobalMemoryEnabled !== undefined
       ? { setGlobalMemoryEnabled: options.setGlobalMemoryEnabled }
       : {}),
+    ...(options?.agentLimits ? { agentLimits: options.agentLimits } : {}),
     ...(options?.conversationContextFile
       ? { conversationContextFile: options.conversationContextFile }
       : {}),
@@ -143,6 +157,7 @@ const createSharedParsedOptions = (options: {
   defaultModel?: string;
   sessionMemoryEnabled?: boolean;
   globalMemoryEnabled?: boolean;
+  agentLimits?: RuntimeAgentLimitOverrides;
   conversationContextFile?: string;
   contextPaths?: string[];
   imagePaths?: string[];
@@ -164,6 +179,7 @@ const createSharedParsedOptions = (options: {
     ...(options.globalMemoryEnabled !== undefined
       ? { globalMemoryEnabled: options.globalMemoryEnabled }
       : {}),
+    ...(options.agentLimits ? { agentLimits: options.agentLimits } : {}),
     ...(options.conversationContextFile
       ? { conversationContextFile: options.conversationContextFile }
       : {}),
@@ -197,6 +213,16 @@ const parseMemoryOverride = (
   }
 
   return value === "on";
+};
+
+const parsePositiveInteger = (value: string, flagName: string): number => {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isInteger(parsed)) {
+    fail(`Expected ${flagName} to be followed by a positive integer.`);
+  }
+
+  return parsed;
 };
 
 const normalizeContextPaths = (
@@ -256,11 +282,11 @@ export const getHelpText = (): string => {
   return `machdoch
 
 Usage:
-  machdoch [--mode <safe|ask|auto>]
+  machdoch [--mode <plan|safe|ask|auto>]
   machdoch <task>
-  machdoch --task <task> [--mode <safe|ask|auto>]
+  machdoch --task <task> [--mode <plan|safe|ask|auto>]
   machdoch run <task>
-  machdoch --quick --task <task> [--mode <safe|ask|auto>]
+  machdoch --quick --task <task> [--mode <plan|safe|ask|auto>]
   machdoch --set-api --provider <openai|anthropic|google> --key <value>
   machdoch --set-global-memory <on|off>
   machdoch --runtime-provider <openai|anthropic|google>
@@ -272,8 +298,9 @@ Usage:
   machdoch profiles [--json]
 
 Options:
-  --mode <safe|ask|auto>  Override the runtime mode for this command or chat session.
-  --quick                 Force a one-shot task run that exits at a terminal state. Use --mode to choose safe, ask, or auto.
+  --mode <plan|safe|ask|auto>
+                          Override the runtime mode for this command or chat session.
+  --quick                 Force a one-shot task run that exits at a terminal state. Use --mode to choose plan, safe, ask, or auto.
   --set-api               Save a provider API key into the user-scoped Machdoch config file.
   --provider <name>       Provider name for --set-api (openai, anthropic, google).
   --runtime-provider <name>
@@ -288,6 +315,11 @@ Options:
                           Enable or disable per-session memory for this run or chat session.
   --global-memory <inherit|on|off>
                           Override cross-session global memory for this run or chat session.
+  --executor-turns <count>
+                          Override the per-executor model turn limit.
+  --autopilot-iterations <count>
+                          Override the Autopilot continuation limit.
+  --infinite              Disable executor turn and Autopilot iteration limits. The wall-clock safety timeout still applies.
   --conversation-context-file <path>
                           Load conversation history and memory context from a JSON file.
   --context <path>        Add a file or folder path as task context. Repeat for multiple paths.
@@ -331,6 +363,9 @@ export const parseCliArgs = (
         "default-model"?: string;
         "session-memory"?: string;
         "global-memory"?: string;
+        "executor-turns"?: string;
+        "autopilot-iterations"?: string;
+        infinite?: boolean;
         "conversation-context-file"?: string;
         context?: string[];
         image?: string[];
@@ -359,6 +394,9 @@ export const parseCliArgs = (
         "default-model": { type: "string" },
         "session-memory": { type: "string" },
         "global-memory": { type: "string" },
+        "executor-turns": { type: "string" },
+        "autopilot-iterations": { type: "string" },
+        infinite: { type: "boolean" },
         "conversation-context-file": { type: "string" },
         context: { type: "string", multiple: true },
         image: { type: "string", multiple: true },
@@ -394,6 +432,10 @@ export const parseCliArgs = (
   const rawDefaultModel = normalizeOptionalString(values?.["default-model"]);
   const rawSessionMemory = normalizeOptionalString(values?.["session-memory"]);
   const rawGlobalMemory = normalizeOptionalString(values?.["global-memory"]);
+  const rawExecutorTurns = normalizeOptionalString(values?.["executor-turns"]);
+  const rawAutopilotIterations = normalizeOptionalString(
+    values?.["autopilot-iterations"],
+  );
   const rawSetGlobalMemory = normalizeOptionalString(
     values?.["set-global-memory"],
   );
@@ -405,11 +447,11 @@ export const parseCliArgs = (
   const rawProfile = normalizeOptionalString(values?.profile);
 
   if (values?.mode !== undefined && !rawMode) {
-    fail("Expected --mode to be followed by safe, ask, or auto.");
+    fail(`Expected --mode to be followed by ${VALID_MODE_DESCRIPTION}.`);
   }
 
   if (rawMode && !VALID_MODES.has(rawMode as RunMode)) {
-    fail("Expected --mode to be followed by safe, ask, or auto.");
+    fail(`Expected --mode to be followed by ${VALID_MODE_DESCRIPTION}.`);
   }
 
   if (values?.profile !== undefined && !rawProfile) {
@@ -465,6 +507,19 @@ export const parseCliArgs = (
     fail("Expected --global-memory to be followed by inherit, on, or off.");
   }
 
+  if (values?.["executor-turns"] !== undefined && !rawExecutorTurns) {
+    fail("Expected --executor-turns to be followed by a positive integer.");
+  }
+
+  if (
+    values?.["autopilot-iterations"] !== undefined &&
+    !rawAutopilotIterations
+  ) {
+    fail(
+      "Expected --autopilot-iterations to be followed by a positive integer.",
+    );
+  }
+
   if (values?.["set-global-memory"] !== undefined && !rawSetGlobalMemory) {
     fail("Expected --set-global-memory to be followed by on or off.");
   }
@@ -485,6 +540,30 @@ export const parseCliArgs = (
   const setGlobalMemoryEnabled = rawSetGlobalMemory
     ? parseBooleanToggle(rawSetGlobalMemory, "--set-global-memory")
     : undefined;
+  const executorTurns = rawExecutorTurns
+    ? parsePositiveInteger(rawExecutorTurns, "--executor-turns")
+    : undefined;
+  const autopilotExecutorIterations = rawAutopilotIterations
+    ? parsePositiveInteger(rawAutopilotIterations, "--autopilot-iterations")
+    : undefined;
+  const infinite = values?.infinite === true;
+  const agentLimits: RuntimeAgentLimitOverrides | undefined = infinite
+    ? { infinite: true }
+    : executorTurns !== undefined || autopilotExecutorIterations !== undefined
+      ? {
+          ...(executorTurns !== undefined ? { executorTurns } : {}),
+          ...(autopilotExecutorIterations !== undefined
+            ? { autopilotExecutorIterations }
+            : {}),
+        }
+      : undefined;
+
+  if (
+    infinite &&
+    (executorTurns !== undefined || autopilotExecutorIterations !== undefined)
+  ) {
+    fail("--infinite cannot be combined with finite loop limit overrides.");
+  }
 
   if (rawTask && positionals.length > 0) {
     fail("Use either positional task text or --task, not both.");
@@ -496,6 +575,10 @@ export const parseCliArgs = (
 
   if (rawDefaultModel && rawImagePaths) {
     fail("--default-model cannot be combined with --image.");
+  }
+
+  if (rawDefaultModel && agentLimits) {
+    fail("--default-model cannot be combined with runtime loop limit overrides.");
   }
 
   if (rawDefaultModel && (rawTask || positionals.length > 0)) {
@@ -528,6 +611,7 @@ export const parseCliArgs = (
       quickRunRequested ||
       sessionMemoryEnabled !== undefined ||
       globalMemoryEnabled !== undefined ||
+      agentLimits ||
       rawConversationContextFile ||
       rawContextPaths ||
       rawImagePaths
@@ -571,6 +655,7 @@ export const parseCliArgs = (
     ...(rawDefaultModel ? { defaultModel: rawDefaultModel } : {}),
     ...(sessionMemoryEnabled !== undefined ? { sessionMemoryEnabled } : {}),
     ...(globalMemoryEnabled !== undefined ? { globalMemoryEnabled } : {}),
+    ...(agentLimits ? { agentLimits } : {}),
     ...(rawConversationContextFile
       ? { conversationContextFile: rawConversationContextFile }
       : {}),
@@ -590,6 +675,7 @@ export const parseCliArgs = (
       quickRunRequested ||
       sessionMemoryEnabled !== undefined ||
       globalMemoryEnabled !== undefined ||
+      agentLimits ||
       rawConversationContextFile ||
       rawContextPaths ||
       rawImagePaths
