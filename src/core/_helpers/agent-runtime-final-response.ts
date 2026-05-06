@@ -145,43 +145,53 @@ export const parseFinalResponsePayload = (
   };
 };
 
+const createNarrativeSection = (
+  section: TaskExecutionSection,
+): TaskExecutionSection => {
+  return section;
+};
+
 export const createFinalResponseSections = (
   response: TaskExecutionNarrative,
 ): TaskExecutionSection[] => {
   return [
     ...(response.highlights.length > 0
       ? [
-          {
+          createNarrativeSection({
             title: "Highlights",
+            tone: "info",
             lines: response.highlights,
-          },
+          }),
         ]
       : []),
     ...(response.relatedFiles.length > 0
       ? [
-          {
+          createNarrativeSection({
             title: "Related files",
+            tone: "info",
             lines: response.relatedFiles.map(
               (fileReference) =>
                 `${fileReference.path} — ${fileReference.description}`,
             ),
-          },
+          }),
         ]
       : []),
     ...(response.verification.length > 0
       ? [
-          {
+          createNarrativeSection({
             title: "Verification",
+            tone: "success",
             lines: response.verification,
-          },
+          }),
         ]
       : []),
     ...(response.followUps.length > 0
       ? [
-          {
+          createNarrativeSection({
             title: "Follow-up",
+            tone: "warning",
             lines: response.followUps,
-          },
+          }),
         ]
       : []),
   ];

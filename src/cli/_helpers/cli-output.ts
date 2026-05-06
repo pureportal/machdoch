@@ -7,6 +7,14 @@ import type {
 
 const DEFAULT_BODY_PREVIEW_LINES = 8;
 
+const createStateProgressLine = (
+  progress: TaskExecutionProgress,
+): string => {
+  const message = progress.message.trim();
+
+  return `[${progress.state}] ${message || "Task state changed."}`;
+};
+
 export const formatExecutionProgressLines = (
   progress: TaskExecutionProgress,
 ): string[] => {
@@ -48,22 +56,14 @@ export const formatExecutionProgressLines = (
     return lines;
   }
 
-  if (progress.state === "verifying" || progress.state === "monitoring") {
-    return ["Checking the result..."];
-  }
-
-  if (progress.state === "executing") {
-    return ["Working on it..."];
-  }
-
-  if (progress.state === "planning") {
-    return ["Planning the work..."];
-  }
-
-  const lines = ["Preparing the task..."];
+  const lines = [createStateProgressLine(progress)];
 
   if (progress.reason) {
-    lines.push(`Reason: ${progress.reason}`);
+    lines.push(`reason: ${progress.reason}`);
+  }
+
+  if (progress.executedTools.length > 0) {
+    lines.push(`tools: ${progress.executedTools.join(", ")}`);
   }
 
   return lines;

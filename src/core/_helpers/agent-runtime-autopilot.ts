@@ -24,6 +24,7 @@ export const createAutopilotAuditSection = (
 
   return {
     title: "Autopilot audit",
+    audience: "internal",
     lines: [
       `executor iterations: ${report.executorIterations}/${maxExecutorIterations}`,
       `validator passes: ${report.validatorPasses}`,

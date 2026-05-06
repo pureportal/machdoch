@@ -1,5 +1,12 @@
-import type { TaskExecutionResult } from "../../core/types.ts";
-import { formatExecutionSummaryLines } from "./cli-io.ts";
+import type {
+  TaskExecutionProgress,
+  TaskExecutionResult,
+} from "../../core/types.ts";
+import {
+  createVerboseProgressReporter,
+  formatExecutionSummaryLines,
+  STRUCTURED_PROGRESS_PREFIX,
+} from "./cli-io.ts";
 
 const createExecution = (
   overrides: Partial<TaskExecutionResult> = {},
@@ -13,10 +20,12 @@ const createExecution = (
     outputSections: [
       {
         title: "Task context",
+        audience: "internal",
         lines: ["task: What is the weather?"],
       },
       {
         title: "Autopilot audit",
+        audience: "internal",
         lines: ["executor iterations: 1/4"],
       },
     ],
@@ -51,6 +60,7 @@ describe("formatExecutionSummaryLines", () => {
           },
           {
             title: "Tool trace",
+            audience: "internal",
             lines: ["tool_call: read_file(...)"],
           },
         ],
@@ -63,5 +73,31 @@ describe("formatExecutionSummaryLines", () => {
       "Agent answer:",
       "1: I need a location to answer that.",
     ]);
+  });
+});
+
+describe("createVerboseProgressReporter", () => {
+  it("can emit structured progress without localized text parsing", () => {
+    const lines: string[] = [];
+    const progress: TaskExecutionProgress = {
+      task: "show README.md",
+      mode: "ask",
+      state: "executing",
+      message: "Reading workspace files",
+      executedTools: [],
+      outputSections: [],
+      cancellable: true,
+    };
+    const reporter = createVerboseProgressReporter((line) => {
+      lines.push(line);
+    }, { structured: true });
+
+    reporter(progress);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.startsWith(STRUCTURED_PROGRESS_PREFIX)).toBe(true);
+    expect(
+      JSON.parse(lines[0]?.slice(STRUCTURED_PROGRESS_PREFIX.length) ?? "{}"),
+    ).toEqual(progress);
   });
 });

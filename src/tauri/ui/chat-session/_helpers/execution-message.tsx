@@ -125,40 +125,80 @@ const createExecutionThinkingLabel = (
   }
 };
 
+const COMPACT_TRACE_SECTION_LINE_LIMIT = 3;
+const COMPACT_TRACE_ENTRY_LIMIT = 16;
+
 export const createExecutionThinkingTrace = (
   execution: TaskExecutionResult,
 ): TaskThinkingTrace => {
   const summaryTone = createExecutionThinkingTone(execution.status);
   const entries: TaskThinkingTrace["entries"] = [];
   const normalizedSummary = execution.summary.trim();
+  let omittedEntryCount = 0;
+
+  const appendEntry = (
+    label: string,
+    detail: string,
+    tone: TaskThinkingTrace["entries"][number]["tone"],
+  ): void => {
+    const normalizedDetail = detail.trim();
+
+    if (!normalizedDetail) {
+      return;
+    }
+
+    if (entries.length >= COMPACT_TRACE_ENTRY_LIMIT) {
+      omittedEntryCount += 1;
+      return;
+    }
+
+    entries.push({
+      id: `${execution.task}-${entries.length}`,
+      label,
+      detail: normalizedDetail,
+      tone,
+      timestamp: entries.length,
+    });
+  };
 
   if (normalizedSummary.length > 0) {
-    entries.push({
-      id: `${execution.task}-summary`,
-      label: createExecutionThinkingLabel(execution.status),
-      detail: normalizedSummary,
-      tone: summaryTone,
-      timestamp: 0,
-    });
+    appendEntry(
+      createExecutionThinkingLabel(execution.status),
+      normalizedSummary,
+      summaryTone,
+    );
   }
 
-  execution.outputSections.forEach((section, sectionIndex) => {
-    section.lines.forEach((line, lineIndex) => {
-      const normalizedLine = line.trim();
+  execution.outputSections
+    .filter((section) => section.audience !== "internal")
+    .forEach((section, sectionIndex) => {
+      const sectionTone =
+        section.tone ?? (sectionIndex === 0 ? summaryTone : "neutral");
+      const visibleLines = section.lines
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .slice(0, COMPACT_TRACE_SECTION_LINE_LIMIT);
 
-      if (!normalizedLine) {
-        return;
-      }
-
-      entries.push({
-        id: `${execution.task}-${sectionIndex}-${lineIndex}`,
-        label: section.title,
-        detail: normalizedLine,
-        tone: sectionIndex === 0 ? summaryTone : "neutral",
-        timestamp: entries.length,
+      visibleLines.forEach((line) => {
+        appendEntry(section.title, line, sectionTone);
       });
+
+      if (section.lines.length > visibleLines.length) {
+        omittedEntryCount += section.lines.length - visibleLines.length;
+      }
     });
-  });
+
+  if (omittedEntryCount > 0) {
+    if (entries.length >= COMPACT_TRACE_ENTRY_LIMIT) {
+      entries.pop();
+    }
+
+    appendEntry(
+      "More activity",
+      `${omittedEntryCount} additional detail${omittedEntryCount === 1 ? "" : "s"} omitted from this compact log.`,
+      "neutral",
+    );
+  }
 
   if (entries.length === 0) {
     entries.push({

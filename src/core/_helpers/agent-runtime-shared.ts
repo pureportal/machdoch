@@ -7,17 +7,7 @@ import type {
   TaskExecutionState,
 } from "../types.js";
 import type { AgentLoopState } from "./agent-runtime-types.js";
-
-const isTerminalAgentProgressState = (state: TaskExecutionState): boolean => {
-  return (
-    state === "completed" ||
-    state === "planned" ||
-    state === "approval-required" ||
-    state === "blocked" ||
-    state === "unsupported" ||
-    state === "cancelled"
-  );
-};
+import { isTerminalTaskExecutionState } from "./execution-progress.js";
 
 export const createExecutionResult = (
   base: Omit<TaskExecutionResult, "reason">,
@@ -49,7 +39,7 @@ export const emitAgentProgress = async (
     message,
     executedTools: result?.executedTools ?? loopState.executedTools,
     outputSections: result?.outputSections ?? loopState.outputSections,
-    cancellable: !isTerminalAgentProgressState(state),
+    cancellable: !isTerminalTaskExecutionState(state),
     ...(result?.reason ? { reason: result.reason } : {}),
   });
 };

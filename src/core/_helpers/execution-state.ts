@@ -15,6 +15,7 @@ import type {
   ToolName,
 } from "../types.js";
 import { TASK_EXECUTION_TIMEOUT_REASON_PREFIX } from "./agent-runtime-types.js";
+import { isTerminalTaskExecutionState } from "./execution-progress.js";
 
 export interface TaskExecutionRuntime {
   taskContext: ResolvedTaskContext | undefined;
@@ -57,17 +58,6 @@ export const createInvariantViolationResult = (
   );
 };
 
-const isTerminalExecutionState = (state: TaskExecutionState): boolean => {
-  return (
-    state === "completed" ||
-    state === "planned" ||
-    state === "approval-required" ||
-    state === "blocked" ||
-    state === "unsupported" ||
-    state === "cancelled"
-  );
-};
-
 const createProgressSnapshot = (
   task: string,
   config: RuntimeConfig,
@@ -89,7 +79,7 @@ const createProgressSnapshot = (
       result?.outputSections ??
       runtime.pendingResult?.outputSections ??
       runtime.contextSections,
-    cancellable: !isTerminalExecutionState(state),
+    cancellable: !isTerminalTaskExecutionState(state),
     ...(result?.reason ? { reason: result.reason } : {}),
   };
 };

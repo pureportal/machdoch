@@ -376,6 +376,8 @@ export type TaskExecutionStatus =
 export interface TaskExecutionSection {
   title: string;
   lines: string[];
+  audience?: "user" | "internal";
+  tone?: "neutral" | "info" | "success" | "warning" | "danger";
 }
 
 export interface TaskExecutionProgress {

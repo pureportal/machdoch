@@ -15,6 +15,7 @@ import {
   type TaskExecutionRuntime,
   verifyExecutedResult,
 } from "./_helpers/execution-state.js";
+import { TASK_EXECUTION_STATUS_TO_TERMINAL_STATE } from "./_helpers/execution-progress.js";
 import {
   TASK_EXECUTION_TIMEOUT_MS,
   TASK_EXECUTION_TIMEOUT_REASON_PREFIX,
@@ -265,23 +266,10 @@ const runTaskExecutionStateMachine = async (
           }
 
           if (modelDrivenResult) {
-            const terminalState: TaskExecutionState =
-              modelDrivenResult.status === "planned"
-                ? "planned"
-                : modelDrivenResult.status === "executed"
-                ? "completed"
-                : modelDrivenResult.status === "approval-required"
-                  ? "approval-required"
-                  : modelDrivenResult.status === "unsupported"
-                    ? "unsupported"
-                    : modelDrivenResult.status === "cancelled"
-                      ? "cancelled"
-                      : "blocked";
-
             return emitTerminalResult(
               task,
               config,
-              terminalState,
+              TASK_EXECUTION_STATUS_TO_TERMINAL_STATE[modelDrivenResult.status],
               modelDrivenResult.summary,
               runtime,
               options,
@@ -427,19 +415,12 @@ const runTaskExecutionStateMachine = async (
         }
 
         if (runtime.pendingResult.status !== "executed") {
-          const terminalState: TaskExecutionState =
-            runtime.pendingResult.status === "approval-required"
-              ? "approval-required"
-              : runtime.pendingResult.status === "unsupported"
-                ? "unsupported"
-                : runtime.pendingResult.status === "cancelled"
-                  ? "cancelled"
-                  : "blocked";
-
           return emitTerminalResult(
             task,
             config,
-            terminalState,
+            TASK_EXECUTION_STATUS_TO_TERMINAL_STATE[
+              runtime.pendingResult.status
+            ],
             runtime.pendingResult.summary,
             runtime,
             options,

@@ -32,6 +32,7 @@ import {
   openUrlMock,
   windowDragDropListeners,
 } from "./test/tauri-test-mocks";
+import type { TaskExecutionProgress } from "../../core/types.js";
 
 class ResizeObserverMock {
   observe(): void {}
@@ -416,7 +417,7 @@ const SLOW_UI_TEST_TIMEOUT_MS = 30_000;
 
 const emitDesktopTaskProgress = (payload: {
   taskId: string;
-  line: string;
+  progress: TaskExecutionProgress;
   timestamp: number;
 }): void => {
   const handler = desktopEventListeners.get("desktop-task-progress");
@@ -498,7 +499,15 @@ describe("ChatSession component", () => {
 
       emitDesktopTaskProgress({
         taskId: taskId as string,
-        line: "[executing] Reading workspace files",
+        progress: {
+          task: "scan this workspace and explain the setup",
+          mode: "ask",
+          state: "executing",
+          message: "Reading workspace files",
+          executedTools: [],
+          outputSections: [],
+          cancellable: true,
+        },
         timestamp: 1,
       });
 

@@ -5,6 +5,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   ConversationMemoryEntry,
   TaskConversationContext,
+  TaskExecutionProgress,
   TaskExecutionResult,
   TaskRunPreview,
   UiControlAvailability,
@@ -212,7 +213,7 @@ export interface DesktopTaskRunResponse {
 
 export interface DesktopTaskProgressEvent {
   taskId: string;
-  line: string;
+  progress: TaskExecutionProgress;
   timestamp: number;
 }
 
@@ -222,6 +223,40 @@ const DEFAULT_MAX_EXECUTOR_TURNS = 64;
 const DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS = 16;
 const MAX_CONFIGURED_EXECUTOR_TURNS = 1_000;
 const MAX_CONFIGURED_AUTOPILOT_ITERATIONS = 100;
+const RUN_MODES = ["plan", "safe", "ask", "auto"] as const satisfies ReadonlyArray<
+  RuntimeSnapshot["mode"]
+>;
+const TASK_EXECUTION_PROGRESS_STATES = [
+  "starting",
+  "resolving-context",
+  "checking-inputs",
+  "checking-policies",
+  "planning",
+  "executing",
+  "verifying",
+  "monitoring",
+  "planned",
+  "completed",
+  "approval-required",
+  "blocked",
+  "unsupported",
+  "cancelled",
+] as const satisfies ReadonlyArray<TaskExecutionProgress["state"]>;
+const TASK_EXECUTION_SECTION_AUDIENCES = [
+  "user",
+  "internal",
+] as const satisfies ReadonlyArray<
+  NonNullable<TaskExecutionProgress["outputSections"][number]["audience"]>
+>;
+const TASK_EXECUTION_SECTION_TONES = [
+  "neutral",
+  "info",
+  "success",
+  "warning",
+  "danger",
+] as const satisfies ReadonlyArray<
+  NonNullable<TaskExecutionProgress["outputSections"][number]["tone"]>
+>;
 
 const canListenToDesktopTaskProgress = (): boolean => {
   const importMeta = import.meta as ImportMeta & {
@@ -249,6 +284,70 @@ const normalizeWorkspaceRoot = (
   const normalizedWorkspaceRoot = workspaceRoot?.trim();
 
   return normalizedWorkspaceRoot ? normalizedWorkspaceRoot : null;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const isTaskExecutionProgress = (
+  value: unknown,
+): value is TaskExecutionProgress => {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.task === "string" &&
+    RUN_MODES.includes(value.mode as RuntimeSnapshot["mode"]) &&
+    TASK_EXECUTION_PROGRESS_STATES.includes(
+      value.state as TaskExecutionProgress["state"],
+    ) &&
+    typeof value.message === "string" &&
+    Array.isArray(value.executedTools) &&
+    value.executedTools.every((tool) => typeof tool === "string") &&
+    Array.isArray(value.outputSections) &&
+    value.outputSections.every((section) => {
+      if (!isRecord(section)) {
+        return false;
+      }
+
+      return (
+        typeof section.title === "string" &&
+        Array.isArray(section.lines) &&
+        section.lines.every((line) => typeof line === "string") &&
+        (section.audience === undefined ||
+          TASK_EXECUTION_SECTION_AUDIENCES.includes(
+            section.audience as NonNullable<
+              TaskExecutionProgress["outputSections"][number]["audience"]
+            >,
+          )) &&
+        (section.tone === undefined ||
+          TASK_EXECUTION_SECTION_TONES.includes(
+            section.tone as NonNullable<
+              TaskExecutionProgress["outputSections"][number]["tone"]
+            >,
+          ))
+      );
+    }) &&
+    typeof value.cancellable === "boolean" &&
+    (value.reason === undefined || typeof value.reason === "string")
+  );
+};
+
+const isDesktopTaskProgressEvent = (
+  value: unknown,
+): value is DesktopTaskProgressEvent => {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.taskId === "string" &&
+    typeof value.timestamp === "number" &&
+    Number.isFinite(value.timestamp) &&
+    isTaskExecutionProgress(value.progress)
+  );
 };
 
 const createProviderAvailabilitySnapshot = (
@@ -1002,10 +1101,12 @@ export const subscribeToDesktopTaskProgress = async (
   }
 
   try {
-    return await listen<DesktopTaskProgressEvent>(
+    return await listen<unknown>(
       DESKTOP_TASK_PROGRESS_EVENT,
       (event) => {
-        onProgress(event.payload);
+        if (isDesktopTaskProgressEvent(event.payload)) {
+          onProgress(event.payload);
+        }
       },
     );
   } catch (error) {

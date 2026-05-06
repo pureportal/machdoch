@@ -1,31 +1,26 @@
 import process from "node:process";
 import type {
   TaskExecutionProgressHandler,
+  TaskExecutionProgress,
   TaskExecutionResult,
   TaskExecutionSection,
-  TaskExecutionState,
 } from "../../core/types.js";
+import { isTerminalTaskExecutionState } from "../../core/_helpers/execution-progress.js";
 import { formatExecutionProgressLines } from "./cli-output.js";
 
-const TERMINAL_PROGRESS_STATES: ReadonlySet<TaskExecutionState> = new Set([
-  "completed",
-  "planned",
-  "approval-required",
-  "blocked",
-  "unsupported",
-  "cancelled",
-]);
-
-const INTERNAL_OUTPUT_SECTION_TITLES: ReadonlySet<string> = new Set([
-  "Autopilot audit",
-  "Instruction context",
-  "Prompt context",
-  "Task context",
-  "Tool trace",
-]);
+export const STRUCTURED_PROGRESS_PREFIX = "machdoch-progress: ";
 
 const splitMarkdownLines = (markdown: string): string[] => {
   return markdown.replace(/\r\n/g, "\n").split("\n");
+};
+
+const createStructuredProgressSnapshot = (
+  progress: TaskExecutionProgress,
+): TaskExecutionProgress => {
+  return {
+    ...progress,
+    outputSections: [],
+  };
 };
 
 const createStatusFallbackLine = (execution: TaskExecutionResult): string => {
@@ -48,9 +43,7 @@ const createStatusFallbackLine = (execution: TaskExecutionResult): string => {
 const getVisibleOutputSections = (
   sections: TaskExecutionSection[],
 ): TaskExecutionSection[] => {
-  return sections.filter(
-    (section) => !INTERNAL_OUTPUT_SECTION_TITLES.has(section.title),
-  );
+  return sections.filter((section) => section.audience !== "internal");
 };
 
 export const writeStdoutLine = (line = ""): void => {
@@ -63,11 +56,26 @@ export const writeStderrLine = (line: string): void => {
 
 export const createVerboseProgressReporter = (
   writeLine: (line: string) => void,
+  options: { structured?: boolean } = {},
 ): TaskExecutionProgressHandler => {
   let previousSnapshotKey = "";
 
   return (progress): void => {
-    if (TERMINAL_PROGRESS_STATES.has(progress.state)) {
+    if (isTerminalTaskExecutionState(progress.state)) {
+      return;
+    }
+
+    if (options.structured) {
+      const snapshotKey = JSON.stringify(
+        createStructuredProgressSnapshot(progress),
+      );
+
+      if (snapshotKey === previousSnapshotKey) {
+        return;
+      }
+
+      previousSnapshotKey = snapshotKey;
+      writeLine(`${STRUCTURED_PROGRESS_PREFIX}${snapshotKey}`);
       return;
     }
 

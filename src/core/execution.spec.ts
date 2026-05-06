@@ -853,13 +853,9 @@ describe("executeTask", () => {
 
     expect(result.status).toBe("approval-required");
     expect(result.summary).toContain("requires approval");
-    expect(
-      result.outputSections.some(
-        (section) =>
-          section.title === "Requested arguments" &&
-          section.lines.some((line) => line.includes("C:\\Users")),
-      ),
-    ).toBe(true);
+    const outputText = JSON.stringify(result.outputSections);
+    expect(outputText).toContain("Get-Content");
+    expect(outputText).toContain("Users");
   });
 
   it("blocks unstructured model answers instead of classifying prose", async () => {
@@ -1020,6 +1016,7 @@ describe("executeTask", () => {
   it("guards against repeated identical failing tool calls in model-driven execution", async () => {
     const workspaceRoot = await createWorkspace();
     const observedToolOutputs: string[] = [];
+    const progressMessages: string[] = [];
     let continueCount = 0;
 
     const loopingAdapter: AgentModelAdapter = {
@@ -1076,12 +1073,26 @@ describe("executeTask", () => {
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: loopingAdapter,
+        onStateChange: (progress) => {
+          progressMessages.push(progress.message);
+        },
       },
     );
 
     expect(result.status).toBe("executed");
     expect(observedToolOutputs).toHaveLength(3);
     expect(observedToolOutputs[2]).toContain("Do not retry it unchanged");
+    expect(progressMessages).toContain(
+      "Requested read file on missing.txt lines 1-5.",
+    );
+    expect(
+      progressMessages.some((message) =>
+        message.startsWith("read file failed on missing.txt lines 1-5:"),
+      ),
+    ).toBe(true);
+    expect(progressMessages).toContain(
+      "Skipped read file on missing.txt lines 1-5: repeated unchanged failure.",
+    );
     expect(
       result.outputSections.some(
         (section) =>

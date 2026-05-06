@@ -294,6 +294,7 @@ const createExecutionModel = (
       id: `output-${index}`,
       title: section.title,
       lines: section.lines,
+      ...(section.tone ? { tone: section.tone } : {}),
     })),
   ];
 

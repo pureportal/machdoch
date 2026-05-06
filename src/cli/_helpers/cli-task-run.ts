@@ -335,7 +335,9 @@ export const printTaskPreview = async (
     {
       ...(args.verbose
         ? {
-            onStateChange: createVerboseProgressReporter(writeStderrLine),
+            onStateChange: createVerboseProgressReporter(writeStderrLine, {
+              structured: args.json,
+            }),
           }
         : {}),
       ...(conversationContext ? { conversationContext } : {}),

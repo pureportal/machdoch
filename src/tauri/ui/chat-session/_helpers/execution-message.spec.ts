@@ -71,8 +71,24 @@ describe("execution-message helpers", () => {
       createExecution({
         summary: "Workspace scan complete.",
         outputSections: [
-          { title: "Task context", lines: ["task: scan workspace"] },
-          { title: "Verification", lines: ["Ran focused checks."] },
+          {
+            title: "Task context",
+            audience: "internal",
+            lines: ["task: scan workspace"],
+          },
+          {
+            title: "Tool trace",
+            audience: "internal",
+            lines: [
+              'tool_call: read_file({"path":"README.md","startLine":1,"endLine":20})',
+              "read_file(README.md, 1-20)",
+            ],
+          },
+          {
+            title: "Verification",
+            tone: "success",
+            lines: ["Ran focused checks."],
+          },
         ],
       }),
     );
@@ -83,8 +99,16 @@ describe("execution-message helpers", () => {
       detail: "Workspace scan complete.",
       tone: "success",
     });
-    expect(trace.entries.some((entry) => entry.label === "Verification")).toBe(
-      true,
-    );
+    expect(
+      trace.entries.some((entry) => entry.label === "Task context"),
+    ).toBe(false);
+    expect(
+      trace.entries.some((entry) => entry.label === "Tool trace"),
+    ).toBe(false);
+    expect(
+      trace.entries.some(
+        (entry) => entry.label === "Verification" && entry.tone === "success",
+      ),
+    ).toBe(true);
   });
 });

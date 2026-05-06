@@ -1,22 +1,9 @@
-import type { RunMode, TaskExecutionState } from "../../core/types.js";
+import type {
+  RunMode,
+  TaskExecutionProgress,
+  TaskExecutionState,
+} from "../../core/types.js";
 import type { TaskPanelTone } from "./task-panel.model";
-
-const TASK_EXECUTION_STATES: ReadonlySet<TaskExecutionState> = new Set([
-  "starting",
-  "resolving-context",
-  "checking-inputs",
-  "checking-policies",
-  "planning",
-  "executing",
-  "verifying",
-  "monitoring",
-  "planned",
-  "completed",
-  "approval-required",
-  "blocked",
-  "unsupported",
-  "cancelled",
-]);
 
 const THINKING_STATE_LABELS: Record<TaskExecutionState, string> = {
   starting: "Starting",
@@ -50,14 +37,6 @@ const THINKING_STATE_TONES: Record<TaskExecutionState, TaskPanelTone> = {
   blocked: "danger",
   unsupported: "neutral",
   cancelled: "neutral",
-};
-
-const PROGRESS_STATE_PATTERN = /^\[([a-z-]+)\]\s+(.+)$/i;
-const PROGRESS_REASON_PATTERN = /^reason:\s*(.+)$/i;
-const PROGRESS_TOOLS_PATTERN = /^tools:\s*(.+)$/i;
-
-const isTaskExecutionState = (value: string): value is TaskExecutionState => {
-  return TASK_EXECUTION_STATES.has(value as TaskExecutionState);
 };
 
 const createThinkingEntryId = (timestamp: number, index: number): string => {
@@ -102,93 +81,116 @@ export const createInitialThinkingTrace = (
   };
 };
 
-const createThinkingEntryFromProgressLine = (
-  line: string,
+const createThinkingEntry = (
+  label: string,
+  detail: string,
+  tone: TaskPanelTone,
   timestamp: number,
   index: number,
-): TaskThinkingEntry | null => {
-  const normalizedLine = line.trim();
-
-  if (!normalizedLine) {
-    return null;
-  }
-
-  const stateMatch = PROGRESS_STATE_PATTERN.exec(normalizedLine);
-
-  if (stateMatch) {
-    const [, rawState, rawMessage] = stateMatch;
-    const normalizedState = rawState.toLowerCase();
-
-    if (isTaskExecutionState(normalizedState)) {
-      return {
-        id: createThinkingEntryId(timestamp, index),
-        label: THINKING_STATE_LABELS[normalizedState],
-        detail: rawMessage.trim(),
-        tone: THINKING_STATE_TONES[normalizedState],
-        timestamp,
-      };
-    }
-  }
-
-  const reasonMatch = PROGRESS_REASON_PATTERN.exec(normalizedLine);
-
-  if (reasonMatch) {
-    return {
-      id: createThinkingEntryId(timestamp, index),
-      label: "Reason",
-      detail: reasonMatch[1].trim(),
-      tone: "warning",
-      timestamp,
-    };
-  }
-
-  const toolsMatch = PROGRESS_TOOLS_PATTERN.exec(normalizedLine);
-
-  if (toolsMatch) {
-    return {
-      id: createThinkingEntryId(timestamp, index),
-      label: "Tools",
-      detail: toolsMatch[1].trim(),
-      tone: "info",
-      timestamp,
-    };
-  }
-
+): TaskThinkingEntry => {
   return {
     id: createThinkingEntryId(timestamp, index),
-    label: "Update",
-    detail: normalizedLine,
-    tone: "neutral",
+    label,
+    detail,
+    tone,
     timestamp,
   };
 };
 
-export const appendThinkingProgressLine = (
+const createThinkingEntriesFromProgress = (
+  progress: TaskExecutionProgress,
+  timestamp: number,
+  startIndex: number,
+): TaskThinkingEntry[] => {
+  const entries: TaskThinkingEntry[] = [];
+  const detail = progress.message.trim();
+
+  if (detail.length > 0) {
+    entries.push(
+      createThinkingEntry(
+        THINKING_STATE_LABELS[progress.state],
+        detail,
+        THINKING_STATE_TONES[progress.state],
+        timestamp,
+        startIndex + entries.length,
+      ),
+    );
+  }
+
+  const reason = progress.reason?.trim();
+
+  if (reason) {
+    entries.push(
+      createThinkingEntry(
+        "Reason",
+        reason,
+        "warning",
+        timestamp,
+        startIndex + entries.length,
+      ),
+    );
+  }
+
+  if (progress.executedTools.length > 0) {
+    entries.push(
+      createThinkingEntry(
+        "Tools",
+        progress.executedTools.join(", "),
+        "info",
+        timestamp,
+        startIndex + entries.length,
+      ),
+    );
+  }
+
+  return entries;
+};
+
+export const appendThinkingProgress = (
   trace: TaskThinkingTrace,
-  line: string,
+  progress: TaskExecutionProgress,
   timestamp = Date.now(),
 ): TaskThinkingTrace => {
-  const nextEntry = createThinkingEntryFromProgressLine(
-    line,
+  const nextStatus = progress.cancellable ? trace.status : "complete";
+  const nextEntries = createThinkingEntriesFromProgress(
+    progress,
     timestamp,
     trace.entries.length,
   );
 
-  if (!nextEntry) {
+  if (nextEntries.length === 0 && nextStatus === trace.status) {
     return trace;
   }
 
-  const previousEntry = trace.entries.at(-1);
+  const entries = [...trace.entries];
 
-  if (
-    previousEntry?.label === nextEntry.label &&
-    previousEntry.detail === nextEntry.detail
-  ) {
+  for (const nextEntry of nextEntries) {
+    const previousEntry = entries.at(-1);
+    const hasSameToolsEntry =
+      nextEntry.label === "Tools" &&
+      entries.some(
+        (entry) =>
+          entry.label === nextEntry.label && entry.detail === nextEntry.detail,
+      );
+
+    if (
+      hasSameToolsEntry ||
+      (previousEntry?.label === nextEntry.label &&
+        previousEntry.detail === nextEntry.detail)
+    ) {
+      continue;
+    }
+
+    entries.push(nextEntry);
+  }
+
+  if (entries.length === trace.entries.length && nextStatus === trace.status) {
     return trace;
   }
 
   return {
     ...trace,
-    entries: [...trace.entries, nextEntry],
+    status: nextStatus,
+    entries,
   };
 };

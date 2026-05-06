@@ -55,7 +55,7 @@ import {
   type DroppedPathEntry,
 } from "../../runtime";
 import {
-  appendThinkingProgressLine,
+  appendThinkingProgress,
   createInitialThinkingTrace,
 } from "../../task-thinking.model";
 import { getExecutionMessageContent } from "./execution-message.tsx";
@@ -652,9 +652,9 @@ export const useChatSessionController = (
       }
 
       updateThinkingTrace(sessionId, progressEvent.taskId, (trace) => {
-        return appendThinkingProgressLine(
+        return appendThinkingProgress(
           trace,
-          progressEvent.line,
+          progressEvent.progress,
           progressEvent.timestamp,
         );
       });
@@ -1128,10 +1128,15 @@ export const useChatSessionController = (
       }
 
       updateThinkingTrace(session.id, targetTaskId, (trace) => {
-        return appendThinkingProgressLine(
-          trace,
-          "[cancelled] Cancellation requested.",
-        );
+        return appendThinkingProgress(trace, {
+          task: targetTaskId,
+          mode: trace.mode,
+          state: "cancelled",
+          message: "Cancellation requested.",
+          executedTools: [],
+          outputSections: [],
+          cancellable: true,
+        });
       });
 
       void cancelDesktopTask(targetTaskId).catch((error) => {

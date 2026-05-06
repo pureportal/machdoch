@@ -44,6 +44,7 @@ import { createProviderAdapter } from "./_helpers/provider-adapters.js";
 import { compactTraceText, stringifyUnknown } from "./_helpers/runtime-text.js";
 import type {
   AgentModelAdapter,
+  AgentModelToolCall,
   AgentModelToolResult,
   ResolvedTaskContext,
   RuntimeConfig,
@@ -89,6 +90,7 @@ const finalizeExecutedResult = (
   if (loopState.traceLines.length > 0) {
     outputSections.push({
       title: "Tool trace",
+      audience: "internal",
       lines: loopState.traceLines,
     });
   }
@@ -133,6 +135,7 @@ const finalizeBlockedResult = (
   if (loopState.traceLines.length > 0) {
     outputSections.push({
       title: "Tool trace",
+      audience: "internal",
       lines: loopState.traceLines,
     });
   }
@@ -232,6 +235,108 @@ const createToolCallSignature = (
   args: Record<string, unknown>,
 ): string => {
   return `${name}:${stableSerializeValue(args)}`;
+};
+
+const getStringArg = (
+  args: Record<string, unknown>,
+  key: string,
+): string | undefined => {
+  const value = args[key];
+
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+};
+
+const getNumberArg = (
+  args: Record<string, unknown>,
+  key: string,
+): number | undefined => {
+  const value = args[key];
+
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+};
+
+const formatToolName = (name: string): string => {
+  return name.replace(/_/gu, " ");
+};
+
+const formatQuotedValue = (value: string): string => {
+  return `"${compactTraceText(value)}"`;
+};
+
+const createToolTargetPhrase = (call: AgentModelToolCall): string => {
+  const args = call.arguments;
+  const path = getStringArg(args, "path");
+  const command = getStringArg(args, "command");
+  const query = getStringArg(args, "query");
+  const url = getStringArg(args, "url");
+  const name = getStringArg(args, "name");
+  const packageName = getStringArg(args, "packageName");
+  const selector = getStringArg(args, "selector");
+  const startLine = getNumberArg(args, "startLine");
+  const endLine = getNumberArg(args, "endLine");
+
+  if (call.name === "run_shell_command" && command) {
+    return `: ${compactTraceText(command)}`;
+  }
+
+  if (call.name === "fetch_url" && url) {
+    return ` from ${url}`;
+  }
+
+  if (
+    (call.name === "search_web" || call.name === "search_workspace") &&
+    query
+  ) {
+    return ` for ${formatQuotedValue(query)}`;
+  }
+
+  if (path) {
+    const lineRange =
+      startLine !== undefined && endLine !== undefined
+        ? ` lines ${startLine}-${endLine}`
+        : "";
+
+    return ` on ${path}${lineRange}`;
+  }
+
+  if (packageName) {
+    return ` for ${packageName}`;
+  }
+
+  if (name) {
+    return ` for ${name}`;
+  }
+
+  if (selector) {
+    return ` at ${selector}`;
+  }
+
+  return "";
+};
+
+const createToolRequestProgressMessage = (
+  call: AgentModelToolCall,
+): string => {
+  return `Requested ${formatToolName(call.name)}${createToolTargetPhrase(call)}.`;
+};
+
+const createToolResultProgressMessage = (
+  call: AgentModelToolCall,
+  result: { toolResult: AgentModelToolResult; traceLines: string[] },
+): string => {
+  const resultSummary =
+    result.traceLines.find((line) => !line.startsWith("tool_call:")) ??
+    result.toolResult.output;
+  const outcome = result.toolResult.isError ? "failed" : "finished";
+  const detail = compactTraceText(resultSummary);
+
+  return `${formatToolName(call.name)} ${outcome}${createToolTargetPhrase(call)}${
+    detail ? `: ${detail}` : "."
+  }`;
 };
 
 const runExecutorCycle = async (
@@ -497,14 +602,32 @@ const runExecutorCycle = async (
         );
         loopState.outputSections.push({
           title: "Tool retry guard",
+          tone: "danger",
           lines: [repeatedFailureMessage],
         });
         lastConsecutiveToolError = {
           signature: callSignature,
           count: lastConsecutiveToolError.count + 1,
         };
+        await emitAgentProgress(
+          task,
+          config,
+          config.mode === "plan" ? "planning" : "executing",
+          `Skipped ${formatToolName(call.name)}${createToolTargetPhrase(call)}: repeated unchanged failure.`,
+          loopState,
+          onStateChange,
+        );
         continue;
       }
+
+      await emitAgentProgress(
+        task,
+        config,
+        config.mode === "plan" ? "planning" : "executing",
+        createToolRequestProgressMessage(call),
+        loopState,
+        onStateChange,
+      );
 
       const executionOutcome = await executeToolCall(
         task,
@@ -571,6 +694,15 @@ const runExecutorCycle = async (
       ) {
         loopState.executedTools.push(toolDefinition.backingTool);
       }
+
+      await emitAgentProgress(
+        task,
+        config,
+        config.mode === "plan" ? "planning" : "executing",
+        createToolResultProgressMessage(call, result),
+        loopState,
+        onStateChange,
+      );
     }
 
     turn = await adapter.continueTurn({

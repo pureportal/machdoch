@@ -543,7 +543,7 @@ describe("formatExecutionProgressLines", () => {
     ]);
   });
 
-  it("keeps non-terminal progress output compact when optional data is absent", () => {
+  it("keeps non-terminal progress output compact while preserving the exact state message", () => {
     const progress: TaskExecutionProgress = {
       task: "show README.md",
       mode: "ask",
@@ -556,7 +556,7 @@ describe("formatExecutionProgressLines", () => {
     };
 
     expect(formatExecutionProgressLines(progress)).toEqual([
-      "Preparing the task...",
+      "[resolving-context] Resolve prompt inputs, workspace paths, and applicable instructions.",
     ]);
   });
 });

@@ -472,6 +472,7 @@ const createPromptContextSection = (
 
   return {
     title: "Prompt context",
+    audience: "internal",
     lines: [
       `prompt: /${invokedPrompt.name}`,
       `arguments: ${invokedPrompt.arguments.length > 0 ? invokedPrompt.arguments : "none"}`,
@@ -491,6 +492,7 @@ const createTaskContextSection = (
 ): TaskExecutionSection => {
   return {
     title: "Task context",
+    audience: "internal",
     lines: [
       `task: ${taskContext.task}`,
       `effective task: ${taskContext.effectiveTask}`,
@@ -517,6 +519,7 @@ const createInstructionContextSection = (
 
   return {
     title: "Instruction context",
+    audience: "internal",
     lines: taskContext.applicableInstructions.flatMap((instruction) => [
       `${instruction.name} (${instruction.path})${instruction.priority > 0 ? ` [priority ${instruction.priority}]` : ""}`,
       `  reason: ${instruction.reason}`,

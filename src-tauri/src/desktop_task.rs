@@ -14,12 +14,13 @@ use std::{
 use std::os::windows::process::CommandExt;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use tauri::Emitter;
 
 use crate::runtime_snapshot::{normalize_optional_string, resolve_workspace_root_path};
 
 const DESKTOP_TASK_PROGRESS_EVENT: &str = "desktop-task-progress";
+const CLI_STRUCTURED_PROGRESS_PREFIX: &str = "machdoch-progress: ";
 const DESKTOP_TASK_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
 const DESKTOP_TASK_WAIT_POLL_MS: u64 = 250;
 
@@ -97,7 +98,7 @@ struct CliCommandOptions<'a> {
 #[serde(rename_all = "camelCase")]
 struct DesktopTaskProgressEvent {
     task_id: String,
-    line: String,
+    progress: Value,
     timestamp: u64,
 }
 
@@ -310,33 +311,42 @@ fn create_progress_timestamp() -> u64 {
         .unwrap_or(0)
 }
 
-fn normalize_progress_line(line: &str) -> Option<String> {
+fn parse_structured_progress_line(line: &str) -> Option<Value> {
     let trimmed = line.trim();
 
-    if trimmed.is_empty() {
-        return None;
-    }
+    let payload = trimmed.strip_prefix(CLI_STRUCTURED_PROGRESS_PREFIX)?;
 
-    Some(
-        trimmed
-            .strip_prefix("machdoch: ")
-            .unwrap_or(trimmed)
-            .trim()
-            .to_string(),
-    )
+    match serde_json::from_str(payload.trim()).ok()? {
+        Value::Object(progress) => Some(Value::Object(progress)),
+        _ => None,
+    }
 }
 
-fn emit_progress_line(
+fn create_bridge_progress(
+    task: &str,
+    mode: Option<&str>,
+    state: &str,
+    message: &str,
+    cancellable: bool,
+) -> Value {
+    json!({
+        "task": task,
+        "mode": mode.unwrap_or("ask"),
+        "state": state,
+        "message": message,
+        "executedTools": [],
+        "outputSections": [],
+        "cancellable": cancellable,
+    })
+}
+
+fn emit_progress_event(
     app_handle: &tauri::AppHandle,
     window_label: &str,
     task_id: Option<&str>,
-    line: &str,
+    progress: Value,
 ) {
     let Some(task_id) = task_id else {
-        return;
-    };
-
-    let Some(normalized_line) = normalize_progress_line(line) else {
         return;
     };
 
@@ -345,10 +355,24 @@ fn emit_progress_line(
         DESKTOP_TASK_PROGRESS_EVENT,
         DesktopTaskProgressEvent {
             task_id: task_id.to_string(),
-            line: normalized_line,
+            progress,
             timestamp: create_progress_timestamp(),
         },
     );
+}
+
+fn emit_progress_from_stderr_line(
+    app_handle: &tauri::AppHandle,
+    window_label: &str,
+    task_id: Option<&str>,
+    line: &str,
+) -> bool {
+    let Some(progress) = parse_structured_progress_line(line) else {
+        return false;
+    };
+
+    emit_progress_event(app_handle, window_label, task_id, progress);
+    true
 }
 
 fn read_stdout(stdout: impl Read) -> Result<String, String> {
@@ -379,7 +403,15 @@ fn read_stderr(
             continue;
         }
 
-        emit_progress_line(&app_handle, &window_label, task_id.as_deref(), trimmed_line);
+        if emit_progress_from_stderr_line(
+            &app_handle,
+            &window_label,
+            task_id.as_deref(),
+            trimmed_line,
+        ) {
+            continue;
+        }
+
         stderr_lines.push(trimmed_line.to_string());
     }
 
@@ -493,11 +525,17 @@ fn execute_desktop_task(
             Some(status) => break status,
             None => {
                 if cancel_flag.load(Ordering::SeqCst) {
-                    emit_progress_line(
+                    emit_progress_event(
                         &progress_app_handle,
                         &progress_window_label,
                         progress_task_id.as_deref(),
-                        "machdoch: Cancelled by user; stopping the task.",
+                        create_bridge_progress(
+                            normalized_task,
+                            normalized_mode.as_deref(),
+                            "cancelled",
+                            "Cancelled by user; stopping the task.",
+                            true,
+                        ),
                     );
 
                     let _ = child.kill();
@@ -513,11 +551,17 @@ fn execute_desktop_task(
                 }
 
                 if started_at.elapsed() >= Duration::from_millis(DESKTOP_TASK_TIMEOUT_MS) {
-                    emit_progress_line(
+                    emit_progress_event(
                         &progress_app_handle,
                         &progress_window_label,
                         progress_task_id.as_deref(),
-                        "machdoch: execution exceeded the desktop safety timeout; stopping the task.",
+                        create_bridge_progress(
+                            normalized_task,
+                            normalized_mode.as_deref(),
+                            "cancelled",
+                            "Execution exceeded the desktop safety timeout; stopping the task.",
+                            false,
+                        ),
                     );
 
                     let _ = child.kill();
