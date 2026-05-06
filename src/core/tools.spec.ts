@@ -63,13 +63,29 @@ describe("inferSuggestedTools", () => {
     ]);
   });
 
-  it("uses utilities for generated UUIDs and random strings", () => {
+  it("uses utilities for deterministic helper requests", () => {
     expect(inferSuggestedTools("generate a UUID for this fixture")).toEqual([
       "utilities",
     ]);
     expect(inferSuggestedTools("create a random string token")).toEqual([
       "utilities",
     ]);
+    expect(inferSuggestedTools("show the current datetime")).toEqual([
+      "utilities",
+    ]);
+    expect(inferSuggestedTools("hash this text with sha256")).toEqual([
+      "utilities",
+    ]);
+    expect(inferSuggestedTools("validate this JSON")).toEqual(["utilities"]);
+    expect(inferSuggestedTools("parse this URL")).toEqual(["utilities"]);
+    expect(inferSuggestedTools("compare these semver versions")).toEqual([
+      "utilities",
+    ]);
+    expect(inferSuggestedTools("test this regex")).toEqual(["utilities"]);
+    expect(inferSuggestedTools("diff these two text snippets")).toEqual([
+      "utilities",
+    ]);
+    expect(inferSuggestedTools("sort unique lines")).toEqual(["utilities"]);
   });
 
   it("keeps coding and verification tools when the task also asks for online research", () => {
