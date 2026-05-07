@@ -1,5 +1,4 @@
-import { execFile, spawn } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import type { RuntimeConfig } from "../types.js";
 import {
   executeWebSearch,
@@ -18,8 +17,6 @@ import {
   createTextSection,
   limitText,
 } from "./runtime-text.js";
-
-const execFileAsync = promisify(execFile);
 
 const WINDOWS_POWERSHELL_BOOTSTRAP_LINES = [
   "$PSDefaultParameterValues['Invoke-WebRequest:UseBasicParsing'] = $true",
@@ -138,6 +135,159 @@ export const startDetachedShellCommand = async (
   return pid;
 };
 
+interface ShellCommandResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+const normalizeShellOutput = (value: string): string => {
+  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+};
+
+const createCommandProcessError = (
+  message: string,
+  result: {
+    stdout: string;
+    stderr: string;
+    exitCode?: number;
+  },
+): Error & { stdout: string; stderr: string; code?: number } => {
+  const error = new Error(message) as Error & {
+    stdout: string;
+    stderr: string;
+    code?: number;
+  };
+
+  error.stdout = result.stdout;
+  error.stderr = result.stderr;
+
+  if (result.exitCode !== undefined) {
+    error.code = result.exitCode;
+  }
+
+  return error;
+};
+
+const runStreamingShellCommand = async (
+  shellExecutable: string,
+  shellArgs: string[],
+  options: {
+    cwd: string;
+    timeoutMs: number;
+    maxBufferBytes: number;
+    onOutput?: (output: { stream: "stdout" | "stderr"; chunk: string }) => void;
+  },
+): Promise<ShellCommandResult> => {
+  return new Promise((resolve, reject) => {
+    const child = spawn(shellExecutable, shellArgs, {
+      cwd: options.cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    const chunks = {
+      stdout: [] as string[],
+      stderr: [] as string[],
+    };
+    let outputBytes = 0;
+    let settled = false;
+    let timedOut = false;
+    let exceededBuffer = false;
+
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, options.timeoutMs);
+
+    const settle = (callback: () => void): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeoutHandle);
+      callback();
+    };
+
+    const appendOutput = (
+      stream: "stdout" | "stderr",
+      value: string | Buffer,
+    ): void => {
+      const chunk = value.toString();
+
+      outputBytes += Buffer.byteLength(chunk);
+      chunks[stream].push(chunk);
+      options.onOutput?.({ stream, chunk });
+
+      if (outputBytes > options.maxBufferBytes && !exceededBuffer) {
+        exceededBuffer = true;
+        child.kill();
+      }
+    };
+
+    child.stdout?.on("data", (chunk: string | Buffer) => {
+      appendOutput("stdout", chunk);
+    });
+    child.stderr?.on("data", (chunk: string | Buffer) => {
+      appendOutput("stderr", chunk);
+    });
+    child.once("error", (error) => {
+      settle(() => {
+        reject(
+          createCommandProcessError(error.message, {
+            stdout: chunks.stdout.join(""),
+            stderr: chunks.stderr.join(""),
+          }),
+        );
+      });
+    });
+    child.once("close", (code) => {
+      settle(() => {
+        const stdout = chunks.stdout.join("");
+        const stderr = chunks.stderr.join("");
+
+        if (timedOut) {
+          reject(
+            createCommandProcessError(
+              `Command timed out after ${options.timeoutMs}ms.`,
+              { stdout, stderr },
+            ),
+          );
+          return;
+        }
+
+        if (exceededBuffer) {
+          reject(
+            createCommandProcessError(
+              `Command output exceeded ${options.maxBufferBytes} bytes.`,
+              { stdout, stderr },
+            ),
+          );
+          return;
+        }
+
+        const exitCode = code ?? 0;
+
+        if (exitCode !== 0) {
+          reject(
+            createCommandProcessError(
+              `Command failed with exit code ${exitCode}.`,
+              { stdout, stderr, exitCode },
+            ),
+          );
+          return;
+        }
+
+        resolve({
+          stdout: normalizeShellOutput(stdout),
+          stderr: normalizeShellOutput(stderr),
+          exitCode,
+        });
+      });
+    });
+  });
+};
+
 export const createShellNetworkToolDefinitions = (
   config: RuntimeConfig,
 ): AgentToolDefinition[] => {
@@ -178,17 +328,18 @@ export const createShellNetworkToolDefinitions = (
           resolveShellCommandInvocation(command);
 
         try {
-          const { stdout, stderr } = await execFileAsync(
+          const { stdout, stderr } = await runStreamingShellCommand(
             shellExecutable,
             shellArgs,
             {
               cwd: context.workspaceRoot,
-              timeout: SHELL_TIMEOUT_MS,
-              maxBuffer: 1_000_000,
+              timeoutMs: SHELL_TIMEOUT_MS,
+              maxBufferBytes: 1_000_000,
+              ...(context.onOutput ? { onOutput: context.onOutput } : {}),
             },
           );
-          const normalizedStdout = stdout.trim();
-          const normalizedStderr = stderr.trim();
+          const normalizedStdout = stdout;
+          const normalizedStderr = stderr;
           const output = [
             `Command: ${command}`,
             `Exit code: 0`,
@@ -232,13 +383,13 @@ export const createShellNetworkToolDefinitions = (
             error instanceof Error &&
             "stdout" in error &&
             typeof error.stdout === "string"
-              ? error.stdout.trim()
+              ? normalizeShellOutput(error.stdout)
               : "";
           const stderr =
             error instanceof Error &&
             "stderr" in error &&
             typeof error.stderr === "string"
-              ? error.stderr.trim()
+              ? normalizeShellOutput(error.stderr)
               : error instanceof Error
                 ? error.message
                 : String(error);

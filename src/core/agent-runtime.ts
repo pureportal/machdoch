@@ -48,6 +48,7 @@ import type {
   AgentModelToolResult,
   ResolvedTaskContext,
   RuntimeConfig,
+  TaskActionOutputHandler,
   TaskAutopilotDecision,
   TaskAutopilotReport,
   TaskExecutionProgressHandler,
@@ -350,6 +351,7 @@ const runExecutorCycle = async (
   continuationRequest: ExecutorContinuationRequest | undefined,
   signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
+  onActionOutput: TaskActionOutputHandler | undefined,
 ): Promise<ExecutorCycleOutcome> => {
   throwIfExecutionAborted(signal);
 
@@ -639,6 +641,7 @@ const runExecutorCycle = async (
           : undefined,
         toolMap,
         call,
+        onActionOutput,
       );
 
       if (executionOutcome.approvalPause) {
@@ -804,6 +807,7 @@ const runModelDrivenLoop = async (
   monitorAdapter: AgentModelAdapter | undefined,
   signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
+  onActionOutput: TaskActionOutputHandler | undefined,
 ): Promise<TaskExecutionResult> => {
   let cycleResult = await runExecutorCycle(
     task,
@@ -816,6 +820,7 @@ const runModelDrivenLoop = async (
     undefined,
     signal,
     onStateChange,
+    onActionOutput,
   );
   let executorIterations = 1;
   const decisions: TaskAutopilotDecision[] = [];
@@ -904,6 +909,7 @@ const runModelDrivenLoop = async (
       },
       signal,
       onStateChange,
+      onActionOutput,
     );
     executorIterations += 1;
 
@@ -956,6 +962,7 @@ export const maybeExecuteModelDrivenTask = async (
       params.monitorModelAdapter,
       params.signal,
       params.onStateChange,
+      params.onActionOutput,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

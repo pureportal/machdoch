@@ -30,6 +30,7 @@ import type {
 import type { ParsedCliArgs } from "./cli-args.js";
 import {
   attachCancellationHandlers,
+  createActionFeedbackProgressReporter,
   createVerboseProgressReporter,
   printExecutionSummary,
   writeStderrLine,
@@ -296,6 +297,7 @@ export const printTaskPreview = async (
   args: ParsedCliArgs,
   options?: {
     conversationContext?: TaskConversationContext;
+    showActionFeedback?: boolean;
   },
 ): Promise<{
   execution: TaskExecutionResult;
@@ -328,17 +330,31 @@ export const printTaskPreview = async (
     args.workspaceRoot,
     createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
   );
+  const showActionFeedback =
+    !args.json && (options?.showActionFeedback === true || args.command === "run");
+  const actionFeedbackReporter =
+    showActionFeedback
+      ? createActionFeedbackProgressReporter(
+          options?.showActionFeedback
+            ? writeStdoutLine
+            : (line = ""): void => {
+                writeStderrLine(line);
+              },
+        )
+      : undefined;
+  const onStateChange = args.verbose
+    ? createVerboseProgressReporter(writeStderrLine, {
+        structured: args.json,
+      })
+    : actionFeedbackReporter?.report;
   const controller = createTaskExecutionController(
     task,
     config,
     customizations,
     {
-      ...(args.verbose
-        ? {
-            onStateChange: createVerboseProgressReporter(writeStderrLine, {
-              structured: args.json,
-            }),
-          }
+      ...(onStateChange ? { onStateChange } : {}),
+      ...(actionFeedbackReporter
+        ? { onActionOutput: actionFeedbackReporter.reportOutput }
         : {}),
       ...(conversationContext ? { conversationContext } : {}),
       ...(imageInputs.length > 0 ? { imageInputs } : {}),
@@ -353,6 +369,7 @@ export const printTaskPreview = async (
   try {
     execution = await controller.execute();
   } finally {
+    actionFeedbackReporter?.finish();
     detachCancellationHandlers();
   }
 
@@ -466,6 +483,7 @@ export const runInteractiveChat = async (
         },
         {
           conversationContext: createCurrentConversationContext(),
+          showActionFeedback: true,
         },
       );
 

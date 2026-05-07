@@ -1,5 +1,7 @@
 import process from "node:process";
 import type {
+  TaskActionOutput,
+  TaskActionOutputHandler,
   TaskExecutionProgressHandler,
   TaskExecutionProgress,
   TaskExecutionResult,
@@ -91,6 +93,151 @@ export const createVerboseProgressReporter = (
     for (const line of lines) {
       writeLine(`machdoch: ${line}`);
     }
+  };
+};
+
+export interface ActionFeedbackProgressReporter {
+  report: TaskExecutionProgressHandler;
+  reportOutput: TaskActionOutputHandler;
+  finish(): void;
+}
+
+const ACTION_FEEDBACK_STATES = new Set<TaskExecutionProgress["state"]>([
+  "planning",
+  "executing",
+  "verifying",
+  "monitoring",
+]);
+
+const removeTrailingPeriod = (value: string): string => {
+  return value.replace(/\.$/u, "");
+};
+
+const quoteActionValue = (value: string): string => {
+  return `"${value.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"')}"`;
+};
+
+const formatActionRequest = (message: string): string => {
+  const shellMatch = /^Requested run shell command: (.+)\.$/u.exec(message);
+
+  if (shellMatch?.[1]) {
+    return `execute command ${quoteActionValue(shellMatch[1])}`;
+  }
+
+  const requestMatch = /^Requested (.+)\.$/u.exec(message);
+
+  return requestMatch?.[1] ?? removeTrailingPeriod(message);
+};
+
+const formatActionFeedbackLine = (
+  progress: TaskExecutionProgress,
+): string | undefined => {
+  const message = progress.message.trim();
+
+  if (
+    message.length === 0 ||
+    isTerminalTaskExecutionState(progress.state) ||
+    !ACTION_FEEDBACK_STATES.has(progress.state)
+  ) {
+    return undefined;
+  }
+
+  if (message.startsWith("Requested ")) {
+    return `action: ${formatActionRequest(message)}`;
+  }
+
+  return `thinking: ${message}`;
+};
+
+export const createActionFeedbackProgressReporter = (
+  writeLine: (line?: string) => void,
+): ActionFeedbackProgressReporter => {
+  let started = false;
+  let finished = false;
+  let previousLine = "";
+  const outputLineBuffers: Record<TaskActionOutput["stream"], string> = {
+    stdout: "",
+    stderr: "",
+  };
+
+  const start = (): void => {
+    if (started) {
+      return;
+    }
+
+    started = true;
+    writeLine("--- Actions Start ---");
+  };
+
+  const writeActionLine = (line: string): void => {
+    start();
+    writeLine(line);
+  };
+
+  const report: TaskExecutionProgressHandler = (progress): void => {
+    if (finished) {
+      return;
+    }
+
+    const line = formatActionFeedbackLine(progress);
+
+    if (!line || line === previousLine) {
+      return;
+    }
+
+    previousLine = line;
+    writeActionLine(line);
+  };
+
+  const reportOutput: TaskActionOutputHandler = (output): void => {
+    if (finished || output.chunk.length === 0) {
+      return;
+    }
+
+    const normalizedChunk = output.chunk
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n");
+    const stream = output.stream;
+    const lines = `${outputLineBuffers[stream]}${normalizedChunk}`.split("\n");
+
+    outputLineBuffers[stream] = lines.pop() ?? "";
+
+    for (const line of lines) {
+      writeActionLine(`${stream}: ${line}`);
+    }
+  };
+
+  const flushOutput = (): void => {
+    for (const stream of ["stdout", "stderr"] as const) {
+      const line = outputLineBuffers[stream];
+
+      if (line.length === 0) {
+        continue;
+      }
+
+      outputLineBuffers[stream] = "";
+      writeActionLine(`${stream}: ${line}`);
+    }
+  };
+
+  return {
+    report,
+    reportOutput,
+    finish: (): void => {
+      if (finished) {
+        return;
+      }
+
+      flushOutput();
+
+      if (!started) {
+        return;
+      }
+
+      finished = true;
+      writeLine("--- Actions End ---");
+      writeLine();
+    },
   };
 };
 

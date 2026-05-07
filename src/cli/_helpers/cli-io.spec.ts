@@ -3,6 +3,7 @@ import type {
   TaskExecutionResult,
 } from "../../core/types.ts";
 import {
+  createActionFeedbackProgressReporter,
   createVerboseProgressReporter,
   formatExecutionSummaryLines,
   STRUCTURED_PROGRESS_PREFIX,
@@ -99,5 +100,68 @@ describe("createVerboseProgressReporter", () => {
     expect(
       JSON.parse(lines[0]?.slice(STRUCTURED_PROGRESS_PREFIX.length) ?? "{}"),
     ).toEqual(progress);
+  });
+});
+
+describe("createActionFeedbackProgressReporter", () => {
+  it("prints a compact actions block for interactive chat progress", () => {
+    const lines: string[] = [];
+    const createProgress = (
+      state: TaskExecutionProgress["state"],
+      message: string,
+    ): TaskExecutionProgress => ({
+      task: "Check the docker state",
+      mode: "auto",
+      state,
+      message,
+      executedTools: [],
+      outputSections: [],
+      cancellable: true,
+    });
+    const reporter = createActionFeedbackProgressReporter((line = "") => {
+      lines.push(line);
+    });
+
+    reporter.report(
+      createProgress("resolving-context", "Resolve workspace context."),
+    );
+    reporter.report(createProgress("executing", "Executor iteration 1 started."));
+    reporter.report(
+      createProgress("executing", "Requested run shell command: docker ps."),
+    );
+    reporter.reportOutput({
+      toolName: "run_shell_command",
+      stream: "stdout",
+      chunk: "CONTAINER ID   IMAGE\n",
+    });
+    reporter.reportOutput({
+      toolName: "run_shell_command",
+      stream: "stdout",
+      chunk: "abc123         postgres",
+    });
+    reporter.report(
+      createProgress(
+        "executing",
+        "run shell command finished: exit code 0, stdout 6 containers",
+      ),
+    );
+    reporter.report(
+      createProgress(
+        "executing",
+        "run shell command finished: exit code 0, stdout 6 containers",
+      ),
+    );
+    reporter.finish();
+
+    expect(lines).toEqual([
+      "--- Actions Start ---",
+      "thinking: Executor iteration 1 started.",
+      'action: execute command "docker ps"',
+      "stdout: CONTAINER ID   IMAGE",
+      "thinking: run shell command finished: exit code 0, stdout 6 containers",
+      "stdout: abc123         postgres",
+      "--- Actions End ---",
+      "",
+    ]);
   });
 });

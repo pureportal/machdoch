@@ -5,6 +5,7 @@ import type {
   AgentModelToolResult,
   AgentModelToolSpec,
   ConversationMemoryEntry,
+  TaskActionOutput,
   TaskExecutionMemoryUpdate,
   TaskExecutionSection,
   ToolCallEffect,
@@ -44,6 +45,7 @@ export interface AgentToolExecutionContext {
   workspaceRoot: string;
   memory: ConversationMemoryRuntime;
   uiControl?: UiControlRuntimeInfo;
+  onOutput?: (output: Omit<TaskActionOutput, "toolName">) => void;
 }
 
 export interface AgentToolExecutionResult {

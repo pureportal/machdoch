@@ -1,6 +1,7 @@
 import type {
   AgentModelToolCall,
   RuntimeConfig,
+  TaskActionOutputHandler,
   TaskExecutionSection,
   ToolCallEffect,
   ToolName,
@@ -177,6 +178,7 @@ export const executeToolCall = async (
   uiControl: UiControlRuntimeInfo | undefined,
   toolDefinitions: Map<string, AgentToolDefinition>,
   call: AgentModelToolCall,
+  onActionOutput?: TaskActionOutputHandler,
 ): Promise<{
   result?: AgentToolExecutionResult;
   approvalPause?: ApprovalPause;
@@ -231,6 +233,16 @@ export const executeToolCall = async (
     workspaceRoot: config.workspaceRoot,
     memory,
     ...(uiControl !== undefined ? { uiControl } : {}),
+    ...(onActionOutput
+      ? {
+          onOutput: (output): void => {
+            void onActionOutput({
+              toolName: call.name,
+              ...output,
+            });
+          },
+        }
+      : {}),
   });
 
   return {

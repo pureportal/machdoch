@@ -250,6 +250,9 @@ const runTaskExecutionStateMachine = async (
             ...(options.onStateChange
               ? { onStateChange: options.onStateChange }
               : {}),
+            ...(options.onActionOutput
+              ? { onActionOutput: options.onActionOutput }
+              : {}),
           });
 
           const cancelledAfterModelExecution = await maybeReturnCancelledResult(

@@ -14,7 +14,9 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 import { EventEmitter } from "node:events";
+import type { RuntimeConfig } from "../types.ts";
 import {
+  createShellNetworkToolDefinitions,
   isReadOnlyShellCommand,
   resolveShellCommandInvocation,
   startDetachedShellCommand,
@@ -22,6 +24,37 @@ import {
 
 afterEach(() => {
   spawnMock.mockReset();
+});
+
+const createRuntimeConfig = (): RuntimeConfig => ({
+  workspaceRoot: "c:/Development/machdoch",
+  availableProfiles: [],
+  mode: "auto",
+  enabledTools: ["shell"],
+  provider: "unconfigured",
+  model: "gpt-5.5",
+  offline: true,
+  compatibility: {},
+  providerAvailability: [],
+  webSearch: {
+    activeProvider: "none",
+    providerAvailability: [],
+  },
+});
+
+const createToolContext = (
+  chunks: { stream: "stdout" | "stderr"; chunk: string }[] = [],
+) => ({
+  workspaceRoot: "c:/Development/machdoch",
+  memory: {
+    sessionEnabled: false,
+    sessionEntries: [],
+    globalEnabled: false,
+    globalEntries: [],
+  },
+  onOutput: (output: { stream: "stdout" | "stderr"; chunk: string }) => {
+    chunks.push(output);
+  },
 });
 
 describe("resolveShellCommandInvocation", () => {
@@ -106,6 +139,66 @@ describe("resolveShellCommandInvocation", () => {
 
     await expect(launchPromise).rejects.toThrow("spawn sh ENOENT");
     expect(child.unref).not.toHaveBeenCalled();
+  });
+});
+
+describe("run_shell_command", () => {
+  it("streams stdout and stderr chunks while preserving the final result", async () => {
+    const stdout = new EventEmitter();
+    const stderr = new EventEmitter();
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: EventEmitter;
+      stderr: EventEmitter;
+      kill: ReturnType<typeof vi.fn>;
+    };
+    const chunks: { stream: "stdout" | "stderr"; chunk: string }[] = [];
+    const tool = createShellNetworkToolDefinitions(createRuntimeConfig()).find(
+      (definition) => definition.spec.name === "run_shell_command",
+    );
+
+    child.stdout = stdout;
+    child.stderr = stderr;
+    child.kill = vi.fn();
+    spawnMock.mockReturnValue(child);
+
+    if (!tool) {
+      throw new Error("Expected run_shell_command to be registered.");
+    }
+
+    const resultPromise = tool.execute(
+      { command: "node script.js" },
+      createToolContext(chunks),
+    );
+
+    stdout.emit("data", "first line\n");
+    stderr.emit("data", Buffer.from("warning line\n"));
+    child.emit("close", 0);
+
+    const result = await resultPromise;
+
+    expect(chunks).toEqual([
+      { stream: "stdout", chunk: "first line\n" },
+      { stream: "stderr", chunk: "warning line\n" },
+    ]);
+    const expectedExecutable =
+      process.platform === "win32" ? "powershell.exe" : "sh";
+    const expectedArgs =
+      process.platform === "win32"
+        ? expect.arrayContaining(["-NoProfile", "-NonInteractive", "-Command"])
+        : ["-lc", "node script.js"];
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      expectedExecutable,
+      expectedArgs,
+      expect.objectContaining({
+        cwd: "c:/Development/machdoch",
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      }),
+    );
+    expect(result.toolResult.output).toContain("STDOUT:\nfirst line");
+    expect(result.toolResult.output).toContain("STDERR:\nwarning line");
+    expect(result.toolResult.isError).toBeUndefined();
   });
 });
 

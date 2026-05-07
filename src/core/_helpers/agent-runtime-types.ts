@@ -8,6 +8,7 @@ import type {
   AgentModelImageInput,
   TaskExecutionMemoryUpdate,
   TaskExecutionNarrative,
+  TaskActionOutputHandler,
   TaskExecutionProgressHandler,
   TaskExecutionResult,
   TaskExecutionSection,
@@ -104,6 +105,7 @@ export interface ModelDrivenExecutionParams {
   modelAdapter?: AgentModelAdapter;
   monitorModelAdapter?: AgentModelAdapter;
   onStateChange?: TaskExecutionProgressHandler;
+  onActionOutput?: TaskActionOutputHandler;
   signal?: AbortSignal;
 }
 

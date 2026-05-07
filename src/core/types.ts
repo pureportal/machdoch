@@ -395,6 +395,16 @@ export type TaskExecutionProgressHandler = (
   progress: TaskExecutionProgress,
 ) => void | Promise<void>;
 
+export interface TaskActionOutput {
+  toolName: string;
+  stream: "stdout" | "stderr";
+  chunk: string;
+}
+
+export type TaskActionOutputHandler = (
+  output: TaskActionOutput,
+) => void | Promise<void>;
+
 export interface TaskAutopilotDecision {
   pass: number;
   decision: "complete" | "continue";
@@ -428,6 +438,7 @@ export interface TaskExecutionNarrative {
 export interface TaskExecutionOptions {
   signal?: AbortSignal;
   onStateChange?: TaskExecutionProgressHandler;
+  onActionOutput?: TaskActionOutputHandler;
   modelAdapter?: AgentModelAdapter;
   monitorModelAdapter?: AgentModelAdapter;
   conversationContext?: TaskConversationContext;
