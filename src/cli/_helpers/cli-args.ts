@@ -332,6 +332,7 @@ Options:
 
 Default CLI mode is interactive and keeps running until /exit, /quit, or Ctrl+C.
 \`machdoch <task>\` and \`machdoch --task <text>\` start interactive chat with an initial task.
+Use \`/paste\` in interactive chat to submit multiline task text; finish with a line containing only \`/end\`.
 Use \`machdoch run <task>\` or \`machdoch --quick --task <text>\` for one-shot execution that exits.
 During a task run, press Ctrl+C to request cancellation after the current execution step.
 `;

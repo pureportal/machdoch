@@ -26,6 +26,7 @@ import type {
   TaskConversationContext,
   TaskExecutionResult,
   TaskRunPreview,
+  RunMode,
 } from "../../core/types.js";
 import type { ParsedCliArgs } from "./cli-args.js";
 import {
@@ -405,8 +406,87 @@ const printInteractiveChatHelp = (): void => {
   writeStdoutLine("interactive commands:");
   writeStdoutLine("  /help  Show this help");
   writeStdoutLine("  /plan <task>  Produce a read-only approval plan");
+  writeStdoutLine("  /paste [mode]  Paste a multiline task; finish with /end");
   writeStdoutLine("  /exit  Leave interactive mode");
   writeStdoutLine("  /quit  Leave interactive mode");
+};
+
+export const PASTE_TERMINATOR = "/end";
+
+const VALID_PASTE_MODES: ReadonlySet<RunMode> = new Set([
+  "plan",
+  "safe",
+  "ask",
+  "auto",
+]);
+
+export interface ParsedInteractivePasteCommand {
+  recognized: boolean;
+  mode?: RunMode;
+  error?: string;
+}
+
+interface InteractiveQuestionHandle {
+  question(query: string): Promise<string>;
+}
+
+export const parseInteractivePasteCommand = (
+  command: string,
+): ParsedInteractivePasteCommand => {
+  const normalizedCommand = command.trim();
+
+  if (
+    normalizedCommand !== "/paste" &&
+    !normalizedCommand.startsWith("/paste ")
+  ) {
+    return { recognized: false };
+  }
+
+  const rawMode = normalizedCommand.slice("/paste".length).trim();
+
+  if (rawMode.length === 0) {
+    return { recognized: true };
+  }
+
+  if (VALID_PASTE_MODES.has(rawMode as RunMode)) {
+    return { recognized: true, mode: rawMode as RunMode };
+  }
+
+  return {
+    recognized: true,
+    error: "Usage: /paste [plan|safe|ask|auto]",
+  };
+};
+
+export const normalizePastedTask = (lines: string[]): string | undefined => {
+  const task = lines.join("\n").trim();
+
+  return task.length > 0 ? task : undefined;
+};
+
+export const readPastedTask = async (
+  interfaceHandle: InteractiveQuestionHandle,
+  options: {
+    writeLine: (line?: string) => void;
+    terminator?: string;
+  },
+): Promise<string | undefined> => {
+  const terminator = options.terminator ?? PASTE_TERMINATOR;
+  const lines: string[] = [];
+
+  options.writeLine(
+    `Paste task text. Finish with a line containing only ${terminator}.`,
+  );
+
+  while (true) {
+    const line = await interfaceHandle.question("paste> ");
+
+    if (line.trim() === terminator) {
+      return normalizePastedTask(lines);
+    }
+
+    lines.push(line);
+  }
 };
 
 export const runInteractiveChat = async (
@@ -442,7 +522,7 @@ export const runInteractiveChat = async (
     `machdoch chat (${config.mode}, ${config.model}${profileSuffix})`,
   );
   writeStdoutLine(
-    "Type a task and press Enter. Use /help for commands, /exit to quit.",
+    "Type a task and press Enter. Use /paste for multiline tasks, /help for commands, /exit to quit.",
   );
   writeStdoutLine();
 
@@ -543,6 +623,30 @@ export const runInteractiveChat = async (
 
       if (nextTask === "/help") {
         printInteractiveChatHelp();
+        writeStdoutLine();
+        continue;
+      }
+
+      const pasteCommand = parseInteractivePasteCommand(nextTask);
+
+      if (pasteCommand.recognized) {
+        if (pasteCommand.error) {
+          writeStdoutLine(pasteCommand.error);
+          writeStdoutLine();
+          continue;
+        }
+
+        const pastedTask = await readPastedTask(interfaceHandle, {
+          writeLine: writeStdoutLine,
+        });
+
+        if (!pastedTask) {
+          writeStdoutLine("Paste cancelled: no task text was provided.");
+          writeStdoutLine();
+          continue;
+        }
+
+        await executeChatTask(pastedTask, pasteCommand.mode ?? args.mode);
         writeStdoutLine();
         continue;
       }

@@ -10,6 +10,9 @@ import {
   applyContextPathsToTask,
   createImageInputsFromPaths,
   createInteractiveChatSessionState,
+  normalizePastedTask,
+  parseInteractivePasteCommand,
+  readPastedTask,
   resolveConversationContext,
 } from "./cli-task-run.ts";
 
@@ -231,5 +234,71 @@ describe("createInteractiveChatSessionState", () => {
       sessionMemoryEnabled: true,
       effectiveGlobalMemoryEnabled: false,
     });
+  });
+});
+
+describe("interactive paste helpers", () => {
+  it("recognizes paste commands with optional execution modes", () => {
+    expect(parseInteractivePasteCommand("show README.md")).toEqual({
+      recognized: false,
+    });
+    expect(parseInteractivePasteCommand("/paste")).toEqual({
+      recognized: true,
+    });
+    expect(parseInteractivePasteCommand("/paste plan")).toEqual({
+      recognized: true,
+      mode: "plan",
+    });
+    expect(parseInteractivePasteCommand("/paste beta")).toEqual({
+      recognized: true,
+      error: "Usage: /paste [plan|safe|ask|auto]",
+    });
+  });
+
+  it("normalizes pasted multiline task text", () => {
+    expect(
+      normalizePastedTask([
+        "",
+        "Create a Docker Compose setup.",
+        "",
+        "Repos:",
+        "- backend",
+        "- frontend",
+        "",
+      ]),
+    ).toBe("Create a Docker Compose setup.\n\nRepos:\n- backend\n- frontend");
+
+    expect(normalizePastedTask(["", "  ", ""])).toBeUndefined();
+  });
+
+  it("reads pasted lines until the terminator", async () => {
+    const prompts: string[] = [];
+    const notices: string[] = [];
+    const inputs = ["line one", "line two", "/end"];
+    let inputIndex = 0;
+
+    await expect(
+      readPastedTask(
+        {
+          question: async (query) => {
+            prompts.push(query);
+            const input = inputs[inputIndex];
+            inputIndex += 1;
+
+            return input ?? "/end";
+          },
+        },
+        {
+          writeLine: (line = "") => {
+            notices.push(line);
+          },
+        },
+      ),
+    ).resolves.toBe("line one\nline two");
+
+    expect(prompts).toEqual(["paste> ", "paste> ", "paste> "]);
+    expect(notices).toEqual([
+      "Paste task text. Finish with a line containing only /end.",
+    ]);
   });
 });
