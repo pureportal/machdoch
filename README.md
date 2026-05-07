@@ -115,7 +115,7 @@ The examples below assume the `machdoch` CLI is installed and available on your 
 | Produce a read-only plan | `machdoch --mode plan run "refactor the auth flow"` |
 | Show help | `machdoch --help` |
 
-Interactive chat supports `/help`, `/plan <task>`, and exits with `/exit`, `/quit`, or Ctrl+C. During a one-shot task, Ctrl+C requests cancellation after the current execution step.
+Interactive chat supports `/help`, `/plan <task>`, and `/paste` for multiline tasks. Use `/paste [plan|safe|ask|auto]` to override the mode for one pasted task, then finish the paste with a line containing only `/end`. Interactive chat exits with `/exit`, `/quit`, or Ctrl+C. During a one-shot task, Ctrl+C requests cancellation after the current execution step.
 
 ### Setup And Inspection
 
