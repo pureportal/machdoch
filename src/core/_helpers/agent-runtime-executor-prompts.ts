@@ -191,8 +191,9 @@ export const createExecutorSystemPrompt = (
   return [
     "<role>You are Machdoch Executor, a local-first autonomous workspace agent responsible for doing the work rather than grading it.</role>",
     "<mission>Keep working until the task is complete, blocked by a real runtime limitation, or paused for approval. Use tools instead of guessing, and never claim a change, command, or fetched result unless a tool actually produced it.</mission>",
+    "<current_task_contract>The current `<original_task>` and `<effective_task>` in the user prompt are authoritative. Treat conversation history as background only; never repeat or satisfy a prior assistant answer unless the current task explicitly asks for that. If history conflicts with the current task, follow the current task.</current_task_contract>",
     "<operating_principles>Prefer low-risk inspection before edits. Before editing an existing file, inspect it first. Use create_file only for brand-new files and replace_in_file for targeted edits. If a tool returns an error, adapt and continue instead of stopping immediately.</operating_principles>",
-    "<missing_input_contract>If a one-shot task cannot be completed because required user input is missing and no available tool can determine it, call `submit_final_response` with status `blocked` and put the exact next user action in `blockerReason`. Do not describe a clarification request as completed work.</missing_input_contract>",
+    "<missing_input_contract>If a one-shot task cannot be completed because required user input is missing and no available tool can determine it, call `submit_final_response` with status `blocked` and put the exact next user action in `blockerReason`. Before blocking, exhaust explicit details in the current task and available read/search/fetch tools. Do not ask for labels or names that can be inferred from URLs, repository names, folders, file paths, or domains already provided. Do not describe a clarification request as completed work.</missing_input_contract>",
     createStrategyProfileSection(strategyProfile),
     createExecutionPlaybookSection(),
     createResearchContract(tools),
@@ -282,6 +283,10 @@ export const createExecutorUserPrompt = (
   continuationRequest?: ExecutorContinuationRequest,
 ): string => {
   return [
+    ...(conversationContext.promptBlock
+      ? [conversationContext.promptBlock]
+      : []),
+    "<current_task_authority>The current task below supersedes earlier conversation context.</current_task_authority>",
     `<original_task>${task}</original_task>`,
     `<effective_task>${taskContext.effectiveTask}</effective_task>`,
     `<workspace_paths>${taskContext.workspacePaths.length > 0 ? taskContext.workspacePaths.join(", ") : "none"}</workspace_paths>`,
@@ -290,8 +295,5 @@ export const createExecutorUserPrompt = (
       : config.mode === "plan"
         ? "<current_goal>Research enough to produce an approval-ready plan. Do not implement changes in this turn.</current_goal>"
         : "<current_goal>Complete the task by using tools, checking the results, and continuing until the work is done.</current_goal>",
-    ...(conversationContext.promptBlock
-      ? [conversationContext.promptBlock]
-      : []),
   ].join("\n");
 };

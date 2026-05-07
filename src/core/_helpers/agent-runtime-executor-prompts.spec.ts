@@ -6,6 +6,7 @@ import type {
 } from "../types.js";
 import {
   createExecutorSystemPrompt,
+  createExecutorUserPrompt,
   inferTaskStrategyProfile,
 } from "./agent-runtime-executor-prompts.ts";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
@@ -51,7 +52,9 @@ const createTaskContext = (
   };
 };
 
-const createConversationContext = (): PreparedConversationPromptContext => {
+const createConversationContext = (
+  overrides: Partial<PreparedConversationPromptContext> = {},
+): PreparedConversationPromptContext => {
   return {
     sections: [],
     memory: {
@@ -61,6 +64,7 @@ const createConversationContext = (): PreparedConversationPromptContext => {
       globalEntries: [],
     },
     uiControlEnabled: false,
+    ...overrides,
   };
 };
 
@@ -175,5 +179,36 @@ describe("createExecutorSystemPrompt", () => {
     expect(prompt).toContain("Do not call file-write");
     expect(prompt).toContain("status `completed`");
     expect(prompt).toContain("runtime will surface that as a planned result");
+  });
+
+  it("makes the current task authoritative over prior conversation context", () => {
+    const systemPrompt = createExecutorSystemPrompt(
+      createRuntimeConfig(),
+      createTaskContext(),
+      [createTool("read_file")],
+      createConversationContext(),
+    );
+    const userPrompt = createExecutorUserPrompt(
+      createRuntimeConfig(),
+      "Create the Docker Compose files for the current repos.",
+      createTaskContext({
+        task: "Create the Docker Compose files for the current repos.",
+        effectiveTask: "Create the Docker Compose files for the current repos.",
+      }),
+      createConversationContext({
+        promptBlock:
+          "<conversation_context>\nassistant: I am blocked on a suite name.\n</conversation_context>",
+      }),
+    );
+
+    expect(systemPrompt).toContain("<current_task_contract>");
+    expect(systemPrompt).toContain("conversation history as background only");
+    expect(systemPrompt).toContain(
+      "Do not ask for labels or names that can be inferred",
+    );
+    expect(userPrompt).toContain("<current_task_authority>");
+    expect(userPrompt.indexOf("<conversation_context>")).toBeLessThan(
+      userPrompt.indexOf("<original_task>"),
+    );
   });
 });

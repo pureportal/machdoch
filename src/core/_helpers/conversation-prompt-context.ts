@@ -278,6 +278,7 @@ export const prepareConversationPromptContext = async (
       ? {
           promptBlock: [
             "<conversation_context>",
+            "Earlier conversation is background only. The current task outside this block is authoritative and may supersede it.",
             ...promptSections,
             "</conversation_context>",
           ].join("\n\n"),

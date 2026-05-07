@@ -340,6 +340,53 @@ const createToolResultProgressMessage = (
   }`;
 };
 
+const hasResolvedGroundingContext = (
+  taskContext: ResolvedTaskContext,
+): boolean => {
+  return (
+    taskContext.workspacePaths.length > 0 ||
+    (taskContext.invokedPrompt?.tools.length ?? 0) > 0
+  );
+};
+
+const hasRunnableSuggestedTool = (
+  taskContext: ResolvedTaskContext,
+): boolean => {
+  return taskContext.toolPolicies.some(
+    (policy) => policy.enabled && policy.decision !== "blocked",
+  );
+};
+
+const shouldRejectPrematureBlockedFinalResponse = (
+  config: RuntimeConfig,
+  taskContext: ResolvedTaskContext,
+  loopState: AgentLoopState,
+  status: string,
+): boolean => {
+  if (
+    config.mode === "plan" ||
+    status !== "blocked" ||
+    loopState.executedTools.length > 0
+  ) {
+    return false;
+  }
+
+  return (
+    hasResolvedGroundingContext(taskContext) &&
+    hasRunnableSuggestedTool(taskContext)
+  );
+};
+
+const createPrematureBlockedFinalResponseMessage = (): string => {
+  return [
+    "Premature final response rejected: this task has resolved workspace context or declared prompt tools, but no tool has run yet.",
+    "Treat the current `<original_task>` and `<effective_task>` as authoritative over prior conversation.",
+    "Use the available tools for the resolved context before blocking.",
+    "Infer labels from repository URLs, domains, target folders, and file paths when they are provided instead of asking the user for a generic name.",
+    "Only submit a blocked final response after a concrete attempted lookup/action or when an actually unavailable credential, approval, tool, or detail prevents progress.",
+  ].join(" ");
+};
+
 const runExecutorCycle = async (
   task: string,
   config: RuntimeConfig,
@@ -443,6 +490,7 @@ const runExecutorCycle = async (
 
   const executorTurnLimit = resolveRuntimeAgentLimits(config).executorTurns;
   let turnIndex = 0;
+  let rejectedPrematureFinalResponse = false;
 
   while (executorTurnLimit === null || turnIndex < executorTurnLimit) {
     throwIfExecutionAborted(signal);
@@ -534,6 +582,39 @@ const runExecutorCycle = async (
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected incomplete payload.`,
         );
+        continue;
+      }
+
+      if (
+        !rejectedPrematureFinalResponse &&
+        shouldRejectPrematureBlockedFinalResponse(
+          config,
+          taskContext,
+          loopState,
+          parsedPayload.status,
+        )
+      ) {
+        const rejectionMessage = createPrematureBlockedFinalResponseMessage();
+
+        rejectedPrematureFinalResponse = true;
+        loopState.traceLines.push(
+          `${FINAL_RESPONSE_TOOL_NAME}: rejected premature blocked response before any tool use.`,
+        );
+        loopState.outputSections.push({
+          title: "Final response guard",
+          tone: "warning",
+          lines: [rejectionMessage],
+        });
+        turn = await adapter.continueTurn({
+          toolResults: [
+            createFinalResponseToolResult(
+              finalResponseCall.id,
+              rejectionMessage,
+              true,
+            ),
+          ],
+          ...(signal ? { signal } : {}),
+        });
         continue;
       }
 

@@ -751,6 +751,89 @@ describe("executeTask", () => {
     ).toBe(false);
   });
 
+  it("rejects first-turn blocked final responses for tool-grounded tasks", async () => {
+    const workspaceRoot = await createWorkspace();
+    let continueCount = 0;
+
+    await writeFile(join(workspaceRoot, "README.md"), "# Deployment");
+
+    const prematureBlockAdapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "",
+        toolCalls: [
+          createFinalResponseToolCall({
+            summary: "The suite name is required before setup can start.",
+            status: "blocked",
+            blockerReason: "Ask the user for the exact software suite name.",
+            markdown:
+              "I am blocked on one required input: the exact software suite name.",
+          }),
+        ],
+      }),
+      continueTurn: async (params) => {
+        continueCount += 1;
+
+        if (continueCount === 1) {
+          expect(params.toolResults[0]?.isError).toBe(true);
+          expect(params.toolResults[0]?.output).toContain(
+            "Premature final response rejected",
+          );
+
+          return {
+            text: "",
+            toolCalls: [
+              {
+                id: "list-root",
+                name: "list_directory",
+                arguments: {
+                  path: ".",
+                  maxEntries: 20,
+                },
+              },
+            ],
+          };
+        }
+
+        expect(params.toolResults[0]?.name).toBe("list_directory");
+
+        return {
+          text: "",
+          toolCalls: [
+            createFinalResponseToolCall({
+              summary: "Recovered and inspected before completing.",
+              markdown: "Recovered and inspected before completing.",
+              verification: ["Listed the workspace root."],
+            }),
+          ],
+        };
+      },
+    };
+
+    const result = await executeTask(
+      [
+        "Create a complete Docker Compose setup for the following software suite.",
+        "Repos:",
+        "- https://github.com/BeeWaTec/beelopt-xls-upload-backend",
+        "- https://github.com/BeeWaTec/beelopt-xls-upload-frontend",
+        "Inspect all provided repos and paths, create docker-compose.yml and .env, then validate.",
+      ].join("\n"),
+      createConfig(workspaceRoot, "ask", ["filesystem", "network"]),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: prematureBlockAdapter,
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(result.summary).toBe("Recovered and inspected before completing.");
+    expect(result.executedTools).toEqual(["filesystem"]);
+    expect(
+      result.outputSections.some(
+        (section) => section.title === "Final response guard",
+      ),
+    ).toBe(true);
+  });
+
   it("returns planned instead of executed for model-driven plan mode completions", async () => {
     const workspaceRoot = await createWorkspace();
 
