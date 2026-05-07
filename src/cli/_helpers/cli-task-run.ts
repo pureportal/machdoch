@@ -428,6 +428,16 @@ export interface ParsedInteractivePasteCommand {
 
 interface InteractiveQuestionHandle {
   question(query: string): Promise<string>;
+  on?(event: "line" | "close", listener: (...args: unknown[]) => void): unknown;
+  off?(event: "line" | "close", listener: (...args: unknown[]) => void): unknown;
+  removeListener?(
+    event: "line" | "close",
+    listener: (...args: unknown[]) => void,
+  ): unknown;
+  once?(event: "close", listener: (...args: unknown[]) => void): unknown;
+  getPrompt?(): string;
+  setPrompt?(prompt: string): void;
+  prompt?(preserveCursor?: boolean): void;
 }
 
 export const parseInteractivePasteCommand = (
@@ -464,6 +474,16 @@ export const normalizePastedTask = (lines: string[]): string | undefined => {
   return task.length > 0 ? task : undefined;
 };
 
+const supportsInteractiveLineEvents = (
+  interfaceHandle: InteractiveQuestionHandle,
+): boolean => {
+  return (
+    typeof interfaceHandle.on === "function" &&
+    typeof (interfaceHandle.off ?? interfaceHandle.removeListener) ===
+      "function"
+  );
+};
+
 export const readPastedTask = async (
   interfaceHandle: InteractiveQuestionHandle,
   options: {
@@ -477,6 +497,51 @@ export const readPastedTask = async (
   options.writeLine(
     `Paste task text. Finish with a line containing only ${terminator}.`,
   );
+
+  if (supportsInteractiveLineEvents(interfaceHandle)) {
+    const previousPrompt = interfaceHandle.getPrompt?.();
+    interfaceHandle.setPrompt?.("paste> ");
+
+    return await new Promise((resolve) => {
+      const removeListener =
+        interfaceHandle.off?.bind(interfaceHandle) ??
+        interfaceHandle.removeListener?.bind(interfaceHandle);
+
+      const cleanup = (): void => {
+        removeListener?.("line", handleLine);
+        removeListener?.("close", handleClose);
+
+        if (previousPrompt !== undefined) {
+          interfaceHandle.setPrompt?.(previousPrompt);
+        }
+      };
+
+      const finish = (task: string | undefined): void => {
+        cleanup();
+        resolve(task);
+      };
+
+      const handleClose = (): void => {
+        finish(undefined);
+      };
+
+      const handleLine = (lineValue: unknown): void => {
+        const line = typeof lineValue === "string" ? lineValue : "";
+
+        if (line.trim() === terminator) {
+          finish(normalizePastedTask(lines));
+          return;
+        }
+
+        lines.push(line);
+        interfaceHandle.prompt?.();
+      };
+
+      interfaceHandle.on?.("line", handleLine);
+      interfaceHandle.once?.("close", handleClose);
+      interfaceHandle.prompt?.();
+    });
+  }
 
   while (true) {
     const line = await interfaceHandle.question("paste> ");
