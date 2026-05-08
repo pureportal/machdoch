@@ -53,7 +53,7 @@
     "vitest": "^4.1.4"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.89.0",
+    "@anthropic-ai/sdk": "^0.95.1",
     "@google/genai": "^1.50.1",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.7.0",
