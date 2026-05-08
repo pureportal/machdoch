@@ -1,4 +1,4 @@
-import type { Browser, BrowserContext, Page } from "playwright-core";
+import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 import {
   coerceBoolean,
   coerceInteger,
@@ -19,8 +19,10 @@ const MAX_VIEWPORT_SIZE = 3_840;
 const DEFAULT_BROWSER_TIMEOUT_MS = 30_000;
 const MAX_BROWSER_TIMEOUT_MS = 120_000;
 const MAX_BROWSER_TEXT_CHARS = 20_000;
+const MAX_BROWSER_SNAPSHOT_LINES = 80;
 const MAX_SELECTOR_LENGTH = 1_000;
 const MAX_TYPED_TEXT_LENGTH = 10_000;
+const DEFAULT_SCREENSHOT_DIFF_THRESHOLD_PERCENT = 0.1;
 
 const BROWSER_CHANNELS = [
   "msedge",
@@ -41,8 +43,40 @@ const WAIT_UNTIL_VALUES = [
   "commit",
 ] as const;
 
+const BROWSER_LOCATOR_TYPES = [
+  "selector",
+  "role",
+  "text",
+  "testId",
+  "label",
+  "placeholder",
+  "title",
+  "altText",
+] as const;
+
+const BROWSER_WAIT_STRATEGIES = [
+  "load-state",
+  "locator-visible",
+  "locator-hidden",
+  "locator-attached",
+  "locator-detached",
+  "text",
+  "url",
+  "timeout",
+] as const;
+
 type BrowserChannel = (typeof BROWSER_CHANNELS)[number];
 type BrowserWaitUntil = (typeof WAIT_UNTIL_VALUES)[number];
+type BrowserLocatorType = (typeof BROWSER_LOCATOR_TYPES)[number];
+type BrowserWaitStrategy = (typeof BROWSER_WAIT_STRATEGIES)[number];
+
+interface BrowserScreenshotBaseline {
+  id: string;
+  screenshot: Buffer;
+  url: string;
+  title: string;
+  capturedAt: number;
+}
 
 interface BrowserSession {
   id: string;
@@ -52,6 +86,7 @@ interface BrowserSession {
   channel: BrowserChannel;
   headless: boolean;
   startedAt: number;
+  screenshotBaselines: Map<string, BrowserScreenshotBaseline>;
 }
 
 const browserSessions = new Map<string, BrowserSession>();
@@ -69,6 +104,24 @@ const isWaitUntil = (value: string | undefined): value is BrowserWaitUntil => {
   return (
     value !== undefined &&
     WAIT_UNTIL_VALUES.includes(value as BrowserWaitUntil)
+  );
+};
+
+const isBrowserLocatorType = (
+  value: string | undefined,
+): value is BrowserLocatorType => {
+  return (
+    value !== undefined &&
+    BROWSER_LOCATOR_TYPES.includes(value as BrowserLocatorType)
+  );
+};
+
+const isBrowserWaitStrategy = (
+  value: string | undefined,
+): value is BrowserWaitStrategy => {
+  return (
+    value !== undefined &&
+    BROWSER_WAIT_STRATEGIES.includes(value as BrowserWaitStrategy)
   );
 };
 
@@ -114,6 +167,27 @@ const coerceSelector = (
   }
 
   return selector;
+};
+
+const coerceBoundedBrowserText = (
+  args: Record<string, unknown>,
+  field: string,
+): string | undefined => {
+  const value = coerceString(args, field);
+
+  if (!value || value.length > MAX_SELECTOR_LENGTH || value.includes("\0")) {
+    return undefined;
+  }
+
+  return value;
+};
+
+const coerceBaselineId = (args: Record<string, unknown>): string | undefined => {
+  const baselineId = coerceString(args, "baselineId");
+
+  return baselineId && /^[a-zA-Z0-9_-]{1,64}$/u.test(baselineId)
+    ? baselineId
+    : undefined;
 };
 
 const coerceBrowserUrl = (
@@ -255,6 +329,283 @@ const readVisibleBodyText = async (
   }
 };
 
+const createLocatorGuidanceLines = (): string[] => {
+  return [
+    "Prefer locatorType=role with locatorValue=<role> and locatorName=<accessible name> for buttons, links, headings, and inputs.",
+    "Use locatorType=text for visible copy and locatorType=testId for stable test ids; use raw selector only when semantic locators are unavailable.",
+    "Before destructive actions, inspect_browser_locator and/or snapshot_browser_page, then use wait_for_browser_page for explicit post-action waits.",
+    "Click and text tools use Playwright locator actionability checks; avoid arbitrary sleeps unless waiting for animations or debounced UI.",
+  ];
+};
+
+const getLocatorInputSchemaProperties = () => ({
+  selector: {
+    type: "string",
+    description:
+      "Legacy raw Playwright selector. Prefer locatorType plus locatorValue when possible.",
+  },
+  locatorType: {
+    type: "string",
+    enum: BROWSER_LOCATOR_TYPES,
+    description:
+      "Preferred target strategy. Use role, text, testId, label, placeholder, title, or altText before selector.",
+  },
+  locatorValue: {
+    type: "string",
+    description:
+      "Locator value. For role locators this is the ARIA role, such as button, link, textbox, heading, or checkbox.",
+  },
+  locatorName: {
+    type: "string",
+    description:
+      "Accessible name for role locators, such as the button text or input label.",
+  },
+  exact: {
+    type: "boolean",
+    description:
+      "Whether text-like locators should match exactly. Defaults to Playwright behavior.",
+  },
+});
+
+const resolveBrowserLocator = (
+  page: Page,
+  args: Record<string, unknown>,
+): { locator: Locator; summary: string } => {
+  const locatorTypeInput = coerceString(args, "locatorType");
+  const locatorType = isBrowserLocatorType(locatorTypeInput)
+    ? locatorTypeInput
+    : undefined;
+  const locatorValue = coerceBoundedBrowserText(args, "locatorValue");
+  const locatorName = coerceBoundedBrowserText(args, "locatorName");
+  const exact = coerceBoolean(args, "exact");
+  const textOptions = exact === undefined ? undefined : { exact };
+
+  if (locatorType && locatorType !== "selector") {
+    if (!locatorValue) {
+      throw new Error(
+        "Expected `locatorValue` when `locatorType` is provided.",
+      );
+    }
+
+    switch (locatorType) {
+      case "role": {
+        const roleOptions = {
+          ...(locatorName ? { name: locatorName } : {}),
+          ...(exact === undefined ? {} : { exact }),
+        };
+
+        return {
+          locator: page.getByRole(
+            locatorValue as Parameters<Page["getByRole"]>[0],
+            roleOptions,
+          ),
+          summary: `role=${locatorValue}${locatorName ? ` name=${locatorName}` : ""}`,
+        };
+      }
+      case "text":
+        return {
+          locator: page.getByText(locatorValue, textOptions),
+          summary: `text=${locatorValue}`,
+        };
+      case "testId":
+        return {
+          locator: page.getByTestId(locatorValue),
+          summary: `testId=${locatorValue}`,
+        };
+      case "label":
+        return {
+          locator: page.getByLabel(locatorValue, textOptions),
+          summary: `label=${locatorValue}`,
+        };
+      case "placeholder":
+        return {
+          locator: page.getByPlaceholder(locatorValue, textOptions),
+          summary: `placeholder=${locatorValue}`,
+        };
+      case "title":
+        return {
+          locator: page.getByTitle(locatorValue, textOptions),
+          summary: `title=${locatorValue}`,
+        };
+      case "altText":
+        return {
+          locator: page.getByAltText(locatorValue, textOptions),
+          summary: `altText=${locatorValue}`,
+        };
+    }
+  }
+
+  const selector = locatorType === "selector" && locatorValue
+    ? locatorValue
+    : coerceSelector(args);
+
+  if (!selector) {
+    throw new Error(
+      "Expected a semantic locator (`locatorType` and `locatorValue`) or a bounded raw `selector`.",
+    );
+  }
+
+  return {
+    locator: page.locator(selector),
+    summary: `selector=${selector}`,
+  };
+};
+
+const maybeCallLocatorBoolean = async (
+  locator: Locator,
+  method: "isVisible" | "isEnabled" | "isEditable",
+  timeoutMs: number,
+): Promise<boolean | "unknown"> => {
+  try {
+    return await locator[method]({ timeout: timeoutMs });
+  } catch {
+    return "unknown";
+  }
+};
+
+const formatBooleanState = (value: boolean | "unknown"): string => {
+  return value === "unknown" ? "unknown" : value ? "yes" : "no";
+};
+
+const inspectLocatorActionability = async (
+  locator: Locator,
+  timeoutMs: number,
+): Promise<{
+  count: number;
+  visible: boolean | "unknown";
+  enabled: boolean | "unknown";
+  editable: boolean | "unknown";
+  boundingBox: Awaited<ReturnType<Locator["boundingBox"]>>;
+  text: string;
+}> => {
+  const count = await locator.count();
+  const first = locator.first();
+  const [visible, enabled, editable, boundingBox] = await Promise.all([
+    maybeCallLocatorBoolean(first, "isVisible", timeoutMs),
+    maybeCallLocatorBoolean(first, "isEnabled", timeoutMs),
+    maybeCallLocatorBoolean(first, "isEditable", timeoutMs),
+    first.boundingBox({ timeout: timeoutMs }).catch(() => null),
+  ]);
+  const text = await first.innerText({ timeout: timeoutMs }).catch(() => "");
+
+  return {
+    count,
+    visible,
+    enabled,
+    editable,
+    boundingBox,
+    text: limitText(text, 2_000),
+  };
+};
+
+const assertLocatorActionable = async (
+  locator: Locator,
+  timeoutMs: number,
+  mode: "click" | "text",
+): Promise<void> => {
+  await locator.waitFor({
+    state: "visible",
+    timeout: timeoutMs,
+  });
+
+  if (mode === "click") {
+    const enabled = await locator.isEnabled({ timeout: timeoutMs });
+
+    if (!enabled) {
+      throw new Error("Target locator is visible but disabled.");
+    }
+
+    return;
+  }
+
+  const editable = await locator.isEditable({ timeout: timeoutMs });
+
+  if (!editable) {
+    throw new Error("Target locator is visible but not editable.");
+  }
+};
+
+const createBrowserPageSnapshot = async (
+  page: Page,
+  timeoutMs: number,
+): Promise<string[]> => {
+  const title = await page.title();
+  const bodyText = await readVisibleBodyText(page, timeoutMs);
+  const domLines = await page
+    .evaluate<string[]>(`
+(() => {
+  const clean = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+  const describe = (element) => {
+    const tag = element.tagName.toLowerCase();
+    const role = element.getAttribute("role");
+    const testId = element.getAttribute("data-testid") || element.getAttribute("data-test-id");
+    const aria = element.getAttribute("aria-label");
+    const text = clean(element.innerText || element.textContent || element.getAttribute("value") || element.getAttribute("placeholder"));
+    const bits = [tag];
+    if (role) bits.push("role=" + role);
+    if (testId) bits.push("testId=" + testId);
+    if (aria) bits.push("aria=" + aria);
+    if (text) bits.push("text=" + text.slice(0, 120));
+    return bits.join(" | ");
+  };
+  const selectors = [
+    "h1", "h2", "h3",
+    "button", "[role=button]",
+    "a[href]",
+    "input", "textarea", "select",
+    "[data-testid]", "[data-test-id]",
+    "[aria-label]"
+  ];
+  return Array.from(document.querySelectorAll(selectors.join(",")))
+    .map(describe)
+    .filter(Boolean)
+    .slice(0, ${MAX_BROWSER_SNAPSHOT_LINES});
+})()
+`)
+    .catch(() => []);
+
+  return [
+    `url: ${page.url()}`,
+    `title: ${title}`,
+    ...domLines.map((line) => `element: ${line}`),
+    "visible text:",
+    ...limitText(bodyText, 8_000).split(/\r?\n/u),
+  ];
+};
+
+const compareScreenshotBuffers = (
+  baseline: Buffer,
+  current: Buffer,
+): {
+  differingBytes: number;
+  comparedBytes: number;
+  differencePercent: number;
+} => {
+  const comparedBytes = Math.max(baseline.length, current.length);
+
+  if (comparedBytes === 0) {
+    return {
+      differingBytes: 0,
+      comparedBytes,
+      differencePercent: 0,
+    };
+  }
+
+  let differingBytes = 0;
+
+  for (let index = 0; index < comparedBytes; index += 1) {
+    if (baseline[index] !== current[index]) {
+      differingBytes += 1;
+    }
+  }
+
+  return {
+    differingBytes,
+    comparedBytes,
+    differencePercent: (differingBytes / comparedBytes) * 100,
+  };
+};
+
 const formatSessionLine = (session: BrowserSession): string => {
   return [
     `${session.id}`,
@@ -380,6 +731,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
             ...launched,
             headless: coerceBoolean(args, "headless") ?? true,
             startedAt: Date.now(),
+            screenshotBaselines: new Map(),
           };
 
           browserSessions.set(session.id, session);
@@ -611,7 +963,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
       spec: {
         name: "capture_browser_page",
         description:
-          "Capture a PNG screenshot from an open browser session for visual inspection.",
+          "Capture a PNG screenshot from an open browser session for visual inspection. Use baselineId to store screenshots for later compare_browser_screenshot checks.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -624,6 +976,11 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
               type: "boolean",
               description:
                 "Whether to capture the full scrollable page instead of only the viewport.",
+            },
+            baselineId: {
+              type: "string",
+              description:
+                "Optional stable id to store this screenshot as a comparison baseline for the session.",
             },
             timeoutMs: {
               type: "integer",
@@ -651,16 +1008,30 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
 
         try {
           const session = getBrowserSession(sessionId);
+          const baselineId = coerceBaselineId(args);
           const screenshot = await session.page.screenshot({
             fullPage: coerceBoolean(args, "fullPage") ?? false,
             timeout: coerceTimeoutMs(args),
             type: "png",
           });
+          const title = await session.page.title();
+
+          if (baselineId) {
+            session.screenshotBaselines.set(baselineId, {
+              id: baselineId,
+              screenshot,
+              url: session.page.url(),
+              title,
+              capturedAt: Date.now(),
+            });
+          }
+
           const summary = [
             `session: ${session.id}`,
             `url: ${session.page.url()}`,
-            `title: ${await session.page.title()}`,
+            `title: ${title}`,
             `bytes: ${screenshot.length}`,
+            ...(baselineId ? [`baseline: ${baselineId}`] : []),
           ].join("\n");
 
           return {
@@ -702,9 +1073,9 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
     },
     {
       spec: {
-        name: "click_browser_selector",
+        name: "snapshot_browser_page",
         description:
-          "Click an element in an open browser session using a Playwright selector. Read or capture the page before and after important clicks.",
+          "Create a text snapshot of the current browser page with URL, title, visible text, and key interactive elements. Use this to choose role/text/testId locators before acting.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -713,11 +1084,449 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
               type: "string",
               description: "Browser session id from start_browser_session.",
             },
-            selector: {
+            timeoutMs: {
+              type: "integer",
+              minimum: 1_000,
+              maximum: MAX_BROWSER_TIMEOUT_MS,
+              description: "Maximum snapshot timeout in milliseconds.",
+            },
+          },
+          required: ["sessionId"],
+        },
+      },
+      backingTool: "browser",
+      riskLevel: "low",
+      effect: "read",
+      execute: async (args) => {
+        const sessionId = coerceString(args, "sessionId");
+
+        if (!sessionId) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "snapshot_browser_page",
+            "Expected a non-empty `sessionId`.",
+          );
+        }
+
+        try {
+          const session = getBrowserSession(sessionId);
+          const lines = await createBrowserPageSnapshot(
+            session.page,
+            coerceTimeoutMs(args),
+          );
+
+          return {
+            toolResult: {
+              callId: crypto.randomUUID(),
+              name: "snapshot_browser_page",
+              output: lines.join("\n"),
+            },
+            sections: [
+              {
+                title: "Browser page snapshot",
+                lines: [
+                  ...lines.slice(0, MAX_BROWSER_SNAPSHOT_LINES),
+                  ...createLocatorGuidanceLines(),
+                ],
+              },
+            ],
+            traceLines: [
+              `snapshot_browser_page(${session.id}) -> ${lines.length} lines`,
+            ],
+          };
+        } catch (error) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "snapshot_browser_page",
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      },
+    },
+    {
+      spec: {
+        name: "compare_browser_screenshot",
+        description:
+          "Capture the current page and compare it with a screenshot baseline stored by capture_browser_page. Reports byte-level PNG differences for visual regression checks.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            sessionId: {
+              type: "string",
+              description: "Browser session id from start_browser_session.",
+            },
+            baselineId: {
               type: "string",
               description:
-                "Playwright selector for the target element, such as text=Submit or css=button[type=submit].",
+                "Baseline id previously stored by capture_browser_page.",
             },
+            fullPage: {
+              type: "boolean",
+              description:
+                "Whether to capture the full scrollable page before comparison.",
+            },
+            thresholdPercent: {
+              type: "number",
+              minimum: 0,
+              maximum: 100,
+              description:
+                "Allowed differing byte percentage before the comparison is marked changed. Defaults to 0.1.",
+            },
+            timeoutMs: {
+              type: "integer",
+              minimum: 1_000,
+              maximum: MAX_BROWSER_TIMEOUT_MS,
+              description: "Maximum screenshot timeout in milliseconds.",
+            },
+          },
+          required: ["sessionId", "baselineId"],
+        },
+      },
+      backingTool: "browser",
+      riskLevel: "low",
+      effect: "read",
+      execute: async (args) => {
+        const sessionId = coerceString(args, "sessionId");
+        const baselineId = coerceBaselineId(args);
+
+        if (!sessionId || !baselineId) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "compare_browser_screenshot",
+            "Expected non-empty `sessionId` and valid `baselineId` values.",
+          );
+        }
+
+        try {
+          const session = getBrowserSession(sessionId);
+          const baseline = session.screenshotBaselines.get(baselineId);
+
+          if (!baseline) {
+            return createToolErrorResult(
+              crypto.randomUUID(),
+              "compare_browser_screenshot",
+              `No screenshot baseline named \`${baselineId}\` exists for session \`${sessionId}\`.`,
+            );
+          }
+
+          const current = await session.page.screenshot({
+            fullPage: coerceBoolean(args, "fullPage") ?? false,
+            timeout: coerceTimeoutMs(args),
+            type: "png",
+          });
+          const thresholdPercent =
+            typeof args.thresholdPercent === "number" &&
+            Number.isFinite(args.thresholdPercent)
+              ? Math.min(Math.max(args.thresholdPercent, 0), 100)
+              : DEFAULT_SCREENSHOT_DIFF_THRESHOLD_PERCENT;
+          const comparison = compareScreenshotBuffers(
+            baseline.screenshot,
+            current,
+          );
+          const changed = comparison.differencePercent > thresholdPercent;
+          const lines = [
+            `session: ${session.id}`,
+            `baseline: ${baseline.id}`,
+            `baseline url: ${baseline.url}`,
+            `current url: ${session.page.url()}`,
+            `baseline title: ${baseline.title}`,
+            `current title: ${await session.page.title()}`,
+            `baseline captured: ${new Date(baseline.capturedAt).toISOString()}`,
+            `baseline bytes: ${baseline.screenshot.length}`,
+            `current bytes: ${current.length}`,
+            `differing bytes: ${comparison.differingBytes}/${comparison.comparedBytes}`,
+            `difference: ${comparison.differencePercent.toFixed(3)}%`,
+            `threshold: ${thresholdPercent.toFixed(3)}%`,
+            `changed: ${changed ? "yes" : "no"}`,
+          ];
+
+          return {
+            toolResult: {
+              callId: crypto.randomUUID(),
+              name: "compare_browser_screenshot",
+              output: lines.join("\n"),
+            },
+            sections: [
+              {
+                title: "Browser screenshot comparison",
+                lines,
+              },
+            ],
+            traceLines: [
+              `compare_browser_screenshot(${session.id}, ${baselineId}) -> ${comparison.differencePercent.toFixed(3)}%`,
+            ],
+          };
+        } catch (error) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "compare_browser_screenshot",
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      },
+    },
+    {
+      spec: {
+        name: "inspect_browser_locator",
+        description:
+          "Inspect a Playwright locator before acting. Reports match count, visibility, enabled/editable state, bounding box, and text. Prefer this with role/text/testId locators before risky clicks or typing.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            sessionId: {
+              type: "string",
+              description: "Browser session id from start_browser_session.",
+            },
+            ...getLocatorInputSchemaProperties(),
+            timeoutMs: {
+              type: "integer",
+              minimum: 1_000,
+              maximum: MAX_BROWSER_TIMEOUT_MS,
+              description: "Maximum locator inspection timeout in milliseconds.",
+            },
+          },
+          required: ["sessionId"],
+        },
+      },
+      backingTool: "browser",
+      riskLevel: "low",
+      effect: "read",
+      execute: async (args) => {
+        const sessionId = coerceString(args, "sessionId");
+
+        if (!sessionId) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "inspect_browser_locator",
+            "Expected a non-empty `sessionId`.",
+          );
+        }
+
+        try {
+          const session = getBrowserSession(sessionId);
+          const { locator, summary } = resolveBrowserLocator(
+            session.page,
+            args,
+          );
+          const inspection = await inspectLocatorActionability(
+            locator,
+            coerceTimeoutMs(args),
+          );
+          const box = inspection.boundingBox
+            ? `${inspection.boundingBox.x},${inspection.boundingBox.y} ${inspection.boundingBox.width}x${inspection.boundingBox.height}`
+            : "none";
+          const lines = [
+            `session: ${session.id}`,
+            `locator: ${summary}`,
+            `matches: ${inspection.count}`,
+            `visible: ${formatBooleanState(inspection.visible)}`,
+            `enabled: ${formatBooleanState(inspection.enabled)}`,
+            `editable: ${formatBooleanState(inspection.editable)}`,
+            `bounding box: ${box}`,
+            ...(inspection.text ? [`text: ${inspection.text}`] : []),
+            ...createLocatorGuidanceLines(),
+          ];
+
+          return {
+            toolResult: {
+              callId: crypto.randomUUID(),
+              name: "inspect_browser_locator",
+              output: lines.join("\n"),
+            },
+            sections: [
+              {
+                title: "Browser locator inspection",
+                lines,
+              },
+            ],
+            traceLines: [
+              `inspect_browser_locator(${session.id}, ${compactTraceText(summary)}) -> ${inspection.count}`,
+            ],
+          };
+        } catch (error) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "inspect_browser_locator",
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      },
+    },
+    {
+      spec: {
+        name: "wait_for_browser_page",
+        description:
+          "Wait explicitly for browser state instead of guessing with arbitrary delays. Supports load states, URL changes, visible/hidden/attached/detached locators, visible text, and bounded timeout waits.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            sessionId: {
+              type: "string",
+              description: "Browser session id from start_browser_session.",
+            },
+            waitFor: {
+              type: "string",
+              enum: BROWSER_WAIT_STRATEGIES,
+              description:
+                "Wait strategy. Prefer locator-visible/text/url/load-state over timeout.",
+            },
+            waitUntil: {
+              type: "string",
+              enum: WAIT_UNTIL_VALUES,
+              description:
+                "Load state for waitFor=load-state. Defaults to load; use networkidle sparingly.",
+            },
+            urlContains: {
+              type: "string",
+              description: "URL substring required for waitFor=url.",
+            },
+            text: {
+              type: "string",
+              description: "Visible text required for waitFor=text.",
+            },
+            milliseconds: {
+              type: "integer",
+              minimum: 1_000,
+              maximum: MAX_BROWSER_TIMEOUT_MS,
+              description:
+                "Bounded delay for waitFor=timeout when no event-based wait is possible.",
+            },
+            ...getLocatorInputSchemaProperties(),
+            timeoutMs: {
+              type: "integer",
+              minimum: 1_000,
+              maximum: MAX_BROWSER_TIMEOUT_MS,
+              description: "Maximum explicit wait timeout in milliseconds.",
+            },
+          },
+          required: ["sessionId", "waitFor"],
+        },
+      },
+      backingTool: "browser",
+      riskLevel: "low",
+      effect: "read",
+      execute: async (args) => {
+        const sessionId = coerceString(args, "sessionId");
+        const waitFor = coerceString(args, "waitFor");
+
+        if (!sessionId || !isBrowserWaitStrategy(waitFor)) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "wait_for_browser_page",
+            "Expected non-empty `sessionId` and supported `waitFor` strategy.",
+          );
+        }
+
+        try {
+          const session = getBrowserSession(sessionId);
+          const timeoutMs = coerceTimeoutMs(args);
+          const lines: string[] = [`session: ${session.id}`, `waitFor: ${waitFor}`];
+
+          if (waitFor === "load-state") {
+            const waitUntil = coerceString(args, "waitUntil");
+            const state =
+              isWaitUntil(waitUntil) && waitUntil !== "commit"
+                ? waitUntil
+                : "load";
+
+            await session.page.waitForLoadState(state, {
+              timeout: timeoutMs,
+            });
+            lines.push(`load state: ${state}`);
+          } else if (waitFor === "url") {
+            const urlContains = coerceBoundedBrowserText(args, "urlContains");
+
+            if (!urlContains) {
+              throw new Error("Expected `urlContains` for waitFor=url.");
+            }
+
+            await session.page.waitForURL(
+              (url) => url.toString().includes(urlContains),
+              { timeout: timeoutMs },
+            );
+            lines.push(`url contains: ${urlContains}`);
+          } else if (waitFor === "text") {
+            const text = coerceBoundedBrowserText(args, "text");
+
+            if (!text) {
+              throw new Error("Expected `text` for waitFor=text.");
+            }
+
+            await session.page.getByText(text).waitFor({
+              state: "visible",
+              timeout: timeoutMs,
+            });
+            lines.push(`text: ${text}`);
+          } else if (waitFor === "timeout") {
+            const milliseconds = Math.min(
+              coerceInteger(args, "milliseconds") ?? timeoutMs,
+              timeoutMs,
+            );
+
+            await session.page.waitForTimeout(milliseconds);
+            lines.push(`milliseconds: ${milliseconds}`);
+          } else {
+            const { locator, summary } = resolveBrowserLocator(
+              session.page,
+              args,
+            );
+            const state = waitFor.replace("locator-", "") as
+              | "attached"
+              | "detached"
+              | "hidden"
+              | "visible";
+
+            await locator.waitFor({
+              state,
+              timeout: timeoutMs,
+            });
+            lines.push(`locator: ${summary}`, `state: ${state}`);
+          }
+
+          const summaryLines = await navigationSummaryLines(session);
+
+          return {
+            toolResult: {
+              callId: crypto.randomUUID(),
+              name: "wait_for_browser_page",
+              output: [...lines, ...summaryLines].join("\n"),
+            },
+            sections: [
+              {
+                title: "Browser explicit wait",
+                lines: [...lines, ...summaryLines],
+              },
+            ],
+            traceLines: [
+              `wait_for_browser_page(${session.id}, ${waitFor})`,
+            ],
+          };
+        } catch (error) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "wait_for_browser_page",
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      },
+    },
+    {
+      spec: {
+        name: "click_browser_selector",
+        description:
+          "Click an element in an open browser session using Playwright locators. Prefer role/text/testId locators over raw selectors. The tool waits for visibility/enabled actionability before clicking; read, snapshot, or capture before and after important clicks.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            sessionId: {
+              type: "string",
+              description: "Browser session id from start_browser_session.",
+            },
+            ...getLocatorInputSchemaProperties(),
             timeoutMs: {
               type: "integer",
               minimum: 1_000,
@@ -725,7 +1534,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
               description: "Maximum locator timeout in milliseconds.",
             },
           },
-          required: ["sessionId", "selector"],
+          required: ["sessionId"],
         },
       },
       backingTool: "browser",
@@ -733,21 +1542,26 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
       effect: "external-side-effect",
       execute: async (args) => {
         const sessionId = coerceString(args, "sessionId");
-        const selector = coerceSelector(args);
 
-        if (!sessionId || !selector) {
+        if (!sessionId) {
           return createToolErrorResult(
             crypto.randomUUID(),
             "click_browser_selector",
-            "Expected non-empty `sessionId` and bounded `selector` values.",
+            "Expected a non-empty `sessionId`.",
           );
         }
 
         try {
           const session = getBrowserSession(sessionId);
+          const { locator, summary } = resolveBrowserLocator(
+            session.page,
+            args,
+          );
+          const timeoutMs = coerceTimeoutMs(args);
 
-          await session.page.locator(selector).click({
-            timeout: coerceTimeoutMs(args),
+          await assertLocatorActionable(locator, timeoutMs, "click");
+          await locator.click({
+            timeout: timeoutMs,
           });
 
           const lines = await navigationSummaryLines(session);
@@ -756,16 +1570,20 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
             toolResult: {
               callId: crypto.randomUUID(),
               name: "click_browser_selector",
-              output: [`Clicked selector: ${selector}`, ...lines].join("\n"),
+              output: [`Clicked locator: ${summary}`, ...lines].join("\n"),
             },
             sections: [
               {
                 title: "Browser click",
-                lines: [`selector: ${selector}`, ...lines],
+                lines: [
+                  `locator: ${summary}`,
+                  "actionability: visible and enabled",
+                  ...lines,
+                ],
               },
             ],
             traceLines: [
-              `click_browser_selector(${sessionId}, ${compactTraceText(selector)})`,
+              `click_browser_selector(${sessionId}, ${compactTraceText(summary)})`,
             ],
           };
         } catch (error) {
@@ -781,7 +1599,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
       spec: {
         name: "type_browser_text",
         description:
-          "Fill or type text into an element in an open browser session using a Playwright selector.",
+          "Fill or type text into an element in an open browser session using Playwright locators. Prefer label/role/text/testId locators over raw selectors. The tool waits for visibility/editability before entering text.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -790,11 +1608,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
               type: "string",
               description: "Browser session id from start_browser_session.",
             },
-            selector: {
-              type: "string",
-              description:
-                "Playwright selector for the target input, textarea, or editable element.",
-            },
+            ...getLocatorInputSchemaProperties(),
             text: {
               type: "string",
               description: "Text to enter into the selected element.",
@@ -812,7 +1626,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
               description: "Maximum locator timeout in milliseconds.",
             },
           },
-          required: ["sessionId", "selector", "text"],
+          required: ["sessionId", "text"],
         },
       },
       backingTool: "browser",
@@ -820,12 +1634,10 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
       effect: "external-side-effect",
       execute: async (args) => {
         const sessionId = coerceString(args, "sessionId");
-        const selector = coerceSelector(args);
         const text = typeof args.text === "string" ? args.text : undefined;
 
         if (
           !sessionId ||
-          !selector ||
           text === undefined ||
           text.length > MAX_TYPED_TEXT_LENGTH ||
           text.includes("\0")
@@ -839,16 +1651,21 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
 
         try {
           const session = getBrowserSession(sessionId);
-          const locator = session.page.locator(selector);
+          const { locator, summary } = resolveBrowserLocator(
+            session.page,
+            args,
+          );
           const mode = coerceString(args, "mode") === "type" ? "type" : "fill";
+          const timeoutMs = coerceTimeoutMs(args);
 
+          await assertLocatorActionable(locator, timeoutMs, "text");
           if (mode === "type") {
             await locator.pressSequentially(text, {
-              timeout: coerceTimeoutMs(args),
+              timeout: timeoutMs,
             });
           } else {
             await locator.fill(text, {
-              timeout: coerceTimeoutMs(args),
+              timeout: timeoutMs,
             });
           }
 
@@ -859,7 +1676,7 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
               callId: crypto.randomUUID(),
               name: "type_browser_text",
               output: [
-                `${mode === "type" ? "Typed" : "Filled"} selector: ${selector}`,
+                `${mode === "type" ? "Typed" : "Filled"} locator: ${summary}`,
                 ...lines,
               ].join("\n"),
             },
@@ -867,15 +1684,16 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
               {
                 title: "Browser text input",
                 lines: [
-                  `selector: ${selector}`,
+                  `locator: ${summary}`,
                   `mode: ${mode}`,
                   `text length: ${text.length}`,
+                  "actionability: visible and editable",
                   ...lines,
                 ],
               },
             ],
             traceLines: [
-              `type_browser_text(${sessionId}, ${compactTraceText(selector)}, chars=${text.length})`,
+              `type_browser_text(${sessionId}, ${compactTraceText(summary)}, chars=${text.length})`,
             ],
           };
         } catch (error) {

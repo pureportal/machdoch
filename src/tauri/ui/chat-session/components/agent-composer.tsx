@@ -14,8 +14,8 @@ import {
   ContextAttachmentMenuButton,
   ContextAttachmentsList,
 } from "./context-attachments";
-import { MemoryShortcutButton } from "./memory-shortcut-button";
 import { SessionModelPicker } from "./session-model-picker";
+import { ToolToggleButton } from "./tool-toggle-button";
 
 export type AgentComposerVariant = "session" | "quick";
 
@@ -125,42 +125,25 @@ const renderToggle = (
   variant: AgentComposerVariant,
   iconButtonClassName: string,
 ): JSX.Element => {
-  const stateClassName =
-    !toggle.disabled && toggle.pressed
-      ? toggle.activeClassName
-      : toggle.disabled
-        ? toggle.unavailableClassName
-        : undefined;
-
-  if (variant === "session") {
-    return (
-      <MemoryShortcutButton
-        key={toggle.id}
-        label={toggle.label}
-        description={toggle.description ?? toggle.title ?? toggle.label}
-        pressed={toggle.pressed}
-        disabled={toggle.disabled}
-        onClick={() => toggle.onPressedChange(!toggle.pressed)}
-        icon={toggle.icon}
-        className={cn(stateClassName)}
-      />
-    );
-  }
-
   return (
-    <Button
+    <ToolToggleButton
       key={toggle.id}
-      type="button"
-      variant="outline"
-      aria-label={toggle.label}
-      title={toggle.title ?? toggle.label}
-      aria-pressed={toggle.pressed}
+      label={toggle.label}
+      title={toggle.title}
+      description={
+        variant === "session"
+          ? toggle.description ?? toggle.title ?? toggle.label
+          : undefined
+      }
+      icon={toggle.icon}
+      pressed={toggle.pressed}
       disabled={toggle.disabled}
-      onClick={() => toggle.onPressedChange(!toggle.pressed)}
-      className={cn(iconButtonClassName, stateClassName)}
-    >
-      {toggle.icon}
-    </Button>
+      disabledMode={variant === "quick" ? "native" : "aria"}
+      onPressedChange={toggle.onPressedChange}
+      baseClassName={variant === "quick" ? iconButtonClassName : undefined}
+      activeClassName={toggle.activeClassName}
+      disabledClassName={toggle.unavailableClassName}
+    />
   );
 };
 

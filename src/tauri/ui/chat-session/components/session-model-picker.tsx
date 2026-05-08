@@ -197,6 +197,18 @@ export const SessionModelPicker = ({
                         <span className="line-clamp-2 text-[11px] leading-4 text-slate-500">
                           Best for: {model.bestFor}
                         </span>
+                        {model.capabilityHighlights.length > 0 ? (
+                          <span className="flex flex-wrap gap-1 pt-1">
+                            {model.capabilityHighlights.map((capability) => (
+                              <span
+                                key={capability}
+                                className="rounded-full border border-slate-700/80 bg-slate-950/70 px-1.5 py-0.5 text-[10px] leading-4 font-medium text-slate-400"
+                              >
+                                {capability}
+                              </span>
+                            ))}
+                          </span>
+                        ) : null}
                       </span>
                     </button>
                   );

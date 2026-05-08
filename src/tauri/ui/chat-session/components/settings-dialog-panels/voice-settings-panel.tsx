@@ -13,6 +13,7 @@ import {
   ChoiceButtons,
   SettingPanel,
   SettingsCard,
+  SettingsProviderChoice,
   SettingsStatus,
 } from "./shared";
 import type { VoiceSettingsControls } from "./types";
@@ -58,28 +59,23 @@ export const VoiceSettingsPanel = ({
       description="Voice provider and device selections apply immediately."
     >
       <div className="grid gap-0">
-        <SettingPanel
+        <SettingsProviderChoice
           label="Speak to text"
           detail={setup.speechToTextAvailabilityDescription}
-        >
-          <ChoiceButtons
-            value={setup.speechToTextProvider}
-            options={(["none", ...USER_SPEECH_TO_TEXT_PROVIDER_ORDER] as const).map(
-              (provider) => ({
-                value: provider,
-                label: getSpeechToTextProviderLabel(provider),
-                ariaLabel: `Speak to text provider ${getSpeechToTextProviderLabel(provider)}`,
-                disabled:
-                  provider !== "none" &&
-                  !speechToTextProviderConfigured.get(provider),
-              }),
-            )}
-            disabled={setup.speechToTextProviderSaving}
-            onChange={(provider) => {
-              void setup.onSpeechToTextProviderChange(provider);
-            }}
-          />
-        </SettingPanel>
+          value={setup.speechToTextProvider}
+          options={(["none", ...USER_SPEECH_TO_TEXT_PROVIDER_ORDER] as const).map(
+            (provider) => ({
+              value: provider,
+              label: getSpeechToTextProviderLabel(provider),
+              ariaLabel: `Speak to text provider ${getSpeechToTextProviderLabel(provider)}`,
+              disabled:
+                provider !== "none" &&
+                !speechToTextProviderConfigured.get(provider),
+            }),
+          )}
+          disabled={setup.speechToTextProviderSaving}
+          onChange={setup.onSpeechToTextProviderChange}
+        />
 
         <SettingPanel label="Input device">
           <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
@@ -136,23 +132,21 @@ export const VoiceSettingsPanel = ({
           </div>
         </SettingPanel>
 
-        <SettingPanel label="Voice provider" detail={setup.availabilityDescription}>
-          <ChoiceButtons
-            value={setup.aiProvider}
-            options={(["none", ...USER_VOICE_AI_PROVIDER_ORDER] as const).map(
-              (provider) => ({
-                value: provider,
-                label: getVoiceAiProviderLabel(provider),
-                disabled:
-                  provider !== "none" && !aiVoiceProviderConfigured.get(provider),
-              }),
-            )}
-            disabled={setup.aiProviderSaving}
-            onChange={(provider) => {
-              void setup.onAiProviderChange(provider);
-            }}
-          />
-        </SettingPanel>
+        <SettingsProviderChoice
+          label="Voice provider"
+          detail={setup.availabilityDescription}
+          value={setup.aiProvider}
+          options={(["none", ...USER_VOICE_AI_PROVIDER_ORDER] as const).map(
+            (provider) => ({
+              value: provider,
+              label: getVoiceAiProviderLabel(provider),
+              disabled:
+                provider !== "none" && !aiVoiceProviderConfigured.get(provider),
+            }),
+          )}
+          disabled={setup.aiProviderSaving}
+          onChange={setup.onAiProviderChange}
+        />
 
         <SettingPanel label="Replies">
           <ChoiceButtons

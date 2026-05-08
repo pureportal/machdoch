@@ -9,6 +9,22 @@ interface MockLocator {
   click: ReturnType<typeof vi.fn<AsyncUnknownFunction<void>>>;
   fill: ReturnType<typeof vi.fn<AsyncUnknownFunction<void>>>;
   pressSequentially: ReturnType<typeof vi.fn<AsyncUnknownFunction<void>>>;
+  waitFor: ReturnType<typeof vi.fn<AsyncUnknownFunction<void>>>;
+  count: ReturnType<typeof vi.fn<AsyncUnknownFunction<number>>>;
+  first: ReturnType<typeof vi.fn<() => MockLocator>>;
+  isVisible: ReturnType<typeof vi.fn<AsyncUnknownFunction<boolean>>>;
+  isEnabled: ReturnType<typeof vi.fn<AsyncUnknownFunction<boolean>>>;
+  isEditable: ReturnType<typeof vi.fn<AsyncUnknownFunction<boolean>>>;
+  boundingBox: ReturnType<
+    typeof vi.fn<
+      AsyncUnknownFunction<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      } | null>
+    >
+  >;
 }
 
 interface MockPage {
@@ -16,10 +32,23 @@ interface MockPage {
   title: ReturnType<typeof vi.fn<AsyncUnknownFunction<string>>>;
   url: ReturnType<typeof vi.fn<() => string>>;
   locator: ReturnType<typeof vi.fn<(selector: string) => MockLocator>>;
+  getByRole: ReturnType<typeof vi.fn<(...args: unknown[]) => MockLocator>>;
+  getByText: ReturnType<typeof vi.fn<(...args: unknown[]) => MockLocator>>;
+  getByTestId: ReturnType<typeof vi.fn<(...args: unknown[]) => MockLocator>>;
+  getByLabel: ReturnType<typeof vi.fn<(...args: unknown[]) => MockLocator>>;
+  getByPlaceholder: ReturnType<
+    typeof vi.fn<(...args: unknown[]) => MockLocator>
+  >;
+  getByTitle: ReturnType<typeof vi.fn<(...args: unknown[]) => MockLocator>>;
+  getByAltText: ReturnType<typeof vi.fn<(...args: unknown[]) => MockLocator>>;
   textContent: ReturnType<
     typeof vi.fn<(...args: unknown[]) => Promise<string | null>>
   >;
   screenshot: ReturnType<typeof vi.fn<AsyncUnknownFunction<Buffer>>>;
+  evaluate: ReturnType<typeof vi.fn<AsyncUnknownFunction<string[]>>>;
+  waitForLoadState: ReturnType<typeof vi.fn<AsyncUnknownFunction<void>>>;
+  waitForURL: ReturnType<typeof vi.fn<AsyncUnknownFunction<void>>>;
+  waitForTimeout: ReturnType<typeof vi.fn<AsyncUnknownFunction<void>>>;
 }
 
 interface MockContext {
@@ -60,7 +89,7 @@ const createExecutionContext = (): AgentToolExecutionContext => {
 };
 
 const createMockLocator = (): MockLocator => {
-  return {
+  const locator = {
     innerText: vi.fn<AsyncUnknownFunction<string>>().mockResolvedValue(
       "Visible page text",
     ),
@@ -69,7 +98,32 @@ const createMockLocator = (): MockLocator => {
     pressSequentially: vi
       .fn<AsyncUnknownFunction<void>>()
       .mockResolvedValue(undefined),
+    waitFor: vi.fn<AsyncUnknownFunction<void>>().mockResolvedValue(undefined),
+    count: vi.fn<AsyncUnknownFunction<number>>().mockResolvedValue(1),
+    first: vi.fn<() => MockLocator>(),
+    isVisible: vi.fn<AsyncUnknownFunction<boolean>>().mockResolvedValue(true),
+    isEnabled: vi.fn<AsyncUnknownFunction<boolean>>().mockResolvedValue(true),
+    isEditable: vi.fn<AsyncUnknownFunction<boolean>>().mockResolvedValue(true),
+    boundingBox: vi
+      .fn<
+        AsyncUnknownFunction<{
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        } | null>
+      >()
+      .mockResolvedValue({
+        x: 12,
+        y: 24,
+        width: 120,
+        height: 32,
+      }),
   };
+
+  locator.first.mockReturnValue(locator);
+
+  return locator;
 };
 
 const createMockBrowserStack = () => {
@@ -81,12 +135,36 @@ const createMockBrowserStack = () => {
     ),
     url: vi.fn<() => string>().mockReturnValue("https://example.com/"),
     locator: vi.fn<(selector: string) => MockLocator>().mockReturnValue(locator),
+    getByRole: vi.fn<(...args: unknown[]) => MockLocator>().mockReturnValue(locator),
+    getByText: vi.fn<(...args: unknown[]) => MockLocator>().mockReturnValue(locator),
+    getByTestId: vi
+      .fn<(...args: unknown[]) => MockLocator>()
+      .mockReturnValue(locator),
+    getByLabel: vi.fn<(...args: unknown[]) => MockLocator>().mockReturnValue(locator),
+    getByPlaceholder: vi
+      .fn<(...args: unknown[]) => MockLocator>()
+      .mockReturnValue(locator),
+    getByTitle: vi.fn<(...args: unknown[]) => MockLocator>().mockReturnValue(locator),
+    getByAltText: vi
+      .fn<(...args: unknown[]) => MockLocator>()
+      .mockReturnValue(locator),
     textContent: vi
       .fn<(...args: unknown[]) => Promise<string | null>>()
       .mockResolvedValue("Fallback page text"),
     screenshot: vi
       .fn<AsyncUnknownFunction<Buffer>>()
       .mockResolvedValue(Buffer.from("fake-png")),
+    evaluate: vi.fn<AsyncUnknownFunction<string[]>>().mockResolvedValue([
+      "h1 | text=Example Domain",
+      "button | role=button | text=Continue",
+    ]),
+    waitForLoadState: vi
+      .fn<AsyncUnknownFunction<void>>()
+      .mockResolvedValue(undefined),
+    waitForURL: vi.fn<AsyncUnknownFunction<void>>().mockResolvedValue(undefined),
+    waitForTimeout: vi
+      .fn<AsyncUnknownFunction<void>>()
+      .mockResolvedValue(undefined),
   };
   const context: MockContext = {
     newPage: vi.fn<AsyncUnknownFunction<MockPage>>().mockResolvedValue(page),
@@ -154,6 +232,30 @@ describe("createBrowserToolDefinitions", () => {
       },
       {
         name: "capture_browser_page",
+        riskLevel: "low",
+        backingTool: "browser",
+        effect: "read",
+      },
+      {
+        name: "snapshot_browser_page",
+        riskLevel: "low",
+        backingTool: "browser",
+        effect: "read",
+      },
+      {
+        name: "compare_browser_screenshot",
+        riskLevel: "low",
+        backingTool: "browser",
+        effect: "read",
+      },
+      {
+        name: "inspect_browser_locator",
+        riskLevel: "low",
+        backingTool: "browser",
+        effect: "read",
+      },
+      {
+        name: "wait_for_browser_page",
         riskLevel: "low",
         backingTool: "browser",
         effect: "read",
@@ -282,6 +384,79 @@ describe("createBrowserToolDefinitions", () => {
     expect(locator.fill).toHaveBeenCalledWith("machdoch", {
       timeout: 30_000,
     });
+    expect(locator.waitFor).toHaveBeenCalledWith({
+      state: "visible",
+      timeout: 30_000,
+    });
+  });
+
+  it("supports semantic locators, snapshots, explicit waits, and screenshot comparison", async () => {
+    const { browser, page, locator } = createMockBrowserStack();
+
+    chromiumLaunchMock.mockResolvedValue(browser);
+
+    await getBrowserTool("start_browser_session").execute(
+      {
+        sessionId: "quality",
+        channel: "chrome",
+      },
+      createExecutionContext(),
+    );
+
+    const inspectResult = await getBrowserTool("inspect_browser_locator").execute(
+      {
+        sessionId: "quality",
+        locatorType: "role",
+        locatorValue: "button",
+        locatorName: "Continue",
+        exact: true,
+      },
+      createExecutionContext(),
+    );
+    const snapshotResult = await getBrowserTool("snapshot_browser_page").execute(
+      { sessionId: "quality" },
+      createExecutionContext(),
+    );
+
+    await getBrowserTool("wait_for_browser_page").execute(
+      {
+        sessionId: "quality",
+        waitFor: "locator-visible",
+        locatorType: "testId",
+        locatorValue: "submit",
+      },
+      createExecutionContext(),
+    );
+
+    await getBrowserTool("capture_browser_page").execute(
+      {
+        sessionId: "quality",
+        baselineId: "before-submit",
+      },
+      createExecutionContext(),
+    );
+    const compareResult = await getBrowserTool(
+      "compare_browser_screenshot",
+    ).execute(
+      {
+        sessionId: "quality",
+        baselineId: "before-submit",
+      },
+      createExecutionContext(),
+    );
+
+    expect(page.getByRole).toHaveBeenCalledWith("button", {
+      name: "Continue",
+      exact: true,
+    });
+    expect(page.getByTestId).toHaveBeenCalledWith("submit");
+    expect(inspectResult.toolResult.output).toContain("visible: yes");
+    expect(snapshotResult.toolResult.output).toContain("Example Domain");
+    expect(locator.waitFor).toHaveBeenCalledWith({
+      state: "visible",
+      timeout: 30_000,
+    });
+    expect(compareResult.toolResult.output).toContain("changed: no");
   });
 
   it("lists and closes browser sessions", async () => {

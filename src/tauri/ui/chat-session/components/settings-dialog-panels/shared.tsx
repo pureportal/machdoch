@@ -1,5 +1,7 @@
-import type { JSX, ReactNode } from "react";
+import { ArrowUpRight, Eye, EyeOff } from "lucide-react";
+import { useEffect, useRef, useState, type JSX, type ReactNode } from "react";
 import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
 import { cn } from "../../../lib/utils";
 import type { SettingsStatusMessage } from "./types";
 
@@ -111,6 +113,46 @@ export function ChoiceButtons<TValue extends string>({
   );
 }
 
+export interface SettingsProviderChoiceProps<TValue extends string> {
+  label: string;
+  detail?: string;
+  value: TValue;
+  options: ReadonlyArray<ChoiceOption<TValue>>;
+  disabled?: boolean;
+  className?: string;
+  contentClassName?: string;
+  onChange: (value: TValue) => Promise<void> | void;
+}
+
+export function SettingsProviderChoice<TValue extends string>({
+  label,
+  detail,
+  value,
+  options,
+  disabled,
+  className,
+  contentClassName,
+  onChange,
+}: SettingsProviderChoiceProps<TValue>): JSX.Element {
+  return (
+    <SettingPanel
+      label={label}
+      detail={detail}
+      className={className}
+      contentClassName={contentClassName}
+    >
+      <ChoiceButtons
+        value={value}
+        options={options}
+        disabled={disabled}
+        onChange={(nextValue) => {
+          void onChange(nextValue);
+        }}
+      />
+    </SettingPanel>
+  );
+}
+
 export const SettingsStatus = ({
   message,
 }: {
@@ -132,6 +174,21 @@ export const SettingsStatus = ({
       {message.text}
     </p>
   );
+};
+
+const getApiKeyValidationMessage = (
+  providerLabel: string,
+  draftKey: string,
+  saveAttempted: boolean,
+): SettingsStatusMessage | null => {
+  if (!saveAttempted || draftKey.trim().length > 0) {
+    return null;
+  }
+
+  return {
+    tone: "error",
+    text: `Enter a valid ${providerLabel} API key before saving.`,
+  };
 };
 
 export interface SettingsSaveBarProps {
@@ -169,5 +226,179 @@ export const SettingsSaveBar = ({
         {saving ? savingLabel : saveLabel}
       </Button>
     </div>
+  );
+};
+
+export interface CredentialPortalAction {
+  label: string;
+  title?: string;
+  onClick: () => Promise<void> | void;
+}
+
+export interface SettingsCredentialFormProps {
+  resetKey: string;
+  providerLabel: string;
+  keyValue: string;
+  saving: boolean;
+  message: SettingsStatusMessage | null;
+  dirtyText: string;
+  cleanText: string;
+  saveLabel: string;
+  keyLabel?: string;
+  placeholder?: string;
+  savingLabel?: string;
+  portalAction?: CredentialPortalAction;
+  onSave: (keyValue: string) => Promise<boolean> | boolean;
+}
+
+export const SettingsCredentialForm = ({
+  resetKey,
+  providerLabel,
+  keyValue,
+  saving,
+  message,
+  dirtyText,
+  cleanText,
+  saveLabel,
+  keyLabel,
+  placeholder,
+  savingLabel = "Saving...",
+  portalAction,
+  onSave,
+}: SettingsCredentialFormProps): JSX.Element => {
+  const [draftKey, setDraftKey] = useState(keyValue);
+  const [savedKey, setSavedKey] = useState(keyValue.trim());
+  const [lastExternalKey, setLastExternalKey] = useState(keyValue);
+  const [keyVisible, setKeyVisible] = useState(false);
+  const [saveAttempted, setSaveAttempted] = useState(false);
+  const lastResetKeyRef = useRef(resetKey);
+  const normalizedDraftKey = draftKey.trim();
+  const keyDirty = normalizedDraftKey !== savedKey;
+  const validationMessage = getApiKeyValidationMessage(
+    providerLabel,
+    draftKey,
+    saveAttempted || keyDirty,
+  );
+
+  useEffect(() => {
+    if (lastResetKeyRef.current !== resetKey) {
+      lastResetKeyRef.current = resetKey;
+      setDraftKey(keyValue);
+      setSavedKey(keyValue.trim());
+      setLastExternalKey(keyValue);
+      setKeyVisible(false);
+      setSaveAttempted(false);
+      return;
+    }
+
+    if (keyValue === lastExternalKey) {
+      return;
+    }
+
+    setDraftKey((currentDraft) =>
+      currentDraft.trim() === savedKey ? keyValue : currentDraft,
+    );
+    setSavedKey(keyValue.trim());
+    setLastExternalKey(keyValue);
+    setSaveAttempted(false);
+  }, [keyValue, lastExternalKey, resetKey, savedKey]);
+
+  const updateDraftKey = (value: string): void => {
+    setDraftKey(value);
+
+    if (saveAttempted && value.trim().length > 0) {
+      setSaveAttempted(false);
+    }
+  };
+
+  const saveDraftKey = async (): Promise<void> => {
+    setSaveAttempted(true);
+
+    if (normalizedDraftKey.length === 0) {
+      return;
+    }
+
+    const saved = await onSave(normalizedDraftKey);
+
+    if (saved) {
+      setDraftKey(normalizedDraftKey);
+      setSavedKey(normalizedDraftKey);
+      setLastExternalKey(normalizedDraftKey);
+      setSaveAttempted(false);
+    }
+  };
+
+  return (
+    <>
+      <SettingPanel label={keyLabel ?? `${providerLabel} API key`}>
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+          <Input
+            type={keyVisible ? "text" : "password"}
+            value={draftKey}
+            onChange={(event) => {
+              updateDraftKey(event.target.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void saveDraftKey();
+              }
+            }}
+            placeholder={placeholder ?? `Paste your ${providerLabel} API key`}
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={validationMessage ? true : undefined}
+            className="h-10 rounded-lg border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
+          />
+          <div className="flex items-center gap-2 md:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label={`${keyVisible ? "Hide" : "Show"} ${providerLabel} API key`}
+              title={`${keyVisible ? "Hide" : "Show"} ${providerLabel} API key`}
+              onClick={() => setKeyVisible((visible) => !visible)}
+              disabled={draftKey.trim().length === 0}
+              className="h-10 w-10 rounded-lg border-slate-800 bg-slate-950 text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40"
+            >
+              {keyVisible ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </Button>
+            {portalAction ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={portalAction.label}
+                title={portalAction.title ?? portalAction.label}
+                onClick={() => {
+                  void portalAction.onClick();
+                }}
+                className="h-10 w-10 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+              >
+                <ArrowUpRight className="h-4 w-4" />
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </SettingPanel>
+
+      <SettingsSaveBar
+        dirty={keyDirty}
+        dirtyText={dirtyText}
+        cleanText={cleanText}
+        saveLabel={saveLabel}
+        savingLabel={savingLabel}
+        saving={saving}
+        onSave={() => {
+          void saveDraftKey();
+        }}
+      />
+
+      <SettingsStatus message={validationMessage ?? message} />
+    </>
   );
 };
