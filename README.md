@@ -3,6 +3,13 @@
   <h1>machdoch</h1>
   <p><strong>Local-first OS AI agent for desktop and CLI.</strong></p>
   <p>Use AI models with your files, terminal, browser, Git repository, package manager, memory, voice, and desktop UI.</p>
+  <p>
+    <img src="./assets/branding/banner.png" alt="machdoch desktop app banner" width="960" />
+  </p>
+  <p>
+    <img src="./assets/branding/window-protected-message.png" alt="Windows protected your PC message explanation" width="720" />
+  </p>
+  <p><strong>Windows SmartScreen note:</strong> For the official machdoch installer downloaded from this repository, this message is harmless: it appears because the app is new or uncommon and has not built SmartScreen reputation yet, not because Windows detected malware. Verify the download source before choosing <strong>More info</strong> and <strong>Run anyway</strong>.</p>
 </div>
 
 <p align="center">
