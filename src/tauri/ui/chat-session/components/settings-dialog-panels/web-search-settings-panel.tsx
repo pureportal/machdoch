@@ -31,7 +31,7 @@ const getApiKeyValidationMessage = (
 
   return {
     tone: "error",
-    text: `Enter a ${providerLabel} API key before saving.`,
+    text: `Enter a valid ${providerLabel} API key before saving.`,
   };
 };
 
@@ -49,7 +49,7 @@ export const WebSearchSettingsPanel = ({
   const validationMessage = getApiKeyValidationMessage(
     selectedProviderLabel,
     draftKey,
-    saveAttempted,
+    saveAttempted || keyDirty,
   );
   const webSearchProviderOptions: ReadonlyArray<{
     value: WebSearchProvider;

@@ -149,11 +149,11 @@ describe("SettingsDialog", () => {
     fireEvent.keyDown(keyInput, { key: "Enter" });
 
     expect(
-      await screen.findByText(/Enter an OpenAI API key before saving\./i),
+      await screen.findByText(/Enter a valid OpenAI API key before saving\./i),
     ).toBeDefined();
     expect(onSave).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByDisplayValue("   "), {
+    fireEvent.change(keyInput, {
       target: { value: " sk-new " },
     });
     fireEvent.click(screen.getByRole("button", { name: /Save provider key/i }));
