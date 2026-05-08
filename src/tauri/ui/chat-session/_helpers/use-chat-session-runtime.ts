@@ -100,7 +100,7 @@ export interface ChatSessionRuntimeController {
   handleProviderSetupProviderChange: (provider: UserApiKeyProvider) => void;
   handleProviderSetupPortalOpen: (provider: UserApiKeyProvider) => Promise<void>;
   handleProviderSetupKeyChange: (value: string) => void;
-  handleProviderSetupSave: () => Promise<void>;
+  handleProviderSetupSave: (keyValue?: string) => Promise<boolean>;
   handleVoiceActiveProviderSave: (provider: VoiceAiProvider) => Promise<void>;
   handleSpeechToTextActiveProviderSave: (
     provider: SpeechToTextProvider,
@@ -115,7 +115,7 @@ export interface ChatSessionRuntimeController {
     provider: UserWebSearchApiKeyProvider,
   ) => void;
   handleWebSearchSetupKeyChange: (value: string) => void;
-  handleWebSearchSetupSave: () => Promise<void>;
+  handleWebSearchSetupSave: (keyValue?: string) => Promise<boolean>;
   handleDesktopSettingsSave: (settings: UserDesktopSettings) => Promise<void>;
   handleAgentLimitsSettingsSave: (
     settings: UserAgentLimitsSettings,
@@ -829,11 +829,13 @@ export const useChatSessionRuntime = (
     [webSearchSetupMessage, webSearchSetupProvider],
   );
 
-  const handleProviderSetupSave = useCallback(async (): Promise<void> => {
-    const normalizedKey = providerSetupKey.trim();
+  const handleProviderSetupSave = useCallback(async (
+    keyValue?: string,
+  ): Promise<boolean> => {
+    const normalizedKey = (keyValue ?? providerSetupKey).trim();
 
     if (!normalizedKey || !isTauri()) {
-      return;
+      return false;
     }
 
     setProviderSetupSaving(true);
@@ -866,6 +868,8 @@ export const useChatSessionRuntime = (
       ]);
       applyLoadedUserVoiceSettings(voiceSettings);
       applyLoadedUserSpeechToTextSettings(speechToTextSettings);
+
+      return true;
     } catch (error) {
       setProviderSetupMessage({
         tone: "error",
@@ -874,6 +878,8 @@ export const useChatSessionRuntime = (
             ? error.message
             : "The API key could not be saved.",
       });
+
+      return false;
     } finally {
       setProviderSetupSaving(false);
     }
@@ -1050,11 +1056,13 @@ export const useChatSessionRuntime = (
     ],
   );
 
-  const handleWebSearchSetupSave = useCallback(async (): Promise<void> => {
-    const normalizedKey = webSearchSetupKey.trim();
+  const handleWebSearchSetupSave = useCallback(async (
+    keyValue?: string,
+  ): Promise<boolean> => {
+    const normalizedKey = (keyValue ?? webSearchSetupKey).trim();
 
     if (!normalizedKey || !isTauri()) {
-      return;
+      return false;
     }
 
     setWebSearchSetupSaving(true);
@@ -1082,6 +1090,8 @@ export const useChatSessionRuntime = (
         options.activeSessionWorkspace,
         options.activeSessionProfile,
       );
+
+      return true;
     } catch (error) {
       setWebSearchSetupMessage({
         tone: "error",
@@ -1090,6 +1100,8 @@ export const useChatSessionRuntime = (
             ? error.message
             : "The web-search API key could not be saved.",
       });
+
+      return false;
     } finally {
       setWebSearchSetupSaving(false);
     }

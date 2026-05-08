@@ -1,0 +1,192 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Dialog } from "../../components/ui/dialog";
+import { SettingsDialog, type SettingsDialogProps } from "./settings-dialog";
+
+class TestResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+beforeAll(() => {
+  vi.stubGlobal("ResizeObserver", TestResizeObserver);
+});
+
+afterAll(() => {
+  vi.unstubAllGlobals();
+});
+
+const createSettingsDialogProps = (
+  overrides: Partial<SettingsDialogProps> = {},
+): SettingsDialogProps => ({
+  settingsSection: "providers",
+  onSettingsSectionChange: vi.fn(),
+  providerSetup: {
+    provider: "openai",
+    keyValue: "sk-old",
+    saving: false,
+    message: null,
+    onProviderChange: vi.fn(),
+    onOpenProviderPortal: vi.fn(),
+    onKeyChange: vi.fn(),
+    onSave: vi.fn(async () => true),
+  },
+  webSearchSetup: {
+    activeProvider: "none",
+    provider: "perplexity",
+    keyValue: "pplx-old",
+    saving: false,
+    message: null,
+    onActiveProviderChange: vi.fn(),
+    onProviderChange: vi.fn(),
+    onKeyChange: vi.fn(),
+    onSave: vi.fn(async () => true),
+  },
+  agentLimitsSetup: {
+    settings: {
+      infinite: false,
+      executorTurns: 64,
+      autopilotExecutorIterations: 16,
+    },
+    saving: false,
+    message: null,
+    onSave: vi.fn(),
+  },
+  memorySetup: {
+    settings: {
+      globalEnabled: false,
+      entries: [],
+    },
+    saving: false,
+    message: null,
+    onGlobalEnabledChange: vi.fn(),
+  },
+  desktopSetup: {
+    settings: {
+      autostartEnabled: false,
+      autostartMinimized: false,
+      autostartToTray: false,
+      assistantBubbleEnabled: true,
+      assistantBubbleHideWhenFullscreen: true,
+      assistantBubbleTemporarilyHideSeconds: 6,
+      aiContextMaxMessages: 60,
+      quickVoiceEnabled: true,
+      quickVoiceShortcut: "CommandOrControl+Alt+V",
+      quickVoiceSilenceSeconds: 1.8,
+      quickVoiceMaxMessages: 50,
+    },
+    saving: false,
+    message: null,
+    onSave: vi.fn(),
+  },
+  voiceSetup: {
+    supported: true,
+    systemVoicesSupported: true,
+    autoSpeakResponses: false,
+    availabilityDescription: "System voices are available.",
+    speechToTextAvailabilityDescription: "Speech input is available.",
+    speechToTextProvider: "none",
+    speechToTextProviderAvailability: [
+      { provider: "openai", configured: true },
+      { provider: "google", configured: false },
+    ],
+    speechToTextProviderSaving: false,
+    speechInputDeviceId: null,
+    speechInputDevicesSupported: true,
+    speechInputDevicesRefreshing: false,
+    speechInputDeviceSaving: false,
+    speechInputDevices: [],
+    speechInputDeviceMessage: null,
+    speechToTextProviderMessage: null,
+    aiProvider: "none",
+    aiProviderAvailability: [
+      { provider: "openai", configured: true },
+      { provider: "google", configured: false },
+    ],
+    aiProviderSaving: false,
+    aiProviderMessage: null,
+    preferredVoiceURI: null,
+    rate: 1,
+    voiceOptions: [],
+    onSpeechToTextProviderChange: vi.fn(),
+    onSpeechInputDeviceChange: vi.fn(),
+    onRefreshSpeechInputDevices: vi.fn(),
+    onAiProviderChange: vi.fn(),
+    onAutoSpeakResponsesChange: vi.fn(),
+    onPreferredVoiceChange: vi.fn(),
+    onRateChange: vi.fn(),
+  },
+  ...overrides,
+});
+
+const renderSettingsDialog = (props: SettingsDialogProps): void => {
+  render(
+    <Dialog open>
+      <SettingsDialog {...props} />
+    </Dialog>,
+  );
+};
+
+describe("SettingsDialog", () => {
+  it("validates provider API key drafts before saving", async () => {
+    const onSave = vi.fn(async () => true);
+    const props = createSettingsDialogProps({
+      providerSetup: {
+        ...createSettingsDialogProps().providerSetup,
+        onSave,
+      },
+    });
+
+    renderSettingsDialog(props);
+
+    const keyInput = screen.getByDisplayValue("sk-old");
+
+    fireEvent.change(keyInput, {
+      target: { value: "   " },
+    });
+    expect(screen.getByText("Unsaved provider key changes")).toBeDefined();
+
+    fireEvent.keyDown(keyInput, { key: "Enter" });
+
+    expect(
+      await screen.findByText(/Enter an OpenAI API key before saving\./i),
+    ).toBeDefined();
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByDisplayValue("   "), {
+      target: { value: " sk-new " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save provider key/i }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith("sk-new");
+    });
+  });
+
+  it("saves the current web-search key draft value", async () => {
+    const onSave = vi.fn(async () => true);
+    const props = createSettingsDialogProps({
+      settingsSection: "web-search",
+      webSearchSetup: {
+        ...createSettingsDialogProps().webSearchSetup,
+        onSave,
+      },
+    });
+
+    renderSettingsDialog(props);
+
+    fireEvent.change(screen.getByDisplayValue("pplx-old"), {
+      target: { value: " pplx-new " },
+    });
+
+    expect(screen.getByText("Unsaved web-search key changes")).toBeDefined();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Save web-search key/i }),
+    );
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith("pplx-new");
+    });
+  });
+});

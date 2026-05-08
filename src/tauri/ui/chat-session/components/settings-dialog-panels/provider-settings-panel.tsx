@@ -37,6 +37,7 @@ export const ProviderSettingsPanel = ({
 }: ProviderSettingsPanelProps): JSX.Element => {
   const [draftKey, setDraftKey] = useState(setup.keyValue);
   const [savedKey, setSavedKey] = useState(setup.keyValue.trim());
+  const [lastExternalKey, setLastExternalKey] = useState(setup.keyValue);
   const [keyVisible, setKeyVisible] = useState(false);
   const [saveAttempted, setSaveAttempted] = useState(false);
   const providerLabel = getProviderLabel(setup.provider);
@@ -51,16 +52,23 @@ export const ProviderSettingsPanel = ({
   useEffect(() => {
     setDraftKey(setup.keyValue);
     setSavedKey(setup.keyValue.trim());
+    setLastExternalKey(setup.keyValue);
     setKeyVisible(false);
     setSaveAttempted(false);
   }, [setup.provider]);
 
   useEffect(() => {
-    if (!keyDirty) {
-      setDraftKey(setup.keyValue);
-      setSavedKey(setup.keyValue.trim());
+    if (setup.keyValue === lastExternalKey) {
+      return;
     }
-  }, [keyDirty, setup.keyValue]);
+
+    setDraftKey((currentDraft) =>
+      currentDraft.trim() === savedKey ? setup.keyValue : currentDraft,
+    );
+    setSavedKey(setup.keyValue.trim());
+    setLastExternalKey(setup.keyValue);
+    setSaveAttempted(false);
+  }, [lastExternalKey, savedKey, setup.keyValue]);
 
   const updateDraftKey = (value: string): void => {
     setDraftKey(value);
@@ -82,6 +90,7 @@ export const ProviderSettingsPanel = ({
     if (saved) {
       setDraftKey(normalizedDraftKey);
       setSavedKey(normalizedDraftKey);
+      setLastExternalKey(normalizedDraftKey);
       setSaveAttempted(false);
     }
   };
