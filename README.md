@@ -1,15 +1,8 @@
 <div align="center">
-  <img src="./assets/branding/logo.png" alt="machdoch logo" width="120" />
+  <img src="./assets/branding/banner.png" alt="machdoch desktop app banner" width="960" />
   <h1>machdoch</h1>
   <p><strong>Local-first OS AI agent for desktop and CLI.</strong></p>
   <p>Use AI models with your files, terminal, browser, Git repository, package manager, memory, voice, and desktop UI.</p>
-  <p>
-    <img src="./assets/branding/banner.png" alt="machdoch desktop app banner" width="960" />
-  </p>
-  <p>
-    <img src="./assets/branding/window-protected-message.png" alt="Windows protected your PC message explanation" width="720" />
-  </p>
-  <p><strong>Windows SmartScreen note:</strong> For the official machdoch installer downloaded from this repository, this message is harmless: it appears because the app is new or uncommon and has not built SmartScreen reputation yet, not because Windows detected malware. Verify the download source before choosing <strong>More info</strong> and <strong>Run anyway</strong>.</p>
 </div>
 
 <p align="center">
@@ -40,6 +33,13 @@
 Release downloads: <https://github.com/pureportal/machdoch/releases/latest>
 
 Release builds publish Windows and Linux desktop packages with stable asset names.
+
+> [!NOTE]
+> Windows SmartScreen can show **Windows protected your PC** for the official machdoch installer because the app is new or uncommon and has not built SmartScreen reputation yet. This warning is harmless in this case and is not a malware detection. Verify that you downloaded the installer from this repository, then choose **More info** and **Run anyway**.
+
+<p align="center">
+  <img src="./assets/branding/window-protected-message.png" alt="Windows protected your PC message explanation" width="520" />
+</p>
 
 ### Windows Setup
 
