@@ -66,6 +66,7 @@ const createSettingsDialogProps = (
       autostartEnabled: false,
       autostartMinimized: false,
       autostartToTray: false,
+      alwaysRunAsAdministrator: false,
       assistantBubbleEnabled: true,
       assistantBubbleHideWhenFullscreen: true,
       assistantBubbleTemporarilyHideSeconds: 6,

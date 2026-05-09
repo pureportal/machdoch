@@ -1082,6 +1082,46 @@ describe("ChatSession component", () => {
     saveUserDesktopSettingsSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
+  it("saves Always Run as Administrator as a desktop UI preference", async () => {
+    const saveUserDesktopSettingsSpy = vi
+      .spyOn(runtime, "saveUserDesktopSettings")
+      .mockImplementation(async (settings) => settings);
+
+    render(<ChatSession />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Desktop$/i }));
+
+    const adminPanel = screen
+      .getByText(/^Always run as administrator$/i)
+      .closest("[data-setting-panel]");
+
+    expect(adminPanel).not.toBeNull();
+    expect(
+      within(adminPanel as HTMLElement)
+        .getByRole("button", { name: "Disabled" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    fireEvent.click(
+      within(adminPanel as HTMLElement).getByRole("button", {
+        name: "Enabled",
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Save desktop settings/i }));
+
+    await waitFor(() => {
+      expect(saveUserDesktopSettingsSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          alwaysRunAsAdministrator: true,
+        }),
+      );
+    });
+
+    saveUserDesktopSettingsSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
   it("normalizes desktop numeric settings before saving", async () => {
     const saveUserDesktopSettingsSpy = vi
       .spyOn(runtime, "saveUserDesktopSettings")

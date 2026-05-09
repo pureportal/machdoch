@@ -87,6 +87,7 @@ export const hasDesktopSettingsDraftChanges = (
     left.autostartEnabled !== right.autostartEnabled ||
     left.autostartMinimized !== right.autostartMinimized ||
     left.autostartToTray !== right.autostartToTray ||
+    left.alwaysRunAsAdministrator !== right.alwaysRunAsAdministrator ||
     left.assistantBubbleEnabled !== right.assistantBubbleEnabled ||
     left.assistantBubbleHideWhenFullscreen !==
       right.assistantBubbleHideWhenFullscreen ||
@@ -150,6 +151,23 @@ export const DesktopSettingsPanel = ({
             disabled={setup.saving}
             onChange={(mode) => {
               setDraft(applyDesktopAutostartMode(draft, mode));
+            }}
+          />
+        </SettingPanel>
+
+        <SettingPanel label="Always run as administrator">
+          <ChoiceButtons
+            value={draft.alwaysRunAsAdministrator ? "enabled" : "disabled"}
+            options={[
+              { value: "enabled", label: "Enabled" },
+              { value: "disabled", label: "Disabled" },
+            ]}
+            disabled={setup.saving}
+            onChange={(value) => {
+              setDraft({
+                ...draft,
+                alwaysRunAsAdministrator: value === "enabled",
+              });
             }}
           />
         </SettingPanel>

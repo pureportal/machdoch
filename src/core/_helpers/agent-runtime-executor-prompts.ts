@@ -163,6 +163,18 @@ const createExecutionPlaybookSection = (): string => {
   ].join("\n");
 };
 
+export const createHostElevationRuntimeLine = (): string | undefined => {
+  if (process.env.MACHDOCH_DESKTOP_HOST_ELEVATED === "true") {
+    return "Desktop host elevation: administrator";
+  }
+
+  if (process.env.MACHDOCH_DESKTOP_HOST_ELEVATED === "false") {
+    return "Desktop host elevation: standard user";
+  }
+
+  return undefined;
+};
+
 export const createExecutorSystemPrompt = (
   config: RuntimeConfig,
   taskContext: ResolvedTaskContext,
@@ -231,11 +243,14 @@ export const createExecutorSystemPrompt = (
       `Runtime mode: ${config.mode}`,
       `Selected provider: ${config.provider}`,
       `Selected model: ${config.model}`,
+      createHostElevationRuntimeLine(),
       `Enabled high-level tools: ${config.enabledTools.join(", ")}`,
       `Available agent tools: ${tools.map((tool) => tool.name).join(", ")}`,
       ...promptContextLines,
       "</runtime>",
-    ].join("\n"),
+    ]
+      .filter((line): line is string => line !== undefined)
+      .join("\n"),
     ["<instructions>", ...instructionLines, "</instructions>"].join("\n"),
     [
       "<memory_contract>",

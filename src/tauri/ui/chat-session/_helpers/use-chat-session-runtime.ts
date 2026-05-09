@@ -133,6 +133,7 @@ const createEmptyUserDesktopSettings = (): UserDesktopSettings => {
     autostartEnabled: false,
     autostartMinimized: false,
     autostartToTray: false,
+    alwaysRunAsAdministrator: false,
     assistantBubbleEnabled: true,
     assistantBubbleHideWhenFullscreen: true,
     assistantBubbleTemporarilyHideSeconds: 6,
@@ -155,6 +156,9 @@ const createEmptyUserAgentLimitsSettings = (): UserAgentLimitsSettings => {
 const getDesktopSettingsSavedMessage = (
   settings: UserDesktopSettings,
 ): string => {
+  const administratorDescription = settings.alwaysRunAsAdministrator
+    ? " Packaged Windows launches will request administrator permissions."
+    : "";
   const surfacesDescription = [
     settings.assistantBubbleEnabled ? "bubble" : null,
     settings.quickVoiceEnabled ? "quick voice" : null,
@@ -164,25 +168,25 @@ const getDesktopSettingsSavedMessage = (
 
   if (!settings.autostartEnabled) {
     return surfacesDescription.length > 0
-      ? `Desktop assistant settings saved. Autostart is currently off, and ${surfacesDescription} is ready while the app is running.`
-      : "Desktop startup settings saved. Autostart is currently off.";
+      ? `Desktop assistant settings saved. Autostart is currently off, and ${surfacesDescription} is ready while the app is running.${administratorDescription}`
+      : `Desktop startup settings saved. Autostart is currently off.${administratorDescription}`;
   }
 
   if (settings.autostartToTray) {
     return `Desktop assistant settings saved. Login launches will start in the tray${
       surfacesDescription.length > 0 ? ` with ${surfacesDescription}.` : "."
-    }`;
+    }${administratorDescription}`;
   }
 
   if (settings.autostartMinimized) {
     return `Desktop assistant settings saved. Login launches will start minimized${
       surfacesDescription.length > 0 ? ` with ${surfacesDescription}.` : "."
-    }`;
+    }${administratorDescription}`;
   }
 
   return `Desktop assistant settings saved. Login launches will open normally${
     surfacesDescription.length > 0 ? ` with ${surfacesDescription}.` : "."
-  }`;
+  }${administratorDescription}`;
 };
 
 const getAgentLimitsSettingsSavedMessage = (

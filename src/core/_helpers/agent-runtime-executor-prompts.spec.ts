@@ -78,6 +78,18 @@ const createTool = (name: string): AgentModelToolSpec => {
   };
 };
 
+const originalDesktopHostElevated =
+  process.env.MACHDOCH_DESKTOP_HOST_ELEVATED;
+
+afterEach(() => {
+  if (originalDesktopHostElevated === undefined) {
+    delete process.env.MACHDOCH_DESKTOP_HOST_ELEVATED;
+    return;
+  }
+
+  process.env.MACHDOCH_DESKTOP_HOST_ELEVATED = originalDesktopHostElevated;
+});
+
 describe("createExecutorSystemPrompt", () => {
   it("encourages proactive web research when search tools are available", () => {
     const prompt = createExecutorSystemPrompt(
@@ -179,6 +191,30 @@ describe("createExecutorSystemPrompt", () => {
     expect(prompt).toContain("Do not call file-write");
     expect(prompt).toContain("status `completed`");
     expect(prompt).toContain("runtime will surface that as a planned result");
+  });
+
+  it("surfaces the desktop host elevation state when provided", () => {
+    process.env.MACHDOCH_DESKTOP_HOST_ELEVATED = "true";
+
+    expect(
+      createExecutorSystemPrompt(
+        createRuntimeConfig(),
+        createTaskContext(),
+        [createTool("run_shell_command")],
+        createConversationContext(),
+      ),
+    ).toContain("Desktop host elevation: administrator");
+
+    process.env.MACHDOCH_DESKTOP_HOST_ELEVATED = "false";
+
+    expect(
+      createExecutorSystemPrompt(
+        createRuntimeConfig(),
+        createTaskContext(),
+        [createTool("run_shell_command")],
+        createConversationContext(),
+      ),
+    ).toContain("Desktop host elevation: standard user");
   });
 
   it("makes the current task authoritative over prior conversation context", () => {

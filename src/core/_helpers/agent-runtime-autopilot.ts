@@ -7,7 +7,10 @@ import type {
   TaskAutopilotReport,
   TaskExecutionSection,
 } from "../types.js";
-import { inferTaskStrategyProfile } from "./agent-runtime-executor-prompts.js";
+import {
+  createHostElevationRuntimeLine,
+  inferTaskStrategyProfile,
+} from "./agent-runtime-executor-prompts.js";
 import { coerceString, coerceStringArray } from "./agent-runtime-shared.js";
 import type { ExecutorCycleOutcome } from "./agent-runtime-types.js";
 import { limitText } from "./runtime-text.js";
@@ -185,8 +188,11 @@ export const createAutopilotMonitorSystemPrompt = (
       `Runtime mode: ${config.mode}`,
       `Selected provider: ${config.provider}`,
       `Selected model: ${config.model}`,
+      createHostElevationRuntimeLine(),
       "</runtime>",
-    ].join("\n"),
+    ]
+      .filter((line): line is string => line !== undefined)
+      .join("\n"),
   ].join("\n\n");
 };
 

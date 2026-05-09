@@ -76,7 +76,12 @@ pub(crate) fn run_cli(args: &[String]) -> Result<i32, String> {
 
 fn strip_launcher_mode_flags(args: &[String]) -> Vec<String> {
     args.iter()
-        .filter(|arg| arg.as_str() != CLI_FLAG && arg.as_str() != UI_FLAG)
+        .filter(|arg| {
+            !matches!(
+                arg.as_str(),
+                CLI_FLAG | UI_FLAG | desktop_shell::ADMIN_RELAUNCH_ARG
+            )
+        })
         .cloned()
         .collect()
 }

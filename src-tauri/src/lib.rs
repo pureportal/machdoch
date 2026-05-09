@@ -10,6 +10,8 @@ mod voice;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    desktop_shell::hide_console_window_for_admin_relaunch();
+
     match ui_control::try_run_ui_control_bridge_from_args() {
         Ok(true) => {
             return;
@@ -35,6 +37,16 @@ pub fn run() {
             std::process::exit(1);
         }
     };
+
+    match desktop_shell::relaunch_as_administrator_if_configured() {
+        Ok(true) => {
+            return;
+        }
+        Ok(false) => {}
+        Err(error) => {
+            eprintln!("Failed to restart machdoch as administrator: {error}");
+        }
+    }
 
     tauri::Builder::default()
         .on_window_event(|window, event| {

@@ -133,6 +133,7 @@ export interface UserDesktopSettings {
   autostartEnabled: boolean;
   autostartMinimized: boolean;
   autostartToTray: boolean;
+  alwaysRunAsAdministrator: boolean;
   assistantBubbleEnabled: boolean;
   assistantBubbleHideWhenFullscreen: boolean;
   assistantBubbleTemporarilyHideSeconds: number;
@@ -479,6 +480,7 @@ const createDefaultUserDesktopSettings = (): UserDesktopSettings => {
     autostartEnabled: false,
     autostartMinimized: false,
     autostartToTray: false,
+    alwaysRunAsAdministrator: false,
     assistantBubbleEnabled: true,
     assistantBubbleHideWhenFullscreen: true,
     assistantBubbleTemporarilyHideSeconds: 6,

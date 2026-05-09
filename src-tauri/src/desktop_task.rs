@@ -488,6 +488,14 @@ fn execute_desktop_task(
 
     cli_command
         .command
+        .env(
+            "MACHDOCH_DESKTOP_HOST_ELEVATED",
+            if crate::desktop_shell::current_process_has_administrator_rights() {
+                "true"
+            } else {
+                "false"
+            },
+        )
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 

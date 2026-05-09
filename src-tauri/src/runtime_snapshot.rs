@@ -155,6 +155,7 @@ pub struct UserDesktopSettings {
     pub(crate) autostart_enabled: bool,
     pub(crate) autostart_minimized: bool,
     pub(crate) autostart_to_tray: bool,
+    pub(crate) always_run_as_administrator: bool,
     pub(crate) assistant_bubble_enabled: bool,
     pub(crate) assistant_bubble_hide_when_fullscreen: bool,
     pub(crate) assistant_bubble_temporarily_hide_seconds: u32,
@@ -250,6 +251,7 @@ struct UserSpeechToTextConfigFile {
 struct UserDesktopConfigFile {
     autostart_minimized: Option<bool>,
     autostart_to_tray: Option<bool>,
+    always_run_as_administrator: Option<bool>,
     assistant_bubble_enabled: Option<bool>,
     assistant_bubble_hide_when_fullscreen: Option<bool>,
     assistant_bubble_temporarily_hide_seconds: Option<u32>,
@@ -445,6 +447,7 @@ fn normalize_user_desktop_settings_input(
         autostart_enabled: settings.autostart_enabled,
         autostart_minimized: settings.autostart_minimized,
         autostart_to_tray: settings.autostart_to_tray,
+        always_run_as_administrator: settings.always_run_as_administrator,
         assistant_bubble_enabled: settings.assistant_bubble_enabled,
         assistant_bubble_hide_when_fullscreen: settings.assistant_bubble_hide_when_fullscreen,
         assistant_bubble_temporarily_hide_seconds: clamp_assistant_bubble_hide_seconds(
@@ -1162,6 +1165,12 @@ pub(crate) fn load_user_desktop_launch_preferences() -> Result<UserDesktopLaunch
     })
 }
 
+pub(crate) fn load_user_desktop_admin_preference() -> Result<bool, String> {
+    let (config, _) = load_user_config_file()?;
+
+    Ok(config.desktop.always_run_as_administrator.unwrap_or(false))
+}
+
 pub(crate) fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>>(
     manager: &M,
 ) -> Result<UserDesktopSettings, String> {
@@ -1176,6 +1185,7 @@ pub(crate) fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>
         autostart_enabled,
         autostart_minimized: preferences.autostart_minimized,
         autostart_to_tray: preferences.autostart_to_tray,
+        always_run_as_administrator: config.desktop.always_run_as_administrator.unwrap_or(false),
         assistant_bubble_enabled: config.desktop.assistant_bubble_enabled.unwrap_or(true),
         assistant_bubble_hide_when_fullscreen: config
             .desktop
@@ -1352,6 +1362,8 @@ fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Manager<R>>(
 
     config.desktop.autostart_minimized = Some(normalized_settings.autostart_minimized);
     config.desktop.autostart_to_tray = Some(normalized_settings.autostart_to_tray);
+    config.desktop.always_run_as_administrator =
+        Some(normalized_settings.always_run_as_administrator);
     config.desktop.assistant_bubble_enabled = Some(normalized_settings.assistant_bubble_enabled);
     config.desktop.assistant_bubble_hide_when_fullscreen =
         Some(normalized_settings.assistant_bubble_hide_when_fullscreen);
@@ -1462,7 +1474,13 @@ pub async fn save_user_desktop_settings(
         );
     }
 
-    load_user_desktop_settings(&app)
+    let next_settings = load_user_desktop_settings(&app)?;
+
+    if next_settings.always_run_as_administrator {
+        crate::desktop_shell::restart_as_administrator_if_needed(&app)?;
+    }
+
+    Ok(next_settings)
 }
 
 #[tauri::command]

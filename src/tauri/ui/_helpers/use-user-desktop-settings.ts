@@ -9,6 +9,7 @@ const FALLBACK_USER_DESKTOP_SETTINGS: UserDesktopSettings = {
   autostartEnabled: false,
   autostartMinimized: false,
   autostartToTray: false,
+  alwaysRunAsAdministrator: false,
   assistantBubbleEnabled: true,
   assistantBubbleHideWhenFullscreen: true,
   assistantBubbleTemporarilyHideSeconds: 6,

@@ -4,6 +4,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(target_os = "windows")]
+use std::{ffi::OsStr, os::windows::ffi::OsStrExt};
+
 use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -11,6 +14,22 @@ use tauri::{
     AppHandle, Emitter, Manager, Runtime, Window, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut as GlobalShortcut, ShortcutState};
+#[cfg(target_os = "windows")]
+use windows::{
+    core::PCWSTR,
+    Win32::{
+        Foundation::{CloseHandle, ERROR_CANCELLED, HANDLE},
+        Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY},
+        System::{
+            Console::{FreeConsole, GetConsoleWindow},
+            Threading::{GetCurrentProcess, OpenProcessToken},
+        },
+        UI::{
+            Shell::ShellExecuteW,
+            WindowsAndMessaging::{ShowWindow, SW_HIDE},
+        },
+    },
+};
 use xcap::Window as DesktopWindow;
 
 use crate::runtime_snapshot;
@@ -22,6 +41,7 @@ pub(crate) const ASSISTANT_POPUP_WINDOW_LABEL: &str = "assistant-popup";
 pub(crate) const QUICK_VOICE_WINDOW_LABEL: &str = "quick-voice";
 pub(crate) const QUICK_VOICE_START_EVENT: &str = "machdoch://quick-voice-start";
 pub(crate) const DEFAULT_QUICK_VOICE_SHORTCUT: &str = "CommandOrControl+Alt+V";
+pub(crate) const ADMIN_RELAUNCH_ARG: &str = "--machdoch-admin-relaunch";
 
 const TRAY_ID: &str = "machdoch-tray";
 const TRAY_MENU_SHOW_ID: &str = "tray-show";
@@ -77,6 +97,242 @@ pub(crate) fn create_desktop_launch_id() -> String {
         .unwrap_or(0);
 
     format!("{}-{timestamp}", std::process::id())
+}
+
+pub(crate) fn hide_console_window_for_admin_relaunch() {
+    #[cfg(target_os = "windows")]
+    {
+        if !env::args().skip(1).any(|arg| arg == ADMIN_RELAUNCH_ARG) {
+            return;
+        }
+
+        unsafe {
+            let console_window = GetConsoleWindow();
+
+            if !console_window.is_invalid() {
+                let _ = ShowWindow(console_window, SW_HIDE);
+            }
+
+            let _ = FreeConsole();
+        }
+    }
+}
+
+pub(crate) fn current_process_has_administrator_rights() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        is_current_process_elevated().unwrap_or(false)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
+}
+
+pub(crate) fn administrator_relaunch_supported() -> bool {
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
+
+    #[cfg(all(target_os = "windows", not(debug_assertions)))]
+    {
+        true
+    }
+
+    #[cfg(all(target_os = "windows", debug_assertions))]
+    {
+        env::var("MACHDOCH_ENABLE_ADMIN_RELAUNCH_IN_DEV")
+            .map(|value| value == "true" || value == "1")
+            .unwrap_or(false)
+    }
+}
+
+pub(crate) fn relaunch_as_administrator_if_configured() -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        if !administrator_relaunch_supported() {
+            return Ok(false);
+        }
+
+        if !runtime_snapshot::load_user_desktop_admin_preference()? {
+            return Ok(false);
+        }
+
+        if is_current_process_elevated()? {
+            return Ok(false);
+        }
+
+        return start_elevated_relaunch();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(false)
+    }
+}
+
+pub(crate) fn restart_as_administrator_if_needed<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        if !administrator_relaunch_supported() {
+            return Ok(());
+        }
+
+        if is_current_process_elevated()? {
+            return Ok(());
+        }
+
+        if start_elevated_relaunch()? {
+            app.exit(0);
+        }
+
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn is_current_process_elevated() -> Result<bool, String> {
+    unsafe {
+        let mut token = HANDLE::default();
+
+        OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token)
+            .map_err(|error| format!("Failed to inspect the current process token: {error}"))?;
+
+        let mut elevation = TOKEN_ELEVATION::default();
+        let mut returned_length = 0u32;
+        let token_info_result = GetTokenInformation(
+            token,
+            TokenElevation,
+            Some(&mut elevation as *mut TOKEN_ELEVATION as *mut _),
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut returned_length,
+        );
+
+        let _ = CloseHandle(token);
+
+        token_info_result
+            .map_err(|error| format!("Failed to inspect process elevation: {error}"))?;
+
+        Ok(elevation.TokenIsElevated != 0)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn start_elevated_relaunch() -> Result<bool, String> {
+    let executable_path = env::current_exe()
+        .map_err(|error| format!("Failed to resolve the current executable path: {error}"))?;
+    let working_directory = env::current_dir().ok();
+    let parameters = build_elevated_ui_relaunch_parameters();
+
+    let operation = wide_null("runas");
+    let executable = wide_os_null(executable_path.as_os_str());
+    let parameters = wide_null(&parameters);
+    let working_directory = working_directory
+        .as_ref()
+        .map(|path| wide_os_null(path.as_os_str()))
+        .unwrap_or_else(|| vec![0]);
+
+    let result = unsafe {
+        ShellExecuteW(
+            None,
+            PCWSTR(operation.as_ptr()),
+            PCWSTR(executable.as_ptr()),
+            PCWSTR(parameters.as_ptr()),
+            PCWSTR(working_directory.as_ptr()),
+            SW_HIDE,
+        )
+    };
+    let result_code = result.0 as isize;
+
+    if result_code > 32 {
+        return Ok(true);
+    }
+
+    let result_code = result_code as u32;
+
+    if result_code == ERROR_CANCELLED.0 {
+        return Ok(false);
+    }
+
+    Err(format!(
+        "Failed to restart machdoch as administrator. ShellExecute returned {result_code}."
+    ))
+}
+
+#[cfg(target_os = "windows")]
+fn build_elevated_ui_relaunch_parameters() -> String {
+    std::iter::once("--ui".to_string())
+        .chain(std::iter::once(ADMIN_RELAUNCH_ARG.to_string()))
+        .chain(env::args_os().skip(1).filter_map(|argument| {
+            let argument = argument.to_string_lossy();
+
+            match argument.as_ref() {
+                "--ui" | "--cli" | ADMIN_RELAUNCH_ARG => None,
+                _ => Some(argument.into_owned()),
+            }
+        }))
+        .map(|argument| quote_windows_argument(&argument))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(target_os = "windows")]
+fn wide_null(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(target_os = "windows")]
+fn wide_os_null(value: &OsStr) -> Vec<u16> {
+    value.encode_wide().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(target_os = "windows")]
+fn quote_windows_argument(argument: &str) -> String {
+    if argument.is_empty() {
+        return "\"\"".to_string();
+    }
+
+    if !argument
+        .chars()
+        .any(|character| character.is_whitespace() || character == '"')
+    {
+        return argument.to_string();
+    }
+
+    let mut quoted = String::from("\"");
+    let mut backslash_count = 0usize;
+
+    for character in argument.chars() {
+        match character {
+            '\\' => {
+                backslash_count += 1;
+            }
+            '"' => {
+                quoted.push_str(&"\\".repeat(backslash_count * 2 + 1));
+                quoted.push('"');
+                backslash_count = 0;
+            }
+            _ => {
+                quoted.push_str(&"\\".repeat(backslash_count));
+                backslash_count = 0;
+                quoted.push(character);
+            }
+        }
+    }
+
+    quoted.push_str(&"\\".repeat(backslash_count * 2));
+    quoted.push('"');
+    quoted
 }
 
 pub(crate) fn validate_quick_voice_shortcut(shortcut: &str) -> Result<(), String> {

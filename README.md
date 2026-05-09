@@ -102,8 +102,14 @@ The desktop app provides:
 - provider setup for OpenAI, Anthropic, and Google
 - web-search setup for Perplexity, Tavily, and Serper
 - speech-to-text through OpenAI/Google and spoken replies through OpenAI/Google or system voices where available
-- a desktop assistant bubble, Quick Voice shortcut, tray behavior, and sign-in startup settings
+- a desktop assistant bubble, Quick Voice shortcut, tray behavior, sign-in startup settings, and optional Windows administrator launch
 - optional desktop UI control for screenshots, windows, mouse, keyboard, and Windows control handles
+
+### Windows Administrator Launch
+
+On Windows, **Settings > Desktop > Always run as administrator** stores a user preference that makes packaged app launches request elevation through the normal UAC prompt. If the app starts without administrator rights while this preference is enabled, it relaunches the desktop UI elevated and exits the unelevated copy.
+
+This automatic relaunch is disabled in debug/dev builds so `tauri dev` can keep the Vite dev server alive. To test the relaunch behavior in development, set `MACHDOCH_ENABLE_ADMIN_RELAUNCH_IN_DEV=true` before starting the Tauri dev process.
 
 ## CLI
 
@@ -311,6 +317,7 @@ Environment variables can also configure the runtime:
 | `MACHDOCH_AUTOPILOT_ITERATIONS` | Autopilot continuation limit override |
 | `MACHDOCH_INFINITE` | Set to `true` or `1` to disable loop-count limits |
 | `MACHDOCH_USER_CONFIG_DIR` | Override the user config directory |
+| `MACHDOCH_ENABLE_ADMIN_RELAUNCH_IN_DEV` | Set to `true` or `1` to allow Windows administrator relaunch while running debug/dev builds |
 
 When running through `sudo`, `machdoch` may read root's user config instead of your normal user config. Run `machdoch config` without `sudo`, or pass the relevant environment variables deliberately.
 
