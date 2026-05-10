@@ -7,6 +7,7 @@ import {
   printDefaultModelSummary,
   printProfileSummary,
   printSetApiSummary,
+  printSetConfigSummary,
   printSetGlobalMemorySummary,
   printToolSummary,
 } from "./_helpers/cli-summary-commands.js";
@@ -28,6 +29,10 @@ export const runCli = async (argv: string[]): Promise<void> => {
     }
     case "set-api": {
       await printSetApiSummary(args);
+      return;
+    }
+    case "set-config": {
+      await printSetConfigSummary(args);
       return;
     }
     case "set-global-memory": {

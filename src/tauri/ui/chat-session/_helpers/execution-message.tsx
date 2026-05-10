@@ -3,6 +3,7 @@ import type { Components } from "react-markdown";
 import type { TaskExecutionResult } from "../../../../core/types.js";
 import type { ChatSessionMessage } from "../../chat-session.model";
 import type { TaskThinkingTrace } from "../../task-thinking.model";
+import { getTaskActionDisplayContent } from "./task-action-prompts";
 
 export const createFallbackExecutionMarkdown = (
   execution: TaskExecutionResult,
@@ -49,6 +50,10 @@ export const getRenderedMessageContent = (
 
   if (message.role === "agent" && message.source?.kind === "execution") {
     return getExecutionMessageContent(message.source.execution);
+  }
+
+  if (message.role === "user") {
+    return getTaskActionDisplayContent(message.content) ?? message.content;
   }
 
   return message.content;
@@ -219,22 +224,28 @@ export const createExecutionThinkingTrace = (
 
 export const markdownComponents: Components = {
   p: ({ children }): JSX.Element => (
-    <p className="m-0 whitespace-pre-wrap">{children}</p>
+    <p className="m-0 whitespace-pre-wrap wrap-break-word">{children}</p>
   ),
   ul: ({ children }): JSX.Element => (
-    <ul className="m-0 list-disc space-y-1 pl-5">{children}</ul>
+    <ul className="m-0 min-w-0 list-disc space-y-1 pl-5 wrap-break-word">
+      {children}
+    </ul>
   ),
   ol: ({ children }): JSX.Element => (
-    <ol className="m-0 list-decimal space-y-1 pl-5">{children}</ol>
+    <ol className="m-0 min-w-0 list-decimal space-y-1 pl-5 wrap-break-word">
+      {children}
+    </ol>
   ),
-  li: ({ children }): JSX.Element => <li className="leading-6">{children}</li>,
+  li: ({ children }): JSX.Element => (
+    <li className="leading-6 wrap-break-word">{children}</li>
+  ),
   blockquote: ({ children }): JSX.Element => (
-    <blockquote className="m-0 border-l-2 border-slate-700 pl-4 text-slate-400 italic">
+    <blockquote className="m-0 min-w-0 border-l-2 border-slate-700 pl-4 text-slate-400 italic wrap-break-word">
       {children}
     </blockquote>
   ),
   pre: ({ children }): JSX.Element => (
-    <pre className="m-0 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-xs leading-6 text-slate-200">
+    <pre className="m-0 max-w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-xs leading-6 text-slate-200">
       {children}
     </pre>
   ),

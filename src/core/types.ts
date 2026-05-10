@@ -1,13 +1,25 @@
-export type RunMode = "plan" | "safe" | "ask" | "auto";
+import type {
+  ModelProvider,
+  RunMode,
+  ToolName,
+} from "./runtime-contract.generated.js";
 
-export type ToolName =
-  | "filesystem"
-  | "shell"
-  | "network"
-  | "browser"
-  | "git"
-  | "packages"
-  | "utilities";
+export type {
+  ModelProvider,
+  ProviderAvailability,
+  RuntimeAgentLimitOverrides,
+  RuntimeAgentLimits,
+  RuntimeConfig,
+  RuntimeProfileSummary,
+  RuntimeWebSearchConfig,
+  RunMode,
+  ToolName,
+  WebSearchProvider,
+  WebSearchProviderAvailability,
+  WorkspaceCompatibilityConfig,
+  WorkspaceConfigFile,
+  WorkspaceProfileConfig,
+} from "./runtime-contract.generated.js";
 
 export type ToolRiskLevel = "low" | "medium" | "high";
 
@@ -19,81 +31,7 @@ export type ToolCallEffect =
   | "external-read"
   | "external-side-effect";
 
-export type ModelProvider = "openai" | "anthropic" | "google" | "unconfigured";
-
-export type WebSearchProvider = "none" | "perplexity" | "tavily" | "serper";
-
 export type FrontmatterValue = string | number | boolean | string[];
-
-export interface WorkspaceCompatibilityConfig {
-  discoverGithubCustomizations?: boolean;
-}
-
-export interface RuntimeAgentLimitOverrides {
-  infinite?: boolean;
-  executorTurns?: number;
-  autopilotExecutorIterations?: number;
-}
-
-export interface RuntimeAgentLimits {
-  executorTurns: number | null;
-  autopilotExecutorIterations: number | null;
-}
-
-export interface WorkspaceProfileConfig {
-  description?: string;
-  mode?: RunMode;
-  enabledTools?: ToolName[];
-  provider?: Exclude<ModelProvider, "unconfigured">;
-  model?: string;
-  offline?: boolean;
-  agentLimits?: RuntimeAgentLimitOverrides;
-  compatibility?: WorkspaceCompatibilityConfig;
-}
-
-export interface WorkspaceConfigFile {
-  defaultProfile?: string;
-  defaultMode?: RunMode;
-  enabledTools?: ToolName[];
-  provider?: Exclude<ModelProvider, "unconfigured">;
-  model?: string;
-  offline?: boolean;
-  agentLimits?: RuntimeAgentLimitOverrides;
-  compatibility?: WorkspaceCompatibilityConfig;
-  profiles?: Record<string, WorkspaceProfileConfig>;
-}
-
-export interface ProviderAvailability {
-  provider: Exclude<ModelProvider, "unconfigured">;
-  configured: boolean;
-}
-
-export interface WebSearchProviderAvailability {
-  provider: Exclude<WebSearchProvider, "none">;
-  configured: boolean;
-}
-
-export interface RuntimeWebSearchConfig {
-  activeProvider: WebSearchProvider;
-  providerAvailability: WebSearchProviderAvailability[];
-}
-
-export interface RuntimeConfig {
-  workspaceRoot: string;
-  workspaceConfigPath?: string;
-  userConfigPath?: string;
-  activeProfile?: string;
-  availableProfiles: RuntimeProfileSummary[];
-  mode: RunMode;
-  enabledTools: ToolName[];
-  provider: ModelProvider;
-  model: string;
-  offline: boolean;
-  agentLimits?: RuntimeAgentLimits;
-  compatibility: WorkspaceCompatibilityConfig;
-  providerAvailability: ProviderAvailability[];
-  webSearch: RuntimeWebSearchConfig;
-}
 
 export interface ToolDefinition {
   name: ToolName;
@@ -101,11 +39,6 @@ export interface ToolDefinition {
   description: string;
   riskLevel: ToolRiskLevel;
   keywords: string[];
-}
-
-export interface RuntimeProfileSummary {
-  name: string;
-  description?: string;
 }
 
 export interface ResolvedToolPolicy {
@@ -271,6 +204,88 @@ export interface AgentModelTurn {
   stopReason?: string;
 }
 
+export interface AgentModelStreamUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cachedInputTokens?: number;
+  reasoningTokens?: number;
+  raw?: unknown;
+}
+
+export type AgentModelStreamEvent =
+  | {
+      type: "status";
+      provider?: ModelProvider;
+      status:
+        | "starting"
+        | "queued"
+        | "in-progress"
+        | "completed"
+        | "stopped";
+      message?: string;
+      rawEventType?: string;
+    }
+  | {
+      type: "text-delta";
+      delta: string;
+      provider?: ModelProvider;
+    }
+  | {
+      type: "reasoning-delta";
+      delta: string;
+      provider?: ModelProvider;
+      signature?: string;
+    }
+  | {
+      type: "tool-call-start";
+      id?: string;
+      name?: string;
+      provider?: ModelProvider;
+    }
+  | {
+      type: "tool-call-arguments-delta";
+      id?: string;
+      name?: string;
+      delta: string;
+      snapshot?: string;
+      provider?: ModelProvider;
+    }
+  | {
+      type: "tool-call-done";
+      id?: string;
+      name: string;
+      argumentsText?: string;
+      provider?: ModelProvider;
+    }
+  | {
+      type: "tool-result";
+      provider?: ModelProvider;
+      id: string;
+      name: string;
+      output: string;
+      isError?: boolean;
+      content?: AgentModelToolResultContent[];
+    }
+  | {
+      type: "usage";
+      provider?: ModelProvider;
+      usage: AgentModelStreamUsage;
+    }
+  | {
+      type: "error";
+      provider?: ModelProvider;
+      message: string;
+      code?: string;
+      param?: string;
+      recoverable?: boolean;
+      raw?: unknown;
+    };
+
+export type AgentModelStreamEventHandler = (
+  event: AgentModelStreamEvent,
+) => void;
+
 export interface AgentModelStartParams {
   model: string;
   systemPrompt: string;
@@ -278,11 +293,13 @@ export interface AgentModelStartParams {
   imageInputs?: AgentModelImageInput[];
   tools: AgentModelToolSpec[];
   signal?: AbortSignal | undefined;
+  onStreamEvent?: AgentModelStreamEventHandler;
 }
 
 export interface AgentModelContinueParams {
   toolResults: AgentModelToolResult[];
   signal?: AbortSignal | undefined;
+  onStreamEvent?: AgentModelStreamEventHandler;
 }
 
 export interface AgentModelAdapter {
@@ -389,6 +406,14 @@ export interface TaskExecutionProgress {
   outputSections: TaskExecutionSection[];
   cancellable: boolean;
   reason?: string;
+  assistantText?: string;
+  modelStream?: {
+    kind: "assistant" | "tool-call" | "reasoning" | "status" | "tool-result";
+    label: string;
+    content: string;
+    complete?: boolean;
+  };
+  actionOutput?: TaskActionOutput;
 }
 
 export type TaskExecutionProgressHandler = (

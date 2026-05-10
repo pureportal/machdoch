@@ -214,6 +214,18 @@ describe("loadRuntimeConfig", () => {
     ).toBe(true);
   });
 
+  it("uses provider-specific default models when no model is configured", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    process.env.GOOGLE_API_KEY = "google-real-key-123456";
+
+    const config = await loadRuntimeConfig(workspaceRoot);
+
+    expect(config.provider).toBe("google");
+    expect(config.model).toBe("gemini-2.5-flash");
+  });
+
   it("loads agent loop limits from user config, workspace config, environment, and overrides", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();

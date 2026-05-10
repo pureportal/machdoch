@@ -2,19 +2,42 @@ use std::{
     collections::HashMap,
     env, fs,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
 use tauri_plugin_autostart::ManagerExt as _;
 
+use crate::runtime_contract_generated::{
+    DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
+    DEFAULT_DESKTOP_SETTING_ALWAYS_RUN_AS_ADMINISTRATOR,
+    DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_ENABLED,
+    DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_HIDE_WHEN_FULLSCREEN,
+    DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
+    DEFAULT_DESKTOP_SETTING_AUTOSTART_MINIMIZED, DEFAULT_DESKTOP_SETTING_AUTOSTART_TO_TRAY,
+    DEFAULT_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
+    DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
+    DEFAULT_DESKTOP_SETTING_QUICK_VOICE_ENABLED, DEFAULT_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES,
+    DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SHORTCUT,
+    DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
+    DEFAULT_MAX_EXECUTOR_TURNS, DEFAULT_MODEL_BY_PROVIDER, DEFAULT_MODEL_PROVIDER, DEFAULT_TOOLS,
+    DEFAULT_USER_AGENT_LIMITS_INFINITE, MAX_CONFIGURED_AUTOPILOT_ITERATIONS,
+    MAX_CONFIGURED_EXECUTOR_TURNS, MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
+    MAX_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
+    MAX_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
+    MAX_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
+    MAX_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MAX_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
+    MIN_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
+    MIN_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
+    MIN_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
+    MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
+    MIN_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
+    PROVIDER_ENV_KEYS, RUNTIME_ENV_KEYS, USER_API_PROVIDERS, USER_AUDIO_AI_PROVIDERS,
+    USER_WEB_SEARCH_PROVIDERS, VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS, VALID_TOOLS,
+    VALID_WEB_SEARCH_PROVIDERS, WEB_SEARCH_ENV_KEYS,
+};
 use crate::ui_control::UiControlAvailability;
 
-const DEFAULT_MODEL: &str = "gpt-5.5";
-const DEFAULT_MAX_EXECUTOR_TURNS: u32 = 64;
-const DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS: u32 = 16;
-const MAX_CONFIGURED_EXECUTOR_TURNS: u32 = 1_000;
-const MAX_CONFIGURED_AUTOPILOT_ITERATIONS: u32 = 100;
 const PLACEHOLDER_TOKENS: [&str; 3] = ["YOUR_", "CHANGE_ME", "PLACEHOLDER"];
 const KNOWN_SAMPLE_SECRET_VALUES: [&str; 6] = [
     "sk-user-config",
@@ -24,23 +47,7 @@ const KNOWN_SAMPLE_SECRET_VALUES: [&str; 6] = [
     "tavily-live",
     "serper-live",
 ];
-const DEFAULT_TOOLS: [&str; 3] = ["filesystem", "shell", "utilities"];
-const VALID_TOOLS: [&str; 7] = [
-    "filesystem",
-    "shell",
-    "network",
-    "browser",
-    "git",
-    "packages",
-    "utilities",
-];
-const VALID_MODEL_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
 const USER_CONFIG_FILE_NAME: &str = "user-config.json";
-const USER_API_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
-const USER_WEB_SEARCH_PROVIDERS: [&str; 3] = ["perplexity", "tavily", "serper"];
-const USER_AUDIO_AI_PROVIDERS: [&str; 2] = ["openai", "google"];
-const VALID_WEB_SEARCH_PROVIDERS: [&str; 4] = ["none", "perplexity", "tavily", "serper"];
-const VALID_AUDIO_AI_PROVIDERS: [&str; 3] = ["none", "openai", "google"];
 const MAX_GLOBAL_MEMORY_ENTRIES: usize = 40;
 const MAX_MEMORY_CONTENT_LENGTH: usize = 280;
 
@@ -88,6 +95,50 @@ pub struct RuntimeProfileSummary {
 pub struct ProviderAvailability {
     provider: String,
     configured: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderModelCatalogSnapshot {
+    generated_at: u64,
+    providers: Vec<ProviderModelCatalogProvider>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderModelCatalogProvider {
+    provider: String,
+    source: String,
+    available: bool,
+    error: Option<String>,
+    models: Vec<ProviderRuntimeModel>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderRuntimeModel {
+    id: String,
+    label: Option<String>,
+    stage: Option<String>,
+    description: Option<String>,
+    best_for: Option<String>,
+    recommended_for: Vec<String>,
+    capabilities: ProviderRuntimeModelCapabilities,
+    warnings: Vec<String>,
+    source: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderRuntimeModelCapabilities {
+    image_input: Option<bool>,
+    tool_use: Option<bool>,
+    reasoning: Option<bool>,
+    streaming: Option<bool>,
+    context_window_tokens: Option<u64>,
+    max_output_tokens: Option<u64>,
+    voice: Option<bool>,
+    computer_use: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -160,6 +211,8 @@ pub struct UserDesktopSettings {
     pub(crate) assistant_bubble_hide_when_fullscreen: bool,
     pub(crate) assistant_bubble_temporarily_hide_seconds: u32,
     pub(crate) ai_context_max_messages: u32,
+    pub(crate) inactive_session_archive_days: u32,
+    pub(crate) archived_session_retention_days: u32,
     pub(crate) quick_voice_enabled: bool,
     pub(crate) quick_voice_shortcut: String,
     pub(crate) quick_voice_silence_seconds: f64,
@@ -256,6 +309,8 @@ struct UserDesktopConfigFile {
     assistant_bubble_hide_when_fullscreen: Option<bool>,
     assistant_bubble_temporarily_hide_seconds: Option<u32>,
     ai_context_max_messages: Option<u32>,
+    inactive_session_archive_days: Option<u32>,
+    archived_session_retention_days: Option<u32>,
     quick_voice_enabled: Option<bool>,
     quick_voice_shortcut: Option<String>,
     quick_voice_silence_seconds: Option<f64>,
@@ -299,23 +354,49 @@ pub(crate) fn normalize_optional_string(value: Option<&str>) -> Option<String> {
 }
 
 fn clamp_assistant_bubble_hide_seconds(value: u32) -> u32 {
-    value.clamp(2, 30)
+    value.clamp(
+        MIN_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
+        MAX_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
+    )
 }
 
 fn clamp_quick_voice_silence_seconds(value: f64) -> f64 {
     if !value.is_finite() {
-        return 1.8;
+        return DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS;
     }
 
-    ((value * 10.0).round() / 10.0).clamp(0.8, 8.0)
+    ((value * 10.0).round() / 10.0).clamp(
+        MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
+        MAX_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
+    )
 }
 
 fn clamp_quick_voice_message_limit(value: u32) -> u32 {
-    value.clamp(10, 200)
+    value.clamp(
+        MIN_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES,
+        MAX_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES,
+    )
 }
 
 fn clamp_ai_context_message_limit(value: u32) -> u32 {
-    value.clamp(1, 200)
+    value.clamp(
+        MIN_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
+        MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
+    )
+}
+
+fn clamp_inactive_session_archive_days(value: u32) -> u32 {
+    value.clamp(
+        MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
+        MAX_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
+    )
+}
+
+fn clamp_archived_session_retention_days(value: u32) -> u32 {
+    value.clamp(
+        MIN_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
+        MAX_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
+    )
 }
 
 fn clamp_executor_turn_limit(value: u32) -> u32 {
@@ -330,7 +411,9 @@ fn normalize_user_agent_limits_settings(
     settings: &UserAgentLimitsConfigFile,
 ) -> UserAgentLimitsSettings {
     UserAgentLimitsSettings {
-        infinite: settings.infinite.unwrap_or(false),
+        infinite: settings
+            .infinite
+            .unwrap_or(DEFAULT_USER_AGENT_LIMITS_INFINITE),
         executor_turns: settings
             .executor_turns
             .map(clamp_executor_turn_limit)
@@ -422,7 +505,7 @@ fn resolve_runtime_agent_limits(
 
 fn normalize_quick_voice_shortcut(value: Option<&str>) -> String {
     normalize_optional_string(value)
-        .unwrap_or_else(|| crate::desktop_shell::DEFAULT_QUICK_VOICE_SHORTCUT.to_string())
+        .unwrap_or_else(|| DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SHORTCUT.to_string())
 }
 
 fn resolve_quick_voice_shortcut(value: Option<&str>) -> String {
@@ -431,7 +514,7 @@ fn resolve_quick_voice_shortcut(value: Option<&str>) -> String {
     if crate::desktop_shell::validate_quick_voice_shortcut(&normalized).is_ok() {
         normalized
     } else {
-        crate::desktop_shell::DEFAULT_QUICK_VOICE_SHORTCUT.to_string()
+        DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SHORTCUT.to_string()
     }
 }
 
@@ -454,6 +537,12 @@ fn normalize_user_desktop_settings_input(
             settings.assistant_bubble_temporarily_hide_seconds,
         ),
         ai_context_max_messages: clamp_ai_context_message_limit(settings.ai_context_max_messages),
+        inactive_session_archive_days: clamp_inactive_session_archive_days(
+            settings.inactive_session_archive_days,
+        ),
+        archived_session_retention_days: clamp_archived_session_retention_days(
+            settings.archived_session_retention_days,
+        ),
         quick_voice_enabled: settings.quick_voice_enabled,
         quick_voice_shortcut,
         quick_voice_silence_seconds: clamp_quick_voice_silence_seconds(
@@ -572,22 +661,12 @@ fn parse_dotenv_file(path: &Path) -> Result<HashMap<String, String>, String> {
 }
 
 fn apply_process_env_overrides(values: &mut HashMap<String, String>) {
-    for key in [
-        "OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "GOOGLE_API_KEY",
-        "PERPLEXITY_API_KEY",
-        "TAVILY_API_KEY",
-        "SERPER_API_KEY",
-        "MACHDOCH_MODEL",
-        "MACHDOCH_MODE",
-        "MACHDOCH_PROFILE",
-        "MACHDOCH_OFFLINE",
-        "MACHDOCH_WEB_SEARCH_PROVIDER",
-        "MACHDOCH_EXECUTOR_TURNS",
-        "MACHDOCH_AUTOPILOT_ITERATIONS",
-        "MACHDOCH_INFINITE",
-    ] {
+    for key in PROVIDER_ENV_KEYS
+        .iter()
+        .map(|(_, key)| *key)
+        .chain(WEB_SEARCH_ENV_KEYS.iter().map(|(_, key)| *key))
+        .chain(RUNTIME_ENV_KEYS.iter().copied())
+    {
         if let Ok(value) = env::var(key) {
             values.insert(key.to_string(), value);
         }
@@ -797,16 +876,10 @@ fn load_user_web_search_api_keys() -> Result<HashMap<String, String>, String> {
 fn merge_user_api_keys_into_env(values: &mut HashMap<String, String>) -> Result<(), String> {
     let api_keys = load_user_api_keys()?;
 
-    if let Some(value) = api_keys.get("openai") {
-        values.insert("OPENAI_API_KEY".to_string(), value.clone());
-    }
-
-    if let Some(value) = api_keys.get("anthropic") {
-        values.insert("ANTHROPIC_API_KEY".to_string(), value.clone());
-    }
-
-    if let Some(value) = api_keys.get("google") {
-        values.insert("GOOGLE_API_KEY".to_string(), value.clone());
+    for (provider, env_key) in PROVIDER_ENV_KEYS {
+        if let Some(value) = api_keys.get(provider) {
+            values.insert(env_key.to_string(), value.clone());
+        }
     }
 
     Ok(())
@@ -817,16 +890,10 @@ fn merge_user_web_search_api_keys_into_env(
 ) -> Result<(), String> {
     let api_keys = load_user_web_search_api_keys()?;
 
-    if let Some(value) = api_keys.get("perplexity") {
-        values.insert("PERPLEXITY_API_KEY".to_string(), value.clone());
-    }
-
-    if let Some(value) = api_keys.get("tavily") {
-        values.insert("TAVILY_API_KEY".to_string(), value.clone());
-    }
-
-    if let Some(value) = api_keys.get("serper") {
-        values.insert("SERPER_API_KEY".to_string(), value.clone());
+    for (provider, env_key) in WEB_SEARCH_ENV_KEYS {
+        if let Some(value) = api_keys.get(provider) {
+            values.insert(env_key.to_string(), value.clone());
+        }
     }
 
     Ok(())
@@ -892,54 +959,531 @@ fn has_configured_value(value: Option<&str>) -> bool {
 }
 
 fn get_provider_availability(env: &HashMap<String, String>) -> Vec<ProviderAvailability> {
-    vec![
-        ProviderAvailability {
-            provider: "openai".to_string(),
-            configured: has_configured_value(env.get("OPENAI_API_KEY").map(String::as_str)),
-        },
-        ProviderAvailability {
-            provider: "anthropic".to_string(),
-            configured: has_configured_value(env.get("ANTHROPIC_API_KEY").map(String::as_str)),
-        },
-        ProviderAvailability {
-            provider: "google".to_string(),
-            configured: has_configured_value(env.get("GOOGLE_API_KEY").map(String::as_str)),
-        },
-    ]
+    PROVIDER_ENV_KEYS
+        .iter()
+        .map(|(provider, env_key)| ProviderAvailability {
+            provider: provider.to_string(),
+            configured: has_configured_value(env.get(*env_key).map(String::as_str)),
+        })
+        .collect()
 }
 
 fn get_web_search_provider_availability(
     env: &HashMap<String, String>,
 ) -> Vec<WebSearchProviderAvailability> {
-    vec![
-        WebSearchProviderAvailability {
-            provider: "perplexity".to_string(),
-            configured: has_configured_value(env.get("PERPLEXITY_API_KEY").map(String::as_str)),
-        },
-        WebSearchProviderAvailability {
-            provider: "tavily".to_string(),
-            configured: has_configured_value(env.get("TAVILY_API_KEY").map(String::as_str)),
-        },
-        WebSearchProviderAvailability {
-            provider: "serper".to_string(),
-            configured: has_configured_value(env.get("SERPER_API_KEY").map(String::as_str)),
-        },
-    ]
+    WEB_SEARCH_ENV_KEYS
+        .iter()
+        .map(|(provider, env_key)| WebSearchProviderAvailability {
+            provider: provider.to_string(),
+            configured: has_configured_value(env.get(*env_key).map(String::as_str)),
+        })
+        .collect()
 }
 
 fn get_audio_provider_availability(
     env: &HashMap<String, String>,
 ) -> Vec<AudioProviderAvailability> {
-    vec![
-        AudioProviderAvailability {
-            provider: "openai".to_string(),
-            configured: has_configured_value(env.get("OPENAI_API_KEY").map(String::as_str)),
-        },
-        AudioProviderAvailability {
-            provider: "google".to_string(),
-            configured: has_configured_value(env.get("GOOGLE_API_KEY").map(String::as_str)),
-        },
+    USER_AUDIO_AI_PROVIDERS
+        .iter()
+        .filter_map(|provider| {
+            let env_key = PROVIDER_ENV_KEYS
+                .iter()
+                .find_map(|(entry_provider, env_key)| {
+                    if entry_provider == provider {
+                        Some(*env_key)
+                    } else {
+                        None
+                    }
+                })?;
+
+            Some(AudioProviderAvailability {
+                provider: provider.to_string(),
+                configured: has_configured_value(env.get(env_key).map(String::as_str)),
+            })
+        })
+        .collect()
+}
+
+fn create_provider_model_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .build()
+        .map_err(|error| format!("Failed to create provider model HTTP client: {error}"))
+}
+
+fn sanitize_provider_error(error: reqwest::Error) -> String {
+    if error.is_timeout() {
+        return "Provider model discovery timed out.".to_string();
+    }
+
+    if let Some(status) = error.status() {
+        return format!("Provider model discovery returned HTTP {status}.");
+    }
+
+    "Provider model discovery failed before a response was received.".to_string()
+}
+
+fn provider_model_catalog_unavailable(provider: &str, error: &str) -> ProviderModelCatalogProvider {
+    ProviderModelCatalogProvider {
+        provider: provider.to_string(),
+        source: "provider-probe".to_string(),
+        available: false,
+        error: Some(error.to_string()),
+        models: Vec::new(),
+    }
+}
+
+fn json_string(value: &serde_json::Value, key: &str) -> Option<String> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .and_then(|entry| normalize_optional_string(Some(entry)))
+}
+
+fn json_u64(value: &serde_json::Value, key: &str) -> Option<u64> {
+    value.get(key).and_then(serde_json::Value::as_u64)
+}
+
+fn json_bool_from_keys(value: Option<&serde_json::Value>, keys: &[&str]) -> Option<bool> {
+    let object = value?.as_object()?;
+
+    for key in keys {
+        if let Some(value) = object.get(*key).and_then(serde_json::Value::as_bool) {
+            return Some(value);
+        }
+    }
+
+    None
+}
+
+fn looks_like_dated_snapshot(model_id: &str) -> bool {
+    if model_id.len() >= 10 {
+        let tail = &model_id[model_id.len() - 10..];
+        let bytes = tail.as_bytes();
+        let is_hyphenated_date = bytes.get(4) == Some(&b'-')
+            && bytes.get(7) == Some(&b'-')
+            && tail
+                .chars()
+                .enumerate()
+                .all(|(index, character)| index == 4 || index == 7 || character.is_ascii_digit());
+
+        if is_hyphenated_date {
+            return true;
+        }
+    }
+
+    let Some(tail) = model_id.rsplit('-').next() else {
+        return false;
+    };
+
+    tail.len() == 8 && tail.chars().all(|character| character.is_ascii_digit())
+}
+
+fn is_openai_runtime_model(model_id: &str) -> bool {
+    let normalized = model_id.to_ascii_lowercase();
+
+    if looks_like_dated_snapshot(&normalized) {
+        return false;
+    }
+
+    if [
+        "embedding",
+        "moderation",
+        "dall",
+        "image",
+        "sora",
+        "tts",
+        "transcribe",
+        "whisper",
     ]
+    .iter()
+    .any(|excluded| normalized.contains(excluded))
+    {
+        return false;
+    }
+
+    normalized.starts_with("gpt-")
+        || normalized.starts_with("computer-use")
+        || normalized
+            .strip_prefix('o')
+            .and_then(|suffix| suffix.chars().next())
+            .is_some_and(|character| character.is_ascii_digit())
+}
+
+fn runtime_model_stage(model_id: &str) -> Option<String> {
+    let normalized = model_id.to_ascii_lowercase();
+
+    if normalized.contains("deprecated") {
+        return Some("deprecated".to_string());
+    }
+
+    if normalized.contains("preview") {
+        return Some("preview".to_string());
+    }
+
+    None
+}
+
+fn create_openai_runtime_model(model_id: &str) -> ProviderRuntimeModel {
+    let normalized = model_id.to_ascii_lowercase();
+    let voice = normalized.contains("realtime") || normalized.contains("audio");
+    let computer_use = normalized.contains("computer-use")
+        || normalized.starts_with("gpt-5.5")
+        || normalized.starts_with("gpt-5.4");
+    let latest_text_model = normalized.starts_with("gpt-5")
+        || normalized.starts_with("gpt-4o")
+        || normalized.starts_with("gpt-4.1")
+        || normalized.starts_with("o3")
+        || normalized.starts_with("o4")
+        || normalized.starts_with("computer-use");
+    let mut recommended_for = Vec::new();
+
+    if latest_text_model {
+        recommended_for.push("coding".to_string());
+        recommended_for.push("vision".to_string());
+    }
+
+    if normalized.contains("mini") || normalized.contains("nano") {
+        recommended_for.push("fast".to_string());
+        recommended_for.push("cheap".to_string());
+    }
+
+    if voice {
+        recommended_for.push("voice".to_string());
+    }
+
+    if computer_use {
+        recommended_for.push("computer-use".to_string());
+    }
+
+    ProviderRuntimeModel {
+        id: model_id.to_string(),
+        label: None,
+        stage: runtime_model_stage(model_id),
+        description: None,
+        best_for: None,
+        recommended_for,
+        capabilities: ProviderRuntimeModelCapabilities {
+            image_input: Some(latest_text_model),
+            tool_use: Some(true),
+            reasoning: Some(
+                normalized.starts_with("gpt-5")
+                    || normalized.starts_with('o')
+                    || normalized.contains("reasoning"),
+            ),
+            streaming: Some(true),
+            context_window_tokens: None,
+            max_output_tokens: None,
+            voice: Some(voice),
+            computer_use: Some(computer_use),
+        },
+        warnings: Vec::new(),
+        source: "provider-api".to_string(),
+    }
+}
+
+fn create_anthropic_runtime_model(entry: &serde_json::Value) -> Option<ProviderRuntimeModel> {
+    let id = json_string(entry, "id")?;
+    let display_name =
+        json_string(entry, "display_name").or_else(|| json_string(entry, "displayName"));
+    let capabilities = entry.get("capabilities");
+    let normalized = id.to_ascii_lowercase();
+    let image_input = json_bool_from_keys(
+        capabilities,
+        &["vision", "image_input", "imageInput", "images"],
+    )
+    .unwrap_or(true);
+    let tool_use = json_bool_from_keys(
+        capabilities,
+        &["tool_use", "toolUse", "function_calling", "functionCalling"],
+    )
+    .unwrap_or(true);
+    let reasoning = json_bool_from_keys(
+        capabilities,
+        &[
+            "reasoning",
+            "thinking",
+            "extended_thinking",
+            "extendedThinking",
+            "adaptive_thinking",
+            "adaptiveThinking",
+        ],
+    )
+    .unwrap_or_else(|| normalized.contains("opus") || normalized.contains("sonnet"));
+    let mut recommended_for = Vec::new();
+
+    if normalized.contains("opus") || normalized.contains("sonnet") {
+        recommended_for.push("coding".to_string());
+    }
+
+    if normalized.contains("sonnet") || normalized.contains("haiku") {
+        recommended_for.push("fast".to_string());
+    }
+
+    if normalized.contains("haiku") {
+        recommended_for.push("cheap".to_string());
+    }
+
+    if image_input {
+        recommended_for.push("vision".to_string());
+    }
+
+    Some(ProviderRuntimeModel {
+        id: id.clone(),
+        label: display_name,
+        stage: runtime_model_stage(&id),
+        description: None,
+        best_for: None,
+        recommended_for,
+        capabilities: ProviderRuntimeModelCapabilities {
+            image_input: Some(image_input),
+            tool_use: Some(tool_use),
+            reasoning: Some(reasoning),
+            streaming: Some(true),
+            context_window_tokens: json_u64(entry, "max_input_tokens")
+                .or_else(|| json_u64(entry, "maxInputTokens")),
+            max_output_tokens: json_u64(entry, "max_tokens")
+                .or_else(|| json_u64(entry, "maxTokens")),
+            voice: Some(false),
+            computer_use: Some(false),
+        },
+        warnings: Vec::new(),
+        source: "provider-api".to_string(),
+    })
+}
+
+fn create_google_runtime_model(entry: &serde_json::Value) -> Option<ProviderRuntimeModel> {
+    let resource_name = json_string(entry, "name")?;
+    let id = json_string(entry, "baseModelId").unwrap_or_else(|| {
+        resource_name
+            .strip_prefix("models/")
+            .unwrap_or(resource_name.as_str())
+            .to_string()
+    });
+    let methods = entry
+        .get("supportedGenerationMethods")
+        .and_then(serde_json::Value::as_array)
+        .map(|methods| {
+            methods
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if !methods.iter().any(|method| method == "generateContent") {
+        return None;
+    }
+
+    let normalized = id.to_ascii_lowercase();
+    let voice = normalized.contains("tts") || normalized.contains("audio");
+    let image_input = !voice
+        && !normalized.contains("embedding")
+        && !normalized.contains("imagen")
+        && !normalized.contains("veo");
+    let reasoning = entry
+        .get("thinking")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or_else(|| normalized.contains("pro") || normalized.contains("2.5"));
+    let mut recommended_for = Vec::new();
+
+    if reasoning || normalized.contains("pro") {
+        recommended_for.push("coding".to_string());
+    }
+
+    if normalized.contains("flash") {
+        recommended_for.push("fast".to_string());
+        recommended_for.push("cheap".to_string());
+    }
+
+    if image_input {
+        recommended_for.push("vision".to_string());
+    }
+
+    if voice {
+        recommended_for.push("voice".to_string());
+    }
+
+    Some(ProviderRuntimeModel {
+        id,
+        label: json_string(entry, "displayName"),
+        stage: runtime_model_stage(&resource_name),
+        description: json_string(entry, "description"),
+        best_for: None,
+        recommended_for,
+        capabilities: ProviderRuntimeModelCapabilities {
+            image_input: Some(image_input),
+            tool_use: Some(true),
+            reasoning: Some(reasoning),
+            streaming: Some(true),
+            context_window_tokens: json_u64(entry, "inputTokenLimit"),
+            max_output_tokens: json_u64(entry, "outputTokenLimit"),
+            voice: Some(voice),
+            computer_use: Some(false),
+        },
+        warnings: Vec::new(),
+        source: "provider-api".to_string(),
+    })
+}
+
+async fn fetch_openai_model_catalog(
+    client: &reqwest::Client,
+    api_key: &str,
+) -> Result<Vec<ProviderRuntimeModel>, String> {
+    let payload = client
+        .get("https://api.openai.com/v1/models")
+        .bearer_auth(api_key)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(sanitize_provider_error)?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| format!("Failed to parse OpenAI model list: {error}"))?;
+    let mut models = payload
+        .get("data")
+        .and_then(serde_json::Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| json_string(entry, "id"))
+                .filter(|id| is_openai_runtime_model(id))
+                .map(|id| create_openai_runtime_model(&id))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    models.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(models)
+}
+
+async fn fetch_anthropic_model_catalog(
+    client: &reqwest::Client,
+    api_key: &str,
+) -> Result<Vec<ProviderRuntimeModel>, String> {
+    let payload = client
+        .get("https://api.anthropic.com/v1/models?limit=1000")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(sanitize_provider_error)?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| format!("Failed to parse Anthropic model list: {error}"))?;
+    let mut models = payload
+        .get("data")
+        .and_then(serde_json::Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(create_anthropic_runtime_model)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    models.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(models)
+}
+
+async fn fetch_google_model_catalog(
+    client: &reqwest::Client,
+    api_key: &str,
+) -> Result<Vec<ProviderRuntimeModel>, String> {
+    let payload = client
+        .get("https://generativelanguage.googleapis.com/v1beta/models")
+        .query(&[("key", api_key), ("pageSize", "1000")])
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(sanitize_provider_error)?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| format!("Failed to parse Google model list: {error}"))?;
+    let mut by_id = HashMap::<String, ProviderRuntimeModel>::new();
+
+    if let Some(entries) = payload.get("models").and_then(serde_json::Value::as_array) {
+        for model in entries.iter().filter_map(create_google_runtime_model) {
+            by_id.entry(model.id.clone()).or_insert(model);
+        }
+    }
+
+    let mut models = by_id.into_values().collect::<Vec<_>>();
+    models.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(models)
+}
+
+async fn fetch_provider_model_catalog(
+    client: &reqwest::Client,
+    env: &HashMap<String, String>,
+    provider: &str,
+) -> ProviderModelCatalogProvider {
+    let (api_key_name, fetch_result) = match provider {
+        "openai" => {
+            let api_key = env.get("OPENAI_API_KEY").map(String::as_str);
+            match api_key.filter(|value| has_configured_value(Some(value))) {
+                Some(value) => (
+                    "OPENAI_API_KEY",
+                    fetch_openai_model_catalog(client, value).await,
+                ),
+                None => {
+                    return provider_model_catalog_unavailable(
+                        provider,
+                        "OPENAI_API_KEY is not configured.",
+                    );
+                }
+            }
+        }
+        "anthropic" => {
+            let api_key = env.get("ANTHROPIC_API_KEY").map(String::as_str);
+            match api_key.filter(|value| has_configured_value(Some(value))) {
+                Some(value) => (
+                    "ANTHROPIC_API_KEY",
+                    fetch_anthropic_model_catalog(client, value).await,
+                ),
+                None => {
+                    return provider_model_catalog_unavailable(
+                        provider,
+                        "ANTHROPIC_API_KEY is not configured.",
+                    );
+                }
+            }
+        }
+        "google" => {
+            let api_key = env.get("GOOGLE_API_KEY").map(String::as_str);
+            match api_key.filter(|value| has_configured_value(Some(value))) {
+                Some(value) => (
+                    "GOOGLE_API_KEY",
+                    fetch_google_model_catalog(client, value).await,
+                ),
+                None => {
+                    return provider_model_catalog_unavailable(
+                        provider,
+                        "GOOGLE_API_KEY is not configured.",
+                    );
+                }
+            }
+        }
+        _ => {
+            return provider_model_catalog_unavailable(provider, "Unsupported provider.");
+        }
+    };
+
+    match fetch_result {
+        Ok(models) => ProviderModelCatalogProvider {
+            provider: provider.to_string(),
+            source: "provider-api".to_string(),
+            available: true,
+            error: None,
+            models,
+        },
+        Err(error) => provider_model_catalog_unavailable(
+            provider,
+            &format!("{api_key_name} is configured, but {error}"),
+        ),
+    }
 }
 
 fn resolve_audio_active_provider(configured_provider: Option<&str>) -> String {
@@ -965,6 +1509,25 @@ fn resolve_provider(
         .unwrap_or_else(|| "unconfigured".to_string())
 }
 
+fn default_model_for_provider(provider: &str) -> &'static str {
+    let normalized_provider = if provider == "unconfigured" {
+        DEFAULT_MODEL_PROVIDER
+    } else {
+        provider
+    };
+
+    DEFAULT_MODEL_BY_PROVIDER
+        .iter()
+        .find_map(|(entry_provider, model)| {
+            if *entry_provider == normalized_provider {
+                Some(*model)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(DEFAULT_MODEL_BY_PROVIDER[0].1)
+}
+
 fn resolve_web_search_active_provider(
     configured_provider: Option<&str>,
     env: &HashMap<String, String>,
@@ -983,7 +1546,9 @@ fn resolve_web_search_active_provider(
 }
 
 fn is_valid_mode(value: Option<&str>) -> bool {
-    matches!(value.map(str::trim), Some("plan" | "safe" | "ask" | "auto"))
+    value
+        .map(str::trim)
+        .is_some_and(|value| crate::runtime_contract_generated::RUN_MODES.contains(&value))
 }
 
 fn get_available_profiles(
@@ -1160,15 +1725,24 @@ pub(crate) fn load_user_desktop_launch_preferences() -> Result<UserDesktopLaunch
     let (config, _) = load_user_config_file()?;
 
     Ok(UserDesktopLaunchPreferences {
-        autostart_minimized: config.desktop.autostart_minimized.unwrap_or(false),
-        autostart_to_tray: config.desktop.autostart_to_tray.unwrap_or(false),
+        autostart_minimized: config
+            .desktop
+            .autostart_minimized
+            .unwrap_or(DEFAULT_DESKTOP_SETTING_AUTOSTART_MINIMIZED),
+        autostart_to_tray: config
+            .desktop
+            .autostart_to_tray
+            .unwrap_or(DEFAULT_DESKTOP_SETTING_AUTOSTART_TO_TRAY),
     })
 }
 
 pub(crate) fn load_user_desktop_admin_preference() -> Result<bool, String> {
     let (config, _) = load_user_config_file()?;
 
-    Ok(config.desktop.always_run_as_administrator.unwrap_or(false))
+    Ok(config
+        .desktop
+        .always_run_as_administrator
+        .unwrap_or(DEFAULT_DESKTOP_SETTING_ALWAYS_RUN_AS_ADMINISTRATOR))
 }
 
 pub(crate) fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>>(
@@ -1185,30 +1759,60 @@ pub(crate) fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>
         autostart_enabled,
         autostart_minimized: preferences.autostart_minimized,
         autostart_to_tray: preferences.autostart_to_tray,
-        always_run_as_administrator: config.desktop.always_run_as_administrator.unwrap_or(false),
-        assistant_bubble_enabled: config.desktop.assistant_bubble_enabled.unwrap_or(true),
+        always_run_as_administrator: config
+            .desktop
+            .always_run_as_administrator
+            .unwrap_or(DEFAULT_DESKTOP_SETTING_ALWAYS_RUN_AS_ADMINISTRATOR),
+        assistant_bubble_enabled: config
+            .desktop
+            .assistant_bubble_enabled
+            .unwrap_or(DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_ENABLED),
         assistant_bubble_hide_when_fullscreen: config
             .desktop
             .assistant_bubble_hide_when_fullscreen
-            .unwrap_or(true),
+            .unwrap_or(DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_HIDE_WHEN_FULLSCREEN),
         assistant_bubble_temporarily_hide_seconds: clamp_assistant_bubble_hide_seconds(
             config
                 .desktop
                 .assistant_bubble_temporarily_hide_seconds
-                .unwrap_or(6),
+                .unwrap_or(DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS),
         ),
         ai_context_max_messages: clamp_ai_context_message_limit(
-            config.desktop.ai_context_max_messages.unwrap_or(60),
+            config
+                .desktop
+                .ai_context_max_messages
+                .unwrap_or(DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES),
         ),
-        quick_voice_enabled: config.desktop.quick_voice_enabled.unwrap_or(true),
+        inactive_session_archive_days: clamp_inactive_session_archive_days(
+            config
+                .desktop
+                .inactive_session_archive_days
+                .unwrap_or(DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS),
+        ),
+        archived_session_retention_days: clamp_archived_session_retention_days(
+            config
+                .desktop
+                .archived_session_retention_days
+                .unwrap_or(DEFAULT_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS),
+        ),
+        quick_voice_enabled: config
+            .desktop
+            .quick_voice_enabled
+            .unwrap_or(DEFAULT_DESKTOP_SETTING_QUICK_VOICE_ENABLED),
         quick_voice_shortcut: resolve_quick_voice_shortcut(
             config.desktop.quick_voice_shortcut.as_deref(),
         ),
         quick_voice_silence_seconds: clamp_quick_voice_silence_seconds(
-            config.desktop.quick_voice_silence_seconds.unwrap_or(1.8),
+            config
+                .desktop
+                .quick_voice_silence_seconds
+                .unwrap_or(DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS),
         ),
         quick_voice_max_messages: clamp_quick_voice_message_limit(
-            config.desktop.quick_voice_max_messages.unwrap_or(50),
+            config
+                .desktop
+                .quick_voice_max_messages
+                .unwrap_or(DEFAULT_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES),
         ),
     })
 }
@@ -1370,6 +1974,10 @@ fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Manager<R>>(
     config.desktop.assistant_bubble_temporarily_hide_seconds =
         Some(normalized_settings.assistant_bubble_temporarily_hide_seconds);
     config.desktop.ai_context_max_messages = Some(normalized_settings.ai_context_max_messages);
+    config.desktop.inactive_session_archive_days =
+        Some(normalized_settings.inactive_session_archive_days);
+    config.desktop.archived_session_retention_days =
+        Some(normalized_settings.archived_session_retention_days);
     config.desktop.quick_voice_enabled = Some(normalized_settings.quick_voice_enabled);
     config.desktop.quick_voice_shortcut = Some(normalized_settings.quick_voice_shortcut.clone());
     config.desktop.quick_voice_silence_seconds =
@@ -1400,6 +2008,22 @@ fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Manager<R>>(
 pub async fn get_global_provider_availability() -> Result<Vec<ProviderAvailability>, String> {
     let env = load_global_env()?;
     Ok(get_provider_availability(&env))
+}
+
+#[tauri::command]
+pub async fn get_provider_model_catalog() -> Result<ProviderModelCatalogSnapshot, String> {
+    let env = load_global_env()?;
+    let client = create_provider_model_http_client()?;
+    let mut providers = Vec::new();
+
+    for provider in VALID_MODEL_PROVIDERS {
+        providers.push(fetch_provider_model_catalog(&client, &env, provider).await);
+    }
+
+    Ok(ProviderModelCatalogSnapshot {
+        generated_at: create_timestamp_millis(),
+        providers,
+    })
 }
 
 #[tauri::command]
@@ -1591,7 +2215,7 @@ pub async fn get_runtime_snapshot(
             .or(config.model.as_deref())
             .or(env.get("MACHDOCH_MODEL").map(String::as_str)),
     )
-    .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    .unwrap_or_else(|| default_model_for_provider(&provider).to_string());
 
     let offline = matches!(
         env.get("MACHDOCH_OFFLINE").map(String::as_str),

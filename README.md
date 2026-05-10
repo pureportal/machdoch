@@ -137,6 +137,11 @@ Interactive chat supports `/help`, `/plan <task>`, and `/paste` for multiline ta
 | Save an OpenAI API key | `machdoch --set-api --provider openai --key YOUR_OPENAI_API_KEY` |
 | Save an Anthropic API key | `machdoch --set-api --provider anthropic --key YOUR_ANTHROPIC_API_KEY` |
 | Save a Google API key | `machdoch --set-api --provider google --key YOUR_GOOGLE_API_KEY` |
+| Save a Serper web-search key | `machdoch config set web-search.serper.key YOUR_SERPER_API_KEY` |
+| Select Serper for web search | `machdoch config set web-search.provider serper` |
+| Persist the workspace provider | `machdoch config set workspace.provider openai` |
+| Persist the workspace mode | `machdoch config set workspace.mode auto` |
+| Persist loop limits | `machdoch config set agent-limits.executor-turns 128` |
 | Inspect resolved runtime config | `machdoch config` |
 | Print config as JSON | `machdoch config --json` |
 | Inspect workspace customizations | `machdoch inspect` |
@@ -144,6 +149,12 @@ Interactive chat supports `/help`, `/plan <task>`, and `/paste` for multiline ta
 | List workspace profiles | `machdoch profiles` |
 
 Add `--json` to `config`, `inspect`, `tools`, or `profiles` for machine-readable output.
+`machdoch config set <setting> <value>` also accepts `--json` and supports:
+`api.<openai|anthropic|google>.key`, `web-search.provider`,
+`web-search.<perplexity|tavily|serper>.key`, `voice.provider`,
+`speech-to-text.<provider|input-device>`, `desktop.<setting>`,
+`memory.global`, `agent-limits.<infinite|executor-turns|autopilot-iterations>`,
+and `workspace.<model|provider|mode|offline>`.
 
 ### Runtime Overrides
 

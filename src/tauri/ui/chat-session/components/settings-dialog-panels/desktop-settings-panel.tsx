@@ -1,4 +1,8 @@
 import { useEffect, useState, type JSX } from "react";
+import {
+  DEFAULT_USER_DESKTOP_SETTINGS,
+  DESKTOP_SETTING_BOUNDS,
+} from "../../../../../core/runtime-contract.generated.js";
 import { Input } from "../../../components/ui/input";
 import type { UserDesktopSettings } from "../../../runtime";
 import {
@@ -15,8 +19,6 @@ import {
   parseDecimalSettingInput,
   parseIntegerSettingInput,
 } from "./number-settings";
-
-const DEFAULT_QUICK_VOICE_SHORTCUT = "CommandOrControl+Alt+V";
 
 const getDesktopAutostartMode = (
   settings: UserDesktopSettings,
@@ -52,29 +54,42 @@ export const normalizeDesktopSettingsDraft = (
     ...settings,
     assistantBubbleTemporarilyHideSeconds: clampIntegerSetting(
       settings.assistantBubbleTemporarilyHideSeconds,
-      2,
-      30,
-      6,
+      DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.min,
+      DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.assistantBubbleTemporarilyHideSeconds,
     ),
     aiContextMaxMessages: clampIntegerSetting(
       settings.aiContextMaxMessages,
-      1,
-      200,
-      60,
+      DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min,
+      DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.aiContextMaxMessages,
     ),
-    quickVoiceShortcut: quickVoiceShortcut || DEFAULT_QUICK_VOICE_SHORTCUT,
+    inactiveSessionArchiveDays: clampIntegerSetting(
+      settings.inactiveSessionArchiveDays,
+      DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.min,
+      DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.inactiveSessionArchiveDays,
+    ),
+    archivedSessionRetentionDays: clampIntegerSetting(
+      settings.archivedSessionRetentionDays,
+      DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.min,
+      DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.archivedSessionRetentionDays,
+    ),
+    quickVoiceShortcut:
+      quickVoiceShortcut || DEFAULT_USER_DESKTOP_SETTINGS.quickVoiceShortcut,
     quickVoiceSilenceSeconds: clampDecimalSetting(
       settings.quickVoiceSilenceSeconds,
-      0.8,
-      8,
-      1.8,
+      DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.min,
+      DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.quickVoiceSilenceSeconds,
       1,
     ),
     quickVoiceMaxMessages: clampIntegerSetting(
       settings.quickVoiceMaxMessages,
-      10,
-      200,
-      50,
+      DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.min,
+      DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.quickVoiceMaxMessages,
     ),
   };
 };
@@ -94,6 +109,9 @@ export const hasDesktopSettingsDraftChanges = (
     left.assistantBubbleTemporarilyHideSeconds !==
       right.assistantBubbleTemporarilyHideSeconds ||
     left.aiContextMaxMessages !== right.aiContextMaxMessages ||
+    left.inactiveSessionArchiveDays !== right.inactiveSessionArchiveDays ||
+    left.archivedSessionRetentionDays !==
+      right.archivedSessionRetentionDays ||
     left.quickVoiceEnabled !== right.quickVoiceEnabled ||
     left.quickVoiceShortcut !== right.quickVoiceShortcut ||
     left.quickVoiceSilenceSeconds !== right.quickVoiceSilenceSeconds ||
@@ -209,8 +227,8 @@ export const DesktopSettingsPanel = ({
         <SettingPanel label="Hide duration">
           <Input
             type="number"
-            min="2"
-            max="30"
+            min={DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.min}
+            max={DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.max}
             step="1"
             value={draft.assistantBubbleTemporarilyHideSeconds}
             onChange={(event) => {
@@ -218,8 +236,8 @@ export const DesktopSettingsPanel = ({
                 ...draft,
                 assistantBubbleTemporarilyHideSeconds: parseIntegerSettingInput(
                   event.target.value,
-                  2,
-                  30,
+                  DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.min,
+                  DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.max,
                   draft.assistantBubbleTemporarilyHideSeconds,
                 ),
               });
@@ -231,8 +249,8 @@ export const DesktopSettingsPanel = ({
         <SettingPanel label="AI context cap">
           <Input
             type="number"
-            min="1"
-            max="200"
+            min={DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min}
+            max={DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max}
             step="1"
             value={draft.aiContextMaxMessages}
             onChange={(event) => {
@@ -240,9 +258,59 @@ export const DesktopSettingsPanel = ({
                 ...draft,
                 aiContextMaxMessages: parseIntegerSettingInput(
                   event.target.value,
-                  1,
-                  200,
+                  DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min,
+                  DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max,
                   draft.aiContextMaxMessages,
+                ),
+              });
+            }}
+            className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
+          />
+        </SettingPanel>
+
+        <SettingPanel
+          label="Inactive archive"
+          detail="Move open sessions to the archive after this many inactive days."
+        >
+          <Input
+            type="number"
+            min={DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.min}
+            max={DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.max}
+            step="1"
+            value={draft.inactiveSessionArchiveDays}
+            onChange={(event) => {
+              setDraft({
+                ...draft,
+                inactiveSessionArchiveDays: parseIntegerSettingInput(
+                  event.target.value,
+                  DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.min,
+                  DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.max,
+                  draft.inactiveSessionArchiveDays,
+                ),
+              });
+            }}
+            className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
+          />
+        </SettingPanel>
+
+        <SettingPanel
+          label="Archived cleanup"
+          detail="Delete archived sessions after this many days."
+        >
+          <Input
+            type="number"
+            min={DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.min}
+            max={DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.max}
+            step="1"
+            value={draft.archivedSessionRetentionDays}
+            onChange={(event) => {
+              setDraft({
+                ...draft,
+                archivedSessionRetentionDays: parseIntegerSettingInput(
+                  event.target.value,
+                  DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.min,
+                  DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.max,
+                  draft.archivedSessionRetentionDays,
                 ),
               });
             }}
@@ -277,7 +345,7 @@ export const DesktopSettingsPanel = ({
                 quickVoiceShortcut: event.target.value,
               });
             }}
-            placeholder={DEFAULT_QUICK_VOICE_SHORTCUT}
+            placeholder={DEFAULT_USER_DESKTOP_SETTINGS.quickVoiceShortcut}
             autoComplete="off"
             spellCheck={false}
             className="h-10 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
@@ -287,8 +355,8 @@ export const DesktopSettingsPanel = ({
         <SettingPanel label="Silence timeout">
           <Input
             type="number"
-            min="0.8"
-            max="8"
+            min={DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.min}
+            max={DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.max}
             step="0.1"
             value={draft.quickVoiceSilenceSeconds}
             onChange={(event) => {
@@ -296,8 +364,8 @@ export const DesktopSettingsPanel = ({
                 ...draft,
                 quickVoiceSilenceSeconds: parseDecimalSettingInput(
                   event.target.value,
-                  0.8,
-                  8,
+                  DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.min,
+                  DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.max,
                   draft.quickVoiceSilenceSeconds,
                   1,
                 ),
@@ -310,8 +378,8 @@ export const DesktopSettingsPanel = ({
         <SettingPanel label="Quick Chat cap">
           <Input
             type="number"
-            min="10"
-            max="200"
+            min={DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.min}
+            max={DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.max}
             step="5"
             value={draft.quickVoiceMaxMessages}
             onChange={(event) => {
@@ -319,8 +387,8 @@ export const DesktopSettingsPanel = ({
                 ...draft,
                 quickVoiceMaxMessages: parseIntegerSettingInput(
                   event.target.value,
-                  10,
-                  200,
+                  DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.min,
+                  DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.max,
                   draft.quickVoiceMaxMessages,
                 ),
               });

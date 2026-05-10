@@ -3,6 +3,7 @@ import {
   Gauge,
   KeyRound,
   Monitor,
+  Palette,
   Search,
   Volume2,
   type LucideIcon,
@@ -22,11 +23,13 @@ import {
   type SettingsSection,
 } from "../_helpers/session-shell";
 import { AgentLimitsSettingsPanel } from "./settings-dialog-panels/agent-limits-settings-panel";
+import { AppearanceSettingsPanel } from "./settings-dialog-panels/appearance-settings-panel";
 import { DesktopSettingsPanel } from "./settings-dialog-panels/desktop-settings-panel";
 import { MemorySettingsPanel } from "./settings-dialog-panels/memory-settings-panel";
 import { ProviderSettingsPanel } from "./settings-dialog-panels/provider-settings-panel";
 import type {
   AgentLimitsSettingsControls,
+  AppearanceSettingsControls,
   DesktopSettingsControls,
   MemorySettingsControls,
   ProviderSetupControls,
@@ -38,6 +41,7 @@ import { WebSearchSettingsPanel } from "./settings-dialog-panels/web-search-sett
 
 export type {
   AgentLimitsSettingsControls,
+  AppearanceSettingsControls,
   DesktopSettingsControls,
   MemorySettingsControls,
   ProviderSetupControls,
@@ -50,6 +54,7 @@ const SETTINGS_SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   providers: KeyRound,
   "web-search": Search,
   agent: Gauge,
+  appearance: Palette,
   voice: Volume2,
   memory: Brain,
   desktop: Monitor,
@@ -61,6 +66,7 @@ export interface SettingsDialogProps {
   providerSetup: ProviderSetupControls;
   webSearchSetup: WebSearchSetupControls;
   agentLimitsSetup: AgentLimitsSettingsControls;
+  appearanceSetup: AppearanceSettingsControls;
   memorySetup: MemorySettingsControls;
   desktopSetup: DesktopSettingsControls;
   voiceSetup: VoiceSettingsControls;
@@ -71,6 +77,7 @@ const renderSettingsPanel = ({
   providerSetup,
   webSearchSetup,
   agentLimitsSetup,
+  appearanceSetup,
   memorySetup,
   desktopSetup,
   voiceSetup,
@@ -84,6 +91,9 @@ const renderSettingsPanel = ({
 
     case "agent":
       return <AgentLimitsSettingsPanel setup={agentLimitsSetup} />;
+
+    case "appearance":
+      return <AppearanceSettingsPanel setup={appearanceSetup} />;
 
     case "memory":
       return <MemorySettingsPanel setup={memorySetup} />;
@@ -100,14 +110,15 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
   const { settingsSection, onSettingsSectionChange } = props;
 
   return (
-    <DialogContent className="max-h-[min(720px,calc(100vh-28px))] w-[min(980px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none">
+    <DialogContent className="app-settings-dialog max-h-[min(720px,calc(100vh-28px))] w-[min(980px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none">
       <div className="flex max-h-[min(720px,calc(100vh-28px))] min-h-[420px] flex-col overflow-hidden">
         <DialogHeader className="border-b border-slate-800/80 px-5 py-4 pr-12 text-left">
           <DialogTitle className="text-xl font-semibold text-white">
             Settings
           </DialogTitle>
           <DialogDescription className="sr-only">
-            Configure providers, web search, voice, memory, and desktop behavior.
+            Configure providers, web search, appearance, voice, memory, and
+            desktop behavior.
           </DialogDescription>
         </DialogHeader>
 

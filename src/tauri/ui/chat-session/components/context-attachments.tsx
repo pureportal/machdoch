@@ -150,7 +150,7 @@ export const ContextAttachmentsList = ({
   return (
     <div
       className={cn(
-        "grid gap-1.5",
+        "app-context-attachments-list grid gap-1.5",
         compact ? "gap-1" : "gap-1.5",
       )}
     >
@@ -161,7 +161,7 @@ export const ContextAttachmentsList = ({
           title="Remove all attached context"
           onClick={onClearAll}
           className={cn(
-            "inline-flex items-center gap-1 rounded-full border border-slate-800 bg-slate-950/70 text-slate-500 hover:border-rose-500/25 hover:bg-rose-500/10 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30",
+          "app-context-attachments-clear inline-flex items-center gap-1 rounded-full border border-slate-800 bg-slate-950/70 text-slate-500 hover:border-rose-500/25 hover:bg-rose-500/10 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30",
             compact ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs",
           )}
         >
@@ -173,7 +173,7 @@ export const ContextAttachmentsList = ({
       <ul
         aria-label="Attached context"
         className={cn(
-          "flex flex-wrap content-start items-start gap-1.5 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable] [scrollbar-width:thin]",
+          "app-context-attachments-items flex flex-wrap content-start items-start gap-1.5 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable] [scrollbar-width:thin]",
           compact ? "max-h-20 px-0.5" : "max-h-32 px-1",
         )}
       >
@@ -185,7 +185,7 @@ export const ContextAttachmentsList = ({
             <li
               key={attachment.id}
               className={cn(
-                "flex max-w-full items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/80 text-slate-200",
+                "app-context-attachment-item flex max-w-full items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/80 text-slate-200",
                 attachment.kind === "image" &&
                   "border-sky-400/30 bg-sky-400/10 text-sky-50",
                 compact ? "h-7 px-2 text-[11px]" : "h-8 px-2.5 text-xs",

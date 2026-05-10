@@ -7,6 +7,7 @@ import type { UiControlRuntimeInfo } from "../types.js";
 
 const execFileAsync = promisify(execFile);
 const UI_CONTROL_BRIDGE_MAX_BUFFER_BYTES = 50_000_000;
+const UI_CONTROL_BRIDGE_TIMEOUT_MS = 60_000;
 
 export interface DesktopUiMonitorInfo {
   id: number;
@@ -151,6 +152,7 @@ export const executeDesktopUiBridge = async <T>(
       {
         windowsHide: true,
         maxBuffer: UI_CONTROL_BRIDGE_MAX_BUFFER_BYTES,
+        timeout: UI_CONTROL_BRIDGE_TIMEOUT_MS,
       },
     );
     const normalizedStdout = stdout.trim();
@@ -179,18 +181,18 @@ export const executeDesktopUiBridge = async <T>(
       const normalizedStderr = typeof stderr === "string" ? stderr.trim() : "";
 
       if (normalizedStdout.length > 0) {
+        let response: DesktopUiBridgeResponse<T> | undefined;
+
         try {
-          const response = JSON.parse(
+          response = JSON.parse(
             normalizedStdout,
           ) as DesktopUiBridgeResponse<T>;
-
-          if (!response.ok) {
-            throw new Error(response.error, { cause: error });
-          }
-
-          return response.data;
         } catch {
           // Fall through to the best available error message below.
+        }
+
+        if (response && !response.ok) {
+          throw new Error(response.error, { cause: error });
         }
       }
 

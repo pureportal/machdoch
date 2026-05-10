@@ -35,7 +35,12 @@ import {
   type SessionStatusFilter,
   type SettingsSection,
 } from "./session-shell";
-import { filterSessions } from "./session-shell-view-model";
+import {
+  createSessionHistoryIndex,
+  filterSessionHistoryIndex,
+  type SessionHistoryIndex,
+  type SessionHistoryTagFacet,
+} from "./session-history-index";
 import { useNewestMessageScroll } from "./use-newest-message-scroll";
 
 const serializeShellFragment = (value: unknown): string => {
@@ -45,7 +50,11 @@ const serializeShellFragment = (value: unknown): string => {
 const getSessionPersistenceTimestamp = (
   session: ChatSessionRecord,
 ): number => {
-  let timestamp = Math.max(session.updatedAt, session.archivedAt ?? 0);
+  let timestamp = Math.max(
+    session.updatedAt,
+    session.archivedAt ?? 0,
+    session.pinnedAt ?? 0,
+  );
 
   for (const message of session.messages) {
     timestamp = Math.max(timestamp, message.createdAt ?? 0);
@@ -250,6 +259,10 @@ export interface ChatSessionShellStateController {
   hasHydrated: boolean;
   sessionScopeFilter: SessionScopeFilter;
   sessionStatusFilter: SessionStatusFilter;
+  sessionSearchQuery: string;
+  sessionTagFilters: string[];
+  sessionHistoryIndex: SessionHistoryIndex;
+  sessionTagFacets: SessionHistoryTagFacet[];
   catalogOpen: boolean;
   settingsSection: SettingsSection;
   isRenamingSession: boolean;
@@ -264,6 +277,8 @@ export interface ChatSessionShellStateController {
   setActiveSessionId: (sessionId: string) => void;
   setSessionScopeFilter: Dispatch<SetStateAction<SessionScopeFilter>>;
   setSessionStatusFilter: Dispatch<SetStateAction<SessionStatusFilter>>;
+  setSessionSearchQuery: Dispatch<SetStateAction<string>>;
+  setSessionTagFilters: Dispatch<SetStateAction<string[]>>;
   setIsRenamingSession: Dispatch<SetStateAction<boolean>>;
   setRenameValue: Dispatch<SetStateAction<string>>;
   setPromptHistoryIndex: Dispatch<SetStateAction<number | null>>;
@@ -305,6 +320,8 @@ export const useChatSessionShellState = (
     useState<SessionScopeFilter>("open");
   const [sessionStatusFilter, setSessionStatusFilter] =
     useState<SessionStatusFilter>("any");
+  const [sessionSearchQuery, setSessionSearchQuery] = useState("");
+  const [sessionTagFilters, setSessionTagFilters] = useState<string[]>([]);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>("providers");
@@ -379,13 +396,24 @@ export const useChatSessionShellState = (
     return sortSessionsByUpdatedAt(shellState.sessions);
   }, [shellState.sessions]);
 
+  const sessionHistoryIndex = useMemo(() => {
+    return createSessionHistoryIndex(sortedSessions);
+  }, [sortedSessions]);
+
   const filteredSessions = useMemo(() => {
-    return filterSessions(
-      sortedSessions,
-      sessionScopeFilter,
-      sessionStatusFilter,
-    );
-  }, [sessionScopeFilter, sessionStatusFilter, sortedSessions]);
+    return filterSessionHistoryIndex(sessionHistoryIndex, {
+      scope: sessionScopeFilter,
+      status: sessionStatusFilter,
+      searchQuery: sessionSearchQuery,
+      tagFilters: sessionTagFilters,
+    }).sessions;
+  }, [
+    sessionHistoryIndex,
+    sessionScopeFilter,
+    sessionSearchQuery,
+    sessionStatusFilter,
+    sessionTagFilters,
+  ]);
 
   const applyShellState = useCallback(
     (updater: SetStateAction<ShellPersistedState>): void => {
@@ -440,6 +468,23 @@ export const useChatSessionShellState = (
 
     setActiveSessionIdState(resolvedActiveSessionId);
   }, [activeSession, activeSessionId, resolvedActiveSessionId]);
+
+  useEffect(() => {
+    if (sessionTagFilters.length === 0) {
+      return;
+    }
+
+    const availableTags = new Set(
+      sessionHistoryIndex.tags.map((tag) => tag.label.toLowerCase()),
+    );
+    const nextTagFilters = sessionTagFilters.filter((tag) =>
+      availableTags.has(tag.toLowerCase()),
+    );
+
+    if (nextTagFilters.length !== sessionTagFilters.length) {
+      setSessionTagFilters(nextTagFilters);
+    }
+  }, [sessionHistoryIndex.tags, sessionTagFilters]);
 
   useEffect(() => {
     let cancelled = false;
@@ -683,6 +728,10 @@ export const useChatSessionShellState = (
     hasHydrated,
     sessionScopeFilter,
     sessionStatusFilter,
+    sessionSearchQuery,
+    sessionTagFilters,
+    sessionHistoryIndex,
+    sessionTagFacets: sessionHistoryIndex.tags,
     catalogOpen,
     settingsSection,
     isRenamingSession,
@@ -697,6 +746,8 @@ export const useChatSessionShellState = (
     setActiveSessionId,
     setSessionScopeFilter,
     setSessionStatusFilter,
+    setSessionSearchQuery,
+    setSessionTagFilters,
     setIsRenamingSession,
     setRenameValue,
     setPromptHistoryIndex,

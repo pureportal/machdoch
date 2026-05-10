@@ -12,6 +12,7 @@ export type CommandName =
   | "run"
   | "chat"
   | "set-api"
+  | "set-config"
   | "set-global-memory"
   | "inspect"
   | "config"
@@ -28,6 +29,8 @@ export interface ParsedCliArgs {
   provider?: UserApiProvider;
   runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
   key?: string;
+  configSetting?: string;
+  configValue?: string;
   model?: string;
   defaultModel?: string;
   sessionMemoryEnabled?: boolean;
@@ -84,6 +87,8 @@ const createParsedArgs = (
     | "provider"
     | "runtimeProvider"
     | "key"
+    | "configSetting"
+    | "configValue"
     | "model"
     | "defaultModel"
     | "sessionMemoryEnabled"
@@ -100,6 +105,8 @@ const createParsedArgs = (
     provider?: UserApiProvider;
     runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
     key?: string;
+    configSetting?: string;
+    configValue?: string;
     model?: string;
     defaultModel?: string;
     sessionMemoryEnabled?: boolean;
@@ -121,6 +128,8 @@ const createParsedArgs = (
       ? { runtimeProvider: options.runtimeProvider }
       : {}),
     ...(options?.key ? { key: options.key } : {}),
+    ...(options?.configSetting ? { configSetting: options.configSetting } : {}),
+    ...(options?.configValue ? { configValue: options.configValue } : {}),
     ...(options?.model ? { model: options.model } : {}),
     ...(options?.defaultModel ? { defaultModel: options.defaultModel } : {}),
     ...(options?.sessionMemoryEnabled !== undefined
@@ -294,6 +303,7 @@ Usage:
   machdoch --default-model <name>
   machdoch inspect [--json]
   machdoch config [--json]
+  machdoch config set <setting> <value> [--json]
   machdoch tools [--json]
   machdoch profiles [--json]
 
@@ -329,6 +339,17 @@ Options:
   --json                  Print machine-readable JSON.
   --verbose, -v           Print compact progress updates during \`machdoch run\`.
   -h, --help              Show help.
+
+Config settings accepted by \`machdoch config set\`:
+  api.<openai|anthropic|google>.key
+  web-search.provider
+  web-search.<perplexity|tavily|serper>.key
+  voice.provider
+  speech-to-text.<provider|input-device>
+  desktop.<setting>
+  memory.global
+  agent-limits.<infinite|executor-turns|autopilot-iterations>
+  workspace.<model|provider|mode|offline>
 
 Default CLI mode is interactive and keeps running until /exit, /quit, or Ctrl+C.
 \`machdoch <task>\` and \`machdoch --task <text>\` start interactive chat with an initial task.
@@ -748,7 +769,6 @@ export const parseCliArgs = (
 
   if (
     first === "inspect" ||
-    first === "config" ||
     first === "tools" ||
     first === "profiles" ||
     first === "help"
@@ -765,6 +785,67 @@ export const parseCliArgs = (
       ...sharedOptions,
       command: first,
     });
+  }
+
+  if (first === "config") {
+    if (quickRunRequested) {
+      fail(
+        "--quick can only be used with a task provided via --task or positional task text.",
+      );
+    }
+
+    if (rest.length === 0) {
+      return createParsedArgs({
+        ...sharedOptions,
+        command: "config",
+      });
+    }
+
+    const [subcommand, setting, ...valueParts] = rest;
+
+    if (subcommand !== "set") {
+      fail(
+        `Command \`config\` does not accept positional arguments: ${rest.join(" ")}`,
+      );
+    }
+
+    const configSetting =
+      normalizeOptionalString(setting) ??
+      fail("Expected `machdoch config set <setting> <value>`.");
+    const configValue =
+      normalizeOptionalString(valueParts.join(" ")) ??
+      fail("Expected `machdoch config set <setting> <value>`.");
+
+    if (
+      rawModel ||
+      rawDefaultModel ||
+      rawProfile ||
+      rawRuntimeProvider ||
+      rawMode ||
+      sessionMemoryEnabled !== undefined ||
+      globalMemoryEnabled !== undefined ||
+      agentLimits ||
+      rawConversationContextFile ||
+      rawContextPaths ||
+      rawImagePaths
+    ) {
+      fail(
+        "`machdoch config set` cannot be combined with runtime override options.",
+      );
+    }
+
+    return createParsedArgs(
+      {
+        json,
+        verbose,
+        workspaceRoot,
+        command: "set-config",
+      },
+      {
+        configSetting,
+        configValue,
+      },
+    );
   }
 
   if (first === "run") {

@@ -1,8 +1,9 @@
-import { PencilLine, Trash2 } from "lucide-react";
-import type { JSX } from "react";
+import { GitBranch, PencilLine, Pin, Trash2 } from "lucide-react";
+import { useEffect, useState, type JSX } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import type { ChatSessionRecord } from "../../chat-session.model";
+import { cn } from "../../lib/utils";
 
 export interface SessionHeaderProps {
   activeSession: ChatSessionRecord;
@@ -11,8 +12,12 @@ export interface SessionHeaderProps {
   renameValue: string;
   canRenameSession: boolean;
   canDeleteSession: boolean;
+  canEditSessionMetadata: boolean;
   showClearSessionHistory: boolean;
   canClearSessionHistory: boolean;
+  onTagCommit: (tags: string[]) => void;
+  onTogglePinnedSession: () => void;
+  onBranchSession: () => void;
   onRenameValueChange: (value: string) => void;
   onRenameCommit: () => void;
   onRenameCancel: () => void;
@@ -23,13 +28,18 @@ export interface SessionHeaderProps {
 }
 
 export const SessionHeader = ({
+  activeSession,
   currentSessionTitle,
   isRenamingSession,
   renameValue,
   canRenameSession,
   canDeleteSession,
+  canEditSessionMetadata,
   showClearSessionHistory,
   canClearSessionHistory,
+  onTagCommit,
+  onTogglePinnedSession,
+  onBranchSession,
   onRenameValueChange,
   onRenameCommit,
   onRenameCancel,
@@ -37,8 +47,24 @@ export const SessionHeader = ({
   onClearSessionHistory,
   onDeleteSession,
 }: SessionHeaderProps): JSX.Element => {
+  const [tagDraft, setTagDraft] = useState("");
+  const isPinned = typeof activeSession.pinnedAt === "number";
+
+  useEffect(() => {
+    setTagDraft(activeSession.tags.join(", "));
+  }, [activeSession.id, activeSession.tags]);
+
+  const commitTags = (): void => {
+    onTagCommit(
+      tagDraft
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    );
+  };
+
   return (
-    <header className="flex h-16 items-center justify-between gap-4 border-b border-slate-900 bg-slate-950/60 px-8 backdrop-blur-md">
+    <header className="app-session-header flex h-16 items-center justify-between gap-4 border-b border-slate-900 bg-slate-950/60 px-8 backdrop-blur-md">
       <div className="min-w-0 flex-1">
         {isRenamingSession ? (
           <Input
@@ -57,16 +83,67 @@ export const SessionHeader = ({
                 onRenameCancel();
               }
             }}
-            className="h-10 w-full max-w-md rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+            className="app-session-rename-input h-10 w-full max-w-md rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
           />
         ) : (
-          <h1 className="truncate text-2xl font-semibold tracking-tight text-white">
+          <h1 className="app-session-title-heading truncate text-2xl font-semibold tracking-tight text-white">
             {currentSessionTitle}
           </h1>
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="app-session-header-controls flex shrink-0 items-center gap-2">
+        {canEditSessionMetadata ? (
+          <Input
+            value={tagDraft}
+            aria-label="Session tags"
+            placeholder="Tags"
+            onChange={(event) => setTagDraft(event.target.value)}
+            onBlur={commitTags}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commitTags();
+              }
+
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setTagDraft(activeSession.tags.join(", "));
+              }
+            }}
+            className="app-session-tags-input h-9 w-44 rounded-2xl border-slate-800 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
+          />
+        ) : null}
+        {canEditSessionMetadata ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={isPinned ? "Unpin session" : "Pin session"}
+            aria-pressed={isPinned}
+            title={isPinned ? "Unpin session" : "Pin session"}
+            onClick={onTogglePinnedSession}
+            className={cn(
+              "h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100",
+              isPinned && "text-amber-200 hover:text-amber-100",
+            )}
+          >
+            <Pin className="h-4 w-4" />
+          </Button>
+        ) : null}
+        {canEditSessionMetadata ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Branch session"
+            title="Branch session"
+            onClick={onBranchSession}
+            className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+          >
+            <GitBranch className="h-4 w-4" />
+          </Button>
+        ) : null}
         {showClearSessionHistory ? (
           <Button
             type="button"

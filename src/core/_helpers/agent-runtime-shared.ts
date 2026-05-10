@@ -2,6 +2,7 @@ import type {
   RuntimeConfig,
   TaskExecutionFileReference,
   TaskExecutionMemoryUpdate,
+  TaskExecutionProgress,
   TaskExecutionProgressHandler,
   TaskExecutionResult,
   TaskExecutionState,
@@ -27,6 +28,10 @@ export const emitAgentProgress = async (
   loopState: AgentLoopState,
   onStateChange: TaskExecutionProgressHandler | undefined,
   result?: TaskExecutionResult,
+  progressExtras: Pick<
+    TaskExecutionProgress,
+    "actionOutput" | "assistantText" | "modelStream"
+  > = {},
 ): Promise<void> => {
   if (!onStateChange) {
     return;
@@ -41,6 +46,7 @@ export const emitAgentProgress = async (
     outputSections: result?.outputSections ?? loopState.outputSections,
     cancellable: !isTerminalTaskExecutionState(state),
     ...(result?.reason ? { reason: result.reason } : {}),
+    ...progressExtras,
   });
 };
 

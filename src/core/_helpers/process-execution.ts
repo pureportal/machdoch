@@ -35,11 +35,12 @@ export const executeLocalCommand = async (
         "code" in error &&
         typeof error.code === "number"
           ? error.code
-          : 0;
+          : undefined;
 
       if (
         error &&
-        !options.acceptedExitCodes?.includes(exitCode)
+        (exitCode === undefined ||
+          !options.acceptedExitCodes?.includes(exitCode))
       ) {
         reject(
           Object.assign(error, {
@@ -53,7 +54,7 @@ export const executeLocalCommand = async (
       resolve({
         stdout: normalizeProcessOutput(stdout),
         stderr: normalizeProcessOutput(stderr),
-        exitCode,
+        exitCode: exitCode ?? 0,
       });
     });
   });
@@ -69,14 +70,14 @@ export const formatLocalCommandError = (
     (typeof error.stdout === "string" || Buffer.isBuffer(error.stdout))
       ? normalizeProcessOutput(error.stdout)
       : "";
-  const stderr =
+  const stderrOutput =
     error instanceof Error &&
     "stderr" in error &&
     (typeof error.stderr === "string" || Buffer.isBuffer(error.stderr))
       ? normalizeProcessOutput(error.stderr)
-      : error instanceof Error
-        ? error.message
-        : String(error);
+      : "";
+  const stderr =
+    stderrOutput || (error instanceof Error ? error.message : String(error));
   const exitCode =
     error instanceof Error && "code" in error && typeof error.code === "number"
       ? error.code

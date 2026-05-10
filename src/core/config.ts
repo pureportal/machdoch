@@ -10,6 +10,15 @@ import {
   loadWorkspaceEnv,
 } from "./env.js";
 import { normalizeAgentLimitOverrides } from "./_helpers/agent-runtime-types.js";
+import {
+  DEFAULT_MODEL_BY_PROVIDER,
+  DEFAULT_MODEL_PROVIDER,
+  DEFAULT_TOOLS,
+  VALID_TOOLS,
+  VALID_WEB_SEARCH_PROVIDERS,
+  isConfiguredModelProvider,
+  isRunMode as isRuntimeSchemaRunMode,
+} from "./runtime-contract.generated.js";
 import type {
   ModelProvider,
   ProviderAvailability,
@@ -24,49 +33,20 @@ import type {
   WorkspaceProfileConfig,
 } from "./types.js";
 
-const VALID_MODES: RunMode[] = ["plan", "safe", "ask", "auto"];
-const VALID_TOOLS: ToolName[] = [
-  "filesystem",
-  "shell",
-  "network",
-  "browser",
-  "git",
-  "packages",
-  "utilities",
-];
-
-const DEFAULT_TOOLS: ToolName[] = ["filesystem", "shell", "utilities"];
-const DEFAULT_MODEL = "gpt-5.5";
 const WORKSPACE_CONFIG_DIRECTORY = ".machdoch";
 const WORKSPACE_CONFIG_FILE_NAME = "config.json";
-const VALID_MODEL_PROVIDERS: Exclude<ModelProvider, "unconfigured">[] = [
-  "openai",
-  "anthropic",
-  "google",
-];
-const VALID_WEB_SEARCH_PROVIDERS: WebSearchProvider[] = [
-  "none",
-  "perplexity",
-  "tavily",
-  "serper",
-];
 
 /**
  * Returns whether a string matches one of the supported runtime modes.
  */
 const isRunMode = (value: string | undefined): value is RunMode => {
-  return value !== undefined && VALID_MODES.includes(value as RunMode);
+  return isRuntimeSchemaRunMode(value);
 };
 
 const isModelProvider = (
   value: string | undefined,
 ): value is Exclude<ModelProvider, "unconfigured"> => {
-  return (
-    value !== undefined &&
-    VALID_MODEL_PROVIDERS.includes(
-      value as Exclude<ModelProvider, "unconfigured">,
-    )
-  );
+  return isConfiguredModelProvider(value);
 };
 
 /**
@@ -74,7 +54,7 @@ const isModelProvider = (
  */
 const normalizeTools = (tools: unknown): ToolName[] => {
   if (!Array.isArray(tools)) {
-    return DEFAULT_TOOLS;
+    return [...DEFAULT_TOOLS];
   }
 
   const normalized = tools.filter(
@@ -82,7 +62,7 @@ const normalizeTools = (tools: unknown): ToolName[] => {
       typeof tool === "string" && VALID_TOOLS.includes(tool as ToolName),
   );
 
-  return normalized.length > 0 ? normalized : DEFAULT_TOOLS;
+  return normalized.length > 0 ? normalized : [...DEFAULT_TOOLS];
 };
 
 /**
@@ -110,6 +90,33 @@ const loadWorkspaceConfigFile = async (
   };
 };
 
+const saveWorkspaceConfigFile = async (
+  workspaceRoot: string,
+  update: Partial<WorkspaceConfigFile>,
+): Promise<string> => {
+  const configDirectory = join(workspaceRoot, WORKSPACE_CONFIG_DIRECTORY);
+  const configPath = join(configDirectory, WORKSPACE_CONFIG_FILE_NAME);
+  const existingConfig = existsSync(configPath)
+    ? (JSON.parse(await readFile(configPath, "utf8")) as WorkspaceConfigFile)
+    : {};
+
+  await mkdir(configDirectory, { recursive: true });
+  await writeFile(
+    configPath,
+    `${JSON.stringify(
+      {
+        ...existingConfig,
+        ...update,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  return configPath;
+};
+
 /**
  * Persists the workspace default model into `.machdoch/config.json`, creating
  * the config file when needed.
@@ -124,27 +131,50 @@ export const saveWorkspaceDefaultModel = async (
     throw new Error("Expected --default-model to be followed by a model name.");
   }
 
-  const configDirectory = join(workspaceRoot, WORKSPACE_CONFIG_DIRECTORY);
-  const configPath = join(configDirectory, WORKSPACE_CONFIG_FILE_NAME);
-  const existingConfig = existsSync(configPath)
-    ? (JSON.parse(await readFile(configPath, "utf8")) as WorkspaceConfigFile)
-    : {};
+  return saveWorkspaceConfigFile(workspaceRoot, {
+    model: normalizedModel,
+  });
+};
 
-  await mkdir(configDirectory, { recursive: true });
-  await writeFile(
-    configPath,
-    `${JSON.stringify(
-      {
-        ...existingConfig,
-        model: normalizedModel,
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
+export const saveWorkspaceRuntimeProvider = async (
+  workspaceRoot: string,
+  provider: string,
+): Promise<string> => {
+  const normalizedProvider = normalizeOptionalString(provider);
 
-  return configPath;
+  if (!normalizedProvider || !isConfiguredModelProvider(normalizedProvider)) {
+    throw new Error(
+      "Expected workspace.provider to be one of openai, anthropic, or google.",
+    );
+  }
+
+  return saveWorkspaceConfigFile(workspaceRoot, {
+    provider: normalizedProvider,
+  });
+};
+
+export const saveWorkspaceDefaultMode = async (
+  workspaceRoot: string,
+  mode: string,
+): Promise<string> => {
+  const normalizedMode = normalizeOptionalString(mode);
+
+  if (!normalizedMode || !isRunMode(normalizedMode)) {
+    throw new Error("Expected workspace.mode to be one of plan, safe, ask, or auto.");
+  }
+
+  return saveWorkspaceConfigFile(workspaceRoot, {
+    defaultMode: normalizedMode,
+  });
+};
+
+export const saveWorkspaceOffline = async (
+  workspaceRoot: string,
+  offline: boolean,
+): Promise<string> => {
+  return saveWorkspaceConfigFile(workspaceRoot, {
+    offline,
+  });
 };
 
 /**
@@ -335,6 +365,12 @@ const parseAgentLimitsFromEnv = (
   return Object.keys(limits).length > 0 ? limits : undefined;
 };
 
+const getDefaultModelForRuntimeProvider = (provider: ModelProvider): string => {
+  return DEFAULT_MODEL_BY_PROVIDER[
+    provider === "unconfigured" ? DEFAULT_MODEL_PROVIDER : provider
+  ];
+};
+
 /**
  * Loads the effective runtime configuration for a workspace, including
  * environment variables, workspace config, profile overrides, and provider
@@ -374,7 +410,7 @@ export const loadRuntimeConfig = async (
     normalizeOptionalString(overrideModel) ??
     effectiveConfig.model ??
     env.MACHDOCH_MODEL ??
-    DEFAULT_MODEL;
+    getDefaultModelForRuntimeProvider(provider);
   const offline =
     env.MACHDOCH_OFFLINE === "true" ? true : (effectiveConfig.offline ?? false);
   const agentLimits = normalizeAgentLimitOverrides(

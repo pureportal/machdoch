@@ -1,17 +1,19 @@
+import {
+  ANTHROPIC_IMAGE_MEDIA_TYPES,
+  findProviderModelMetadata,
+  GOOGLE_IMAGE_MEDIA_TYPES,
+  OPENAI_IMAGE_MEDIA_TYPES,
+  PROVIDER_MODEL_METADATA,
+  PROVIDER_MODEL_MODES,
+  type ConfiguredModelProvider,
+  type ProviderModelMode,
+  type ProviderModelVoiceCapability,
+} from "./provider-model-registry.js";
 import type { AgentModelImageMediaType, ModelProvider } from "./types.js";
 
-type ConfiguredModelProvider = Exclude<ModelProvider, "unconfigured">;
+export type ModelProviderMode = ProviderModelMode;
 
-export type ModelProviderMode =
-  | "anthropic-messages"
-  | "gemini-chat"
-  | "gemini-function-calling-any"
-  | "openai-responses";
-
-export type ModelVoiceCapability =
-  | "realtime-voice"
-  | "speech-to-text"
-  | "text-to-speech";
+export type ModelVoiceCapability = ProviderModelVoiceCapability;
 
 export interface ModelCapabilityProfile {
   provider: ConfiguredModelProvider;
@@ -33,14 +35,6 @@ export interface ProviderCapabilityProfile {
   providerModes: readonly ModelProviderMode[];
 }
 
-type ModelCapabilityBase = Omit<ModelCapabilityProfile, "provider" | "model">;
-
-interface ModelCapabilityRule {
-  provider: ConfiguredModelProvider;
-  pattern: RegExp;
-  capabilities: ModelCapabilityBase;
-}
-
 const IMAGE_EXTENSION_MEDIA_TYPES: Record<string, AgentModelImageMediaType> = {
   gif: "image/gif",
   heic: "image/heic",
@@ -51,26 +45,6 @@ const IMAGE_EXTENSION_MEDIA_TYPES: Record<string, AgentModelImageMediaType> = {
   webp: "image/webp",
 };
 
-const ANTHROPIC_IMAGE_MEDIA_TYPES = [
-  "image/gif",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-] as const satisfies readonly AgentModelImageMediaType[];
-const GOOGLE_IMAGE_MEDIA_TYPES = [
-  "image/heic",
-  "image/heif",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-] as const satisfies readonly AgentModelImageMediaType[];
-const OPENAI_IMAGE_MEDIA_TYPES = [
-  "image/gif",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-] as const satisfies readonly AgentModelImageMediaType[];
-
 const PROVIDER_CAPABILITY_PROFILES: Record<
   ConfiguredModelProvider,
   ProviderCapabilityProfile
@@ -78,229 +52,35 @@ const PROVIDER_CAPABILITY_PROFILES: Record<
   anthropic: {
     provider: "anthropic",
     imageInputMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
-    providerModes: ["anthropic-messages"],
+    providerModes: PROVIDER_MODEL_MODES.anthropic,
   },
   google: {
     provider: "google",
     imageInputMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
-    providerModes: ["gemini-chat", "gemini-function-calling-any"],
+    providerModes: PROVIDER_MODEL_MODES.google,
   },
   openai: {
     provider: "openai",
     imageInputMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
-    providerModes: ["openai-responses"],
+    providerModes: PROVIDER_MODEL_MODES.openai,
   },
 };
 
-const withoutImages = [] as const satisfies readonly AgentModelImageMediaType[];
-const withoutVoice = [] as const satisfies readonly ModelVoiceCapability[];
-
-const createCapabilityBase = (
-  provider: ConfiguredModelProvider,
-  overrides: Partial<ModelCapabilityBase>,
-): ModelCapabilityBase => ({
-  imageInput: false,
-  toolUse: true,
-  reasoning: false,
-  streaming: true,
-  contextWindowTokens: null,
-  maxOutputTokens: null,
-  supportedImageMediaTypes: withoutImages,
-  voice: withoutVoice,
-  providerModes: PROVIDER_CAPABILITY_PROFILES[provider].providerModes,
-  ...overrides,
-});
-
-const createProfile = (
-  provider: ConfiguredModelProvider,
-  model: string,
-  overrides: Partial<ModelCapabilityBase>,
-): ModelCapabilityProfile => ({
-  provider,
-  model,
-  ...createCapabilityBase(provider, overrides),
-});
-
-export const MODEL_CAPABILITY_CATALOG = [
-  createProfile("openai", "gpt-5.5", {
-    imageInput: true,
-    reasoning: true,
-    contextWindowTokens: 400_000,
-    maxOutputTokens: 128_000,
-    supportedImageMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
+export const MODEL_CAPABILITY_CATALOG = PROVIDER_MODEL_METADATA.map(
+  (entry): ModelCapabilityProfile => ({
+    provider: entry.provider,
+    model: entry.id,
+    imageInput: entry.capabilities.imageInput,
+    toolUse: entry.capabilities.toolUse,
+    reasoning: entry.capabilities.reasoning,
+    streaming: entry.capabilities.streaming,
+    contextWindowTokens: entry.capabilities.contextWindowTokens,
+    maxOutputTokens: entry.capabilities.maxOutputTokens,
+    supportedImageMediaTypes: entry.capabilities.supportedImageMediaTypes,
+    voice: entry.capabilities.voice,
+    providerModes: entry.capabilities.providerModes,
   }),
-  createProfile("openai", "gpt-5.4", {
-    imageInput: true,
-    reasoning: true,
-    contextWindowTokens: 400_000,
-    maxOutputTokens: 128_000,
-    supportedImageMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
-  }),
-  createProfile("openai", "gpt-5.4-mini", {
-    imageInput: true,
-    reasoning: true,
-    contextWindowTokens: 400_000,
-    maxOutputTokens: 128_000,
-    supportedImageMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
-  }),
-  createProfile("openai", "gpt-5.4-nano", {
-    imageInput: true,
-    reasoning: true,
-    contextWindowTokens: 400_000,
-    maxOutputTokens: 128_000,
-    supportedImageMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
-  }),
-  createProfile("anthropic", "claude-opus-4-6", {
-    imageInput: true,
-    reasoning: true,
-    contextWindowTokens: 200_000,
-    maxOutputTokens: 64_000,
-    supportedImageMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
-  }),
-  createProfile("anthropic", "claude-sonnet-4-6", {
-    imageInput: true,
-    reasoning: true,
-    contextWindowTokens: 200_000,
-    maxOutputTokens: 64_000,
-    supportedImageMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
-  }),
-  createProfile("anthropic", "claude-haiku-4-5", {
-    imageInput: true,
-    reasoning: true,
-    contextWindowTokens: 200_000,
-    maxOutputTokens: 64_000,
-    supportedImageMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
-  }),
-  createProfile("google", "gemini-2.5-pro", {
-    imageInput: true,
-    reasoning: true,
-    contextWindowTokens: 1_000_000,
-    maxOutputTokens: 65_536,
-    supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
-  }),
-  createProfile("google", "gemini-2.5-flash", {
-    imageInput: true,
-    reasoning: true,
-    contextWindowTokens: 1_000_000,
-    maxOutputTokens: 65_536,
-    supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
-  }),
-  createProfile("google", "gemini-2.5-flash-lite", {
-    imageInput: true,
-    reasoning: true,
-    contextWindowTokens: 1_000_000,
-    maxOutputTokens: 65_536,
-    supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
-  }),
-  createProfile("google", "gemini-3.1-pro-preview", {
-    imageInput: true,
-    reasoning: true,
-    contextWindowTokens: 1_000_000,
-    maxOutputTokens: 65_536,
-    supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
-  }),
-  createProfile("google", "gemini-3-flash-preview", {
-    imageInput: true,
-    reasoning: true,
-    contextWindowTokens: 1_000_000,
-    maxOutputTokens: 65_536,
-    supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
-  }),
-] as const satisfies readonly ModelCapabilityProfile[];
-
-const MODEL_CAPABILITY_RULES = [
-  {
-    provider: "openai",
-    pattern:
-      /^gpt-5(?:\.\d+)?(?:-(?:mini|nano|pro))?(?:-\d{4}-\d{2}-\d{2})?$/u,
-    capabilities: createCapabilityBase("openai", {
-      imageInput: true,
-      reasoning: true,
-      contextWindowTokens: 400_000,
-      maxOutputTokens: 128_000,
-      supportedImageMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
-    }),
-  },
-  {
-    provider: "openai",
-    pattern:
-      /^gpt-4(?:\.1|o)(?:-(?:mini|nano))?(?:-\d{4}-\d{2}-\d{2})?$/u,
-    capabilities: createCapabilityBase("openai", {
-      imageInput: true,
-      reasoning: true,
-      contextWindowTokens: 1_000_000,
-      maxOutputTokens: 32_768,
-      supportedImageMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
-    }),
-  },
-  {
-    provider: "openai",
-    pattern: /^o[34](?:-(?:mini))?(?:-\d{4}-\d{2}-\d{2})?$/u,
-    capabilities: createCapabilityBase("openai", {
-      imageInput: true,
-      reasoning: true,
-      contextWindowTokens: 200_000,
-      maxOutputTokens: 100_000,
-      supportedImageMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
-    }),
-  },
-  {
-    provider: "openai",
-    pattern: /^(?:gpt-4o-(?:mini-)?audio|gpt-4o-realtime)/u,
-    capabilities: createCapabilityBase("openai", {
-      imageInput: true,
-      reasoning: true,
-      contextWindowTokens: 128_000,
-      maxOutputTokens: 16_384,
-      supportedImageMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
-      voice: ["realtime-voice", "speech-to-text", "text-to-speech"],
-    }),
-  },
-  {
-    provider: "openai",
-    pattern: /^computer-use-preview$/u,
-    capabilities: createCapabilityBase("openai", {
-      imageInput: true,
-      contextWindowTokens: 128_000,
-      maxOutputTokens: 16_384,
-      supportedImageMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
-      providerModes: ["openai-responses"],
-    }),
-  },
-  {
-    provider: "anthropic",
-    pattern:
-      /^claude-(?:opus|sonnet|haiku)-4(?:-[\w-]+)?(?:-\d{8})?$/u,
-    capabilities: createCapabilityBase("anthropic", {
-      imageInput: true,
-      reasoning: true,
-      contextWindowTokens: 200_000,
-      maxOutputTokens: 64_000,
-      supportedImageMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
-    }),
-  },
-  {
-    provider: "anthropic",
-    pattern: /^claude-3(?:-[\w-]+)?(?:-\d{8})?$/u,
-    capabilities: createCapabilityBase("anthropic", {
-      imageInput: true,
-      contextWindowTokens: 200_000,
-      maxOutputTokens: 8_192,
-      supportedImageMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
-    }),
-  },
-  {
-    provider: "google",
-    pattern: /^gemini-(?!.*(?:embedding|imagen|veo|tts|audio)).+$/u,
-    capabilities: createCapabilityBase("google", {
-      imageInput: true,
-      reasoning: true,
-      contextWindowTokens: 1_000_000,
-      maxOutputTokens: 65_536,
-      supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
-    }),
-  },
-] as const satisfies readonly ModelCapabilityRule[];
+) satisfies readonly ModelCapabilityProfile[];
 
 const getExtension = (path: string): string | undefined => {
   const fileName = path.trim().replace(/\\/gu, "/").split("/").at(-1) ?? "";
@@ -334,27 +114,25 @@ export const getModelCapabilityProfile = (
   }
 
   const normalizedModel = normalizeModel(model);
-  const exactProfile = MODEL_CAPABILITY_CATALOG.find(
-    (profile) =>
-      profile.provider === provider && profile.model === normalizedModel,
-  );
+  const metadata = findProviderModelMetadata(provider, normalizedModel);
 
-  if (exactProfile) {
-    return exactProfile;
+  if (!metadata) {
+    return undefined;
   }
 
-  const rule = MODEL_CAPABILITY_RULES.find(
-    (candidate) =>
-      candidate.provider === provider && candidate.pattern.test(normalizedModel),
-  );
-
-  return rule
-    ? {
-        provider,
-        model: normalizedModel,
-        ...rule.capabilities,
-      }
-    : undefined;
+  return {
+    provider,
+    model: normalizedModel,
+    imageInput: metadata.capabilities.imageInput,
+    toolUse: metadata.capabilities.toolUse,
+    reasoning: metadata.capabilities.reasoning,
+    streaming: metadata.capabilities.streaming,
+    contextWindowTokens: metadata.capabilities.contextWindowTokens,
+    maxOutputTokens: metadata.capabilities.maxOutputTokens,
+    supportedImageMediaTypes: metadata.capabilities.supportedImageMediaTypes,
+    voice: metadata.capabilities.voice,
+    providerModes: metadata.capabilities.providerModes,
+  };
 };
 
 export const getImageInputMediaTypeForPath = (
@@ -442,5 +220,5 @@ export const createImageInputUnsupportedModelMessage = (
     return "Image attachments require a configured model provider with image input support.";
   }
 
-  return `Model \`${model}\` on provider \`${provider}\` does not support reading image attachments. Select a vision-capable model or remove the attached images.`;
+  return `Model \`${model}\` on provider \`${provider}\` does not support reading image attachments with the registered capability metadata. Select a vision-capable model from the provider catalog or remove the attached images.`;
 };

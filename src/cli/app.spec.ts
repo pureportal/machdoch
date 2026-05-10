@@ -439,6 +439,34 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("parses typed config set updates", () => {
+    expect(
+      parseCliArgs(["config", "set", "web-search.serper.key", "serper-live"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "set-config",
+      configSetting: "web-search.serper.key",
+      configValue: "serper-live",
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(["--json", "config", "set", "web-search.provider", "serper"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "set-config",
+      configSetting: "web-search.provider",
+      configValue: "serper",
+      json: true,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
   it("rejects invalid modes and missing run tasks", () => {
     expect(() =>
       parseCliArgs(["--mode", "loud"], {
@@ -511,6 +539,20 @@ describe("parseCliArgs", () => {
       }),
     ).toThrow(
       "--infinite cannot be combined with finite loop limit overrides.",
+    );
+
+    expect(() =>
+      parseCliArgs(["config", "set", "web-search.provider"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("Expected `machdoch config set <setting> <value>`.");
+
+    expect(() =>
+      parseCliArgs(["--model", "gpt-5.5", "config", "set", "workspace.mode", "auto"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow(
+      "`machdoch config set` cannot be combined with runtime override options.",
     );
   });
 

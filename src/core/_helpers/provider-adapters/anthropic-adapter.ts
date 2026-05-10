@@ -3,11 +3,13 @@ import type {
   Message as AnthropicMessage,
   MessageParam as AnthropicMessageParam,
   Tool as AnthropicTool,
+  ToolUseBlock as AnthropicToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages";
 import type {
   AgentModelAdapter,
   AgentModelContinueParams,
   AgentModelStartParams,
+  AgentModelStreamEventHandler,
   AgentModelToolCall,
   AgentModelToolResult,
   AgentModelToolSpec,
@@ -16,6 +18,14 @@ import type {
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
+import {
+  emitProviderStreamError,
+  emitProviderStreamEvent,
+  emitProviderStreamStatus,
+  emitToolResultStreamEvents,
+  emitUsageStreamEvent,
+  normalizeAnthropicUsage,
+} from "./stream-events.js";
 import { normalizeToolResultContent } from "./tool-result-content.js";
 
 export const createAnthropicToolSelection = () => ({
@@ -115,21 +125,29 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
         operation: "startTurn",
         signal: params.signal,
       },
-      async (requestSignal) =>
-        this.client.messages.create(
-          {
-            model: params.model,
-            max_tokens: 4_096,
-            system: params.systemPrompt,
-            messages: [...this.messages],
-            tools: createAnthropicTools(params.tools),
-            ...createAnthropicToolSelection(),
-          },
-          {
-            timeout: TASK_EXECUTION_TIMEOUT_MS,
-            ...(requestSignal ? { signal: requestSignal } : {}),
-          },
-        ),
+      async (requestSignal) => {
+        const request = {
+          model: params.model,
+          max_tokens: 4_096,
+          system: params.systemPrompt,
+          messages: [...this.messages],
+          tools: createAnthropicTools(params.tools),
+          ...createAnthropicToolSelection(),
+        };
+
+        if (params.onStreamEvent) {
+          return await this.createStreamingMessage(
+            request,
+            requestSignal,
+            params.onStreamEvent,
+          );
+        }
+
+        return await this.client.messages.create(request, {
+          timeout: TASK_EXECUTION_TIMEOUT_MS,
+          ...(requestSignal ? { signal: requestSignal } : {}),
+        });
+      },
     );
 
     this.messages.push({
@@ -160,27 +178,41 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
       })) as AnthropicMessageParam["content"],
     });
 
+    emitToolResultStreamEvents(
+      params.onStreamEvent,
+      "anthropic",
+      params.toolResults,
+    );
+
     const message = await withProviderRequest(
       {
         provider: "anthropic",
         operation: "continueTurn",
         signal: params.signal,
       },
-      async (requestSignal) =>
-        this.client.messages.create(
-          {
-            model: startParams.model,
-            max_tokens: 4_096,
-            system: startParams.systemPrompt,
-            messages: [...this.messages],
-            tools: createAnthropicTools(this.tools),
-            ...createAnthropicToolSelection(),
-          },
-          {
-            timeout: TASK_EXECUTION_TIMEOUT_MS,
-            ...(requestSignal ? { signal: requestSignal } : {}),
-          },
-        ),
+      async (requestSignal) => {
+        const request = {
+          model: startParams.model,
+          max_tokens: 4_096,
+          system: startParams.systemPrompt,
+          messages: [...this.messages],
+          tools: createAnthropicTools(this.tools),
+          ...createAnthropicToolSelection(),
+        };
+
+        if (params.onStreamEvent) {
+          return await this.createStreamingMessage(
+            request,
+            requestSignal,
+            params.onStreamEvent,
+          );
+        }
+
+        return await this.client.messages.create(request, {
+          timeout: TASK_EXECUTION_TIMEOUT_MS,
+          ...(requestSignal ? { signal: requestSignal } : {}),
+        });
+      },
     );
 
     this.messages.push({
@@ -189,6 +221,160 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
     });
 
     return this.normalizeResponse(message);
+  }
+
+  private async createStreamingMessage(
+    request: Parameters<Anthropic["messages"]["create"]>[0],
+    requestSignal: AbortSignal | undefined,
+    onStreamEvent: AgentModelStreamEventHandler,
+  ): Promise<AnthropicMessage> {
+    emitProviderStreamStatus(
+      onStreamEvent,
+      "anthropic",
+      "starting",
+      "Anthropic message stream started.",
+    );
+
+    const stream = this.client.messages.stream(request, {
+      timeout: TASK_EXECUTION_TIMEOUT_MS,
+      ...(requestSignal ? { signal: requestSignal } : {}),
+    });
+    const toolCallsByIndex = new Map<number, AnthropicToolUseBlock>();
+    const toolArgumentSnapshotsByIndex = new Map<number, string>();
+    const abortStream = (): void => stream.abort();
+
+    requestSignal?.addEventListener("abort", abortStream, { once: true });
+
+    try {
+      stream.on("text", (textDelta) => {
+        emitProviderStreamEvent(onStreamEvent, {
+          type: "text-delta",
+          provider: "anthropic",
+          delta: textDelta,
+        });
+      });
+      stream.on("streamEvent", (event) => {
+        if (event.type === "message_start") {
+          emitProviderStreamStatus(
+            onStreamEvent,
+            "anthropic",
+            "in-progress",
+            "Anthropic message stream in progress.",
+            event.type,
+          );
+          emitUsageStreamEvent(
+            onStreamEvent,
+            "anthropic",
+            normalizeAnthropicUsage(event.message.usage),
+          );
+          return;
+        }
+
+        if (
+          event.type === "content_block_start" &&
+          event.content_block.type === "tool_use"
+        ) {
+          toolCallsByIndex.set(event.index, event.content_block);
+          emitProviderStreamEvent(onStreamEvent, {
+            type: "tool-call-start",
+            provider: "anthropic",
+            id: event.content_block.id,
+            name: event.content_block.name,
+          });
+          return;
+        }
+
+        if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "input_json_delta"
+        ) {
+          const toolCall = toolCallsByIndex.get(event.index);
+          const previousSnapshot =
+            toolArgumentSnapshotsByIndex.get(event.index) ?? "";
+          const snapshot = `${previousSnapshot}${event.delta.partial_json}`;
+
+          toolArgumentSnapshotsByIndex.set(event.index, snapshot);
+          emitProviderStreamEvent(onStreamEvent, {
+            type: "tool-call-arguments-delta",
+            provider: "anthropic",
+            ...(toolCall ? { id: toolCall.id, name: toolCall.name } : {}),
+            delta: event.delta.partial_json,
+            snapshot,
+          });
+          return;
+        }
+
+        if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "thinking_delta"
+        ) {
+          emitProviderStreamEvent(onStreamEvent, {
+            type: "reasoning-delta",
+            provider: "anthropic",
+            delta: event.delta.thinking,
+          });
+          return;
+        }
+
+        if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "signature_delta"
+        ) {
+          emitProviderStreamEvent(onStreamEvent, {
+            type: "reasoning-delta",
+            provider: "anthropic",
+            delta: "",
+            signature: event.delta.signature,
+          });
+          return;
+        }
+
+        if (event.type === "content_block_stop") {
+          const toolCall = toolCallsByIndex.get(event.index);
+
+          if (!toolCall) {
+            return;
+          }
+
+          emitProviderStreamEvent(onStreamEvent, {
+            type: "tool-call-done",
+            provider: "anthropic",
+            id: toolCall.id,
+            name: toolCall.name,
+            argumentsText:
+              toolArgumentSnapshotsByIndex.get(event.index) ??
+              JSON.stringify(toolCall.input),
+          });
+          return;
+        }
+
+        if (event.type === "message_delta") {
+          emitUsageStreamEvent(
+            onStreamEvent,
+            "anthropic",
+            normalizeAnthropicUsage(event.usage),
+          );
+          return;
+        }
+
+        if (event.type === "message_stop") {
+          emitProviderStreamStatus(
+            onStreamEvent,
+            "anthropic",
+            "completed",
+            "Anthropic message stream completed.",
+            event.type,
+          );
+        }
+      });
+
+      return await stream.finalMessage();
+    } catch (error) {
+      emitProviderStreamError(onStreamEvent, "anthropic", error);
+      throw error;
+    } finally {
+      requestSignal?.removeEventListener("abort", abortStream);
+    }
   }
 
   private normalizeResponse(

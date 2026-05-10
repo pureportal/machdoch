@@ -2,6 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -82,6 +83,7 @@ export interface ChatSessionRuntimeController {
   webSearchSetupSaving: boolean;
   webSearchSetupMessage: SettingsStatusMessage | null;
   userDesktopSettings: UserDesktopSettings;
+  userDesktopSettingsLoaded: boolean;
   desktopSetupSaving: boolean;
   desktopSetupMessage: SettingsStatusMessage | null;
   userAgentLimitsSettings: UserAgentLimitsSettings;
@@ -138,6 +140,8 @@ const createEmptyUserDesktopSettings = (): UserDesktopSettings => {
     assistantBubbleHideWhenFullscreen: true,
     assistantBubbleTemporarilyHideSeconds: 6,
     aiContextMaxMessages: 60,
+    inactiveSessionArchiveDays: 7,
+    archivedSessionRetentionDays: 7,
     quickVoiceEnabled: true,
     quickVoiceShortcut: "CommandOrControl+Alt+V",
     quickVoiceSilenceSeconds: 1.8,
@@ -245,6 +249,8 @@ export const useChatSessionRuntime = (
     useState<SettingsStatusMessage | null>(null);
   const [userDesktopSettings, setUserDesktopSettings] =
     useState<UserDesktopSettings>(createEmptyUserDesktopSettings());
+  const [userDesktopSettingsLoaded, setUserDesktopSettingsLoaded] =
+    useState(false);
   const [desktopSetupSaving, setDesktopSetupSaving] = useState(false);
   const [desktopSetupMessage, setDesktopSetupMessage] =
     useState<SettingsStatusMessage | null>(null);
@@ -261,6 +267,7 @@ export const useChatSessionRuntime = (
   const [globalProviders, setGlobalProviders] = useState<
     RuntimeProviderAvailability[] | null
   >(null);
+  const runtimeSnapshotRequestIdRef = useRef(0);
 
   const applyLoadedWebSearchSettings = useCallback(
     (settings: UserWebSearchSettings): void => {
@@ -289,6 +296,7 @@ export const useChatSessionRuntime = (
         ...createEmptyUserDesktopSettings(),
         ...settings,
       });
+      setUserDesktopSettingsLoaded(true);
     },
     [],
   );
@@ -325,6 +333,12 @@ export const useChatSessionRuntime = (
       workspaceRoot: string | null,
       profile?: string | null,
     ): Promise<RuntimeSnapshot | null> => {
+      const requestId = runtimeSnapshotRequestIdRef.current + 1;
+      runtimeSnapshotRequestIdRef.current = requestId;
+      const isCurrentRequest = (): boolean => {
+        return runtimeSnapshotRequestIdRef.current === requestId;
+      };
+
       setRuntimeLoading(true);
       setRuntimeError(null);
 
@@ -333,6 +347,10 @@ export const useChatSessionRuntime = (
           workspaceRoot,
           profile,
         );
+
+        if (!isCurrentRequest()) {
+          return snapshot;
+        }
 
         setRuntimeSnapshot(snapshot);
 
@@ -344,14 +362,19 @@ export const useChatSessionRuntime = (
 
         return snapshot;
       } catch (error) {
-        console.error("Failed to resolve runtime snapshot", error);
-        setRuntimeSnapshot(null);
-        setRuntimeError(
-          "Runtime metadata could not be loaded for this workspace.",
-        );
+        if (isCurrentRequest()) {
+          console.error("Failed to resolve runtime snapshot", error);
+          setRuntimeSnapshot(null);
+          setRuntimeError(
+            "Runtime metadata could not be loaded for this workspace.",
+          );
+        }
+
         return null;
       } finally {
-        setRuntimeLoading(false);
+        if (isCurrentRequest()) {
+          setRuntimeLoading(false);
+        }
       }
     },
     [],
@@ -489,6 +512,7 @@ export const useChatSessionRuntime = (
       .catch((error) => {
         if (!cancelled) {
           console.error("Failed to load user desktop settings", error);
+          applyLoadedUserDesktopSettings(createEmptyUserDesktopSettings());
         }
       });
 
@@ -1253,6 +1277,7 @@ export const useChatSessionRuntime = (
     webSearchSetupSaving,
     webSearchSetupMessage,
     userDesktopSettings,
+    userDesktopSettingsLoaded,
     desktopSetupSaving,
     desktopSetupMessage,
     userAgentLimitsSettings,

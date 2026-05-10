@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -14,7 +14,11 @@ import {
   loadWorkspaceEnv,
   rememberUserGlobalMemory,
   saveUserApiKey,
+  saveUserDesktopSettingsPatch,
   saveUserGlobalMemoryEnabled,
+  saveUserSpeechToTextActiveProvider,
+  saveUserSpeechToTextInputDevice,
+  saveUserVoiceActiveProvider,
   saveUserWebSearchActiveProvider,
   saveUserWebSearchApiKey,
 } from "./env.ts";
@@ -204,6 +208,34 @@ describe("user config API key helpers", () => {
       { provider: "tavily", configured: false },
       { provider: "serper", configured: true },
     ]);
+  });
+
+  it("persists voice, speech-to-text, and desktop settings", async () => {
+    isolateEnvironment();
+    const configDirectory = await createWorkspace();
+    process.env.MACHDOCH_USER_CONFIG_DIR = configDirectory;
+
+    await saveUserVoiceActiveProvider("google");
+    await saveUserSpeechToTextActiveProvider("openai");
+    await saveUserSpeechToTextInputDevice("microphone-1");
+    await saveUserDesktopSettingsPatch({
+      quickVoiceEnabled: false,
+      quickVoiceMaxMessages: 80,
+    });
+
+    const savedConfigPath = join(configDirectory, "user-config.json");
+    const config = JSON.parse(await readFile(savedConfigPath, "utf8"));
+
+    expect(config.voice.activeProvider).toBe("google");
+    expect(config.speechToText.activeProvider).toBe("openai");
+    expect(config.speechToText.inputDeviceId).toBe("microphone-1");
+    expect(config.desktop.quickVoiceEnabled).toBe(false);
+    expect(config.desktop.quickVoiceMaxMessages).toBe(80);
+
+    await saveUserSpeechToTextInputDevice(null);
+
+    const updatedConfig = JSON.parse(await readFile(savedConfigPath, "utf8"));
+    expect(updatedConfig.speechToText).not.toHaveProperty("inputDeviceId");
   });
 
   it("persists cross-session global memory settings and deduplicates entries", async () => {

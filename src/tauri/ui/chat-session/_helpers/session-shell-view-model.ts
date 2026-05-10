@@ -1,6 +1,4 @@
 import {
-  getSessionOverviewStatus,
-  isSessionArchived,
   type ChatSessionRecord,
 } from "../../chat-session.model";
 import {
@@ -18,28 +16,28 @@ import {
   type SessionScopeFilter,
   type SessionStatusFilter,
 } from "./session-shell";
+import {
+  createSessionHistoryIndex,
+  filterSessionHistoryIndex,
+  type SessionHistoryFilterOptions,
+} from "./session-history-index";
 
 export const filterSessions = (
   sessions: ChatSessionRecord[],
   sessionScopeFilter: SessionScopeFilter,
   sessionStatusFilter: SessionStatusFilter,
+  historyFilters: Partial<
+    Pick<
+      SessionHistoryFilterOptions,
+      "projectFilter" | "searchQuery" | "tagFilters"
+    >
+  > = {},
 ): ChatSessionRecord[] => {
-  return sessions.filter((session) => {
-    const archived = isSessionArchived(session);
-    const sessionStatus = getSessionOverviewStatus(session);
-    const matchesScope =
-      sessionScopeFilter === "all"
-        ? true
-        : sessionScopeFilter === "archived"
-          ? archived
-          : !archived;
-    const matchesStatus =
-      sessionStatusFilter === "any"
-        ? true
-        : sessionStatus === sessionStatusFilter;
-
-    return matchesScope && matchesStatus;
-  });
+  return filterSessionHistoryIndex(createSessionHistoryIndex(sessions), {
+    scope: sessionScopeFilter,
+    status: sessionStatusFilter,
+    ...historyFilters,
+  }).sessions;
 };
 
 export interface ProviderChooserState {

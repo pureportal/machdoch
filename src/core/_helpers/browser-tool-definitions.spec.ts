@@ -322,6 +322,57 @@ describe("createBrowserToolDefinitions", () => {
     });
   });
 
+  it("closes a newly launched browser when initial navigation fails", async () => {
+    const { browser, context, page } = createMockBrowserStack();
+
+    page.goto.mockRejectedValue(new Error("navigation timed out"));
+    chromiumLaunchMock.mockResolvedValue(browser);
+
+    const result = await getBrowserTool("start_browser_session").execute(
+      {
+        sessionId: "failed-nav",
+        channel: "msedge",
+        url: "https://example.com",
+      },
+      createExecutionContext(),
+    );
+    const listResult = await getBrowserTool("list_browser_sessions").execute(
+      {},
+      createExecutionContext(),
+    );
+
+    expect(result.toolResult.isError).toBe(true);
+    expect(result.toolResult.output).toContain("navigation timed out");
+    expect(context.close).toHaveBeenCalledWith({
+      reason: "Browser session closed by machdoch.",
+    });
+    expect(browser.close).toHaveBeenCalledTimes(1);
+    expect(listResult.toolResult.output).toBe("No browser sessions are open.");
+  });
+
+  it("closes a browser if context creation fails during launch", async () => {
+    const browser: MockBrowser = {
+      newContext: vi
+        .fn<AsyncUnknownFunction<MockContext>>()
+        .mockRejectedValue(new Error("context failed")),
+      close: vi.fn<AsyncUnknownFunction<void>>().mockResolvedValue(undefined),
+    };
+
+    chromiumLaunchMock.mockResolvedValue(browser);
+
+    const result = await getBrowserTool("start_browser_session").execute(
+      {
+        sessionId: "failed-context",
+        channel: "msedge",
+      },
+      createExecutionContext(),
+    );
+
+    expect(result.toolResult.isError).toBe(true);
+    expect(result.toolResult.output).toContain("context failed");
+    expect(browser.close).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects local file navigation before launching a browser", async () => {
     const result = await getBrowserTool("start_browser_session").execute(
       {
@@ -489,5 +540,34 @@ describe("createBrowserToolDefinitions", () => {
       reason: "Browser session closed by machdoch.",
     });
     expect(browser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("still closes the browser process when browser context cleanup fails", async () => {
+    const { browser, context } = createMockBrowserStack();
+
+    context.close.mockRejectedValue(new Error("context close failed"));
+    chromiumLaunchMock.mockResolvedValue(browser);
+
+    await getBrowserTool("start_browser_session").execute(
+      {
+        sessionId: "cleanup-failure",
+        channel: "chrome",
+      },
+      createExecutionContext(),
+    );
+
+    const closeResult = await getBrowserTool("close_browser_session").execute(
+      { sessionId: "cleanup-failure" },
+      createExecutionContext(),
+    );
+    const listResult = await getBrowserTool("list_browser_sessions").execute(
+      {},
+      createExecutionContext(),
+    );
+
+    expect(closeResult.toolResult.isError).toBe(true);
+    expect(closeResult.toolResult.output).toContain("context close failed");
+    expect(browser.close).toHaveBeenCalledTimes(1);
+    expect(listResult.toolResult.output).toBe("No browser sessions are open.");
   });
 });

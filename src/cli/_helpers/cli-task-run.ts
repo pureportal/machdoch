@@ -32,6 +32,7 @@ import type { ParsedCliArgs } from "./cli-args.js";
 import {
   attachCancellationHandlers,
   createActionFeedbackProgressReporter,
+  createStructuredActionOutputReporter,
   createVerboseProgressReporter,
   printExecutionSummary,
   writeStderrLine,
@@ -343,6 +344,14 @@ export const printTaskPreview = async (
               },
         )
       : undefined;
+  const structuredActionOutputReporter =
+    args.json && args.verbose
+      ? createStructuredActionOutputReporter(
+          task,
+          config.mode,
+          writeStderrLine,
+        )
+      : undefined;
   const onStateChange = args.verbose
     ? createVerboseProgressReporter(writeStderrLine, {
         structured: args.json,
@@ -356,6 +365,8 @@ export const printTaskPreview = async (
       ...(onStateChange ? { onStateChange } : {}),
       ...(actionFeedbackReporter
         ? { onActionOutput: actionFeedbackReporter.reportOutput }
+        : structuredActionOutputReporter
+          ? { onActionOutput: structuredActionOutputReporter }
         : {}),
       ...(conversationContext ? { conversationContext } : {}),
       ...(imageInputs.length > 0 ? { imageInputs } : {}),

@@ -236,10 +236,16 @@ export const executeToolCall = async (
     ...(onActionOutput
       ? {
           onOutput: (output): void => {
-            void onActionOutput({
-              toolName: call.name,
-              ...output,
-            });
+            try {
+              void Promise.resolve(
+                onActionOutput({
+                  toolName: call.name,
+                  ...output,
+                }),
+              ).catch(() => undefined);
+            } catch {
+              // Progress streaming should not make the backing tool fail.
+            }
           },
         }
       : {}),

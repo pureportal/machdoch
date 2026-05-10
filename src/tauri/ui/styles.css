@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @source "../ui";
 @source "./";
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
 
 /*
  * Future desktop/Vite entrypoints can import this file to activate the
@@ -71,12 +71,27 @@
     --sidebar-accent-foreground: var(--app-slate-900);
     --sidebar-border: hsl(220 18% 86%);
     --sidebar-ring: var(--app-sky-500);
+
+    color-scheme: dark;
+    --app-bg: var(--app-slate-950);
+    --app-surface: hsl(220 16% 10%);
+    --app-surface-raised: hsl(220 14% 13%);
+    --app-surface-muted: hsl(220 12% 18%);
+    --app-hover: hsl(220 13% 20%);
+    --app-border: hsl(220 12% 17%);
+    --app-border-strong: hsl(220 11% 26%);
+    --app-text: hsl(220 28% 96%);
+    --app-text-soft: hsl(220 17% 84%);
+    --app-text-muted: hsl(220 10% 68%);
+    --app-text-faint: hsl(220 8% 48%);
+    --app-elevated-shadow: 0 24px 70px hsl(220 45% 3% / 0.42);
 }
 
 /*
  ---break---
  */
 
+:root[data-theme="dark"],
 .dark {
     --sidebar: var(--app-slate-950);
     --sidebar-foreground: var(--app-slate-100);
@@ -86,6 +101,73 @@
     --sidebar-accent-foreground: var(--app-slate-100);
     --sidebar-border: var(--app-slate-800);
     --sidebar-ring: var(--app-sky-400);
+}
+
+:root[data-theme="light"] {
+    color-scheme: light;
+    --sidebar: hsl(210 38% 98%);
+    --sidebar-foreground: hsl(218 24% 22%);
+    --sidebar-primary: hsl(220 20% 13%);
+    --sidebar-primary-foreground: white;
+    --sidebar-accent: hsl(204 54% 94%);
+    --sidebar-accent-foreground: hsl(220 20% 13%);
+    --sidebar-border: hsl(211 28% 84%);
+    --sidebar-ring: var(--app-sky-500);
+
+    --app-bg: hsl(210 42% 97%);
+    --app-surface: hsl(0 0% 100%);
+    --app-surface-raised: hsl(210 48% 99%);
+    --app-surface-muted: hsl(210 34% 94%);
+    --app-hover: hsl(203 45% 92%);
+    --app-border: hsl(212 29% 84%);
+    --app-border-strong: hsl(210 20% 66%);
+    --app-text: hsl(221 48% 11%);
+    --app-text-soft: hsl(218 27% 24%);
+    --app-text-muted: hsl(216 16% 41%);
+    --app-text-faint: hsl(215 13% 55%);
+    --app-elevated-shadow: 0 18px 38px hsl(215 28% 38% / 0.18);
+}
+
+:root[data-accent="emerald"] {
+    --app-sky-50: hsl(151 70% 96%);
+    --app-sky-100: hsl(151 70% 92%);
+    --app-sky-200: hsl(153 64% 82%);
+    --app-sky-300: hsl(156 58% 70%);
+    --app-sky-400: hsl(157 56% 56%);
+    --app-sky-500: hsl(158 58% 43%);
+    --app-sky-600: hsl(160 64% 34%);
+    --app-sky-700: hsl(160 68% 28%);
+    --app-sky-800: hsl(161 62% 20%);
+    --app-sky-900: hsl(162 58% 14%);
+    --app-sky-950: hsl(163 60% 9%);
+}
+
+:root[data-accent="violet"] {
+    --app-sky-50: hsl(263 82% 97%);
+    --app-sky-100: hsl(263 82% 94%);
+    --app-sky-200: hsl(262 72% 87%);
+    --app-sky-300: hsl(262 64% 78%);
+    --app-sky-400: hsl(262 55% 65%);
+    --app-sky-500: hsl(262 52% 52%);
+    --app-sky-600: hsl(262 50% 45%);
+    --app-sky-700: hsl(263 48% 36%);
+    --app-sky-800: hsl(263 45% 25%);
+    --app-sky-900: hsl(263 44% 17%);
+    --app-sky-950: hsl(263 44% 12%);
+}
+
+:root[data-accent="amber"] {
+    --app-sky-50: hsl(42 92% 96%);
+    --app-sky-100: hsl(42 92% 91%);
+    --app-sky-200: hsl(42 84% 78%);
+    --app-sky-300: hsl(40 80% 66%);
+    --app-sky-400: hsl(39 78% 54%);
+    --app-sky-500: hsl(38 78% 44%);
+    --app-sky-600: hsl(35 84% 36%);
+    --app-sky-700: hsl(33 80% 29%);
+    --app-sky-800: hsl(31 70% 21%);
+    --app-sky-900: hsl(30 60% 15%);
+    --app-sky-950: hsl(30 58% 9%);
 }
 
 /*
@@ -169,7 +251,35 @@ body,
 body {
     margin: 0;
     background: transparent;
-    color: var(--app-slate-100);
+    color: var(--app-text);
+}
+
+:where(
+    button:not(:disabled),
+    [role="button"]:not([aria-disabled="true"]),
+    [role="menuitem"]:not([aria-disabled="true"]):not([data-disabled]),
+    [role="menuitemcheckbox"]:not([aria-disabled="true"]):not([data-disabled]),
+    [role="menuitemradio"]:not([aria-disabled="true"]):not([data-disabled]),
+    [role="option"]:not([aria-disabled="true"]):not([data-disabled]),
+    [role="tab"]:not([aria-disabled="true"]):not([data-disabled]),
+    [role="switch"]:not([aria-disabled="true"]):not([data-disabled]),
+    [role="checkbox"]:not([aria-disabled="true"]):not([data-disabled]),
+    [role="radio"]:not([aria-disabled="true"]):not([data-disabled]),
+    a[href],
+    select:not(:disabled),
+    summary,
+    label:has(input:not(:disabled))
+) {
+    cursor: pointer;
+}
+
+:where(
+    button:disabled,
+    select:disabled,
+    [aria-disabled="true"],
+    [data-disabled]
+) {
+    cursor: not-allowed;
 }
 
 ::selection {
@@ -205,4 +315,1175 @@ body {
 
 .dark ::-webkit-scrollbar-thumb:hover {
     background-color: var(--app-slate-600);
+}
+
+/*
+ * Appearance bridge for the desktop shell. The existing UI is mostly Tailwind
+ * utility classes, so these scoped rules map slate/surface utilities onto
+ * persisted theme tokens without rewriting every component in one pass.
+ */
+.app-shell {
+    background: var(--app-bg);
+    color: var(--app-text);
+    border-color: var(--app-border);
+}
+
+.app-settings-dialog {
+    box-shadow: var(--app-elevated-shadow);
+}
+
+.app-shell :is(input, textarea, select),
+.app-settings-dialog :is(input, textarea, select) {
+    color-scheme: inherit;
+}
+
+.app-sessions-scroll-content {
+    box-sizing: border-box;
+    padding: 1.25rem 1.35rem 1.25rem 1.25rem !important;
+}
+
+.app-sessions-scroll-content > * {
+    min-width: 0;
+}
+
+.quick-chat-bubble-shell {
+    color: var(--app-text);
+    color-scheme: dark;
+}
+
+:root[data-theme="light"] .quick-chat-bubble-shell {
+    color-scheme: light;
+}
+
+.quick-chat-bubble-wrap {
+    width: 7rem;
+    height: 5.25rem;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    box-sizing: border-box;
+    padding-right: 0.375rem;
+    padding-bottom: 0.375rem;
+}
+
+.quick-chat-bubble {
+    --quick-bubble-bg: color-mix(in srgb, var(--app-bg) 94%, black 6%);
+    --quick-bubble-surface: color-mix(in srgb, var(--app-sky-400) 12%, transparent);
+    --quick-bubble-border: color-mix(in srgb, var(--app-sky-400) 30%, transparent);
+    --quick-bubble-border-strong: color-mix(in srgb, var(--app-sky-300) 48%, transparent);
+    --quick-bubble-icon: var(--app-sky-100);
+    --quick-bubble-zap: var(--app-sky-300);
+    --quick-bubble-shadow: 0 16px 34px hsl(220 50% 3% / 0.32);
+
+    width: 4.25rem !important;
+    height: 4.25rem !important;
+    overflow: visible;
+    border-color: var(--quick-bubble-border) !important;
+    background: var(--quick-bubble-bg) !important;
+    color: var(--app-text) !important;
+    box-shadow: var(--quick-bubble-shadow) !important;
+    transition:
+        transform 160ms ease,
+        border-color 160ms ease,
+        background-color 160ms ease,
+        box-shadow 160ms ease;
+}
+
+:root[data-theme="light"] .quick-chat-bubble {
+    --quick-bubble-bg: color-mix(in srgb, var(--app-surface) 90%, var(--app-sky-50) 10%);
+    --quick-bubble-surface: color-mix(in srgb, var(--app-sky-100) 82%, transparent);
+    --quick-bubble-border: color-mix(in srgb, var(--app-sky-500) 32%, var(--app-border));
+    --quick-bubble-border-strong: color-mix(in srgb, var(--app-sky-500) 48%, var(--app-border-strong));
+    --quick-bubble-icon: var(--app-sky-700);
+    --quick-bubble-zap: var(--app-sky-600);
+    --quick-bubble-shadow: 0 16px 30px hsl(220 35% 40% / 0.16);
+}
+
+.quick-chat-bubble:hover {
+    transform: translateY(-1px);
+    border-color: var(--quick-bubble-border-strong) !important;
+}
+
+.quick-chat-bubble:active {
+    transform: translateY(0);
+}
+
+.quick-chat-bubble-aura,
+.quick-chat-bubble-surface {
+    position: absolute;
+    pointer-events: none;
+}
+
+.quick-chat-bubble-aura {
+    inset: -0.35rem;
+    z-index: 0;
+    border-radius: 1.65rem;
+    background:
+        radial-gradient(circle at 65% 25%, color-mix(in srgb, var(--app-sky-400) 34%, transparent), transparent 42%),
+        radial-gradient(circle at 25% 85%, color-mix(in srgb, var(--app-violet-400) 30%, transparent), transparent 46%);
+    opacity: 0;
+}
+
+.quick-chat-bubble-surface {
+    inset: 0.3125rem;
+    z-index: 1;
+    border-radius: 1.05rem;
+    background: var(--quick-bubble-surface);
+}
+
+.quick-chat-bubble-icon {
+    color: var(--quick-bubble-icon) !important;
+}
+
+.quick-chat-bubble-zap {
+    color: var(--quick-bubble-zap) !important;
+}
+
+.quick-chat-bubble-badge {
+    background: var(--app-sky-500) !important;
+    color: var(--app-slate-950) !important;
+}
+
+:root[data-theme="light"] .quick-chat-bubble-badge {
+    color: white !important;
+}
+
+.quick-chat-voice-button {
+    border-color: color-mix(in srgb, var(--app-violet-300) 54%, transparent) !important;
+    background: var(--app-violet-500) !important;
+    color: white !important;
+    box-shadow: none !important;
+}
+
+.quick-chat-voice-button:hover {
+    background: var(--app-violet-400) !important;
+}
+
+.quick-chat-voice-button:disabled {
+    border-color: var(--app-border-strong) !important;
+    background: var(--app-surface-muted) !important;
+    color: var(--app-text-faint) !important;
+    box-shadow: none !important;
+}
+
+.quick-chat-bubble[data-style="glass"] {
+    border-radius: 999px !important;
+    background:
+        linear-gradient(
+            135deg,
+            color-mix(in srgb, var(--quick-bubble-bg) 88%, transparent),
+            color-mix(in srgb, var(--app-sky-500) 12%, var(--quick-bubble-bg))
+        ) !important;
+    backdrop-filter: blur(12px);
+}
+
+.quick-chat-bubble[data-style="glass"] .quick-chat-bubble-surface {
+    inset: 0.45rem;
+    border-radius: 999px;
+    background:
+        linear-gradient(
+            135deg,
+            color-mix(in srgb, white 12%, transparent),
+            color-mix(in srgb, var(--app-sky-400) 12%, transparent)
+        );
+}
+
+:root[data-theme="light"] .quick-chat-bubble[data-style="glass"] .quick-chat-bubble-surface {
+    background:
+        linear-gradient(
+            135deg,
+            color-mix(in srgb, white 74%, transparent),
+            color-mix(in srgb, var(--app-sky-200) 34%, transparent)
+        );
+}
+
+.quick-chat-bubble[data-style="pulse"] {
+    box-shadow:
+        var(--quick-bubble-shadow),
+        0 0 0 1px color-mix(in srgb, var(--app-sky-400) 10%, transparent) !important;
+}
+
+.quick-chat-bubble[data-style="pulse"] .quick-chat-bubble-aura {
+    opacity: 0.9;
+    animation: quick-chat-bubble-pulse 2.4s ease-in-out infinite;
+}
+
+.quick-chat-bubble[data-style="orbit"] {
+    border-color: transparent !important;
+    background:
+        linear-gradient(var(--quick-bubble-bg), var(--quick-bubble-bg)) padding-box,
+        conic-gradient(
+            from 160deg,
+            color-mix(in srgb, var(--app-sky-300) 82%, transparent),
+            color-mix(in srgb, var(--app-violet-400) 64%, transparent),
+            color-mix(in srgb, var(--app-emerald-400) 58%, transparent),
+            color-mix(in srgb, var(--app-sky-300) 82%, transparent)
+        ) border-box !important;
+    animation: quick-chat-bubble-float 3.8s ease-in-out infinite;
+}
+
+.quick-chat-bubble[data-style="orbit"] .quick-chat-bubble-zap {
+    animation: quick-chat-bubble-spark 1.8s ease-in-out infinite;
+}
+
+@keyframes quick-chat-bubble-pulse {
+    0%,
+    100% {
+        transform: scale(0.92);
+        opacity: 0.18;
+    }
+
+    50% {
+        transform: scale(1.08);
+        opacity: 0.55;
+    }
+}
+
+@keyframes quick-chat-bubble-float {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-2px);
+    }
+}
+
+@keyframes quick-chat-bubble-spark {
+    0%,
+    100% {
+        transform: translate(0, 0) rotate(0deg);
+    }
+
+    50% {
+        transform: translate(-0.2rem, 0.2rem) rotate(18deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .quick-chat-bubble,
+    .quick-chat-bubble-aura,
+    .quick-chat-bubble-zap {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+:root[data-density="compact"] .app-shell {
+    font-size: 13px;
+}
+
+:root[data-density="compact"] .app-shell-rail {
+    width: 3.75rem !important;
+    padding-top: 0.875rem !important;
+    padding-bottom: 0.875rem !important;
+}
+
+:root[data-density="compact"] .app-shell-rail-group {
+    gap: 0.625rem !important;
+}
+
+:root[data-density="compact"] .app-shell-logo,
+:root[data-density="compact"] .app-shell-rail-button {
+    width: 2.5rem !important;
+    height: 2.5rem !important;
+    border-radius: 0.9rem !important;
+}
+
+:root[data-density="compact"] .app-shell-logo svg,
+:root[data-density="compact"] .app-shell-rail-button svg {
+    width: 1.05rem !important;
+    height: 1.05rem !important;
+}
+
+:root[data-density="compact"] .app-shell-rail [class~="w-10"] {
+    width: 2rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-sidebar {
+    width: 18rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-sidebar-header,
+:root[data-density="compact"] .app-session-header {
+    height: 3rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-sidebar-header {
+    padding-right: 0.75rem !important;
+    padding-left: 0.75rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-sidebar-header p:first-child {
+    font-size: 0.625rem !important;
+    letter-spacing: 0.18em !important;
+}
+
+:root[data-density="compact"] .app-sessions-sidebar-header p:last-child {
+    margin-top: 0.125rem !important;
+    font-size: 0.6875rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-actions {
+    gap: 0.25rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-toolbar-button,
+:root[data-density="compact"] .app-sessions-new-button {
+    height: 1.75rem !important;
+    min-height: 1.75rem !important;
+    border-radius: 0.65rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-toolbar-button {
+    width: 1.75rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-new-button {
+    padding-right: 0.5rem !important;
+    padding-left: 0.5rem !important;
+    font-size: 0.6875rem !important;
+    gap: 0.25rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-toolbar-button svg,
+:root[data-density="compact"] .app-sessions-new-button svg {
+    width: 0.8rem !important;
+    height: 0.8rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-scroll-content {
+    gap: 0.625rem !important;
+    padding: 0.75rem 0.95rem 0.85rem 0.75rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-filter-stack {
+    gap: 0.5rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-filter-input {
+    height: 2rem !important;
+    border-radius: 0.7rem !important;
+    font-size: 0.75rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-filter-stack .relative svg {
+    width: 0.85rem !important;
+    height: 0.85rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-tag-list {
+    gap: 0.25rem !important;
+}
+
+:root[data-density="compact"] .app-sidebar-tag-button {
+    height: 1.5rem !important;
+    padding-right: 0.45rem !important;
+    padding-left: 0.45rem !important;
+    font-size: 0.625rem !important;
+}
+
+:root[data-density="compact"] .app-session-filter-strip {
+    height: 2rem !important;
+    padding: 0.125rem !important;
+    border-radius: 0.7rem !important;
+}
+
+:root[data-density="compact"] .app-session-filter-button {
+    width: 1.55rem !important;
+    height: 1.55rem !important;
+    border-radius: 0.55rem !important;
+}
+
+:root[data-density="compact"] .app-session-filter-button svg {
+    width: 0.8rem !important;
+    height: 0.8rem !important;
+}
+
+:root[data-density="compact"] .app-sessions-empty {
+    border-radius: 0.8rem !important;
+    padding: 1rem !important;
+    font-size: 0.75rem !important;
+    line-height: 1.15rem !important;
+}
+
+:root[data-density="compact"] .app-session-card {
+    gap: 0.375rem !important;
+    border-radius: 0.75rem !important;
+    padding: 0.5rem 0.55rem !important;
+    box-shadow: none !important;
+}
+
+:root[data-density="compact"] .app-session-card button {
+    min-width: 0;
+}
+
+:root[data-density="compact"] .app-session-status-icon {
+    width: 1rem !important;
+    height: 1rem !important;
+}
+
+:root[data-density="compact"] .app-session-status-icon svg {
+    width: 0.625rem !important;
+    height: 0.625rem !important;
+}
+
+:root[data-density="compact"] .app-session-title {
+    font-size: 0.75rem !important;
+    line-height: 1rem !important;
+}
+
+:root[data-density="compact"] .app-session-tags {
+    margin-top: 0.25rem !important;
+    gap: 0.25rem !important;
+}
+
+:root[data-density="compact"] .app-session-tag-chip {
+    max-width: 4.5rem !important;
+    padding: 0 0.35rem !important;
+    font-size: 0.56rem !important;
+    line-height: 0.95rem !important;
+}
+
+:root[data-density="compact"] .app-session-meta {
+    margin-top: 0.25rem !important;
+    gap: 0.35rem !important;
+    font-size: 0.56rem !important;
+    line-height: 0.9rem !important;
+    letter-spacing: 0.04em !important;
+}
+
+:root[data-density="compact"] .app-session-card-actions {
+    gap: 0.2rem !important;
+    padding-top: 0 !important;
+}
+
+:root[data-density="compact"] .app-session-card-action-slot[class~="w-8"],
+:root[data-density="compact"] .app-session-card:hover .app-session-card-action-slot[class~="group-hover:w-8"],
+:root[data-density="compact"] .app-session-card:focus-within .app-session-card-action-slot[class~="group-focus-within:w-8"] {
+    width: 1.6rem !important;
+}
+
+:root[data-density="compact"] .app-session-card-action-button {
+    width: 1.6rem !important;
+    height: 1.6rem !important;
+}
+
+:root[data-density="compact"] .app-session-card-action-button svg {
+    width: 0.75rem !important;
+    height: 0.75rem !important;
+}
+
+:root[data-density="compact"] .app-session-header {
+    gap: 0.75rem !important;
+    padding-right: 1rem !important;
+    padding-left: 1rem !important;
+}
+
+:root[data-density="compact"] .app-session-title-heading {
+    font-size: 1.125rem !important;
+    line-height: 1.45rem !important;
+}
+
+:root[data-density="compact"] .app-session-header-controls {
+    gap: 0.35rem !important;
+}
+
+:root[data-density="compact"] .app-session-rename-input,
+:root[data-density="compact"] .app-session-tags-input,
+:root[data-density="compact"] .app-session-header-controls button {
+    height: 2rem !important;
+    border-radius: 0.75rem !important;
+}
+
+:root[data-density="compact"] .app-session-tags-input {
+    width: 8.75rem !important;
+    padding-right: 0.65rem !important;
+    padding-left: 0.65rem !important;
+    font-size: 0.6875rem !important;
+}
+
+:root[data-density="compact"] .app-session-header-controls button {
+    padding-right: 0.45rem !important;
+    padding-left: 0.45rem !important;
+    font-size: 0.6875rem !important;
+    gap: 0.25rem !important;
+}
+
+:root[data-density="compact"] .app-session-header-controls button[data-size="icon"] {
+    width: 2rem !important;
+}
+
+:root[data-density="compact"] .app-session-header-controls button svg {
+    width: 0.85rem !important;
+    height: 0.85rem !important;
+}
+
+:root[data-density="compact"] .app-conversation-empty {
+    padding-top: 2rem !important;
+    padding-bottom: 2rem !important;
+}
+
+:root[data-density="compact"] .app-conversation-empty > div {
+    gap: 1rem !important;
+}
+
+:root[data-density="compact"] .app-conversation-empty-icon {
+    width: 3rem !important;
+    height: 3rem !important;
+    border-radius: 1rem !important;
+}
+
+:root[data-density="compact"] .app-conversation-empty-icon svg {
+    width: 1.35rem !important;
+    height: 1.35rem !important;
+}
+
+:root[data-density="compact"] .app-conversation-feed {
+    max-width: 58rem !important;
+    gap: 0.875rem !important;
+    padding: 1rem 1rem 0.375rem !important;
+}
+
+:root[data-density="compact"] .app-ai-context-separator {
+    gap: 0.5rem !important;
+    padding: 0 !important;
+    font-size: 0.6875rem !important;
+}
+
+:root[data-density="compact"] .app-ai-context-separator span {
+    padding: 0.25rem 0.65rem !important;
+}
+
+:root[data-density="compact"] .app-message-row {
+    gap: 0.65rem !important;
+}
+
+:root[data-density="compact"] .app-message-avatar {
+    width: 2rem !important;
+    height: 2rem !important;
+    margin-top: 0.125rem !important;
+}
+
+:root[data-density="compact"] .app-message-avatar svg {
+    width: 1rem !important;
+    height: 1rem !important;
+}
+
+:root[data-density="compact"] .app-message-stack {
+    gap: 0.45rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-wrapper {
+    padding-top: 0 !important;
+}
+
+:root[data-density="compact"] .app-message-bubble {
+    max-width: 86% !important;
+    border-radius: 1.05rem !important;
+    padding: 0.65rem 0.85rem !important;
+    font-size: 0.8125rem !important;
+    line-height: 1.45rem !important;
+    box-shadow: none !important;
+}
+
+:root[data-density="compact"] .app-agent-message-bubble {
+    padding-right: 2.35rem !important;
+}
+
+:root[data-density="compact"] .app-user-message-bubble {
+    border-top-right-radius: 0.35rem !important;
+}
+
+:root[data-density="compact"] .app-agent-message-bubble {
+    border-top-left-radius: 0.35rem !important;
+}
+
+:root[data-density="compact"] .app-message-voice-button {
+    top: 0.45rem !important;
+    right: 0.45rem !important;
+    width: 1.55rem !important;
+    height: 1.55rem !important;
+}
+
+:root[data-density="compact"] .app-message-voice-button svg {
+    width: 0.75rem !important;
+    height: 0.75rem !important;
+}
+
+:root[data-density="compact"] .app-message-markdown {
+    gap: 0.45rem !important;
+}
+
+:root[data-density="compact"] .app-message-markdown :is(p, li) {
+    line-height: 1.35rem !important;
+}
+
+:root[data-density="compact"] .app-message-markdown :is(ul, ol) {
+    padding-left: 1.1rem !important;
+}
+
+:root[data-density="compact"] .app-message-markdown blockquote {
+    padding-left: 0.75rem !important;
+}
+
+:root[data-density="compact"] .app-message-markdown pre {
+    border-radius: 0.75rem !important;
+    padding: 0.55rem 0.7rem !important;
+    line-height: 1.25rem !important;
+}
+
+:root[data-density="compact"] .app-message-markdown code {
+    border-radius: 0.35rem !important;
+    padding: 0.08rem 0.3rem !important;
+}
+
+:root[data-density="compact"] .app-execution-insight-row,
+:root[data-density="compact"] .app-message-actions {
+    max-width: 86% !important;
+    gap: 0.35rem !important;
+}
+
+:root[data-density="compact"] .app-execution-metadata {
+    height: 1.35rem !important;
+    padding-right: 0.35rem !important;
+    padding-left: 0.35rem !important;
+    font-size: 0.625rem !important;
+}
+
+:root[data-density="compact"] .app-execution-action,
+:root[data-density="compact"] .app-related-file-button,
+:root[data-density="compact"] .app-message-actions button {
+    height: 1.75rem !important;
+    border-radius: 0.65rem !important;
+    padding-right: 0.6rem !important;
+    padding-left: 0.6rem !important;
+    font-size: 0.6875rem !important;
+}
+
+:root[data-density="compact"] .app-session-footer {
+    padding: 0.5rem 1rem 0.7rem !important;
+}
+
+:root[data-density="compact"] .app-agent-composer-session {
+    border-radius: 1rem !important;
+    padding: 0.5rem !important;
+    box-shadow: none !important;
+}
+
+:root[data-density="compact"] .app-composer-toolbar {
+    gap: 0.35rem !important;
+    padding-bottom: 0.5rem !important;
+}
+
+:root[data-density="compact"] .app-composer-body {
+    gap: 0.35rem !important;
+    margin-top: 0.5rem !important;
+}
+
+:root[data-density="compact"] .app-composer-form {
+    gap: 0.5rem !important;
+    align-items: flex-end !important;
+}
+
+:root[data-density="compact"] :is(.app-model-picker-button, .app-composer-toolbar-pill) {
+    height: 1.85rem !important;
+    max-width: 13rem !important;
+    border-radius: 999px !important;
+    padding-right: 0.6rem !important;
+    padding-left: 0.6rem !important;
+    font-size: 0.6875rem !important;
+    gap: 0.35rem !important;
+}
+
+:root[data-density="compact"] .app-mode-picker-button,
+:root[data-density="compact"] .app-composer-toggle-button {
+    width: 1.85rem !important;
+    height: 1.85rem !important;
+}
+
+:root[data-density="compact"] :is(.app-model-picker-button, .app-composer-toolbar-pill, .app-mode-picker-button, .app-composer-toggle-button) svg {
+    width: 0.8rem !important;
+    height: 0.8rem !important;
+}
+
+:root[data-density="compact"] .app-context-attachments-list {
+    gap: 0.3rem !important;
+}
+
+:root[data-density="compact"] .app-context-attachments-clear {
+    height: 1.35rem !important;
+    padding-right: 0.45rem !important;
+    padding-left: 0.45rem !important;
+    font-size: 0.625rem !important;
+}
+
+:root[data-density="compact"] .app-context-attachments-items {
+    max-height: 4.5rem !important;
+    gap: 0.3rem !important;
+    padding-right: 0.25rem !important;
+    padding-left: 0.25rem !important;
+}
+
+:root[data-density="compact"] .app-context-attachment-item {
+    height: 1.5rem !important;
+    gap: 0.3rem !important;
+    padding-right: 0.45rem !important;
+    padding-left: 0.45rem !important;
+    font-size: 0.625rem !important;
+}
+
+:root[data-density="compact"] .app-composer-textarea {
+    min-height: 2.6rem !important;
+    max-height: 22vh !important;
+    border-radius: 0.9rem !important;
+    padding: 0.6rem 0.75rem !important;
+    font-size: 0.8125rem !important;
+    line-height: 1.3rem !important;
+}
+
+:root[data-density="compact"] :is(
+    .app-composer-attachment-button,
+    .app-composer-icon-button,
+    .app-composer-send-button,
+    .app-composer-cancel-button
+) {
+    width: 2.15rem !important;
+    height: 2.15rem !important;
+    border-radius: 0.8rem !important;
+}
+
+:root[data-density="compact"] :is(
+    .app-composer-attachment-button,
+    .app-composer-icon-button,
+    .app-composer-send-button,
+    .app-composer-cancel-button
+) svg {
+    width: 0.9rem !important;
+    height: 0.9rem !important;
+}
+
+:root[data-density="compact"] .app-composer-status {
+    line-height: 1rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-card {
+    border-radius: 0.85rem !important;
+    box-shadow: none !important;
+}
+
+:root[data-density="compact"] .app-thinking-header {
+    gap: 0.45rem !important;
+    padding: 0.5rem 0.65rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-main-icon {
+    width: 1.65rem !important;
+    height: 1.65rem !important;
+    border-radius: 0.65rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-main-icon svg {
+    width: 0.8rem !important;
+    height: 0.8rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-toggle {
+    height: 1.5rem !important;
+    padding-right: 0.55rem !important;
+    padding-left: 0.55rem !important;
+    font-size: 0.625rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-scroll {
+    height: 8.5rem !important;
+    padding: 0.65rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-detail-block {
+    margin-bottom: 0.65rem !important;
+    border-radius: 0.75rem !important;
+    padding: 0.45rem 0.6rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-code {
+    padding: 0.45rem 0.6rem !important;
+    line-height: 1.15rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-entries {
+    gap: 0.55rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-entry {
+    gap: 0.55rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-entry-detail {
+    font-size: 0.75rem !important;
+    line-height: 1.2rem !important;
+}
+
+:root[data-density="compact"] .app-settings-dialog {
+    width: min(900px, calc(100vw - 28px)) !important;
+}
+
+:root[data-density="compact"] .app-settings-dialog [role="tab"],
+:root[data-density="compact"] .app-settings-dialog nav button {
+    height: 2rem !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-950"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-950"] {
+    background-color: var(--app-bg) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-950/96"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-950/96"] {
+    background-color: color-mix(in srgb, var(--app-bg) 96%, transparent) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-950/98"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-950/98"] {
+    background-color: color-mix(in srgb, var(--app-bg) 98%, transparent) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-950/90"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-950/90"] {
+    background-color: color-mix(in srgb, var(--app-bg) 90%, transparent) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-950/80"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-950/80"] {
+    background-color: color-mix(in srgb, var(--app-bg) 80%, transparent) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-950/75"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-950/75"] {
+    background-color: color-mix(in srgb, var(--app-bg) 75%, transparent) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-950/70"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-950/70"] {
+    background-color: color-mix(in srgb, var(--app-bg) 70%, transparent) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-950/60"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-950/60"] {
+    background-color: color-mix(in srgb, var(--app-bg) 60%, transparent) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-950/50"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-950/50"] {
+    background-color: color-mix(in srgb, var(--app-bg) 50%, transparent) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-950/40"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-950/40"] {
+    background-color: color-mix(in srgb, var(--app-bg) 40%, transparent) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-900"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-900"],
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-900/90"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-900/90"],
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-900/80"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-900/80"],
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-900/70"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-900/70"],
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-900/60"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-900/60"],
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-900/50"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-900/50"],
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-900/40"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-900/40"] {
+    background-color: var(--app-surface) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="bg-slate-800"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-slate-800"] {
+    background-color: var(--app-surface-muted) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="border-slate-900"],
+:where(.app-shell, .app-settings-dialog) [class~="border-slate-900"],
+:where(.app-shell, .app-settings-dialog)[class~="border-slate-900/80"],
+:where(.app-shell, .app-settings-dialog) [class~="border-slate-900/80"],
+:where(.app-shell, .app-settings-dialog)[class~="border-slate-800"],
+:where(.app-shell, .app-settings-dialog) [class~="border-slate-800"],
+:where(.app-shell, .app-settings-dialog)[class~="border-slate-800/80"],
+:where(.app-shell, .app-settings-dialog) [class~="border-slate-800/80"],
+:where(.app-shell, .app-settings-dialog)[class~="border-slate-800/90"],
+:where(.app-shell, .app-settings-dialog) [class~="border-slate-800/90"],
+:where(.app-shell, .app-settings-dialog)[class~="border-slate-800/75"],
+:where(.app-shell, .app-settings-dialog) [class~="border-slate-800/75"],
+:where(.app-shell, .app-settings-dialog)[class~="border-slate-800/70"],
+:where(.app-shell, .app-settings-dialog) [class~="border-slate-800/70"] {
+    border-color: var(--app-border) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="border-slate-700"],
+:where(.app-shell, .app-settings-dialog) [class~="border-slate-700"] {
+    border-color: var(--app-border-strong) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="text-white"],
+:where(.app-shell, .app-settings-dialog) [class~="text-white"],
+:where(.app-shell, .app-settings-dialog)[class~="text-slate-100"],
+:where(.app-shell, .app-settings-dialog) [class~="text-slate-100"],
+:where(.app-shell, .app-settings-dialog)[class~="text-slate-200"],
+:where(.app-shell, .app-settings-dialog) [class~="text-slate-200"] {
+    color: var(--app-text) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="text-slate-300"],
+:where(.app-shell, .app-settings-dialog) [class~="text-slate-300"] {
+    color: var(--app-text-soft) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="text-slate-400"],
+:where(.app-shell, .app-settings-dialog) [class~="text-slate-400"],
+:where(.app-shell, .app-settings-dialog)[class~="text-slate-500"],
+:where(.app-shell, .app-settings-dialog) [class~="text-slate-500"] {
+    color: var(--app-text-muted) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="text-slate-600"],
+:where(.app-shell, .app-settings-dialog) [class~="text-slate-600"],
+:where(.app-shell, .app-settings-dialog)[class~="text-slate-700"],
+:where(.app-shell, .app-settings-dialog) [class~="text-slate-700"] {
+    color: var(--app-text-faint) !important;
+}
+
+:where(.app-shell, .app-settings-dialog) .placeholder\:text-slate-600::placeholder {
+    color: var(--app-text-faint) !important;
+}
+
+:where(.app-shell, .app-settings-dialog) .hover\:bg-slate-900:hover,
+:where(.app-shell, .app-settings-dialog) .hover\:bg-slate-900\/70:hover,
+:where(.app-shell, .app-settings-dialog) .hover\:bg-slate-800:hover {
+    background-color: var(--app-hover) !important;
+}
+
+:where(.app-shell, .app-settings-dialog) .hover\:border-slate-800:hover,
+:where(.app-shell, .app-settings-dialog) .hover\:border-slate-700:hover {
+    border-color: var(--app-border-strong) !important;
+}
+
+:where(.app-shell, .app-settings-dialog) .hover\:text-slate-100:hover,
+:where(.app-shell, .app-settings-dialog) .hover\:text-white:hover {
+    color: var(--app-text) !important;
+}
+
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-sky-100"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-sky-100"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-sky-200"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-sky-200"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-sky-300"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-sky-300"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-sky-400"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-sky-400"] {
+    color: var(--app-sky-700) !important;
+}
+
+:where(.app-shell, .app-settings-dialog)[class~="bg-sky-500"][class~="text-white"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-sky-500"][class~="text-white"],
+:where(.app-shell, .app-settings-dialog)[class~="bg-sky-600"][class~="text-white"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-sky-600"][class~="text-white"],
+:where(.app-shell, .app-settings-dialog)[class~="bg-red-500"][class~="text-white"],
+:where(.app-shell, .app-settings-dialog) [class~="bg-red-500"][class~="text-white"] {
+    color: white !important;
+}
+
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="bg-slate-900/28"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="bg-slate-900/28"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="bg-slate-900/65"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="bg-slate-900/65"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="bg-slate-900/75"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="bg-slate-900/75"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="bg-slate-900/85"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="bg-slate-900/85"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="bg-slate-900/95"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="bg-slate-900/95"] {
+    background-color: var(--app-surface-raised) !important;
+}
+
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="bg-slate-950/55"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="bg-slate-950/55"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="bg-slate-950/72"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="bg-slate-950/72"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="bg-slate-950/92"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="bg-slate-950/92"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="bg-slate-950/95"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="bg-slate-950/95"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="bg-slate-800/80"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="bg-slate-800/80"] {
+    background-color: color-mix(in srgb, var(--app-surface-muted) 68%, white) !important;
+}
+
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="border-slate-800/60"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="border-slate-800/60"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="border-slate-700/80"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="border-slate-700/80"] {
+    border-color: var(--app-border) !important;
+}
+
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-sky-50"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-sky-50"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-sky-100"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-sky-100"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-sky-200"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-sky-200"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-sky-300"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-sky-300"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-sky-400"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-sky-400"] {
+    color: var(--app-sky-700) !important;
+}
+
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-emerald-50"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-emerald-50"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-emerald-100"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-emerald-100"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-emerald-200"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-emerald-200"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-emerald-300"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-emerald-300"] {
+    color: hsl(160 58% 25%) !important;
+}
+
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-amber-50"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-amber-50"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-amber-100"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-amber-100"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-amber-200"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-amber-200"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-amber-300"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-amber-300"] {
+    color: hsl(36 82% 31%) !important;
+}
+
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-rose-100"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-rose-100"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-rose-200"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-rose-200"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-rose-300"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-rose-300"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-rose-400"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-rose-400"] {
+    color: hsl(348 68% 36%) !important;
+}
+
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-violet-100"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-violet-100"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-violet-200"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-violet-200"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog)[class~="text-violet-300"],
+:root[data-theme="light"] :where(.app-shell, .app-settings-dialog) [class~="text-violet-300"] {
+    color: hsl(262 50% 39%) !important;
+}
+
+:root[data-theme="light"] .app-agent-message-bubble {
+    background: var(--app-surface) !important;
+    border-color: var(--app-border) !important;
+    color: var(--app-text-soft) !important;
+    box-shadow: 0 12px 28px hsl(214 28% 38% / 0.17) !important;
+}
+
+:root[data-theme="light"] .app-user-message-bubble {
+    background: linear-gradient(
+        180deg,
+        hsl(213 48% 96%),
+        hsl(211 44% 93%)
+    ) !important;
+    color: var(--app-text) !important;
+    box-shadow: 0 12px 26px hsl(214 28% 38% / 0.14) !important;
+}
+
+:root[data-theme="light"] .app-message-voice-button {
+    background: hsl(203 62% 97%) !important;
+    border-color: hsl(201 48% 82%) !important;
+    color: var(--app-sky-700) !important;
+}
+
+:root[data-theme="light"] .app-message-avatar {
+    box-shadow: 0 6px 14px hsl(214 30% 38% / 0.08);
+}
+
+:root[data-theme="light"] .app-thinking-card {
+    background: linear-gradient(
+        180deg,
+        hsl(204 68% 97%),
+        hsl(213 44% 96%)
+    ) !important;
+    border-color: hsl(202 42% 78%) !important;
+    color: var(--app-text) !important;
+}
+
+:root[data-theme="light"] .app-thinking-card[class~="shadow-xl"] {
+    box-shadow: 0 14px 30px hsl(214 28% 38% / 0.16) !important;
+}
+
+:root[data-theme="light"] .app-thinking-main-icon {
+    background: hsl(197 76% 93%) !important;
+    border-color: hsl(197 52% 74%) !important;
+    color: var(--app-sky-700) !important;
+}
+
+:root[data-theme="light"] .app-thinking-toggle {
+    background: white !important;
+    border-color: hsl(212 28% 84%) !important;
+    color: var(--app-text-soft) !important;
+}
+
+:root[data-theme="light"] .app-thinking-detail-block {
+    background: color-mix(in srgb, var(--app-surface) 84%, var(--app-sky-50)) !important;
+    border-color: hsl(205 36% 84%) !important;
+}
+
+:root[data-theme="light"] .app-thinking-code {
+    background: hsl(215 40% 96%) !important;
+    color: var(--app-text-soft) !important;
+}
+
+:root[data-theme="light"] .app-session-card {
+    background: var(--app-surface) !important;
+    border-color: var(--app-border) !important;
+    box-shadow: 0 8px 18px hsl(214 26% 42% / 0.06);
+}
+
+:root[data-theme="light"] .app-session-card:hover {
+    background: hsl(205 62% 98%) !important;
+    border-color: hsl(201 40% 76%) !important;
+}
+
+:root[data-theme="light"] .app-session-card[class*="bg-sky-500"] {
+    background: hsl(198 76% 94%) !important;
+    border-color: hsl(197 48% 70%) !important;
+}
+
+:root[data-theme="light"] .app-session-card-action-button,
+:root[data-theme="light"] .app-sessions-toolbar-button,
+:root[data-theme="light"] .app-session-filter-button {
+    background: hsl(210 46% 98%) !important;
+    border-color: var(--app-border) !important;
+    color: var(--app-text-muted) !important;
+}
+
+:root[data-theme="light"] .app-session-filter-button[aria-pressed="true"],
+:root[data-theme="light"] .app-sidebar-tag-button[aria-pressed="true"] {
+    background: hsl(197 74% 93%) !important;
+    border-color: hsl(197 48% 72%) !important;
+    color: var(--app-sky-700) !important;
+}
+
+:root[data-theme="light"] .app-execution-metadata {
+    color: var(--app-text-muted) !important;
+}
+
+:root[data-theme="light"] .app-related-file-button {
+    background: white !important;
+    border-color: var(--app-border) !important;
+    color: var(--app-text-soft) !important;
 }

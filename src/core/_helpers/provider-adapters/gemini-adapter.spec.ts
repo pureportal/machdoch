@@ -1,6 +1,7 @@
 import { FunctionCallingConfigMode, type GoogleGenAI } from "@google/genai";
 import type {
   AgentModelStartParams,
+  AgentModelStreamEvent,
   AgentModelToolSpec,
 } from "../../types.js";
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
@@ -212,5 +213,94 @@ describe("Gemini function-calling conformance", () => {
         },
       ],
     });
+  });
+
+  it("normalizes streamed Gemini chunks", async () => {
+    const events: AgentModelStreamEvent[] = [];
+    const chat = {
+      sendMessageStream: async () => [
+        {
+          usageMetadata: {
+            promptTokenCount: 11,
+            candidatesTokenCount: 3,
+            totalTokenCount: 14,
+            thoughtsTokenCount: 2,
+          },
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { text: "Thinking privately.", thought: true },
+                  { text: "Need " },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    functionCall: {
+                      id: "call_1",
+                      name: "inspect_file",
+                      args: { path: "README.md" },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const client = {
+      chats: {
+        create: vi.fn(() => chat),
+      },
+    } as unknown as GoogleGenAI;
+    const adapter = new GeminiChatAdapter(client, "gemini-3-pro", [tool]);
+
+    await expect(
+      adapter.startTurn({
+        ...startParams,
+        onStreamEvent: (event) => events.push(event),
+      }),
+    ).resolves.toMatchObject({
+      text: "Need",
+      toolCalls: [{ id: "call_1", name: "inspect_file" }],
+    });
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "status", provider: "google" }),
+        expect.objectContaining({
+          type: "reasoning-delta",
+          provider: "google",
+          delta: "Thinking privately.",
+        }),
+        { type: "text-delta", provider: "google", delta: "Need " },
+        expect.objectContaining({
+          type: "tool-call-start",
+          provider: "google",
+          name: "inspect_file",
+        }),
+        expect.objectContaining({
+          type: "tool-call-done",
+          provider: "google",
+          argumentsText: "{\"path\":\"README.md\"}",
+        }),
+        expect.objectContaining({
+          type: "usage",
+          provider: "google",
+          usage: expect.objectContaining({
+            totalTokens: 14,
+            reasoningTokens: 2,
+          }),
+        }),
+      ]),
+    );
   });
 });

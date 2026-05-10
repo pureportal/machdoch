@@ -1,11 +1,22 @@
 import type { ConversationMemoryEntry } from "../../../../core/types.js";
-import { createSession } from "../../chat-session.model.ts";
+import {
+  createInitialShellState,
+  createSession,
+} from "../../chat-session.model.ts";
 import type { RuntimeSnapshot, UserMemorySettings } from "../../runtime";
 import {
   createMemorySummaryState,
   createProviderChooserState,
   filterSessions,
 } from "./session-shell-view-model";
+import {
+  ALL_SESSION_PROJECTS_FILTER,
+  createSessionExportPayload,
+  createSessionHistoryIndex,
+  duplicateSessionRecord,
+  filterSessionHistoryIndex,
+  importSessionsIntoShellState,
+} from "./session-history-index";
 
 const createRuntimeSnapshot = (
   overrides: Partial<RuntimeSnapshot> = {},
@@ -114,6 +125,92 @@ describe("session shell view model helpers", () => {
         "done",
       ).map((session) => session.id),
     ).toEqual([archivedDoneSession.id]);
+  });
+
+  it("indexes session history by text, tags, projects, and pin priority", () => {
+    const timestamp = 1_713_260_000_000;
+    const apiSession = createSession({
+      id: "api-session",
+      manualTitle: "API migration",
+      workspace: "c:/Development/machdoch",
+      pinnedAt: timestamp,
+      updatedAt: timestamp - 100,
+      tags: ["backend", "release"],
+      messages: [
+        {
+          id: "api-user",
+          role: "user",
+          content: "Move the provider catalog into generated metadata",
+        },
+      ],
+    });
+    const uiSession = createSession({
+      id: "ui-session",
+      manualTitle: "Sidebar polish",
+      workspace: "c:/Development/desktop",
+      updatedAt: timestamp,
+      tags: ["ui"],
+      messages: [
+        {
+          id: "ui-user",
+          role: "user",
+          content: "Tighten the session sidebar controls",
+        },
+      ],
+    });
+    const index = createSessionHistoryIndex([uiSession, apiSession]);
+
+    expect(index.tags.map((tag) => tag.label)).toEqual([
+      "backend",
+      "release",
+      "ui",
+    ]);
+    expect(index.projects.map((project) => project.label)).toEqual([
+      "desktop",
+      "machdoch",
+    ]);
+    expect(
+      filterSessionHistoryIndex(index, {
+        scope: "open",
+        status: "any",
+        searchQuery: "provider metadata",
+        projectFilter: ALL_SESSION_PROJECTS_FILTER,
+        tagFilters: ["backend"],
+      }).sessions.map((session) => session.id),
+    ).toEqual(["api-session"]);
+  });
+
+  it("duplicates sessions and imports exported sessions with fresh ids", () => {
+    const baseState = {
+      ...createInitialShellState(),
+      sessions: [
+        createSession({
+          id: "session-to-copy",
+          manualTitle: "Copy source",
+          tags: ["docs"],
+          messages: [
+            {
+              id: "message-1",
+              taskId: "task-1",
+              role: "user" as const,
+              content: "Write docs",
+            },
+          ],
+        }),
+      ],
+      activeSessionId: "session-to-copy",
+    };
+    const duplicate = duplicateSessionRecord(baseState.sessions[0], "branch", 20);
+    const payload = createSessionExportPayload(baseState, ["session-to-copy"], 30);
+    const imported = importSessionsIntoShellState(baseState, payload, 40);
+
+    expect(duplicate.id).not.toBe("session-to-copy");
+    expect(duplicate.draft).toBe("");
+    expect(duplicate.messages[0]?.id).not.toBe("message-1");
+    expect(duplicate.messages[0]?.taskId).not.toBe("task-1");
+    expect(imported.sessions).toHaveLength(2);
+    expect(imported.sessions[0]?.id).not.toBe("session-to-copy");
+    expect(imported.activeSessionId).toBe(imported.sessions[0]?.id);
   });
 
   it("falls back to the supported provider order when desktop providers are still unconfigured", () => {

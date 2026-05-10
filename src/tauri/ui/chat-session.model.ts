@@ -31,6 +31,7 @@ export interface ChatSessionMessage {
   role: "user" | "agent";
   content: string;
   createdAt?: number;
+  intent?: "approve-plan" | "retry-task" | "continue-task";
   source?: ChatSessionMessageSource;
 }
 
@@ -39,6 +40,7 @@ export interface ChatSessionRecord {
   createdAt: number;
   updatedAt: number;
   archivedAt?: number;
+  pinnedAt?: number;
   specialSession?: ChatSessionSpecialKind;
   workspace: string | null;
   profile?: string;
@@ -48,6 +50,7 @@ export interface ChatSessionRecord {
   draft: string;
   draftContextAttachments: ChatSessionContextAttachment[];
   manualTitle?: string;
+  tags: string[];
   messages: ChatSessionMessage[];
   promptHistory: string[];
   promptContextHistory: ChatSessionContextAttachment[][];
@@ -90,6 +93,9 @@ const MAX_VOICE_RATE = 1.4;
 const SPECIAL_SESSION_KINDS = ["quick-voice"] as const;
 const RUN_MODES: RunMode[] = ["plan", "safe", "ask", "auto"];
 const RUNTIME_PROVIDERS: RuntimeProvider[] = ["openai", "anthropic", "google"];
+const MAX_SESSION_TAGS = 12;
+const MAX_SESSION_TAG_LENGTH = 32;
+const SESSION_RETENTION_DAY_MS = 24 * 60 * 60 * 1000;
 const CONTEXT_ATTACHMENT_KINDS: ChatSessionContextAttachmentKind[] = [
   "file",
   "directory",
@@ -213,6 +219,41 @@ const normalizePromptContextHistory = (
   );
 };
 
+export const normalizeSessionTags = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const tags: string[] = [];
+  const seenTags = new Set<string>();
+
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+
+    const tag = entry
+      .replace(/^#+/u, "")
+      .replace(/\s+/gu, " ")
+      .trim()
+      .slice(0, MAX_SESSION_TAG_LENGTH);
+    const dedupeKey = tag.toLowerCase();
+
+    if (!tag || seenTags.has(dedupeKey)) {
+      continue;
+    }
+
+    seenTags.add(dedupeKey);
+    tags.push(tag);
+
+    if (tags.length >= MAX_SESSION_TAGS) {
+      break;
+    }
+  }
+
+  return tags;
+};
+
 export const createSession = (
   overrides: Partial<ChatSessionRecord> = {},
 ): ChatSessionRecord => {
@@ -230,6 +271,9 @@ export const createSession = (
     ...(typeof overrides.archivedAt === "number"
       ? { archivedAt: overrides.archivedAt }
       : {}),
+    ...(typeof overrides.pinnedAt === "number"
+      ? { pinnedAt: overrides.pinnedAt }
+      : {}),
     ...(specialSession ? { specialSession } : {}),
     workspace: overrides.workspace ?? null,
     ...(overrides.profile ? { profile: overrides.profile } : {}),
@@ -239,6 +283,7 @@ export const createSession = (
     draft: overrides.draft ?? "",
     draftContextAttachments: overrides.draftContextAttachments ?? [],
     ...(overrides.manualTitle ? { manualTitle: overrides.manualTitle } : {}),
+    tags: normalizeSessionTags(overrides.tags),
     messages: overrides.messages ?? [],
     promptHistory: overrides.promptHistory ?? [],
     promptContextHistory: overrides.promptContextHistory ?? [],
@@ -362,6 +407,9 @@ const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord =
       typeof session.updatedAt === "number" ? session.updatedAt : undefined,
     archivedAt:
       typeof session.archivedAt === "number" ? session.archivedAt : undefined,
+    pinnedAt:
+      typeof session.pinnedAt === "number" ? session.pinnedAt : undefined,
+    tags: normalizeSessionTags(session.tags),
   });
 };
 
@@ -468,7 +516,25 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
 export const sortSessionsByUpdatedAt = (
   sessions: ChatSessionRecord[],
 ): ChatSessionRecord[] => {
-  return [...sessions].sort((left, right) => right.updatedAt - left.updatedAt);
+  return [...sessions].sort((left, right) => {
+    const leftIsQuickTaskSession =
+      left.specialSession === QUICK_VOICE_SESSION_KIND;
+    const rightIsQuickTaskSession =
+      right.specialSession === QUICK_VOICE_SESSION_KIND;
+
+    if (leftIsQuickTaskSession !== rightIsQuickTaskSession) {
+      return leftIsQuickTaskSession ? -1 : 1;
+    }
+
+    const leftPinnedAt = left.pinnedAt ?? 0;
+    const rightPinnedAt = right.pinnedAt ?? 0;
+
+    if (leftPinnedAt !== rightPinnedAt) {
+      return rightPinnedAt - leftPinnedAt;
+    }
+
+    return right.updatedAt - left.updatedAt;
+  });
 };
 
 const getMessageTaskId = (message: ChatSessionMessage): string => {
@@ -821,6 +887,221 @@ export const canArchiveSession = (session: ChatSessionRecord): boolean => {
     !isSessionArchived(session) &&
     getSessionOverviewStatus(session) !== "running"
   );
+};
+
+export interface SessionRetentionPolicy {
+  inactiveSessionArchiveDays: number;
+  archivedSessionRetentionDays: number;
+}
+
+export interface SessionRetentionProgress {
+  phase: "archive" | "delete";
+  startedAt: number;
+  deadlineAt: number;
+  progress: number;
+}
+
+const clampRetentionDays = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return 7;
+  }
+
+  return Math.max(1, Math.round(value));
+};
+
+const getRetentionDurationMs = (days: number): number => {
+  return clampRetentionDays(days) * SESSION_RETENTION_DAY_MS;
+};
+
+const getSessionRetentionDeadline = (
+  startedAt: number | undefined,
+  days: number,
+): number | null => {
+  if (typeof startedAt !== "number") {
+    return null;
+  }
+
+  return startedAt + getRetentionDurationMs(days);
+};
+
+const createSessionRetentionProgress = (
+  phase: SessionRetentionProgress["phase"],
+  startedAt: number,
+  deadlineAt: number,
+  now: number,
+): SessionRetentionProgress => {
+  const duration = Math.max(1, deadlineAt - startedAt);
+  const progress = Math.min(1, Math.max(0, (now - startedAt) / duration));
+
+  return {
+    phase,
+    startedAt,
+    deadlineAt,
+    progress,
+  };
+};
+
+export const getSessionRetentionProgress = (
+  session: ChatSessionRecord,
+  policy: SessionRetentionPolicy,
+  now = Date.now(),
+): SessionRetentionProgress | null => {
+  if (isQuickVoiceSession(session)) {
+    return null;
+  }
+
+  if (isSessionArchived(session)) {
+    const deadlineAt = getSessionRetentionDeadline(
+      session.archivedAt,
+      policy.archivedSessionRetentionDays,
+    );
+
+    return deadlineAt === null
+      ? null
+      : createSessionRetentionProgress(
+          "delete",
+          session.archivedAt as number,
+          deadlineAt,
+          now,
+        );
+  }
+
+  if (!canArchiveSession(session)) {
+    return null;
+  }
+
+  const deadlineAt = getSessionRetentionDeadline(
+    session.updatedAt,
+    policy.inactiveSessionArchiveDays,
+  );
+
+  return deadlineAt === null
+    ? null
+    : createSessionRetentionProgress("archive", session.updatedAt, deadlineAt, now);
+};
+
+const createRetentionReplacementSession = (
+  state: ShellPersistedState,
+  timestamp: number,
+): ChatSessionRecord => {
+  const provider = state.lastSelectedProvider;
+
+  return createSession({
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    provider,
+    ...(state.lastSelectedMode ? { mode: state.lastSelectedMode } : {}),
+    ...(state.lastSelectedProfile ? { profile: state.lastSelectedProfile } : {}),
+    model:
+      state.lastSelectedModelByProvider[provider] ??
+      getDefaultModelForProvider(provider),
+  });
+};
+
+export const applySessionRetentionPolicy = (
+  state: ShellPersistedState,
+  policy: SessionRetentionPolicy,
+  now = Date.now(),
+): ShellPersistedState => {
+  let changed = false;
+  const archivedRetentionMs = getRetentionDurationMs(
+    policy.archivedSessionRetentionDays,
+  );
+  const inactiveArchiveMs = getRetentionDurationMs(
+    policy.inactiveSessionArchiveDays,
+  );
+  const sessions: ChatSessionRecord[] = [];
+
+  for (const session of state.sessions) {
+    if (
+      !isQuickVoiceSession(session) &&
+      typeof session.archivedAt === "number" &&
+      now - session.archivedAt >= archivedRetentionMs
+    ) {
+      changed = true;
+      continue;
+    }
+
+    if (
+      !isQuickVoiceSession(session) &&
+      !isSessionArchived(session) &&
+      canArchiveSession(session) &&
+      now - session.updatedAt >= inactiveArchiveMs
+    ) {
+      changed = true;
+      sessions.push({
+        ...session,
+        archivedAt: now,
+      });
+      continue;
+    }
+
+    sessions.push(session);
+  }
+
+  if (!changed) {
+    return state;
+  }
+
+  const nextSessions =
+    sessions.length > 0
+      ? sessions
+      : [createRetentionReplacementSession(state, now)];
+  const activeSessionExists = nextSessions.some(
+    (session) => session.id === state.activeSessionId,
+  );
+  const fallbackActiveSessionId = sortSessionsByUpdatedAt(nextSessions)[0]?.id;
+
+  return {
+    ...state,
+    activeSessionId: activeSessionExists
+      ? state.activeSessionId
+      : (fallbackActiveSessionId ?? state.activeSessionId),
+    sessions: nextSessions,
+  };
+};
+
+export const deleteExpiredArchivedSessions = (
+  state: ShellPersistedState,
+  archivedSessionRetentionDays: number,
+  now = Date.now(),
+): ShellPersistedState => {
+  let changed = false;
+  const archivedRetentionMs = getRetentionDurationMs(
+    archivedSessionRetentionDays,
+  );
+  const sessions = state.sessions.filter((session) => {
+    const expired =
+      !isQuickVoiceSession(session) &&
+      typeof session.archivedAt === "number" &&
+      now - session.archivedAt >= archivedRetentionMs;
+
+    if (expired) {
+      changed = true;
+      return false;
+    }
+
+    return true;
+  });
+
+  if (!changed) {
+    return state;
+  }
+
+  const nextSessions =
+    sessions.length > 0 ? sessions : [createRetentionReplacementSession(state, now)];
+  const activeSessionExists = nextSessions.some(
+    (session) => session.id === state.activeSessionId,
+  );
+  const fallbackActiveSessionId = sortSessionsByUpdatedAt(nextSessions)[0]?.id;
+
+  return {
+    ...state,
+    activeSessionId: activeSessionExists
+      ? state.activeSessionId
+      : (fallbackActiveSessionId ?? state.activeSessionId),
+    sessions: nextSessions,
+  };
 };
 
 export const createVisibleConversationMessages = (

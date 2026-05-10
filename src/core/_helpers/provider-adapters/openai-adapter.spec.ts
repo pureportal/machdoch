@@ -1,6 +1,7 @@
 import type OpenAI from "openai";
 import type {
   AgentModelStartParams,
+  AgentModelStreamEvent,
   AgentModelToolSpec,
 } from "../../types.js";
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
@@ -149,5 +150,126 @@ describe("OpenAI Responses conformance", () => {
         },
       ],
     });
+  });
+
+  it("normalizes streamed Responses events", async () => {
+    const events: AgentModelStreamEvent[] = [];
+    const stream = {
+      abort: vi.fn(),
+      on: vi.fn(),
+      finalResponse: async () => {
+        const eventHandler = stream.on.mock.calls.find(
+          ([eventName]) => eventName === "event",
+        )?.[1] as (event: unknown) => void;
+
+        eventHandler({ type: "response.created" });
+        eventHandler({
+          type: "response.output_text.delta",
+          delta: "Need ",
+        });
+        eventHandler({
+          type: "response.output_item.added",
+          item: {
+            id: "item_1",
+            type: "function_call",
+            name: "inspect_file",
+          },
+        });
+        eventHandler({
+          type: "response.function_call_arguments.delta",
+          item_id: "item_1",
+          delta: "{\"path\"",
+        });
+        eventHandler({
+          type: "response.function_call_arguments.done",
+          item_id: "item_1",
+          name: "inspect_file",
+          arguments: "{\"path\":\"README.md\"}",
+        });
+        eventHandler({
+          type: "response.output_item.done",
+          item: {
+            id: "item_1",
+            type: "function_call",
+            name: "inspect_file",
+          },
+        });
+        eventHandler({
+          type: "response.completed",
+          response: {
+            usage: {
+              input_tokens: 12,
+              output_tokens: 7,
+              total_tokens: 19,
+            },
+          },
+        });
+
+        return {
+          id: "resp_stream",
+          output_text: "Need the file.",
+          usage: {
+            input_tokens: 12,
+            output_tokens: 7,
+            total_tokens: 19,
+          },
+          output: [
+            {
+              type: "function_call",
+              call_id: "call_1",
+              name: "inspect_file",
+              arguments: "{\"path\":\"README.md\"}",
+            },
+          ],
+        };
+      },
+    };
+    const client = {
+      responses: {
+        stream: vi.fn(() => stream),
+      },
+    } as unknown as OpenAI;
+    const adapter = new OpenAIResponsesAdapter(client, [tool]);
+
+    await expect(
+      adapter.startTurn({
+        ...startParams,
+        onStreamEvent: (event) => events.push(event),
+      }),
+    ).resolves.toMatchObject({
+      text: "Need the file.",
+      toolCalls: [{ id: "call_1", name: "inspect_file" }],
+    });
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "status", provider: "openai" }),
+        { type: "text-delta", provider: "openai", delta: "Need " },
+        expect.objectContaining({
+          type: "tool-call-start",
+          provider: "openai",
+          name: "inspect_file",
+        }),
+        expect.objectContaining({
+          type: "tool-call-arguments-delta",
+          provider: "openai",
+          delta: "{\"path\"",
+        }),
+        expect.objectContaining({
+          type: "tool-call-done",
+          provider: "openai",
+          argumentsText: "{\"path\":\"README.md\"}",
+        }),
+        expect.objectContaining({
+          type: "usage",
+          provider: "openai",
+          usage: expect.objectContaining({ totalTokens: 19 }),
+        }),
+      ]),
+    );
+    expect(events.filter((event) => event.type === "tool-call-done")).toHaveLength(
+      1,
+    );
+    expect(events.filter((event) => event.type === "usage")).toHaveLength(1);
   });
 });

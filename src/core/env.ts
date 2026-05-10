@@ -12,6 +12,23 @@ import {
   DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
   DEFAULT_MAX_EXECUTOR_TURNS,
 } from "./_helpers/agent-runtime-types.js";
+import {
+  PROVIDER_ENV_KEY_BY_PROVIDER,
+  RUNTIME_ENV_KEYS,
+  USER_WEB_SEARCH_PROVIDERS,
+  VALID_MODEL_PROVIDERS,
+  WEB_SEARCH_ENV_KEY_BY_PROVIDER,
+  isUserWebSearchProvider as isSchemaUserWebSearchProvider,
+  isVoiceAiProvider,
+  isWebSearchProvider as isSchemaWebSearchProvider,
+} from "./runtime-contract.generated.js";
+import type {
+  SpeechToTextProvider,
+  UserAgentLimitsSettings as SharedUserAgentLimitsSettings,
+  UserConfigFile as SharedUserConfigFile,
+  UserDesktopSettings,
+  VoiceAiProvider,
+} from "./runtime-contract.generated.js";
 import type {
   ConversationMemoryEntry,
   ProviderAvailability,
@@ -33,56 +50,10 @@ const USER_CONFIG_FILE_NAME = "user-config.json";
 const WORKSPACE_ENV_FILE_NAME = ".env";
 export type UserApiProvider = ProviderAvailability["provider"];
 export type UserWebSearchProvider = Exclude<WebSearchProvider, "none">;
+const USER_API_PROVIDERS = VALID_MODEL_PROVIDERS;
 
-const PROVIDER_ENV_KEY_BY_PROVIDER: Record<UserApiProvider, string> = {
-  openai: "OPENAI_API_KEY",
-  anthropic: "ANTHROPIC_API_KEY",
-  google: "GOOGLE_API_KEY",
-};
-const WEB_SEARCH_ENV_KEY_BY_PROVIDER: Record<UserWebSearchProvider, string> = {
-  perplexity: "PERPLEXITY_API_KEY",
-  tavily: "TAVILY_API_KEY",
-  serper: "SERPER_API_KEY",
-};
-const RUNTIME_ENV_KEYS = [
-  "MACHDOCH_MODE",
-  "MACHDOCH_MODEL",
-  "MACHDOCH_OFFLINE",
-  "MACHDOCH_PROFILE",
-  "MACHDOCH_WEB_SEARCH_PROVIDER",
-  "MACHDOCH_EXECUTOR_TURNS",
-  "MACHDOCH_AUTOPILOT_ITERATIONS",
-  "MACHDOCH_INFINITE",
-] as const;
-const USER_API_PROVIDERS: UserApiProvider[] = ["openai", "anthropic", "google"];
-const USER_WEB_SEARCH_PROVIDERS: UserWebSearchProvider[] = [
-  "perplexity",
-  "tavily",
-  "serper",
-];
-
-interface UserWebSearchConfigFile {
-  activeProvider?: WebSearchProvider;
-  apiKeys?: Partial<Record<UserWebSearchProvider, string>>;
-}
-
-interface UserMemoryConfigFile {
-  globalEnabled?: boolean;
-  entries?: ConversationMemoryEntry[];
-}
-
-export interface UserAgentLimitsSettings {
-  infinite: boolean;
-  executorTurns: number;
-  autopilotExecutorIterations: number;
-}
-
-interface UserConfigFile {
-  apiKeys?: Partial<Record<UserApiProvider, string>>;
-  webSearch?: UserWebSearchConfigFile;
-  agentLimits?: RuntimeAgentLimitOverrides;
-  memory?: UserMemoryConfigFile;
-}
+export type UserAgentLimitsSettings = SharedUserAgentLimitsSettings;
+type UserConfigFile = SharedUserConfigFile;
 
 const stripWrappingQuotes = (value: string): string => {
   const trimmed = value.trim();
@@ -143,15 +114,13 @@ const isUserApiProvider = (value: string): value is UserApiProvider => {
 };
 
 const isWebSearchProvider = (value: string): value is WebSearchProvider => {
-  return ["none", ...USER_WEB_SEARCH_PROVIDERS].includes(
-    value as WebSearchProvider,
-  );
+  return isSchemaWebSearchProvider(value);
 };
 
 const isUserWebSearchProvider = (
   value: string,
 ): value is UserWebSearchProvider => {
-  return USER_WEB_SEARCH_PROVIDERS.includes(value as UserWebSearchProvider);
+  return isSchemaUserWebSearchProvider(value);
 };
 
 const normalizePositiveIntegerSetting = (
@@ -454,6 +423,87 @@ export const saveUserWebSearchActiveProvider = async (
     webSearch: {
       ...(config.webSearch ?? {}),
       activeProvider: provider,
+    },
+  });
+
+  return path;
+};
+
+export const saveUserVoiceActiveProvider = async (
+  provider: VoiceAiProvider,
+): Promise<string> => {
+  if (!isVoiceAiProvider(provider)) {
+    throw new Error("Expected voice.provider to be one of none, openai, or google.");
+  }
+
+  const { config, path } = await loadUserConfigFile();
+
+  await saveUserConfigFile({
+    ...config,
+    voice: {
+      ...(config.voice ?? {}),
+      activeProvider: provider,
+    },
+  });
+
+  return path;
+};
+
+export const saveUserSpeechToTextActiveProvider = async (
+  provider: SpeechToTextProvider,
+): Promise<string> => {
+  if (!isVoiceAiProvider(provider)) {
+    throw new Error(
+      "Expected speech-to-text.provider to be one of none, openai, or google.",
+    );
+  }
+
+  const { config, path } = await loadUserConfigFile();
+
+  await saveUserConfigFile({
+    ...config,
+    speechToText: {
+      ...(config.speechToText ?? {}),
+      activeProvider: provider,
+    },
+  });
+
+  return path;
+};
+
+export const saveUserSpeechToTextInputDevice = async (
+  inputDeviceId: string | null,
+): Promise<string> => {
+  const normalizedInputDeviceId = normalizeOptionalString(inputDeviceId) ?? null;
+  const { config, path } = await loadUserConfigFile();
+  const speechToText = {
+    ...(config.speechToText ?? {}),
+  };
+
+  if (normalizedInputDeviceId) {
+    speechToText.inputDeviceId = normalizedInputDeviceId;
+  } else {
+    delete speechToText.inputDeviceId;
+  }
+
+  await saveUserConfigFile({
+    ...config,
+    speechToText,
+  });
+
+  return path;
+};
+
+export const saveUserDesktopSettingsPatch = async (
+  settings: Partial<UserDesktopSettings>,
+): Promise<string> => {
+  const { config, path } = await loadUserConfigFile();
+
+  await saveUserConfigFile({
+    ...config,
+    desktop: {
+      ...(config.desktop ?? {}),
+      ...settings,
     },
   });
 

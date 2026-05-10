@@ -15,6 +15,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 import { EventEmitter } from "node:events";
 import type { RuntimeConfig } from "../types.ts";
+import { SHELL_TIMEOUT_MS } from "./agent-tools-shared.ts";
 import {
   createShellNetworkToolDefinitions,
   isReadOnlyShellCommand,
@@ -24,6 +25,7 @@ import {
 
 afterEach(() => {
   spawnMock.mockReset();
+  vi.useRealTimers();
 });
 
 const createRuntimeConfig = (): RuntimeConfig => ({
@@ -192,6 +194,7 @@ describe("run_shell_command", () => {
       expectedArgs,
       expect.objectContaining({
         cwd: "c:/Development/machdoch",
+        detached: process.platform !== "win32",
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       }),
@@ -199,6 +202,153 @@ describe("run_shell_command", () => {
     expect(result.toolResult.output).toContain("STDOUT:\nfirst line");
     expect(result.toolResult.output).toContain("STDERR:\nwarning line");
     expect(result.toolResult.isError).toBeUndefined();
+  });
+
+  it("terminates the process tree when a streaming shell command times out", async () => {
+    vi.useFakeTimers();
+
+    const processKillSpy = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw new Error("missing process group");
+    });
+    const stdout = new EventEmitter();
+    const stderr = new EventEmitter();
+    const child = new EventEmitter() as EventEmitter & {
+      pid: number;
+      stdout: EventEmitter;
+      stderr: EventEmitter;
+      killed: boolean;
+      kill: ReturnType<typeof vi.fn>;
+    };
+    const taskkillChild = new EventEmitter();
+    const tool = createShellNetworkToolDefinitions(createRuntimeConfig()).find(
+      (definition) => definition.spec.name === "run_shell_command",
+    );
+
+    child.pid = 4242;
+    child.stdout = stdout;
+    child.stderr = stderr;
+    child.killed = false;
+    child.kill = vi.fn(() => {
+      child.killed = true;
+      return true;
+    });
+    spawnMock.mockImplementation((command: string) =>
+      command === "taskkill" ? taskkillChild : child,
+    );
+
+    if (!tool) {
+      throw new Error("Expected run_shell_command to be registered.");
+    }
+
+    const resultPromise = tool.execute(
+      { command: "node hangs.js" },
+      createToolContext(),
+    );
+
+    await vi.advanceTimersByTimeAsync(SHELL_TIMEOUT_MS);
+    child.emit("close", null);
+
+    const result = await resultPromise;
+
+    expect(result.toolResult.isError).toBe(true);
+    expect(result.toolResult.output).toContain("Command timed out");
+
+    if (process.platform === "win32") {
+      expect(spawnMock).toHaveBeenCalledWith(
+        "taskkill",
+        ["/PID", "4242", "/T", "/F"],
+        expect.objectContaining({
+          stdio: "ignore",
+          windowsHide: true,
+        }),
+      );
+      expect(child.kill).not.toHaveBeenCalled();
+    } else {
+      expect(processKillSpy).toHaveBeenCalledWith(-4242, "SIGTERM");
+      expect(child.kill).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("reports commands that terminate from a signal as failures", async () => {
+    const stdout = new EventEmitter();
+    const stderr = new EventEmitter();
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: EventEmitter;
+      stderr: EventEmitter;
+      kill: ReturnType<typeof vi.fn>;
+    };
+    const tool = createShellNetworkToolDefinitions(createRuntimeConfig()).find(
+      (definition) => definition.spec.name === "run_shell_command",
+    );
+
+    child.stdout = stdout;
+    child.stderr = stderr;
+    child.kill = vi.fn();
+    spawnMock.mockReturnValue(child);
+
+    if (!tool) {
+      throw new Error("Expected run_shell_command to be registered.");
+    }
+
+    const resultPromise = tool.execute(
+      { command: "node killed.js" },
+      createToolContext(),
+    );
+
+    stdout.emit("data", "partial output\n");
+    child.emit("close", null, "SIGTERM");
+
+    const result = await resultPromise;
+
+    expect(result.toolResult.isError).toBe(true);
+    expect(result.toolResult.output).toContain(
+      "Command terminated by signal SIGTERM.",
+    );
+    expect(result.toolResult.output).toContain("partial output");
+  });
+
+  it("terminates the command when the output callback throws", async () => {
+    const stdout = new EventEmitter();
+    const stderr = new EventEmitter();
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: EventEmitter;
+      stderr: EventEmitter;
+      kill: ReturnType<typeof vi.fn>;
+    };
+    const tool = createShellNetworkToolDefinitions(createRuntimeConfig()).find(
+      (definition) => definition.spec.name === "run_shell_command",
+    );
+
+    child.stdout = stdout;
+    child.stderr = stderr;
+    child.kill = vi.fn();
+    spawnMock.mockReturnValue(child);
+
+    if (!tool) {
+      throw new Error("Expected run_shell_command to be registered.");
+    }
+
+    const resultPromise = tool.execute(
+      { command: "node noisy.js" },
+      {
+        ...createToolContext(),
+        onOutput: () => {
+          throw new Error("sink failed");
+        },
+      },
+    );
+
+    stdout.emit("data", "partial output\n");
+    child.emit("close", null, "SIGTERM");
+
+    const result = await resultPromise;
+
+    expect(child.kill).toHaveBeenCalledTimes(1);
+    expect(result.toolResult.isError).toBe(true);
+    expect(result.toolResult.output).toContain(
+      "Command output handler failed: sink failed",
+    );
+    expect(result.toolResult.output).toContain("partial output");
   });
 });
 

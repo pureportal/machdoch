@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applySessionRetentionPolicy,
   createInitialShellState,
   createSession,
   createVisibleConversationMessages,
@@ -7,12 +8,15 @@ import {
   getSessionOverviewStatus,
   normalizeShellState,
   recoverInterruptedTasksForLaunch,
+  QUICK_VOICE_SESSION_KIND,
 } from "./chat-session.model";
 import {
   createMockExecutionFixture,
   createPreviewFixture,
 } from "./preview/fixtures";
 import { createInitialThinkingTrace } from "./task-thinking.model";
+
+const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
 
 describe("normalizeShellState", () => {
   it("repairs invalid persisted sessions while preserving valid overrides", () => {
@@ -68,6 +72,103 @@ describe("normalizeShellState", () => {
       updatedAt: 456,
     });
     expect(normalized.sessions[0]?.model.length).toBeGreaterThan(0);
+  });
+});
+
+describe("applySessionRetentionPolicy", () => {
+  it("archives inactive open sessions after the configured duration", () => {
+    const baseState = createInitialShellState();
+    const now = Date.now();
+    const staleSession = createSession({
+      id: "stale-open-session",
+      updatedAt: now - 8 * SESSION_DAY_MS,
+      manualTitle: "Stale open session",
+    });
+    const state = {
+      ...baseState,
+      activeSessionId: staleSession.id,
+      sessions: [staleSession],
+    };
+
+    const nextState = applySessionRetentionPolicy(
+      state,
+      {
+        inactiveSessionArchiveDays: 7,
+        archivedSessionRetentionDays: 7,
+      },
+      now,
+    );
+
+    expect(nextState).not.toBe(state);
+    expect(nextState.activeSessionId).toBe(staleSession.id);
+    expect(nextState.sessions).toHaveLength(1);
+    expect(nextState.sessions[0]).toMatchObject({
+      id: staleSession.id,
+      archivedAt: now,
+      updatedAt: staleSession.updatedAt,
+    });
+  });
+
+  it("deletes expired archived sessions and falls back to a remaining session", () => {
+    const baseState = createInitialShellState();
+    const now = Date.now();
+    const expiredArchivedSession = createSession({
+      id: "expired-archived-session",
+      archivedAt: now - 8 * SESSION_DAY_MS,
+      updatedAt: now - 8 * SESSION_DAY_MS,
+      manualTitle: "Expired archived session",
+    });
+    const freshSession = createSession({
+      id: "fresh-session",
+      updatedAt: now - 10_000,
+      manualTitle: "Fresh session",
+    });
+    const state = {
+      ...baseState,
+      activeSessionId: expiredArchivedSession.id,
+      sessions: [expiredArchivedSession, freshSession],
+    };
+
+    const nextState = applySessionRetentionPolicy(
+      state,
+      {
+        inactiveSessionArchiveDays: 7,
+        archivedSessionRetentionDays: 7,
+      },
+      now,
+    );
+
+    expect(nextState.sessions.map((session) => session.id)).toEqual([
+      freshSession.id,
+    ]);
+    expect(nextState.activeSessionId).toBe(freshSession.id);
+  });
+
+  it("does not archive or delete Quick Chat", () => {
+    const baseState = createInitialShellState();
+    const now = Date.now();
+    const quickSession = createSession({
+      id: "quick-retention-session",
+      specialSession: QUICK_VOICE_SESSION_KIND,
+      archivedAt: now - 30 * SESSION_DAY_MS,
+      updatedAt: now - 30 * SESSION_DAY_MS,
+    });
+    const state = {
+      ...baseState,
+      activeSessionId: quickSession.id,
+      sessions: [quickSession],
+    };
+
+    expect(
+      applySessionRetentionPolicy(
+        state,
+        {
+          inactiveSessionArchiveDays: 7,
+          archivedSessionRetentionDays: 7,
+        },
+        now,
+      ),
+    ).toBe(state);
   });
 });
 

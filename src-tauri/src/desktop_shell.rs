@@ -40,7 +40,6 @@ pub(crate) const ASSISTANT_BUBBLE_WINDOW_LABEL: &str = "assistant-bubble";
 pub(crate) const ASSISTANT_POPUP_WINDOW_LABEL: &str = "assistant-popup";
 pub(crate) const QUICK_VOICE_WINDOW_LABEL: &str = "quick-voice";
 pub(crate) const QUICK_VOICE_START_EVENT: &str = "machdoch://quick-voice-start";
-pub(crate) const DEFAULT_QUICK_VOICE_SHORTCUT: &str = "CommandOrControl+Alt+V";
 pub(crate) const ADMIN_RELAUNCH_ARG: &str = "--machdoch-admin-relaunch";
 
 const TRAY_ID: &str = "machdoch-tray";

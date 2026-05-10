@@ -1,4 +1,8 @@
 import { useEffect, useState, type JSX } from "react";
+import {
+  AGENT_LIMIT_BOUNDS,
+  DEFAULT_USER_AGENT_LIMITS_SETTINGS,
+} from "../../../../../core/runtime-contract.generated.js";
 import { Input } from "../../../components/ui/input";
 import type { UserAgentLimitsSettings } from "../../../runtime";
 import {
@@ -20,12 +24,17 @@ export const normalizeAgentLimitsDraft = (
 ): UserAgentLimitsSettings => {
   return {
     infinite: settings.infinite,
-    executorTurns: clampIntegerSetting(settings.executorTurns, 1, 1000, 64),
+    executorTurns: clampIntegerSetting(
+      settings.executorTurns,
+      AGENT_LIMIT_BOUNDS.executorTurns.min,
+      AGENT_LIMIT_BOUNDS.executorTurns.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.executorTurns,
+    ),
     autopilotExecutorIterations: clampIntegerSetting(
       settings.autopilotExecutorIterations,
-      1,
-      100,
-      16,
+      AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.min,
+      AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.autopilotExecutorIterations,
     ),
   };
 };
@@ -84,8 +93,8 @@ export const AgentLimitsSettingsPanel = ({
         >
           <Input
             type="number"
-            min="1"
-            max="1000"
+            min={AGENT_LIMIT_BOUNDS.executorTurns.min}
+            max={AGENT_LIMIT_BOUNDS.executorTurns.max}
             step="1"
             value={draft.executorTurns}
             disabled={setup.saving || draft.infinite}
@@ -94,8 +103,8 @@ export const AgentLimitsSettingsPanel = ({
                 ...draft,
                 executorTurns: parseIntegerSettingInput(
                   event.target.value,
-                  1,
-                  1000,
+                  AGENT_LIMIT_BOUNDS.executorTurns.min,
+                  AGENT_LIMIT_BOUNDS.executorTurns.max,
                   draft.executorTurns,
                 ),
               });
@@ -110,8 +119,8 @@ export const AgentLimitsSettingsPanel = ({
         >
           <Input
             type="number"
-            min="1"
-            max="100"
+            min={AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.min}
+            max={AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.max}
             step="1"
             value={draft.autopilotExecutorIterations}
             disabled={setup.saving || draft.infinite}
@@ -120,8 +129,8 @@ export const AgentLimitsSettingsPanel = ({
                 ...draft,
                 autopilotExecutorIterations: parseIntegerSettingInput(
                   event.target.value,
-                  1,
-                  100,
+                  AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.min,
+                  AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.max,
                   draft.autopilotExecutorIterations,
                 ),
               });

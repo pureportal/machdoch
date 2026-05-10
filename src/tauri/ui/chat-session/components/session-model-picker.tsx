@@ -1,4 +1,4 @@
-import { Bot, Check, ChevronDown } from "lucide-react";
+import { AlertTriangle, Bot, Check, ChevronDown } from "lucide-react";
 import { useEffect, useState, type JSX } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -11,8 +11,10 @@ import { cn } from "../../lib/utils";
 import {
   getCatalogModelsForProvider,
   getProviderLabel,
+  type ProviderModelCatalogSnapshot,
   type RuntimeProvider,
 } from "../../model-catalog";
+import { loadProviderModelCatalog } from "../../runtime";
 import {
   MODEL_STAGE_CLASSES,
   MODEL_STAGE_LABELS,
@@ -33,12 +35,31 @@ export const SessionModelPicker = ({
 }: SessionModelPickerProps): JSX.Element => {
   const [open, setOpen] = useState(false);
   const [visibleProvider, setVisibleProvider] = useState(activeProvider);
+  const [providerModelCatalog, setProviderModelCatalog] =
+    useState<ProviderModelCatalogSnapshot | null>(null);
 
   useEffect(() => {
     setVisibleProvider(activeProvider);
   }, [activeProvider]);
 
-  const activeProviderModels = getCatalogModelsForProvider(activeProvider);
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadProviderModelCatalog().then((catalog) => {
+      if (!cancelled) {
+        setProviderModelCatalog(catalog);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const activeProviderModels = getCatalogModelsForProvider(
+    activeProvider,
+    providerModelCatalog,
+  );
   const activeModelMeta = activeProviderModels.find(
     (model) => model.id === activeModel,
   );
@@ -46,7 +67,13 @@ export const SessionModelPicker = ({
   const selectedProvider = chooserProviders.includes(visibleProvider)
     ? visibleProvider
     : (chooserProviders[0] ?? activeProvider);
-  const selectedProviderModels = getCatalogModelsForProvider(selectedProvider);
+  const selectedProviderModels = getCatalogModelsForProvider(
+    selectedProvider,
+    providerModelCatalog,
+  );
+  const selectedProviderCatalog = providerModelCatalog?.providers.find(
+    (provider) => provider.provider === selectedProvider,
+  );
 
   const handleSessionModelSelection = (
     provider: RuntimeProvider,
@@ -64,7 +91,7 @@ export const SessionModelPicker = ({
           variant="outline"
           aria-label={`Session model: ${getProviderLabel(activeProvider)} ${activeModelLabel}`}
           disabled={chooserProviders.length === 0}
-          className="h-8 max-w-68 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:border-sky-500/30 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-50"
+          className="app-model-picker-button h-8 max-w-68 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:border-sky-500/30 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-50"
         >
           <Bot className="h-3.5 w-3.5 text-sky-300" />
           <span className="min-w-0 truncate">
@@ -142,6 +169,15 @@ export const SessionModelPicker = ({
                   {selectedProviderModels.length} available
                 </span>
               </div>
+              {selectedProviderCatalog?.available ? (
+                <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/10 px-3 py-2 text-[11px] leading-4 text-emerald-100">
+                  Live provider catalog loaded from the configured API key.
+                </div>
+              ) : selectedProviderCatalog?.error ? (
+                <div className="rounded-xl border border-amber-500/15 bg-amber-500/10 px-3 py-2 text-[11px] leading-4 text-amber-100">
+                  {selectedProviderCatalog.error}
+                </div>
+              ) : null}
 
               <div className="grid max-h-72 gap-1.5 overflow-y-auto pr-1">
                 {selectedProviderModels.map((model) => {
@@ -207,6 +243,14 @@ export const SessionModelPicker = ({
                                 {capability}
                               </span>
                             ))}
+                          </span>
+                        ) : null}
+                        {model.warnings.length > 0 ? (
+                          <span className="flex min-w-0 items-start gap-1.5 rounded-lg border border-amber-500/15 bg-amber-500/10 px-2 py-1 text-[10px] leading-4 text-amber-100">
+                            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                            <span className="line-clamp-2">
+                              {model.warnings[0]}
+                            </span>
                           </span>
                         ) : null}
                       </span>

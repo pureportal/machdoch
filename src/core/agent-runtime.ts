@@ -44,6 +44,8 @@ import { createProviderAdapter } from "./_helpers/provider-adapters.js";
 import { compactTraceText, stringifyUnknown } from "./_helpers/runtime-text.js";
 import type {
   AgentModelAdapter,
+  AgentModelStreamEvent,
+  AgentModelTurn,
   AgentModelToolCall,
   AgentModelToolResult,
   ResolvedTaskContext,
@@ -51,10 +53,246 @@ import type {
   TaskActionOutputHandler,
   TaskAutopilotDecision,
   TaskAutopilotReport,
+  TaskExecutionProgress,
   TaskExecutionProgressHandler,
   TaskExecutionResult,
   TaskExecutionSection,
+  TaskExecutionState,
 } from "./types.js";
+
+const MODEL_STREAM_PROGRESS_INTERVAL_MS = 250;
+const MODEL_STREAM_CONTENT_LIMIT = 4_000;
+
+const limitStreamContent = (value: string): string => {
+  if (value.length <= MODEL_STREAM_CONTENT_LIMIT) {
+    return value;
+  }
+
+  return value.slice(value.length - MODEL_STREAM_CONTENT_LIMIT);
+};
+
+const createModelStreamProgressEmitter = (
+  task: string,
+  config: RuntimeConfig,
+  loopState: AgentLoopState,
+  state: TaskExecutionState,
+  onStateChange: TaskExecutionProgressHandler | undefined,
+): {
+  handleEvent: (event: AgentModelStreamEvent) => void;
+  flush: () => Promise<void>;
+} => {
+  let assistantText = loopState.lastAssistantText ?? "";
+  let reasoningText = "";
+  let modelStream: NonNullable<TaskExecutionProgress["modelStream"]> | undefined;
+  let lastEmitAt = 0;
+  let hasPendingEmit = false;
+
+  const emit = (force = false): void => {
+    if (!onStateChange) {
+      return;
+    }
+
+    const now = Date.now();
+
+    if (!force && now - lastEmitAt < MODEL_STREAM_PROGRESS_INTERVAL_MS) {
+      hasPendingEmit = true;
+      return;
+    }
+
+    lastEmitAt = now;
+    hasPendingEmit = false;
+
+    const message =
+      modelStream?.kind === "tool-call"
+        ? `${modelStream.complete ? "Finished" : "Streaming"} model tool input for ${modelStream.label}.`
+        : modelStream?.kind === "tool-result"
+          ? `Forwarding tool result for ${modelStream.label}.`
+          : modelStream?.kind === "reasoning"
+            ? "Streaming model reasoning."
+            : modelStream?.kind === "status"
+              ? modelStream.label
+        : "Streaming model response.";
+
+    void emitAgentProgress(
+      task,
+      config,
+      state,
+      message,
+      loopState,
+      onStateChange,
+      undefined,
+      {
+        ...(assistantText
+          ? { assistantText: limitStreamContent(assistantText) }
+          : {}),
+        ...(modelStream
+          ? {
+              modelStream: {
+                ...modelStream,
+                content: limitStreamContent(modelStream.content),
+              },
+            }
+          : {}),
+      },
+    ).catch(() => undefined);
+  };
+
+  return {
+    handleEvent: (event): void => {
+      switch (event.type) {
+        case "text-delta": {
+          if (!event.delta) {
+            return;
+          }
+
+          assistantText += event.delta;
+          loopState.lastAssistantText = assistantText.trim();
+          modelStream = {
+            kind: "assistant",
+            label: "Assistant draft",
+            content: assistantText,
+          };
+          emit();
+          return;
+        }
+
+        case "reasoning-delta": {
+          if (!event.delta) {
+            return;
+          }
+
+          reasoningText += event.delta;
+          modelStream = {
+            kind: "reasoning",
+            label: "Model reasoning",
+            content: reasoningText,
+          };
+          emit();
+          return;
+        }
+
+        case "status": {
+          const provider = event.provider ? `${event.provider} ` : "";
+
+          modelStream = {
+            kind: "status",
+            label: event.message ?? `${provider}stream ${event.status}`,
+            content: event.rawEventType ?? event.status,
+            complete:
+              event.status === "completed" || event.status === "stopped",
+          };
+          emit(true);
+          return;
+        }
+
+        case "tool-call-start": {
+          const label = event.name ?? event.id ?? "tool call";
+
+          modelStream = {
+            kind: "tool-call",
+            label,
+            content: "",
+          };
+          emit(true);
+          return;
+        }
+
+        case "tool-call-arguments-delta": {
+          const label =
+            event.name ?? modelStream?.label ?? event.id ?? "tool call";
+          const content =
+            event.snapshot ??
+            `${modelStream?.kind === "tool-call" ? modelStream.content : ""}${event.delta}`;
+
+          modelStream = {
+            kind: "tool-call",
+            label,
+            content,
+          };
+          emit();
+          return;
+        }
+
+        case "tool-call-done": {
+          modelStream = {
+            kind: "tool-call",
+            label: event.name,
+            content: event.argumentsText ?? modelStream?.content ?? "",
+            complete: true,
+          };
+          emit(true);
+          return;
+        }
+
+        case "tool-result": {
+          modelStream = {
+            kind: "tool-result",
+            label: event.name,
+            content: event.output,
+            complete: true,
+          };
+          emit(true);
+          return;
+        }
+
+        case "usage":
+          return;
+
+        case "error": {
+          modelStream = {
+            kind: "status",
+            label: `Model stream error: ${event.message}`,
+            content: event.code ?? event.param ?? event.message,
+            complete: true,
+          };
+          emit(true);
+          return;
+        }
+      }
+    },
+    flush: async (): Promise<void> => {
+      if (!hasPendingEmit && !assistantText && !modelStream) {
+        return;
+      }
+
+      try {
+        await emitAgentProgress(
+          task,
+          config,
+          state,
+          modelStream?.kind === "tool-call"
+            ? `Finished streaming model tool input for ${modelStream.label}.`
+            : modelStream?.kind === "reasoning"
+              ? "Finished streaming model reasoning."
+              : modelStream?.kind === "tool-result"
+                ? `Forwarded tool result for ${modelStream.label}.`
+                : modelStream?.kind === "status"
+                  ? modelStream.label
+                  : "Finished streaming model response.",
+          loopState,
+          onStateChange,
+          undefined,
+          {
+            ...(assistantText
+              ? { assistantText: limitStreamContent(assistantText) }
+              : {}),
+            ...(modelStream
+              ? {
+                  modelStream: {
+                    ...modelStream,
+                    content: limitStreamContent(modelStream.content),
+                    complete: true,
+                  },
+                }
+              : {}),
+          },
+        );
+      } catch {
+        // Stream updates are best-effort progress; execution should continue.
+      }
+    },
+  };
+};
 
 const attachAutopilotReport = (
   result: TaskExecutionResult,
@@ -461,6 +699,14 @@ const runExecutorCycle = async (
     onStateChange,
   );
 
+  const modelStreamProgress = createModelStreamProgressEmitter(
+    task,
+    config,
+    loopState,
+    config.mode === "plan" ? "planning" : "executing",
+    onStateChange,
+  );
+
   let turn = await adapter.startTurn({
     model: config.model,
     systemPrompt: createExecutorSystemPrompt(
@@ -480,7 +726,26 @@ const runExecutorCycle = async (
     ...(imageInputs && imageInputs.length > 0 ? { imageInputs } : {}),
     tools: toolSpecs,
     ...(signal ? { signal } : {}),
+    ...(onStateChange
+      ? { onStreamEvent: modelStreamProgress.handleEvent }
+      : {}),
   });
+  await modelStreamProgress.flush();
+  const continueTurnWithProgress = async (
+    toolResults: AgentModelToolResult[],
+  ): Promise<AgentModelTurn> => {
+    const nextTurn = await adapter.continueTurn({
+      toolResults,
+      ...(signal ? { signal } : {}),
+      ...(onStateChange
+        ? { onStreamEvent: modelStreamProgress.handleEvent }
+        : {}),
+    });
+
+    await modelStreamProgress.flush();
+
+    return nextTurn;
+  };
   let lastConsecutiveToolError:
     | {
         signature: string;
@@ -527,16 +792,13 @@ const runExecutorCycle = async (
 
     if (finalResponseCall) {
       if (turn.toolCalls.length !== 1) {
-        turn = await adapter.continueTurn({
-          toolResults: [
+        turn = await continueTurnWithProgress([
             createFinalResponseToolResult(
               finalResponseCall.id,
               "`submit_final_response` must be the only tool call in its turn.",
               true,
             ),
-          ],
-          ...(signal ? { signal } : {}),
-        });
+        ]);
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected because additional tool calls were present in the same turn.`,
         );
@@ -548,16 +810,13 @@ const runExecutorCycle = async (
         finalResponseCall.arguments === null ||
         Array.isArray(finalResponseCall.arguments)
       ) {
-        turn = await adapter.continueTurn({
-          toolResults: [
+        turn = await continueTurnWithProgress([
             createFinalResponseToolResult(
               finalResponseCall.id,
               "`submit_final_response` requires an object payload that matches the schema.",
               true,
             ),
-          ],
-          ...(signal ? { signal } : {}),
-        });
+        ]);
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected invalid payload shape.`,
         );
@@ -569,16 +828,13 @@ const runExecutorCycle = async (
       );
 
       if (!parsedPayload) {
-        turn = await adapter.continueTurn({
-          toolResults: [
+        turn = await continueTurnWithProgress([
             createFinalResponseToolResult(
               finalResponseCall.id,
               "`submit_final_response` payload was missing one or more required fields.",
               true,
             ),
-          ],
-          ...(signal ? { signal } : {}),
-        });
+        ]);
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected incomplete payload.`,
         );
@@ -605,16 +861,13 @@ const runExecutorCycle = async (
           tone: "warning",
           lines: [rejectionMessage],
         });
-        turn = await adapter.continueTurn({
-          toolResults: [
+        turn = await continueTurnWithProgress([
             createFinalResponseToolResult(
               finalResponseCall.id,
               rejectionMessage,
               true,
             ),
-          ],
-          ...(signal ? { signal } : {}),
-        });
+        ]);
         continue;
       }
 
@@ -789,10 +1042,7 @@ const runExecutorCycle = async (
       );
     }
 
-    turn = await adapter.continueTurn({
-      toolResults,
-      ...(signal ? { signal } : {}),
-    });
+    turn = await continueTurnWithProgress(toolResults);
   }
 
   return {

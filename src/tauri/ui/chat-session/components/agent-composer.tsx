@@ -104,18 +104,18 @@ const getVariantStyles = (variant: AgentComposerVariant) => {
     attachmentListCompact: false,
     attachmentMenuSide: "top" as const,
     attachmentButton:
-      "h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100",
+      "app-composer-attachment-button h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100",
     attachmentIcon: "h-4 w-4",
     textarea:
-      "max-h-[30vh] min-h-14 resize-none overflow-y-auto rounded-[1.4rem] border-slate-800 bg-slate-900/70 px-5 py-4 text-base text-slate-100 shadow-inner shadow-black/20 placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:bg-slate-900/50 disabled:text-slate-500 disabled:opacity-100",
+      "app-composer-textarea max-h-[30vh] min-h-14 resize-none overflow-y-auto rounded-[1.4rem] border-slate-800 bg-slate-900/70 px-5 py-4 text-base text-slate-100 shadow-inner shadow-black/20 placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:bg-slate-900/50 disabled:text-slate-500 disabled:opacity-100",
     iconButton:
-      "h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-100",
+      "app-composer-icon-button h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-100",
     sendButton:
-      "h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-100",
+      "app-composer-send-button h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-100",
     sendButtonActive:
       "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
     cancelButton:
-      "h-11 w-11 shrink-0 rounded-[1.15rem] border-rose-500/20 bg-rose-500/10 text-rose-100 shadow-none hover:bg-rose-500/15 hover:text-white",
+      "app-composer-cancel-button h-11 w-11 shrink-0 rounded-[1.15rem] border-rose-500/20 bg-rose-500/10 text-rose-100 shadow-none hover:bg-rose-500/15 hover:text-white",
     iconClassName: "h-4 w-4",
   };
 };
@@ -143,6 +143,7 @@ const renderToggle = (
       baseClassName={variant === "quick" ? iconButtonClassName : undefined}
       activeClassName={toggle.activeClassName}
       disabledClassName={toggle.unavailableClassName}
+      className={variant === "session" ? "app-composer-toggle-button" : undefined}
     />
   );
 };
@@ -316,8 +317,11 @@ export const AgentComposer = ({
   }
 
   return (
-    <div className="rounded-[1.75rem] border border-slate-800/80 bg-slate-950/75 p-3 shadow-[0_18px_48px_rgba(2,6,23,0.42)]">
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-900/80 pb-3">
+    <div
+      className="app-agent-composer app-agent-composer-session rounded-[1.75rem] border border-slate-800/80 bg-slate-950/75 p-3 shadow-[0_18px_48px_rgba(2,6,23,0.42)]"
+      data-variant={variant}
+    >
+      <div className="app-composer-toolbar flex flex-wrap items-center gap-2 border-b border-slate-900/80 pb-3">
         <SessionModelPicker
           chooserProviders={chooserProviders}
           activeProvider={activeProvider}
@@ -328,7 +332,7 @@ export const AgentComposer = ({
         {toggleButtons}
       </div>
 
-      <div className="mt-3 grid gap-2">
+      <div className="app-composer-body mt-3 grid gap-2">
         <ContextAttachmentsList
           attachments={contextAttachments}
           onRemove={onRemoveContextAttachment}
@@ -336,7 +340,7 @@ export const AgentComposer = ({
         />
 
         <form
-          className="flex items-center gap-3"
+          className="app-composer-form flex items-center gap-3"
           onSubmit={(event) => {
             event.preventDefault();
             submit();
@@ -352,7 +356,7 @@ export const AgentComposer = ({
           <p
             aria-live="polite"
             className={cn(
-              "px-1 text-xs leading-6",
+              "app-composer-status px-1 text-xs leading-6",
               statusMessage.tone === "error"
                 ? "text-rose-300"
                 : statusMessage.tone === "success"

@@ -4,6 +4,7 @@ import {
   type ChatSessionMessage,
 } from "../../chat-session.model";
 import { getRenderedMessageContent } from "./execution-message.tsx";
+import { shouldOmitTaskActionPromptFromAiContext } from "./task-action-prompts";
 
 export const DEFAULT_AI_CONTEXT_MESSAGE_LIMIT = 60;
 export const MIN_AI_CONTEXT_MESSAGE_LIMIT = 1;
@@ -25,6 +26,13 @@ export const clampAiContextMessageLimit = (value: unknown): number => {
 const createConversationHistoryEntry = (
   message: ChatSessionMessage,
 ): ConversationHistoryEntry | undefined => {
+  if (
+    message.role === "user" &&
+    (message.intent || shouldOmitTaskActionPromptFromAiContext(message.content))
+  ) {
+    return undefined;
+  }
+
   const content = getRenderedMessageContent(message).trim();
 
   if (content.length === 0) {

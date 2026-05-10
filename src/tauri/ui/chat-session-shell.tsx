@@ -1,8 +1,10 @@
 import { Cog, TerminalSquare } from "lucide-react";
-import { Suspense, lazy, type JSX } from "react";
+import { Suspense, lazy, useEffect, useState, type JSX } from "react";
+import { useAppearanceSettings } from "./chat-session/_helpers/use-appearance-settings";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
+import { OnboardingWizard } from "./chat-session/components/onboarding-wizard";
 import { ProviderEmptyState } from "./chat-session/components/provider-empty-state";
 import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
 import { SessionComposer } from "./chat-session/components/session-composer";
@@ -14,6 +16,10 @@ import { Dialog } from "./components/ui/dialog";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { Separator } from "./components/ui/separator";
 import { VoiceInputOverlay } from "./components/voice-input-overlay";
+import {
+  loadOnboardingState,
+  saveOnboardingState,
+} from "./lib/shell-store";
 import {
   Tooltip,
   TooltipContent,
@@ -29,10 +35,47 @@ const SettingsDialog = lazy(async () => {
   };
 });
 
+const isTestEnvironment = (): boolean => {
+  return typeof process !== "undefined" && process.env.NODE_ENV === "test";
+};
+
 export const ChatSession = (): JSX.Element => {
   const controller = useChatSessionController({
     fileDropTarget: "active-session",
   });
+  const appearance = useAppearanceSettings();
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+
+  useEffect(() => {
+    if (isTestEnvironment()) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void loadOnboardingState().then((state) => {
+      if (cancelled) {
+        return;
+      }
+
+      setOnboardingOpen(!state?.completedAt && !state?.skippedAt);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const closeOnboarding = async (skipped: boolean): Promise<void> => {
+    const timestamp = Date.now();
+
+    setOnboardingOpen(false);
+    await saveOnboardingState({
+      version: 1,
+      completedAt: timestamp,
+      ...(skipped ? { skippedAt: timestamp } : {}),
+    });
+  };
 
   return (
     <TooltipProvider delayDuration={250}>
@@ -40,13 +83,46 @@ export const ChatSession = (): JSX.Element => {
         open={controller.catalogOpen}
         onOpenChange={controller.setCatalogOpen}
       >
-        <div className="dark relative flex h-screen w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 font-sans text-slate-100 antialiased">
+        <div className="app-shell relative flex h-screen w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 font-sans text-slate-100 antialiased">
           <ShellTitlebar {...controller.titlebar} />
 
           <FileDropOverlay
             active={controller.fileDrop.isActive}
             label="Attach to task"
           />
+
+          {onboardingOpen && !controller.catalogOpen ? (
+            <OnboardingWizard
+              activeSession={controller.composer.activeSession}
+              chooserProviders={controller.composer.chooserProviders}
+              hasAnyProvider={controller.hasAnyProvider}
+              runtimeSnapshot={controller.header.runtimeSnapshot}
+              isUiControlAvailable={controller.composer.isUiControlAvailable}
+              uiControlDescription={controller.composer.uiControlDescription}
+              providerSetup={controller.settingsDialog.providerSetup}
+              desktopSetup={controller.settingsDialog.desktopSetup}
+              voiceSetup={controller.settingsDialog.voiceSetup}
+              onSelectFolder={controller.composer.onSelectFolder}
+              onSessionModelSelection={
+                controller.composer.onSessionModelSelection
+              }
+              onSessionModeSelection={
+                controller.composer.onSessionModeSelection
+              }
+              onUiControlEnabledChange={
+                controller.composer.onUiControlEnabledChange
+              }
+              onSessionProfileSelection={
+                controller.header.onSessionProfileSelection
+              }
+              onFinish={() => {
+                void closeOnboarding(false);
+              }}
+              onSkip={() => {
+                void closeOnboarding(true);
+              }}
+            />
+          ) : null}
 
           {controller.voiceInputOverlay.visible ? (
             <div className="absolute inset-0 z-50 overflow-hidden bg-slate-950/96 backdrop-blur-xl">
@@ -67,17 +143,17 @@ export const ChatSession = (): JSX.Element => {
             </div>
           ) : null}
 
-          <div className="flex min-h-0 flex-1 w-full overflow-hidden bg-slate-950">
-            <aside className="z-10 flex w-20 shrink-0 flex-col items-center justify-between border-r border-slate-900 bg-slate-950 py-6">
-              <div className="flex flex-col items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 shadow-lg shadow-sky-500/10">
+          <div className="flex min-h-0 min-w-0 flex-1 w-full overflow-hidden bg-slate-950">
+            <aside className="app-shell-rail z-10 flex w-20 shrink-0 flex-col items-center justify-between border-r border-slate-900 bg-slate-950 py-6">
+              <div className="app-shell-rail-group flex flex-col items-center gap-4">
+                <div className="app-shell-logo flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 shadow-lg shadow-sky-500/10">
                   <TerminalSquare className="h-6 w-6 text-sky-400" />
                 </div>
 
                 <Separator className="w-10 bg-slate-900" />
               </div>
 
-              <div className="flex flex-col items-center gap-3">
+              <div className="app-shell-rail-group flex flex-col items-center gap-3">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -86,7 +162,7 @@ export const ChatSession = (): JSX.Element => {
                       size="icon"
                       aria-label="Settings"
                       onClick={controller.openProviderSettings}
-                      className="h-12 w-12 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+                      className="app-shell-rail-button h-12 w-12 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
                     >
                       <Cog className="h-5 w-5" />
                     </Button>
@@ -103,11 +179,11 @@ export const ChatSession = (): JSX.Element => {
                 onOpenSettings={controller.openProviderSettings}
               />
             ) : (
-              <main className="flex min-h-0 flex-1 flex-col bg-slate-950">
+              <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
                 <SessionHeader {...controller.header} />
 
-                <div className="relative min-h-0 flex-1">
-                  <ScrollArea className="h-full" type="always">
+                <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <ScrollArea className="h-full min-w-0" type="always">
                     <ConversationFeed {...controller.conversation} />
                   </ScrollArea>
                   <ScrollToNewestButton
@@ -117,8 +193,8 @@ export const ChatSession = (): JSX.Element => {
                   />
                 </div>
 
-                <footer className="border-t border-slate-900/80 bg-slate-950/40 px-8 pb-5 pt-3 backdrop-blur-xl">
-                  <div className="mx-auto w-full max-w-5xl">
+                <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-8 pb-5 pt-3 backdrop-blur-xl">
+                  <div className="mx-auto w-full max-w-5xl min-w-0">
                     <SessionComposer {...controller.composer} />
                   </div>
                 </footer>
@@ -137,6 +213,7 @@ export const ChatSession = (): JSX.Element => {
               providerSetup={controller.settingsDialog.providerSetup}
               webSearchSetup={controller.settingsDialog.webSearchSetup}
               agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}
+              appearanceSetup={appearance}
               memorySetup={controller.settingsDialog.memorySetup}
               desktopSetup={controller.settingsDialog.desktopSetup}
               voiceSetup={controller.settingsDialog.voiceSetup}

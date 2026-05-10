@@ -1,5 +1,4 @@
 import { isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow, type DragDropEvent } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   useCallback,
@@ -7,300 +6,75 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
-  type MouseEvent,
 } from "react";
 import {
-  MAX_SESSION_MEMORY_ENTRIES,
-  mergeConversationMemoryEntries,
-} from "../../../../core/memory.js";
-import {
   createImageInputUnsupportedModelMessage,
-  getImageInputMediaTypeForPath,
   getSupportedImageInputExtensions,
   modelSupportsImageInput,
 } from "../../../../core/model-capabilities.js";
-import type { RunMode, TaskExecutionResult } from "../../../../core/types.js";
+import type { RunMode } from "../../../../core/types.js";
 import {
-  canArchiveSession,
   canDeleteSession,
   canRenameSession,
+  applySessionRetentionPolicy,
   createSession,
   createVisibleConversationMessages,
   getLatestRunningTaskId,
   getSessionOverviewStatus,
   getSessionTitle,
   isQuickVoiceSession,
-  isSessionArchived,
   QUICK_VOICE_SESSION_KIND,
-  sortSessionsByUpdatedAt,
   type ChatSessionContextAttachment,
-  type ChatSessionContextAttachmentKind,
-  type ChatSessionMessage,
   type ChatSessionRecord,
   type ShellPersistedState,
   trimSessionTaskGroupsToVisibleMessageLimit,
 } from "../../chat-session.model";
 import {
-  getDefaultModelForProvider,
   type RuntimeProvider,
 } from "../../model-catalog";
 import {
   cancelDesktopTask,
-  loadUserMemorySettings,
   openWorkspacePath,
   resolveDroppedPaths,
-  runDesktopTask,
-  subscribeToDesktopTaskProgress,
-  type DroppedPathEntry,
 } from "../../runtime";
 import {
   appendThinkingProgress,
   createInitialThinkingTrace,
 } from "../../task-thinking.model";
-import { getExecutionMessageContent } from "./execution-message.tsx";
 import { clampAiContextMessageLimit } from "./ai-context-window";
 import {
-  createConversationContextFromSession,
+  appendTranscriptToDraft,
+  clampQuickVoiceMessageLimit,
+  createContextAttachment,
+  getImageAttachmentPaths,
+  mergeContextAttachments,
+  normalizeDialogSelection,
+  type AttachmentSelectionKind,
+  type DialogSelection,
+  type FileDropTarget,
+} from "./session-context-attachments";
+import {
   getEffectiveSessionMode,
-  removeSessionArchiveFlag,
   removeSessionModeOverride,
   removeSessionProfileOverride,
   RUN_MODE_META,
-  type SettingsSection,
 } from "./session-shell";
 import {
   createMemorySummaryState,
   createProviderChooserState,
 } from "./session-shell-view-model";
-import {
-  closeDesktopWindow,
-  minimizeDesktopWindow,
-  stopTitlebarEvent,
-  toggleDesktopWindowMaximize,
-} from "./session-window-controls";
 import { useChatSessionRuntime } from "./use-chat-session-runtime";
 import { useChatSessionSpeechInput } from "./use-chat-session-speech-input";
 import { useChatSessionShellState } from "./use-chat-session-shell-state";
 import { useChatSessionVoice } from "./use-chat-session-voice";
+import { useDesktopTaskProgress } from "./use-desktop-task-progress";
+import { useSessionComposerState } from "./use-session-composer-state";
+import { useSessionFileDrops } from "./use-session-file-drops";
+import { useSessionLifecycle } from "./use-session-lifecycle";
+import { useSessionSettingsActions } from "./use-session-settings";
+import { useSessionTaskSubmission } from "./use-session-task-submission";
+import { useSessionWindowControls } from "./use-session-window-controls";
 import { useSpeechInputDevices } from "./use-speech-input-devices";
-
-const formatTaskExecutionError = (error: unknown): string => {
-  const detail = error instanceof Error ? error.message : String(error);
-
-  return `**Desktop handoff failed.** ${detail}`;
-};
-
-const createExecutionMessageContent = (
-  execution: TaskExecutionResult,
-): string => {
-  return getExecutionMessageContent(execution);
-};
-
-const appendTranscriptToDraft = (draft: string, transcript: string): string => {
-  const normalizedTranscript = transcript.trim();
-
-  if (!normalizedTranscript) {
-    return draft;
-  }
-
-  if (!draft.trim()) {
-    return normalizedTranscript;
-  }
-
-  return /\s$/u.test(draft) ? `${draft}${normalizedTranscript}` : `${draft}\n${normalizedTranscript}`;
-};
-
-const clampQuickVoiceMessageLimit = (value: number): number => {
-  if (!Number.isFinite(value)) {
-    return 50;
-  }
-
-  return Math.min(200, Math.max(10, Math.round(value)));
-};
-
-type FileDropTarget = "active-session" | "quick-task";
-
-type AttachmentSelectionKind = "files" | "folders" | "images";
-
-type DialogSelection = string | string[] | null;
-
-const appendDraftBlock = (draft: string, block: string): string => {
-  const normalizedBlock = block.trim();
-
-  if (!normalizedBlock) {
-    return draft;
-  }
-
-  const normalizedDraft = draft.trimEnd();
-
-  return normalizedDraft ? `${normalizedDraft}\n\n${normalizedBlock}` : normalizedBlock;
-};
-
-const normalizeDroppedPathKind = (
-  entry: DroppedPathEntry,
-): ChatSessionContextAttachmentKind => {
-  switch (entry.kind) {
-    case "directory":
-      return "directory";
-    case "file":
-      return getImageInputMediaTypeForPath(entry.path) ? "image" : "file";
-    case "other":
-    default:
-      return "other";
-  }
-};
-
-const formatContextAttachmentKind = (
-  attachment: Pick<ChatSessionContextAttachment, "kind">,
-): string => {
-  switch (attachment.kind) {
-    case "directory":
-      return "folder";
-    case "file":
-      return "file";
-    case "image":
-      return "image";
-    case "other":
-    default:
-      return "path";
-  }
-};
-
-const createContextAttachment = (
-  entry: DroppedPathEntry,
-): ChatSessionContextAttachment => {
-  const parent = entry.parent?.trim();
-
-  return {
-    id: crypto.randomUUID(),
-    path: entry.path,
-    kind: normalizeDroppedPathKind(entry),
-    name: entry.name,
-    ...(parent ? { parent } : {}),
-  };
-};
-
-const mergeContextAttachments = (
-  existing: ChatSessionContextAttachment[],
-  incoming: ChatSessionContextAttachment[],
-): ChatSessionContextAttachment[] => {
-  const seenPaths = new Set(
-    existing.map((attachment) => attachment.path.toLowerCase()),
-  );
-  const merged = [...existing];
-
-  for (const attachment of incoming) {
-    const dedupeKey = attachment.path.toLowerCase();
-
-    if (seenPaths.has(dedupeKey)) {
-      continue;
-    }
-
-    seenPaths.add(dedupeKey);
-    merged.push(attachment);
-  }
-
-  return merged;
-};
-
-const createContextAttachmentsTaskBlock = (
-  attachments: ChatSessionContextAttachment[],
-): string => {
-  if (attachments.length === 0) {
-    return "";
-  }
-
-  if (attachments.length === 1) {
-    const [attachment] = attachments;
-
-    if (!attachment) {
-      return "";
-    }
-
-    return `Use this ${formatContextAttachmentKind(attachment)}: "${attachment.path}"`;
-  }
-
-  return [
-    "Use these paths:",
-    ...attachments.map(
-      (attachment) =>
-        `- ${formatContextAttachmentKind(attachment)}: "${attachment.path}"`,
-    ),
-  ].join("\n");
-};
-
-const appendContextAttachmentsToTask = (
-  task: string,
-  attachments: ChatSessionContextAttachment[],
-): string => {
-  return appendDraftBlock(task, createContextAttachmentsTaskBlock(attachments));
-};
-
-const getImageAttachmentPaths = (
-  attachments: ChatSessionContextAttachment[],
-): string[] => {
-  return attachments
-    .filter((attachment) => attachment.kind === "image")
-    .map((attachment) => attachment.path);
-};
-
-const areContextAttachmentsEqual = (
-  left: ChatSessionContextAttachment[],
-  right: ChatSessionContextAttachment[],
-): boolean => {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return left.every((attachment, index) => {
-    const otherAttachment = right[index];
-
-    return (
-      otherAttachment !== undefined &&
-      attachment.path === otherAttachment.path &&
-      attachment.kind === otherAttachment.kind
-    );
-  });
-};
-
-const createPromptHistoryUpdate = (
-  session: Pick<ChatSessionRecord, "promptHistory" | "promptContextHistory">,
-  task: string,
-  attachments: ChatSessionContextAttachment[],
-): Pick<ChatSessionRecord, "promptHistory" | "promptContextHistory"> => {
-  const alignedPromptContextHistory = session.promptHistory.map(
-    (_entry, index) => session.promptContextHistory[index] ?? [],
-  );
-  const latestTask = session.promptHistory.at(-1);
-  const latestAttachments = alignedPromptContextHistory.at(-1) ?? [];
-
-  if (
-    latestTask === task &&
-    areContextAttachmentsEqual(latestAttachments, attachments)
-  ) {
-    return {
-      promptHistory: session.promptHistory,
-      promptContextHistory: alignedPromptContextHistory,
-    };
-  }
-
-  return {
-    promptHistory: [...session.promptHistory, task].slice(-40),
-    promptContextHistory: [
-      ...alignedPromptContextHistory,
-      attachments,
-    ].slice(-40),
-  };
-};
-
-const normalizeDialogSelection = (selection: DialogSelection): string[] => {
-  if (!selection) {
-    return [];
-  }
-
-  return Array.isArray(selection) ? selection : [selection];
-};
 
 export interface UseChatSessionControllerOptions {
   isolateActiveSession?: boolean;
@@ -320,11 +94,7 @@ export const useChatSessionController = (
   const [quickTaskDraft, setQuickTaskDraft] = useState("");
   const [quickTaskContextAttachments, setQuickTaskContextAttachments] =
     useState<ChatSessionContextAttachment[]>([]);
-  const [
-    draftContextAttachmentsBeforeHistory,
-    setDraftContextAttachmentsBeforeHistory,
-  ] = useState<ChatSessionContextAttachment[]>([]);
-  const [isFileDropActive, setIsFileDropActive] = useState(false);
+  const composerState = useSessionComposerState(state);
   const runtime = useChatSessionRuntime({
     catalogOpen: state.catalogOpen,
     activeSessionProvider: state.activeSession.provider,
@@ -388,6 +158,12 @@ export const useChatSessionController = (
     runtimeSnapshot: runtime.runtimeSnapshot,
     globalProviders: runtime.globalProviders,
   });
+  const lifecycleActions = useSessionLifecycle({
+    state,
+    providerChooserState,
+  });
+  const settingsActions = useSessionSettingsActions(state);
+  const windowControls = useSessionWindowControls();
   const memorySummaryState = createMemorySummaryState({
     session: state.activeSession,
     userMemorySettings: runtime.userMemorySettings,
@@ -475,39 +251,17 @@ export const useChatSessionController = (
     runtime.userDesktopSettings.aiContextMaxMessages,
   );
 
-  const handleOpenSettings = (section: SettingsSection = "providers"): void => {
-    state.setSettingsSection(section);
-    state.setCatalogOpen(true);
-  };
-
   const handleSpeechInputAction = (): void => {
     if (!speechInput.browserSupported) {
       return;
     }
 
     if (!speechInput.enabled && !speechInput.recording && !speechInput.transcribing) {
-      handleOpenSettings("voice");
+      settingsActions.openSettings("voice");
       return;
     }
 
     speechInput.toggleRecording();
-  };
-
-  const handleMinimizeWindow = (event: MouseEvent<HTMLButtonElement>): void => {
-    stopTitlebarEvent(event);
-    void minimizeDesktopWindow();
-  };
-
-  const handleToggleMaximizeWindow = (
-    event: MouseEvent<HTMLButtonElement>,
-  ): void => {
-    stopTitlebarEvent(event);
-    void toggleDesktopWindowMaximize();
-  };
-
-  const handleCloseWindow = (event: MouseEvent<HTMLButtonElement>): void => {
-    stopTitlebarEvent(event);
-    void closeDesktopWindow();
   };
 
   const applySessionMessageLimit = useCallback(
@@ -528,31 +282,6 @@ export const useChatSessionController = (
     },
     [runtime.userDesktopSettings.quickVoiceMaxMessages],
   );
-
-  const appendAgentMessage = (
-    sessionId: string,
-    taskId: string,
-    content: string,
-    source?: ChatSessionMessage["source"],
-  ): void => {
-    state.updateSessionById(sessionId, (session) => {
-      return applySessionMessageLimit({
-        ...session,
-        updatedAt: Date.now(),
-        messages: [
-          ...session.messages,
-          {
-            id: crypto.randomUUID(),
-            taskId,
-            role: "agent",
-            content,
-            createdAt: Date.now(),
-            ...(source ? { source } : {}),
-          },
-        ],
-      });
-    });
-  };
 
   const updateThinkingTrace = useCallback(
     (
@@ -637,124 +366,48 @@ export const useChatSessionController = (
     [applySessionMessageLimit, runtime.runtimeSnapshot, state.updateSessionById],
   );
 
+  useDesktopTaskProgress({
+    activeDesktopTasksRef,
+    ignoredDesktopTaskIdsRef,
+    updateThinkingTrace,
+  });
+
   useEffect(() => {
-    let disposed = false;
-    let unsubscribe: (() => void) | undefined;
+    if (!state.hasHydrated || !runtime.userDesktopSettingsLoaded) {
+      return;
+    }
 
-    void subscribeToDesktopTaskProgress((progressEvent) => {
-      const sessionId = activeDesktopTasksRef.current.get(progressEvent.taskId);
-
-      if (
-        !sessionId ||
-        ignoredDesktopTaskIdsRef.current.has(progressEvent.taskId)
-      ) {
-        return;
-      }
-
-      updateThinkingTrace(sessionId, progressEvent.taskId, (trace) => {
-        return appendThinkingProgress(
-          trace,
-          progressEvent.progress,
-          progressEvent.timestamp,
-        );
+    const applyRetentionPolicy = (): void => {
+      const nextShellState = applySessionRetentionPolicy(state.shellState, {
+        inactiveSessionArchiveDays:
+          runtime.userDesktopSettings.inactiveSessionArchiveDays,
+        archivedSessionRetentionDays:
+          runtime.userDesktopSettings.archivedSessionRetentionDays,
       });
-    }).then((unlisten) => {
-      if (disposed) {
-        unlisten();
-        return;
-      }
 
-      unsubscribe = unlisten;
-    });
+      if (nextShellState !== state.shellState) {
+        state.applyShellState(nextShellState);
+      }
+    };
+
+    applyRetentionPolicy();
+
+    const intervalId = window.setInterval(
+      applyRetentionPolicy,
+      60 * 60 * 1_000,
+    );
 
     return () => {
-      disposed = true;
-      unsubscribe?.();
+      window.clearInterval(intervalId);
     };
-  }, [updateThinkingTrace]);
-
-  const createNewSession = (): void => {
-    const provider =
-      providerChooserState.chooserProviders.find(
-        (entry) => entry === state.shellState.lastSelectedProvider,
-      ) ??
-      providerChooserState.chooserProviders[0] ??
-      state.shellState.lastSelectedProvider;
-    const session = createSession({
-      workspace: state.activeSession.workspace,
-      provider,
-      ...(state.shellState.lastSelectedProfile
-        ? { profile: state.shellState.lastSelectedProfile }
-        : {}),
-      ...(state.shellState.lastSelectedMode
-        ? { mode: state.shellState.lastSelectedMode }
-        : {}),
-      model:
-        state.shellState.lastSelectedModelByProvider[provider] ??
-        getDefaultModelForProvider(provider),
-    });
-
-    state.applyShellState((prev) => ({
-      ...prev,
-      activeSessionId: session.id,
-      sessions: [session, ...prev.sessions],
-    }));
-    state.setActiveSessionId(session.id);
-  };
-
-  const deleteSession = (sessionId: string): void => {
-    let nextActiveSessionId = state.activeSessionId;
-
-    state.applyShellState((prev) => {
-      const targetSession = prev.sessions.find((session) => session.id === sessionId);
-
-      if (targetSession && !canDeleteSession(targetSession)) {
-        return prev;
-      }
-
-      const remainingSessions = prev.sessions.filter(
-        (session) => session.id !== sessionId,
-      );
-
-      if (remainingSessions.length === 0) {
-        const replacement = createSession({
-          workspace: state.activeSession.workspace,
-          provider: prev.lastSelectedProvider,
-          ...(prev.lastSelectedProfile
-            ? { profile: prev.lastSelectedProfile }
-            : {}),
-          ...(prev.lastSelectedMode ? { mode: prev.lastSelectedMode } : {}),
-          model:
-            prev.lastSelectedModelByProvider[prev.lastSelectedProvider] ??
-            getDefaultModelForProvider(prev.lastSelectedProvider),
-        });
-        nextActiveSessionId = replacement.id;
-
-        return {
-          ...prev,
-          activeSessionId: replacement.id,
-          sessions: [replacement],
-        };
-      }
-
-      if (state.activeSessionId === sessionId) {
-        nextActiveSessionId = sortSessionsByUpdatedAt(remainingSessions)[0].id;
-      }
-
-      return {
-        ...prev,
-        activeSessionId:
-          prev.activeSessionId === sessionId
-            ? sortSessionsByUpdatedAt(remainingSessions)[0].id
-            : prev.activeSessionId,
-        sessions: remainingSessions,
-      };
-    });
-
-    if (nextActiveSessionId !== state.activeSessionId) {
-      state.setActiveSessionId(nextActiveSessionId);
-    }
-  };
+  }, [
+    runtime.userDesktopSettings.inactiveSessionArchiveDays,
+    runtime.userDesktopSettings.archivedSessionRetentionDays,
+    runtime.userDesktopSettingsLoaded,
+    state.applyShellState,
+    state.hasHydrated,
+    state.shellState,
+  ]);
 
   const handleRenameCommit = (): void => {
     const trimmed = state.renameValue.trim();
@@ -991,108 +644,6 @@ export const useChatSessionController = (
     state.activeSession.workspace,
     state.shellState.lastSelectedProfile,
   ]);
-
-  const handleSessionMemoryEnabledChange = (enabled: boolean): void => {
-    state.updateActiveSession((session) => ({
-      ...session,
-      sessionMemoryEnabled: enabled,
-      updatedAt: Date.now(),
-    }));
-  };
-
-  const handleUseGlobalMemoryChange = (enabled: boolean): void => {
-    state.updateActiveSession((session) => ({
-      ...session,
-      useGlobalMemory: enabled,
-      updatedAt: Date.now(),
-    }));
-  };
-
-  const handleUiControlEnabledChange = (enabled: boolean): void => {
-    state.updateActiveSession((session) => ({
-      ...session,
-      uiControlEnabled: enabled,
-      updatedAt: Date.now(),
-    }));
-  };
-
-  const handleDraftChange = (value: string): void => {
-    state.setPromptHistoryIndex(null);
-    state.setDraftBeforeHistory("");
-    setDraftContextAttachmentsBeforeHistory([]);
-    state.setDraftValue(value);
-  };
-
-  const handleComposerHistoryNavigation = (
-    event: KeyboardEvent<HTMLTextAreaElement>,
-  ): void => {
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") {
-      return;
-    }
-
-    if (state.activeSession.promptHistory.length === 0) {
-      return;
-    }
-
-    event.preventDefault();
-
-    if (event.key === "ArrowUp") {
-      if (state.promptHistoryIndex === null) {
-        state.setDraftBeforeHistory(state.activeSession.draft);
-        setDraftContextAttachmentsBeforeHistory(
-          state.activeSession.draftContextAttachments,
-        );
-
-        const nextIndex = state.activeSession.promptHistory.length - 1;
-        state.setPromptHistoryIndex(nextIndex);
-        state.setDraftValue(state.activeSession.promptHistory[nextIndex]);
-        state.updateActiveSession((session) => ({
-          ...session,
-          draftContextAttachments:
-            session.promptContextHistory[nextIndex] ?? [],
-          updatedAt: Date.now(),
-        }));
-        return;
-      }
-
-      const nextIndex = Math.max(state.promptHistoryIndex - 1, 0);
-      state.setPromptHistoryIndex(nextIndex);
-      state.setDraftValue(state.activeSession.promptHistory[nextIndex]);
-      state.updateActiveSession((session) => ({
-        ...session,
-        draftContextAttachments: session.promptContextHistory[nextIndex] ?? [],
-        updatedAt: Date.now(),
-      }));
-      return;
-    }
-
-    if (state.promptHistoryIndex === null) {
-      return;
-    }
-
-    const nextIndex = state.promptHistoryIndex + 1;
-
-    if (nextIndex >= state.activeSession.promptHistory.length) {
-      state.setPromptHistoryIndex(null);
-      state.setDraftValue(state.draftBeforeHistory);
-      state.setDraftBeforeHistory("");
-      state.updateActiveSession((session) => ({
-        ...session,
-        draftContextAttachments: draftContextAttachmentsBeforeHistory,
-        updatedAt: Date.now(),
-      }));
-      setDraftContextAttachmentsBeforeHistory([]);
-      return;
-    }
-
-    state.setPromptHistoryIndex(nextIndex);
-    state.setDraftValue(state.activeSession.promptHistory[nextIndex]);
-    state.updateActiveSession((session) => ({
-      ...session,
-      draftContextAttachments: session.promptContextHistory[nextIndex] ?? [],
-      updatedAt: Date.now(),
-    }));
-  };
 
   const handleOpenWorkspaceFile = (relativePath: string): void => {
     void openWorkspacePath(state.activeSession.workspace, relativePath).catch(
@@ -1334,9 +885,7 @@ export const useChatSessionController = (
         return;
       }
 
-      state.setPromptHistoryIndex(null);
-      state.setDraftBeforeHistory("");
-      setDraftContextAttachmentsBeforeHistory([]);
+      composerState.resetDraftHistoryState();
       state.updateActiveSession((session) => ({
         ...session,
         draftContextAttachments: mergeContextAttachments(
@@ -1355,8 +904,7 @@ export const useChatSessionController = (
       }
     },
     [
-      state.setDraftBeforeHistory,
-      state.setPromptHistoryIndex,
+      composerState,
       state.updateActiveSession,
       updateQuickTaskSession,
     ],
@@ -1448,9 +996,7 @@ export const useChatSessionController = (
         return;
       }
 
-      state.setPromptHistoryIndex(null);
-      state.setDraftBeforeHistory("");
-      setDraftContextAttachmentsBeforeHistory([]);
+      composerState.resetDraftHistoryState();
       state.updateActiveSession((session) => ({
         ...session,
         draftContextAttachments: session.draftContextAttachments.filter(
@@ -1460,8 +1006,7 @@ export const useChatSessionController = (
       }));
     },
     [
-      state.setDraftBeforeHistory,
-      state.setPromptHistoryIndex,
+      composerState,
       state.updateActiveSession,
     ],
   );
@@ -1473,9 +1018,7 @@ export const useChatSessionController = (
         return;
       }
 
-      state.setPromptHistoryIndex(null);
-      state.setDraftBeforeHistory("");
-      setDraftContextAttachmentsBeforeHistory([]);
+      composerState.resetDraftHistoryState();
       state.updateActiveSession((session) => {
         if (session.draftContextAttachments.length === 0) {
           return session;
@@ -1489,390 +1032,28 @@ export const useChatSessionController = (
       });
     },
     [
-      state.setDraftBeforeHistory,
-      state.setPromptHistoryIndex,
+      composerState,
       state.updateActiveSession,
     ],
   );
 
-  useEffect(() => {
-    const fileDropTarget = options.fileDropTarget;
+  const fileDrop = useSessionFileDrops({
+    fileDropTarget: options.fileDropTarget,
+    isDesktop,
+    onAttachPaths: handleAttachPaths,
+  });
 
-    if (!fileDropTarget || !isDesktop) {
-      setIsFileDropActive(false);
-      return;
-    }
-
-    let disposed = false;
-    let unsubscribe: (() => void) | undefined;
-
-    void getCurrentWindow()
-      .onDragDropEvent((event: { payload: DragDropEvent }) => {
-        const payload = event.payload;
-
-        if (payload.type === "enter" || payload.type === "over") {
-          setIsFileDropActive(true);
-          return;
-        }
-
-        if (payload.type === "leave") {
-          setIsFileDropActive(false);
-          return;
-        }
-
-        setIsFileDropActive(false);
-        void handleAttachPaths(payload.paths, fileDropTarget);
-      })
-      .then((unlisten) => {
-        if (disposed) {
-          unlisten();
-          return;
-        }
-
-        unsubscribe = unlisten;
-      })
-      .catch((error) => {
-        console.error("Failed to subscribe to dropped files", error);
-      });
-
-    return () => {
-      disposed = true;
-      unsubscribe?.();
-    };
-  }, [handleAttachPaths, isDesktop, options.fileDropTarget]);
-
-  const submitTaskToSession = useCallback(
-    (options: {
-      sessionSnapshot: ChatSessionRecord;
-      task: string;
-      contextAttachments: ChatSessionContextAttachment[];
-      clearDraft: boolean;
-      activateSession: boolean;
-      modeOverride?: RunMode;
-    }): void => {
-      const normalizedTask = options.task.trim();
-
-      if (!normalizedTask) {
-        return;
-      }
-
-      const contextAttachments = options.contextAttachments;
-      const executionTask = appendContextAttachmentsToTask(
-        normalizedTask,
-        contextAttachments,
-      );
-      const imagePaths = getImageAttachmentPaths(contextAttachments);
-      const { sessionSnapshot } = options;
-      const isQuickTaskSessionSnapshot = isQuickVoiceSession(sessionSnapshot);
-      const taskId = crypto.randomUUID();
-      const sessionId = sessionSnapshot.id;
-      const sessionWorkspace = sessionSnapshot.workspace;
-      const sessionProfile = sessionSnapshot.profile;
-      const sessionMode = options.modeOverride ?? sessionSnapshot.mode;
-      const taskConversationContext = createConversationContextFromSession(
-        sessionSnapshot,
-        runtime.userMemorySettings.globalEnabled,
-        uiControlAvailability,
-        aiContextMessageLimit,
-      );
-      const taskRunPromise = runDesktopTask(sessionWorkspace, executionTask, {
-        conversationContext: taskConversationContext,
-        ...(imagePaths.length > 0 ? { imagePaths } : {}),
-        model: sessionSnapshot.model,
-        ...(sessionProfile ? { profile: sessionProfile } : {}),
-        provider: sessionSnapshot.provider,
-        ...(sessionMode ? { mode: sessionMode } : {}),
-        taskId,
-      });
-      const nextRunMode = getEffectiveSessionMode(
-        sessionMode,
-        runtime.runtimeSnapshot,
-      );
-      let taskFailureReported = false;
-
-      voice.stopSpeaking();
-
-      const reportTaskFailure = (error: unknown): void => {
-        activeDesktopTasksRef.current.delete(taskId);
-
-        if (ignoredDesktopTaskIdsRef.current.has(taskId)) {
-          ignoredDesktopTaskIdsRef.current.delete(taskId);
-          return;
-        }
-
-        if (taskFailureReported) {
-          return;
-        }
-
-        taskFailureReported = true;
-        appendAgentMessage(sessionId, taskId, formatTaskExecutionError(error));
-      };
-
-      if (
-        isSessionArchived(sessionSnapshot) &&
-        state.sessionScopeFilter === "archived"
-      ) {
-        state.setSessionScopeFilter("open");
-      }
-
-      state.applyShellState((prev) => {
-        const nextUpdatedAt = Date.now();
-        let sessionFound = false;
-        const nextSessions = prev.sessions.map((session) => {
-          if (session.id !== sessionId) {
-            return session;
-          }
-
-          sessionFound = true;
-
-          const sessionWithoutArchive = removeSessionArchiveFlag(session);
-          const nextPromptHistory = createPromptHistoryUpdate(
-            sessionWithoutArchive,
-            normalizedTask,
-            contextAttachments,
-          );
-          const nextSession: ChatSessionRecord = {
-            ...sessionWithoutArchive,
-            workspace: sessionSnapshot.workspace,
-            provider: sessionSnapshot.provider,
-            model: sessionSnapshot.model,
-            draft: options.clearDraft ? "" : sessionWithoutArchive.draft,
-            draftContextAttachments: options.clearDraft
-              ? []
-              : sessionWithoutArchive.draftContextAttachments,
-            sessionMemoryEnabled: isQuickTaskSessionSnapshot
-              ? false
-              : sessionSnapshot.sessionMemoryEnabled,
-            sessionMemory: isQuickTaskSessionSnapshot
-              ? []
-              : sessionWithoutArchive.sessionMemory,
-            useGlobalMemory: sessionSnapshot.useGlobalMemory,
-            uiControlEnabled: sessionSnapshot.uiControlEnabled,
-            updatedAt: nextUpdatedAt,
-            messages: [
-              ...sessionWithoutArchive.messages,
-              {
-                id: crypto.randomUUID(),
-                taskId,
-                role: "user",
-                content: executionTask,
-                createdAt: Date.now(),
-              },
-            ],
-            promptHistory: nextPromptHistory.promptHistory,
-            promptContextHistory: nextPromptHistory.promptContextHistory,
-          };
-
-          if (sessionSnapshot.profile) {
-            nextSession.profile = sessionSnapshot.profile;
-          } else {
-            delete nextSession.profile;
-          }
-
-          if (sessionSnapshot.mode) {
-            nextSession.mode = sessionSnapshot.mode;
-          } else {
-            delete nextSession.mode;
-          }
-
-          if (sessionSnapshot.specialSession) {
-            nextSession.specialSession = sessionSnapshot.specialSession;
-          } else {
-            delete nextSession.specialSession;
-          }
-
-          if (sessionSnapshot.manualTitle) {
-            nextSession.manualTitle = sessionSnapshot.manualTitle;
-          } else {
-            delete nextSession.manualTitle;
-          }
-
-          return applySessionMessageLimit(nextSession);
-        });
-
-        if (!sessionFound) {
-          const nextPromptHistory = createPromptHistoryUpdate(
-            sessionSnapshot,
-            normalizedTask,
-            contextAttachments,
-          );
-          const insertedSession = applySessionMessageLimit({
-            ...sessionSnapshot,
-            draft: options.clearDraft ? "" : sessionSnapshot.draft,
-            draftContextAttachments: options.clearDraft
-              ? []
-              : sessionSnapshot.draftContextAttachments,
-            updatedAt: nextUpdatedAt,
-            messages: [
-              ...sessionSnapshot.messages,
-              {
-                id: crypto.randomUUID(),
-                taskId,
-                role: "user",
-                content: executionTask,
-                createdAt: Date.now(),
-              },
-            ],
-            promptHistory: nextPromptHistory.promptHistory,
-            promptContextHistory: nextPromptHistory.promptContextHistory,
-          });
-
-          return {
-            ...prev,
-            ...(options.activateSession ? { activeSessionId: sessionId } : {}),
-            sessions: [insertedSession, ...prev.sessions],
-          };
-        }
-
-        return {
-          ...prev,
-          ...(options.activateSession ? { activeSessionId: sessionId } : {}),
-          sessions: nextSessions,
-        };
-      });
-
-      if (options.activateSession) {
-        state.setActiveSessionId(sessionId);
-      }
-
-      if (options.clearDraft && sessionId === state.activeSession.id) {
-        state.setDraftValue("");
-      }
-
-      if (sessionId === state.activeSession.id) {
-        state.setPromptHistoryIndex(null);
-        state.setDraftBeforeHistory("");
-      }
-
-      activeDesktopTasksRef.current.set(taskId, sessionId);
-      updateThinkingTrace(sessionId, taskId, () => {
-        return createInitialThinkingTrace(nextRunMode);
-      });
-
-      void taskRunPromise
-        .then((taskRun) => {
-          activeDesktopTasksRef.current.delete(taskId);
-
-          if (ignoredDesktopTaskIdsRef.current.has(taskId)) {
-            ignoredDesktopTaskIdsRef.current.delete(taskId);
-            return;
-          }
-
-          const sessionMemoryUpdates =
-            taskRun.execution.memoryUpdates
-              ?.filter((update) => update.scope === "session")
-              .map((update) => update.entry) ?? [];
-          const wroteGlobalMemory =
-            taskRun.execution.memoryUpdates?.some(
-              (update) => update.scope === "global",
-            ) ?? false;
-
-          if (!isQuickTaskSessionSnapshot && sessionMemoryUpdates.length > 0) {
-            state.updateSessionById(sessionId, (session) => {
-              return applySessionMessageLimit({
-                ...session,
-                sessionMemory: mergeConversationMemoryEntries(
-                  session.sessionMemory,
-                  sessionMemoryUpdates,
-                  MAX_SESSION_MEMORY_ENTRIES,
-                ),
-                updatedAt: Date.now(),
-              });
-            });
-          }
-
-          if (wroteGlobalMemory) {
-            void runtime
-              .refreshWorkspaceRuntimeSnapshot(sessionWorkspace, sessionProfile)
-              .then(() => loadUserMemorySettings())
-              .then(runtime.applyLoadedUserMemorySettings)
-              .catch((error) => {
-                console.error("Failed to refresh user memory settings", error);
-              });
-          }
-
-          state.scheduleMessage(
-            () => {
-              if (ignoredDesktopTaskIdsRef.current.has(taskId)) {
-                ignoredDesktopTaskIdsRef.current.delete(taskId);
-                return;
-              }
-
-              appendAgentMessage(
-                sessionId,
-                taskId,
-                createExecutionMessageContent(taskRun.execution),
-                {
-                  kind: "execution",
-                  execution: taskRun.execution,
-                },
-              );
-            },
-            220,
-          );
-        })
-        .catch(reportTaskFailure);
-    },
-    [
-      applySessionMessageLimit,
-      appendAgentMessage,
-      runtime.applyLoadedUserMemorySettings,
-      runtime.refreshWorkspaceRuntimeSnapshot,
-      runtime.runtimeSnapshot,
-      aiContextMessageLimit,
-      runtime.userMemorySettings.globalEnabled,
-      state.activeSession.id,
-      state.applyShellState,
-      state.setActiveSessionId,
-      state.scheduleMessage,
-      state.sessionScopeFilter,
-      state.setDraftValue,
-      state.setDraftBeforeHistory,
-      state.setPromptHistoryIndex,
-      state.setSessionScopeFilter,
-      state.updateSessionById,
-      uiControlAvailability,
-      updateThinkingTrace,
-      voice,
-    ],
-  );
-
-  const handleApprovePlan = useCallback(
-    (message: ChatSessionMessage): void => {
-      if (
-        message.source?.kind !== "execution" ||
-        message.source.execution.status !== "planned"
-      ) {
-        return;
-      }
-
-      const sourceSession =
-        state.shellState.sessions.find((session) =>
-          session.messages.some((entry) => entry.id === message.id),
-        ) ?? state.activeSession;
-      const execution = message.source.execution;
-      const approvedPlan = execution.response?.markdown.trim();
-      const approvalTask = [
-        "Implement this approved plan.",
-        "",
-        "Original task:",
-        execution.task,
-        ...(approvedPlan
-          ? ["", "Approved plan:", approvedPlan]
-          : ["", "Plan summary:", execution.summary]),
-      ].join("\n");
-
-      submitTaskToSession({
-        sessionSnapshot: sourceSession,
-        task: approvalTask,
-        contextAttachments: [],
-        clearDraft: false,
-        activateSession: true,
-        modeOverride: "ask",
-      });
-    },
-    [state.activeSession, state.shellState.sessions, submitTaskToSession],
-  );
+  const taskSubmission = useSessionTaskSubmission({
+    state,
+    runtime,
+    voice,
+    uiControlAvailability,
+    aiContextMessageLimit,
+    activeDesktopTasksRef,
+    ignoredDesktopTaskIdsRef,
+    applySessionMessageLimit,
+    updateThinkingTrace,
+  });
 
   const submitQuickVoiceCommand = useCallback(
     (
@@ -1885,7 +1066,7 @@ export const useChatSessionController = (
         return;
       }
 
-      submitTaskToSession({
+      taskSubmission.submitTaskToSession({
         sessionSnapshot: buildQuickVoiceSessionSnapshot(),
         task: normalizedTranscript,
         contextAttachments,
@@ -1893,7 +1074,7 @@ export const useChatSessionController = (
         activateSession: false,
       });
     },
-    [buildQuickVoiceSessionSnapshot, submitTaskToSession],
+    [buildQuickVoiceSessionSnapshot, taskSubmission],
   );
 
   const handleQuickTaskDraftSend = useCallback((): void => {
@@ -2001,7 +1182,7 @@ export const useChatSessionController = (
       return;
     }
 
-    submitTaskToSession({
+    taskSubmission.submitTaskToSession({
       sessionSnapshot: state.activeSession,
       task,
       contextAttachments: state.activeSession.draftContextAttachments,
@@ -2014,9 +1195,7 @@ export const useChatSessionController = (
     isDesktop,
     submitQuickVoiceCommand,
     clearQuickTaskHistory,
-    fileDrop: {
-      isActive: isFileDropActive,
-    },
+    fileDrop,
     voiceInputOverlay: {
       visible: speechInput.recording || speechInput.transcribing,
       recording: speechInput.recording,
@@ -2045,33 +1224,36 @@ export const useChatSessionController = (
     hasAnyProvider: providerChooserState.hasAnyProvider,
     titlebar: {
       providerStatuses: providerChooserState.activeProviderStats,
-      onMinimizeWindow: handleMinimizeWindow,
-      onToggleMaximizeWindow: handleToggleMaximizeWindow,
-      onCloseWindow: handleCloseWindow,
+      onMinimizeWindow: windowControls.onMinimizeWindow,
+      onToggleMaximizeWindow: windowControls.onToggleMaximizeWindow,
+      onCloseWindow: windowControls.onCloseWindow,
     },
-    openProviderSettings: () => handleOpenSettings("providers"),
+    openProviderSettings: () => settingsActions.openSettings("providers"),
     sidebar: {
       totalSessions: state.shellState.sessions.length,
       activeSessionId: state.activeSession.id,
       filteredSessions: state.filteredSessions,
       sessionScopeFilter: state.sessionScopeFilter,
       sessionStatusFilter: state.sessionStatusFilter,
+      sessionSearchQuery: state.sessionSearchQuery,
+      inactiveSessionArchiveDays:
+        runtime.userDesktopSettings.inactiveSessionArchiveDays,
+      archivedSessionRetentionDays:
+        runtime.userDesktopSettings.archivedSessionRetentionDays,
+      sessionTagFacets: state.sessionTagFacets,
+      sessionTagFilters: state.sessionTagFilters,
       onSessionScopeFilterChange: state.setSessionScopeFilter,
       onSessionStatusFilterChange: state.setSessionStatusFilter,
-      onCreateSession: createNewSession,
+      onSessionSearchQueryChange: state.setSessionSearchQuery,
+      onSessionTagFilterToggle: lifecycleActions.toggleSessionTagFilter,
+      onCreateSession: lifecycleActions.createNewSession,
       onActivateSession: state.setActiveSessionId,
-      onArchiveSession: (sessionId: string) => {
-        state.updateSessionById(sessionId, (session) => {
-          if (!canArchiveSession(session)) {
-            return session;
-          }
-
-          return {
-            ...session,
-            archivedAt: Date.now(),
-          };
-        });
-      },
+      onArchiveSession: lifecycleActions.archiveSession,
+      onTogglePinnedSession: lifecycleActions.togglePinnedSession,
+      onDuplicateSession: (sessionId: string) =>
+        lifecycleActions.cloneSession(sessionId, "duplicate"),
+      onExportSessions: lifecycleActions.exportSessions,
+      onImportSessions: lifecycleActions.importSessions,
     },
     header: {
       activeSession: state.activeSession,
@@ -2080,6 +1262,7 @@ export const useChatSessionController = (
       renameValue: state.renameValue,
       canRenameSession: canRenameSession(state.activeSession),
       canDeleteSession: canDeleteSession(state.activeSession),
+      canEditSessionMetadata: !isQuickVoiceSession(state.activeSession),
       showClearSessionHistory: isQuickVoiceSession(state.activeSession),
       canClearSessionHistory:
         isQuickVoiceSession(state.activeSession) &&
@@ -2094,17 +1277,22 @@ export const useChatSessionController = (
       runtimeLoading: runtime.runtimeLoading,
       runtimeError: runtime.runtimeError,
       onSessionProfileSelection: handleSessionProfileSelection,
+      onTagCommit: lifecycleActions.commitSessionTags,
+      onTogglePinnedSession: () =>
+        lifecycleActions.togglePinnedSession(state.activeSession.id),
+      onBranchSession: () =>
+        lifecycleActions.cloneSession(state.activeSession.id, "branch"),
       onRenameValueChange: state.setRenameValue,
       onRenameCommit: handleRenameCommit,
       onRenameCancel: handleRenameCancel,
       onSelectFolder: handleSelectFolder,
-      onCreateSession: createNewSession,
+      onCreateSession: lifecycleActions.createNewSession,
       onStartRename: () => {
         state.setRenameValue(currentSessionTitle);
         state.setIsRenamingSession(true);
       },
       onClearSessionHistory: clearQuickTaskHistory,
-      onDeleteSession: () => deleteSession(state.activeSession.id),
+      onDeleteSession: () => lifecycleActions.deleteSession(state.activeSession.id),
     },
     conversation: {
       visibleMessages: state.visibleMessages,
@@ -2112,7 +1300,9 @@ export const useChatSessionController = (
       bottomRef: state.bottomRef,
       showScrollToNewestButton: state.showScrollToNewestButton,
       onScrollToNewest: state.scrollToNewest,
-      onApprovePlan: handleApprovePlan,
+      onApprovePlan: taskSubmission.handleApprovePlan,
+      onRetryTask: taskSubmission.handleRetryTask,
+      onContinueTask: taskSubmission.handleContinueTask,
       onOpenWorkspaceFile: handleOpenWorkspaceFile,
       voicePlayback: {
         supported: voice.supported,
@@ -2158,9 +1348,9 @@ export const useChatSessionController = (
       onSelectFolder: handleSelectFolder,
       onSessionModelSelection: handleSessionModelSelection,
       onSessionModeSelection: handleSessionModeSelection,
-      onSessionMemoryEnabledChange: handleSessionMemoryEnabledChange,
-      onUseGlobalMemoryChange: handleUseGlobalMemoryChange,
-      onUiControlEnabledChange: handleUiControlEnabledChange,
+      onSessionMemoryEnabledChange: settingsActions.setSessionMemoryEnabled,
+      onUseGlobalMemoryChange: settingsActions.setUseGlobalMemory,
+      onUiControlEnabledChange: settingsActions.setUiControlEnabled,
       onSelectContextFiles: () =>
         handleSelectAttachments("active-session", "files"),
       onSelectContextFolders: () =>
@@ -2171,8 +1361,8 @@ export const useChatSessionController = (
         handleRemoveContextAttachment("active-session", attachmentId),
       onClearContextAttachments: () =>
         handleClearContextAttachments("active-session"),
-      onDraftChange: handleDraftChange,
-      onComposerHistoryNavigation: handleComposerHistoryNavigation,
+      onDraftChange: composerState.handleDraftChange,
+      onComposerHistoryNavigation: composerState.handleComposerHistoryNavigation,
       onSend: handleSend,
       onCancel: handleCancel,
       isExecuting: getSessionOverviewStatus(state.activeSession) === "running",

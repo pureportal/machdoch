@@ -5,13 +5,46 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   ConversationMemoryEntry,
   TaskConversationContext,
+  TaskActionOutput,
   TaskExecutionProgress,
   TaskExecutionResult,
   TaskRunPreview,
-  UiControlAvailability,
 } from "../../core/types.js";
 import {
+  AGENT_LIMIT_BOUNDS,
+  DEFAULT_USER_AGENT_LIMITS_SETTINGS,
+  DEFAULT_USER_DESKTOP_SETTINGS,
+  DESKTOP_SETTING_BOUNDS,
+  RUN_MODES,
+  USER_AUDIO_AI_PROVIDERS,
+  USER_WEB_SEARCH_PROVIDERS,
+  VALID_MODEL_PROVIDERS,
+} from "../../core/runtime-contract.generated.js";
+import type {
+  AudioProvider,
+  AudioProviderAvailability as SharedAudioProviderAvailability,
+  RuntimeAgentLimits as SharedRuntimeAgentLimits,
+  RuntimeCompatibilityConfig as SharedRuntimeCompatibilityConfig,
+  RuntimeProfileSummary as SharedRuntimeProfileSummary,
+  RuntimeSnapshot as SharedRuntimeSnapshot,
+  RuntimeWebSearchConfig as SharedRuntimeWebSearchConfig,
+  SpeechToTextProvider as SharedSpeechToTextProvider,
+  UserAgentLimitsSettings as SharedUserAgentLimitsSettings,
+  UserDesktopSettings as SharedUserDesktopSettings,
+  UserProviderApiKeys as SharedUserProviderApiKeys,
+  UserSpeechToTextSettings as SharedUserSpeechToTextSettings,
+  UserWebSearchApiKeys as SharedUserWebSearchApiKeys,
+  UserWebSearchProvider,
+  UserWebSearchSettings as SharedUserWebSearchSettings,
+  UserVoiceSettings as SharedUserVoiceSettings,
+  VoiceAiProvider as SharedVoiceAiProvider,
+  WebSearchProvider as SharedWebSearchProvider,
+  WebSearchProviderAvailability as SharedWebSearchProviderAvailability,
+  ProviderAvailability as SharedRuntimeProviderAvailability,
+} from "../../core/runtime-contract.generated.js";
+import {
   SUPPORTED_PROVIDER_ORDER,
+  type ProviderModelCatalogSnapshot,
   type RuntimeProvider,
 } from "./model-catalog";
 import {
@@ -21,17 +54,17 @@ import {
 
 export type UserApiKeyProvider = RuntimeProvider;
 
-export type WebSearchProvider = "none" | "perplexity" | "tavily" | "serper";
+export type WebSearchProvider = SharedWebSearchProvider;
 
-export type VoiceAiProvider = "none" | "openai" | "google";
+export type VoiceAiProvider = SharedVoiceAiProvider;
 
-export type SpeechToTextProvider = "none" | "openai" | "google";
+export type SpeechToTextProvider = SharedSpeechToTextProvider;
 
-export type UserWebSearchApiKeyProvider = Exclude<WebSearchProvider, "none">;
+export type UserWebSearchApiKeyProvider = UserWebSearchProvider;
 
-export type UserVoiceAiProvider = Exclude<VoiceAiProvider, "none">;
+export type UserVoiceAiProvider = AudioProvider;
 
-export type UserSpeechToTextProvider = Exclude<SpeechToTextProvider, "none">;
+export type UserSpeechToTextProvider = AudioProvider;
 
 export const MAIN_WINDOW_LABEL = "main";
 export const ASSISTANT_BUBBLE_WINDOW_LABEL = "assistant-bubble";
@@ -42,17 +75,15 @@ export const DESKTOP_SETTINGS_CHANGED_EVENT =
 export const QUICK_VOICE_START_EVENT = "machdoch://quick-voice-start";
 
 export const USER_API_KEY_PROVIDER_ORDER: UserApiKeyProvider[] = [
-  ...SUPPORTED_PROVIDER_ORDER,
+  ...VALID_MODEL_PROVIDERS,
 ];
 
 export const USER_VOICE_AI_PROVIDER_ORDER: UserVoiceAiProvider[] = [
-  "openai",
-  "google",
+  ...USER_AUDIO_AI_PROVIDERS,
 ];
 
 export const USER_SPEECH_TO_TEXT_PROVIDER_ORDER: UserSpeechToTextProvider[] = [
-  "openai",
-  "google",
+  ...USER_AUDIO_AI_PROVIDERS,
 ];
 
 export const USER_API_KEY_PROVIDER_PORTAL_URLS: Record<
@@ -65,84 +96,37 @@ export const USER_API_KEY_PROVIDER_PORTAL_URLS: Record<
 };
 
 export const USER_WEB_SEARCH_PROVIDER_ORDER: UserWebSearchApiKeyProvider[] = [
-  "perplexity",
-  "tavily",
-  "serper",
+  ...USER_WEB_SEARCH_PROVIDERS,
 ];
 
-export type UserProviderApiKeys = Partial<Record<UserApiKeyProvider, string>>;
+export type UserProviderApiKeys = SharedUserProviderApiKeys;
 
-export type UserWebSearchApiKeys = Partial<
-  Record<UserWebSearchApiKeyProvider, string>
->;
+export type UserWebSearchApiKeys = SharedUserWebSearchApiKeys;
 
-export interface RuntimeProviderAvailability {
-  provider: RuntimeProvider;
-  configured: boolean;
-}
+export type RuntimeProviderAvailability = SharedRuntimeProviderAvailability;
 
-export interface WebSearchProviderAvailability {
-  provider: UserWebSearchApiKeyProvider;
-  configured: boolean;
-}
+export type WebSearchProviderAvailability = SharedWebSearchProviderAvailability;
 
-export interface VoiceProviderAvailability {
-  provider: UserVoiceAiProvider;
-  configured: boolean;
-}
+export type VoiceProviderAvailability = SharedAudioProviderAvailability;
 
-export interface SpeechToTextProviderAvailability {
-  provider: UserSpeechToTextProvider;
-  configured: boolean;
-}
+export type SpeechToTextProviderAvailability = SharedAudioProviderAvailability;
 
-export interface RuntimeWebSearchConfig {
-  activeProvider: WebSearchProvider;
-  providerAvailability: WebSearchProviderAvailability[];
-}
+export type RuntimeWebSearchConfig = SharedRuntimeWebSearchConfig;
 
-export interface UserWebSearchSettings {
-  activeProvider: WebSearchProvider;
-  apiKeys: UserWebSearchApiKeys;
-  providerAvailability: WebSearchProviderAvailability[];
-}
+export type UserWebSearchSettings = SharedUserWebSearchSettings;
 
-export interface UserVoiceSettings {
-  activeProvider: VoiceAiProvider;
-  providerAvailability: VoiceProviderAvailability[];
-}
+export type UserVoiceSettings = SharedUserVoiceSettings;
 
-export interface UserSpeechToTextSettings {
-  activeProvider: SpeechToTextProvider;
-  inputDeviceId: string | null;
-  providerAvailability: SpeechToTextProviderAvailability[];
-}
+export type UserSpeechToTextSettings = SharedUserSpeechToTextSettings;
 
 export interface UserMemorySettings {
   globalEnabled: boolean;
   entries: ConversationMemoryEntry[];
 }
 
-export interface UserAgentLimitsSettings {
-  infinite: boolean;
-  executorTurns: number;
-  autopilotExecutorIterations: number;
-}
+export type UserAgentLimitsSettings = SharedUserAgentLimitsSettings;
 
-export interface UserDesktopSettings {
-  autostartEnabled: boolean;
-  autostartMinimized: boolean;
-  autostartToTray: boolean;
-  alwaysRunAsAdministrator: boolean;
-  assistantBubbleEnabled: boolean;
-  assistantBubbleHideWhenFullscreen: boolean;
-  assistantBubbleTemporarilyHideSeconds: number;
-  aiContextMaxMessages: number;
-  quickVoiceEnabled: boolean;
-  quickVoiceShortcut: string;
-  quickVoiceSilenceSeconds: number;
-  quickVoiceMaxMessages: number;
-}
+export type UserDesktopSettings = SharedUserDesktopSettings;
 
 export interface MonitorBoundsInput {
   x: number;
@@ -176,36 +160,13 @@ export interface TranscribedSpeechText {
   detectedLanguage?: string;
 }
 
-export interface RuntimeProfileSummary {
-  name: string;
-  description?: string;
-}
+export type RuntimeProfileSummary = SharedRuntimeProfileSummary;
 
-export interface RuntimeCompatibilityConfig {
-  discoverGithubCustomizations: boolean;
-}
+export type RuntimeCompatibilityConfig = SharedRuntimeCompatibilityConfig;
 
-export interface RuntimeAgentLimits {
-  executorTurns: number | null;
-  autopilotExecutorIterations: number | null;
-}
+export type RuntimeAgentLimits = SharedRuntimeAgentLimits;
 
-export interface RuntimeSnapshot {
-  workspaceRoot: string;
-  workspaceConfigPath?: string;
-  activeProfile?: string;
-  availableProfiles: RuntimeProfileSummary[];
-  mode: "plan" | "safe" | "ask" | "auto";
-  enabledTools: string[];
-  provider: RuntimeProvider | "unconfigured";
-  model: string;
-  offline: boolean;
-  agentLimits: RuntimeAgentLimits;
-  compatibility: RuntimeCompatibilityConfig;
-  providerAvailability: RuntimeProviderAvailability[];
-  webSearch: RuntimeWebSearchConfig;
-  uiControl?: UiControlAvailability;
-}
+export type RuntimeSnapshot = SharedRuntimeSnapshot;
 
 export interface DesktopTaskRunResponse {
   execution: TaskExecutionResult;
@@ -220,13 +181,6 @@ export interface DesktopTaskProgressEvent {
 
 const DEFAULT_MOCK_WORKSPACE_ROOT = "/mock/home/path";
 const DESKTOP_TASK_PROGRESS_EVENT = "desktop-task-progress";
-const DEFAULT_MAX_EXECUTOR_TURNS = 64;
-const DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS = 16;
-const MAX_CONFIGURED_EXECUTOR_TURNS = 1_000;
-const MAX_CONFIGURED_AUTOPILOT_ITERATIONS = 100;
-const RUN_MODES = ["plan", "safe", "ask", "auto"] as const satisfies ReadonlyArray<
-  RuntimeSnapshot["mode"]
->;
 const TASK_EXECUTION_PROGRESS_STATES = [
   "starting",
   "resolving-context",
@@ -257,6 +211,18 @@ const TASK_EXECUTION_SECTION_TONES = [
   "danger",
 ] as const satisfies ReadonlyArray<
   NonNullable<TaskExecutionProgress["outputSections"][number]["tone"]>
+>;
+const TASK_ACTION_OUTPUT_STREAMS = ["stdout", "stderr"] as const satisfies ReadonlyArray<
+  TaskActionOutput["stream"]
+>;
+const MODEL_STREAM_KINDS = [
+  "assistant",
+  "tool-call",
+  "reasoning",
+  "status",
+  "tool-result",
+] as const satisfies ReadonlyArray<
+  NonNullable<TaskExecutionProgress["modelStream"]>["kind"]
 >;
 
 const canListenToDesktopTaskProgress = (): boolean => {
@@ -332,7 +298,27 @@ const isTaskExecutionProgress = (
       );
     }) &&
     typeof value.cancellable === "boolean" &&
-    (value.reason === undefined || typeof value.reason === "string")
+    (value.reason === undefined || typeof value.reason === "string") &&
+    (value.assistantText === undefined ||
+      typeof value.assistantText === "string") &&
+    (value.modelStream === undefined ||
+      (isRecord(value.modelStream) &&
+        MODEL_STREAM_KINDS.includes(
+          value.modelStream.kind as NonNullable<
+            TaskExecutionProgress["modelStream"]
+          >["kind"],
+        ) &&
+        typeof value.modelStream.label === "string" &&
+        typeof value.modelStream.content === "string" &&
+        (value.modelStream.complete === undefined ||
+          typeof value.modelStream.complete === "boolean"))) &&
+    (value.actionOutput === undefined ||
+      (isRecord(value.actionOutput) &&
+        typeof value.actionOutput.toolName === "string" &&
+        TASK_ACTION_OUTPUT_STREAMS.includes(
+          value.actionOutput.stream as TaskActionOutput["stream"],
+        ) &&
+        typeof value.actionOutput.chunk === "string"))
   );
 };
 
@@ -369,6 +355,18 @@ const createUnavailableProviderAvailability =
   (): RuntimeProviderAvailability[] => {
     return createProviderAvailabilitySnapshot([]);
   };
+
+const createUnavailableProviderModelCatalog =
+  (): ProviderModelCatalogSnapshot => ({
+    generatedAt: Date.now(),
+    providers: SUPPORTED_PROVIDER_ORDER.map((provider) => ({
+      provider,
+      source: "curated-fallback",
+      available: false,
+      error: "Provider model discovery is unavailable in this runtime.",
+      models: [],
+    })),
+  });
 
 const createWebSearchAvailabilitySnapshot = (
   configuredProviders: UserWebSearchApiKeyProvider[],
@@ -445,14 +443,22 @@ const clampIntegerSetting = (
   return Math.min(max, Math.max(min, Math.round(value)));
 };
 
+const clampNumberSetting = (
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, value));
+};
+
 const createDefaultUserAgentLimitsSettings =
   (): UserAgentLimitsSettings => {
-    return {
-      infinite: false,
-      executorTurns: DEFAULT_MAX_EXECUTOR_TURNS,
-      autopilotExecutorIterations:
-        DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
-    };
+    return { ...DEFAULT_USER_AGENT_LIMITS_SETTINGS };
   };
 
 const normalizeUserAgentLimitsSettings = (
@@ -462,33 +468,69 @@ const normalizeUserAgentLimitsSettings = (
     infinite: settings.infinite === true,
     executorTurns: clampIntegerSetting(
       settings.executorTurns,
-      1,
-      MAX_CONFIGURED_EXECUTOR_TURNS,
-      DEFAULT_MAX_EXECUTOR_TURNS,
+      AGENT_LIMIT_BOUNDS.executorTurns.min,
+      AGENT_LIMIT_BOUNDS.executorTurns.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.executorTurns,
     ),
     autopilotExecutorIterations: clampIntegerSetting(
       settings.autopilotExecutorIterations,
-      1,
-      MAX_CONFIGURED_AUTOPILOT_ITERATIONS,
-      DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
+      AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.min,
+      AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.autopilotExecutorIterations,
     ),
   };
 };
 
 const createDefaultUserDesktopSettings = (): UserDesktopSettings => {
+  return { ...DEFAULT_USER_DESKTOP_SETTINGS };
+};
+
+const normalizeUserDesktopSettings = (
+  settings: UserDesktopSettings,
+): UserDesktopSettings => {
+  const quickVoiceShortcut =
+    settings.quickVoiceShortcut.trim() ||
+    DEFAULT_USER_DESKTOP_SETTINGS.quickVoiceShortcut;
+
   return {
-    autostartEnabled: false,
-    autostartMinimized: false,
-    autostartToTray: false,
-    alwaysRunAsAdministrator: false,
-    assistantBubbleEnabled: true,
-    assistantBubbleHideWhenFullscreen: true,
-    assistantBubbleTemporarilyHideSeconds: 6,
-    aiContextMaxMessages: 60,
-    quickVoiceEnabled: true,
-    quickVoiceShortcut: "CommandOrControl+Alt+V",
-    quickVoiceSilenceSeconds: 1.8,
-    quickVoiceMaxMessages: 50,
+    ...settings,
+    quickVoiceShortcut,
+    assistantBubbleTemporarilyHideSeconds: clampIntegerSetting(
+      settings.assistantBubbleTemporarilyHideSeconds,
+      DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.min,
+      DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.assistantBubbleTemporarilyHideSeconds,
+    ),
+    aiContextMaxMessages: clampIntegerSetting(
+      settings.aiContextMaxMessages,
+      DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min,
+      DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.aiContextMaxMessages,
+    ),
+    inactiveSessionArchiveDays: clampIntegerSetting(
+      settings.inactiveSessionArchiveDays,
+      DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.min,
+      DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.inactiveSessionArchiveDays,
+    ),
+    archivedSessionRetentionDays: clampIntegerSetting(
+      settings.archivedSessionRetentionDays,
+      DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.min,
+      DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.archivedSessionRetentionDays,
+    ),
+    quickVoiceSilenceSeconds: clampNumberSetting(
+      settings.quickVoiceSilenceSeconds,
+      DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.min,
+      DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.quickVoiceSilenceSeconds,
+    ),
+    quickVoiceMaxMessages: clampIntegerSetting(
+      settings.quickVoiceMaxMessages,
+      DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.min,
+      DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.quickVoiceMaxMessages,
+    ),
   };
 };
 
@@ -574,6 +616,15 @@ export const loadGlobalProviderAvailability = async (): Promise<
     createUnavailableProviderAvailability,
   );
 };
+
+export const loadProviderModelCatalog =
+  async (): Promise<ProviderModelCatalogSnapshot> => {
+    return loadTauriValueOrFallback(
+      "get_provider_model_catalog",
+      createUnavailableProviderModelCatalog,
+      "Failed to load provider model catalog",
+    );
+  };
 
 export const loadUserProviderApiKeys =
   async (): Promise<UserProviderApiKeys> => {
@@ -730,10 +781,12 @@ export const saveUserGlobalMemoryEnabled = async (
 export const saveUserDesktopSettings = async (
   settings: UserDesktopSettings,
 ): Promise<UserDesktopSettings> => {
+  const normalizedSettings = normalizeUserDesktopSettings(settings);
+
   if (!canInvokeTauriCommands()) {
     const nextSettings = {
       ...createDefaultUserDesktopSettings(),
-      ...settings,
+      ...normalizedSettings,
     };
 
     await emitDesktopSettingsChanged(nextSettings);
@@ -743,7 +796,7 @@ export const saveUserDesktopSettings = async (
   try {
     const nextSettings = await tauriCore.invoke<UserDesktopSettings>(
       "save_user_desktop_settings",
-      { settings },
+      { settings: normalizedSettings },
     );
 
     await emitDesktopSettingsChanged(nextSettings);

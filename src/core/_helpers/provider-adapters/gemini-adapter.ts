@@ -10,6 +10,7 @@ import type {
   AgentModelAdapter,
   AgentModelContinueParams,
   AgentModelStartParams,
+  AgentModelStreamEventHandler,
   AgentModelToolCall,
   AgentModelToolResult,
   AgentModelToolSpec,
@@ -18,6 +19,14 @@ import type {
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
+import {
+  emitProviderStreamError,
+  emitProviderStreamEvent,
+  emitProviderStreamStatus,
+  emitToolResultStreamEvents,
+  emitUsageStreamEvent,
+  normalizeGeminiUsage,
+} from "./stream-events.js";
 import { normalizeToolResultContent } from "./tool-result-content.js";
 
 export const createGeminiUserMessage = (
@@ -133,6 +142,15 @@ export const normalizeGeminiResponse = (
   };
 };
 
+const isAgentModelTurn = (value: unknown): value is AgentModelTurn => {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as AgentModelTurn).text === "string" &&
+    Array.isArray((value as AgentModelTurn).toolCalls)
+  );
+};
+
 export class GeminiChatAdapter implements AgentModelAdapter {
   private readonly chat: ReturnType<GoogleGenAI["chats"]["create"]>;
   private readonly tools: AgentModelToolSpec[];
@@ -178,8 +196,8 @@ export class GeminiChatAdapter implements AgentModelAdapter {
         operation: "startTurn",
         signal: params.signal,
       },
-      async (requestSignal) =>
-        this.chat.sendMessage({
+      async (requestSignal) => {
+        const request = {
           message: createGeminiUserMessage(params),
           config: {
             systemInstruction: params.systemPrompt,
@@ -189,10 +207,20 @@ export class GeminiChatAdapter implements AgentModelAdapter {
             },
             ...(requestSignal ? { abortSignal: requestSignal } : {}),
           },
-        }),
+        };
+
+        if (params.onStreamEvent) {
+          return await this.sendStreamingMessage(
+            request,
+            params.onStreamEvent,
+          );
+        }
+
+        return await this.chat.sendMessage(request);
+      },
     );
 
-    return this.normalizeResponse(response);
+    return isAgentModelTurn(response) ? response : this.normalizeResponse(response);
   }
 
   async continueTurn(
@@ -203,14 +231,21 @@ export class GeminiChatAdapter implements AgentModelAdapter {
     }
 
     const startParams = this.startParams;
+
+    emitToolResultStreamEvents(
+      params.onStreamEvent,
+      "google",
+      params.toolResults,
+    );
+
     const response = await withProviderRequest(
       {
         provider: "google",
         operation: "continueTurn",
         signal: params.signal,
       },
-      async (requestSignal) =>
-        this.chat.sendMessage({
+      async (requestSignal) => {
+        const request = {
           message: params.toolResults.map((toolResult) =>
             createPartFromFunctionResponse(
               toolResult.callId,
@@ -227,15 +262,137 @@ export class GeminiChatAdapter implements AgentModelAdapter {
             },
             ...(requestSignal ? { abortSignal: requestSignal } : {}),
           },
-        }),
+        };
+
+        if (params.onStreamEvent) {
+          return await this.sendStreamingMessage(
+            request,
+            params.onStreamEvent,
+          );
+        }
+
+        return await this.chat.sendMessage(request);
+      },
     );
 
-    return this.normalizeResponse(response);
+    return isAgentModelTurn(response) ? response : this.normalizeResponse(response);
   }
 
   private normalizeResponse(response: {
     candidates?: GenerateContentResponse["candidates"];
   }): AgentModelTurn {
     return normalizeGeminiResponse(response);
+  }
+
+  private async sendStreamingMessage(
+    request: Parameters<typeof this.chat.sendMessage>[0],
+    onStreamEvent: AgentModelStreamEventHandler,
+  ): Promise<AgentModelTurn> {
+    emitProviderStreamStatus(
+      onStreamEvent,
+      "google",
+      "starting",
+      "Gemini content stream started.",
+    );
+
+    const stream = await this.chat.sendMessageStream(request);
+    let text = "";
+    let didEmitInProgress = false;
+    const toolCallsByKey = new Map<string, AgentModelToolCall>();
+
+    try {
+      for await (const chunk of stream) {
+        if (!didEmitInProgress) {
+          didEmitInProgress = true;
+          emitProviderStreamStatus(
+            onStreamEvent,
+            "google",
+            "in-progress",
+            "Gemini content stream in progress.",
+          );
+        }
+
+        emitUsageStreamEvent(
+          onStreamEvent,
+          "google",
+          normalizeGeminiUsage(
+            (chunk as { usageMetadata?: unknown }).usageMetadata,
+          ),
+        );
+
+        for (const part of extractGeminiResponseParts(chunk)) {
+          if (typeof part.text === "string" && part.thought === true) {
+            emitProviderStreamEvent(onStreamEvent, {
+              type: "reasoning-delta",
+              provider: "google",
+              delta: part.text,
+            });
+            continue;
+          }
+
+          if (typeof part.text === "string") {
+            text += part.text;
+            emitProviderStreamEvent(onStreamEvent, {
+              type: "text-delta",
+              provider: "google",
+              delta: part.text,
+            });
+          }
+
+          const functionCall = part.functionCall;
+
+          if (!functionCall) {
+            continue;
+          }
+
+          const name = functionCall.name ?? "unknown_tool";
+          const id = functionCall.id ?? crypto.randomUUID();
+          const key = functionCall.id ?? `${name}:${toolCallsByKey.size}`;
+          const parsedArguments =
+            typeof functionCall.args === "object" && functionCall.args !== null
+              ? (functionCall.args as Record<string, unknown>)
+              : {};
+          const rawArguments = JSON.stringify(parsedArguments);
+
+          if (!toolCallsByKey.has(key)) {
+            emitProviderStreamEvent(onStreamEvent, {
+              type: "tool-call-start",
+              provider: "google",
+              id,
+              name,
+            });
+          }
+
+          emitProviderStreamEvent(onStreamEvent, {
+            type: "tool-call-done",
+            provider: "google",
+            id,
+            name,
+            argumentsText: rawArguments,
+          });
+          toolCallsByKey.set(key, {
+            id,
+            name,
+            arguments: parsedArguments,
+            rawArguments,
+          });
+        }
+      }
+    } catch (error) {
+      emitProviderStreamError(onStreamEvent, "google", error);
+      throw error;
+    }
+
+    emitProviderStreamStatus(
+      onStreamEvent,
+      "google",
+      "completed",
+      "Gemini content stream completed.",
+    );
+
+    return {
+      text: text.trim(),
+      toolCalls: [...toolCallsByKey.values()],
+    };
   }
 }

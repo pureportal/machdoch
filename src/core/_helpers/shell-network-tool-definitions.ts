@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import type { RuntimeConfig } from "../types.js";
 import {
   executeWebSearch,
@@ -169,6 +169,46 @@ const createCommandProcessError = (
   return error;
 };
 
+const terminateChildProcessTree = (child: ChildProcess): void => {
+  const pid = child.pid;
+
+  if (pid === undefined) {
+    child.kill();
+    return;
+  }
+
+  if (process.platform === "win32") {
+    try {
+      const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      const fallbackToChildKill = (): void => {
+        if (!child.killed) {
+          child.kill();
+        }
+      };
+
+      killer.once("error", fallbackToChildKill);
+      killer.once("exit", (code) => {
+        if (code !== 0) {
+          fallbackToChildKill();
+        }
+      });
+      return;
+    } catch {
+      child.kill();
+      return;
+    }
+  }
+
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    child.kill();
+  }
+};
+
 const runStreamingShellCommand = async (
   shellExecutable: string,
   shellArgs: string[],
@@ -176,12 +216,15 @@ const runStreamingShellCommand = async (
     cwd: string;
     timeoutMs: number;
     maxBufferBytes: number;
-    onOutput?: (output: { stream: "stdout" | "stderr"; chunk: string }) => void;
+    onOutput?: (
+      output: { stream: "stdout" | "stderr"; chunk: string },
+    ) => void | Promise<void>;
   },
 ): Promise<ShellCommandResult> => {
   return new Promise((resolve, reject) => {
     const child = spawn(shellExecutable, shellArgs, {
       cwd: options.cwd,
+      detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });
@@ -193,10 +236,11 @@ const runStreamingShellCommand = async (
     let settled = false;
     let timedOut = false;
     let exceededBuffer = false;
+    let outputHandlerError: unknown;
 
     const timeoutHandle = setTimeout(() => {
       timedOut = true;
-      child.kill();
+      terminateChildProcessTree(child);
     }, options.timeoutMs);
 
     const settle = (callback: () => void): void => {
@@ -217,11 +261,19 @@ const runStreamingShellCommand = async (
 
       outputBytes += Buffer.byteLength(chunk);
       chunks[stream].push(chunk);
-      options.onOutput?.({ stream, chunk });
+
+      try {
+        void Promise.resolve(options.onOutput?.({ stream, chunk })).catch(
+          () => undefined,
+        );
+      } catch (error) {
+        outputHandlerError ??= error;
+        terminateChildProcessTree(child);
+      }
 
       if (outputBytes > options.maxBufferBytes && !exceededBuffer) {
         exceededBuffer = true;
-        child.kill();
+        terminateChildProcessTree(child);
       }
     };
 
@@ -241,7 +293,7 @@ const runStreamingShellCommand = async (
         );
       });
     });
-    child.once("close", (code) => {
+    child.once("close", (code, signal) => {
       settle(() => {
         const stdout = chunks.stdout.join("");
         const stderr = chunks.stderr.join("");
@@ -250,6 +302,20 @@ const runStreamingShellCommand = async (
           reject(
             createCommandProcessError(
               `Command timed out after ${options.timeoutMs}ms.`,
+              { stdout, stderr },
+            ),
+          );
+          return;
+        }
+
+        if (outputHandlerError !== undefined) {
+          reject(
+            createCommandProcessError(
+              `Command output handler failed: ${
+                outputHandlerError instanceof Error
+                  ? outputHandlerError.message
+                  : String(outputHandlerError)
+              }`,
               { stdout, stderr },
             ),
           );
@@ -266,7 +332,17 @@ const runStreamingShellCommand = async (
           return;
         }
 
-        const exitCode = code ?? 0;
+        if (code === null) {
+          reject(
+            createCommandProcessError(
+              `Command terminated by signal ${signal ?? "unknown"}.`,
+              { stdout, stderr },
+            ),
+          );
+          return;
+        }
+
+        const exitCode = code;
 
         if (exitCode !== 0) {
           reject(
@@ -385,14 +461,15 @@ export const createShellNetworkToolDefinitions = (
             typeof error.stdout === "string"
               ? normalizeShellOutput(error.stdout)
               : "";
-          const stderr =
+          const stderrFromError =
             error instanceof Error &&
             "stderr" in error &&
             typeof error.stderr === "string"
               ? normalizeShellOutput(error.stderr)
-              : error instanceof Error
-                ? error.message
-                : String(error);
+              : "";
+          const stderr =
+            stderrFromError ||
+            (error instanceof Error ? error.message : String(error));
           const exitCode =
             error instanceof Error &&
             "code" in error &&

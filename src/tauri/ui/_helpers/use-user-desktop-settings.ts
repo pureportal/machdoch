@@ -14,6 +14,8 @@ const FALLBACK_USER_DESKTOP_SETTINGS: UserDesktopSettings = {
   assistantBubbleHideWhenFullscreen: true,
   assistantBubbleTemporarilyHideSeconds: 6,
   aiContextMaxMessages: 60,
+  inactiveSessionArchiveDays: 7,
+  archivedSessionRetentionDays: 7,
   quickVoiceEnabled: true,
   quickVoiceShortcut: "CommandOrControl+Alt+V",
   quickVoiceSilenceSeconds: 1.8,

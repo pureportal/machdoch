@@ -58,15 +58,17 @@ describe("model image input capabilities", () => {
     });
     expect(profile?.providerModes).toContain("gemini-function-calling-any");
     expect(getModelContextWindowTokens("anthropic", "claude-sonnet-4-6")).toBe(
-      200_000,
+      1_000_000,
     );
   });
 
-  it("keeps unknown model families behind data-driven fallback rules", () => {
-    expect(modelSupportsToolUse("openai", "gpt-5.2")).toBe(true);
-    expect(modelSupportsReasoning("openai", "gpt-5.2")).toBe(true);
-    expect(modelSupportsStreaming("anthropic", "claude-3-5-sonnet")).toBe(true);
-    expect(modelSupportsVoice("openai", "gpt-4o-realtime-preview")).toBe(true);
+  it("keeps unknown models conservative until provider metadata is registered", () => {
+    expect(modelSupportsToolUse("openai", "gpt-5.2")).toBe(false);
+    expect(modelSupportsReasoning("openai", "gpt-5.2")).toBe(false);
+    expect(modelSupportsStreaming("anthropic", "claude-3-5-sonnet")).toBe(
+      false,
+    );
+    expect(modelSupportsVoice("openai", "gpt-4o-realtime-preview")).toBe(false);
     expect(modelSupportsImageInput("google", "gemini-embedding-001")).toBe(
       false,
     );

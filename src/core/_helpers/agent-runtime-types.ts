@@ -14,9 +14,19 @@ import type {
   TaskExecutionSection,
   ToolName,
 } from "../types.js";
+import {
+  AGENT_LIMIT_BOUNDS,
+  DEFAULT_USER_AGENT_LIMITS_SETTINGS,
+} from "../runtime-contract.generated.js";
 
-export const DEFAULT_MAX_EXECUTOR_TURNS = 64;
-export const DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS = 16;
+export const DEFAULT_MAX_EXECUTOR_TURNS =
+  DEFAULT_USER_AGENT_LIMITS_SETTINGS.executorTurns;
+export const DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS =
+  DEFAULT_USER_AGENT_LIMITS_SETTINGS.autopilotExecutorIterations;
+export const MAX_CONFIGURED_EXECUTOR_TURNS =
+  AGENT_LIMIT_BOUNDS.executorTurns.max;
+export const MAX_CONFIGURED_AUTOPILOT_ITERATIONS =
+  AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.max;
 export const MAX_CONSECUTIVE_IDENTICAL_TOOL_ERRORS = 2;
 export const MAX_FINAL_RESPONSE_ITEMS = 4;
 export const TASK_EXECUTION_TIMEOUT_MS = 20 * 60 * 1_000;

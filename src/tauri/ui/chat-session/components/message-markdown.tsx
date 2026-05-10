@@ -11,7 +11,7 @@ export const MessageMarkdown = ({
   content,
 }: MessageMarkdownProps): JSX.Element => {
   return (
-    <div className="grid gap-3">
+    <div className="app-message-markdown grid min-w-0 gap-3 wrap-break-word">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={markdownComponents}

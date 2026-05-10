@@ -1,6 +1,6 @@
 {
   "name": "machdoch",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "description": "Local-first OS AI agent for CLI and desktop.",
   "type": "module",
@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "build:cli-bundle": "node scripts/build-cli-bundle.mjs",
     "build:ui": "vite build --config vite.ui.config.ts",
+    "generate:runtime-contract": "node scripts/generate-runtime-contract.mjs",
     "version:bump": "node scripts/bump-version.mjs",
     "lint": "eslint src vite.ui.config.ts vitest.config.ts vitest.ui.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",

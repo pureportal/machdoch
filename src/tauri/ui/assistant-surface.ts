@@ -17,7 +17,7 @@ import {
 } from "./runtime";
 
 export const ASSISTANT_BUBBLE_DIMENSIONS = {
-  width: 84,
+  width: 112,
   height: 84,
 } as const;
 

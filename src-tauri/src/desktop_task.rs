@@ -3,7 +3,7 @@ use std::{
     env, fs,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
     sync::atomic::{AtomicBool, Ordering},
     sync::{Arc, Mutex},
     thread,
@@ -12,6 +12,9 @@ use std::{
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -23,6 +26,9 @@ const DESKTOP_TASK_PROGRESS_EVENT: &str = "desktop-task-progress";
 const CLI_STRUCTURED_PROGRESS_PREFIX: &str = "machdoch-progress: ";
 const DESKTOP_TASK_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
 const DESKTOP_TASK_WAIT_POLL_MS: u64 = 250;
+const MAX_PENDING_CANCEL_IDS: usize = 256;
+
+static TEMP_FILE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 #[derive(Default)]
 pub struct DesktopTaskCancelState {
@@ -43,6 +49,9 @@ const DETACHED_PROCESS: u32 = 0x00000008;
 
 #[cfg(target_os = "windows")]
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -163,9 +172,12 @@ fn build_cli_args(options: CliCommandOptions<'_>) -> Vec<String> {
 }
 
 fn write_conversation_context_file(conversation_context: &Value) -> Result<PathBuf, String> {
+    let unique_id = TEMP_FILE_COUNTER.fetch_add(1, Ordering::SeqCst);
     let file_path = env::temp_dir().join(format!(
-        "machdoch-desktop-context-{}.json",
-        create_progress_timestamp()
+        "machdoch-desktop-context-{}-{}-{}.json",
+        std::process::id(),
+        create_progress_timestamp(),
+        unique_id
     ));
     let serialized = serde_json::to_string(conversation_context)
         .map_err(|error| format!("Failed to serialize conversation context: {error}"))?;
@@ -361,6 +373,27 @@ fn emit_progress_event(
     );
 }
 
+fn normalize_task_id(task_id: Option<&str>) -> Option<String> {
+    task_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn remember_pending_cancel(cancel_state: &mut DesktopTaskCancelState, task_id: &str) {
+    if task_id.trim().is_empty() || cancel_state.pending.contains(task_id) {
+        return;
+    }
+
+    if cancel_state.pending.len() >= MAX_PENDING_CANCEL_IDS {
+        if let Some(stale_task_id) = cancel_state.pending.iter().next().cloned() {
+            cancel_state.pending.remove(&stale_task_id);
+        }
+    }
+
+    cancel_state.pending.insert(task_id.to_string());
+}
+
 fn emit_progress_from_stderr_line(
     app_handle: &tauri::AppHandle,
     window_label: &str,
@@ -428,6 +461,56 @@ fn join_worker<T>(
             "The shared CLI {description} worker terminated unexpectedly."
         )),
     }
+}
+
+fn join_cli_output_and_cleanup(
+    stdout_worker: thread::JoinHandle<Result<String, String>>,
+    stderr_worker: thread::JoinHandle<Result<Vec<String>, String>>,
+    conversation_context_path: Option<&PathBuf>,
+) -> Result<(String, String), String> {
+    let stdout_result = join_worker(stdout_worker, "stdout");
+    let stderr_result = join_worker(stderr_worker, "stderr").map(|lines| lines.join("\n"));
+
+    cleanup_temporary_file(conversation_context_path);
+
+    Ok((stdout_result?, stderr_result?))
+}
+
+fn terminate_child_process_tree(child: &mut Child) {
+    #[cfg(target_os = "windows")]
+    {
+        let pid = child.id().to_string();
+        let taskkill_result = Command::new("taskkill")
+            .args(["/PID", pid.as_str(), "/T", "/F"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        if taskkill_result
+            .map(|status| status.success())
+            .unwrap_or(false)
+        {
+            return;
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        let process_group_id = format!("-{}", child.id());
+        let kill_result = Command::new("kill")
+            .args(["-TERM", process_group_id.as_str()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        if kill_result.map(|status| status.success()).unwrap_or(false) {
+            return;
+        }
+    }
+
+    let _ = child.kill();
 }
 
 fn parse_desktop_task_response(stdout: &str) -> Result<DesktopTaskRunResponse, String> {
@@ -499,6 +582,18 @@ fn execute_desktop_task(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
+    #[cfg(target_os = "windows")]
+    {
+        cli_command
+            .command
+            .creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
+    }
+
+    #[cfg(unix)]
+    {
+        cli_command.command.process_group(0);
+    }
+
     let mut child = cli_command.command.spawn().map_err(|error| {
         cleanup_temporary_file(conversation_context_path.as_ref());
 
@@ -508,14 +603,28 @@ fn execute_desktop_task(
         )
     })?;
 
-    let stdout = child.stdout.take().ok_or_else(|| {
-        cleanup_temporary_file(conversation_context_path.as_ref());
-        "The shared CLI did not expose a stdout stream for the desktop bridge.".to_string()
-    })?;
-    let stderr = child.stderr.take().ok_or_else(|| {
-        cleanup_temporary_file(conversation_context_path.as_ref());
-        "The shared CLI did not expose a stderr stream for the desktop bridge.".to_string()
-    })?;
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            terminate_child_process_tree(&mut child);
+            let _ = child.wait();
+            cleanup_temporary_file(conversation_context_path.as_ref());
+            return Err(
+                "The shared CLI did not expose a stdout stream for the desktop bridge.".to_string(),
+            );
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            terminate_child_process_tree(&mut child);
+            let _ = child.wait();
+            cleanup_temporary_file(conversation_context_path.as_ref());
+            return Err(
+                "The shared CLI did not expose a stderr stream for the desktop bridge.".to_string(),
+            );
+        }
+    };
     let progress_app_handle = app_handle.clone();
     let progress_window_label = window_label.clone();
     let progress_task_id = task_id.clone();
@@ -546,13 +655,14 @@ fn execute_desktop_task(
                         ),
                     );
 
-                    let _ = child.kill();
+                    terminate_child_process_tree(&mut child);
                     let _ = child.wait();
 
-                    let stdout_text = join_worker(stdout_worker, "stdout")?;
-                    let stderr_text = join_worker(stderr_worker, "stderr")?.join("\n");
-
-                    cleanup_temporary_file(conversation_context_path.as_ref());
+                    let (stdout_text, stderr_text) = join_cli_output_and_cleanup(
+                        stdout_worker,
+                        stderr_worker,
+                        conversation_context_path.as_ref(),
+                    )?;
 
                     let failure_tail = format_command_failure(&stderr_text, &stdout_text);
                     return Err(format!("The task was cancelled. {}", failure_tail));
@@ -572,13 +682,14 @@ fn execute_desktop_task(
                         ),
                     );
 
-                    let _ = child.kill();
+                    terminate_child_process_tree(&mut child);
                     let _ = child.wait();
 
-                    let stdout_text = join_worker(stdout_worker, "stdout")?;
-                    let stderr_text = join_worker(stderr_worker, "stderr")?.join("\n");
-
-                    cleanup_temporary_file(conversation_context_path.as_ref());
+                    let (stdout_text, stderr_text) = join_cli_output_and_cleanup(
+                        stdout_worker,
+                        stderr_worker,
+                        conversation_context_path.as_ref(),
+                    )?;
 
                     let failure_tail = format_command_failure(&stderr_text, &stdout_text);
                     return Err(format!(
@@ -592,18 +703,19 @@ fn execute_desktop_task(
             }
         }
     };
-    let stdout_text = join_worker(stdout_worker, "stdout")?;
-    let stderr_text = join_worker(stderr_worker, "stderr")?.join("\n");
+    let (stdout_text, stderr_text) = join_cli_output_and_cleanup(
+        stdout_worker,
+        stderr_worker,
+        conversation_context_path.as_ref(),
+    )?;
 
     if !stdout_text.trim().is_empty() {
         if let Ok(response) = parse_desktop_task_response(&stdout_text) {
-            cleanup_temporary_file(conversation_context_path.as_ref());
             return Ok(response);
         }
     }
 
     if !status.success() {
-        cleanup_temporary_file(conversation_context_path.as_ref());
         return Err(format!(
             "The shared CLI could not complete the task. {}",
             format_command_failure(&stderr_text, &stdout_text)
@@ -611,8 +723,6 @@ fn execute_desktop_task(
     }
 
     let response = parse_desktop_task_response(&stdout_text);
-
-    cleanup_temporary_file(conversation_context_path.as_ref());
 
     response
 }
@@ -722,11 +832,15 @@ pub async fn cancel_desktop_task(
     state: tauri::State<'_, DesktopTaskCancelMap>,
     task_id: String,
 ) -> Result<(), String> {
+    let Some(task_id) = normalize_task_id(Some(&task_id)) else {
+        return Ok(());
+    };
+
     if let Ok(mut cancel_state) = state.0.lock() {
-        if let Some(cancel_flag) = cancel_state.active.get(&task_id) {
+        if let Some(cancel_flag) = cancel_state.active.get(task_id.as_str()) {
             cancel_flag.store(true, Ordering::SeqCst);
         } else {
-            cancel_state.pending.insert(task_id);
+            remember_pending_cancel(&mut cancel_state, task_id.as_str());
         }
     }
     Ok(())
@@ -752,13 +866,14 @@ pub async fn run_desktop_task(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, DesktopTaskCancelMap>,
     window: tauri::WebviewWindow,
-    request: DesktopTaskRunRequest,
+    mut request: DesktopTaskRunRequest,
 ) -> Result<DesktopTaskRunResponse, String> {
     let window_label = window.label().to_string();
     let cancel_flag = Arc::new(AtomicBool::new(false));
-    let task_id = request.task_id.clone();
+    let task_id = normalize_task_id(request.task_id.as_deref());
+    request.task_id = task_id.clone();
 
-    if let Some(id) = &request.task_id {
+    if let Some(id) = &task_id {
         if let Ok(mut cancel_state) = state.0.lock() {
             if cancel_state.pending.remove(id) {
                 cancel_flag.store(true, Ordering::SeqCst);
@@ -806,7 +921,15 @@ pub async fn resolve_dropped_paths(paths: Vec<String>) -> Result<DroppedPathsRes
 
 #[cfg(test)]
 mod tests {
-    use super::{build_cli_args, CliCommandOptions};
+    use std::thread;
+
+    use serde_json::json;
+
+    use super::{
+        build_cli_args, cleanup_temporary_file, join_cli_output_and_cleanup,
+        remember_pending_cancel, write_conversation_context_file, CliCommandOptions,
+        DesktopTaskCancelState, MAX_PENDING_CANCEL_IDS,
+    };
 
     #[test]
     fn desktop_cli_args_force_one_shot_json_execution() {
@@ -851,5 +974,61 @@ mod tests {
                 .collect::<Vec<_>>(),
             image_paths,
         );
+    }
+
+    #[test]
+    fn desktop_context_temp_files_are_unique_for_parallel_tasks() {
+        let context = json!({ "history": [] });
+        let first_path = write_conversation_context_file(&context)
+            .expect("first context file should be created");
+        let second_path = write_conversation_context_file(&context)
+            .expect("second context file should be created");
+
+        assert_ne!(first_path, second_path);
+
+        cleanup_temporary_file(Some(&first_path));
+        cleanup_temporary_file(Some(&second_path));
+    }
+
+    #[test]
+    fn desktop_output_join_cleans_context_file_after_workers_finish() {
+        let context = json!({ "history": [] });
+        let context_path =
+            write_conversation_context_file(&context).expect("context file should be created");
+        let stdout_worker = thread::spawn(|| Ok("stdout".to_string()));
+        let stderr_worker = thread::spawn(|| Ok(vec!["stderr".to_string()]));
+
+        let output = join_cli_output_and_cleanup(stdout_worker, stderr_worker, Some(&context_path))
+            .expect("output should join cleanly");
+
+        assert_eq!(output, ("stdout".to_string(), "stderr".to_string()));
+        assert!(!context_path.exists());
+    }
+
+    #[test]
+    fn desktop_output_join_cleans_context_file_when_worker_fails() {
+        let context = json!({ "history": [] });
+        let context_path =
+            write_conversation_context_file(&context).expect("context file should be created");
+        let stdout_worker = thread::spawn(|| Err::<String, String>("stdout failed".to_string()));
+        let stderr_worker = thread::spawn(|| Ok(Vec::<String>::new()));
+
+        let result = join_cli_output_and_cleanup(stdout_worker, stderr_worker, Some(&context_path));
+
+        assert!(result
+            .expect_err("worker failure should be returned")
+            .contains("stdout failed"));
+        assert!(!context_path.exists());
+    }
+
+    #[test]
+    fn pending_cancel_ids_are_bounded() {
+        let mut cancel_state = DesktopTaskCancelState::default();
+
+        for index in 0..(MAX_PENDING_CANCEL_IDS + 10) {
+            remember_pending_cancel(&mut cancel_state, &format!("task-{index}"));
+        }
+
+        assert_eq!(cancel_state.pending.len(), MAX_PENDING_CANCEL_IDS);
     }
 }

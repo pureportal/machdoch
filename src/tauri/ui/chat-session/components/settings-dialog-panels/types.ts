@@ -10,6 +10,7 @@ import type {
   VoiceProviderAvailability,
   WebSearchProvider,
 } from "../../../runtime";
+import type { AppearanceSettings } from "../../../lib/shell-store";
 import type { SpeechInputDeviceOption } from "../../_helpers/speech-audio";
 import type { ChatSessionVoiceOption } from "../../_helpers/use-chat-session-voice";
 
@@ -60,6 +61,12 @@ export interface AgentLimitsSettingsControls {
   saving: boolean;
   message: SettingsStatusMessage | null;
   onSave: (settings: UserAgentLimitsSettings) => Promise<void> | void;
+}
+
+export interface AppearanceSettingsControls {
+  settings: AppearanceSettings;
+  saving: boolean;
+  onSave: (settings: AppearanceSettings) => Promise<void> | void;
 }
 
 export interface VoiceSettingsControls {

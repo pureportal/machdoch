@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "machdoch",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "identifier": "com.machdoch.desktop",
   "build": {
     "beforeDevCommand": {
@@ -39,9 +39,9 @@
       {
         "label": "assistant-bubble",
         "title": "machdoch Assistant Bubble",
-        "width": 84,
+        "width": 112,
         "height": 84,
-        "minWidth": 84,
+        "minWidth": 112,
         "minHeight": 84,
         "visible": false,
         "resizable": false,

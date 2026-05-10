@@ -45,7 +45,9 @@ export interface AgentToolExecutionContext {
   workspaceRoot: string;
   memory: ConversationMemoryRuntime;
   uiControl?: UiControlRuntimeInfo;
-  onOutput?: (output: Omit<TaskActionOutput, "toolName">) => void;
+  onOutput?: (
+    output: Omit<TaskActionOutput, "toolName">,
+  ) => void | Promise<void>;
 }
 
 export interface AgentToolExecutionResult {

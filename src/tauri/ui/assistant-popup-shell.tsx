@@ -221,7 +221,9 @@ const QuickTaskComposer = ({
           icon: <Mic className="h-4 w-4" />,
           disabled: !quickVoiceEnabled,
           onClick: () => {
-            void showQuickVoiceWindow();
+            void showQuickVoiceWindow().catch((error) => {
+              console.error("Failed to show Quick Voice window", error);
+            });
           },
           className:
             "border border-violet-400/15 bg-violet-400/10 text-violet-100 hover:bg-violet-400/15 hover:text-white disabled:border-slate-800/80 disabled:bg-transparent disabled:text-slate-600 disabled:opacity-100",
@@ -330,7 +332,9 @@ export const AssistantPopupShell = (): JSX.Element => {
               size="icon"
               aria-label="Open full app"
               onClick={() => {
-                void revealMainWindow();
+                void revealMainWindow().catch((error) => {
+                  console.error("Failed to reveal main window", error);
+                });
               }}
               className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
             >
@@ -364,7 +368,9 @@ export const AssistantPopupShell = (): JSX.Element => {
             <Button
               type="button"
               onClick={() => {
-                void revealMainWindow();
+                void revealMainWindow().catch((error) => {
+                  console.error("Failed to reveal main window", error);
+                });
               }}
               className="rounded-2xl bg-sky-600 px-5 text-white hover:bg-sky-500"
             >

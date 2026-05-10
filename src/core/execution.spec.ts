@@ -1186,4 +1186,44 @@ describe("executeTask", () => {
       ),
     ).toBe(true);
   });
+
+  it("does not leak rejected model stream progress callbacks", async () => {
+    const workspaceRoot = await createWorkspace();
+    let streamProgressCallbacks = 0;
+    const streamingAdapter: AgentModelAdapter = {
+      startTurn: async ({ onStreamEvent }) => {
+        onStreamEvent?.({
+          type: "text-delta",
+          provider: "openai",
+          delta: "Streaming draft.",
+        });
+
+        return {
+          text: "",
+          toolCalls: [createFinalResponseToolCall()],
+        };
+      },
+      continueTurn: async () => {
+        throw new Error("The streaming adapter should not continue.");
+      },
+    };
+
+    const result = await executeTask(
+      "stream a final response",
+      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: streamingAdapter,
+        onStateChange: (progress) => {
+          if (progress.modelStream?.kind === "assistant") {
+            streamProgressCallbacks += 1;
+            return Promise.reject(new Error("progress sink failed"));
+          }
+        },
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(streamProgressCallbacks).toBeGreaterThan(0);
+  });
 });

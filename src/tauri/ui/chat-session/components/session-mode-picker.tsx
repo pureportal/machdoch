@@ -36,7 +36,7 @@ export const SessionModePicker = ({
           variant="outline"
           aria-label={`Execution mode: ${activeRunModeMeta.label}`}
           className={cn(
-            "h-8 w-8 rounded-full border p-0 text-xs font-medium shadow-none",
+            "app-mode-picker-button h-8 w-8 rounded-full border p-0 text-xs font-medium shadow-none",
             activeRunModeMeta.triggerClassName,
           )}
         >

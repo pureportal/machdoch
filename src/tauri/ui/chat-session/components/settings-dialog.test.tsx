@@ -52,6 +52,17 @@ const createSettingsDialogProps = (
     message: null,
     onSave: vi.fn(),
   },
+  appearanceSetup: {
+    settings: {
+      version: 1,
+      theme: "dark",
+      density: "comfortable",
+      accent: "sky",
+      quickChatBubbleStyle: "classic",
+    },
+    saving: false,
+    onSave: vi.fn(),
+  },
   memorySetup: {
     settings: {
       globalEnabled: false,
@@ -71,6 +82,8 @@ const createSettingsDialogProps = (
       assistantBubbleHideWhenFullscreen: true,
       assistantBubbleTemporarilyHideSeconds: 6,
       aiContextMaxMessages: 60,
+      inactiveSessionArchiveDays: 7,
+      archivedSessionRetentionDays: 7,
       quickVoiceEnabled: true,
       quickVoiceShortcut: "CommandOrControl+Alt+V",
       quickVoiceSilenceSeconds: 1.8,
@@ -188,6 +201,53 @@ describe("SettingsDialog", () => {
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith("pplx-new");
+    });
+  });
+
+  it("saves appearance choices", () => {
+    const onSave = vi.fn();
+    const props = createSettingsDialogProps({
+      settingsSection: "appearance",
+      appearanceSetup: {
+        ...createSettingsDialogProps().appearanceSetup,
+        onSave,
+      },
+    });
+
+    renderSettingsDialog(props);
+
+    fireEvent.click(screen.getByRole("button", { name: "Light" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compact" }));
+    fireEvent.click(screen.getByRole("button", { name: "Emerald" }));
+    fireEvent.click(screen.getByRole("button", { name: "Orbit" }));
+
+    expect(onSave).toHaveBeenCalledWith({
+      version: 1,
+      theme: "light",
+      density: "comfortable",
+      accent: "sky",
+      quickChatBubbleStyle: "classic",
+    });
+    expect(onSave).toHaveBeenCalledWith({
+      version: 1,
+      theme: "dark",
+      density: "compact",
+      accent: "sky",
+      quickChatBubbleStyle: "classic",
+    });
+    expect(onSave).toHaveBeenCalledWith({
+      version: 1,
+      theme: "dark",
+      density: "comfortable",
+      accent: "emerald",
+      quickChatBubbleStyle: "classic",
+    });
+    expect(onSave).toHaveBeenCalledWith({
+      version: 1,
+      theme: "dark",
+      density: "comfortable",
+      accent: "sky",
+      quickChatBubbleStyle: "orbit",
     });
   });
 });

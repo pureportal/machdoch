@@ -51,10 +51,28 @@ export interface TaskThinkingEntry {
   timestamp: number;
 }
 
+export interface TaskThinkingModelStream {
+  kind: "assistant" | "tool-call" | "reasoning" | "status" | "tool-result";
+  label: string;
+  content: string;
+  complete?: boolean;
+}
+
+export interface TaskThinkingActionOutputLine {
+  id: string;
+  toolName: string;
+  stream: "stdout" | "stderr";
+  text: string;
+  timestamp: number;
+}
+
 export interface TaskThinkingTrace {
   status: "running" | "complete";
   mode: RunMode;
   entries: TaskThinkingEntry[];
+  assistantText?: string;
+  modelStream?: TaskThinkingModelStream;
+  actionOutputLines?: TaskThinkingActionOutputLine[];
 }
 
 export interface TaskThinkingSource {
@@ -105,7 +123,7 @@ const createThinkingEntriesFromProgress = (
   const entries: TaskThinkingEntry[] = [];
   const detail = progress.message.trim();
 
-  if (detail.length > 0) {
+  if (detail.length > 0 && !progress.actionOutput) {
     entries.push(
       createThinkingEntry(
         THINKING_STATE_LABELS[progress.state],
@@ -146,6 +164,60 @@ const createThinkingEntriesFromProgress = (
   return entries;
 };
 
+const STREAM_TEXT_LIMIT = 4_000;
+const ACTION_OUTPUT_LINE_LIMIT = 80;
+const ACTION_OUTPUT_LINE_LENGTH_LIMIT = 240;
+
+const limitStreamText = (value: string): string => {
+  if (value.length <= STREAM_TEXT_LIMIT) {
+    return value;
+  }
+
+  return value.slice(value.length - STREAM_TEXT_LIMIT);
+};
+
+const limitOutputLine = (value: string): string => {
+  const normalized = value.trimEnd();
+
+  if (normalized.length <= ACTION_OUTPUT_LINE_LENGTH_LIMIT) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, ACTION_OUTPUT_LINE_LENGTH_LIMIT - 1)}...`;
+};
+
+const createActionOutputLines = (
+  trace: TaskThinkingTrace,
+  progress: TaskExecutionProgress,
+  timestamp: number,
+): TaskThinkingActionOutputLine[] => {
+  const output = progress.actionOutput;
+
+  if (!output || output.chunk.length === 0) {
+    return trace.actionOutputLines ?? [];
+  }
+
+  const existingLines = trace.actionOutputLines ?? [];
+  const normalizedChunk = output.chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const nextLines = normalizedChunk
+    .split("\n")
+    .map(limitOutputLine)
+    .filter((line) => line.length > 0)
+    .map((line, index) => ({
+      id: `output-${timestamp}-${existingLines.length + index}`,
+      toolName: output.toolName,
+      stream: output.stream,
+      text: line,
+      timestamp,
+    }));
+
+  if (nextLines.length === 0) {
+    return existingLines;
+  }
+
+  return [...existingLines, ...nextLines].slice(-ACTION_OUTPUT_LINE_LIMIT);
+};
+
 export const appendThinkingProgress = (
   trace: TaskThinkingTrace,
   progress: TaskExecutionProgress,
@@ -157,8 +229,16 @@ export const appendThinkingProgress = (
     timestamp,
     trace.entries.length,
   );
+  const hasProgressExtras =
+    progress.assistantText !== undefined ||
+    progress.modelStream !== undefined ||
+    progress.actionOutput !== undefined;
 
-  if (nextEntries.length === 0 && nextStatus === trace.status) {
+  if (
+    nextEntries.length === 0 &&
+    nextStatus === trace.status &&
+    !hasProgressExtras
+  ) {
     return trace;
   }
 
@@ -185,12 +265,65 @@ export const appendThinkingProgress = (
   }
 
   if (entries.length === trace.entries.length && nextStatus === trace.status) {
-    return trace;
+    const nextAssistantText =
+      progress.assistantText !== undefined
+        ? limitStreamText(progress.assistantText)
+        : trace.assistantText;
+    const nextModelStream = progress.modelStream
+      ? {
+          ...progress.modelStream,
+          content: limitStreamText(progress.modelStream.content),
+        }
+      : trace.modelStream;
+    const nextActionOutputLines = createActionOutputLines(
+      trace,
+      progress,
+      timestamp,
+    );
+
+    if (
+      nextAssistantText === trace.assistantText &&
+      nextModelStream === trace.modelStream &&
+      nextActionOutputLines === trace.actionOutputLines
+    ) {
+      return trace;
+    }
+
+    return {
+      ...trace,
+      status: nextStatus,
+      ...(nextAssistantText ? { assistantText: nextAssistantText } : {}),
+      ...(nextModelStream ? { modelStream: nextModelStream } : {}),
+      ...(nextActionOutputLines.length > 0
+        ? { actionOutputLines: nextActionOutputLines }
+        : {}),
+    };
   }
+
+  const nextAssistantText =
+    progress.assistantText !== undefined
+      ? limitStreamText(progress.assistantText)
+      : trace.assistantText;
+  const nextModelStream = progress.modelStream
+    ? {
+        ...progress.modelStream,
+        content: limitStreamText(progress.modelStream.content),
+      }
+    : trace.modelStream;
+  const nextActionOutputLines = createActionOutputLines(
+    trace,
+    progress,
+    timestamp,
+  );
 
   return {
     ...trace,
     status: nextStatus,
     entries,
+    ...(nextAssistantText ? { assistantText: nextAssistantText } : {}),
+    ...(nextModelStream ? { modelStream: nextModelStream } : {}),
+    ...(nextActionOutputLines.length > 0
+      ? { actionOutputLines: nextActionOutputLines }
+      : {}),
   };
 };

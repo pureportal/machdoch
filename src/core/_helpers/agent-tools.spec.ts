@@ -1,6 +1,10 @@
 /// <reference types="vitest/globals" />
 import type { RuntimeConfig } from "../types.js";
-import { resolveActionDecision } from "./agent-tools.ts";
+import { executeToolCall, resolveActionDecision } from "./agent-tools.ts";
+import type {
+  AgentToolDefinition,
+  ConversationMemoryRuntime,
+} from "./agent-tools-shared.ts";
 
 const createRuntimeConfig = (
   overrides: Partial<RuntimeConfig> = {},
@@ -23,6 +27,13 @@ const createRuntimeConfig = (
     },
     ...overrides,
   };
+};
+
+const memory: ConversationMemoryRuntime = {
+  sessionEnabled: false,
+  sessionEntries: [],
+  globalEnabled: false,
+  globalEntries: [],
 };
 
 describe("resolveActionDecision", () => {
@@ -95,5 +106,63 @@ describe("resolveActionDecision", () => {
 
     expect(decision.decision).toBe("allow");
     expect(decision.reason).toContain("Auto mode");
+  });
+});
+
+describe("executeToolCall", () => {
+  it("does not let action-output handler failures fail the tool call", async () => {
+    const streamingTool: AgentToolDefinition = {
+      spec: {
+        name: "streaming_tool",
+        description: "Streams output.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {},
+        },
+      },
+      backingTool: "shell",
+      riskLevel: "low",
+      effect: "read",
+      execute: async (_args, context) => {
+        context.onOutput?.({ stream: "stdout", chunk: "first chunk\n" });
+
+        return {
+          toolResult: {
+            callId: "tool-call",
+            name: "streaming_tool",
+            output: "done",
+          },
+          sections: [],
+          traceLines: ["streaming_tool() -> success"],
+        };
+      },
+    };
+    const toolDefinitions = new Map<string, AgentToolDefinition>([
+      ["streaming_tool", streamingTool],
+    ]);
+
+    const result = await executeToolCall(
+      "stream output",
+      createRuntimeConfig(),
+      {
+        outputSections: [],
+        traceLines: [],
+      },
+      memory,
+      undefined,
+      toolDefinitions,
+      {
+        id: "call-1",
+        name: "streaming_tool",
+        arguments: {},
+      },
+      () => {
+        throw new Error("progress sink failed");
+      },
+    );
+
+    expect(result.result?.toolResult.output).toBe("done");
+    expect(result.approvalPause).toBeUndefined();
   });
 });

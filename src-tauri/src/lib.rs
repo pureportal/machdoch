@@ -3,6 +3,7 @@ use tauri::Manager;
 mod desktop_shell;
 mod desktop_task;
 mod launcher;
+mod runtime_contract_generated;
 mod runtime_snapshot;
 mod shared_cli;
 mod ui_control;
@@ -96,6 +97,7 @@ pub fn run() {
             runtime_snapshot::get_user_desktop_settings,
             runtime_snapshot::get_user_agent_limits_settings,
             runtime_snapshot::get_global_provider_availability,
+            runtime_snapshot::get_provider_model_catalog,
             runtime_snapshot::get_user_memory_settings,
             runtime_snapshot::get_user_provider_api_keys,
             runtime_snapshot::get_user_speech_to_text_settings,

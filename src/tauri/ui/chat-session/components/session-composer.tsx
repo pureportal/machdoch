@@ -147,6 +147,7 @@ export const SessionComposer = ({
         }}
         className={cn(
           "h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100",
+          "app-composer-toolbar-pill",
           hasActiveWorkspace &&
             "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15",
         )}

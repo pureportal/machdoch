@@ -255,8 +255,10 @@ const launchInstalledChromium = async (
   const { chromium } = await import("playwright-core");
 
   for (const channel of channels) {
+    let browser: Browser | undefined;
+
     try {
-      const browser = await chromium.launch({
+      browser = await chromium.launch({
         channel,
         headless,
       });
@@ -272,6 +274,10 @@ const launchInstalledChromium = async (
         channel,
       };
     } catch (error) {
+      if (browser) {
+        await browser.close().catch(() => undefined);
+      }
+
       errors.push(
         `${channel}: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -289,10 +295,14 @@ const launchInstalledChromium = async (
 
 const closeBrowserSession = async (session: BrowserSession): Promise<void> => {
   browserSessions.delete(session.id);
-  await session.context.close({
-    reason: "Browser session closed by machdoch.",
-  });
-  await session.browser.close();
+
+  try {
+    await session.context.close({
+      reason: "Browser session closed by machdoch.",
+    });
+  } finally {
+    await session.browser.close();
+  }
 };
 
 const closeAllBrowserSessions = async (): Promise<number> => {
@@ -733,38 +743,50 @@ export const createBrowserToolDefinitions = (): AgentToolDefinition[] => {
             startedAt: Date.now(),
             screenshotBaselines: new Map(),
           };
+          let didRegisterSession = false;
 
           browserSessions.set(session.id, session);
+          didRegisterSession = true;
 
-          if (url) {
-            await session.page.goto(url.toString(), {
-              waitUntil: "load",
-              timeout: coerceTimeoutMs(args),
-            });
-          }
+          try {
+            if (url) {
+              await session.page.goto(url.toString(), {
+                waitUntil: "load",
+                timeout: coerceTimeoutMs(args),
+              });
+            }
 
-          const lines = await navigationSummaryLines(session);
+            const lines = await navigationSummaryLines(session);
 
-          return {
-            toolResult: {
-              callId: crypto.randomUUID(),
-              name: "start_browser_session",
-              output: lines.join("\n"),
-            },
-            sections: [
-              {
-                title: "Browser session",
-                lines: [
-                  ...lines,
-                  `headless: ${session.headless ? "yes" : "no"}`,
-                  `viewport: ${viewport.width}x${viewport.height}`,
-                ],
+            return {
+              toolResult: {
+                callId: crypto.randomUUID(),
+                name: "start_browser_session",
+                output: lines.join("\n"),
               },
-            ],
-            traceLines: [
-              `start_browser_session(${session.id}, ${session.channel})`,
-            ],
-          };
+              sections: [
+                {
+                  title: "Browser session",
+                  lines: [
+                    ...lines,
+                    `headless: ${session.headless ? "yes" : "no"}`,
+                    `viewport: ${viewport.width}x${viewport.height}`,
+                  ],
+                },
+              ],
+              traceLines: [
+                `start_browser_session(${session.id}, ${session.channel})`,
+              ],
+            };
+          } catch (error) {
+            if (didRegisterSession) {
+              await closeBrowserSession(session).catch(() => undefined);
+            } else {
+              await session.browser.close().catch(() => undefined);
+            }
+
+            throw error;
+          }
         } catch (error) {
           return createToolErrorResult(
             crypto.randomUUID(),

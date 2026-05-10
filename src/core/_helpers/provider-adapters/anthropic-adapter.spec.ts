@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type {
   AgentModelStartParams,
+  AgentModelStreamEvent,
   AgentModelToolSpec,
 } from "../../types.js";
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
@@ -160,5 +161,130 @@ describe("Anthropic Messages conformance", () => {
         },
       ],
     });
+  });
+
+  it("normalizes streamed Messages events", async () => {
+    const events: AgentModelStreamEvent[] = [];
+    const stream = {
+      abort: vi.fn(),
+      on: vi.fn(),
+      finalMessage: async () => {
+        const textHandler = stream.on.mock.calls.find(
+          ([eventName]) => eventName === "text",
+        )?.[1] as (text: string) => void;
+        const streamEventHandler = stream.on.mock.calls.find(
+          ([eventName]) => eventName === "streamEvent",
+        )?.[1] as (event: unknown) => void;
+
+        streamEventHandler({
+          type: "message_start",
+          message: {
+            usage: {
+              input_tokens: 10,
+              output_tokens: 1,
+            },
+          },
+        });
+        textHandler("Need ");
+        streamEventHandler({
+          type: "content_block_delta",
+          index: 0,
+          delta: {
+            type: "thinking_delta",
+            thinking: "I should inspect the file.",
+          },
+        });
+        streamEventHandler({
+          type: "content_block_start",
+          index: 1,
+          content_block: {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "inspect_file",
+            input: {},
+          },
+        });
+        streamEventHandler({
+          type: "content_block_delta",
+          index: 1,
+          delta: {
+            type: "input_json_delta",
+            partial_json: "{\"path\":\"README.md\"}",
+          },
+        });
+        streamEventHandler({
+          type: "content_block_stop",
+          index: 1,
+        });
+        streamEventHandler({
+          type: "message_delta",
+          usage: {
+            output_tokens: 9,
+          },
+        });
+        streamEventHandler({ type: "message_stop" });
+
+        return {
+          content: [
+            { type: "text", text: "Need the file." },
+            {
+              type: "tool_use",
+              id: "toolu_1",
+              name: "inspect_file",
+              input: { path: "README.md" },
+            },
+          ],
+          stop_reason: "tool_use",
+        };
+      },
+    };
+    const client = {
+      messages: {
+        stream: vi.fn(() => stream),
+      },
+    } as unknown as Anthropic;
+    const adapter = new AnthropicMessagesAdapter(client, [tool]);
+
+    await expect(
+      adapter.startTurn({
+        ...startParams,
+        onStreamEvent: (event) => events.push(event),
+      }),
+    ).resolves.toMatchObject({
+      text: "Need the file.",
+      toolCalls: [{ id: "toolu_1", name: "inspect_file" }],
+    });
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "status", provider: "anthropic" }),
+        { type: "text-delta", provider: "anthropic", delta: "Need " },
+        expect.objectContaining({
+          type: "reasoning-delta",
+          provider: "anthropic",
+          delta: "I should inspect the file.",
+        }),
+        expect.objectContaining({
+          type: "tool-call-start",
+          provider: "anthropic",
+          name: "inspect_file",
+        }),
+        expect.objectContaining({
+          type: "tool-call-arguments-delta",
+          provider: "anthropic",
+          snapshot: "{\"path\":\"README.md\"}",
+        }),
+        expect.objectContaining({
+          type: "tool-call-done",
+          provider: "anthropic",
+          argumentsText: "{\"path\":\"README.md\"}",
+        }),
+        expect.objectContaining({
+          type: "usage",
+          provider: "anthropic",
+          usage: expect.objectContaining({ outputTokens: 9 }),
+        }),
+      ]),
+    );
   });
 });

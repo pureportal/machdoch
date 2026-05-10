@@ -10,6 +10,7 @@ import {
   detectFullscreenWindowOnMonitor,
   loadActiveDesktopTaskIds,
   loadDesktopLaunchId,
+  loadProviderModelCatalog,
   resolveDroppedPaths,
   runDesktopTask,
   saveUserSpeechToTextInputDevice,
@@ -63,6 +64,31 @@ describe("desktop runtime fullscreen detection", () => {
       "task-1",
     ]);
     expect(invokeMock).toHaveBeenCalledWith("get_active_desktop_task_ids");
+  });
+
+  it("loads the provider model catalog through the Tauri runtime", async () => {
+    invokeMock.mockResolvedValueOnce({
+      generatedAt: 123,
+      providers: [
+        {
+          provider: "openai",
+          source: "provider-api",
+          available: true,
+          models: [],
+        },
+      ],
+    });
+
+    await expect(loadProviderModelCatalog()).resolves.toMatchObject({
+      generatedAt: 123,
+      providers: [
+        {
+          provider: "openai",
+          available: true,
+        },
+      ],
+    });
+    expect(invokeMock).toHaveBeenCalledWith("get_provider_model_catalog");
   });
 
   it("returns no active desktop task snapshot when Tauri commands are unavailable", async () => {

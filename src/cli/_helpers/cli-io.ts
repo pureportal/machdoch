@@ -96,6 +96,35 @@ export const createVerboseProgressReporter = (
   };
 };
 
+export const createStructuredActionOutputReporter = (
+  task: string,
+  mode: TaskExecutionProgress["mode"],
+  writeLine: (line: string) => void,
+): TaskActionOutputHandler => {
+  return (output): void => {
+    if (output.chunk.length === 0) {
+      return;
+    }
+
+    const progress: TaskExecutionProgress = {
+      task,
+      mode,
+      state: "executing",
+      message: `${output.toolName} ${output.stream} output`,
+      executedTools: [],
+      outputSections: [],
+      cancellable: true,
+      actionOutput: output,
+    };
+
+    writeLine(
+      `${STRUCTURED_PROGRESS_PREFIX}${JSON.stringify(
+        createStructuredProgressSnapshot(progress),
+      )}`,
+    );
+  };
+};
+
 export interface ActionFeedbackProgressReporter {
   report: TaskExecutionProgressHandler;
   reportOutput: TaskActionOutputHandler;

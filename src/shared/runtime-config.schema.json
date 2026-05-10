@@ -1,0 +1,767 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://machdoch.local/schemas/runtime-config.schema.json",
+  "title": "MachdochRuntimeConfigContract",
+  "description": "Shared runtime configuration, user settings, and desktop snapshot contract for TypeScript and Rust.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "workspaceConfig": {
+      "$ref": "#/$defs/WorkspaceConfigFile"
+    },
+    "userConfig": {
+      "$ref": "#/$defs/UserConfigFile"
+    },
+    "runtimeConfig": {
+      "$ref": "#/$defs/RuntimeConfig"
+    },
+    "runtimeSnapshot": {
+      "$ref": "#/$defs/RuntimeSnapshot"
+    },
+    "userDesktopSettings": {
+      "$ref": "#/$defs/UserDesktopSettings"
+    }
+  },
+  "$defs": {
+    "RunMode": {
+      "type": "string",
+      "enum": ["plan", "safe", "ask", "auto"]
+    },
+    "ToolName": {
+      "type": "string",
+      "enum": [
+        "filesystem",
+        "shell",
+        "network",
+        "browser",
+        "git",
+        "packages",
+        "utilities"
+      ]
+    },
+    "ConfiguredModelProvider": {
+      "type": "string",
+      "enum": ["openai", "anthropic", "google"]
+    },
+    "ModelProvider": {
+      "type": "string",
+      "enum": ["openai", "anthropic", "google", "unconfigured"]
+    },
+    "WebSearchProvider": {
+      "type": "string",
+      "enum": ["none", "perplexity", "tavily", "serper"]
+    },
+    "UserWebSearchProvider": {
+      "type": "string",
+      "enum": ["perplexity", "tavily", "serper"]
+    },
+    "AudioProvider": {
+      "type": "string",
+      "enum": ["openai", "google"]
+    },
+    "VoiceAiProvider": {
+      "type": "string",
+      "enum": ["none", "openai", "google"]
+    },
+    "RuntimeMemoryScope": {
+      "type": "string",
+      "enum": ["session", "global"]
+    },
+    "RuntimeProfileSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "WorkspaceCompatibilityConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "discoverGithubCustomizations": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "RuntimeAgentLimitOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "infinite": {
+          "type": "boolean",
+          "default": false
+        },
+        "executorTurns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "autopilotExecutorIterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    },
+    "RuntimeAgentLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executorTurns", "autopilotExecutorIterations"],
+      "properties": {
+        "executorTurns": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "autopilotExecutorIterations": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    },
+    "WorkspaceProfileConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/RunMode"
+        },
+        "enabledTools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolName"
+          },
+          "uniqueItems": true
+        },
+        "provider": {
+          "$ref": "#/$defs/ConfiguredModelProvider"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "offline": {
+          "type": "boolean"
+        },
+        "agentLimits": {
+          "$ref": "#/$defs/RuntimeAgentLimitOverrides"
+        },
+        "compatibility": {
+          "$ref": "#/$defs/WorkspaceCompatibilityConfig"
+        }
+      }
+    },
+    "WorkspaceConfigFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaultProfile": {
+          "type": "string"
+        },
+        "defaultMode": {
+          "$ref": "#/$defs/RunMode"
+        },
+        "enabledTools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolName"
+          },
+          "uniqueItems": true
+        },
+        "provider": {
+          "$ref": "#/$defs/ConfiguredModelProvider"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "offline": {
+          "type": "boolean"
+        },
+        "agentLimits": {
+          "$ref": "#/$defs/RuntimeAgentLimitOverrides"
+        },
+        "compatibility": {
+          "$ref": "#/$defs/WorkspaceCompatibilityConfig"
+        },
+        "profiles": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/WorkspaceProfileConfig"
+          }
+        }
+      }
+    },
+    "ProviderAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "configured"],
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ConfiguredModelProvider"
+        },
+        "configured": {
+          "type": "boolean"
+        }
+      }
+    },
+    "WebSearchProviderAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "configured"],
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/UserWebSearchProvider"
+        },
+        "configured": {
+          "type": "boolean"
+        }
+      }
+    },
+    "AudioProviderAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "configured"],
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/AudioProvider"
+        },
+        "configured": {
+          "type": "boolean"
+        }
+      }
+    },
+    "RuntimeWebSearchConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["activeProvider", "providerAvailability"],
+      "properties": {
+        "activeProvider": {
+          "$ref": "#/$defs/WebSearchProvider"
+        },
+        "providerAvailability": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WebSearchProviderAvailability"
+          }
+        }
+      }
+    },
+    "RuntimeMemoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "scope", "content", "createdAt", "updatedAt"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/RuntimeMemoryScope"
+        },
+        "content": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "updatedAt": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "UserProviderApiKeys": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "openai": {
+          "type": "string"
+        },
+        "anthropic": {
+          "type": "string"
+        },
+        "google": {
+          "type": "string"
+        }
+      }
+    },
+    "UserWebSearchApiKeys": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "perplexity": {
+          "type": "string"
+        },
+        "tavily": {
+          "type": "string"
+        },
+        "serper": {
+          "type": "string"
+        }
+      }
+    },
+    "UserWebSearchConfigFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activeProvider": {
+          "$ref": "#/$defs/WebSearchProvider"
+        },
+        "apiKeys": {
+          "$ref": "#/$defs/UserWebSearchApiKeys"
+        }
+      }
+    },
+    "UserVoiceConfigFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activeProvider": {
+          "$ref": "#/$defs/VoiceAiProvider"
+        }
+      }
+    },
+    "UserSpeechToTextConfigFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activeProvider": {
+          "$ref": "#/$defs/VoiceAiProvider"
+        },
+        "inputDeviceId": {
+          "type": "string"
+        }
+      }
+    },
+    "UserMemoryConfigFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "globalEnabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuntimeMemoryEntry"
+          }
+        }
+      }
+    },
+    "UserAgentLimitsSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["infinite", "executorTurns", "autopilotExecutorIterations"],
+      "properties": {
+        "infinite": {
+          "type": "boolean",
+          "default": false
+        },
+        "executorTurns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 64
+        },
+        "autopilotExecutorIterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 16
+        }
+      }
+    },
+    "UserDesktopConfigFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "autostartMinimized": {
+          "type": "boolean"
+        },
+        "autostartToTray": {
+          "type": "boolean"
+        },
+        "alwaysRunAsAdministrator": {
+          "type": "boolean"
+        },
+        "assistantBubbleEnabled": {
+          "type": "boolean"
+        },
+        "assistantBubbleHideWhenFullscreen": {
+          "type": "boolean"
+        },
+        "assistantBubbleTemporarilyHideSeconds": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 30
+        },
+        "aiContextMaxMessages": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "inactiveSessionArchiveDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365
+        },
+        "archivedSessionRetentionDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365
+        },
+        "quickVoiceEnabled": {
+          "type": "boolean"
+        },
+        "quickVoiceShortcut": {
+          "type": "string"
+        },
+        "quickVoiceSilenceSeconds": {
+          "type": "number",
+          "minimum": 0.8,
+          "maximum": 8.0
+        },
+        "quickVoiceMaxMessages": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 200
+        }
+      }
+    },
+    "UserDesktopSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "autostartEnabled",
+        "autostartMinimized",
+        "autostartToTray",
+        "alwaysRunAsAdministrator",
+        "assistantBubbleEnabled",
+        "assistantBubbleHideWhenFullscreen",
+        "assistantBubbleTemporarilyHideSeconds",
+        "aiContextMaxMessages",
+        "inactiveSessionArchiveDays",
+        "archivedSessionRetentionDays",
+        "quickVoiceEnabled",
+        "quickVoiceShortcut",
+        "quickVoiceSilenceSeconds",
+        "quickVoiceMaxMessages"
+      ],
+      "properties": {
+        "autostartEnabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "autostartMinimized": {
+          "type": "boolean",
+          "default": false
+        },
+        "autostartToTray": {
+          "type": "boolean",
+          "default": false
+        },
+        "alwaysRunAsAdministrator": {
+          "type": "boolean",
+          "default": false
+        },
+        "assistantBubbleEnabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "assistantBubbleHideWhenFullscreen": {
+          "type": "boolean",
+          "default": true
+        },
+        "assistantBubbleTemporarilyHideSeconds": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 30,
+          "default": 6
+        },
+        "aiContextMaxMessages": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 60
+        },
+        "inactiveSessionArchiveDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365,
+          "default": 7
+        },
+        "archivedSessionRetentionDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365,
+          "default": 7
+        },
+        "quickVoiceEnabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "quickVoiceShortcut": {
+          "type": "string",
+          "default": "CommandOrControl+Alt+V"
+        },
+        "quickVoiceSilenceSeconds": {
+          "type": "number",
+          "minimum": 0.8,
+          "maximum": 8.0,
+          "default": 1.8
+        },
+        "quickVoiceMaxMessages": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 200,
+          "default": 50
+        }
+      }
+    },
+    "UserConfigFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiKeys": {
+          "$ref": "#/$defs/UserProviderApiKeys"
+        },
+        "webSearch": {
+          "$ref": "#/$defs/UserWebSearchConfigFile"
+        },
+        "voice": {
+          "$ref": "#/$defs/UserVoiceConfigFile"
+        },
+        "speechToText": {
+          "$ref": "#/$defs/UserSpeechToTextConfigFile"
+        },
+        "desktop": {
+          "$ref": "#/$defs/UserDesktopConfigFile"
+        },
+        "agentLimits": {
+          "$ref": "#/$defs/RuntimeAgentLimitOverrides"
+        },
+        "memory": {
+          "$ref": "#/$defs/UserMemoryConfigFile"
+        }
+      }
+    },
+    "UiControlAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "available",
+        "platform",
+        "supportsScreenshots",
+        "supportsWindowEnumeration",
+        "supportsInput",
+        "supportsWindowHandles"
+      ],
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["windows", "macos", "linux", "unknown"]
+        },
+        "supportsScreenshots": {
+          "type": "boolean"
+        },
+        "supportsWindowEnumeration": {
+          "type": "boolean"
+        },
+        "supportsInput": {
+          "type": "boolean"
+        },
+        "supportsWindowHandles": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "RuntimeConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspaceRoot",
+        "availableProfiles",
+        "mode",
+        "enabledTools",
+        "provider",
+        "model",
+        "offline",
+        "compatibility",
+        "providerAvailability",
+        "webSearch"
+      ],
+      "properties": {
+        "workspaceRoot": {
+          "type": "string"
+        },
+        "workspaceConfigPath": {
+          "type": "string"
+        },
+        "userConfigPath": {
+          "type": "string"
+        },
+        "activeProfile": {
+          "type": "string"
+        },
+        "availableProfiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuntimeProfileSummary"
+          }
+        },
+        "mode": {
+          "$ref": "#/$defs/RunMode"
+        },
+        "enabledTools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolName"
+          }
+        },
+        "provider": {
+          "$ref": "#/$defs/ModelProvider"
+        },
+        "model": {
+          "type": "string"
+        },
+        "offline": {
+          "type": "boolean"
+        },
+        "agentLimits": {
+          "$ref": "#/$defs/RuntimeAgentLimits"
+        },
+        "compatibility": {
+          "$ref": "#/$defs/WorkspaceCompatibilityConfig"
+        },
+        "providerAvailability": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderAvailability"
+          }
+        },
+        "webSearch": {
+          "$ref": "#/$defs/RuntimeWebSearchConfig"
+        }
+      }
+    },
+    "RuntimeSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspaceRoot",
+        "availableProfiles",
+        "mode",
+        "enabledTools",
+        "provider",
+        "model",
+        "offline",
+        "agentLimits",
+        "compatibility",
+        "providerAvailability",
+        "webSearch"
+      ],
+      "properties": {
+        "workspaceRoot": {
+          "type": "string"
+        },
+        "workspaceConfigPath": {
+          "type": "string"
+        },
+        "activeProfile": {
+          "type": "string"
+        },
+        "availableProfiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuntimeProfileSummary"
+          }
+        },
+        "mode": {
+          "$ref": "#/$defs/RunMode"
+        },
+        "enabledTools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolName"
+          }
+        },
+        "provider": {
+          "$ref": "#/$defs/ModelProvider"
+        },
+        "model": {
+          "type": "string"
+        },
+        "offline": {
+          "type": "boolean"
+        },
+        "agentLimits": {
+          "$ref": "#/$defs/RuntimeAgentLimits"
+        },
+        "compatibility": {
+          "$ref": "#/$defs/WorkspaceCompatibilityConfig"
+        },
+        "providerAvailability": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderAvailability"
+          }
+        },
+        "webSearch": {
+          "$ref": "#/$defs/RuntimeWebSearchConfig"
+        },
+        "uiControl": {
+          "$ref": "#/$defs/UiControlAvailability"
+        }
+      }
+    }
+  },
+  "x-machdoch": {
+    "schemaVersion": 1,
+    "defaultModelProvider": "openai",
+    "defaultModelByProvider": {
+      "openai": "gpt-5.5",
+      "anthropic": "claude-sonnet-4-6",
+      "google": "gemini-2.5-flash"
+    },
+    "defaultTools": ["filesystem", "shell", "utilities"],
+    "runtimeEnvKeys": [
+      "MACHDOCH_MODE",
+      "MACHDOCH_MODEL",
+      "MACHDOCH_OFFLINE",
+      "MACHDOCH_PROFILE",
+      "MACHDOCH_WEB_SEARCH_PROVIDER",
+      "MACHDOCH_EXECUTOR_TURNS",
+      "MACHDOCH_AUTOPILOT_ITERATIONS",
+      "MACHDOCH_INFINITE"
+    ],
+    "providerEnvKeys": {
+      "openai": "OPENAI_API_KEY",
+      "anthropic": "ANTHROPIC_API_KEY",
+      "google": "GOOGLE_API_KEY"
+    },
+    "webSearchEnvKeys": {
+      "perplexity": "PERPLEXITY_API_KEY",
+      "tavily": "TAVILY_API_KEY",
+      "serper": "SERPER_API_KEY"
+    }
+  }
+}

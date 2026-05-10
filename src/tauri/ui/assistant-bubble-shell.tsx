@@ -11,6 +11,7 @@ import {
   toggleAssistantPopup,
 } from "./assistant-surface";
 import { useUserDesktopSettings } from "./_helpers/use-user-desktop-settings";
+import { useAppearanceSettings } from "./chat-session/_helpers/use-appearance-settings";
 import { useChatSessionShellState } from "./chat-session/_helpers/use-chat-session-shell-state";
 import { detectFullscreenWindowOnMonitor } from "./runtime";
 
@@ -19,6 +20,7 @@ const BUBBLE_SYNC_INTERVAL_MS = 2500;
 export const AssistantBubbleShell = () => {
   const state = useChatSessionShellState();
   const desktopSettings = useUserDesktopSettings();
+  const appearance = useAppearanceSettings();
   const temporarilyHiddenUntilRef = useRef<number>(0);
   const suppressPrimaryActionUntilRef = useRef<number>(0);
   const lastVisibilityRef = useRef<boolean | null>(null);
@@ -121,9 +123,15 @@ export const AssistantBubbleShell = () => {
       }
     };
 
-    void syncBubbleWindow();
+    const runSyncBubbleWindow = (): void => {
+      void syncBubbleWindow().catch((error) => {
+        console.error("Failed to sync assistant bubble window", error);
+      });
+    };
+
+    runSyncBubbleWindow();
     const intervalId = window.setInterval(() => {
-      void syncBubbleWindow();
+      runSyncBubbleWindow();
     }, BUBBLE_SYNC_INTERVAL_MS);
 
     return () => {
@@ -143,7 +151,9 @@ export const AssistantBubbleShell = () => {
     temporarilyHiddenUntilRef.current =
       Date.now() +
       desktopSettings.assistantBubbleTemporarilyHideSeconds * 1000;
-    void hideAssistantPopup();
+    void hideAssistantPopup().catch((error) => {
+      console.error("Failed to hide assistant popup", error);
+    });
     void getCurrentWindow().hide().catch(() => undefined);
   };
 
@@ -167,34 +177,38 @@ export const AssistantBubbleShell = () => {
     }
 
     togglePopupInFlightRef.current = true;
-    void toggleAssistantPopup(lastPopupPositionRef.current ?? undefined).finally(
-      () => {
+    void toggleAssistantPopup(lastPopupPositionRef.current ?? undefined)
+      .catch((error) => {
+        console.error("Failed to toggle assistant popup", error);
+      })
+      .finally(() => {
         togglePopupInFlightRef.current = false;
-      },
-    );
+      });
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center overflow-hidden bg-transparent select-none">
-      <div className="relative">
+    <div className="quick-chat-bubble-shell fixed inset-0 flex items-center justify-center overflow-hidden bg-transparent select-none">
+      <div className="quick-chat-bubble-wrap relative">
         <button
           type="button"
           aria-label="Open Quick Chat"
           title="Open Quick Chat"
+          data-style={appearance.settings.quickChatBubbleStyle}
           onClick={handleBubbleClick}
           onMouseDown={handleBubbleMouseDown}
           onContextMenu={(event) => {
             event.preventDefault();
             event.stopPropagation();
           }}
-          className="group relative flex h-17 w-17 items-center justify-center rounded-[1.35rem] border border-sky-400/25 bg-slate-950/95 text-slate-100 shadow-none outline-none transition-colors duration-150 hover:border-sky-300/45 hover:bg-slate-900/95 focus-visible:ring-0"
+          className="quick-chat-bubble group relative flex h-17 w-17 items-center justify-center rounded-[1.35rem] border border-sky-400/25 bg-slate-950/95 text-slate-100 shadow-none outline-none transition-colors duration-150 hover:border-sky-300/45 hover:bg-slate-900/95 focus-visible:ring-0"
         >
-          <span className="absolute inset-1.25 rounded-[1.05rem] bg-sky-400/8" />
-          <MessageSquareMore className="relative z-10 h-6 w-6 text-sky-100 transition-colors group-hover:text-white" />
-          <Zap className="absolute right-3 top-3 z-10 h-3 w-3 text-sky-300" />
+          <span aria-hidden="true" className="quick-chat-bubble-aura" />
+          <span aria-hidden="true" className="quick-chat-bubble-surface" />
+          <MessageSquareMore className="quick-chat-bubble-icon relative z-10 h-6 w-6 text-sky-100 transition-colors group-hover:text-white" />
+          <Zap className="quick-chat-bubble-zap absolute right-3 top-3 z-10 h-3 w-3 text-sky-300" />
 
           {activeSessionSummary.pendingCount > 0 ? (
-            <span className="absolute -right-1 -top-1 z-20 flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold text-slate-950">
+            <span className="quick-chat-bubble-badge absolute -right-1 -top-1 z-20 flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold text-slate-950">
               {activeSessionSummary.pendingCount > 9
                 ? "9+"
                 : activeSessionSummary.pendingCount}
@@ -208,13 +222,15 @@ export const AssistantBubbleShell = () => {
           title="Start quick voice command"
           disabled={!desktopSettings.quickVoiceEnabled}
           onClick={() => {
-            void showQuickVoiceWindow();
+            void showQuickVoiceWindow().catch((error) => {
+              console.error("Failed to show Quick Voice window", error);
+            });
           }}
           onContextMenu={(event) => {
             event.preventDefault();
             event.stopPropagation();
           }}
-          className="absolute -bottom-1.5 -left-1.5 z-20 flex h-8 w-8 items-center justify-center rounded-xl border border-violet-300/45 bg-violet-500 text-white shadow-none transition-colors duration-150 hover:bg-violet-400 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:hover:bg-slate-800"
+          className="quick-chat-voice-button absolute bottom-0.5 left-0.5 z-20 flex h-8 w-8 items-center justify-center rounded-xl border border-violet-300/45 bg-violet-500 text-white shadow-none transition-colors duration-150 hover:bg-violet-400 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:hover:bg-slate-800"
         >
           <Mic className="h-3.5 w-3.5" />
         </button>

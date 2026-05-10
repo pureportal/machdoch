@@ -7,9 +7,11 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { DEFAULT_USER_DESKTOP_SETTINGS } from "../../core/runtime-contract.generated.js";
 import { AssistantPopupShell } from "./assistant-popup-shell";
 import { ChatSession } from "./chat-session";
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
+import { ExecutionInsightRow } from "./chat-session/components/execution-insight-row";
 import {
   createInitialShellState,
   createSession,
@@ -207,6 +209,7 @@ const selectWorkspace = async (): Promise<void> => {
 };
 
 const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
+const SESSION_RETENTION_DAY_MS = 24 * 60 * 60 * 1_000;
 
 const storeShellState = (state: ShellPersistedState): void => {
   window.localStorage.setItem(SHELL_STATE_STORAGE_KEY, JSON.stringify(state));
@@ -270,7 +273,7 @@ const createRuntimeSnapshot = (
 
 const createStoredShellState = (): ShellPersistedState => {
   const baseState = createInitialShellState();
-  const now = 1_713_260_000_000;
+  const now = Date.now();
   const buildExecutionMessage = (
     taskId: string,
     title: string,
@@ -446,7 +449,7 @@ const emitWindowDropEvent = (
 
 describe("ChatSession component", () => {
   it("renders empty state initially", () => {
-    render(<ChatSession />);
+    const { container } = render(<ChatSession />);
     expect(screen.getByText(/Ready to automate/i)).toBeDefined();
     expect(
       screen.queryByText(/Pick a workspace anytime, or start from your home/i),
@@ -461,6 +464,7 @@ describe("ChatSession component", () => {
       "disabled",
       true,
     );
+    expect(container.querySelector("main")?.className).toContain("min-w-0");
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it(
@@ -982,6 +986,140 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "continues a task with a compact hidden prompt instead of a verbose visible message",
+    async () => {
+      const baseState = createInitialShellState();
+      const legacyContinuationPrompt = [
+        "Continue from this previous task.",
+        "",
+        "Previous task:",
+        "Continue from this previous task.",
+        "",
+        "Previous task:",
+        "Wie viel Uhr haben wir es?",
+        "",
+        "Previous status:",
+        "executed",
+        "",
+        "Previous summary:",
+        "Aktuelle Uhrzeit fuer Europa/Berlin abgefragt.",
+        "",
+        "Use the conversation and execution details above as context, then take the next useful step.",
+      ].join("\n");
+      const previousExecution = {
+        ...createMockExecutionFixture(legacyContinuationPrompt),
+        task: legacyContinuationPrompt,
+        status: "executed" as const,
+        summary: "Aktuelle Uhrzeit fuer Europa/Berlin erneut bereitgestellt.",
+        response: {
+          markdown: "**Done.** Uhrzeit erneut bereitgestellt.",
+          highlights: [],
+          relatedFiles: [],
+          verification: [],
+          followUps: ["Ask whether another timezone should be checked."],
+        },
+      };
+      const session = createSession({
+        id: "continue-session",
+        messages: [
+          {
+            id: "original-user",
+            taskId: "original-task",
+            role: "user",
+            content: "Wie viel Uhr haben wir es?",
+            createdAt: 1,
+          },
+          {
+            id: "original-agent",
+            taskId: "original-task",
+            role: "agent",
+            content: "Aktuelle Uhrzeit fuer Europa/Berlin abgefragt.",
+            createdAt: 2,
+          },
+          {
+            id: "legacy-continue-user",
+            taskId: "legacy-continue",
+            role: "user",
+            content: legacyContinuationPrompt,
+            createdAt: 3,
+          },
+          {
+            id: "legacy-continue-agent",
+            taskId: "legacy-continue",
+            role: "agent",
+            content: previousExecution.response.markdown,
+            createdAt: 4,
+            source: {
+              kind: "execution",
+              execution: previousExecution,
+            },
+          },
+        ],
+      });
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockResolvedValue({
+          execution: {
+            ...createMockExecutionFixture("Continue the previous task."),
+            summary: "Continued from compact context.",
+            response: {
+              markdown: "**Continued.**",
+              highlights: [],
+              relatedFiles: [],
+              verification: [],
+              followUps: [],
+            },
+          },
+        });
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: session.id,
+        sessions: [session],
+      });
+
+      render(<ChatSession />);
+
+      await flushShellHydration();
+
+      expect(screen.queryByText(/Previous task:/i)).toBeNull();
+      expect(
+        await screen.findByText("Continue previous task."),
+      ).toBeDefined();
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: /^Continue$/i }),
+      );
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      const submittedTask = runDesktopTaskSpy.mock.calls[0]?.[1] ?? "";
+      const conversationHistory =
+        runDesktopTaskSpy.mock.calls[0]?.[2]?.conversationContext?.history ??
+        [];
+
+      expect(submittedTask).toContain("Continue the previous task.");
+      expect(submittedTask).toContain("Objective: Wie viel Uhr haben wir es?");
+      expect(submittedTask).not.toContain("Previous task:");
+      expect(
+        conversationHistory.some((entry) =>
+          entry.content.includes("Previous task:"),
+        ),
+      ).toBe(false);
+      expect(
+        conversationHistory.some(
+          (entry) => entry.content === "Continue previous task.",
+        ),
+      ).toBe(false);
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "switches settings sections with navbar buttons and shows saved web-search key value",
     async () => {
       const loadUserWebSearchSettingsSpy = vi
@@ -1138,6 +1276,12 @@ describe("ChatSession component", () => {
     const aiContextPanel = screen
       .getByText(/^AI context cap$/i)
       .closest("[data-setting-panel]");
+    const inactiveArchivePanel = screen
+      .getByText(/^Inactive archive$/i)
+      .closest("[data-setting-panel]");
+    const archivedCleanupPanel = screen
+      .getByText(/^Archived cleanup$/i)
+      .closest("[data-setting-panel]");
     const shortcutPanel = screen
       .getByText(/^Global shortcut$/i)
       .closest("[data-setting-panel]");
@@ -1150,6 +1294,8 @@ describe("ChatSession component", () => {
 
     expect(hideDurationPanel).not.toBeNull();
     expect(aiContextPanel).not.toBeNull();
+    expect(inactiveArchivePanel).not.toBeNull();
+    expect(archivedCleanupPanel).not.toBeNull();
     expect(shortcutPanel).not.toBeNull();
     expect(silencePanel).not.toBeNull();
     expect(quickChatPanel).not.toBeNull();
@@ -1160,6 +1306,14 @@ describe("ChatSession component", () => {
     );
     fireEvent.change(
       within(aiContextPanel as HTMLElement).getByRole("spinbutton"),
+      { target: { value: "999" } },
+    );
+    fireEvent.change(
+      within(inactiveArchivePanel as HTMLElement).getByRole("spinbutton"),
+      { target: { value: "999" } },
+    );
+    fireEvent.change(
+      within(archivedCleanupPanel as HTMLElement).getByRole("spinbutton"),
       { target: { value: "999" } },
     );
     fireEvent.change(
@@ -1182,6 +1336,8 @@ describe("ChatSession component", () => {
         expect.objectContaining({
           assistantBubbleTemporarilyHideSeconds: 30,
           aiContextMaxMessages: 200,
+          inactiveSessionArchiveDays: 365,
+          archivedSessionRetentionDays: 365,
           quickVoiceShortcut: "CommandOrControl+Alt+V",
           quickVoiceSilenceSeconds: 0.8,
           quickVoiceMaxMessages: 200,
@@ -1386,6 +1542,9 @@ describe("ChatSession component", () => {
           },
         ]}
         bottomRef={{ current: null }}
+        onApprovePlan={() => {}}
+        onRetryTask={() => {}}
+        onContinueTask={() => {}}
         onOpenWorkspaceFile={() => {}}
         voicePlayback={{
           supported: true,
@@ -1406,6 +1565,89 @@ describe("ChatSession component", () => {
       expect.objectContaining({ id: "agent-reply-1" }),
     );
     expect(onStopSpeaking).not.toHaveBeenCalled();
+  });
+
+  it("keeps long user messages constrained to the feed width", () => {
+    const longMessage = [
+      "Disable the requirement to insert my password on every boot!",
+      "This sentence is intentionally long enough to exercise wrapping in the chat bubble instead of widening the main shell.",
+      "verylongunbrokenidentifierthatshouldnotforcethelayoutoutsideofthenativewindowbounds",
+    ].join(" ");
+
+    const { container } = render(
+      <ConversationFeed
+        visibleMessages={[
+          {
+            id: "wide-user-message",
+            role: "user",
+            content: longMessage,
+          },
+        ]}
+        bottomRef={{ current: null }}
+        onApprovePlan={() => {}}
+        onRetryTask={() => {}}
+        onContinueTask={() => {}}
+        onOpenWorkspaceFile={() => {}}
+        voicePlayback={{
+          supported: false,
+          speakingMessageId: null,
+          onSpeakMessage: () => {},
+          onStopSpeaking: () => {},
+        }}
+      />,
+    );
+
+    expect(container.firstElementChild?.className).toContain("min-w-0");
+
+    const messageText = screen.getByText(longMessage);
+    expect(messageText.className).toContain("wrap-break-word");
+    expect(messageText.parentElement?.className).toContain("min-w-0");
+    expect(messageText.parentElement?.className).toContain("overflow-hidden");
+  });
+
+  it("visually separates insight metadata from task action buttons", () => {
+    const execution = {
+      ...createMockExecutionFixture(
+        "scan this workspace and explain the setup",
+        "/mocked/tauri/path",
+      ),
+      status: "executed" as const,
+      response: {
+        markdown: "**Done.**",
+        highlights: [],
+        relatedFiles: [],
+        verification: ["Ran focused UI checks.", "Built the UI bundle."],
+        followUps: [],
+      },
+      autopilot: {
+        executorIterations: 2,
+        validatorPasses: 1,
+        continuationCount: 2,
+        maxExecutorIterations: 16,
+        decisions: [],
+      },
+    };
+
+    render(
+      <ExecutionInsightRow
+        execution={execution}
+        onOpenWorkspaceFile={() => {}}
+        onContinueTask={() => {}}
+      />,
+    );
+
+    const autoReviewBadge = screen
+      .getByText(/Auto review/i)
+      .closest("[data-slot='badge']");
+    const checksBadge = screen
+      .getByText(/2 checks/i)
+      .closest("[data-slot='badge']");
+    const continueButton = screen.getByRole("button", { name: /Continue/i });
+
+    expect(autoReviewBadge?.className).toContain("bg-transparent");
+    expect(checksBadge?.className).toContain("cursor-default");
+    expect(continueButton.className).toContain("rounded-lg");
+    expect(continueButton.className).toContain("shadow-sm");
   });
 
   it("shows the AI context cutoff before the first included message", () => {
@@ -1435,6 +1677,9 @@ describe("ChatSession component", () => {
         ]}
         aiContextMessageLimit={2}
         bottomRef={{ current: null }}
+        onApprovePlan={() => {}}
+        onRetryTask={() => {}}
+        onContinueTask={() => {}}
         onOpenWorkspaceFile={() => {}}
         voicePlayback={{
           supported: false,
@@ -1704,6 +1949,7 @@ describe("ChatSession component", () => {
       });
 
       expect(screen.queryByText(/^Saved sessions$/i)).toBeNull();
+      expect(screen.queryByLabelText("Project filter")).toBeNull();
       expect(
         screen.queryByRole("button", {
           name: "Open session Archived session",
@@ -1772,6 +2018,207 @@ describe("ChatSession component", () => {
           name: "Open session Running session",
         }),
       ).toBeNull();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "shows different retention progress bars for open and archived sessions",
+    async () => {
+      const baseState = createInitialShellState();
+      const now = Date.now();
+      const openSession = createSession({
+        id: "retention-open-session",
+        manualTitle: "Open retention session",
+        updatedAt: now - 3 * SESSION_RETENTION_DAY_MS,
+      });
+      const archivedSession = createSession({
+        id: "retention-archived-session",
+        manualTitle: "Archived retention session",
+        archivedAt: now - 3 * SESSION_RETENTION_DAY_MS,
+        updatedAt: now - 3 * SESSION_RETENTION_DAY_MS,
+      });
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: openSession.id,
+        sessions: [openSession, archivedSession],
+      });
+
+      render(<ChatSession />);
+
+      const archiveProgress = await screen.findByLabelText(
+        "Auto-archive progress for Open retention session",
+        {},
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+      );
+      const archiveBar = archiveProgress.firstElementChild as HTMLElement | null;
+
+      expect(archiveBar).not.toBeNull();
+      expect(archiveBar?.className).toContain("bg-sky-400");
+      expect(Number.parseInt(archiveBar?.style.width ?? "0", 10)).toBeGreaterThan(
+        0,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Scope: Archived" }));
+
+      const deleteProgress = await screen.findByLabelText(
+        "Auto-delete progress for Archived retention session",
+      );
+      const deleteBar = deleteProgress.firstElementChild as HTMLElement | null;
+
+      expect(deleteBar).not.toBeNull();
+      expect(deleteBar?.className).toContain("bg-rose-400");
+      expect(Number.parseInt(deleteBar?.style.width ?? "0", 10)).toBeGreaterThan(
+        0,
+      );
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "applies session retention cleanup on startup",
+    async () => {
+      const loadUserDesktopSettingsSpy = vi
+        .spyOn(runtime, "loadUserDesktopSettings")
+        .mockResolvedValue({
+          ...DEFAULT_USER_DESKTOP_SETTINGS,
+          inactiveSessionArchiveDays: 1,
+          archivedSessionRetentionDays: 1,
+        });
+      const baseState = createInitialShellState();
+      const now = Date.now();
+      const freshSession = createSession({
+        id: "fresh-retention-session",
+        manualTitle: "Fresh retention session",
+        updatedAt: now - 10_000,
+      });
+      const staleOpenSession = createSession({
+        id: "stale-open-retention-session",
+        manualTitle: "Stale open retention session",
+        updatedAt: now - 2 * SESSION_RETENTION_DAY_MS,
+      });
+      const expiredArchivedSession = createSession({
+        id: "expired-archived-retention-session",
+        manualTitle: "Expired archived retention session",
+        archivedAt: now - 2 * SESSION_RETENTION_DAY_MS,
+        updatedAt: now - 2 * SESSION_RETENTION_DAY_MS,
+      });
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: freshSession.id,
+        sessions: [
+          freshSession,
+          staleOpenSession,
+          expiredArchivedSession,
+        ],
+      });
+
+      render(<ChatSession />);
+
+      await waitFor(
+        () => {
+          expect(
+            screen.getByRole("button", {
+              name: "Open session Fresh retention session",
+            }),
+          ).toBeDefined();
+          expect(
+            screen.queryByRole("button", {
+              name: "Open session Stale open retention session",
+            }),
+          ).toBeNull();
+        },
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Scope: Archived" }));
+
+      expect(
+        await screen.findByRole("button", {
+          name: "Open session Stale open retention session",
+        }),
+      ).toBeDefined();
+      expect(
+        screen.queryByRole("button", {
+          name: "Open session Expired archived retention session",
+        }),
+      ).toBeNull();
+
+      loadUserDesktopSettingsSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "keeps Quick Chat visible at the top without pin or duplicate actions",
+    async () => {
+      const baseState = createInitialShellState();
+      const now = Date.now();
+      const quickSession = createSession({
+        id: "quick-sidebar-session",
+        specialSession: QUICK_VOICE_SESSION_KIND,
+        updatedAt: now - 100_000,
+      });
+      const pinnedSession = createSession({
+        id: "pinned-sidebar-session",
+        manualTitle: "Pinned session",
+        pinnedAt: now - 500,
+        updatedAt: now - 50_000,
+      });
+      const recentSession = createSession({
+        id: "recent-sidebar-session",
+        manualTitle: "Recent session",
+        updatedAt: now,
+      });
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: recentSession.id,
+        sessions: [recentSession, pinnedSession, quickSession],
+      });
+
+      render(<ChatSession />);
+
+      await waitFor(() => {
+        expect(getVisibleSessionButtonLabels()).toEqual([
+          "Open session Quick Chat",
+          "Open session Pinned session",
+          "Open session Recent session",
+        ]);
+      });
+
+      const quickRow = getSessionRow("Quick Chat");
+
+      expect(
+        within(quickRow).queryByRole("button", {
+          name: /^(Pin|Unpin) Quick Chat$/i,
+        }),
+      ).toBeNull();
+      expect(
+        within(quickRow).queryByRole("button", {
+          name: "Duplicate Quick Chat",
+        }),
+      ).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "Status: Running" }));
+
+      await waitFor(() => {
+        expect(getVisibleSessionButtonLabels()).toEqual([
+          "Open session Quick Chat",
+        ]);
+      });
+
+      fireEvent.change(screen.getByLabelText("Search sessions"), {
+        target: { value: "nothing matches quick chat either" },
+      });
+
+      await waitFor(() => {
+        expect(getVisibleSessionButtonLabels()).toEqual([
+          "Open session Quick Chat",
+        ]);
+      });
     },
     SLOW_UI_TEST_TIMEOUT_MS,
   );
@@ -2635,18 +3082,19 @@ describe("ChatSession component", () => {
 
   it("keeps the Quick Chat model independent from the helper window active session", async () => {
     const baseState = createInitialShellState();
+    const now = Date.now();
     const mainSession = createSession({
       id: "main-model-session",
       provider: "openai",
       model: "gpt-5.4",
-      updatedAt: 1_713_260_000_000,
+      updatedAt: now - 10_000,
     });
     const quickSession = createSession({
       id: "quick-model-session",
       specialSession: QUICK_VOICE_SESSION_KIND,
       provider: "openai",
       model: "gpt-5.5",
-      updatedAt: 1_713_260_010_000,
+      updatedAt: now,
     });
     const runDesktopTaskSpy = vi
       .spyOn(runtime, "runDesktopTask")
