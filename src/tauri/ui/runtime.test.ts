@@ -13,6 +13,7 @@ import {
   loadProviderModelCatalog,
   resolveDroppedPaths,
   runDesktopTask,
+  saveClipboardImageAttachment,
   saveUserSpeechToTextInputDevice,
 } from "./runtime";
 
@@ -124,6 +125,26 @@ describe("desktop runtime fullscreen detection", () => {
     });
     expect(invokeMock).toHaveBeenCalledWith("resolve_dropped_paths", {
       paths: ["C:\\Docs\\notes.md"],
+    });
+  });
+
+  it("saves clipboard image attachments through the Rust command", async () => {
+    invokeMock.mockResolvedValueOnce("C:\\Temp\\clipboard-image.png");
+
+    await expect(
+      saveClipboardImageAttachment({
+        blob: new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
+        mediaType: "image/png",
+        fileName: "clipboard-image.png",
+      }),
+    ).resolves.toBe("C:\\Temp\\clipboard-image.png");
+
+    expect(invokeMock).toHaveBeenCalledWith("save_clipboard_image_attachment", {
+      request: {
+        dataBase64: "AQID",
+        mediaType: "image/png",
+        fileName: "clipboard-image.png",
+      },
     });
   });
 

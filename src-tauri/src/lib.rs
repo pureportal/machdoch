@@ -94,6 +94,7 @@ pub fn run() {
             desktop_task::open_workspace_path,
             desktop_task::resolve_dropped_paths,
             desktop_task::run_desktop_task,
+            desktop_task::save_clipboard_image_attachment,
             runtime_snapshot::get_user_desktop_settings,
             runtime_snapshot::get_user_agent_limits_settings,
             runtime_snapshot::get_global_provider_availability,

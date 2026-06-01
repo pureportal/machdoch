@@ -63,6 +63,7 @@ export interface SessionComposerProps {
   onSelectContextFiles: () => Promise<void>;
   onSelectContextFolders: () => Promise<void>;
   onSelectContextImages: () => Promise<void>;
+  onPasteContextImages: (files: File[]) => Promise<void>;
   onRemoveContextAttachment: (attachmentId: string) => void;
   onClearContextAttachments: () => void;
   onDraftChange: (value: string) => void;
@@ -104,6 +105,7 @@ export const SessionComposer = ({
   onSelectContextFiles,
   onSelectContextFolders,
   onSelectContextImages,
+  onPasteContextImages,
   onRemoveContextAttachment,
   onClearContextAttachments,
   onDraftChange,
@@ -257,6 +259,7 @@ export const SessionComposer = ({
       onSelectContextFiles={onSelectContextFiles}
       onSelectContextFolders={onSelectContextFolders}
       onSelectContextImages={onSelectContextImages}
+      onPasteContextImages={onPasteContextImages}
       onRemoveContextAttachment={onRemoveContextAttachment}
       onClearContextAttachments={onClearContextAttachments}
       onDraftChange={onDraftChange}

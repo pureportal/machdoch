@@ -1137,7 +1137,13 @@ describe("ChatSession component", () => {
 
       fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
 
-      expect(await screen.findByText(/Model provider keys/i)).toBeDefined();
+      expect(
+        await screen.findByText(
+          /Model provider keys/i,
+          undefined,
+          { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+        ),
+      ).toBeDefined();
 
       fireEvent.click(screen.getByRole("button", { name: /^Web search$/i }));
 
@@ -2724,6 +2730,101 @@ describe("ChatSession component", () => {
     runDesktopTaskSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
+  it("adds pasted clipboard images to the main composer", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "clipboard-image-paste-session",
+      workspace: "C:\\Project",
+    });
+    const pastedImage = new File(["image"], "clipboard-image.png", {
+      type: "image/png",
+    });
+    const saveClipboardImageAttachmentSpy = vi
+      .spyOn(runtime, "saveClipboardImageAttachment")
+      .mockResolvedValue("C:\\Temp\\clipboard-image.png");
+    const resolveDroppedPathsSpy = vi
+      .spyOn(runtime, "resolveDroppedPaths")
+      .mockResolvedValue({
+        workspaceRoot: "C:\\Temp",
+        entries: [
+          {
+            path: "C:\\Temp\\clipboard-image.png",
+            kind: "file",
+            name: "clipboard-image.png",
+            parent: "C:\\Temp",
+          },
+        ],
+      });
+    const runDesktopTaskSpy = vi.spyOn(runtime, "runDesktopTask").mockResolvedValue({
+      execution: createMockExecutionFixture(
+        'Describe the pasted image\n\nUse this image: "C:\\Temp\\clipboard-image.png"',
+        "C:\\Project",
+      ),
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    render(<ChatSession />);
+    await flushShellHydration();
+
+    const input = screen.getByPlaceholderText(
+      /What should machdoch do next\?/i,
+    ) as HTMLTextAreaElement;
+
+    fireEvent.paste(input, {
+      clipboardData: {
+        files: [pastedImage],
+        items: [
+          {
+            kind: "file",
+            type: "image/png",
+            getAsFile: () => pastedImage,
+          },
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      const attachedContext = screen.getByRole("list", {
+        name: "Attached context",
+      });
+
+      expect(within(attachedContext).getByText("clipboard-image.png")).toBeDefined();
+      expect(within(attachedContext).getByText("image")).toBeDefined();
+    });
+    expect(saveClipboardImageAttachmentSpy).toHaveBeenCalledWith({
+      blob: pastedImage,
+      mediaType: "image/png",
+      fileName: "clipboard-image.png",
+    });
+    expect(resolveDroppedPathsSpy).toHaveBeenCalledWith([
+      "C:\\Temp\\clipboard-image.png",
+    ]);
+
+    fireEvent.change(input, {
+      target: { value: "Describe the pasted image" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => {
+      expect(runDesktopTaskSpy).toHaveBeenCalledWith(
+        "C:\\Project",
+        'Describe the pasted image\n\nUse this image: "C:\\Temp\\clipboard-image.png"',
+        expect.objectContaining({
+          imagePaths: ["C:\\Temp\\clipboard-image.png"],
+        }),
+      );
+    });
+
+    saveClipboardImageAttachmentSpy.mockRestore();
+    resolveDroppedPathsSpy.mockRestore();
+    runDesktopTaskSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
   it("removes all attached context from the main composer", async () => {
     const baseState = createInitialShellState();
     const session = createSession({
@@ -3339,6 +3440,63 @@ describe("ChatSession component", () => {
 
     resolveDroppedPathsSpy.mockRestore();
     runDesktopTaskSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("adds pasted clipboard images to the Quick Chat composer", async () => {
+    const pastedImage = new File(["image"], "quick-clipboard.png", {
+      type: "image/png",
+    });
+    const saveClipboardImageAttachmentSpy = vi
+      .spyOn(runtime, "saveClipboardImageAttachment")
+      .mockResolvedValue("C:\\Temp\\quick-clipboard.png");
+    const resolveDroppedPathsSpy = vi
+      .spyOn(runtime, "resolveDroppedPaths")
+      .mockResolvedValue({
+        workspaceRoot: "C:\\Temp",
+        entries: [
+          {
+            path: "C:\\Temp\\quick-clipboard.png",
+            kind: "file",
+            name: "quick-clipboard.png",
+            parent: "C:\\Temp",
+          },
+        ],
+      });
+
+    render(<AssistantPopupShell />);
+
+    const input = (await screen.findByPlaceholderText(
+      /Quick Chat/i,
+    )) as HTMLTextAreaElement;
+
+    fireEvent.paste(input, {
+      clipboardData: {
+        files: [pastedImage],
+        items: [
+          {
+            kind: "file",
+            type: "image/png",
+            getAsFile: () => pastedImage,
+          },
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("quick-clipboard.png")).toBeDefined();
+      expect(screen.getByText("image")).toBeDefined();
+    });
+    expect(saveClipboardImageAttachmentSpy).toHaveBeenCalledWith({
+      blob: pastedImage,
+      mediaType: "image/png",
+      fileName: "quick-clipboard.png",
+    });
+    expect(resolveDroppedPathsSpy).toHaveBeenCalledWith([
+      "C:\\Temp\\quick-clipboard.png",
+    ]);
+
+    saveClipboardImageAttachmentSpy.mockRestore();
+    resolveDroppedPathsSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("removes all attached context from the Quick Chat composer", async () => {

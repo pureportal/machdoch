@@ -9,10 +9,15 @@ import {
 } from "react";
 import {
   createImageInputUnsupportedModelMessage,
+  getImageInputMediaTypeForPath,
   getSupportedImageInputExtensions,
   modelSupportsImageInput,
+  providerSupportsImageInputMediaType,
 } from "../../../../core/model-capabilities.js";
-import type { RunMode } from "../../../../core/types.js";
+import type {
+  AgentModelImageMediaType,
+  RunMode,
+} from "../../../../core/types.js";
 import {
   canDeleteSession,
   canRenameSession,
@@ -36,6 +41,7 @@ import {
   cancelDesktopTask,
   openWorkspacePath,
   resolveDroppedPaths,
+  saveClipboardImageAttachment,
 } from "../../runtime";
 import {
   appendThinkingProgress,
@@ -81,6 +87,26 @@ export interface UseChatSessionControllerOptions {
   enableSessionAutoProfile?: boolean;
   fileDropTarget?: FileDropTarget;
 }
+
+const CLIPBOARD_IMAGE_MEDIA_TYPES: readonly AgentModelImageMediaType[] = [
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
+
+const getClipboardImageMediaType = (
+  file: File,
+): AgentModelImageMediaType | null => {
+  const normalizedMediaType = file.type.trim().toLowerCase();
+  const mediaType = CLIPBOARD_IMAGE_MEDIA_TYPES.find(
+    (candidate) => candidate === normalizedMediaType,
+  );
+
+  return mediaType ?? getImageInputMediaTypeForPath(file.name) ?? null;
+};
 
 export const useChatSessionController = (
   options: UseChatSessionControllerOptions = {},
@@ -861,9 +887,14 @@ export const useChatSessionController = (
   );
 
   const handleAttachPaths = useCallback(
-    async (paths: string[], target: FileDropTarget): Promise<void> => {
+    async (
+      paths: string[],
+      target: FileDropTarget,
+      options: { updateWorkspaceRoot?: boolean } = {},
+    ): Promise<void> => {
       const resolution = await resolveDroppedPaths(paths);
       const attachments = resolution.entries.map(createContextAttachment);
+      const shouldUpdateWorkspaceRoot = options.updateWorkspaceRoot !== false;
 
       if (attachments.length === 0) {
         return;
@@ -874,7 +905,7 @@ export const useChatSessionController = (
           mergeContextAttachments(currentAttachments, attachments),
         );
 
-        if (resolution.workspaceRoot) {
+        if (shouldUpdateWorkspaceRoot && resolution.workspaceRoot) {
           updateQuickTaskSession((session) => ({
             ...session,
             workspace: resolution.workspaceRoot,
@@ -895,7 +926,7 @@ export const useChatSessionController = (
         updatedAt: Date.now(),
       }));
 
-      if (resolution.workspaceRoot) {
+      if (shouldUpdateWorkspaceRoot && resolution.workspaceRoot) {
         state.updateActiveSession((session) => ({
           ...session,
           workspace: resolution.workspaceRoot,
@@ -980,6 +1011,65 @@ export const useChatSessionController = (
     [
       handleAttachPaths,
       isDesktop,
+      quickTaskModel,
+      quickTaskProvider,
+      state.activeSession.model,
+      state.activeSession.provider,
+    ],
+  );
+
+  const handlePasteContextImages = useCallback(
+    async (target: FileDropTarget, files: File[]): Promise<void> => {
+      const targetProvider =
+        target === "quick-task"
+          ? quickTaskProvider
+          : state.activeSession.provider;
+      const targetModel =
+        target === "quick-task" ? quickTaskModel : state.activeSession.model;
+
+      if (!modelSupportsImageInput(targetProvider, targetModel)) {
+        console.error(
+          createImageInputUnsupportedModelMessage(targetProvider, targetModel),
+        );
+        return;
+      }
+
+      const supportedFiles = files.flatMap((file) => {
+        const mediaType = getClipboardImageMediaType(file);
+
+        if (
+          !mediaType ||
+          !providerSupportsImageInputMediaType(targetProvider, mediaType)
+        ) {
+          console.error(
+            `Unsupported pasted image format \`${file.type || file.name || "unknown"}\`. Supported extensions for provider \`${targetProvider}\`: ${getSupportedImageInputExtensions(
+              targetProvider,
+            ).join(", ")}.`,
+          );
+          return [];
+        }
+
+        return [{ file, mediaType }];
+      });
+
+      if (supportedFiles.length === 0) {
+        return;
+      }
+
+      const paths = await Promise.all(
+        supportedFiles.map(({ file, mediaType }) =>
+          saveClipboardImageAttachment({
+            blob: file,
+            mediaType,
+            fileName: file.name,
+          }),
+        ),
+      );
+
+      await handleAttachPaths(paths, target, { updateWorkspaceRoot: false });
+    },
+    [
+      handleAttachPaths,
       quickTaskModel,
       quickTaskProvider,
       state.activeSession.model,
@@ -1357,6 +1447,8 @@ export const useChatSessionController = (
         handleSelectAttachments("active-session", "folders"),
       onSelectContextImages: () =>
         handleSelectAttachments("active-session", "images"),
+      onPasteContextImages: (files: File[]) =>
+        handlePasteContextImages("active-session", files),
       onRemoveContextAttachment: (attachmentId: string) =>
         handleRemoveContextAttachment("active-session", attachmentId),
       onClearContextAttachments: () =>
@@ -1398,6 +1490,8 @@ export const useChatSessionController = (
         handleSelectAttachments("quick-task", "folders"),
       onSelectContextImages: () =>
         handleSelectAttachments("quick-task", "images"),
+      onPasteContextImages: (files: File[]) =>
+        handlePasteContextImages("quick-task", files),
       onRemoveContextAttachment: (attachmentId: string) =>
         handleRemoveContextAttachment("quick-task", attachmentId),
       onClearContextAttachments: () =>

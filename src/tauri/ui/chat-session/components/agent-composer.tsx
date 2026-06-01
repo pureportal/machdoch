@@ -1,5 +1,6 @@
 import { SendHorizonal, Square } from "lucide-react";
 import type {
+  ClipboardEvent,
   JSX,
   KeyboardEvent,
   ReactNode,
@@ -68,6 +69,7 @@ export interface AgentComposerProps {
   onSelectContextFiles: () => Promise<void>;
   onSelectContextFolders: () => Promise<void>;
   onSelectContextImages: () => Promise<void>;
+  onPasteContextImages: (files: File[]) => Promise<void>;
   onRemoveContextAttachment: (attachmentId: string) => void;
   onClearContextAttachments: () => void;
   onDraftChange: (value: string) => void;
@@ -168,6 +170,27 @@ const renderAction = (
   );
 };
 
+const getClipboardImageFiles = (
+  event: ClipboardEvent<HTMLTextAreaElement>,
+): File[] => {
+  const clipboardData = event.clipboardData;
+  const itemFiles = Array.from(clipboardData.items)
+    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+    .flatMap((item) => {
+      const file = item.getAsFile();
+
+      return file ? [file] : [];
+    });
+
+  if (itemFiles.length > 0) {
+    return itemFiles;
+  }
+
+  return Array.from(clipboardData.files).filter((file) =>
+    file.type.startsWith("image/"),
+  );
+};
+
 export const AgentComposer = ({
   variant,
   draft,
@@ -191,6 +214,7 @@ export const AgentComposer = ({
   onSelectContextFiles,
   onSelectContextFolders,
   onSelectContextImages,
+  onPasteContextImages,
   onRemoveContextAttachment,
   onClearContextAttachments,
   onDraftChange,
@@ -219,6 +243,27 @@ export const AgentComposer = ({
     onAdditionalTextareaKeyDown?.(event);
   };
 
+  const handleTextareaPaste = (
+    event: ClipboardEvent<HTMLTextAreaElement>,
+  ): void => {
+    const imageFiles = getClipboardImageFiles(event);
+
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (!imageInputSupported) {
+      console.error(imageInputDisabledReason ?? "Image input is unavailable.");
+      return;
+    }
+
+    void onPasteContextImages(imageFiles).catch((error) => {
+      console.error("Failed to attach pasted image", error);
+    });
+  };
+
   const attachmentMenu = (
     <ContextAttachmentMenuButton
       onSelectFiles={onSelectContextFiles}
@@ -238,6 +283,7 @@ export const AgentComposer = ({
       value={draft}
       onChange={(event) => onDraftChange(event.target.value)}
       onKeyDown={handleTextareaKeyDown}
+      onPaste={handleTextareaPaste}
       placeholder={placeholder}
       className={styles.textarea}
     />

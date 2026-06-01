@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
+  AgentModelImageMediaType,
   ConversationMemoryEntry,
   TaskConversationContext,
   TaskActionOutput,
@@ -147,6 +148,12 @@ export interface DroppedPathsResolution {
   workspaceRoot: string | null;
 }
 
+export interface ClipboardImageAttachmentInput {
+  blob: Blob;
+  mediaType?: AgentModelImageMediaType;
+  fileName?: string;
+}
+
 export interface SynthesizedVoiceAudio {
   provider: UserVoiceAiProvider;
   mimeType: string;
@@ -181,6 +188,17 @@ export interface DesktopTaskProgressEvent {
 
 const DEFAULT_MOCK_WORKSPACE_ROOT = "/mock/home/path";
 const DESKTOP_TASK_PROGRESS_EVENT = "desktop-task-progress";
+const CLIPBOARD_IMAGE_EXTENSION_BY_MEDIA_TYPE: Record<
+  AgentModelImageMediaType,
+  string
+> = {
+  "image/gif": "gif",
+  "image/heic": "heic",
+  "image/heif": "heif",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
 const TASK_EXECUTION_PROGRESS_STATES = [
   "starting",
   "resolving-context",
@@ -572,6 +590,46 @@ const createFallbackDroppedPathsResolution = (
     entries,
     workspaceRoot: entries[0]?.parent ?? null,
   };
+};
+
+const normalizeClipboardImageMediaType = (
+  mediaType: string | undefined,
+): AgentModelImageMediaType | undefined => {
+  const normalizedMediaType = mediaType?.trim().toLowerCase();
+
+  return normalizedMediaType &&
+    normalizedMediaType in CLIPBOARD_IMAGE_EXTENSION_BY_MEDIA_TYPE
+    ? (normalizedMediaType as AgentModelImageMediaType)
+    : undefined;
+};
+
+const getFallbackClipboardImagePath = (
+  mediaType: AgentModelImageMediaType,
+  fileName: string | undefined,
+): string => {
+  const normalizedFileName = fileName?.trim();
+
+  return `/mock/${normalizedFileName || `clipboard-image.${CLIPBOARD_IMAGE_EXTENSION_BY_MEDIA_TYPE[mediaType]}`}`;
+};
+
+const encodeBinaryStringAsBase64 = (binary: string): string => {
+  if (typeof btoa === "function") {
+    return btoa(binary);
+  }
+
+  return Buffer.from(binary, "binary").toString("base64");
+};
+
+const blobToBase64 = async (blob: Blob): Promise<string> => {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const chunkSize = 32_768;
+  let binary = "";
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+
+  return encodeBinaryStringAsBase64(binary);
 };
 
 const emitDesktopSettingsChanged = async (
@@ -1189,6 +1247,35 @@ export const openWorkspacePath = async (
     await tauriCore.invoke("open_workspace_path", {
       workspaceRoot: normalizedWorkspaceRoot ?? "",
       relativePath: normalizedRelativePath,
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const saveClipboardImageAttachment = async (
+  input: ClipboardImageAttachmentInput,
+): Promise<string> => {
+  const mediaType =
+    input.mediaType ?? normalizeClipboardImageMediaType(input.blob.type);
+
+  if (!mediaType) {
+    throw new Error("Unsupported clipboard image format.");
+  }
+
+  const fileName = input.fileName?.trim() || undefined;
+
+  if (!canInvokeTauriCommands()) {
+    return getFallbackClipboardImagePath(mediaType, fileName);
+  }
+
+  try {
+    return await tauriCore.invoke<string>("save_clipboard_image_attachment", {
+      request: {
+        dataBase64: await blobToBase64(input.blob),
+        mediaType,
+        ...(fileName ? { fileName } : {}),
+      },
     });
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));

@@ -230,7 +230,7 @@ export const AssistantBubbleShell = () => {
             event.preventDefault();
             event.stopPropagation();
           }}
-          className="quick-chat-voice-button absolute bottom-0.5 left-0.5 z-20 flex h-8 w-8 items-center justify-center rounded-xl border border-violet-300/45 bg-violet-500 text-white shadow-none transition-colors duration-150 hover:bg-violet-400 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:hover:bg-slate-800"
+          className="quick-chat-voice-button absolute bottom-1 left-5 z-20 flex h-8 w-8 items-center justify-center rounded-xl border border-violet-300/45 bg-violet-500 text-white shadow-none transition-colors duration-150 hover:bg-violet-400 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:hover:bg-slate-800"
         >
           <Mic className="h-3.5 w-3.5" />
         </button>

@@ -10,6 +10,8 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
@@ -90,6 +92,14 @@ pub struct DroppedPathEntry {
 pub struct DroppedPathsResolution {
     entries: Vec<DroppedPathEntry>,
     workspace_root: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipboardImageAttachmentRequest {
+    data_base64: String,
+    media_type: String,
+    file_name: Option<String>,
 }
 
 struct CliCommandOptions<'a> {
@@ -269,6 +279,88 @@ fn resolve_dropped_paths_sync(paths: Vec<String>) -> DroppedPathsResolution {
         entries,
         workspace_root,
     }
+}
+
+fn clipboard_image_extension(media_type: &str) -> Option<&'static str> {
+    match media_type.trim().to_ascii_lowercase().as_str() {
+        "image/gif" => Some("gif"),
+        "image/heic" => Some("heic"),
+        "image/heif" => Some("heif"),
+        "image/jpeg" => Some("jpg"),
+        "image/png" => Some("png"),
+        "image/webp" => Some("webp"),
+        _ => None,
+    }
+}
+
+fn sanitize_clipboard_image_file_stem(file_name: Option<&str>) -> String {
+    let raw_stem = file_name
+        .and_then(|name| Path::new(name).file_stem())
+        .map(|stem| stem.to_string_lossy().to_string())
+        .unwrap_or_else(|| "clipboard-image".to_string());
+    let sanitized: String = raw_stem
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let normalized = sanitized.trim_matches(&['-', '.'][..]).trim();
+
+    if normalized.is_empty() {
+        "clipboard-image".to_string()
+    } else {
+        normalized.to_string()
+    }
+}
+
+fn save_clipboard_image_attachment_sync(
+    request: ClipboardImageAttachmentRequest,
+) -> Result<String, String> {
+    let extension = clipboard_image_extension(&request.media_type).ok_or_else(|| {
+        format!(
+            "Unsupported clipboard image media type `{}`.",
+            request.media_type.trim()
+        )
+    })?;
+    let image_bytes = BASE64_STANDARD
+        .decode(request.data_base64.trim())
+        .map_err(|error| format!("Failed to decode clipboard image data: {error}"))?;
+
+    if image_bytes.is_empty() {
+        return Err("Clipboard image data was empty.".to_string());
+    }
+
+    let output_directory = env::temp_dir().join("machdoch").join("clipboard-images");
+    fs::create_dir_all(&output_directory).map_err(|error| {
+        format!(
+            "Failed to create clipboard image directory {}: {error}",
+            output_directory.display()
+        )
+    })?;
+
+    let timestamp_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    let file_stem = sanitize_clipboard_image_file_stem(request.file_name.as_deref());
+    let output_path = output_directory.join(format!(
+        "{file_stem}-{timestamp_ms}-{}.{}",
+        std::process::id(),
+        extension
+    ));
+
+    fs::write(&output_path, image_bytes).map_err(|error| {
+        format!(
+            "Failed to save clipboard image attachment {}: {error}",
+            output_path.display()
+        )
+    })?;
+
+    Ok(format_path_for_ui(&output_path))
 }
 
 fn enrich_ui_control_conversation_context(
@@ -917,6 +1009,15 @@ pub async fn resolve_dropped_paths(paths: Vec<String>) -> Result<DroppedPathsRes
     tauri::async_runtime::spawn_blocking(move || resolve_dropped_paths_sync(paths))
         .await
         .map_err(|error| format!("The dropped path resolver stopped unexpectedly. {error}"))
+}
+
+#[tauri::command]
+pub async fn save_clipboard_image_attachment(
+    request: ClipboardImageAttachmentRequest,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || save_clipboard_image_attachment_sync(request))
+        .await
+        .map_err(|error| format!("The clipboard image saver stopped unexpectedly. {error}"))?
 }
 
 #[cfg(test)]

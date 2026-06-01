@@ -233,6 +233,7 @@ const QuickTaskComposer = ({
       onSelectContextFiles={quickTaskComposer.onSelectContextFiles}
       onSelectContextFolders={quickTaskComposer.onSelectContextFolders}
       onSelectContextImages={quickTaskComposer.onSelectContextImages}
+      onPasteContextImages={quickTaskComposer.onPasteContextImages}
       onRemoveContextAttachment={quickTaskComposer.onRemoveContextAttachment}
       onClearContextAttachments={quickTaskComposer.onClearContextAttachments}
       onDraftChange={quickTaskComposer.onDraftChange}
