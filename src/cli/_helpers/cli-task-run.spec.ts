@@ -274,13 +274,13 @@ describe("interactive paste helpers", () => {
     expect(parseInteractivePasteCommand("/paste")).toEqual({
       recognized: true,
     });
-    expect(parseInteractivePasteCommand("/paste plan")).toEqual({
+    expect(parseInteractivePasteCommand("/paste machdoch")).toEqual({
       recognized: true,
-      mode: "plan",
+      mode: "machdoch",
     });
     expect(parseInteractivePasteCommand("/paste beta")).toEqual({
       recognized: true,
-      error: "Usage: /paste [plan|safe|ask|auto]",
+      error: "Usage: /paste [ask|machdoch]",
     });
   });
 

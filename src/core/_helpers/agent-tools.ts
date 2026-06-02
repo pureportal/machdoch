@@ -46,74 +46,57 @@ export interface AgentLoopSnapshot {
   traceLines: string[];
 }
 
-const PLAN_MODE_READ_EFFECTS: ReadonlySet<ToolCallEffect> = new Set([
+const READ_ONLY_EFFECTS: ReadonlySet<ToolCallEffect> = new Set([
   "read",
   "external-read",
 ]);
 
-const isPlanModeReadOnlyEffect = (effect: ToolCallEffect): boolean => {
-  return PLAN_MODE_READ_EFFECTS.has(effect);
+const isReadOnlyEffect = (effect: ToolCallEffect): boolean => {
+  return READ_ONLY_EFFECTS.has(effect);
+};
+
+const isReadOnlyAction = (
+  effect: ToolCallEffect,
+  isReadOnlyOverride?: boolean,
+): boolean => {
+  return isReadOnlyEffect(effect) || isReadOnlyOverride === true;
 };
 
 export const resolveActionDecision = (
   config: RuntimeConfig,
-  tool: ToolName,
-  riskLevel: ToolRiskLevel,
+  _tool: ToolName,
+  _riskLevel: ToolRiskLevel,
   options: {
     effect?: ToolCallEffect;
     isReadOnlyInPlanMode?: boolean;
   } = {},
 ): { decision: "allow" | "ask" | "blocked"; reason: string } => {
-  if (!config.enabledTools.includes(tool)) {
+  const isReadOnly = isReadOnlyAction(
+    options.effect ?? "external-side-effect",
+    options.isReadOnlyInPlanMode,
+  );
+
+  if (config.mode === "ask" && !isReadOnly) {
     return {
       decision: "blocked",
       reason:
-        "This tool is not enabled in `.machdoch/config.json`, so the runtime refused to execute it.",
-    };
-  }
-
-  if (config.mode === "plan") {
-    if (
-      (options.effect && isPlanModeReadOnlyEffect(options.effect)) ||
-      options.isReadOnlyInPlanMode === true
-    ) {
-      return {
-        decision: "allow",
-        reason:
-          "Plan mode allows read-only information gathering before a proposed plan is approved.",
-      };
-    }
-
-    return {
-      decision: "ask",
-      reason:
-        "Plan mode pauses before state-changing or ambiguous actions so the user can validate the plan first.",
-    };
-  }
-
-  if (config.mode === "safe") {
-    return {
-      decision: "ask",
-      reason:
-        "Safe mode never auto-executes tools; explicit approval is required first.",
-    };
-  }
-
-  if (config.mode === "ask" && riskLevel !== "low") {
-    return {
-      decision: "ask",
-      reason:
-        "This action is medium/high risk and requires approval in ask mode before execution.",
+        "Ask mode only allows read-only function calls. Switch to machdoch mode to let the agent change files, run side-effecting commands, drive UI input, or mutate external state.",
     };
   }
 
   return {
     decision: "allow",
     reason:
-      config.mode === "auto"
-        ? "Auto mode allows enabled tools to run automatically within the workspace policy."
-        : "This action is low risk and can proceed automatically in ask mode.",
+      config.mode === "ask"
+        ? "Ask mode allows this read-only function call."
+        : "Machdoch mode allows function calls to run automatically.",
   };
+};
+
+const isReadOnlyToolDefinition = (
+  definition: AgentToolDefinition,
+): boolean => {
+  return isReadOnlyAction(definition.effect);
 };
 
 const createApprovalPause = (
@@ -158,7 +141,7 @@ export const createToolDefinitions = (
   memory: ConversationMemoryRuntime,
   uiControl?: UiControlRuntimeInfo,
 ): AgentToolDefinition[] => {
-  return [
+  const definitions = [
     ...createFilesystemToolDefinitions(),
     ...createGitToolDefinitions(),
     ...createPackageToolDefinitions(),
@@ -168,6 +151,12 @@ export const createToolDefinitions = (
     ...createMemoryToolDefinitions(memory),
     ...createDesktopUiToolDefinitions(uiControl),
   ];
+
+  if (config.mode === "ask") {
+    return definitions.filter(isReadOnlyToolDefinition);
+  }
+
+  return definitions;
 };
 
 export const executeToolCall = async (

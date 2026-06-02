@@ -435,7 +435,7 @@ fn create_bridge_progress(
 ) -> Value {
     json!({
         "task": task,
-        "mode": mode.unwrap_or("ask"),
+        "mode": mode.unwrap_or("machdoch"),
         "state": state,
         "message": message,
         "executedTools": [],

@@ -13,7 +13,6 @@ const createRuntimeConfig = (
     workspaceRoot: "c:/Development/machdoch",
     availableProfiles: [],
     mode: "ask",
-    enabledTools: ["filesystem", "shell"],
     provider: "unconfigured",
     model: "gpt-5.5",
     offline: false,
@@ -37,32 +36,10 @@ const memory: ConversationMemoryRuntime = {
 };
 
 describe("resolveActionDecision", () => {
-  it("blocks disabled tools before checking mode", () => {
-    const decision = resolveActionDecision(
-      createRuntimeConfig({ enabledTools: ["filesystem"] }),
-      "shell",
-      "low",
-    );
-
-    expect(decision.decision).toBe("blocked");
-    expect(decision.reason).toContain("not enabled");
-  });
-
-  it("always requires approval in safe mode", () => {
-    const decision = resolveActionDecision(
-      createRuntimeConfig({ mode: "safe" }),
-      "filesystem",
-      "low",
-    );
-
-    expect(decision.decision).toBe("ask");
-    expect(decision.reason).toContain("Safe mode");
-  });
-
-  it("allows read-only actions and pauses writes in plan mode", () => {
+  it("allows read-only actions and blocks writes in ask mode", () => {
     expect(
       resolveActionDecision(
-        createRuntimeConfig({ mode: "plan" }),
+        createRuntimeConfig({ mode: "ask" }),
         "filesystem",
         "low",
         { effect: "read" },
@@ -70,42 +47,26 @@ describe("resolveActionDecision", () => {
     ).toBe("allow");
 
     const writeDecision = resolveActionDecision(
-      createRuntimeConfig({ mode: "plan" }),
+      createRuntimeConfig({ mode: "ask" }),
       "filesystem",
       "low",
       { effect: "write" },
     );
 
-    expect(writeDecision.decision).toBe("ask");
-    expect(writeDecision.reason).toContain("Plan mode");
+    expect(writeDecision.decision).toBe("blocked");
+    expect(writeDecision.reason).toContain("Ask mode");
   });
 
-  it("allows only low-risk enabled tools in ask mode", () => {
-    expect(
-      resolveActionDecision(createRuntimeConfig(), "filesystem", "low")
-        .decision,
-    ).toBe("allow");
-    expect(
-      resolveActionDecision(createRuntimeConfig(), "shell", "high").decision,
-    ).toBe("ask");
-    expect(
-      resolveActionDecision(
-        createRuntimeConfig({ enabledTools: ["utilities"] }),
-        "utilities",
-        "low",
-      ).decision,
-    ).toBe("allow");
-  });
-
-  it("allows enabled tools in auto mode", () => {
+  it("allows side-effecting function calls in machdoch mode", () => {
     const decision = resolveActionDecision(
-      createRuntimeConfig({ mode: "auto", enabledTools: ["network"] }),
+      createRuntimeConfig({ mode: "machdoch" }),
       "network",
       "medium",
+      { effect: "external-side-effect" },
     );
 
     expect(decision.decision).toBe("allow");
-    expect(decision.reason).toContain("Auto mode");
+    expect(decision.reason).toContain("Machdoch mode");
   });
 });
 

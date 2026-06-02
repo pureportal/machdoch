@@ -181,9 +181,9 @@ const QuickTaskComposer = ({
       isExecuting={quickTaskComposer.isExecuting}
       toggles={[
         {
-          id: "autopilot",
-          label: "Autopilot",
-          title: "Autopilot",
+          id: "machdoch",
+          label: "Machdoch",
+          title: "Machdoch",
           icon: <WandSparkles className="h-3.5 w-3.5" />,
           pressed: quickTaskComposer.autopilotEnabled,
           onPressedChange: quickTaskComposer.onAutopilotChange,

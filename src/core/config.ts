@@ -13,8 +13,6 @@ import { normalizeAgentLimitOverrides } from "./_helpers/agent-runtime-types.js"
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_MODEL_PROVIDER,
-  DEFAULT_TOOLS,
-  VALID_TOOLS,
   VALID_WEB_SEARCH_PROVIDERS,
   isConfiguredModelProvider,
   isRunMode as isRuntimeSchemaRunMode,
@@ -26,7 +24,6 @@ import type {
   RunMode,
   RuntimeConfig,
   RuntimeProfileSummary,
-  ToolName,
   WebSearchProvider,
   WebSearchProviderAvailability,
   WorkspaceConfigFile,
@@ -47,22 +44,6 @@ const isModelProvider = (
   value: string | undefined,
 ): value is Exclude<ModelProvider, "unconfigured"> => {
   return isConfiguredModelProvider(value);
-};
-
-/**
- * Normalizes configured tool names and falls back to the default tool set.
- */
-const normalizeTools = (tools: unknown): ToolName[] => {
-  if (!Array.isArray(tools)) {
-    return [...DEFAULT_TOOLS];
-  }
-
-  const normalized = tools.filter(
-    (tool): tool is ToolName =>
-      typeof tool === "string" && VALID_TOOLS.includes(tool as ToolName),
-  );
-
-  return normalized.length > 0 ? normalized : [...DEFAULT_TOOLS];
 };
 
 /**
@@ -160,7 +141,7 @@ export const saveWorkspaceDefaultMode = async (
   const normalizedMode = normalizeOptionalString(mode);
 
   if (!normalizedMode || !isRunMode(normalizedMode)) {
-    throw new Error("Expected workspace.mode to be one of plan, safe, ask, or auto.");
+    throw new Error("Expected workspace.mode to be one of ask or machdoch.");
   }
 
   return saveWorkspaceConfigFile(workspaceRoot, {
@@ -245,7 +226,6 @@ const mergeProfileIntoConfig = (
   return {
     ...config,
     ...(profile.mode ? { defaultMode: profile.mode } : {}),
-    ...(profile.enabledTools ? { enabledTools: profile.enabledTools } : {}),
     ...(profile.provider ? { provider: profile.provider } : {}),
     ...(profile.model ? { model: profile.model } : {}),
     ...(typeof profile.offline === "boolean"
@@ -400,8 +380,11 @@ export const loadRuntimeConfig = async (
   const modeFromEnv = isRunMode(env.MACHDOCH_MODE)
     ? env.MACHDOCH_MODE
     : undefined;
+  const configuredMode = isRunMode(effectiveConfig.defaultMode)
+    ? effectiveConfig.defaultMode
+    : undefined;
   const mode =
-    overrideMode ?? modeFromEnv ?? effectiveConfig.defaultMode ?? "ask";
+    overrideMode ?? modeFromEnv ?? configuredMode ?? "machdoch";
   const provider = resolveProvider(
     overrideProvider ?? effectiveConfig.provider,
     providerAvailability,
@@ -427,7 +410,6 @@ export const loadRuntimeConfig = async (
     ...(activeProfile ? { activeProfile } : {}),
     availableProfiles,
     mode,
-    enabledTools: normalizeTools(effectiveConfig.enabledTools),
     provider,
     model,
     offline,

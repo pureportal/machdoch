@@ -17,8 +17,7 @@ const createRuntimeConfig = (
   return {
     workspaceRoot: "c:/Development/machdoch",
     availableProfiles: [],
-    mode: "auto",
-    enabledTools: ["filesystem", "network"],
+    mode: "machdoch",
     provider: "openai",
     model: "gpt-5.5",
     offline: false,
@@ -56,7 +55,7 @@ const createTaskContext = (
 const createCycleResult = (): ExecutorCycleOutcome => {
   const result: TaskExecutionResult = {
     task: "Investigate online best practices and improve the autonomous coding agent.",
-    mode: "auto",
+    mode: "machdoch",
     status: "executed",
     summary: "Improved the agent prompts and runtime guard.",
     executedTools: ["network"],

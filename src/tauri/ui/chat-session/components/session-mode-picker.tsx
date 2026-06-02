@@ -55,8 +55,8 @@ export const SessionModePicker = ({
               Execution mode
             </p>
             <p className="text-sm leading-6 text-slate-400">
-              Switch between planning, safe, approval-first, and autopilot runs
-              without leaving the composer.
+              Switch between read-only Ask mode and full Machdoch mode without
+              leaving the composer.
             </p>
           </div>
 

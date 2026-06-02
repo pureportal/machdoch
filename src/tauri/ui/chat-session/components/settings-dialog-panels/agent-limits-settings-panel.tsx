@@ -114,8 +114,8 @@ export const AgentLimitsSettingsPanel = ({
         </SettingPanel>
 
         <SettingPanel
-          label="Autopilot iterations"
-          detail="Executor cycles allowed after monitor feedback."
+          label="Machdoch continuations"
+          detail="Executor cycles allowed after review feedback."
         >
           <Input
             type="number"

@@ -25,7 +25,6 @@ const createRuntimeSnapshot = (
     workspaceRoot: "c:/Development/machdoch",
     availableProfiles: [],
     mode: "ask",
-    enabledTools: ["filesystem", "shell"],
     provider: "openai",
     model: "gpt-5.5",
     offline: false,

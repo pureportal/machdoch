@@ -149,16 +149,16 @@ const createToolPolicies = (tools: ToolName[]): ResolvedToolPolicy[] => {
         return [
           createToolPolicy(
             shellTool,
-            "ask",
-            "Shell commands should stay approval-gated until the desktop shell can show a full audit trail.",
+            "allow",
+            "Machdoch mode can run shell-backed function calls automatically.",
           ),
         ];
       case "network":
         return [
           createToolPolicy(
             networkTool,
-            "ask",
-            "External fetches can have side effects and should remain approval-gated.",
+            "allow",
+            "Machdoch mode can use configured network function calls automatically.",
           ),
         ];
       default:
@@ -209,7 +209,7 @@ const createInvokedPrompt = (
     argumentHint: "Provide the prompt arguments inline.",
     inputs: ["task"],
     tools: ["filesystem", "shell"],
-    body: "Resolve the prompt input and stage the smallest safe next action.",
+    body: "Resolve the prompt input and stage the smallest observable next action.",
     arguments: argumentsText,
     expectedInputs: ["task"],
     inputValues: hasArguments ? { task: argumentsText } : {},
@@ -230,7 +230,7 @@ const createApplicableInstructions = (
       name: "Workspace defaults",
       path: ".machdoch/instructions.md",
       priority: 20,
-      body: "Keep changes small, verify the result, and surface approval boundaries clearly.",
+      body: "Keep changes small, verify the result, and surface mode boundaries clearly.",
       reason: "Always-on workspace instruction.",
     },
   ];
@@ -258,7 +258,7 @@ const createApplicableInstructions = (
       name: "Security guardrails",
       path: ".machdoch/instructions/security.instructions.md",
       priority: 80,
-      body: "Keep privileged actions behind explicit approval and avoid leaking secrets into logs.",
+      body: "Keep privileged actions in Machdoch mode and avoid leaking secrets into logs.",
       reason: "Matched task terms: auth, permission, security, or token.",
     });
   }
@@ -271,12 +271,6 @@ const createPreviewWarnings = (
   invokedPrompt?: ResolvedPromptInvocation,
 ): string[] => {
   const warnings: string[] = [];
-
-  if (toolPolicies.some((policy) => policy.decision === "ask")) {
-    warnings.push(
-      "Some likely tools remain approval-gated, so the desktop shell would pause before running them.",
-    );
-  }
 
   if (invokedPrompt?.missingInputs.length) {
     warnings.push(
@@ -318,10 +312,10 @@ export const createPreviewFixture = (
 
   return {
     task: normalizedTask,
-    mode: context.mode ?? "ask",
+    mode: context.mode ?? "machdoch",
     summary: invokedPrompt
       ? "This staged preview resolved a direct prompt invocation, mapped it through the current tool policies, and highlighted any missing input before execution."
-      : "This staged preview maps the request to likely tools, approval checkpoints, and next steps before a live run begins.",
+      : "This staged preview maps the request to likely tools, mode constraints, and next steps before a live run begins.",
     suggestedTools,
     blockedTools: [],
     toolPolicies,
@@ -335,7 +329,7 @@ export const createPreviewFixture = (
       {
         title: "Load workspace context",
         description:
-          "Read the active workspace folder, customization hints, and effective safety mode before doing anything risky.",
+          "Read the active workspace folder, customization hints, and effective run mode before doing anything risky.",
       },
       {
         title: invokedPrompt ? "Resolve the prompt" : "Clarify the target",
@@ -344,9 +338,9 @@ export const createPreviewFixture = (
           : `Interpret the goal \`${normalizedTask}\` and keep the first action as small and observable as possible.`,
       },
       {
-        title: "Check approvals",
+        title: "Check mode constraints",
         description:
-          "Pause for shell or network access and keep every potentially state-changing action inspectable.",
+          "Use read-only function calls in Ask mode or the full function-call surface in Machdoch mode.",
       },
       {
         title: "Verify the result",
@@ -444,7 +438,7 @@ const createExecutedExecutionSections = (
       lines: [
         `root: ${workspacePath}`,
         `workspace label: ${workspaceLabel}`,
-        `mode: ${context.mode ?? "ask"}`,
+        `mode: ${context.mode ?? "machdoch"}`,
         "execution surface: deterministic read-only scaffold",
         ...(context.provider ? [`provider: ${context.provider}`] : []),
         ...(context.model ? [`model: ${context.model}`] : []),
@@ -512,27 +506,6 @@ const createUnsupportedExecutionResponse = (): NonNullable<
   };
 };
 
-const createPlannedExecutionResponse = (): NonNullable<
-  TaskExecutionResult["response"]
-> => {
-  return {
-    markdown: [
-      "**Plan ready.**",
-      "",
-      "1. Inspect the relevant workspace files and current runtime context.",
-      "2. Apply the smallest required edit only after approval.",
-      "3. Run focused verification and report any remaining blockers.",
-    ].join("\n"),
-    highlights: [
-      "No files were changed in plan mode.",
-      "Changing actions stay behind explicit approval.",
-    ],
-    relatedFiles: [],
-    verification: ["Prepared a read-only execution plan."],
-    followUps: ["Approve the plan by rerunning the task in ask or autopilot mode."],
-  };
-};
-
 export const createMockExecutionFixture = (
   task = DEFAULT_EXECUTION_TASK,
   workspacePath = DEFAULT_WORKSPACE_ROOT,
@@ -540,48 +513,27 @@ export const createMockExecutionFixture = (
 ): TaskExecutionResult => {
   const normalizedTask = normalizeTask(task, DEFAULT_EXECUTION_TASK);
   const status: TaskExecutionStatus =
-    context.mode === "plan"
-      ? "planned"
-      : supportsMockExecution(normalizedTask)
-        ? "executed"
-        : "unsupported";
+    supportsMockExecution(normalizedTask) ? "executed" : "unsupported";
 
   return {
     task: normalizedTask,
-    mode: context.mode ?? "ask",
+    mode: context.mode ?? "machdoch",
     status,
     summary:
-      status === "planned"
-        ? "Plan mode prepared proposed next steps without changing the workspace."
-        : status === "executed"
+      status === "executed"
         ? "This request matches a read-only execution path that already exists in the shared core, so the desktop shell can render a representative result shape."
         : "This task stays in preview mode because the deterministic executor only covers read-only workspace and explicit file or directory inspection flows today.",
     executedTools: status === "executed" ? ["filesystem"] : [],
     reason:
-      status === "planned"
-        ? "Plan mode stops before state-changing actions."
-        : status === "executed"
+      status === "executed"
         ? "Representative data only until the desktop shell is connected to the shared core executor."
         : "Broader task types still fall back to preview mode in the current desktop scaffold.",
     response:
-      status === "planned"
-        ? createPlannedExecutionResponse()
-        : status === "executed"
+      status === "executed"
         ? createExecutedExecutionResponse(workspacePath)
         : createUnsupportedExecutionResponse(),
     outputSections:
-      status === "planned"
-        ? [
-            {
-              title: "Plan mode",
-              lines: [
-                `task: ${normalizedTask}`,
-                "result: proposed plan only",
-                "workspace changes: none",
-              ],
-            },
-          ]
-        : status === "executed"
+      status === "executed"
         ? createExecutedExecutionSections(
             normalizedTask,
             workspacePath,

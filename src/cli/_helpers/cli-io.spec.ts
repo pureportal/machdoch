@@ -14,7 +14,7 @@ const createExecution = (
 ): TaskExecutionResult => {
   return {
     task: "What is the weather?",
-    mode: "auto",
+    mode: "machdoch",
     status: "blocked",
     summary: "I need a location to answer that.",
     executedTools: ["filesystem"],
@@ -25,7 +25,7 @@ const createExecution = (
         lines: ["task: What is the weather?"],
       },
       {
-        title: "Autopilot audit",
+        title: "Machdoch review",
         audience: "internal",
         lines: ["executor iterations: 1/4"],
       },
@@ -111,7 +111,7 @@ describe("createActionFeedbackProgressReporter", () => {
       message: string,
     ): TaskExecutionProgress => ({
       task: "Check the docker state",
-      mode: "auto",
+      mode: "machdoch",
       state,
       message,
       executedTools: [],

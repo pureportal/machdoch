@@ -5,9 +5,8 @@
 pub const RUNTIME_CONFIG_SCHEMA_ID: &str = "https://machdoch.local/schemas/runtime-config.schema.json";
 pub const RUNTIME_CONFIG_SCHEMA_VERSION: u32 = 1;
 
-pub const RUN_MODES: [&str; 4] = ["plan", "safe", "ask", "auto"];
+pub const RUN_MODES: [&str; 2] = ["ask", "machdoch"];
 pub const VALID_TOOLS: [&str; 7] = ["filesystem", "shell", "network", "browser", "git", "packages", "utilities"];
-pub const DEFAULT_TOOLS: [&str; 3] = ["filesystem", "shell", "utilities"];
 pub const VALID_MODEL_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
 pub const MODEL_PROVIDERS: [&str; 4] = ["openai", "anthropic", "google", "unconfigured"];
 pub const USER_API_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];

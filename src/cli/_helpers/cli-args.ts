@@ -46,12 +46,10 @@ export interface ParsedCliArgs {
 }
 
 const VALID_MODES: ReadonlySet<RunMode> = new Set([
-  "plan",
-  "safe",
   "ask",
-  "auto",
+  "machdoch",
 ]);
-const VALID_MODE_DESCRIPTION = "plan, safe, ask, or auto";
+const VALID_MODE_DESCRIPTION = "ask or machdoch";
 const VALID_PROVIDERS: ReadonlySet<UserApiProvider> = new Set([
   "openai",
   "anthropic",
@@ -291,11 +289,11 @@ export const getHelpText = (): string => {
   return `machdoch
 
 Usage:
-  machdoch [--mode <plan|safe|ask|auto>]
+  machdoch [--mode <ask|machdoch>]
   machdoch <task>
-  machdoch --task <task> [--mode <plan|safe|ask|auto>]
+  machdoch --task <task> [--mode <ask|machdoch>]
   machdoch run <task>
-  machdoch --quick --task <task> [--mode <plan|safe|ask|auto>]
+  machdoch --quick --task <task> [--mode <ask|machdoch>]
   machdoch --set-api --provider <openai|anthropic|google> --key <value>
   machdoch --set-global-memory <on|off>
   machdoch --runtime-provider <openai|anthropic|google>
@@ -308,9 +306,9 @@ Usage:
   machdoch profiles [--json]
 
 Options:
-  --mode <plan|safe|ask|auto>
+  --mode <ask|machdoch>
                           Override the runtime mode for this command or chat session.
-  --quick                 Force a one-shot task run that exits at a terminal state. Use --mode to choose plan, safe, ask, or auto.
+  --quick                 Force a one-shot task run that exits at a terminal state. Use --mode to choose ask or machdoch.
   --set-api               Save a provider API key into the user-scoped Machdoch config file.
   --provider <name>       Provider name for --set-api (openai, anthropic, google).
   --runtime-provider <name>
@@ -328,8 +326,8 @@ Options:
   --executor-turns <count>
                           Override the per-executor model turn limit.
   --autopilot-iterations <count>
-                          Override the Autopilot continuation limit.
-  --infinite              Disable executor turn and Autopilot iteration limits. The wall-clock safety timeout still applies.
+                          Override the Machdoch continuation limit.
+  --infinite              Disable executor turn and Machdoch continuation limits. The wall-clock safety timeout still applies.
   --conversation-context-file <path>
                           Load conversation history and memory context from a JSON file.
   --context <path>        Add a file or folder path as task context. Repeat for multiple paths.

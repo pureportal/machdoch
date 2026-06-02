@@ -129,13 +129,9 @@ const createPlanSteps = (
   invokedPrompt?: ResolvedPromptInvocation,
 ): TaskPlanStep[] => {
   const approvalStepDescription =
-    config.mode === "plan"
-      ? "Gather read-only evidence, draft the proposed changes, and pause for validation before any write, install, commit, UI input, or ambiguous command."
-      : config.mode === "safe"
-      ? "Do not execute actions automatically. Pause for explicit confirmation before any state-changing step."
-      : config.mode === "ask"
-        ? "Request approval before risky actions, especially shell execution, writes, package installs, and elevated access."
-        : "Proceed automatically only within the configured tool and policy boundaries, then run a separate validator pass before declaring the task complete.";
+    config.mode === "ask"
+      ? "Use only read-only function calls and report when the task needs Machdoch mode to change state."
+      : "Use the needed function calls automatically, then run a separate validator pass before declaring the task complete.";
 
   return [
     {
@@ -154,9 +150,9 @@ const createPlanSteps = (
       : {
           title: "Clarify the task target",
           description: `Interpret the user goal: ${task}`,
-        },
+    },
     {
-      title: "Check tools and approvals",
+      title: "Check tool surface",
       description:
         blockedTools.length > 0
           ? `${approvalStepDescription} The current task likely needs additional tools: ${blockedTools.join(", ")}.`
@@ -165,7 +161,7 @@ const createPlanSteps = (
     {
       title: "Execute and keep iterating",
       description:
-        "Run the smallest useful step first, inspect the result, update the plan, and continue until the task is complete or an approval/blocker prevents the next step.",
+        "Run the smallest useful step first, inspect the result, update the plan, and continue until the task is complete or a blocker prevents the next step.",
     },
     {
       title: "Verify before stopping",
@@ -227,12 +223,6 @@ export const previewTaskRun = (
     }
   }
 
-  if (taskContext.blockedTools.length > 0) {
-    warnings.push(
-      `The current task likely needs tools that are not enabled in .machdoch/config.json: ${taskContext.blockedTools.join(", ")}.`,
-    );
-  }
-
   if (parsedPromptInvocation && !taskContext.invokedPrompt) {
     warnings.push(
       `The task looks like a prompt invocation, but no prompt named \`${parsedPromptInvocation.name}\` was discovered.`,
@@ -248,21 +238,15 @@ export const previewTaskRun = (
     );
   }
 
-  if (taskContext.approvalRequiredTools.length > 0) {
+  if (config.mode === "ask") {
     notes.push(
-      `These relevant tools would require approval in ${config.mode} mode: ${taskContext.approvalRequiredTools.join(", ")}.`,
+      "Ask mode exposes only read-only function calls.",
     );
   }
 
-  if (config.mode === "plan") {
+  if (config.mode === "machdoch") {
     notes.push(
-      "Plan mode allows read-only investigation and returns a proposed plan instead of making changes.",
-    );
-  }
-
-  if (config.mode === "auto") {
-    notes.push(
-      "Autopilot mode uses a separate validator pass after each claimed completion and can require another executor iteration when evidence is incomplete.",
+      "Machdoch mode uses a separate validator pass after each claimed completion and can require another executor iteration when evidence is incomplete.",
     );
   }
 
@@ -304,8 +288,8 @@ export const previewTaskRun = (
     task,
     mode: config.mode,
     summary: taskContext.invokedPrompt
-      ? "This preview resolved a direct prompt invocation, merged its declared tools with the task context, and staged a run that should continue until the task is complete, blocked, or waiting on approval."
-      : "This preview now combines config, tool policy decisions, and customization discovery to show how the agent should stage and continue the next task until it is complete, blocked, or waiting on approval.",
+      ? "This preview resolved a direct prompt invocation, merged its declared tools with the task context, and staged a run that should continue until the task is complete or blocked."
+      : "This preview now combines config, tool policy decisions, and customization discovery to show how the agent should stage and continue the next task until it is complete or blocked.",
     suggestedTools: taskContext.suggestedTools,
     blockedTools: taskContext.blockedTools,
     toolPolicies: taskContext.toolPolicies,

@@ -100,12 +100,12 @@ describe("loadProcessEnv", () => {
     isolateEnvironment();
     process.env.OPENAI_API_KEY = "sk-live";
     process.env.MACHDOCH_MODEL = "local-model";
-    process.env.MACHDOCH_MODE = "auto";
+    process.env.MACHDOCH_MODE = "machdoch";
 
     const env = loadProcessEnv();
 
     expect(env.MACHDOCH_MODEL).toBe("local-model");
-    expect(env.MACHDOCH_MODE).toBe("auto");
+    expect(env.MACHDOCH_MODE).toBe("machdoch");
     expect(env).not.toHaveProperty("OPENAI_API_KEY");
   });
 });
@@ -135,13 +135,13 @@ describe("loadWorkspaceEnv", () => {
         "\n",
       ),
     );
-    process.env.MACHDOCH_MODE = "auto";
+    process.env.MACHDOCH_MODE = "machdoch";
 
     const env = await loadWorkspaceEnv(workspaceRoot);
 
     expect(env.OPENAI_API_KEY).toBe("sk-workspace");
     expect(env.MACHDOCH_MODEL).toBe("workspace-model");
-    expect(env.MACHDOCH_MODE).toBe("auto");
+    expect(env.MACHDOCH_MODE).toBe("machdoch");
   });
 });
 

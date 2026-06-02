@@ -30,6 +30,10 @@ import type {
 } from "../../core/types.js";
 import type { ParsedCliArgs } from "./cli-args.js";
 import {
+  createCliStartupSummaryLines,
+  loadDesktopShellSummary,
+} from "./cli-startup-summary.js";
+import {
   attachCancellationHandlers,
   createActionFeedbackProgressReporter,
   createStructuredActionOutputReporter,
@@ -416,7 +420,6 @@ export const printTaskPreview = async (
 const printInteractiveChatHelp = (): void => {
   writeStdoutLine("interactive commands:");
   writeStdoutLine("  /help  Show this help");
-  writeStdoutLine("  /plan <task>  Produce a read-only approval plan");
   writeStdoutLine("  /paste [mode]  Paste a multiline task; finish with /end");
   writeStdoutLine("  /exit  Leave interactive mode");
   writeStdoutLine("  /quit  Leave interactive mode");
@@ -425,10 +428,8 @@ const printInteractiveChatHelp = (): void => {
 export const PASTE_TERMINATOR = "/end";
 
 const VALID_PASTE_MODES: ReadonlySet<RunMode> = new Set([
-  "plan",
-  "safe",
   "ask",
-  "auto",
+  "machdoch",
 ]);
 
 export interface ParsedInteractivePasteCommand {
@@ -475,7 +476,7 @@ export const parseInteractivePasteCommand = (
 
   return {
     recognized: true,
-    error: "Usage: /paste [plan|safe|ask|auto]",
+    error: "Usage: /paste [ask|machdoch]",
   };
 };
 
@@ -584,6 +585,7 @@ export const runInteractiveChat = async (
     args.runtimeProvider,
     args.agentLimits,
   );
+  const shellSummary = await loadDesktopShellSummary();
   const memorySettings = await loadUserMemorySettings();
   const baseConversationContext = await resolveConversationContext(args);
   const sessionState = createInteractiveChatSessionState(
@@ -597,6 +599,9 @@ export const runInteractiveChat = async (
   writeStdoutLine(
     `machdoch chat (${config.mode}, ${config.model}${profileSuffix})`,
   );
+  for (const line of createCliStartupSummaryLines(config, shellSummary)) {
+    writeStdoutLine(line);
+  }
   writeStdoutLine(
     "Type a task and press Enter. Use /paste for multiline tasks, /help for commands, /exit to quit.",
   );
@@ -723,26 +728,6 @@ export const runInteractiveChat = async (
         }
 
         await executeChatTask(pastedTask, pasteCommand.mode ?? args.mode);
-        writeStdoutLine();
-        continue;
-      }
-
-      if (nextTask === "/plan") {
-        writeStdoutLine("Usage: /plan <task>");
-        writeStdoutLine();
-        continue;
-      }
-
-      if (nextTask.startsWith("/plan ")) {
-        const planTask = nextTask.slice("/plan ".length).trim();
-
-        if (planTask.length === 0) {
-          writeStdoutLine("Usage: /plan <task>");
-          writeStdoutLine();
-          continue;
-        }
-
-        await executeChatTask(planTask, "plan");
         writeStdoutLine();
         continue;
       }

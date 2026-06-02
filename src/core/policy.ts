@@ -8,62 +8,30 @@ import type {
 } from "./types.js";
 
 /**
- * Resolves the decision for an enabled tool under the active runtime mode.
+ * Resolves the high-level policy summary for a tool under the active runtime
+ * mode. The actual model tool surface is filtered at function-call granularity.
  */
-const getDecisionForEnabledTool = (
+const getDecisionForTool = (
   tool: ToolDefinition,
   mode: RuntimeConfig["mode"],
 ): { decision: ToolPolicyDecision; reason: string } => {
-  if (mode === "plan") {
-    if (tool.name === "utilities") {
-      return {
-        decision: "allow",
-        reason:
-          "Plan mode allows deterministic utility helpers because they do not inspect or mutate external state.",
-      };
-    }
-
-    return {
-      decision: "ask",
-      reason:
-        "Plan mode permits read-only sub-actions but pauses before state-changing or ambiguous actions until the plan is validated.",
-    };
-  }
-
-  if (mode === "safe") {
-    return {
-      decision: "ask",
-      reason:
-        "Safe mode never auto-executes tools; every enabled tool requires approval first.",
-    };
-  }
-
   if (mode === "ask") {
-    if (tool.riskLevel === "low") {
-      return {
-        decision: "allow",
-        reason:
-          "This tool is low risk and can proceed automatically in ask mode unless a specific action is escalated.",
-      };
-    }
-
     return {
-      decision: "ask",
+      decision: "allow",
       reason:
-        "This tool is medium/high risk and requires approval in ask mode before execution.",
+        "Ask mode exposes only read-only function calls; state-changing calls are unavailable in this mode.",
     };
   }
 
   return {
     decision: "allow",
-    reason:
-      "Auto mode allows enabled tools to run automatically within the configured workspace policy.",
+    reason: "Machdoch mode can use all function calls automatically.",
   };
 };
 
 /**
- * Resolves the allow/ask/blocked decision for tools under the active runtime
- * mode and enabled-tool configuration.
+ * Resolves the allow/ask/blocked summary for tools under the active runtime
+ * mode.
  */
 export const resolveToolPolicies = (
   config: RuntimeConfig,
@@ -74,19 +42,7 @@ export const resolveToolPolicies = (
   return getToolRegistry()
     .filter((tool) => (focusSet ? focusSet.has(tool.name) : true))
     .map((tool) => {
-      const enabled = config.enabledTools.includes(tool.name);
-
-      if (!enabled) {
-        return {
-          tool,
-          enabled: false,
-          decision: "blocked",
-          reason:
-            "This tool is not enabled in `.machdoch/config.json`, so the runtime should not use it.",
-        } satisfies ResolvedToolPolicy;
-      }
-
-      const { decision, reason } = getDecisionForEnabledTool(tool, config.mode);
+      const { decision, reason } = getDecisionForTool(tool, config.mode);
 
       return {
         tool,

@@ -97,7 +97,6 @@ const userWebSearchProviders = getEnum("UserWebSearchProvider");
 const audioProviders = getEnum("AudioProvider");
 const voiceProviders = getEnum("VoiceAiProvider");
 const runtimeMemoryScopes = getEnum("RuntimeMemoryScope");
-const defaultTools = metadata.defaultTools;
 const defaultModelByProvider = metadata.defaultModelByProvider;
 const defaultModelProvider = metadata.defaultModelProvider;
 const runtimeEnvKeys = metadata.runtimeEnvKeys;
@@ -110,7 +109,6 @@ const desktopSettingBounds = getBoundsObject("UserDesktopSettings");
 const schemaVersion = metadata.schemaVersion;
 
 for (const [name, value] of Object.entries({
-  defaultTools,
   defaultModelByProvider,
   defaultModelProvider,
   runtimeEnvKeys,
@@ -160,7 +158,6 @@ export type RuntimeMemoryScope = (typeof RUNTIME_MEMORY_SCOPES)[number];
 export const DEFAULT_MODEL_PROVIDER = ${json(defaultModelProvider)} as const satisfies ConfiguredModelProvider;
 export const DEFAULT_MODEL_BY_PROVIDER = ${json(defaultModelByProvider)} as const satisfies Record<ConfiguredModelProvider, string>;
 
-export const DEFAULT_TOOLS = ${tsReadonlyArray(defaultTools)} as const satisfies readonly ToolName[];
 export const RUNTIME_ENV_KEYS = ${tsReadonlyArray(runtimeEnvKeys)} as const;
 export const PROVIDER_ENV_KEY_BY_PROVIDER = ${json(providerEnvKeys)} as const satisfies Record<ConfiguredModelProvider, string>;
 export const WEB_SEARCH_ENV_KEY_BY_PROVIDER = ${json(webSearchEnvKeys)} as const satisfies Record<UserWebSearchProvider, string>;
@@ -228,7 +225,6 @@ export interface RuntimeAgentLimits {
 export interface WorkspaceProfileConfig {
   description?: string;
   mode?: RunMode;
-  enabledTools?: ToolName[];
   provider?: ConfiguredModelProvider;
   model?: string;
   offline?: boolean;
@@ -239,7 +235,6 @@ export interface WorkspaceProfileConfig {
 export interface WorkspaceConfigFile {
   defaultProfile?: string;
   defaultMode?: RunMode;
-  enabledTools?: ToolName[];
   provider?: ConfiguredModelProvider;
   model?: string;
   offline?: boolean;
@@ -292,7 +287,6 @@ export interface RuntimeConfig {
   activeProfile?: string;
   availableProfiles: RuntimeProfileSummary[];
   mode: RunMode;
-  enabledTools: ToolName[];
   provider: ModelProvider;
   model: string;
   offline: boolean;
@@ -438,7 +432,6 @@ pub const RUNTIME_CONFIG_SCHEMA_VERSION: u32 = ${schemaVersion};
 
 pub const RUN_MODES: [&str; ${runtimeModes.length}] = ${rustStringArray(runtimeModes)};
 pub const VALID_TOOLS: [&str; ${validTools.length}] = ${rustStringArray(validTools)};
-pub const DEFAULT_TOOLS: [&str; ${defaultTools.length}] = ${rustStringArray(defaultTools)};
 pub const VALID_MODEL_PROVIDERS: [&str; ${configuredModelProviders.length}] = ${rustStringArray(configuredModelProviders)};
 pub const MODEL_PROVIDERS: [&str; ${modelProviders.length}] = ${rustStringArray(modelProviders)};
 pub const USER_API_PROVIDERS: [&str; ${configuredModelProviders.length}] = ${rustStringArray(configuredModelProviders)};

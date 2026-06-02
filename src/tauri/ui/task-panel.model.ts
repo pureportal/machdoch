@@ -71,12 +71,10 @@ const formatToolList = (tools: string[]): string => {
 
 const createModeTone = (mode: string): TaskPanelTone => {
   switch (mode) {
-    case "auto":
+    case "machdoch":
       return "success";
-    case "plan":
+    case "ask":
       return "info";
-    case "safe":
-      return "warning";
     default:
       return "info";
   }

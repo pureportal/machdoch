@@ -4,7 +4,7 @@
 export const RUNTIME_CONFIG_SCHEMA_ID = "https://machdoch.local/schemas/runtime-config.schema.json";
 export const RUNTIME_CONFIG_SCHEMA_VERSION = 1 as const;
 
-export const RUN_MODES = ["plan", "safe", "ask", "auto"] as const;
+export const RUN_MODES = ["ask", "machdoch"] as const;
 export type RunMode = (typeof RUN_MODES)[number];
 
 export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "utilities"] as const;
@@ -39,7 +39,6 @@ export const DEFAULT_MODEL_BY_PROVIDER = {
   "google": "gemini-2.5-flash"
 } as const satisfies Record<ConfiguredModelProvider, string>;
 
-export const DEFAULT_TOOLS = ["filesystem", "shell", "utilities"] as const satisfies readonly ToolName[];
 export const RUNTIME_ENV_KEYS = ["MACHDOCH_MODE", "MACHDOCH_MODEL", "MACHDOCH_OFFLINE", "MACHDOCH_PROFILE", "MACHDOCH_WEB_SEARCH_PROVIDER", "MACHDOCH_EXECUTOR_TURNS", "MACHDOCH_AUTOPILOT_ITERATIONS", "MACHDOCH_INFINITE"] as const;
 export const PROVIDER_ENV_KEY_BY_PROVIDER = {
   "openai": "OPENAI_API_KEY",
@@ -168,7 +167,6 @@ export interface RuntimeAgentLimits {
 export interface WorkspaceProfileConfig {
   description?: string;
   mode?: RunMode;
-  enabledTools?: ToolName[];
   provider?: ConfiguredModelProvider;
   model?: string;
   offline?: boolean;
@@ -179,7 +177,6 @@ export interface WorkspaceProfileConfig {
 export interface WorkspaceConfigFile {
   defaultProfile?: string;
   defaultMode?: RunMode;
-  enabledTools?: ToolName[];
   provider?: ConfiguredModelProvider;
   model?: string;
   offline?: boolean;
@@ -232,7 +229,6 @@ export interface RuntimeConfig {
   activeProfile?: string;
   availableProfiles: RuntimeProfileSummary[];
   mode: RunMode;
-  enabledTools: ToolName[];
   provider: ModelProvider;
   model: string;
   offline: boolean;

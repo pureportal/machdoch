@@ -18,7 +18,6 @@ const createRuntimeConfig = (
     workspaceRoot: "c:/Development/machdoch",
     availableProfiles: [],
     mode: "ask",
-    enabledTools: ["filesystem", "network"],
     provider: "openai",
     model: "gpt-5.5",
     offline: false,
@@ -156,7 +155,7 @@ describe("createExecutorSystemPrompt", () => {
     expect(profile.requireResearch).toBe(true);
 
     const prompt = createExecutorSystemPrompt(
-      createRuntimeConfig({ mode: "auto" }),
+      createRuntimeConfig({ mode: "machdoch" }),
       taskContext,
       [createTool("fetch_url"), createTool("search_web")],
       createConversationContext(),
@@ -178,19 +177,20 @@ describe("createExecutorSystemPrompt", () => {
     );
   });
 
-  it("adds a strict read-only contract in plan mode", () => {
+  it("adds a strict read-only contract in ask mode", () => {
     const prompt = createExecutorSystemPrompt(
-      createRuntimeConfig({ mode: "plan" }),
+      createRuntimeConfig({ mode: "ask" }),
       createTaskContext(),
       [createTool("read_file"), createTool("create_file")],
       createConversationContext(),
     );
 
-    expect(prompt).toContain("<plan_mode_contract>");
-    expect(prompt).toContain("produce a concrete implementation plan");
-    expect(prompt).toContain("Do not call file-write");
-    expect(prompt).toContain("status `completed`");
-    expect(prompt).toContain("runtime will surface that as a planned result");
+    expect(prompt).toContain("<ask_mode_contract>");
+    expect(prompt).toContain("Only read-only function calls are available");
+    expect(prompt).toContain(
+      "Do not claim to have changed files, memory, packages, git state, browser state, desktop UI state, or any external system in Ask mode.",
+    );
+    expect(prompt).toContain("needs Machdoch mode");
   });
 
   it("surfaces the desktop host elevation state when provided", () => {

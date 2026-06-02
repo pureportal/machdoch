@@ -3,7 +3,6 @@ import type {
   CustomizationDiscoveryResult,
   ProviderAvailability,
   RuntimeConfig,
-  ToolName,
 } from "./types.ts";
 
 const providerAvailability: ProviderAvailability[] = [
@@ -12,11 +11,12 @@ const providerAvailability: ProviderAvailability[] = [
   { provider: "google", configured: false },
 ];
 
-const createConfig = (enabledTools: ToolName[]): RuntimeConfig => {
+const createConfig = (
+  mode: RuntimeConfig["mode"] = "machdoch",
+): RuntimeConfig => {
   return {
     workspaceRoot: "C:/workspace",
-    mode: "ask",
-    enabledTools,
+    mode,
     provider: "unconfigured",
     model: "gpt-5.5",
     offline: false,
@@ -102,14 +102,14 @@ const createEmptyCustomizations = (): CustomizationDiscoveryResult => {
 };
 
 describe("previewTaskRun", () => {
-  it("surfaces blocked tools, relevant instructions, and provider warnings", () => {
+  it("surfaces relevant instructions and provider warnings", () => {
     const preview = previewTaskRun(
       "install a package and update the repo",
-      createConfig(["filesystem", "shell", "network"]),
+      createConfig(),
       createCustomizations(),
     );
 
-    expect(preview.blockedTools).toEqual(["git", "packages"]);
+    expect(preview.blockedTools).toEqual([]);
     expect(preview.applicableInstructions.map((entry) => entry.name)).toEqual([
       "Workspace defaults",
       "Security defaults",
@@ -127,7 +127,7 @@ describe("previewTaskRun", () => {
   it("filters stop words out of prompt and skill suggestions", () => {
     const preview = previewTaskRun(
       "the and this then them with your",
-      createConfig(["filesystem", "shell"]),
+      createConfig(),
       createCustomizations(),
     );
 
@@ -138,7 +138,7 @@ describe("previewTaskRun", () => {
   it("avoids substring keyword matches for conditional instructions", () => {
     const preview = previewTaskRun(
       "authority review for the website",
-      createConfig(["browser"]),
+      createConfig(),
       createCustomizations(),
     );
 
@@ -150,7 +150,7 @@ describe("previewTaskRun", () => {
   it("resolves direct prompt invocations and merges prompt tools into the preview", () => {
     const preview = previewTaskRun(
       "/debug-build TypeScript compile fails after install",
-      createConfig(["filesystem", "shell"]),
+      createConfig(),
       createCustomizations(),
     );
 
@@ -170,7 +170,7 @@ describe("previewTaskRun", () => {
   it("warns when a slash command looks like a prompt but no prompt was discovered", () => {
     const preview = previewTaskRun(
       "/missing-prompt explain the error",
-      createConfig(["filesystem", "shell"]),
+      createConfig(),
       createCustomizations(),
     );
 
@@ -184,7 +184,7 @@ describe("previewTaskRun", () => {
   it("warns when an invoked prompt declares inputs but no arguments were supplied", () => {
     const preview = previewTaskRun(
       "/debug-build",
-      createConfig(["filesystem", "shell"]),
+      createConfig(),
       createCustomizations(),
     );
 
@@ -195,11 +195,11 @@ describe("previewTaskRun", () => {
     ).toBe(true);
   });
 
-  it("warns for an unavailable selected provider and records approval-related notes", () => {
+  it("warns for an unavailable selected provider and records mode notes", () => {
     const preview = previewTaskRun(
       "run a command",
       {
-        ...createConfig(["shell"]),
+        ...createConfig("ask"),
         provider: "openai",
       },
       createEmptyCustomizations(),
@@ -212,7 +212,7 @@ describe("previewTaskRun", () => {
     ).toBe(true);
     expect(
       preview.notes.some((note) =>
-        note.includes("would require approval in ask mode: shell"),
+        note.includes("Ask mode exposes only read-only function calls."),
       ),
     ).toBe(true);
     expect(preview.notes).toContain("No instruction files were discovered.");
@@ -222,7 +222,7 @@ describe("previewTaskRun", () => {
     const preview = previewTaskRun(
       "search the web for recent Tauri updater guidance",
       {
-        ...createConfig(["network"]),
+        ...createConfig(),
         webSearch: {
           activeProvider: "none",
           providerAvailability: [
@@ -258,7 +258,7 @@ describe("previewTaskRun", () => {
 
     const preview = previewTaskRun(
       "prompt:debug-build run the failing build",
-      createConfig(["filesystem", "shell"]),
+      createConfig(),
       customizations,
     );
 
@@ -285,7 +285,7 @@ describe("previewTaskRun", () => {
 
     const preview = previewTaskRun(
       "/review-ui",
-      createConfig(["filesystem", "shell", "browser"]),
+      createConfig(),
       customizations,
     );
 
@@ -307,7 +307,7 @@ describe("previewTaskRun", () => {
 
     const preview = previewTaskRun(
       "/release-review feature=profiles",
-      createConfig(["filesystem", "shell"]),
+      createConfig(),
       customizations,
     );
 
@@ -335,7 +335,7 @@ describe("previewTaskRun", () => {
 
     const preview = previewTaskRun(
       "review src\\core\\config.ts for cleanup",
-      createConfig(["filesystem", "shell"]),
+      createConfig(),
       customizations,
     );
 
@@ -363,7 +363,7 @@ describe("previewTaskRun", () => {
 
     const preview = previewTaskRun(
       "improve unit test assertions for the task runner",
-      createConfig(["filesystem", "shell"]),
+      createConfig(),
       customizations,
     );
 
@@ -391,7 +391,7 @@ describe("previewTaskRun", () => {
 
     const preview = previewTaskRun(
       "review README.md for wording",
-      createConfig(["filesystem", "shell"]),
+      createConfig(),
       customizations,
     );
 
@@ -431,7 +431,7 @@ describe("previewTaskRun", () => {
 
     const preview = previewTaskRun(
       "install auth test coverage",
-      createConfig(["filesystem", "shell"]),
+      createConfig(),
       customizations,
     );
 
@@ -472,7 +472,7 @@ describe("previewTaskRun", () => {
 
     const preview = previewTaskRun(
       "/show-file file=src/core/config.ts",
-      createConfig(["filesystem", "shell"]),
+      createConfig(),
       customizations,
     );
 

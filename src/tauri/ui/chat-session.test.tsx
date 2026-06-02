@@ -251,7 +251,6 @@ const createRuntimeSnapshot = (
     workspaceRoot: "/mocked/tauri/path",
     availableProfiles: [],
     mode: "ask",
-    enabledTools: ["filesystem", "shell"],
     provider: "openai",
     model: "gpt-5.5",
     offline: false,
@@ -576,24 +575,27 @@ describe("ChatSession component", () => {
           execution: createMockExecutionFixture(
             "scan this workspace and explain the setup",
             "/mock/home/path",
-            { mode: "auto" },
+            { mode: "ask" },
           ),
-        });
+      });
 
       render(<ChatSession />);
+      await selectWorkspace();
 
       fireEvent.click(
-        screen.getByRole("button", { name: /Execution mode: Ask mode/i }),
+        await screen.findByRole("button", {
+          name: /Execution mode: Machdoch/i,
+        }),
       );
       fireEvent.click(
-        screen.getByRole("button", { name: /Choose Autopilot/i }),
+        await screen.findByRole("button", { name: /Choose Ask mode/i }),
       );
 
-      const modeButton = screen.getByRole("button", {
-        name: /Execution mode: Autopilot/i,
+      const modeButton = await screen.findByRole("button", {
+        name: /Execution mode: Ask mode/i,
       });
       expect(modeButton).toBeDefined();
-      expect(within(modeButton).queryByText(/Autopilot/i)).toBeNull();
+      expect(within(modeButton).queryByText(/Ask mode/i)).toBeNull();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -605,10 +607,10 @@ describe("ChatSession component", () => {
 
       await waitFor(() => {
         expect(runDesktopTaskSpy).toHaveBeenCalledWith(
-          null,
+          "/mocked/tauri/path",
           "scan this workspace and explain the setup",
           expect.objectContaining({
-            mode: "auto",
+            mode: "ask",
             model: expect.any(String),
             provider: expect.any(String),
           }),
@@ -635,7 +637,7 @@ describe("ChatSession component", () => {
               },
             ],
             ...(profile ? { activeProfile: profile } : {}),
-            mode: profile === "offline" ? "safe" : "ask",
+            mode: profile === "offline" ? "machdoch" : "ask",
             provider: profile === "offline" ? "anthropic" : "openai",
             model:
               profile === "offline"
@@ -665,7 +667,7 @@ describe("ChatSession component", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByRole("button", { name: /Execution mode: Safe mode/i }),
+          screen.getByRole("button", { name: /Execution mode: Machdoch/i }),
         ).toBeDefined();
       });
 
@@ -861,7 +863,7 @@ describe("ChatSession component", () => {
             ...createMockExecutionFixture(
               "refresh the desktop feedback surface",
               "/mocked/tauri/path",
-              { mode: "auto" },
+              { mode: "machdoch" },
             ),
             summary: "Updated the chat shell response surface.",
             response: {
@@ -3011,7 +3013,7 @@ describe("ChatSession component", () => {
         execution: createMockExecutionFixture(
           "Summarize the attached notes",
           "/mock/home/path",
-          { mode: "auto" },
+          { mode: "machdoch" },
         ),
       });
 
@@ -3048,7 +3050,7 @@ describe("ChatSession component", () => {
         name: /Choose OpenAI GPT-5.5/i,
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Autopilot" }));
+    fireEvent.click(screen.getByRole("button", { name: "Machdoch" }));
     fireEvent.click(screen.getByRole("button", { name: "UI Control" }));
 
     const input = await screen.findByPlaceholderText(/Quick Chat/i);
@@ -3068,7 +3070,7 @@ describe("ChatSession component", () => {
       expect.objectContaining({
         provider: "openai",
         model: "gpt-5.5",
-        mode: "auto",
+        mode: "machdoch",
         conversationContext: expect.objectContaining({
           sessionMemoryEnabled: false,
           sessionMemory: [],

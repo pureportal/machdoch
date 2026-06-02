@@ -197,10 +197,10 @@ const getAgentLimitsSettingsSavedMessage = (
   settings: UserAgentLimitsSettings,
 ): string => {
   if (settings.infinite) {
-    return "Agent loop limits saved. Executor and Autopilot loop counts are unlimited; the safety timeout still applies.";
+    return "Agent loop limits saved. Executor and Machdoch continuation counts are unlimited; the safety timeout still applies.";
   }
 
-  return `Agent loop limits saved. Executor turns: ${settings.executorTurns}; Autopilot iterations: ${settings.autopilotExecutorIterations}.`;
+  return `Agent loop limits saved. Executor turns: ${settings.executorTurns}; Machdoch continuations: ${settings.autopilotExecutorIterations}.`;
 };
 
 export const useChatSessionRuntime = (

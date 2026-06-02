@@ -25,7 +25,7 @@
   "$defs": {
     "RunMode": {
       "type": "string",
-      "enum": ["plan", "safe", "ask", "auto"]
+      "enum": ["ask", "machdoch"]
     },
     "ToolName": {
       "type": "string",
@@ -137,13 +137,6 @@
         "mode": {
           "$ref": "#/$defs/RunMode"
         },
-        "enabledTools": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ToolName"
-          },
-          "uniqueItems": true
-        },
         "provider": {
           "$ref": "#/$defs/ConfiguredModelProvider"
         },
@@ -171,13 +164,6 @@
         },
         "defaultMode": {
           "$ref": "#/$defs/RunMode"
-        },
-        "enabledTools": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ToolName"
-          },
-          "uniqueItems": true
         },
         "provider": {
           "$ref": "#/$defs/ConfiguredModelProvider"
@@ -601,7 +587,6 @@
         "workspaceRoot",
         "availableProfiles",
         "mode",
-        "enabledTools",
         "provider",
         "model",
         "offline",
@@ -630,12 +615,6 @@
         },
         "mode": {
           "$ref": "#/$defs/RunMode"
-        },
-        "enabledTools": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ToolName"
-          }
         },
         "provider": {
           "$ref": "#/$defs/ModelProvider"
@@ -670,7 +649,6 @@
         "workspaceRoot",
         "availableProfiles",
         "mode",
-        "enabledTools",
         "provider",
         "model",
         "offline",
@@ -697,12 +675,6 @@
         },
         "mode": {
           "$ref": "#/$defs/RunMode"
-        },
-        "enabledTools": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ToolName"
-          }
         },
         "provider": {
           "$ref": "#/$defs/ModelProvider"
@@ -742,7 +714,6 @@
       "anthropic": "claude-sonnet-4-6",
       "google": "gemini-2.5-flash"
     },
-    "defaultTools": ["filesystem", "shell", "utilities"],
     "runtimeEnvKeys": [
       "MACHDOCH_MODE",
       "MACHDOCH_MODEL",

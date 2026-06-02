@@ -4,7 +4,6 @@ import type {
   ProviderAvailability,
   RunMode,
   RuntimeConfig,
-  ToolName,
 } from "./types.ts";
 
 const providerAvailability: ProviderAvailability[] = [
@@ -13,14 +12,10 @@ const providerAvailability: ProviderAvailability[] = [
   { provider: "google", configured: false },
 ];
 
-const createConfig = (
-  mode: RunMode,
-  enabledTools: ToolName[],
-): RuntimeConfig => {
+const createConfig = (mode: RunMode): RuntimeConfig => {
   return {
     workspaceRoot: "C:/workspace",
     mode,
-    enabledTools,
     provider: "unconfigured",
     model: "gpt-5.5",
     offline: false,
@@ -41,7 +36,7 @@ const createConfig = (
 
 describe("resolveToolPolicies", () => {
   it("returns policies for the full registry when no focus tools are provided", () => {
-    const policies = resolveToolPolicies(createConfig("ask", ["filesystem"]));
+    const policies = resolveToolPolicies(createConfig("ask"));
 
     expect(policies).toHaveLength(getToolRegistry().length);
     expect(
@@ -49,12 +44,12 @@ describe("resolveToolPolicies", () => {
     ).toBe("allow");
     expect(
       policies.find((policy) => policy.tool.name === "shell")?.decision,
-    ).toBe("blocked");
+    ).toBe("allow");
   });
 
-  it("uses risk-aware approvals in ask mode", () => {
+  it("allows high-level tool categories in ask mode while describing the read-only function-call surface", () => {
     const policies = resolveToolPolicies(
-      createConfig("ask", ["filesystem", "shell", "network", "utilities"]),
+      createConfig("ask"),
       ["filesystem", "shell", "network", "git", "utilities"],
     );
 
@@ -64,17 +59,18 @@ describe("resolveToolPolicies", () => {
       ),
     ).toEqual({
       filesystem: "allow",
-      shell: "ask",
-      network: "ask",
-      git: "blocked",
+      shell: "allow",
+      network: "allow",
+      git: "allow",
       utilities: "allow",
     });
+    expect(policies[0]?.reason).toContain("read-only function calls");
   });
 
-  it("keeps plan mode approval-first for stateful tool categories", () => {
+  it("allows all high-level tool categories in machdoch mode", () => {
     const policies = resolveToolPolicies(
-      createConfig("plan", ["filesystem", "network", "utilities"]),
-      ["filesystem", "network", "utilities"],
+      createConfig("machdoch"),
+      ["filesystem", "network", "utilities", "git"],
     );
 
     expect(
@@ -82,30 +78,11 @@ describe("resolveToolPolicies", () => {
         policies.map((policy) => [policy.tool.name, policy.decision]),
       ),
     ).toEqual({
-      filesystem: "ask",
-      network: "ask",
+      filesystem: "allow",
+      network: "allow",
       utilities: "allow",
+      git: "allow",
     });
-    expect(policies[0]?.reason).toContain("Plan mode");
-  });
-
-  it("requires approval for every enabled tool in safe mode and allows enabled tools in auto mode", () => {
-    const safePolicies = resolveToolPolicies(
-      createConfig("safe", ["filesystem", "git"]),
-      ["filesystem", "git"],
-    );
-    const autoPolicies = resolveToolPolicies(
-      createConfig("auto", ["filesystem", "git"]),
-      ["filesystem", "git"],
-    );
-
-    expect(safePolicies.map((policy) => policy.decision)).toEqual([
-      "ask",
-      "ask",
-    ]);
-    expect(autoPolicies.map((policy) => policy.decision)).toEqual([
-      "allow",
-      "allow",
-    ]);
+    expect(policies[0]?.reason).toContain("Machdoch mode");
   });
 });

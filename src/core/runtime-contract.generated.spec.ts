@@ -3,7 +3,6 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
-  DEFAULT_TOOLS,
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
   DEFAULT_USER_DESKTOP_SETTINGS,
   RUN_MODES,
@@ -30,7 +29,6 @@ const readRuntimeContract = () => {
     >;
     "x-machdoch": {
       defaultModelByProvider: Record<string, string>;
-      defaultTools: string[];
       runtimeEnvKeys: string[];
     };
   };
@@ -63,7 +61,6 @@ describe("generated runtime contract", () => {
     expect(USER_WEB_SEARCH_PROVIDERS).toEqual(
       contract.$defs.UserWebSearchProvider?.enum,
     );
-    expect(DEFAULT_TOOLS).toEqual(contract["x-machdoch"].defaultTools);
     expect(DEFAULT_MODEL_BY_PROVIDER).toEqual(
       contract["x-machdoch"].defaultModelByProvider,
     );

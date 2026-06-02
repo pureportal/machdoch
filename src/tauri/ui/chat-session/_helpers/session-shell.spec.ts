@@ -13,7 +13,6 @@ const createRuntimeSnapshot = (
     workspaceRoot: "c:/Development/machdoch",
     availableProfiles: [],
     mode: "ask",
-    enabledTools: ["filesystem", "shell"],
     provider: "openai",
     model: "gpt-5.5",
     offline: false,
@@ -36,15 +35,18 @@ const createRuntimeSnapshot = (
 describe("session shell helpers", () => {
   it("uses the session override before the workspace default mode", () => {
     expect(
-      getEffectiveSessionMode("auto", createRuntimeSnapshot({ mode: "safe" })),
-    ).toBe("auto");
+      getEffectiveSessionMode(
+        "machdoch",
+        createRuntimeSnapshot({ mode: "ask" }),
+      ),
+    ).toBe("machdoch");
     expect(
       getEffectiveSessionMode(
         undefined,
-        createRuntimeSnapshot({ mode: "safe" }),
+        createRuntimeSnapshot({ mode: "ask" }),
       ),
-    ).toBe("safe");
-    expect(getEffectiveSessionMode(undefined, null)).toBe("ask");
+    ).toBe("ask");
+    expect(getEffectiveSessionMode(undefined, null)).toBe("machdoch");
   });
 
   it("formats workspace labels from path tails", () => {

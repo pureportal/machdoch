@@ -208,7 +208,7 @@ export const useChatSessionController = (
     runtime.runtimeSnapshot,
   );
   const activeRunModeMeta = RUN_MODE_META[activeRunMode];
-  const defaultRunMode = runtime.runtimeSnapshot?.mode ?? "ask";
+  const defaultRunMode = runtime.runtimeSnapshot?.mode ?? "machdoch";
   const isUsingWorkspaceDefaultMode = !state.activeSession.mode;
   const hasActiveWorkspace = state.activeSession.workspace !== null;
   const activeSessionImageInputSupported = modelSupportsImageInput(
@@ -822,7 +822,7 @@ export const useChatSessionController = (
     (enabled: boolean): void => {
       updateQuickTaskSession((session) => ({
         ...session,
-        mode: enabled ? "auto" : "ask",
+        mode: enabled ? "machdoch" : "ask",
         updatedAt: Date.now(),
       }));
     },
@@ -1464,7 +1464,7 @@ export const useChatSessionController = (
       chooserProviders: providerChooserState.chooserProviders,
       provider: quickTaskProvider,
       model: quickTaskModel,
-      autopilotEnabled: quickTaskEffectiveRunMode === "auto",
+      autopilotEnabled: quickTaskEffectiveRunMode === "machdoch",
       globalMemoryAvailable: quickTaskGlobalMemoryAvailable,
       globalMemoryEnabled: quickTaskGlobalMemoryEnabled,
       uiControlAvailable: isUiControlAvailable,

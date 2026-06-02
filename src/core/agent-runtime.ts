@@ -337,7 +337,7 @@ const finalizeExecutedResult = (
   return createExecutionResult({
     task,
     mode: config.mode,
-    status: config.mode === "plan" ? "planned" : "executed",
+    status: "executed",
     summary:
       summaryOverride?.trim() ||
       normalizeFinalSummary(
@@ -591,7 +591,7 @@ const hasRunnableSuggestedTool = (
   taskContext: ResolvedTaskContext,
 ): boolean => {
   return taskContext.toolPolicies.some(
-    (policy) => policy.enabled && policy.decision !== "blocked",
+    (policy) => policy.decision !== "blocked",
   );
 };
 
@@ -602,7 +602,6 @@ const shouldRejectPrematureBlockedFinalResponse = (
   status: string,
 ): boolean => {
   if (
-    config.mode === "plan" ||
     status !== "blocked" ||
     loopState.executedTools.length > 0
   ) {
@@ -689,12 +688,10 @@ const runExecutorCycle = async (
   await emitAgentProgress(
     task,
     config,
-    config.mode === "plan" ? "planning" : "executing",
-    config.mode === "plan"
-      ? "Plan mode started read-only investigation."
-      : continuationRequest
-        ? `Executor iteration ${executorIteration} started with monitor feedback from continuation ${continuationRequest.continuationIndex}.`
-        : "Executor iteration 1 started.",
+    "executing",
+    continuationRequest
+      ? `Executor iteration ${executorIteration} started with monitor feedback from continuation ${continuationRequest.continuationIndex}.`
+      : "Executor iteration 1 started.",
     loopState,
     onStateChange,
   );
@@ -703,7 +700,7 @@ const runExecutorCycle = async (
     task,
     config,
     loopState,
-    config.mode === "plan" ? "planning" : "executing",
+    "executing",
     onStateChange,
   );
 
@@ -886,10 +883,8 @@ const runExecutorCycle = async (
       await emitAgentProgress(
         task,
         config,
-        config.mode === "plan" ? "planned" : "verifying",
-        config.mode === "plan"
-          ? "Plan mode submitted a proposed plan for approval."
-          : `Executor iteration ${executorIteration} submitted a structured final response for validation.`,
+        "verifying",
+        `Executor iteration ${executorIteration} submitted a structured final response for validation.`,
         loopState,
         onStateChange,
       );
@@ -948,7 +943,7 @@ const runExecutorCycle = async (
         await emitAgentProgress(
           task,
           config,
-          config.mode === "plan" ? "planning" : "executing",
+          "executing",
           `Skipped ${formatToolName(call.name)}${createToolTargetPhrase(call)}: repeated unchanged failure.`,
           loopState,
           onStateChange,
@@ -959,7 +954,7 @@ const runExecutorCycle = async (
       await emitAgentProgress(
         task,
         config,
-        config.mode === "plan" ? "planning" : "executing",
+        "executing",
         createToolRequestProgressMessage(call),
         loopState,
         onStateChange,
@@ -1035,7 +1030,7 @@ const runExecutorCycle = async (
       await emitAgentProgress(
         task,
         config,
-        config.mode === "plan" ? "planning" : "executing",
+        "executing",
         createToolResultProgressMessage(call, result),
         loopState,
         onStateChange,
@@ -1079,7 +1074,7 @@ const runAutopilotMonitorPass = async (
 
   if (!adapter) {
     throw new Error(
-      "Autopilot validation could not start because no monitor model adapter is available.",
+      "Machdoch validation could not start because no monitor model adapter is available.",
     );
   }
 
@@ -1109,7 +1104,7 @@ const runAutopilotMonitorPass = async (
 
   if (!decision) {
     throw new Error(
-      "Autopilot validation did not return a structured decision.",
+      "Machdoch validation did not return a structured decision.",
     );
   }
 
@@ -1158,7 +1153,7 @@ const runModelDrivenLoop = async (
   const autopilotExecutorIterationLimit =
     resolveRuntimeAgentLimits(config).autopilotExecutorIterations;
 
-  if (config.mode !== "auto" || cycleResult.result.status !== "executed") {
+  if (config.mode !== "machdoch" || cycleResult.result.status !== "executed") {
     return cycleResult.result;
   }
 
@@ -1194,7 +1189,7 @@ const runModelDrivenLoop = async (
           task,
           config,
           cycleResult.loopState,
-          "Autopilot validation could not complete because the monitor step failed.",
+          "Machdoch validation could not complete because the monitor step failed.",
           message,
         ),
         buildAutopilotReport(),
@@ -1217,7 +1212,7 @@ const runModelDrivenLoop = async (
           task,
           config,
           cycleResult.loopState,
-          "Autopilot reached its continuation limit before the monitor could verify completion.",
+          "Machdoch reached its continuation limit before the monitor could verify completion.",
           `The monitor requested more work after ${executorIterations} executor iteration(s). Last rationale: ${decision.rationale}`,
         ),
         autopilotReport,

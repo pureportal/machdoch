@@ -26,7 +26,7 @@ export const createAutopilotAuditSection = (
       : String(report.maxExecutorIterations);
 
   return {
-    title: "Autopilot audit",
+    title: "Machdoch review",
     audience: "internal",
     lines: [
       `executor iterations: ${report.executorIterations}/${maxExecutorIterations}`,

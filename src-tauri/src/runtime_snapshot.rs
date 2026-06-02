@@ -20,7 +20,7 @@ use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_ENABLED, DEFAULT_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SHORTCUT,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
-    DEFAULT_MAX_EXECUTOR_TURNS, DEFAULT_MODEL_BY_PROVIDER, DEFAULT_MODEL_PROVIDER, DEFAULT_TOOLS,
+    DEFAULT_MAX_EXECUTOR_TURNS, DEFAULT_MODEL_BY_PROVIDER, DEFAULT_MODEL_PROVIDER,
     DEFAULT_USER_AGENT_LIMITS_INFINITE, MAX_CONFIGURED_AUTOPILOT_ITERATIONS,
     MAX_CONFIGURED_EXECUTOR_TURNS, MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MAX_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
@@ -33,7 +33,7 @@ use crate::runtime_contract_generated::{
     MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MIN_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
     PROVIDER_ENV_KEYS, RUNTIME_ENV_KEYS, USER_API_PROVIDERS, USER_AUDIO_AI_PROVIDERS,
-    USER_WEB_SEARCH_PROVIDERS, VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS, VALID_TOOLS,
+    USER_WEB_SEARCH_PROVIDERS, VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS,
     VALID_WEB_SEARCH_PROVIDERS, WEB_SEARCH_ENV_KEYS,
 };
 use crate::ui_control::UiControlAvailability;
@@ -59,7 +59,6 @@ pub struct RuntimeSnapshot {
     active_profile: Option<String>,
     available_profiles: Vec<RuntimeProfileSummary>,
     mode: String,
-    enabled_tools: Vec<String>,
     provider: String,
     model: String,
     offline: bool,
@@ -230,7 +229,6 @@ pub(crate) struct UserDesktopLaunchPreferences {
 struct WorkspaceConfigFile {
     default_profile: Option<String>,
     default_mode: Option<String>,
-    enabled_tools: Option<Vec<String>>,
     provider: Option<String>,
     model: Option<String>,
     offline: Option<bool>,
@@ -245,7 +243,6 @@ struct WorkspaceConfigFile {
 struct WorkspaceProfileConfig {
     description: Option<String>,
     mode: Option<String>,
-    enabled_tools: Option<Vec<String>>,
     provider: Option<String>,
     model: Option<String>,
     offline: Option<bool>,
@@ -1590,41 +1587,6 @@ fn resolve_profile<'a>(
     Ok((Some(requested_profile), Some(profile)))
 }
 
-fn normalize_tools(tools: Option<&Vec<String>>) -> Vec<String> {
-    let mut normalized = Vec::new();
-
-    if let Some(tools) = tools {
-        for tool in tools {
-            let Some(tool) = normalize_optional_string(Some(tool.as_str())) else {
-                continue;
-            };
-
-            if VALID_TOOLS.contains(&tool.as_str())
-                && !normalized.iter().any(|entry| entry == &tool)
-            {
-                normalized.push(tool);
-            }
-        }
-    }
-
-    if normalized.is_empty() {
-        return DEFAULT_TOOLS.iter().map(|tool| tool.to_string()).collect();
-    }
-
-    normalized
-}
-
-fn resolve_enabled_tools(
-    config: &WorkspaceConfigFile,
-    profile: Option<&WorkspaceProfileConfig>,
-) -> Vec<String> {
-    normalize_tools(
-        profile
-            .and_then(|entry| entry.enabled_tools.as_ref())
-            .or(config.enabled_tools.as_ref()),
-    )
-}
-
 fn resolve_compatibility(
     config: &WorkspaceConfigFile,
     profile: Option<&WorkspaceProfileConfig>,
@@ -2182,24 +2144,24 @@ pub async fn get_runtime_snapshot(
     let mode = if is_valid_mode(env.get("MACHDOCH_MODE").map(String::as_str)) {
         env.get("MACHDOCH_MODE")
             .map(String::as_str)
-            .unwrap_or("ask")
+            .unwrap_or("machdoch")
             .trim()
             .to_string()
     } else if is_valid_mode(profile.and_then(|entry| entry.mode.as_deref())) {
         profile
             .and_then(|entry| entry.mode.as_deref())
-            .unwrap_or("ask")
+            .unwrap_or("machdoch")
             .trim()
             .to_string()
     } else if is_valid_mode(config.default_mode.as_deref()) {
         config
             .default_mode
             .as_deref()
-            .unwrap_or("ask")
+            .unwrap_or("machdoch")
             .trim()
             .to_string()
     } else {
-        "ask".to_string()
+        "machdoch".to_string()
     };
 
     let provider = resolve_provider(
@@ -2231,7 +2193,6 @@ pub async fn get_runtime_snapshot(
         active_profile,
         available_profiles: get_available_profiles(&config.profiles),
         mode,
-        enabled_tools: resolve_enabled_tools(&config, profile),
         provider,
         model,
         offline,

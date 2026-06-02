@@ -209,19 +209,16 @@ export const createExecutorSystemPrompt = (
     createStrategyProfileSection(strategyProfile),
     createExecutionPlaybookSection(),
     createResearchContract(tools),
-    config.mode === "plan"
+    config.mode === "ask"
       ? [
-          "<plan_mode_contract>",
-          "You are running in Plan mode. Your job is to investigate safely and produce a concrete implementation plan for user approval before any state-changing work starts.",
-          "You may use read-only information tools, including workspace reads, searches, read-only git/package inspection, configured web research, screenshots, and deterministic utilities.",
-          "Do not call file-write, memory-write, package-install, git-commit, browser interaction, desktop input, detached-command, or ambiguous shell tools as an implementation step. If such an action is needed, describe it in the plan instead of executing it.",
-          "For shell access, only request clearly read-only inspection commands. The runtime will pause before ambiguous or changing commands.",
-          "When the plan is ready, call `submit_final_response` with status `completed`. The markdown should start with a short approval-oriented plan and include the changing commands or file edits that would run after approval, plus verification steps.",
-          "</plan_mode_contract>",
+          "<ask_mode_contract>",
+          "You are running in Ask mode. Only read-only function calls are available.",
+          "Use the available read-only tools to inspect local context, fetch configured external information, and answer with grounded findings.",
+          "Do not claim to have changed files, memory, packages, git state, browser state, desktop UI state, or any external system in Ask mode.",
+          "If the task requires a state-changing action, explain the specific action that needs Machdoch mode instead of trying to perform it.",
+          "</ask_mode_contract>",
         ].join("\n")
-      : config.mode === "auto"
-        ? "<autopilot_contract>You are running in Autopilot mode. A separate monitor agent will review every claimed completion. Before you stop, gather concrete verification evidence from tool results. If monitor feedback is provided, treat every missing requirement and required action as mandatory for the next iteration.</autopilot_contract>"
-        : "<approval_contract>If a higher-risk action is necessary, call the tool anyway; the runtime will pause automatically if approval is required.</approval_contract>",
+      : "<machdoch_mode_contract>You are running in Machdoch mode. All function calls are available, and a separate monitor agent will review every claimed completion. Before you stop, gather concrete verification evidence from tool results. If monitor feedback is provided, treat every missing requirement and required action as mandatory for the next iteration.</machdoch_mode_contract>",
     continuationRequest
       ? [
           "<monitor_feedback>",
@@ -244,7 +241,6 @@ export const createExecutorSystemPrompt = (
       `Selected provider: ${config.provider}`,
       `Selected model: ${config.model}`,
       createHostElevationRuntimeLine(),
-      `Enabled high-level tools: ${config.enabledTools.join(", ")}`,
       `Available agent tools: ${tools.map((tool) => tool.name).join(", ")}`,
       ...promptContextLines,
       "</runtime>",
@@ -281,9 +277,7 @@ export const createExecutorSystemPrompt = (
           .filter((line): line is string => typeof line === "string")
           .join("\n")
       : undefined,
-    config.mode === "plan"
-      ? "<final_response_contract>When the approval plan is ready or blocked by a real limitation, call `submit_final_response` exactly once and make it the only tool call in that turn. Set status to `completed` when you have a concrete plan ready for user validation; the runtime will surface that as a planned result, not as executed work. Set status to `blocked` when user input, approval, policy, tool availability, provider, or runtime limits prevent even planning. The markdown must stay compact, use standard Markdown, prefer short bullet lists over long prose, and only mention files, commands, or checks that are either grounded in actual read-only tool output or clearly labeled as proposed next actions. Put workspace file references in `relatedFiles` instead of inventing inline file URLs.</final_response_contract>"
-      : "<final_response_contract>When the task is either completed or blocked by a real limitation, call `submit_final_response` exactly once and make it the only tool call in that turn. Set status to `completed` only when the request is satisfied; set status to `blocked` when user input, approval, policy, tool availability, provider, or runtime limits prevent completion. The markdown must stay compact, use standard Markdown, prefer short bullet lists over long prose, and only mention files or checks that are grounded in actual tool output. Put workspace file references in `relatedFiles` instead of inventing inline file URLs. Before submitting it, mentally cross-check goal coverage, evidence, verification, and unresolved risks.</final_response_contract>",
+    "<final_response_contract>When the task is either completed or blocked by a real limitation, call `submit_final_response` exactly once and make it the only tool call in that turn. Set status to `completed` only when the request is satisfied; set status to `blocked` when user input, policy, tool availability, provider, runtime limits, or Ask mode's read-only tool surface prevent completion. The markdown must stay compact, use standard Markdown, prefer short bullet lists over long prose, and only mention files or checks that are grounded in actual tool output. Put workspace file references in `relatedFiles` instead of inventing inline file URLs. Before submitting it, mentally cross-check goal coverage, evidence, verification, and unresolved risks.</final_response_contract>",
     "<completion_requirements>Do not end with freeform prose alone. The runtime only accepts the structured final-response tool as a terminal answer.</completion_requirements>",
   ]
     .filter((section): section is string => typeof section === "string")
@@ -307,8 +301,8 @@ export const createExecutorUserPrompt = (
     `<workspace_paths>${taskContext.workspacePaths.length > 0 ? taskContext.workspacePaths.join(", ") : "none"}</workspace_paths>`,
     continuationRequest
       ? `<current_goal>Continue the task and satisfy the monitor feedback from continuation ${continuationRequest.continuationIndex}.</current_goal>`
-      : config.mode === "plan"
-        ? "<current_goal>Research enough to produce an approval-ready plan. Do not implement changes in this turn.</current_goal>"
+      : config.mode === "ask"
+        ? "<current_goal>Answer or investigate using read-only tools only. If completion requires a state change, report that Machdoch mode is required.</current_goal>"
         : "<current_goal>Complete the task by using tools, checking the results, and continuing until the work is done.</current_goal>",
   ].join("\n");
 };

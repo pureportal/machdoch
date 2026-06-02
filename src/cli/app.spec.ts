@@ -25,7 +25,7 @@ describe("parseCliArgs", () => {
           "--model",
           "gpt-4.5",
           "--mode",
-          "auto",
+          "machdoch",
           "--profile",
           "offline",
           "--json",
@@ -42,7 +42,7 @@ describe("parseCliArgs", () => {
       command: "run",
       task: "show README.md",
       model: "gpt-4.5",
-      mode: "auto",
+      mode: "machdoch",
       profile: "offline",
       json: true,
       verbose: true,
@@ -323,26 +323,26 @@ describe("parseCliArgs", () => {
 
   it("allows quick invocations to keep an explicit runtime mode", () => {
     expect(
-      parseCliArgs(["--quick", "--mode", "safe", "show", "README.md"], {
+      parseCliArgs(["--quick", "--mode", "ask", "show", "README.md"], {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toEqual({
       command: "run",
       task: "show README.md",
-      mode: "safe",
+      mode: "ask",
       json: false,
       verbose: false,
       workspaceRoot: "C:/workspace",
     });
 
     expect(
-      parseCliArgs(["--quick", "--mode", "plan", "--task", "fix the bug"], {
+      parseCliArgs(["--quick", "--mode", "machdoch", "--task", "fix the bug"], {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toEqual({
       command: "run",
       task: "fix the bug",
-      mode: "plan",
+      mode: "machdoch",
       json: false,
       verbose: false,
       workspaceRoot: "C:/workspace",
@@ -472,7 +472,7 @@ describe("parseCliArgs", () => {
       parseCliArgs(["--mode", "loud"], {
         currentWorkingDirectory: "C:/workspace",
       }),
-    ).toThrow("Expected --mode to be followed by plan, safe, ask, or auto.");
+    ).toThrow("Expected --mode to be followed by ask or machdoch.");
 
     expect(() =>
       parseCliArgs(["run"], {
@@ -548,9 +548,12 @@ describe("parseCliArgs", () => {
     ).toThrow("Expected `machdoch config set <setting> <value>`.");
 
     expect(() =>
-      parseCliArgs(["--model", "gpt-5.5", "config", "set", "workspace.mode", "auto"], {
-        currentWorkingDirectory: "C:/workspace",
-      }),
+      parseCliArgs(
+        ["--model", "gpt-5.5", "config", "set", "workspace.mode", "machdoch"],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
     ).toThrow(
       "`machdoch config set` cannot be combined with runtime override options.",
     );

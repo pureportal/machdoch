@@ -2,7 +2,6 @@ import {
   Archive,
   Check,
   CircleDashed,
-  ClipboardList,
   Inbox,
   ListFilter,
   LoaderCircle,
@@ -74,38 +73,14 @@ export const MODEL_STAGE_CLASSES: Record<CatalogModelStage, string> = {
 };
 
 export const RUN_MODE_ORDER = [
-  "plan",
-  "safe",
   "ask",
-  "auto",
+  "machdoch",
 ] as const satisfies ReadonlyArray<RunMode>;
 
 export const RUN_MODE_META = {
-  plan: {
-    label: "Plan mode",
-    description:
-      "Research first, propose steps, and pause before changing files or running ambiguous commands.",
-    icon: ClipboardList,
-    triggerClassName:
-      "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
-    selectedClassName: "border-sky-500/30 bg-sky-500/10 text-sky-100",
-    iconClassName: "text-sky-300",
-    badgeClassName: "border-sky-500/20 bg-sky-500/10 text-sky-200",
-  },
-  safe: {
-    label: "Safe mode",
-    description: "Keep each run read-only or otherwise low-risk.",
-    icon: ShieldAlert,
-    triggerClassName:
-      "border-emerald-500/20 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15 hover:text-white",
-    selectedClassName:
-      "border-emerald-500/30 bg-emerald-500/10 text-emerald-100",
-    iconClassName: "text-emerald-300",
-    badgeClassName: "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
-  },
   ask: {
     label: "Ask mode",
-    description: "Pause for approval before riskier file or shell actions.",
+    description: "Use only read-only function calls.",
     icon: MessageSquare,
     triggerClassName:
       "border-amber-500/20 bg-amber-500/10 text-amber-100 hover:bg-amber-500/15 hover:text-white",
@@ -113,10 +88,10 @@ export const RUN_MODE_META = {
     iconClassName: "text-amber-300",
     badgeClassName: "border-amber-500/20 bg-amber-500/10 text-amber-200",
   },
-  auto: {
-    label: "Autopilot",
+  machdoch: {
+    label: "Machdoch",
     description:
-      "Let machdoch continue automatically when it can verify the next step.",
+      "Let machdoch use all function calls and verify its work.",
     icon: WandSparkles,
     triggerClassName:
       "border-violet-500/20 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
@@ -129,7 +104,7 @@ export const RUN_MODE_META = {
   {
     label: string;
     description: string;
-    icon: typeof ShieldAlert;
+    icon: typeof MessageSquare;
     triggerClassName: string;
     selectedClassName: string;
     iconClassName: string;
@@ -308,7 +283,7 @@ export const getEffectiveSessionMode = (
   sessionMode: RunMode | undefined,
   runtimeSnapshot: RuntimeSnapshot | null,
 ): RunMode => {
-  return sessionMode ?? runtimeSnapshot?.mode ?? "ask";
+  return sessionMode ?? runtimeSnapshot?.mode ?? "machdoch";
 };
 
 export const WEB_SEARCH_PROVIDER_LABELS: Record<WebSearchProvider, string> = {

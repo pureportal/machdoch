@@ -10,7 +10,6 @@ import type {
   ProviderAvailability,
   RunMode,
   RuntimeConfig,
-  ToolName,
 } from "./types.ts";
 
 const workspacesToClean: string[] = [];
@@ -30,14 +29,12 @@ const createWorkspace = async (): Promise<string> => {
 const createConfig = (
   workspaceRoot: string,
   mode: RunMode,
-  enabledTools: ToolName[],
 ): RuntimeConfig => {
   return {
     workspaceRoot,
     activeProfile: "workspace",
     availableProfiles: [{ name: "workspace", description: "Default profile" }],
     mode,
-    enabledTools,
     provider: "unconfigured",
     model: "gpt-5.5",
     offline: false,
@@ -86,6 +83,27 @@ const createFinalResponseToolCall = (
   };
 };
 
+const createAcceptingMonitorAdapter = (): AgentModelAdapter => ({
+  startTurn: async () => ({
+    text: "",
+    toolCalls: [
+      {
+        id: "monitor-1",
+        name: "report_autopilot_decision",
+        arguments: {
+          decision: "complete",
+          confidence: "high",
+          rationale: "The execution result satisfies the task.",
+          missingRequirements: [],
+          requiredActions: [],
+        },
+      },
+    ],
+  }),
+  continueTurn: async (): Promise<never> => {
+    throw new Error("The monitor adapter should only run one turn.");
+  },
+});
 afterEach(async () => {
   await Promise.all(
     workspacesToClean
@@ -120,7 +138,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "scan this workspace and explain the setup",
-      createConfig(workspaceRoot, "ask", ["filesystem", "shell"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -149,7 +167,7 @@ describe("executeTask", () => {
     const result = await executeTask(
       "inspect config",
       {
-        ...createConfig(workspaceRoot, "ask", ["filesystem"]),
+        ...createConfig(workspaceRoot, "ask"),
         workspaceConfigPath: join(workspaceRoot, ".machdoch", "config.json"),
       },
       emptyCustomizations(workspaceRoot),
@@ -173,7 +191,7 @@ describe("executeTask", () => {
     const result = await executeTask(
       "show profiles",
       {
-        ...createConfig(workspaceRoot, "ask", ["filesystem"]),
+        ...createConfig(workspaceRoot, "ask"),
         activeProfile: "workspace",
         availableProfiles: [
           { name: "workspace", description: "Default profile" },
@@ -202,7 +220,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "show tool policies",
-      createConfig(workspaceRoot, "ask", ["filesystem", "network"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -216,7 +234,7 @@ describe("executeTask", () => {
       "filesystem [low] -> allow",
     );
     expect(result.outputSections[1]?.lines).toContain(
-      "shell [high] -> blocked",
+      "shell [high] -> allow",
     );
   });
 
@@ -240,7 +258,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "list prompts",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       customizations,
     );
 
@@ -280,7 +298,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "inspect instructions",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       customizations,
     );
 
@@ -319,7 +337,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "show skills",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       customizations,
     );
 
@@ -341,7 +359,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "inspect customizations",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -370,7 +388,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "inspect config and update profiles",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -378,31 +396,30 @@ describe("executeTask", () => {
     expect(result.executedTools).toEqual([]);
   });
 
-  it("requires approval in safe mode before even low-risk filesystem inspection", async () => {
+  it("executes read-only filesystem inspections in ask mode", async () => {
     const workspaceRoot = await createWorkspace();
 
     const result = await executeTask(
       "summarize this project setup",
-      createConfig(workspaceRoot, "safe", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
-    expect(result.status).toBe("approval-required");
-    expect(result.executedTools).toEqual([]);
-    expect(result.reason).toContain("requires approval");
+    expect(result.status).toBe("executed");
+    expect(result.executedTools).toEqual(["filesystem"]);
   });
 
-  it("blocks execution when the filesystem tool is disabled", async () => {
+  it("blocks deterministic file writes in ask mode", async () => {
     const workspaceRoot = await createWorkspace();
 
     const result = await executeTask(
-      "inspect this workspace",
-      createConfig(workspaceRoot, "ask", ["shell"]),
+      "create notes.txt with hello world",
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
     expect(result.status).toBe("blocked");
-    expect(result.reason).toContain("not enabled");
+    expect(result.reason).toContain("Switch to machdoch mode");
   });
 
   it("falls back to preview mode for unsupported tasks", async () => {
@@ -410,7 +427,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "install dependencies and commit the changes",
-      createConfig(workspaceRoot, "ask", ["filesystem", "shell", "git"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -428,7 +445,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "show README.md",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -466,7 +483,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "/show-file file=README.md",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       customizations,
     );
 
@@ -506,7 +523,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "/show-file",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       customizations,
     );
 
@@ -562,7 +579,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "/show-file file=src/core/config.ts",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       customizations,
     );
 
@@ -590,7 +607,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "list src",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -614,7 +631,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "list empty-dir",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -627,7 +644,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "show missing.txt",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -640,7 +657,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       'read "../machdoch-secret.txt"',
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -655,7 +672,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "inspect sample.bin",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -677,7 +694,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       'show "notes.txt"',
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -698,7 +715,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "describe this repo setup",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -732,7 +749,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "What is the weather?",
-      createConfig(workspaceRoot, "auto", ["filesystem", "network"]),
+      createConfig(workspaceRoot, "machdoch"),
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: clarificationAdapter,
@@ -817,7 +834,7 @@ describe("executeTask", () => {
         "- https://github.com/BeeWaTec/beelopt-xls-upload-frontend",
         "Inspect all provided repos and paths, create docker-compose.yml and .env, then validate.",
       ].join("\n"),
-      createConfig(workspaceRoot, "ask", ["filesystem", "network"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: prematureBlockAdapter,
@@ -834,7 +851,7 @@ describe("executeTask", () => {
     ).toBe(true);
   });
 
-  it("returns planned instead of executed for model-driven plan mode completions", async () => {
+  it("returns executed for model-driven machdoch completions", async () => {
     const workspaceRoot = await createWorkspace();
 
     const planningAdapter: AgentModelAdapter = {
@@ -842,9 +859,9 @@ describe("executeTask", () => {
         text: "",
         toolCalls: [
           createFinalResponseToolCall({
-            summary: "Plan is ready for approval.",
+            summary: "Implementation outline is ready.",
             markdown:
-              "Plan is ready.\n\n1. Inspect files.\n2. Apply the targeted edit after approval.\n3. Run focused tests.",
+              "Implementation outline is ready.\n\n1. Inspect files.\n2. Apply the targeted edit.\n3. Run focused tests.",
           }),
         ],
       }),
@@ -855,20 +872,21 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "Plan a safe implementation.",
-      createConfig(workspaceRoot, "plan", ["filesystem", "shell"]),
+      createConfig(workspaceRoot, "machdoch"),
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: planningAdapter,
+        monitorModelAdapter: createAcceptingMonitorAdapter(),
       },
     );
 
-    expect(result.status).toBe("planned");
-    expect(result.summary).toBe("Plan is ready for approval.");
+    expect(result.status).toBe("executed");
+    expect(result.summary).toBe("Implementation outline is ready.");
     expect(result.response?.markdown).toContain("Apply the targeted edit");
     expect(result.executedTools).toEqual([]);
   });
 
-  it("pauses before mutating tool calls in plan mode", async () => {
+  it("executes mutating tool calls in machdoch mode", async () => {
     const workspaceRoot = await createWorkspace();
 
     const mutatingAdapter: AgentModelAdapter = {
@@ -885,26 +903,40 @@ describe("executeTask", () => {
           },
         ],
       }),
-      continueTurn: async (): Promise<never> => {
-        throw new Error("The mutating adapter should pause before continuing.");
+      continueTurn: async (params) => {
+        expect(params.toolResults[0]?.isError).not.toBe(true);
+
+        return {
+          text: "",
+          toolCalls: [
+            createFinalResponseToolCall({
+              summary: "Created the requested file.",
+              markdown: "Created planned-change.txt.",
+              verification: ["Created planned-change.txt."],
+            }),
+          ],
+        };
       },
     };
 
     const result = await executeTask(
-      "Create planned-change.txt after approval.",
-      createConfig(workspaceRoot, "plan", ["filesystem"]),
+      "Create planned-change.txt.",
+      createConfig(workspaceRoot, "machdoch"),
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: mutatingAdapter,
+        monitorModelAdapter: createAcceptingMonitorAdapter(),
       },
     );
 
-    expect(result.status).toBe("approval-required");
-    expect(result.summary).toContain("requires approval");
-    await expect(stat(join(workspaceRoot, "planned-change.txt"))).rejects.toThrow();
+    expect(result.status).toBe("executed");
+    expect(result.summary).toBe("Created the requested file.");
+    await expect(
+      stat(join(workspaceRoot, "planned-change.txt")),
+    ).resolves.toBeDefined();
   });
 
-  it("pauses before out-of-workspace shell reads in plan mode", async () => {
+  it("hides side-effecting shell tools in ask mode", async () => {
     const workspaceRoot = await createWorkspace();
 
     const shellAdapter: AgentModelAdapter = {
@@ -920,25 +952,35 @@ describe("executeTask", () => {
           },
         ],
       }),
-      continueTurn: async (): Promise<never> => {
-        throw new Error("The shell adapter should pause before continuing.");
+      continueTurn: async (params) => {
+        expect(params.toolResults[0]?.isError).toBe(true);
+        expect(params.toolResults[0]?.output).toContain("not registered");
+
+        return {
+          text: "",
+          toolCalls: [
+            createFinalResponseToolCall({
+              status: "blocked",
+              summary: "Shell access is unavailable in Ask mode.",
+              blockerReason: "Ask mode exposes only read-only function calls.",
+              markdown: "Switch to Machdoch mode to run shell commands.",
+            }),
+          ],
+        };
       },
     };
 
     const result = await executeTask(
       "Inspect a sensitive file through shell.",
-      createConfig(workspaceRoot, "plan", ["shell"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: shellAdapter,
       },
     );
 
-    expect(result.status).toBe("approval-required");
-    expect(result.summary).toContain("requires approval");
-    const outputText = JSON.stringify(result.outputSections);
-    expect(outputText).toContain("Get-Content");
-    expect(outputText).toContain("Users");
+    expect(result.status).toBe("blocked");
+    expect(result.reason).toContain("read-only function calls");
   });
 
   it("blocks unstructured model answers instead of classifying prose", async () => {
@@ -956,7 +998,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "What is the weather?",
-      createConfig(workspaceRoot, "auto", ["filesystem", "network"]),
+      createConfig(workspaceRoot, "machdoch"),
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: unstructuredAdapter,
@@ -1007,7 +1049,7 @@ describe("executeTask", () => {
     const result = await executeTask(
       "Loop until the runtime stops the executor.",
       {
-        ...createConfig(workspaceRoot, "ask", ["filesystem"]),
+        ...createConfig(workspaceRoot, "ask"),
         agentLimits: {
           executorTurns: 2,
           autopilotExecutorIterations: 16,
@@ -1035,7 +1077,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "scan this workspace setup",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
 
@@ -1082,7 +1124,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "scan this workspace and explain the setup",
-      createConfig(workspaceRoot, "ask", ["filesystem", "shell"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: hangingAdapter,
@@ -1152,7 +1194,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "Inspect missing.txt until you find a clue.",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: loopingAdapter,
@@ -1210,7 +1252,7 @@ describe("executeTask", () => {
 
     const result = await executeTask(
       "stream a final response",
-      createConfig(workspaceRoot, "ask", ["filesystem"]),
+      createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: streamingAdapter,

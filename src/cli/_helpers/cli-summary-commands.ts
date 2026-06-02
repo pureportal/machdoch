@@ -555,10 +555,9 @@ export const printConfigSummary = async (
   writeStdoutLine(`provider: ${config.provider}`);
   writeStdoutLine(`model: ${config.model}`);
   writeStdoutLine(`offline: ${config.offline ? "true" : "false"}`);
-  writeStdoutLine(`enabled tools: ${config.enabledTools.join(", ")}`);
   writeStdoutLine(`executor turns: ${formatLimit(agentLimits.executorTurns)}`);
   writeStdoutLine(
-    `autopilot iterations: ${formatLimit(agentLimits.autopilotExecutorIterations)}`,
+    `machdoch continuations: ${formatLimit(agentLimits.autopilotExecutorIterations)}`,
   );
   writeStdoutLine(`web search provider: ${config.webSearch.activeProvider}`);
   writeStdoutLine(

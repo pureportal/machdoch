@@ -225,7 +225,7 @@ const runTaskExecutionStateMachine = async (
 
         state = "checking-policies";
         message =
-          "Resolve tool approvals and blocked tools before any execution starts.";
+          "Resolve the available tool surface before any execution starts.";
         break;
       }
 
@@ -309,15 +309,12 @@ const runTaskExecutionStateMachine = async (
           "filesystem",
         ])[0];
 
-        if (
-          !runtime.filesystemPolicy ||
-          runtime.filesystemPolicy.decision === "blocked"
-        ) {
+        if (!runtime.filesystemPolicy) {
           return emitTerminalResult(
             task,
             config,
             "blocked",
-            "The required filesystem tool is blocked.",
+            "The required filesystem tool is unavailable.",
             runtime,
             options,
             createExecutionResult(
@@ -326,47 +323,34 @@ const runTaskExecutionStateMachine = async (
                 mode: config.mode,
                 status: "blocked",
                 summary: runtime.explicitPathReference
-                  ? "This task maps to a safe filesystem inspection, but the filesystem tool is currently blocked."
-                  : `This task maps to a safe ${getInspectionLabel(runtime.inspectionTarget ?? "workspace")}, but the filesystem tool is currently blocked.`,
+                  ? "This task maps to a safe filesystem inspection, but the filesystem tool is unavailable."
+                  : `This task maps to a safe ${getInspectionLabel(runtime.inspectionTarget ?? "workspace")}, but the filesystem tool is unavailable.`,
                 executedTools: [],
                 outputSections: runtime.contextSections,
               },
-              runtime.filesystemPolicy?.reason ??
-                "The filesystem tool is unavailable.",
+              "The filesystem tool is unavailable.",
             ),
           );
         }
 
-        const canPlanModeRunReadOnlyFilesystemInspection =
-          config.mode === "plan" &&
-          !runtime.createFileTarget &&
-          (runtime.explicitPathReference || runtime.inspectionTarget);
-
-        if (
-          runtime.filesystemPolicy.decision === "ask" &&
-          !canPlanModeRunReadOnlyFilesystemInspection
-        ) {
+        if (config.mode === "ask" && runtime.createFileTarget) {
           return emitTerminalResult(
             task,
             config,
-            "approval-required",
-            "The task requires approval before the filesystem step can run.",
+            "blocked",
+            "Ask mode cannot run the required filesystem write.",
             runtime,
             options,
             createExecutionResult(
               {
                 task,
                 mode: config.mode,
-                status: "approval-required",
-                summary: runtime.createFileTarget
-                  ? `This task can be executed as a deterministic ${createFileWriteLabel()}, but the current mode still requires explicit approval first.`
-                  : runtime.explicitPathReference
-                    ? "This task can be executed as a read-only filesystem inspection, but the current mode still requires explicit approval first."
-                    : `This task can be executed as a read-only ${getInspectionLabel(runtime.inspectionTarget ?? "workspace")}, but the current mode still requires explicit approval first.`,
+                status: "blocked",
+                summary: `This task can be executed as a deterministic ${createFileWriteLabel()}, but Ask mode is read-only.`,
                 executedTools: [],
                 outputSections: runtime.contextSections,
               },
-              runtime.filesystemPolicy.reason,
+              "Switch to machdoch mode to let the agent create or modify files.",
             ),
           );
         }

@@ -74,12 +74,7 @@ describe("loadRuntimeConfig", () => {
       join(workspaceRoot, ".user-config", "user-config.json"),
     );
     expect(config.availableProfiles).toEqual([]);
-    expect(config.mode).toBe("ask");
-    expect(config.enabledTools).toEqual([
-      "filesystem",
-      "shell",
-      "utilities",
-    ]);
+    expect(config.mode).toBe("machdoch");
     expect(config.provider).toBe("unconfigured");
     expect(config.model).toBe("gpt-5.5");
     expect(config.offline).toBe(false);
@@ -106,17 +101,15 @@ describe("loadRuntimeConfig", () => {
       join(workspaceRoot, ".machdoch", "config.json"),
       JSON.stringify(
         {
-          defaultProfile: "safe-review",
-          defaultMode: "safe",
-          enabledTools: ["filesystem", "git", "not-a-real-tool"],
+          defaultProfile: "ask-review",
+          defaultMode: "ask",
           provider: "openai",
           model: "config-model",
           offline: true,
           profiles: {
-            "safe-review": {
+            "ask-review": {
               description: "Review changes conservatively",
-              mode: "safe",
-              enabledTools: ["filesystem"],
+              mode: "ask",
             },
             local: {
               description: "Prefer a local backend",
@@ -131,21 +124,20 @@ describe("loadRuntimeConfig", () => {
       ),
     );
 
-    const config = await loadRuntimeConfig(workspaceRoot, "auto");
+    const config = await loadRuntimeConfig(workspaceRoot, "machdoch");
 
-    expect(config.activeProfile).toBe("safe-review");
+    expect(config.activeProfile).toBe("ask-review");
     expect(config.availableProfiles).toEqual([
+      {
+        name: "ask-review",
+        description: "Review changes conservatively",
+      },
       {
         name: "local",
         description: "Prefer a local backend",
       },
-      {
-        name: "safe-review",
-        description: "Review changes conservatively",
-      },
     ]);
-    expect(config.mode).toBe("auto");
-    expect(config.enabledTools).toEqual(["filesystem"]);
+    expect(config.mode).toBe("machdoch");
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("config-model");
     expect(config.offline).toBe(true);
@@ -164,14 +156,12 @@ describe("loadRuntimeConfig", () => {
       JSON.stringify(
         {
           defaultMode: "ask",
-          enabledTools: ["filesystem", "shell"],
           provider: "openai",
           model: "base-model",
           profiles: {
             local: {
               description: "Local backend profile",
-              mode: "auto",
-              enabledTools: ["filesystem", "network"],
+              mode: "machdoch",
               provider: "google",
               model: "gemini-2.5-flash",
               offline: true,
@@ -186,8 +176,7 @@ describe("loadRuntimeConfig", () => {
     const config = await loadRuntimeConfig(workspaceRoot, undefined, "local");
 
     expect(config.activeProfile).toBe("local");
-    expect(config.mode).toBe("auto");
-    expect(config.enabledTools).toEqual(["filesystem", "network"]);
+    expect(config.mode).toBe("machdoch");
     expect(config.provider).toBe("google");
     expect(config.model).toBe("gemini-2.5-flash");
     expect(config.offline).toBe(true);
@@ -198,13 +187,13 @@ describe("loadRuntimeConfig", () => {
     const workspaceRoot = await createWorkspace();
 
     process.env.OPENAI_API_KEY = "sk-real-openai-key-123456";
-    process.env.MACHDOCH_MODE = "auto";
+    process.env.MACHDOCH_MODE = "machdoch";
     process.env.MACHDOCH_MODEL = "env-model";
     process.env.MACHDOCH_OFFLINE = "true";
 
     const config = await loadRuntimeConfig(workspaceRoot);
 
-    expect(config.mode).toBe("auto");
+    expect(config.mode).toBe("machdoch");
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("env-model");
     expect(config.offline).toBe(true);
