@@ -32,7 +32,6 @@ export interface TaskTimelineItem {
 const executionStatusLabels: Record<TaskExecutionStatus, string> = {
   planned: "Plan ready",
   executed: "Executed",
-  "approval-required": "Approval required",
   blocked: "Blocked",
   cancelled: "Cancelled",
   unsupported: "Preview only",
@@ -41,7 +40,6 @@ const executionStatusLabels: Record<TaskExecutionStatus, string> = {
 const executionStatusTones: Record<TaskExecutionStatus, TaskPanelTone> = {
   planned: "info",
   executed: "success",
-  "approval-required": "warning",
   blocked: "danger",
   cancelled: "neutral",
   unsupported: "neutral",

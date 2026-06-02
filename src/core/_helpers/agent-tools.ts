@@ -22,8 +22,6 @@ import { createPackageToolDefinitions } from "./package-tool-definitions.js";
 import { createUtilityToolDefinitions } from "./utility-tool-definitions.js";
 import {
   compactTraceText,
-  createTextSection,
-  limitText,
   stringifyUnknown,
 } from "./runtime-text.js";
 import { createDesktopUiToolDefinitions } from "./desktop-ui-tool-definitions.js";
@@ -34,12 +32,6 @@ export type {
   AgentToolExecutionResult,
   ConversationMemoryRuntime,
 } from "./agent-tools-shared.js";
-
-export interface ApprovalPause {
-  summary: string;
-  reason: string;
-  outputSections: TaskExecutionSection[];
-}
 
 export interface AgentLoopSnapshot {
   outputSections: TaskExecutionSection[];
@@ -70,7 +62,7 @@ export const resolveActionDecision = (
     effect?: ToolCallEffect;
     isReadOnlyInPlanMode?: boolean;
   } = {},
-): { decision: "allow" | "ask" | "blocked"; reason: string } => {
+): { decision: "allow" | "blocked"; reason: string } => {
   const isReadOnly = isReadOnlyAction(
     options.effect ?? "external-side-effect",
     options.isReadOnlyInPlanMode,
@@ -97,43 +89,6 @@ const isReadOnlyToolDefinition = (
   definition: AgentToolDefinition,
 ): boolean => {
   return isReadOnlyAction(definition.effect);
-};
-
-const createApprovalPause = (
-  task: string,
-  loopState: AgentLoopSnapshot,
-  toolDefinition: AgentToolDefinition,
-  call: AgentModelToolCall,
-  reason: string,
-): ApprovalPause => {
-  const argsPreview = limitText(stringifyUnknown(call.arguments), 500);
-  const approvalSections: TaskExecutionSection[] = [
-    ...loopState.outputSections,
-    {
-      title: "Approval required",
-      lines: [
-        `task: ${task}`,
-        `tool: ${call.name}`,
-        `backing tool: ${toolDefinition.backingTool}`,
-        `risk: ${toolDefinition.riskLevel}`,
-        `reason: ${reason}`,
-      ],
-    },
-    createTextSection("Requested arguments", argsPreview),
-  ];
-
-  if (loopState.traceLines.length > 0) {
-    approvalSections.push({
-      title: "Tool trace",
-      lines: loopState.traceLines,
-    });
-  }
-
-  return {
-    summary: `The model requested \`${call.name}\`, but the current runtime mode requires approval before it can continue.`,
-    reason,
-    outputSections: approvalSections,
-  };
 };
 
 export const createToolDefinitions = (
@@ -170,7 +125,6 @@ export const executeToolCall = async (
   onActionOutput?: TaskActionOutputHandler,
 ): Promise<{
   result?: AgentToolExecutionResult;
-  approvalPause?: ApprovalPause;
 }> => {
   const toolDefinition = toolDefinitions.get(call.name);
 
@@ -199,18 +153,6 @@ export const executeToolCall = async (
         : {}),
     },
   );
-
-  if (actionDecision.decision === "ask") {
-    return {
-      approvalPause: createApprovalPause(
-        task,
-        loopState,
-        toolDefinition,
-        call,
-        actionDecision.reason,
-      ),
-    };
-  }
 
   if (actionDecision.decision === "blocked") {
     return {

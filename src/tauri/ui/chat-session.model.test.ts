@@ -28,6 +28,7 @@ describe("normalizeShellState", () => {
           id: "session-1",
           provider: "invalid",
           model: "",
+          mode: "auto",
           draft: 12,
           workspace: 42,
           promptHistory: ["first", 7, "second"],
@@ -38,6 +39,7 @@ describe("normalizeShellState", () => {
           updatedAt: 456,
         },
       ],
+      lastSelectedMode: "auto",
       lastSelectedProvider: "invalid",
       lastSelectedModelByProvider: {
         openai: "gpt-custom",
@@ -62,6 +64,7 @@ describe("normalizeShellState", () => {
     expect(normalized.sessions[0]).toMatchObject({
       id: "session-1",
       provider: "openai",
+      mode: "machdoch",
       draft: "",
       workspace: null,
       promptHistory: ["first", "second"],
@@ -72,6 +75,162 @@ describe("normalizeShellState", () => {
       updatedAt: 456,
     });
     expect(normalized.sessions[0]?.model.length).toBeGreaterThan(0);
+    expect(normalized.lastSelectedMode).toBe("machdoch");
+  });
+
+  it("repairs legacy persisted task message sources", () => {
+    const normalized = normalizeShellState({
+      activeSessionId: "legacy-session",
+      sessions: [
+        {
+          id: "legacy-session",
+          provider: "openai",
+          model: "gpt-5.5",
+          workspace: null,
+          createdAt: 1,
+          updatedAt: 2,
+          messages: [
+            {
+              id: "legacy-preview",
+              role: "agent",
+              content: "legacy preview",
+              source: {
+                kind: "preview",
+                preview: {
+                  task: "legacy task",
+                  mode: "auto",
+                  suggestedTools: ["filesystem", "unknown-tool"],
+                  invokedPrompt: {
+                    name: "fix",
+                    tools: ["shell", "unknown-tool"],
+                  },
+                  applicableInstructions: [
+                    {
+                      name: "AGENTS.md",
+                    },
+                  ],
+                },
+              },
+            },
+            {
+              id: "legacy-execution",
+              role: "agent",
+              content: "legacy result",
+              source: {
+                kind: "execution",
+                execution: {
+                  task: "legacy execution",
+                  mode: "safe",
+                  status: "executed",
+                  outputSections: [
+                    {
+                      title: "Output",
+                    },
+                  ],
+                  response: {
+                    markdown: "done",
+                    relatedFiles: [
+                      {
+                        path: "README.md",
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            {
+              id: "legacy-thinking",
+              role: "agent",
+              content: "legacy thinking",
+              source: {
+                kind: "thinking",
+                thinking: {
+                  status: "loading",
+                  mode: "auto",
+                  entries: [
+                    {
+                      label: "Running",
+                      tone: "unknown",
+                    },
+                  ],
+                  actionOutputLines: [
+                    {
+                      stream: "stderr",
+                      text: "failed",
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const messages = normalized.sessions[0]?.messages ?? [];
+    const previewSource = messages[0]?.source;
+    const executionSource = messages[1]?.source;
+    const thinkingSource = messages[2]?.source;
+
+    expect(previewSource).toMatchObject({
+      kind: "preview",
+      preview: {
+        mode: "machdoch",
+        summary: "Task preview restored from persisted session.",
+        suggestedTools: ["filesystem"],
+        warnings: [],
+        notes: [],
+        steps: [],
+        customizationCounts: {
+          instructions: 1,
+          prompts: 0,
+          skills: 0,
+        },
+      },
+    });
+    expect(executionSource).toMatchObject({
+      kind: "execution",
+      execution: {
+        mode: "ask",
+        status: "executed",
+        summary: "Task result restored from persisted session.",
+        executedTools: [],
+        outputSections: [
+          {
+            title: "Output",
+            lines: [],
+          },
+        ],
+        response: {
+          markdown: "done",
+          relatedFiles: [
+            {
+              path: "README.md",
+              description: "",
+            },
+          ],
+        },
+      },
+    });
+    expect(thinkingSource).toMatchObject({
+      kind: "thinking",
+      thinking: {
+        status: "complete",
+        mode: "machdoch",
+        entries: [
+          {
+            label: "Running",
+            detail: "",
+            tone: "info",
+          },
+        ],
+        actionOutputLines: [
+          {
+            stream: "stderr",
+            text: "failed",
+          },
+        ],
+      },
+    });
   });
 });
 
@@ -218,34 +377,34 @@ describe("getSessionOverviewStatus", () => {
     expect(getSessionOverviewStatus(session)).toBe("running");
   });
 
-  it("marks approval-required execution updates as waiting", () => {
+  it("marks blocked execution updates as failed", () => {
     const session = createSession({
       messages: [
         {
           id: "user-task-1",
           taskId: "task-1",
           role: "user",
-          content: "need approval",
+          content: "needs machdoch mode",
           createdAt: 1,
         },
         {
           id: "agent-task-1",
           taskId: "task-1",
           role: "agent",
-          content: "approval needed",
+          content: "blocked",
           createdAt: 2,
           source: {
             kind: "execution",
             execution: {
               ...createMockExecutionFixture("scan this workspace"),
-              status: "approval-required",
+              status: "blocked",
             },
           },
         },
       ],
     });
 
-    expect(getSessionOverviewStatus(session)).toBe("waiting");
+    expect(getSessionOverviewStatus(session)).toBe("failed");
   });
 });
 
@@ -332,20 +491,20 @@ describe("recoverInterruptedTasksForLaunch", () => {
           id: "task-3-user",
           taskId: "task-3",
           role: "user",
-          content: "wait for approval",
+          content: "blocked by ask mode",
           createdAt: 5,
         },
         {
           id: "task-3-agent",
           taskId: "task-3",
           role: "agent",
-          content: "approval needed",
+          content: "blocked",
           createdAt: 6,
           source: {
             kind: "execution",
             execution: {
-              ...createMockExecutionFixture("wait for approval"),
-              status: "approval-required",
+              ...createMockExecutionFixture("blocked by ask mode"),
+              status: "blocked",
             },
           },
         },
@@ -365,7 +524,7 @@ describe("recoverInterruptedTasksForLaunch", () => {
 
     expect(recovered.lastRecoveredLaunchId).toBe("launch-1");
     expect(recoveredSession).toBeDefined();
-    expect(getSessionOverviewStatus(recoveredSession!)).toBe("waiting");
+    expect(getSessionOverviewStatus(recoveredSession!)).toBe("failed");
 
     const crashMessages = recoveredSession!.messages.filter((message) =>
       message.content.startsWith("**Task crashed.**"),

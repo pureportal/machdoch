@@ -1390,7 +1390,6 @@ export const useChatSessionController = (
       bottomRef: state.bottomRef,
       showScrollToNewestButton: state.showScrollToNewestButton,
       onScrollToNewest: state.scrollToNewest,
-      onApprovePlan: taskSubmission.handleApprovePlan,
       onRetryTask: taskSubmission.handleRetryTask,
       onContinueTask: taskSubmission.handleContinueTask,
       onOpenWorkspaceFile: handleOpenWorkspaceFile,

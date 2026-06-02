@@ -376,7 +376,7 @@ export const OnboardingWizard = ({
   const renderPermissionsStep = (): JSX.Element => (
     <div className="grid gap-5">
       <div className="grid gap-2">
-        <p className="text-sm font-semibold text-white">Tool approval style</p>
+        <p className="text-sm font-semibold text-white">Task mode</p>
         <div className="grid gap-2 sm:grid-cols-2">
           {RUN_MODE_ORDER.map((mode) => {
             const meta = RUN_MODE_META[mode];

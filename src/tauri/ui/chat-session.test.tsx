@@ -277,7 +277,7 @@ const createStoredShellState = (): ShellPersistedState => {
     taskId: string,
     title: string,
     createdAt: number,
-    status: "executed" | "approval-required",
+    status: "executed" | "blocked",
   ) => ({
     id: `${taskId}-agent`,
     taskId,
@@ -291,8 +291,8 @@ const createStoredShellState = (): ShellPersistedState => {
         task: title,
         status,
         summary:
-          status === "approval-required"
-            ? "Approval required before continuing."
+          status === "blocked"
+            ? "Blocked before continuing."
             : "Task finished cleanly.",
       },
     },
@@ -319,23 +319,23 @@ const createStoredShellState = (): ShellPersistedState => {
     ],
   });
 
-  const waitingSession = createSession({
-    id: "waiting-session",
-    manualTitle: "Waiting session",
+  const failedSession = createSession({
+    id: "failed-session",
+    manualTitle: "Failed session",
     updatedAt: now - 3_000,
     messages: [
       {
-        id: "waiting-task-user",
-        taskId: "waiting-task",
+        id: "failed-task-user",
+        taskId: "failed-task",
         role: "user",
-        content: "Need approval",
+        content: "Needs machdoch mode",
         createdAt: now - 3_100,
       },
       buildExecutionMessage(
-        "waiting-task",
-        "Need approval",
+        "failed-task",
+        "Needs machdoch mode",
         now - 3_000,
-        "approval-required",
+        "blocked",
       ),
     ],
   });
@@ -389,7 +389,7 @@ const createStoredShellState = (): ShellPersistedState => {
     sessions: [
       archivedSession,
       doneSession,
-      waitingSession,
+      failedSession,
       runningSession,
       emptySession,
     ],
@@ -1550,7 +1550,6 @@ describe("ChatSession component", () => {
           },
         ]}
         bottomRef={{ current: null }}
-        onApprovePlan={() => {}}
         onRetryTask={() => {}}
         onContinueTask={() => {}}
         onOpenWorkspaceFile={() => {}}
@@ -1592,7 +1591,6 @@ describe("ChatSession component", () => {
           },
         ]}
         bottomRef={{ current: null }}
-        onApprovePlan={() => {}}
         onRetryTask={() => {}}
         onContinueTask={() => {}}
         onOpenWorkspaceFile={() => {}}
@@ -1685,7 +1683,6 @@ describe("ChatSession component", () => {
         ]}
         aiContextMessageLimit={2}
         bottomRef={{ current: null }}
-        onApprovePlan={() => {}}
         onRetryTask={() => {}}
         onContinueTask={() => {}}
         onOpenWorkspaceFile={() => {}}
@@ -1975,8 +1972,8 @@ describe("ChatSession component", () => {
         ),
       ).toBeDefined();
       expect(
-        within(getSessionRow("Waiting session")).getByLabelText(
-          "Session status: Waiting for approval",
+        within(getSessionRow("Failed session")).getByLabelText(
+          "Session status: Failed",
         ),
       ).toBeDefined();
       expect(

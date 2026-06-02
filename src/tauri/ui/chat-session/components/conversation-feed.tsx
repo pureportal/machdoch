@@ -29,7 +29,6 @@ export interface ConversationFeedProps {
   visibleMessages: ChatSessionMessage[];
   aiContextMessageLimit?: number;
   bottomRef: RefObject<HTMLDivElement | null>;
-  onApprovePlan: (message: ChatSessionMessage) => void;
   onRetryTask: (message: ChatSessionMessage) => void;
   onContinueTask: (message: ChatSessionMessage) => void;
   onOpenWorkspaceFile: (relativePath: string) => void;
@@ -55,7 +54,6 @@ export const ConversationFeed = ({
   visibleMessages,
   aiContextMessageLimit = DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
   bottomRef,
-  onApprovePlan,
   onRetryTask,
   onContinueTask,
   onOpenWorkspaceFile,
@@ -217,7 +215,6 @@ export const ConversationFeed = ({
                 {message.source?.kind === "execution" ? (
                   <ExecutionInsightRow
                     execution={message.source.execution}
-                    onApprovePlan={() => onApprovePlan(message)}
                     onRetryTask={() => onRetryTask(message)}
                     onContinueTask={() => onContinueTask(message)}
                     onOpenWorkspaceFile={onOpenWorkspaceFile}

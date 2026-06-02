@@ -49,6 +49,21 @@ describe("session shell helpers", () => {
     expect(getEffectiveSessionMode(undefined, null)).toBe("machdoch");
   });
 
+  it("falls back when persisted mode values are malformed", () => {
+    expect(
+      getEffectiveSessionMode(
+        "auto" as never,
+        createRuntimeSnapshot({ mode: "ask" }),
+      ),
+    ).toBe("ask");
+    expect(
+      getEffectiveSessionMode(
+        undefined,
+        createRuntimeSnapshot({ mode: "auto" as never }),
+      ),
+    ).toBe("machdoch");
+  });
+
   it("formats workspace labels from path tails", () => {
     expect(getWorkspaceLabel("c:\\Development\\machdoch")).toBe("machdoch");
     expect(getWorkspaceLabel("/tmp/example-workspace")).toBe(

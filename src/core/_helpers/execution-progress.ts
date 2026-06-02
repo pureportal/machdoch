@@ -5,18 +5,12 @@ import type {
 
 type TerminalTaskExecutionState = Extract<
   TaskExecutionState,
-  | "completed"
-  | "planned"
-  | "approval-required"
-  | "blocked"
-  | "unsupported"
-  | "cancelled"
+  "completed" | "planned" | "blocked" | "unsupported" | "cancelled"
 >;
 
 const TERMINAL_EXECUTION_STATES = {
   completed: true,
   planned: true,
-  "approval-required": true,
   blocked: true,
   unsupported: true,
   cancelled: true,
@@ -31,7 +25,6 @@ export const isTerminalTaskExecutionState = (
 export const TASK_EXECUTION_STATUS_TO_TERMINAL_STATE = {
   planned: "planned",
   executed: "completed",
-  "approval-required": "approval-required",
   blocked: "blocked",
   cancelled: "cancelled",
   unsupported: "unsupported",

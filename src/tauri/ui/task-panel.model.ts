@@ -84,8 +84,6 @@ const createStatusTone = (
       return "info";
     case "executed":
       return "success";
-    case "approval-required":
-      return "warning";
     case "blocked":
       return "danger";
     case "cancelled":

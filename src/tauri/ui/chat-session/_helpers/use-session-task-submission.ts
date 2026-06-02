@@ -41,7 +41,6 @@ import {
   removeSessionArchiveFlag,
 } from "./session-shell";
 import {
-  APPROVE_PLAN_DISPLAY_CONTENT,
   CONTINUE_TASK_DISPLAY_CONTENT,
   RETRY_TASK_DISPLAY_CONTENT,
   type TaskActionPromptKind,
@@ -397,43 +396,6 @@ export const useSessionTaskSubmission = (options: {
     [options],
   );
 
-  const handleApprovePlan = useCallback(
-    (message: ChatSessionMessage): void => {
-      if (
-        message.source?.kind !== "execution" ||
-        message.source.execution.status !== "planned"
-      ) {
-        return;
-      }
-
-      const sourceSession = getMessageSourceSession(message);
-      const execution = message.source.execution;
-      const approvedPlan = execution.response?.markdown.trim();
-      const approvalTask = [
-        "Implement this approved plan.",
-        "",
-        "Original task:",
-        execution.task,
-        ...(approvedPlan
-          ? ["", "Approved plan:", approvedPlan]
-          : ["", "Plan summary:", execution.summary]),
-      ].join("\n");
-
-      submitTaskToSession({
-        sessionSnapshot: sourceSession,
-        task: approvalTask,
-        contextAttachments: [],
-        clearDraft: false,
-        activateSession: true,
-        modeOverride: "ask",
-        visibleMessageContent: APPROVE_PLAN_DISPLAY_CONTENT,
-        promptHistoryContent: APPROVE_PLAN_DISPLAY_CONTENT,
-        messageIntent: "approve-plan",
-      });
-    },
-    [getMessageSourceSession, submitTaskToSession],
-  );
-
   const handleRetryTask = useCallback(
     (message: ChatSessionMessage): void => {
       if (isRecoveredTaskCrashMessage(message)) {
@@ -466,8 +428,7 @@ export const useSessionTaskSubmission = (options: {
       if (
         execution.status !== "blocked" &&
         execution.status !== "cancelled" &&
-        execution.status !== "unsupported" &&
-        execution.status !== "approval-required"
+        execution.status !== "unsupported"
       ) {
         return;
       }
@@ -518,8 +479,7 @@ export const useSessionTaskSubmission = (options: {
       if (
         execution.status !== "executed" &&
         execution.status !== "blocked" &&
-        execution.status !== "cancelled" &&
-        execution.status !== "approval-required"
+        execution.status !== "cancelled"
       ) {
         return;
       }
@@ -540,7 +500,6 @@ export const useSessionTaskSubmission = (options: {
 
   return {
     submitTaskToSession,
-    handleApprovePlan,
     handleRetryTask,
     handleContinueTask,
   };

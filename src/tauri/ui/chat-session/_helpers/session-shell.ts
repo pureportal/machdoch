@@ -6,7 +6,6 @@ import {
   ListFilter,
   LoaderCircle,
   MessageSquare,
-  ShieldAlert,
   ServerCrash,
   XCircle,
   WandSparkles,
@@ -138,14 +137,6 @@ export const SESSION_STATUS_META = {
       "border-sky-500/20 bg-sky-500/10 shadow-[0_0_18px_rgba(14,165,233,0.16)]",
     iconClassName: "animate-spin text-sky-300",
   },
-  waiting: {
-    label: "Waiting for approval",
-    filterLabel: "Waiting",
-    icon: ShieldAlert,
-    containerClassName:
-      "border-amber-500/20 bg-amber-500/10 shadow-[0_0_18px_rgba(245,158,11,0.18)]",
-    iconClassName: "animate-pulse text-amber-300",
-  },
   done: {
     label: "Done",
     filterLabel: "Done",
@@ -192,11 +183,6 @@ export const SESSION_STATUS_FILTERS = [
     id: "running",
     label: SESSION_STATUS_META.running.filterLabel,
     icon: SESSION_STATUS_META.running.icon,
-  },
-  {
-    id: "waiting",
-    label: SESSION_STATUS_META.waiting.filterLabel,
-    icon: SESSION_STATUS_META.waiting.icon,
   },
   {
     id: "done",
@@ -279,11 +265,23 @@ export const removeSessionProfileOverride = (
   return removeSessionProperty(session, "profile");
 };
 
+const isRunMode = (value: unknown): value is RunMode => {
+  return value === "ask" || value === "machdoch";
+};
+
 export const getEffectiveSessionMode = (
   sessionMode: RunMode | undefined,
   runtimeSnapshot: RuntimeSnapshot | null,
 ): RunMode => {
-  return sessionMode ?? runtimeSnapshot?.mode ?? "machdoch";
+  if (isRunMode(sessionMode)) {
+    return sessionMode;
+  }
+
+  if (isRunMode(runtimeSnapshot?.mode)) {
+    return runtimeSnapshot.mode;
+  }
+
+  return "machdoch";
 };
 
 export const WEB_SEARCH_PROVIDER_LABELS: Record<WebSearchProvider, string> = {

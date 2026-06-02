@@ -21,18 +21,12 @@ export const formatExecutionProgressLines = (
   const terminalPrefixes: Record<
     Extract<
       TaskExecutionState,
-      | "completed"
-      | "planned"
-      | "approval-required"
-      | "blocked"
-      | "unsupported"
-      | "cancelled"
+      "completed" | "planned" | "blocked" | "unsupported" | "cancelled"
     >,
     string
   > = {
     completed: "Done",
     planned: "Plan ready",
-    "approval-required": "Approval required",
     blocked: "Needs input",
     unsupported: "Cannot continue",
     cancelled: "Cancelled",

@@ -210,7 +210,6 @@ const TASK_EXECUTION_PROGRESS_STATES = [
   "monitoring",
   "planned",
   "completed",
-  "approval-required",
   "blocked",
   "unsupported",
   "cancelled",

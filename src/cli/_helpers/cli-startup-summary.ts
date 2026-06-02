@@ -21,7 +21,6 @@ type RuntimeProvider = Exclude<ModelProvider, "unconfigured">;
 type DesktopSessionStatus =
   | "empty"
   | "running"
-  | "waiting"
   | "done"
   | "failed"
   | "crashed";
@@ -105,7 +104,6 @@ const WEB_SEARCH_PROVIDER_LABELS: Record<WebSearchProvider, string> = {
 const STATUS_LABELS: Record<DesktopSessionStatus, string> = {
   empty: "empty",
   running: "running",
-  waiting: "waiting",
   done: "done",
   failed: "failed",
   crashed: "crashed",
@@ -338,11 +336,11 @@ const getSessionStatus = (
   if (source.kind === "execution") {
     const executionStatus = getNestedStatus(source, "execution");
 
-    if (executionStatus === "approval-required") {
-      return "waiting";
+    if (executionStatus === "blocked" || executionStatus === "cancelled") {
+      return "failed";
     }
 
-    if (executionStatus === "blocked" || executionStatus === "cancelled") {
+    if (executionStatus && executionStatus !== "executed") {
       return "failed";
     }
   }

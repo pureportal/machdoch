@@ -1,11 +1,9 @@
-export type TaskActionPromptKind = "approve-plan" | "retry-task" | "continue-task";
+export type TaskActionPromptKind = "retry-task" | "continue-task";
 
-export const APPROVE_PLAN_DISPLAY_CONTENT = "Approve plan.";
 export const RETRY_TASK_DISPLAY_CONTENT = "Retry previous task.";
 export const CONTINUE_TASK_DISPLAY_CONTENT = "Continue previous task.";
 
 const GENERATED_PROMPT_PREFIXES: Record<TaskActionPromptKind, string[]> = {
-  "approve-plan": ["Implement this approved plan.", APPROVE_PLAN_DISPLAY_CONTENT],
   "retry-task": [
     "Retry this task from the failed or interrupted step.",
     "Retry this task after the app restarted before it finished.",
@@ -23,7 +21,6 @@ const GENERATED_PROMPT_PREFIXES: Record<TaskActionPromptKind, string[]> = {
 };
 
 const SECTION_LABELS = new Set([
-  "Approved plan:",
   "Context:",
   "Instructions:",
   "Objective:",
@@ -79,8 +76,6 @@ export const getTaskActionDisplayContent = (
   content: string,
 ): string | null => {
   switch (getTaskActionPromptKind(content)) {
-    case "approve-plan":
-      return APPROVE_PLAN_DISPLAY_CONTENT;
     case "retry-task":
       return RETRY_TASK_DISPLAY_CONTENT;
     case "continue-task":

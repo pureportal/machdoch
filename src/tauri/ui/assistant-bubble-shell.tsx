@@ -31,7 +31,6 @@ export const AssistantBubbleShell = () => {
 
   const activeSessionSummary = useMemo(() => {
     let runningCount = 0;
-    let waitingCount = 0;
 
     for (const session of state.shellState.sessions) {
       const status = getSessionOverviewStatus(session);
@@ -39,16 +38,11 @@ export const AssistantBubbleShell = () => {
       if (status === "running") {
         runningCount += 1;
       }
-
-      if (status === "waiting") {
-        waitingCount += 1;
-      }
     }
 
     return {
       runningCount,
-      waitingCount,
-      pendingCount: runningCount + waitingCount,
+      pendingCount: runningCount,
     };
   }, [state.shellState.sessions]);
 

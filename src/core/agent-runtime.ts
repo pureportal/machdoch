@@ -34,7 +34,6 @@ import {
 import {
   createToolDefinitions,
   executeToolCall,
-  type ApprovalPause,
 } from "./_helpers/agent-tools.js";
 import {
   prepareConversationPromptContext,
@@ -407,25 +406,6 @@ const finalizeUnstructuredModelResponseResult = (
     loopState,
     "The model-driven execution stopped without submitting a structured final response.",
     "The executor must finish by calling `submit_final_response` with status `completed` or `blocked`.",
-  );
-};
-
-const finalizeApprovalResult = (
-  task: string,
-  config: RuntimeConfig,
-  loopState: AgentLoopState,
-  pause: ApprovalPause,
-): TaskExecutionResult => {
-  return createExecutionResult(
-    {
-      task,
-      mode: config.mode,
-      status: "approval-required",
-      summary: pause.summary,
-      executedTools: loopState.executedTools,
-      outputSections: pause.outputSections,
-    },
-    pause.reason,
   );
 };
 
@@ -970,18 +950,6 @@ const runExecutorCycle = async (
         call,
         onActionOutput,
       );
-
-      if (executionOutcome.approvalPause) {
-        return {
-          loopState,
-          result: finalizeApprovalResult(
-            task,
-            config,
-            loopState,
-            executionOutcome.approvalPause,
-          ),
-        };
-      }
 
       const result = executionOutcome.result;
 

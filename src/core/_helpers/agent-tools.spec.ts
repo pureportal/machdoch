@@ -124,6 +124,5 @@ describe("executeToolCall", () => {
     );
 
     expect(result.result?.toolResult.output).toBe("done");
-    expect(result.approvalPause).toBeUndefined();
   });
 });

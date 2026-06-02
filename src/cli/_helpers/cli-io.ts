@@ -31,8 +31,6 @@ const createStatusFallbackLine = (execution: TaskExecutionResult): string => {
       return `Plan ready: ${execution.summary}`;
     case "executed":
       return execution.summary;
-    case "approval-required":
-      return `Approval required: ${execution.summary}`;
     case "blocked":
       return `Blocked: ${execution.summary}`;
     case "cancelled":

@@ -35,11 +35,11 @@ describe("execution-message helpers", () => {
     expect(
       createFallbackExecutionMarkdown(
         createExecution({
-          status: "approval-required",
-          summary: "Needs approval.",
+          status: "blocked",
+          summary: "Needs machdoch mode.",
         }),
       ),
-    ).toBe("**Approval required.** Needs approval.");
+    ).toBe("**Blocked.** Needs machdoch mode.");
   });
 
   it("prefers structured markdown over fallback content", () => {

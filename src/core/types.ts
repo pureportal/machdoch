@@ -363,7 +363,6 @@ export type TaskExecutionState =
   | "monitoring"
   | "planned"
   | "completed"
-  | "approval-required"
   | "blocked"
   | "unsupported"
   | "cancelled";
@@ -371,7 +370,6 @@ export type TaskExecutionState =
 export type TaskExecutionStatus =
   | "planned"
   | "executed"
-  | "approval-required"
   | "blocked"
   | "cancelled"
   | "unsupported";

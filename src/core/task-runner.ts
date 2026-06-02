@@ -126,7 +126,7 @@ const createPlanSteps = (
   config: RuntimeConfig,
   invokedPrompt?: ResolvedPromptInvocation,
 ): TaskPlanStep[] => {
-  const approvalStepDescription =
+  const toolSurfaceDescription =
     config.mode === "ask"
       ? "Use only read-only function calls and report when the task needs Machdoch mode to change state."
       : "Use the needed function calls automatically, then run a separate validator pass before declaring the task complete.";
@@ -151,7 +151,7 @@ const createPlanSteps = (
     },
     {
       title: "Check tool surface",
-      description: approvalStepDescription,
+      description: toolSurfaceDescription,
     },
     {
       title: "Execute and keep iterating",

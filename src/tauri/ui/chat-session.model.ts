@@ -1,11 +1,27 @@
 import { normalizeConversationMemoryEntries } from "../../core/memory.js";
-import type { ConversationMemoryEntry, RunMode } from "../../core/types.js";
+import { VALID_TOOLS } from "../../core/runtime-contract.generated.js";
+import type {
+  ConversationMemoryEntry,
+  RunMode,
+  TaskExecutionNarrative,
+  TaskExecutionResult,
+  TaskExecutionSection,
+  TaskExecutionStatus,
+  TaskRunPreview,
+  ToolName,
+} from "../../core/types.js";
 import {
   getDefaultModelForProvider,
   type RuntimeProvider,
 } from "./model-catalog";
-import type { TaskPanelSource } from "./task-panel.model";
-import type { TaskThinkingSource } from "./task-thinking.model";
+import type { TaskPanelSource, TaskPanelTone } from "./task-panel.model";
+import type {
+  TaskThinkingActionOutputLine,
+  TaskThinkingEntry,
+  TaskThinkingModelStream,
+  TaskThinkingSource,
+  TaskThinkingTrace,
+} from "./task-thinking.model";
 
 export type ChatSessionMessageSource = TaskPanelSource | TaskThinkingSource;
 
@@ -31,7 +47,7 @@ export interface ChatSessionMessage {
   role: "user" | "agent";
   content: string;
   createdAt?: number;
-  intent?: "approve-plan" | "retry-task" | "continue-task";
+  intent?: "retry-task" | "continue-task";
   source?: ChatSessionMessageSource;
 }
 
@@ -69,7 +85,6 @@ export interface ShellVoiceSettings {
 export type SessionOverviewStatus =
   | "empty"
   | "running"
-  | "waiting"
   | "done"
   | "failed"
   | "crashed";
@@ -93,6 +108,31 @@ const MAX_VOICE_RATE = 1.4;
 const SPECIAL_SESSION_KINDS = ["quick-voice"] as const;
 const RUN_MODES: RunMode[] = ["ask", "machdoch"];
 const RUNTIME_PROVIDERS: RuntimeProvider[] = ["openai", "anthropic", "google"];
+const TASK_EXECUTION_STATUSES: TaskExecutionStatus[] = [
+  "planned",
+  "executed",
+  "blocked",
+  "cancelled",
+  "unsupported",
+];
+const TASK_PANEL_TONES: TaskPanelTone[] = [
+  "neutral",
+  "info",
+  "success",
+  "warning",
+  "danger",
+];
+const THINKING_STATUSES: TaskThinkingTrace["status"][] = [
+  "running",
+  "complete",
+];
+const MODEL_STREAM_KINDS: TaskThinkingModelStream["kind"][] = [
+  "assistant",
+  "tool-call",
+  "reasoning",
+  "status",
+  "tool-result",
+];
 const MAX_SESSION_TAGS = 12;
 const MAX_SESSION_TAG_LENGTH = 32;
 const SESSION_RETENTION_DAY_MS = 24 * 60 * 60 * 1000;
@@ -124,11 +164,90 @@ const isRunMode = (value: unknown): value is RunMode => {
   return typeof value === "string" && RUN_MODES.includes(value as RunMode);
 };
 
+const normalizeStoredRunMode = (
+  value: unknown,
+  fallback: RunMode = "machdoch",
+): RunMode => {
+  if (isRunMode(value)) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  switch (value.toLowerCase()) {
+    case "auto":
+    case "autopilot":
+      return "machdoch";
+    case "read-only":
+    case "readonly":
+    case "safe":
+    case "plan":
+      return "ask";
+    default:
+      return fallback;
+  }
+};
+
+const normalizeOptionalStoredRunMode = (value: unknown): RunMode | undefined => {
+  if (isRunMode(value)) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  switch (value.toLowerCase()) {
+    case "auto":
+    case "autopilot":
+      return "machdoch";
+    case "read-only":
+    case "readonly":
+    case "safe":
+    case "plan":
+      return "ask";
+    default:
+      return undefined;
+  }
+};
+
 const isRuntimeProvider = (value: unknown): value is RuntimeProvider => {
   return (
     typeof value === "string" &&
     RUNTIME_PROVIDERS.includes(value as RuntimeProvider)
   );
+};
+
+const isTaskExecutionStatus = (
+  value: unknown,
+): value is TaskExecutionStatus => {
+  return (
+    typeof value === "string" &&
+    TASK_EXECUTION_STATUSES.includes(value as TaskExecutionStatus)
+  );
+};
+
+const normalizeTaskExecutionStatus = (
+  value: unknown,
+): TaskExecutionStatus => {
+  if (isTaskExecutionStatus(value)) {
+    return value;
+  }
+
+  return "unsupported";
+};
+
+const isTaskPanelTone = (value: unknown): value is TaskPanelTone => {
+  return (
+    typeof value === "string" &&
+    TASK_PANEL_TONES.includes(value as TaskPanelTone)
+  );
+};
+
+const isToolName = (value: unknown): value is ToolName => {
+  return typeof value === "string" && VALID_TOOLS.includes(value as ToolName);
 };
 
 const isSpecialSessionKind = (
@@ -147,6 +266,62 @@ const isContextAttachmentKind = (
     typeof value === "string" &&
     CONTEXT_ATTACHMENT_KINDS.includes(value as ChatSessionContextAttachmentKind)
   );
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null;
+};
+
+const normalizeString = (value: unknown, fallback = ""): string => {
+  return typeof value === "string" ? value : fallback;
+};
+
+const normalizeOptionalString = (value: unknown): string | undefined => {
+  return typeof value === "string" ? value : undefined;
+};
+
+const normalizeFiniteNumber = (value: unknown, fallback = 0): number => {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : fallback;
+};
+
+const normalizeOptionalFiniteNumber = (value: unknown): number | undefined => {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+};
+
+const normalizeStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((entry): entry is string => typeof entry === "string");
+};
+
+const normalizeToolNames = (value: unknown): ToolName[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(value.filter(isToolName))];
+};
+
+const normalizeStringRecord = (value: unknown): Record<string, string> => {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const normalized: Record<string, string> = {};
+
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string") {
+      normalized[key] = entry;
+    }
+  }
+
+  return normalized;
 };
 
 const getFallbackAttachmentName = (path: string): string => {
@@ -259,6 +434,7 @@ export const createSession = (
 ): ChatSessionRecord => {
   const provider = overrides.provider ?? DEFAULT_PROVIDER;
   const now = overrides.updatedAt ?? Date.now();
+  const mode = normalizeOptionalStoredRunMode(overrides.mode);
   const specialSession = isSpecialSessionKind(overrides.specialSession)
     ? overrides.specialSession
     : undefined;
@@ -279,7 +455,7 @@ export const createSession = (
     ...(overrides.profile ? { profile: overrides.profile } : {}),
     provider,
     model: overrides.model ?? getDefaultModelForProvider(provider),
-    ...(overrides.mode ? { mode: overrides.mode } : {}),
+    ...(mode ? { mode } : {}),
     draft: overrides.draft ?? "",
     draftContextAttachments: overrides.draftContextAttachments ?? [],
     ...(overrides.manualTitle ? { manualTitle: overrides.manualTitle } : {}),
@@ -355,12 +531,420 @@ const normalizePromptHistoryEntries = (value: unknown): string[] => {
   return normalizedEntries;
 };
 
+const normalizeTaskCustomizationMatches = (
+  value: unknown,
+): TaskRunPreview["applicableInstructions"] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(isRecord)
+    .map((entry, index) => ({
+      kind: entry.kind === "always-on" ? "always-on" : "conditional",
+      name: normalizeString(entry.name, `Instruction ${index + 1}`),
+      path: normalizeString(entry.path),
+      priority: normalizeFiniteNumber(entry.priority),
+      body: normalizeString(entry.body),
+      reason: normalizeString(entry.reason, "Matched persisted instruction."),
+    }));
+};
+
+const normalizeTaskSuggestions = (
+  value: unknown,
+): TaskRunPreview["suggestedPrompts"] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(isRecord)
+    .map((entry, index) => ({
+      name: normalizeString(entry.name, `Suggestion ${index + 1}`),
+      path: normalizeString(entry.path),
+      score: normalizeFiniteNumber(entry.score),
+      reason: normalizeString(entry.reason),
+    }));
+};
+
+const normalizeTaskPlanSteps = (
+  value: unknown,
+): TaskRunPreview["steps"] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(isRecord)
+    .map((entry, index) => ({
+      title: normalizeString(entry.title, `Step ${index + 1}`),
+      description: normalizeString(entry.description),
+    }));
+};
+
+const normalizeResolvedPromptInvocation = (
+  value: unknown,
+): TaskRunPreview["invokedPrompt"] => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const name = normalizeString(value.name).trim();
+
+  if (!name) {
+    return undefined;
+  }
+
+  return {
+    path: normalizeString(value.path),
+    name,
+    body: normalizeString(value.body),
+    tools: normalizeToolNames(value.tools),
+    inputs: normalizeStringArray(value.inputs),
+    arguments: normalizeString(value.arguments),
+    expectedInputs: normalizeStringArray(value.expectedInputs),
+    inputValues: normalizeStringRecord(value.inputValues),
+    resolvedBody: normalizeString(value.resolvedBody, normalizeString(value.body)),
+    ...(normalizeOptionalString(value.description)
+      ? { description: normalizeOptionalString(value.description) }
+      : {}),
+    ...(normalizeOptionalString(value.agent)
+      ? { agent: normalizeOptionalString(value.agent) }
+      : {}),
+    ...(normalizeOptionalString(value.model)
+      ? { model: normalizeOptionalString(value.model) }
+      : {}),
+    ...(normalizeOptionalString(value.argumentHint)
+      ? { argumentHint: normalizeOptionalString(value.argumentHint) }
+      : {}),
+  };
+};
+
+const normalizeCustomizationCounts = (
+  value: unknown,
+  preview: Pick<
+    TaskRunPreview,
+    "applicableInstructions" | "suggestedPrompts" | "suggestedSkills"
+  >,
+): TaskRunPreview["customizationCounts"] => {
+  if (!isRecord(value)) {
+    return {
+      instructions: preview.applicableInstructions.length,
+      prompts: preview.suggestedPrompts.length,
+      skills: preview.suggestedSkills.length,
+    };
+  }
+
+  return {
+    instructions: normalizeFiniteNumber(
+      value.instructions,
+      preview.applicableInstructions.length,
+    ),
+    prompts: normalizeFiniteNumber(value.prompts, preview.suggestedPrompts.length),
+    skills: normalizeFiniteNumber(value.skills, preview.suggestedSkills.length),
+  };
+};
+
+const normalizeTaskRunPreview = (
+  value: unknown,
+  fallbackTask: string,
+): TaskRunPreview | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const applicableInstructions = normalizeTaskCustomizationMatches(
+    value.applicableInstructions,
+  );
+  const suggestedPrompts = normalizeTaskSuggestions(value.suggestedPrompts);
+  const suggestedSkills = normalizeTaskSuggestions(value.suggestedSkills);
+  const previewBase = {
+    applicableInstructions,
+    suggestedPrompts,
+    suggestedSkills,
+  };
+
+  return {
+    task: normalizeString(value.task, fallbackTask || "Untitled task"),
+    mode: normalizeStoredRunMode(value.mode),
+    summary: normalizeString(
+      value.summary,
+      "Task preview restored from persisted session.",
+    ),
+    suggestedTools: normalizeToolNames(value.suggestedTools),
+    ...(normalizeResolvedPromptInvocation(value.invokedPrompt)
+      ? { invokedPrompt: normalizeResolvedPromptInvocation(value.invokedPrompt) }
+      : {}),
+    applicableInstructions,
+    suggestedPrompts,
+    suggestedSkills,
+    warnings: normalizeStringArray(value.warnings),
+    notes: normalizeStringArray(value.notes),
+    steps: normalizeTaskPlanSteps(value.steps),
+    customizationCounts: normalizeCustomizationCounts(
+      value.customizationCounts,
+      previewBase,
+    ),
+  };
+};
+
+const normalizeTaskExecutionSection = (
+  value: unknown,
+  index: number,
+): TaskExecutionSection | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const section: TaskExecutionSection = {
+    title: normalizeString(value.title, `Details ${index + 1}`),
+    lines: normalizeStringArray(value.lines),
+  };
+
+  if (value.audience === "user" || value.audience === "internal") {
+    section.audience = value.audience;
+  }
+
+  if (isTaskPanelTone(value.tone)) {
+    section.tone = value.tone;
+  }
+
+  return section;
+};
+
+const normalizeTaskExecutionSections = (
+  value: unknown,
+): TaskExecutionSection[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map(normalizeTaskExecutionSection)
+    .filter((section): section is TaskExecutionSection => section !== undefined);
+};
+
+const normalizeTaskExecutionResponse = (
+  value: unknown,
+): TaskExecutionNarrative | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const relatedFiles = Array.isArray(value.relatedFiles)
+    ? value.relatedFiles
+        .filter(isRecord)
+        .map((entry) => ({
+          path: normalizeString(entry.path),
+          description: normalizeString(entry.description),
+        }))
+        .filter((entry) => entry.path.length > 0)
+    : [];
+
+  return {
+    markdown: normalizeString(value.markdown),
+    highlights: normalizeStringArray(value.highlights),
+    relatedFiles,
+    verification: normalizeStringArray(value.verification),
+    followUps: normalizeStringArray(value.followUps),
+  };
+};
+
+const normalizeTaskExecutionResult = (
+  value: unknown,
+  fallbackTask: string,
+): TaskExecutionResult | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const response = normalizeTaskExecutionResponse(value.response);
+
+  return {
+    task: normalizeString(value.task, fallbackTask || "Untitled task"),
+    mode: normalizeStoredRunMode(value.mode),
+    status: normalizeTaskExecutionStatus(value.status),
+    summary: normalizeString(
+      value.summary,
+      "Task result restored from persisted session.",
+    ),
+    executedTools: normalizeToolNames(value.executedTools),
+    ...(normalizeOptionalString(value.reason)
+      ? { reason: normalizeOptionalString(value.reason) }
+      : {}),
+    outputSections: normalizeTaskExecutionSections(value.outputSections),
+    ...(response ? { response } : {}),
+  };
+};
+
+const normalizeThinkingEntry = (
+  value: unknown,
+  index: number,
+): TaskThinkingEntry | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return {
+    id: normalizeString(value.id, `thinking-entry-${index}`),
+    label: normalizeString(value.label, "Progress"),
+    detail: normalizeString(value.detail),
+    tone: isTaskPanelTone(value.tone) ? value.tone : "info",
+    timestamp: normalizeFiniteNumber(value.timestamp, index),
+  };
+};
+
+const normalizeThinkingModelStream = (
+  value: unknown,
+): TaskThinkingModelStream | undefined => {
+  if (
+    !isRecord(value) ||
+    typeof value.kind !== "string" ||
+    !MODEL_STREAM_KINDS.includes(value.kind as TaskThinkingModelStream["kind"])
+  ) {
+    return undefined;
+  }
+
+  return {
+    kind: value.kind as TaskThinkingModelStream["kind"],
+    label: normalizeString(value.label),
+    content: normalizeString(value.content),
+    ...(typeof value.complete === "boolean" ? { complete: value.complete } : {}),
+  };
+};
+
+const normalizeThinkingActionOutputLines = (
+  value: unknown,
+): TaskThinkingActionOutputLine[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(isRecord)
+    .map((entry, index) => ({
+      id: normalizeString(entry.id, `thinking-output-${index}`),
+      toolName: normalizeString(entry.toolName),
+      stream: entry.stream === "stderr" ? "stderr" : "stdout",
+      text: normalizeString(entry.text),
+      timestamp: normalizeFiniteNumber(entry.timestamp, index),
+    }));
+};
+
+const normalizeThinkingTrace = (
+  value: unknown,
+): TaskThinkingTrace | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const entries = Array.isArray(value.entries)
+    ? value.entries
+        .map(normalizeThinkingEntry)
+        .filter((entry): entry is TaskThinkingEntry => entry !== undefined)
+    : [];
+  const modelStream = normalizeThinkingModelStream(value.modelStream);
+  const actionOutputLines = normalizeThinkingActionOutputLines(
+    value.actionOutputLines,
+  );
+
+  return {
+    status:
+      typeof value.status === "string" &&
+      THINKING_STATUSES.includes(value.status as TaskThinkingTrace["status"])
+        ? (value.status as TaskThinkingTrace["status"])
+        : "complete",
+    mode: normalizeStoredRunMode(value.mode),
+    entries,
+    ...(normalizeOptionalString(value.assistantText)
+      ? { assistantText: normalizeOptionalString(value.assistantText) }
+      : {}),
+    ...(modelStream ? { modelStream } : {}),
+    ...(actionOutputLines.length > 0 ? { actionOutputLines } : {}),
+  };
+};
+
+const normalizeMessageSource = (
+  value: unknown,
+  fallbackTask: string,
+): ChatSessionMessageSource | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  if (value.kind === "preview") {
+    const preview = normalizeTaskRunPreview(value.preview, fallbackTask);
+
+    return preview ? { kind: "preview", preview } : undefined;
+  }
+
+  if (value.kind === "execution") {
+    const execution = normalizeTaskExecutionResult(value.execution, fallbackTask);
+
+    return execution ? { kind: "execution", execution } : undefined;
+  }
+
+  if (value.kind === "thinking") {
+    const thinking = normalizeThinkingTrace(value.thinking);
+
+    return thinking ? { kind: "thinking", thinking } : undefined;
+  }
+
+  return undefined;
+};
+
+const normalizeMessageIntent = (
+  value: unknown,
+): ChatSessionMessage["intent"] | undefined => {
+  if (value === "retry-task" || value === "continue-task") {
+    return value;
+  }
+
+  return undefined;
+};
+
+const normalizeSessionMessages = (
+  value: unknown,
+  sessionId: string,
+): ChatSessionMessage[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const messages: ChatSessionMessage[] = [];
+
+  for (const [index, entry] of value.entries()) {
+    if (!isRecord(entry) || (entry.role !== "user" && entry.role !== "agent")) {
+      continue;
+    }
+
+    const content = normalizeString(entry.content);
+    const source = normalizeMessageSource(entry.source, content);
+    const createdAt = normalizeOptionalFiniteNumber(entry.createdAt);
+    const intent = normalizeMessageIntent(entry.intent);
+    const taskId = normalizeOptionalString(entry.taskId);
+    const message: ChatSessionMessage = {
+      id: normalizeString(entry.id, `${sessionId}-message-${index}`),
+      role: entry.role,
+      content,
+      ...(taskId ? { taskId } : {}),
+      ...(createdAt !== undefined ? { createdAt } : {}),
+      ...(intent ? { intent } : {}),
+      ...(source ? { source } : {}),
+    };
+
+    messages.push(message);
+  }
+
+  return messages;
+};
+
 const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord => {
   const provider = isRuntimeProvider(session.provider)
     ? session.provider
     : DEFAULT_PROVIDER;
   const preserveModel = provider === session.provider;
-  const mode = isRunMode(session.mode) ? session.mode : undefined;
+  const mode = normalizeOptionalStoredRunMode(session.mode);
   const specialSession = isSpecialSessionKind(session.specialSession)
     ? session.specialSession
     : undefined;
@@ -384,7 +968,7 @@ const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord =
     workspace: typeof session.workspace === "string" ? session.workspace : null,
     manualTitle:
       typeof session.manualTitle === "string" ? session.manualTitle : undefined,
-    messages: Array.isArray(session.messages) ? session.messages : [],
+    messages: normalizeSessionMessages(session.messages, session.id),
     promptHistory: normalizePromptHistoryEntries(session.promptHistory),
     promptContextHistory: normalizePromptContextHistory(
       session.promptContextHistory,
@@ -470,9 +1054,9 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
     candidate.lastSelectedProfile.trim().length > 0
       ? candidate.lastSelectedProfile
       : undefined;
-  const lastSelectedMode = isRunMode(candidate.lastSelectedMode)
-    ? candidate.lastSelectedMode
-    : undefined;
+  const lastSelectedMode = normalizeOptionalStoredRunMode(
+    candidate.lastSelectedMode,
+  );
   const lastRecoveredLaunchId =
     typeof candidate.lastRecoveredLaunchId === "string" &&
     candidate.lastRecoveredLaunchId.trim().length > 0
@@ -641,10 +1225,6 @@ export const getSessionOverviewStatus = (
 
   if (latestTerminalAgentMessage.source.kind === "execution") {
     const status = latestTerminalAgentMessage.source.execution.status;
-
-    if (status === "approval-required") {
-      return "waiting";
-    }
 
     if (status === "blocked" || status === "cancelled") {
       return "failed";

@@ -1,4 +1,4 @@
-import { Check, Play, RotateCcw } from "lucide-react";
+import { Play, RotateCcw } from "lucide-react";
 import type { JSX } from "react";
 import { StatusBadge } from "../../../../common/_components/status-badge";
 import type { TaskExecutionResult } from "../../../../core/types.js";
@@ -14,7 +14,6 @@ const actionButtonClassName =
 export interface ExecutionInsightRowProps {
   execution: TaskExecutionResult;
   onOpenWorkspaceFile: (relativePath: string) => void;
-  onApprovePlan?: () => void;
   onRetryTask?: () => void;
   onContinueTask?: () => void;
 }
@@ -22,29 +21,24 @@ export interface ExecutionInsightRowProps {
 export const ExecutionInsightRow = ({
   execution,
   onOpenWorkspaceFile,
-  onApprovePlan,
   onRetryTask,
   onContinueTask,
 }: ExecutionInsightRowProps): JSX.Element | null => {
   const relatedFiles = execution.response?.relatedFiles ?? [];
   const verification = execution.response?.verification ?? [];
   const continuationCount = execution.autopilot?.continuationCount ?? 0;
-  const canApprovePlan = execution.status === "planned" && !!onApprovePlan;
   const canRetryTask =
     !!onRetryTask &&
     (execution.status === "blocked" ||
       execution.status === "cancelled" ||
-      execution.status === "unsupported" ||
-      execution.status === "approval-required");
+      execution.status === "unsupported");
   const canContinueTask =
     !!onContinueTask &&
     (execution.status === "executed" ||
       execution.status === "blocked" ||
-      execution.status === "cancelled" ||
-      execution.status === "approval-required");
+      execution.status === "cancelled");
 
   if (
-    !canApprovePlan &&
     !canRetryTask &&
     !canContinueTask &&
     relatedFiles.length === 0 &&
@@ -83,19 +77,6 @@ export const ExecutionInsightRow = ({
           />
           {`${verification.length} check${verification.length === 1 ? "" : "s"}`}
         </StatusBadge>
-      ) : null}
-
-      {canApprovePlan ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={onApprovePlan}
-          className={`${actionButtonClassName} border-sky-400/40 bg-sky-500/15 text-sky-50 hover:border-sky-300/55 hover:bg-sky-500/25 hover:text-white`}
-        >
-          <Check className="mr-1.5 h-3.5 w-3.5" />
-          Approve plan
-        </Button>
       ) : null}
 
       {canRetryTask ? (
