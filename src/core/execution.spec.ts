@@ -215,11 +215,11 @@ describe("executeTask", () => {
     );
   });
 
-  it("executes a safe tool-policy inspection with resolved decisions", async () => {
+  it("executes a safe tool surface inspection", async () => {
     const workspaceRoot = await createWorkspace();
 
     const result = await executeTask(
-      "show tool policies",
+      "show tools",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );
@@ -228,13 +228,13 @@ describe("executeTask", () => {
     expect(result.summary).toContain("registered tools");
     expect(result.outputSections.map((section) => section.title)).toEqual([
       "Task context",
-      "Tool policies",
+      "Function-call surface",
     ]);
     expect(result.outputSections[1]?.lines).toContain(
-      "filesystem [low] -> allow",
+      "mode surface: ask exposes only read-only function calls",
     );
     expect(result.outputSections[1]?.lines).toContain(
-      "shell [high] -> allow",
+      "shell [high]",
     );
   });
 

@@ -21,7 +21,6 @@ import {
   TASK_EXECUTION_TIMEOUT_REASON_PREFIX,
 } from "./_helpers/agent-runtime-types.js";
 import { maybeExecuteModelDrivenTask } from "./agent-runtime.js";
-import { resolveToolPolicies } from "./policy.js";
 import { resolveTaskContext } from "./task-context.js";
 import { resolveReadOnlyInspectionTarget } from "./task-inspection.js";
 import {
@@ -121,7 +120,6 @@ const runTaskExecutionStateMachine = async (
     explicitPathReference: undefined,
     createFileTarget: undefined,
     inspectionTarget: undefined,
-    filesystemPolicy: undefined,
     pendingResult: undefined,
     executedTools: [],
   };
@@ -223,13 +221,13 @@ const runTaskExecutionStateMachine = async (
           taskContext.effectiveTask,
         );
 
-        state = "checking-policies";
+        state = "checking-tools";
         message =
           "Resolve the available tool surface before any execution starts.";
         break;
       }
 
-      case "checking-policies": {
+      case "checking-tools": {
         if (runtime.taskContext) {
           const modelDrivenResult = await maybeExecuteModelDrivenTask({
             task,
@@ -302,34 +300,6 @@ const runTaskExecutionStateMachine = async (
               executedTools: [],
               outputSections: runtime.contextSections,
             }),
-          );
-        }
-
-        runtime.filesystemPolicy = resolveToolPolicies(config, [
-          "filesystem",
-        ])[0];
-
-        if (!runtime.filesystemPolicy) {
-          return emitTerminalResult(
-            task,
-            config,
-            "blocked",
-            "The required filesystem tool is unavailable.",
-            runtime,
-            options,
-            createExecutionResult(
-              {
-                task,
-                mode: config.mode,
-                status: "blocked",
-                summary: runtime.explicitPathReference
-                  ? "This task maps to a safe filesystem inspection, but the filesystem tool is unavailable."
-                  : `This task maps to a safe ${getInspectionLabel(runtime.inspectionTarget ?? "workspace")}, but the filesystem tool is unavailable.`,
-                executedTools: [],
-                outputSections: runtime.contextSections,
-              },
-              "The filesystem tool is unavailable.",
-            ),
           );
         }
 

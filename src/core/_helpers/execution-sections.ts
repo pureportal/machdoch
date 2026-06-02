@@ -3,8 +3,8 @@ import { readdir, readFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { sortEntryNames } from "../../common/_helpers/sort-entry-names.js";
 import { resolveRuntimeAgentLimits } from "./agent-runtime-types.js";
-import { resolveToolPolicies } from "../policy.js";
 import type { CreateFilePathReference } from "../task-paths.js";
+import { getToolRegistry } from "../tools.js";
 import type {
   CustomizationDiscoveryResult,
   ResolvedPromptInvocation,
@@ -354,18 +354,23 @@ export const createProfilesSection = (
   };
 };
 
-export const createToolPoliciesSection = (
+export const createToolSurfaceSection = (
   config: RuntimeConfig,
 ): TaskExecutionSection => {
-  const policies = resolveToolPolicies(config);
+  const modeLine =
+    config.mode === "ask"
+      ? "mode surface: ask exposes only read-only function calls"
+      : "mode surface: machdoch exposes all function calls";
 
   return {
-    title: "Tool policies",
-    lines: policies.flatMap((policy) => [
-      `${policy.tool.name} [${policy.tool.riskLevel}] -> ${policy.decision}`,
-      `  description: ${policy.tool.description}`,
-      `  reason: ${policy.reason}`,
-    ]),
+    title: "Function-call surface",
+    lines: [
+      modeLine,
+      ...getToolRegistry().flatMap((tool) => [
+        `${tool.name} [${tool.riskLevel}]`,
+        `  description: ${tool.description}`,
+      ]),
+    ],
   };
 };
 
@@ -497,14 +502,6 @@ const createTaskContextSection = (
       `effective task: ${taskContext.effectiveTask}`,
       `workspace paths: ${taskContext.workspacePaths.length > 0 ? taskContext.workspacePaths.join(", ") : "none"}`,
       `suggested tools: ${taskContext.suggestedTools.length > 0 ? taskContext.suggestedTools.join(", ") : "none"}`,
-      ...(taskContext.blockedTools.length > 0
-        ? [`blocked tools: ${taskContext.blockedTools.join(", ")}`]
-        : []),
-      ...(taskContext.approvalRequiredTools.length > 0
-        ? [
-            `approval-required tools: ${taskContext.approvalRequiredTools.join(", ")}`,
-          ]
-        : []),
     ],
   };
 };

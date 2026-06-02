@@ -23,8 +23,6 @@ export type {
 
 export type ToolRiskLevel = "low" | "medium" | "high";
 
-export type ToolPolicyDecision = "allow" | "ask" | "blocked";
-
 export type ToolCallEffect =
   | "read"
   | "write"
@@ -39,13 +37,6 @@ export interface ToolDefinition {
   description: string;
   riskLevel: ToolRiskLevel;
   keywords: string[];
-}
-
-export interface ResolvedToolPolicy {
-  tool: ToolDefinition;
-  enabled: boolean;
-  decision: ToolPolicyDecision;
-  reason: string;
 }
 
 export interface ParsedMarkdownDocument {
@@ -338,9 +329,6 @@ export interface ResolvedTaskContext {
   instructionContextText: string;
   workspacePaths: string[];
   suggestedTools: ToolName[];
-  blockedTools: ToolName[];
-  approvalRequiredTools: ToolName[];
-  toolPolicies: ResolvedToolPolicy[];
   invokedPrompt?: ResolvedPromptInvocation;
   applicableInstructions: TaskCustomizationMatch[];
 }
@@ -350,8 +338,6 @@ export interface TaskRunPreview {
   mode: RunMode;
   summary: string;
   suggestedTools: ToolName[];
-  blockedTools: ToolName[];
-  toolPolicies: ResolvedToolPolicy[];
   invokedPrompt?: ResolvedPromptInvocation;
   applicableInstructions: TaskCustomizationMatch[];
   suggestedPrompts: TaskSuggestion[];
@@ -370,7 +356,7 @@ export type TaskExecutionState =
   | "starting"
   | "resolving-context"
   | "checking-inputs"
-  | "checking-policies"
+  | "checking-tools"
   | "planning"
   | "executing"
   | "verifying"

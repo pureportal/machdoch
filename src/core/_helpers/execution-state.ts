@@ -5,7 +5,6 @@ import type {
 } from "../task-paths.js";
 import type {
   ResolvedTaskContext,
-  ResolvedToolPolicy,
   RuntimeConfig,
   TaskExecutionOptions,
   TaskExecutionProgress,
@@ -23,7 +22,6 @@ export interface TaskExecutionRuntime {
   explicitPathReference: TaskPathReference | undefined;
   createFileTarget: CreateFilePathReference | undefined;
   inspectionTarget: ReadOnlyInspectionTarget | undefined;
-  filesystemPolicy: ResolvedToolPolicy | undefined;
   pendingResult: TaskExecutionResult | undefined;
   executedTools: ToolName[];
 }

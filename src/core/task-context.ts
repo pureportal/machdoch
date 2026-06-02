@@ -1,4 +1,3 @@
-import { resolveToolPolicies } from "./policy.js";
 import { resolvePromptInvocation } from "./prompt-resolution.js";
 import {
   extractTaskPathReferences,
@@ -335,13 +334,6 @@ export const resolveTaskContext = (
     ...(invokedPrompt?.tools ?? []),
     ...inferSuggestedTools(taskContextText),
   ]);
-  const toolPolicies = resolveToolPolicies(config, suggestedTools);
-  const blockedTools = toolPolicies
-    .filter((policy) => policy.decision === "blocked")
-    .map((policy) => policy.tool.name);
-  const approvalRequiredTools = toolPolicies
-    .filter((policy) => policy.decision === "ask")
-    .map((policy) => policy.tool.name);
   const applicableInstructions = findApplicableInstructions(
     instructionContextText,
     workspacePaths,
@@ -355,9 +347,6 @@ export const resolveTaskContext = (
     instructionContextText,
     workspacePaths,
     suggestedTools,
-    blockedTools,
-    approvalRequiredTools,
-    toolPolicies,
     ...(invokedPrompt ? { invokedPrompt } : {}),
     applicableInstructions,
   };

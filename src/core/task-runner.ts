@@ -12,7 +12,6 @@ import type {
   TaskPlanStep,
   TaskRunPreview,
   TaskSuggestion,
-  ToolName,
 } from "./types.js";
 
 const WEB_SEARCH_TASK_PATTERN =
@@ -125,7 +124,6 @@ const rankSkillSuggestions = (
 const createPlanSteps = (
   task: string,
   config: RuntimeConfig,
-  blockedTools: ToolName[],
   invokedPrompt?: ResolvedPromptInvocation,
 ): TaskPlanStep[] => {
   const approvalStepDescription =
@@ -153,10 +151,7 @@ const createPlanSteps = (
     },
     {
       title: "Check tool surface",
-      description:
-        blockedTools.length > 0
-          ? `${approvalStepDescription} The current task likely needs additional tools: ${blockedTools.join(", ")}.`
-          : approvalStepDescription,
+      description: approvalStepDescription,
     },
     {
       title: "Execute and keep iterating",
@@ -172,8 +167,8 @@ const createPlanSteps = (
 };
 
 /**
- * Builds a staged task preview by combining prompt resolution, tool policy
- * decisions, and discovered workspace customizations.
+ * Builds a staged task preview by combining prompt resolution, suggested tools,
+ * and discovered workspace customizations.
  */
 export const previewTaskRun = (
   task: string,
@@ -289,10 +284,8 @@ export const previewTaskRun = (
     mode: config.mode,
     summary: taskContext.invokedPrompt
       ? "This preview resolved a direct prompt invocation, merged its declared tools with the task context, and staged a run that should continue until the task is complete or blocked."
-      : "This preview now combines config, tool policy decisions, and customization discovery to show how the agent should stage and continue the next task until it is complete or blocked.",
+      : "This preview combines config, suggested tools, and customization discovery to show how the agent should stage and continue the next task until it is complete or blocked.",
     suggestedTools: taskContext.suggestedTools,
-    blockedTools: taskContext.blockedTools,
-    toolPolicies: taskContext.toolPolicies,
     ...(taskContext.invokedPrompt
       ? { invokedPrompt: taskContext.invokedPrompt }
       : {}),
@@ -301,12 +294,7 @@ export const previewTaskRun = (
     suggestedSkills,
     warnings,
     notes,
-    steps: createPlanSteps(
-      task,
-      config,
-      taskContext.blockedTools,
-      taskContext.invokedPrompt,
-    ),
+    steps: createPlanSteps(task, config, taskContext.invokedPrompt),
     customizationCounts: {
       instructions: customizations.instructions.length,
       prompts: customizations.prompts.length,

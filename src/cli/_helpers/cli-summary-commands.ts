@@ -19,7 +19,6 @@ import {
   saveUserWebSearchActiveProvider,
   saveUserWebSearchApiKey,
 } from "../../core/env.js";
-import { resolveToolPolicies } from "../../core/policy.js";
 import {
   DESKTOP_SETTING_BOUNDS,
   isConfiguredModelProvider,
@@ -630,7 +629,6 @@ export const printToolSummary = async (args: ParsedCliArgs): Promise<void> => {
     args.runtimeProvider,
     args.agentLimits,
   );
-  const toolPolicies = resolveToolPolicies(config);
   const agentTools = createToolDefinitions(config, {
     sessionEnabled: false,
     sessionEntries: [],
@@ -647,24 +645,46 @@ export const printToolSummary = async (args: ParsedCliArgs): Promise<void> => {
   );
 
   if (args.json) {
-    writeStdoutLine(JSON.stringify(toolPolicies, null, 2));
+    writeStdoutLine(
+      JSON.stringify(
+        {
+          workspaceRoot: config.workspaceRoot,
+          mode: config.mode,
+          modeSurface:
+            config.mode === "ask"
+              ? "read-only function calls"
+              : "all function calls",
+          tools: getToolRegistry(),
+          agentTools: agentTools.map((agentTool) => ({
+            name: agentTool.spec.name,
+            backingTool: agentTool.backingTool,
+            riskLevel: agentTool.riskLevel,
+            effect: agentTool.effect,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
     return;
   }
 
   writeStdoutLine(`workspace: ${config.workspaceRoot}`);
   writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
   writeStdoutLine(`mode: ${config.mode}`);
+  writeStdoutLine(
+    `function-call surface: ${
+      config.mode === "ask" ? "read-only calls only" : "all calls"
+    }`,
+  );
   writeStdoutLine(`registered tools: ${getToolRegistry().length}`);
   writeStdoutLine(`agent tools: ${agentTools.length}`);
 
-  for (const policy of toolPolicies) {
-    writeStdoutLine(
-      `- ${policy.tool.name} [${policy.tool.riskLevel}] -> ${policy.decision}`,
-    );
-    writeStdoutLine(`  ${policy.tool.description}`);
-    writeStdoutLine(`  ${policy.reason}`);
+  for (const tool of getToolRegistry()) {
+    writeStdoutLine(`- ${tool.name} [${tool.riskLevel}]`);
+    writeStdoutLine(`  ${tool.description}`);
 
-    const backingAgentTools = agentToolsByBackingTool.get(policy.tool.name);
+    const backingAgentTools = agentToolsByBackingTool.get(tool.name);
 
     if (backingAgentTools && backingAgentTools.length > 0) {
       writeStdoutLine("  agent tools:");

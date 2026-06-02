@@ -44,9 +44,6 @@ const createTaskContext = (
     instructionContextText: "",
     workspacePaths: ["src/core/agent-runtime.ts"],
     suggestedTools: ["filesystem", "network"],
-    blockedTools: [],
-    approvalRequiredTools: [],
-    toolPolicies: [],
     applicableInstructions: [],
     ...overrides,
   };

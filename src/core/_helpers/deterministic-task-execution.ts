@@ -24,7 +24,7 @@ import {
   createProviderAvailabilitySection,
   createRuntimeConfigSection,
   createSkillFilesSection,
-  createToolPoliciesSection,
+  createToolSurfaceSection,
   createWorkspaceInspectionSections,
 } from "./execution-sections.js";
 import { createExecutionResult } from "./execution-state.js";
@@ -40,7 +40,7 @@ export const getInspectionLabel = (
       return "runtime configuration inspection";
     }
     case "tools": {
-      return "tool policy inspection";
+      return "tool surface inspection";
     }
     case "profiles": {
       return "profile inspection";
@@ -292,9 +292,9 @@ export const executeInspectionTarget = async (
         mode: config.mode,
         status: "executed",
         summary:
-          "Executed a safe, read-only inspection of the registered tools and their resolved policies.",
+          "Executed a safe, read-only inspection of the registered tools and available function-call surface.",
         executedTools: ["filesystem"],
-        outputSections: [...contextSections, createToolPoliciesSection(config)],
+        outputSections: [...contextSections, createToolSurfaceSection(config)],
       });
     }
 

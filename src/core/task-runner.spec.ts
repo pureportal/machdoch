@@ -109,7 +109,6 @@ describe("previewTaskRun", () => {
       createCustomizations(),
     );
 
-    expect(preview.blockedTools).toEqual([]);
     expect(preview.applicableInstructions.map((entry) => entry.name)).toEqual([
       "Workspace defaults",
       "Security defaults",

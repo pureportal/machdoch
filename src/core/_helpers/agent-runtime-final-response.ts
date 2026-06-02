@@ -35,7 +35,7 @@ export const createFinalResponseTool = (): AgentModelToolSpec => {
           type: "string",
           enum: ["completed", "blocked"],
           description:
-            "Use `completed` only when the task is actually satisfied. Use `blocked` when execution cannot continue because user input, approval, tool availability, policy, provider, or runtime limits prevent completion.",
+            "Use `completed` only when the task is actually satisfied. Use `blocked` when execution cannot continue because user input, tool availability, provider, runtime limits, or Ask mode's read-only surface prevent completion.",
         },
         blockerReason: {
           type: "string",

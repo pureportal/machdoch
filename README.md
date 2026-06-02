@@ -330,7 +330,7 @@ Commands:
 | `machdoch config` | Print resolved runtime config |
 | `machdoch config set <setting> <value>` | Persist a user or workspace setting |
 | `machdoch inspect` | List discovered workspace customizations |
-| `machdoch tools` | List tool policies and model-facing tool functions |
+| `machdoch tools` | List tool areas and model-facing function calls |
 | `machdoch profiles` | List workspace profiles |
 
 Flags:
@@ -424,7 +424,7 @@ When `compatibility.discoverGithubCustomizations` is enabled, `machdoch` also di
 | Tool area | What it can do |
 | --- | --- |
 | Filesystem | Read, search, create, and modify workspace files and folders. |
-| Shell | Run shell commands and detached commands under policy control. |
+| Shell | Run shell commands and detached commands in Machdoch mode. |
 | Network | Fetch URLs and use web search when configured. |
 | Browser | Control installed Chromium-based browsers for navigation, screenshots, clicks, typing, and forms. |
 | Git | Inspect repository state, diffs, logs, branches, and create local commits. It does not push. |
@@ -450,7 +450,7 @@ Inspect workspace customizations:
 machdoch inspect
 ```
 
-List tool policies:
+List tool areas and model-facing function calls:
 
 ```bash
 machdoch tools

@@ -1,38 +1,12 @@
 import type {
   ResolvedPromptInvocation,
-  ResolvedToolPolicy,
   RunMode,
   TaskCustomizationMatch,
   TaskExecutionResult,
   TaskExecutionStatus,
   TaskRunPreview,
-  ToolDefinition,
   ToolName,
 } from "../../../core/types.js";
-
-const filesystemTool: ToolDefinition = {
-  name: "filesystem",
-  title: "Filesystem",
-  description: "Read files and directories from the workspace.",
-  riskLevel: "low",
-  keywords: ["file", "directory", "inspect"],
-};
-
-const shellTool: ToolDefinition = {
-  name: "shell",
-  title: "Shell",
-  description: "Run terminal commands.",
-  riskLevel: "high",
-  keywords: ["command", "terminal", "run"],
-};
-
-const networkTool: ToolDefinition = {
-  name: "network",
-  title: "Network",
-  description: "Fetch external resources when allowed.",
-  riskLevel: "medium",
-  keywords: ["fetch", "api", "web"],
-};
 
 const WORKSPACE_INSPECTION_ACTIONS = [
   "describe",
@@ -67,17 +41,6 @@ interface FixtureModelContext {
 
 const EXPLICIT_INSPECTION_TARGET_PATTERN =
   /\b(show|inspect|read|list)\b\s+(?:(['"`])(.+?)\2|\((.+?)\)|([^\s]+))/i;
-
-const createToolPolicy = (
-  tool: ToolDefinition,
-  decision: ResolvedToolPolicy["decision"],
-  reason: string,
-): ResolvedToolPolicy => ({
-  tool,
-  enabled: decision !== "blocked",
-  decision,
-  reason,
-});
 
 const normalizeTask = (task: string, fallback: string): string => {
   const trimmed = task.trim();
@@ -132,39 +95,6 @@ const inferSuggestedTools = (task: string): ToolName[] => {
   }
 
   return Array.from(new Set(suggestedTools));
-};
-
-const createToolPolicies = (tools: ToolName[]): ResolvedToolPolicy[] => {
-  return tools.flatMap((tool) => {
-    switch (tool) {
-      case "filesystem":
-        return [
-          createToolPolicy(
-            filesystemTool,
-            "allow",
-            "Read-only inspection is safe in the current desktop scaffold.",
-          ),
-        ];
-      case "shell":
-        return [
-          createToolPolicy(
-            shellTool,
-            "allow",
-            "Machdoch mode can run shell-backed function calls automatically.",
-          ),
-        ];
-      case "network":
-        return [
-          createToolPolicy(
-            networkTool,
-            "allow",
-            "Machdoch mode can use configured network function calls automatically.",
-          ),
-        ];
-      default:
-        return [];
-    }
-  });
 };
 
 const supportsWorkspaceInspection = (task: string): boolean => {
@@ -267,7 +197,6 @@ const createApplicableInstructions = (
 };
 
 const createPreviewWarnings = (
-  toolPolicies: ResolvedToolPolicy[],
   invokedPrompt?: ResolvedPromptInvocation,
 ): string[] => {
   const warnings: string[] = [];
@@ -306,7 +235,6 @@ export const createPreviewFixture = (
 ): TaskRunPreview => {
   const normalizedTask = normalizeTask(task, DEFAULT_PREVIEW_TASK);
   const suggestedTools = inferSuggestedTools(normalizedTask);
-  const toolPolicies = createToolPolicies(suggestedTools);
   const invokedPrompt = createInvokedPrompt(normalizedTask);
   const applicableInstructions = createApplicableInstructions(normalizedTask);
 
@@ -314,16 +242,14 @@ export const createPreviewFixture = (
     task: normalizedTask,
     mode: context.mode ?? "machdoch",
     summary: invokedPrompt
-      ? "This staged preview resolved a direct prompt invocation, mapped it through the current tool policies, and highlighted any missing input before execution."
+      ? "This staged preview resolved a direct prompt invocation, mapped it to suggested tools, and highlighted any missing input before execution."
       : "This staged preview maps the request to likely tools, mode constraints, and next steps before a live run begins.",
     suggestedTools,
-    blockedTools: [],
-    toolPolicies,
     ...(invokedPrompt ? { invokedPrompt } : {}),
     applicableInstructions,
     suggestedPrompts: [],
     suggestedSkills: [],
-    warnings: createPreviewWarnings(toolPolicies, invokedPrompt),
+    warnings: createPreviewWarnings(invokedPrompt),
     notes: createPreviewNotes(applicableInstructions, context, invokedPrompt),
     steps: [
       {

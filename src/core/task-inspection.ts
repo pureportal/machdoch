@@ -61,10 +61,6 @@ const CONFIG_TARGET_TOKENS = new Set([
 ]);
 
 const TOOL_TARGET_TOKENS = new Set([
-  "permission",
-  "permissions",
-  "policies",
-  "policy",
   "tool",
   "tools",
 ]);

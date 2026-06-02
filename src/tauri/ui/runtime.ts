@@ -203,7 +203,7 @@ const TASK_EXECUTION_PROGRESS_STATES = [
   "starting",
   "resolving-context",
   "checking-inputs",
-  "checking-policies",
+  "checking-tools",
   "planning",
   "executing",
   "verifying",

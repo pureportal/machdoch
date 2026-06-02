@@ -10,7 +10,7 @@ describe("resolveReadOnlyInspectionTarget", () => {
     expect(resolveReadOnlyInspectionTarget("inspect config")).toBe(
       "runtime-config",
     );
-    expect(resolveReadOnlyInspectionTarget("show tool policies")).toBe("tools");
+    expect(resolveReadOnlyInspectionTarget("show tools")).toBe("tools");
     expect(resolveReadOnlyInspectionTarget("show profiles")).toBe("profiles");
   });
 

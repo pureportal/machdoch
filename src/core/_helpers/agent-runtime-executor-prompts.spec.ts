@@ -43,9 +43,6 @@ const createTaskContext = (
     instructionContextText: "",
     workspacePaths: [],
     suggestedTools: ["filesystem", "network"],
-    blockedTools: [],
-    approvalRequiredTools: [],
-    toolPolicies: [],
     applicableInstructions: [],
     ...overrides,
   };

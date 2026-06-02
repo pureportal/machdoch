@@ -1,4 +1,4 @@
-import type { TaskExecutionStatus, TaskRunPreview } from "../../core/types.js";
+import type { TaskExecutionStatus } from "../../core/types.js";
 import type { TaskPanelSource, TaskPanelTone } from "./task-panel.model";
 
 export interface TaskTimelineMessage {
@@ -47,27 +47,7 @@ const executionStatusTones: Record<TaskExecutionStatus, TaskPanelTone> = {
   unsupported: "neutral",
 };
 
-const createPreviewStatus = (
-  preview: TaskRunPreview,
-): { label: string; tone: TaskPanelTone } => {
-  const hasBlockedTool =
-    preview.blockedTools.length > 0 ||
-    preview.toolPolicies.some((policy) => policy.decision === "blocked");
-
-  if (hasBlockedTool) {
-    return {
-      label: "Blocked by policy",
-      tone: "danger",
-    };
-  }
-
-  if (preview.toolPolicies.some((policy) => policy.decision === "ask")) {
-    return {
-      label: "Needs approval",
-      tone: "warning",
-    };
-  }
-
+const createPreviewStatus = (): { label: string; tone: TaskPanelTone } => {
   return {
     label: "Ready to run",
     tone: "info",
@@ -151,7 +131,7 @@ const createEventFromMessage = (
   }
 
   if (message.source?.kind === "preview") {
-    const previewStatus = createPreviewStatus(message.source.preview);
+    const previewStatus = createPreviewStatus();
 
     return {
       id: message.id,
@@ -199,7 +179,7 @@ const createTaskStatus = (
     }
 
     if (message.source?.kind === "preview") {
-      const previewStatus = createPreviewStatus(message.source.preview);
+      const previewStatus = createPreviewStatus();
       const toolsLabel = createToolsLabel(message.source);
 
       return {

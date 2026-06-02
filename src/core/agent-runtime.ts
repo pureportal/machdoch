@@ -590,9 +590,7 @@ const hasResolvedGroundingContext = (
 const hasRunnableSuggestedTool = (
   taskContext: ResolvedTaskContext,
 ): boolean => {
-  return taskContext.toolPolicies.some(
-    (policy) => policy.decision !== "blocked",
-  );
+  return taskContext.suggestedTools.length > 0;
 };
 
 const shouldRejectPrematureBlockedFinalResponse = (
@@ -620,7 +618,7 @@ const createPrematureBlockedFinalResponseMessage = (): string => {
     "Treat the current `<original_task>` and `<effective_task>` as authoritative over prior conversation.",
     "Use the available tools for the resolved context before blocking.",
     "Infer labels from repository URLs, domains, target folders, and file paths when they are provided instead of asking the user for a generic name.",
-    "Only submit a blocked final response after a concrete attempted lookup/action or when an actually unavailable credential, approval, tool, or detail prevents progress.",
+    "Only submit a blocked final response after a concrete attempted lookup/action or when an actually unavailable credential, tool, mode limit, or detail prevents progress.",
   ].join(" ");
 };
 

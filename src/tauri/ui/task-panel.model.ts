@@ -1,8 +1,4 @@
-import type {
-  ResolvedToolPolicy,
-  TaskExecutionResult,
-  TaskRunPreview,
-} from "../../core/types.js";
+import type { TaskExecutionResult, TaskRunPreview } from "../../core/types.js";
 
 export type TaskPanelTone =
   | "neutral"
@@ -130,29 +126,16 @@ const createPromptSection = (
 };
 
 const createToolPlanSection = (preview: TaskRunPreview): TaskPanelSection => {
-  const approvalRequiredTools = preview.toolPolicies
-    .filter((policy) => policy.decision === "ask")
-    .map((policy) => policy.tool.name);
-  const policySummaries = preview.toolPolicies.map(
-    (policy: ResolvedToolPolicy) =>
-      `${policy.tool.name}: ${policy.decision}`,
-  );
-  const tone = preview.toolPolicies.some((policy) => policy.decision === "blocked")
-    ? "danger"
-    : preview.toolPolicies.some((policy) => policy.decision === "ask")
-      ? "warning"
-      : "neutral";
-
   return {
     id: "tools",
-    title: "Tool plan",
+    title: "Tool surface",
     lines: [
       `suggested: ${formatToolList(preview.suggestedTools)}`,
-      `blocked: ${formatToolList(preview.blockedTools)}`,
-      `approval required: ${formatToolList(approvalRequiredTools)}`,
-      `policies: ${policySummaries.join(" · ")}`,
+      preview.mode === "ask"
+        ? "mode: ask exposes read-only function calls"
+        : "mode: machdoch exposes all function calls",
     ],
-    tone,
+    tone: "neutral",
   };
 };
 
@@ -214,14 +197,6 @@ const createPreviewBadges = (preview: TaskRunPreview): TaskPanelBadge[] => {
   return [
     { label: "Preview", tone: "info" },
     { label: preview.mode, tone: createModeTone(preview.mode) },
-    ...(preview.blockedTools.length > 0
-      ? [
-          {
-            label: `${preview.blockedTools.length} blocked`,
-            tone: "danger" as const,
-          },
-        ]
-      : []),
     ...(warningCount > 0
       ? [
           {
