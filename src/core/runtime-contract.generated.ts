@@ -36,7 +36,7 @@ export const DEFAULT_MODEL_PROVIDER = "openai" as const satisfies ConfiguredMode
 export const DEFAULT_MODEL_BY_PROVIDER = {
   "openai": "gpt-5.5",
   "anthropic": "claude-sonnet-4-6",
-  "google": "gemini-2.5-flash"
+  "google": "gemini-3.5-flash"
 } as const satisfies Record<ConfiguredModelProvider, string>;
 
 export const RUNTIME_ENV_KEYS = ["MACHDOCH_MODE", "MACHDOCH_MODEL", "MACHDOCH_OFFLINE", "MACHDOCH_PROFILE", "MACHDOCH_WEB_SEARCH_PROVIDER", "MACHDOCH_EXECUTOR_TURNS", "MACHDOCH_AUTOPILOT_ITERATIONS", "MACHDOCH_INFINITE"] as const;

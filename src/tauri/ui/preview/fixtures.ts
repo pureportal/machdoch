@@ -469,11 +469,6 @@ export const createMockExecutionFixture = (
             normalizedTask,
             workspacePath,
             context,
-          ),
+      ),
   };
 };
-
-export const previewFixture: TaskRunPreview = createPreviewFixture();
-
-export const executionFixture: TaskExecutionResult =
-  createMockExecutionFixture();

@@ -36,8 +36,8 @@ export interface CatalogModel {
   id: string;
   label: string;
   stage: CatalogModelStage;
+  releaseDate?: string;
   description: string;
-  bestFor: string;
   recommendedFor: readonly CatalogModelUseCase[];
   source: ProviderModelMetadataSource;
   warnings: readonly string[];
@@ -70,8 +70,8 @@ export interface RuntimeCatalogModel {
   id: string;
   label?: string;
   stage?: CatalogModelStage;
+  releaseDate?: string;
   description?: string;
-  bestFor?: string;
   recommendedFor?: readonly CatalogModelUseCase[];
   capabilities?: RuntimeCatalogModelCapabilities;
   warnings?: readonly string[];
@@ -114,6 +114,44 @@ const USE_CASE_LABELS: Record<CatalogModelUseCase, string> = {
   "computer-use": "Computer use",
 };
 
+const MAX_MODELS_PER_PROVIDER = 5;
+
+const OPENAI_RUNTIME_MODEL_PATTERN =
+  /^gpt-\d+(?:\.\d+)?(?:-(?:mini|nano))?$/u;
+
+const OPENAI_EXCLUDED_MODEL_ID_PARTS = [
+  "audio",
+  "chatgpt",
+  "codex",
+  "computer-use",
+  "dall",
+  "embedding",
+  "image",
+  "moderation",
+  "realtime",
+  "search",
+  "sora",
+  "transcribe",
+  "tts",
+  "whisper",
+] as const;
+
+const GOOGLE_EXCLUDED_MODEL_ID_PARTS = [
+  "aqa",
+  "audio",
+  "banana",
+  "customtools",
+  "embedding",
+  "gemma",
+  "imagen",
+  "image",
+  "learnlm",
+  "live",
+  "lyria",
+  "tts",
+  "veo",
+] as const;
+
 const formatTokenWindow = (tokens: number): string => {
   if (tokens >= 1_000_000) {
     return `${tokens / 1_000_000}M ctx`;
@@ -127,6 +165,44 @@ const formatTokenWindow = (tokens: number): string => {
 };
 
 const normalizeModelId = (model: string): string => model.trim().toLowerCase();
+
+const looksLikeDatedSnapshot = (modelId: string): boolean => {
+  const dateTail = modelId.match(/(?:^|-)(\d{4})-(\d{2})-(\d{2})$/u);
+
+  if (dateTail) {
+    return true;
+  }
+
+  const compactDateTail = modelId.match(/(?:^|-)(\d{8})$/u);
+
+  return compactDateTail !== null;
+};
+
+const inferReleaseDateFromModelId = (modelId: string): string | undefined => {
+  const hyphenatedDate = modelId.match(/(?:^|-)(\d{4})-(\d{2})-(\d{2})$/u);
+
+  if (hyphenatedDate) {
+    return `${hyphenatedDate[1]}-${hyphenatedDate[2]}-${hyphenatedDate[3]}`;
+  }
+
+  const compactDate = modelId.match(/(?:^|-)(\d{4})(\d{2})(\d{2})$/u);
+
+  if (compactDate) {
+    return `${compactDate[1]}-${compactDate[2]}-${compactDate[3]}`;
+  }
+
+  return undefined;
+};
+
+const parseReleaseTime = (date: string | undefined): number | null => {
+  if (!date) {
+    return null;
+  }
+
+  const time = Date.parse(date);
+
+  return Number.isFinite(time) ? time : null;
+};
 
 const formatModelLabel = (modelId: string): string => {
   return modelId
@@ -237,8 +313,8 @@ const createCatalogModelFromMetadata = (
     id: metadata.id,
     label: metadata.label,
     stage: metadata.lifecycle,
+    releaseDate: metadata.releaseDate,
     description: metadata.description,
-    bestFor: metadata.bestFor,
     recommendedFor: metadata.recommendedFor,
     source: metadata.source,
     warnings: metadata.warnings,
@@ -296,14 +372,14 @@ const createCatalogModelFromRuntime = (
     id,
     label: runtimeModel.label ?? fallback?.label ?? formatModelLabel(id),
     stage: runtimeModel.stage ?? fallback?.stage ?? "stable",
+    releaseDate:
+      runtimeModel.releaseDate ??
+      fallback?.releaseDate ??
+      inferReleaseDateFromModelId(id),
     description:
       runtimeModel.description ??
       fallback?.description ??
       "Available through the provider model API.",
-    bestFor:
-      runtimeModel.bestFor ??
-      fallback?.bestFor ??
-      "Use after checking provider docs and a connection test.",
     recommendedFor,
     source: runtimeModel.source ?? "provider-api",
     warnings: [...warningSet],
@@ -316,6 +392,66 @@ const createCatalogModelFromRuntime = (
   };
 };
 
+const isModernOpenAiRuntimeModel = (modelId: string): boolean => {
+  const normalized = normalizeModelId(modelId);
+
+  if (
+    looksLikeDatedSnapshot(normalized) ||
+    OPENAI_EXCLUDED_MODEL_ID_PARTS.some((part) => normalized.includes(part))
+  ) {
+    return false;
+  }
+
+  return OPENAI_RUNTIME_MODEL_PATTERN.test(normalized);
+};
+
+const isModernAnthropicRuntimeModel = (modelId: string): boolean => {
+  const normalized = normalizeModelId(modelId);
+
+  return (
+    /^claude-(?:opus|sonnet|haiku)-4-\d+(?:-\d{8})?$/u.test(normalized) ||
+    /^claude-4-\d+-(?:opus|sonnet|haiku)(?:-\d{8})?$/u.test(normalized)
+  );
+};
+
+const isModernGoogleRuntimeModel = (modelId: string): boolean => {
+  const normalized = normalizeModelId(modelId);
+
+  if (
+    !normalized.startsWith("gemini-") ||
+    looksLikeDatedSnapshot(normalized) ||
+    GOOGLE_EXCLUDED_MODEL_ID_PARTS.some((part) => normalized.includes(part))
+  ) {
+    return false;
+  }
+
+  return /^gemini-\d+(?:\.\d+)?-(?:pro|flash|flash-lite)(?:-preview)?$/u.test(
+    normalized,
+  );
+};
+
+const isModernRuntimeModel = (
+  provider: RuntimeProvider,
+  model: Pick<CatalogModel, "id" | "stage">,
+): boolean => {
+  if (model.stage === "deprecated") {
+    return false;
+  }
+
+  switch (provider) {
+    case "openai":
+      return isModernOpenAiRuntimeModel(model.id);
+    case "anthropic":
+      return isModernAnthropicRuntimeModel(model.id);
+    case "google":
+      return isModernGoogleRuntimeModel(model.id);
+  }
+};
+
+const getCatalogModelReleaseTime = (model: Pick<CatalogModel, "id" | "releaseDate">): number | null =>
+  parseReleaseTime(model.releaseDate) ??
+  parseReleaseTime(inferReleaseDateFromModelId(model.id));
+
 const orderCatalogModels = (
   provider: RuntimeProvider,
   models: CatalogModel[],
@@ -325,6 +461,23 @@ const orderCatalogModels = (
   );
 
   return [...models].sort((left, right) => {
+    const leftReleaseTime = getCatalogModelReleaseTime(left);
+    const rightReleaseTime = getCatalogModelReleaseTime(right);
+
+    if (leftReleaseTime !== null || rightReleaseTime !== null) {
+      if (leftReleaseTime === null) {
+        return 1;
+      }
+
+      if (rightReleaseTime === null) {
+        return -1;
+      }
+
+      if (leftReleaseTime !== rightReleaseTime) {
+        return rightReleaseTime - leftReleaseTime;
+      }
+    }
+
     const leftLifecycleRank = left.stage === "deprecated" ? 3 : left.stage === "preview" ? 2 : 1;
     const rightLifecycleRank =
       right.stage === "deprecated" ? 3 : right.stage === "preview" ? 2 : 1;
@@ -347,7 +500,10 @@ const orderCatalogModels = (
 const getStaticCatalogModelsForProvider = (
   provider: RuntimeProvider,
 ): CatalogModel[] => {
-  return getProviderModelMetadata(provider).map(createCatalogModelFromMetadata);
+  return orderCatalogModels(
+    provider,
+    getProviderModelMetadata(provider).map(createCatalogModelFromMetadata),
+  ).slice(0, MAX_MODELS_PER_PROVIDER);
 };
 
 const mergeRuntimeProviderModels = (
@@ -360,26 +516,22 @@ const mergeRuntimeProviderModels = (
     return staticModels;
   }
 
-  const staticById = new Map(staticModels.map((model) => [model.id, model]));
-  const liveModels = runtimeCatalog.models.map((runtimeModel) =>
-    createCatalogModelFromRuntime(
-      provider,
-      runtimeModel,
-      staticById.get(normalizeModelId(runtimeModel.id)),
-    ),
+  const staticById = new Map(
+    getProviderModelMetadata(provider)
+      .map(createCatalogModelFromMetadata)
+      .map((model) => [model.id, model]),
   );
-  const liveModelIds = new Set(liveModels.map((model) => model.id));
-  const missingStaticModels = staticModels
-    .filter((model) => !liveModelIds.has(model.id))
-    .map((model) => ({
-      ...model,
-      warnings: [
-        ...model.warnings,
-        "Not returned by the provider model list for this key. It may be unavailable for this account, project, or region.",
-      ],
-    }));
+  const liveModels = runtimeCatalog.models
+    .map((runtimeModel) =>
+      createCatalogModelFromRuntime(
+        provider,
+        runtimeModel,
+        staticById.get(normalizeModelId(runtimeModel.id)),
+      ),
+    )
+    .filter((model) => isModernRuntimeModel(provider, model));
 
-  return orderCatalogModels(provider, [...liveModels, ...missingStaticModels]);
+  return orderCatalogModels(provider, liveModels).slice(0, MAX_MODELS_PER_PROVIDER);
 };
 
 const createRuntimeProviderCatalog = (
@@ -426,9 +578,9 @@ const UNSUPPORTED_PROVIDER_CATALOG: CatalogProvider[] = [
         id: "grok-4.20",
         label: "Grok 4.20",
         stage: "stable",
+        releaseDate: "2026-04-20",
         description:
           "xAI flagship model with reasoning, structured outputs, and tool support.",
-        bestFor: "Agentic search, tool orchestration, and large-context analysis.",
         recommendedFor: ["coding", "fast", "vision"],
         capabilities: {
           imageInput: true,
@@ -456,8 +608,8 @@ const UNSUPPORTED_PROVIDER_CATALOG: CatalogProvider[] = [
         id: "mistral-large-3",
         label: "Mistral Large 3",
         stage: "open",
+        releaseDate: "2026-01-01",
         description: "Open-weight general-purpose multimodal model.",
-        bestFor: "High-quality general reasoning with deployment flexibility.",
         recommendedFor: ["coding", "vision"],
         capabilities: {
           imageInput: true,
@@ -475,8 +627,8 @@ const UNSUPPORTED_PROVIDER_CATALOG: CatalogProvider[] = [
         id: "devstral-2",
         label: "Devstral 2",
         stage: "open",
+        releaseDate: "2026-01-01",
         description: "Code agent model for software engineering tasks.",
-        bestFor: "Code agents and task-oriented engineering flows.",
         recommendedFor: ["coding", "fast"],
         capabilities: {
           imageInput: false,

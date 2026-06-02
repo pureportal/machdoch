@@ -152,7 +152,7 @@ const runTaskExecutionStateMachine = async (
       }
 
       case "resolving-context": {
-        runtime.taskContext = resolveTaskContext(task, config, customizations);
+        runtime.taskContext = resolveTaskContext(task, customizations);
         runtime.contextSections = createContextSections(runtime.taskContext);
         state = "checking-inputs";
         message =

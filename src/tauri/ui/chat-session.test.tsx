@@ -3040,8 +3040,8 @@ describe("ChatSession component", () => {
       ),
     ).toBeDefined();
     expect(
-      (await screen.findAllByText(/Best for: Deep coding, planning/i)).length,
-    ).toBeGreaterThan(0);
+      screen.queryByText(/Best for:/i),
+    ).toBeNull();
     fireEvent.click(
       await screen.findByRole("button", {
         name: /Choose OpenAI GPT-5.5/i,

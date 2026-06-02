@@ -574,7 +574,6 @@ const hasRunnableSuggestedTool = (
 };
 
 const shouldRejectPrematureBlockedFinalResponse = (
-  config: RuntimeConfig,
   taskContext: ResolvedTaskContext,
   loopState: AgentLoopState,
   status: string,
@@ -819,7 +818,6 @@ const runExecutorCycle = async (
       if (
         !rejectedPrematureFinalResponse &&
         shouldRejectPrematureBlockedFinalResponse(
-          config,
           taskContext,
           loopState,
           parsedPayload.status,
@@ -939,9 +937,7 @@ const runExecutorCycle = async (
       );
 
       const executionOutcome = await executeToolCall(
-        task,
         config,
-        loopState,
         conversationContext.memory,
         conversationContext.uiControlEnabled
           ? conversationContext.uiControl

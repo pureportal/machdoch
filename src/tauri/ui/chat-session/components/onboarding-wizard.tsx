@@ -309,7 +309,6 @@ export const OnboardingWizard = ({
               key={model.id}
               type="button"
               aria-pressed={activeSession.model === model.id}
-              title={model.bestFor}
               onClick={() => onSessionModelSelection(activeProvider, model.id)}
               className={cn(
                 "min-h-20 rounded-2xl border px-3 py-3 text-left transition",
@@ -323,7 +322,7 @@ export const OnboardingWizard = ({
                 {model.label}
               </span>
               <span className="mt-1 line-clamp-2 block text-xs leading-5 text-slate-500">
-                {model.bestFor}
+                {model.description}
               </span>
             </button>
           ))}

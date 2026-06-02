@@ -2,7 +2,6 @@ import type {
   AgentModelToolCall,
   RuntimeConfig,
   TaskActionOutputHandler,
-  TaskExecutionSection,
   ToolCallEffect,
   ToolName,
   ToolRiskLevel,
@@ -32,11 +31,6 @@ export type {
   AgentToolExecutionResult,
   ConversationMemoryRuntime,
 } from "./agent-tools-shared.js";
-
-export interface AgentLoopSnapshot {
-  outputSections: TaskExecutionSection[];
-  traceLines: string[];
-}
 
 const READ_ONLY_EFFECTS: ReadonlySet<ToolCallEffect> = new Set([
   "read",
@@ -115,9 +109,7 @@ export const createToolDefinitions = (
 };
 
 export const executeToolCall = async (
-  task: string,
   config: RuntimeConfig,
-  loopState: AgentLoopSnapshot,
   memory: ConversationMemoryRuntime,
   uiControl: UiControlRuntimeInfo | undefined,
   toolDefinitions: Map<string, AgentToolDefinition>,

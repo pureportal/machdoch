@@ -191,7 +191,6 @@ export const SessionModelPicker = ({
                       type="button"
                       aria-label={`Choose ${getProviderLabel(selectedProvider)} ${model.label}. ${model.description}`}
                       aria-pressed={isSelected}
-                      title={model.bestFor}
                       onClick={() =>
                         handleSessionModelSelection(selectedProvider, model.id)
                       }
@@ -229,9 +228,6 @@ export const SessionModelPicker = ({
                         </span>
                         <span className="line-clamp-2 text-xs leading-5 text-slate-400">
                           {model.description}
-                        </span>
-                        <span className="line-clamp-2 text-[11px] leading-4 text-slate-500">
-                          Best for: {model.bestFor}
                         </span>
                         {model.capabilityHighlights.length > 0 ? (
                           <span className="flex flex-wrap gap-1 pt-1">

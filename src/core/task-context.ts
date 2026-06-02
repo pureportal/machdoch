@@ -10,7 +10,6 @@ import type {
   DiscoveredInstruction,
   ResolvedPromptInvocation,
   ResolvedTaskContext,
-  RuntimeConfig,
   TaskCustomizationMatch,
   ToolName,
 } from "./types.js";
@@ -313,7 +312,6 @@ const collectWorkspacePaths = (
  */
 export const resolveTaskContext = (
   task: string,
-  config: RuntimeConfig,
   customizations: CustomizationDiscoveryResult,
 ): ResolvedTaskContext => {
   const invokedPrompt = resolvePromptInvocation(task, customizations);

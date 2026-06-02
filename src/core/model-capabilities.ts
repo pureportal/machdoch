@@ -3,7 +3,6 @@ import {
   findProviderModelMetadata,
   GOOGLE_IMAGE_MEDIA_TYPES,
   OPENAI_IMAGE_MEDIA_TYPES,
-  PROVIDER_MODEL_METADATA,
   PROVIDER_MODEL_MODES,
   type ConfiguredModelProvider,
   type ProviderModelMode,
@@ -65,22 +64,6 @@ const PROVIDER_CAPABILITY_PROFILES: Record<
     providerModes: PROVIDER_MODEL_MODES.openai,
   },
 };
-
-export const MODEL_CAPABILITY_CATALOG = PROVIDER_MODEL_METADATA.map(
-  (entry): ModelCapabilityProfile => ({
-    provider: entry.provider,
-    model: entry.id,
-    imageInput: entry.capabilities.imageInput,
-    toolUse: entry.capabilities.toolUse,
-    reasoning: entry.capabilities.reasoning,
-    streaming: entry.capabilities.streaming,
-    contextWindowTokens: entry.capabilities.contextWindowTokens,
-    maxOutputTokens: entry.capabilities.maxOutputTokens,
-    supportedImageMediaTypes: entry.capabilities.supportedImageMediaTypes,
-    voice: entry.capabilities.voice,
-    providerModes: entry.capabilities.providerModes,
-  }),
-) satisfies readonly ModelCapabilityProfile[];
 
 const getExtension = (path: string): string | undefined => {
   const fileName = path.trim().replace(/\\/gu, "/").split("/").at(-1) ?? "";

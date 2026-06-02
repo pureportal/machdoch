@@ -176,7 +176,7 @@ export const previewTaskRun = (
   customizations: CustomizationDiscoveryResult,
 ): TaskRunPreview => {
   const parsedPromptInvocation = parsePromptInvocation(task);
-  const taskContext = resolveTaskContext(task, config, customizations);
+  const taskContext = resolveTaskContext(task, customizations);
   const suggestedPrompts = taskContext.invokedPrompt
     ? []
     : rankPromptSuggestions(taskContext.taskContextText, customizations);

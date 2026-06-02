@@ -104,12 +104,7 @@ describe("executeToolCall", () => {
     ]);
 
     const result = await executeToolCall(
-      "stream output",
       createRuntimeConfig(),
-      {
-        outputSections: [],
-        traceLines: [],
-      },
       memory,
       undefined,
       toolDefinitions,

@@ -712,7 +712,7 @@
     "defaultModelByProvider": {
       "openai": "gpt-5.5",
       "anthropic": "claude-sonnet-4-6",
-      "google": "gemini-2.5-flash"
+      "google": "gemini-3.5-flash"
     },
     "runtimeEnvKeys": [
       "MACHDOCH_MODE",

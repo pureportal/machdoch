@@ -212,7 +212,7 @@ describe("loadRuntimeConfig", () => {
     const config = await loadRuntimeConfig(workspaceRoot);
 
     expect(config.provider).toBe("google");
-    expect(config.model).toBe("gemini-2.5-flash");
+    expect(config.model).toBe("gemini-3.5-flash");
   });
 
   it("loads agent loop limits from user config, workspace config, environment, and overrides", async () => {

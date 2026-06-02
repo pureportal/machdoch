@@ -18,7 +18,7 @@ pub const RUNTIME_ENV_KEYS: [&str; 8] = ["MACHDOCH_MODE", "MACHDOCH_MODEL", "MAC
 pub const PROVIDER_ENV_KEYS: [(&str, &str); 3] = [("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"), ("google", "GOOGLE_API_KEY")];
 pub const WEB_SEARCH_ENV_KEYS: [(&str, &str); 3] = [("perplexity", "PERPLEXITY_API_KEY"), ("tavily", "TAVILY_API_KEY"), ("serper", "SERPER_API_KEY")];
 pub const DEFAULT_MODEL_PROVIDER: &str = "openai";
-pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); 3] = [("openai", "gpt-5.5"), ("anthropic", "claude-sonnet-4-6"), ("google", "gemini-2.5-flash")];
+pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); 3] = [("openai", "gpt-5.5"), ("anthropic", "claude-sonnet-4-6"), ("google", "gemini-3.5-flash")];
 
 pub const DEFAULT_USER_AGENT_LIMITS_INFINITE: bool = false;
 pub const DEFAULT_MAX_EXECUTOR_TURNS: u32 = 64;
