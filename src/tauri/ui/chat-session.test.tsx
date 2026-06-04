@@ -2888,6 +2888,200 @@ describe("ChatSession component", () => {
     runDesktopTaskSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
+  it("applies workspace context packs to the main composer", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "context-pack-session",
+      workspace: "C:\\Project",
+      draft: "Start from the current diff",
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+    const runDesktopTaskSpy = vi.spyOn(runtime, "runDesktopTask").mockResolvedValue({
+      execution: createMockExecutionFixture(
+        [
+          "Start from the current diff",
+          "## Context Pack: Review PR",
+          "### Instructions",
+          "Focus on regressions.",
+          "### Prompt",
+          "Review the staged changes.",
+          'Use this file: "C:\\Project\\plan.md"',
+        ].join("\n"),
+        "C:\\Project",
+      ),
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+      contextPacks: [
+        {
+          id: "review-pr-pack",
+          workspace: "C:\\Project",
+          name: "Review PR",
+          instructions: "Focus on regressions.",
+          prompt: "Review the staged changes.",
+          contextAttachments: [
+            {
+              id: "pack-plan",
+              path: "C:\\Project\\plan.md",
+              kind: "file",
+              name: "plan.md",
+              parent: "C:\\Project",
+            },
+          ],
+          provider: "openai",
+          model: "gpt-5.5",
+          mode: "machdoch",
+          createdAt: 1,
+          updatedAt: 2,
+          useCount: 1,
+        },
+        {
+          id: "other-workspace-pack",
+          workspace: "C:\\Other",
+          name: "Debug build",
+          instructions: "",
+          prompt: "Debug the build",
+          contextAttachments: [],
+          createdAt: 1,
+          updatedAt: 1,
+          useCount: 0,
+        },
+      ],
+    });
+
+    render(<ChatSession />);
+    await flushShellHydration();
+
+    fireEvent.click(screen.getByRole("button", { name: "Context packs" }));
+
+    expect(await screen.findByText("Review PR")).toBeDefined();
+    expect(screen.queryByText("Debug build")).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply context pack Review PR" }),
+    );
+
+    const input = screen.getByPlaceholderText(
+      /What should machdoch do next\?/i,
+    ) as HTMLTextAreaElement;
+
+    await waitFor(() => {
+      expect(input.value).toContain("## Context Pack: Review PR");
+      expect(input.value).toContain("### Instructions\nFocus on regressions.");
+      expect(input.value).toContain("### Prompt\nReview the staged changes.");
+      expect(input.value).toContain("## Current Task\nStart from the current diff");
+      expect(input.value.startsWith("## Context Pack: Review PR")).toBe(true);
+      expect(screen.getByText("plan.md")).toBeDefined();
+    });
+    expect(
+      screen.getByRole("button", { name: "Execution mode: Machdoch" }),
+    ).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => {
+      expect(runDesktopTaskSpy).toHaveBeenCalledWith(
+        "C:\\Project",
+        expect.stringContaining('Use this file: "C:\\Project\\plan.md"'),
+        expect.objectContaining({
+          mode: "machdoch",
+          model: "gpt-5.5",
+          provider: "openai",
+        }),
+      );
+    });
+
+    const submittedTask = runDesktopTaskSpy.mock.calls[0]?.[1] ?? "";
+
+    expect(submittedTask.startsWith("## Context Pack: Review PR")).toBe(true);
+    expect(submittedTask).toContain("## Context Pack: Review PR");
+    expect(submittedTask).toContain("### Instructions\nFocus on regressions.");
+    expect(submittedTask).toContain("### Prompt\nReview the staged changes.");
+    expect(submittedTask).toContain(
+      "## Current Task\nStart from the current diff",
+    );
+
+    runDesktopTaskSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("saves the current composer setup as a workspace context pack", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "save-context-pack-session",
+      workspace: "C:\\Project",
+      draft: "Audit frontend layout",
+      provider: "openai",
+      model: "gpt-5.5",
+      draftContextAttachments: [
+        {
+          id: "layout-shot",
+          path: "C:\\Project\\layout.png",
+          kind: "image",
+          name: "layout.png",
+          parent: "C:\\Project",
+        },
+      ],
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    render(<ChatSession />);
+    await flushShellHydration();
+
+    fireEvent.click(screen.getByRole("button", { name: "Context packs" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    const nameInput = screen.getByPlaceholderText("Review PR") as HTMLInputElement;
+    const instructionsInput = screen.getByPlaceholderText(
+      /Focus on regressions/i,
+    ) as HTMLTextAreaElement;
+
+    expect(nameInput.value).toBe("Audit frontend layout");
+
+    fireEvent.change(nameInput, {
+      target: { value: "Frontend QA" },
+    });
+    fireEvent.change(instructionsInput, {
+      target: { value: "Check responsive layout and visual regressions." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save pack" }));
+
+    await waitFor(() => {
+      const storedState = JSON.parse(
+        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+      ) as ShellPersistedState;
+      const savedPack = storedState.contextPacks.find(
+        (pack) => pack.name === "Frontend QA",
+      );
+
+      expect(savedPack).toMatchObject({
+        workspace: "C:\\Project",
+        instructions: "Check responsive layout and visual regressions.",
+        prompt: "Audit frontend layout",
+        provider: "openai",
+        model: "gpt-5.5",
+        mode: "machdoch",
+        useCount: 0,
+      });
+      expect(savedPack?.contextAttachments).toMatchObject([
+        {
+          path: "C:\\Project\\layout.png",
+          kind: "image",
+          name: "layout.png",
+          parent: "C:\\Project",
+        },
+      ]);
+    });
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
   it("removes all attached context from the main composer", async () => {
     const baseState = createInitialShellState();
     const session = createSession({

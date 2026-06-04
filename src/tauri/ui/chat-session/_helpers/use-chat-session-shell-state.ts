@@ -17,6 +17,7 @@ import {
   sortSessionsByUpdatedAt,
   type ChatSessionMessage,
   type ChatSessionRecord,
+  type SmartContextPack,
   type ShellPersistedState,
 } from "../../chat-session.model";
 import {
@@ -104,6 +105,85 @@ const mergeSessionRuntimeSelection = (
   }
 
   return mergedSession;
+};
+
+const getContextPackPersistenceTimestamp = (
+  pack: SmartContextPack,
+): number => {
+  return Math.max(pack.updatedAt, pack.lastUsedAt ?? 0, pack.createdAt);
+};
+
+const sortContextPacksForPersistence = (
+  packs: SmartContextPack[],
+): SmartContextPack[] => {
+  return [...packs].sort(
+    (left, right) =>
+      getContextPackPersistenceTimestamp(right) -
+      getContextPackPersistenceTimestamp(left),
+  );
+};
+
+const mergeContextPacksForPersistence = (
+  localPacks: SmartContextPack[],
+  basePacks: SmartContextPack[],
+  latestPacks: SmartContextPack[],
+): SmartContextPack[] => {
+  const localPacksById = new Map(localPacks.map((pack) => [pack.id, pack]));
+  const basePacksById = new Map(basePacks.map((pack) => [pack.id, pack]));
+  const latestPacksById = new Map(latestPacks.map((pack) => [pack.id, pack]));
+  const deletedPackIds = new Set<string>();
+
+  for (const packId of basePacksById.keys()) {
+    if (!localPacksById.has(packId)) {
+      deletedPackIds.add(packId);
+    }
+  }
+
+  const mergedPacksById = new Map<string, SmartContextPack>();
+
+  for (const packId of new Set([
+    ...latestPacksById.keys(),
+    ...localPacksById.keys(),
+  ])) {
+    if (deletedPackIds.has(packId)) {
+      continue;
+    }
+
+    const localPack = localPacksById.get(packId);
+    const basePack = basePacksById.get(packId);
+    const latestPack = latestPacksById.get(packId);
+
+    if (!localPack) {
+      if (latestPack) {
+        mergedPacksById.set(packId, latestPack);
+      }
+
+      continue;
+    }
+
+    const localPackChanged =
+      !basePack || !areShellFragmentsEqual(localPack, basePack);
+
+    if (!localPackChanged && latestPack) {
+      mergedPacksById.set(packId, latestPack);
+      continue;
+    }
+
+    if (!latestPack) {
+      mergedPacksById.set(packId, localPack);
+      continue;
+    }
+
+    const localTimestamp = getContextPackPersistenceTimestamp(localPack);
+    const latestTimestamp = getContextPackPersistenceTimestamp(latestPack);
+
+    mergedPacksById.set(
+      packId,
+      localTimestamp >= latestTimestamp ? localPack : latestPack,
+    );
+  }
+
+  return sortContextPacksForPersistence([...mergedPacksById.values()]);
 };
 
 const mergeShellStateForPersistence = (
@@ -196,6 +276,11 @@ const mergeShellStateForPersistence = (
     version: 1,
     activeSessionId: activeSessionId ?? latestState.activeSessionId,
     sessions,
+    contextPacks: mergeContextPacksForPersistence(
+      localState.contextPacks,
+      baseState.contextPacks,
+      latestState.contextPacks,
+    ),
     voice: areShellFragmentsEqual(localState.voice, baseState.voice)
       ? latestState.voice
       : localState.voice,

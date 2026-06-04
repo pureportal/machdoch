@@ -282,6 +282,75 @@ describe("normalizeShellState", () => {
       ],
     });
   });
+
+  it("repairs persisted context packs", () => {
+    const normalized = normalizeShellState({
+      activeSessionId: "pack-session",
+      sessions: [
+        {
+          id: "pack-session",
+          provider: "openai",
+          model: "gpt-5.5",
+          workspace: "C:\\Project",
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+      contextPacks: [
+        null,
+        {
+          id: "pack-1",
+          workspace: "C:\\Project",
+          name: "  Review   PR  ",
+          instructions: " Focus on regressions. ",
+          prompt: " Review staged changes. ",
+          provider: "invalid",
+          model: "gpt-5.5",
+          mode: "auto",
+          createdAt: -1,
+          updatedAt: 12,
+          lastUsedAt: 18,
+          useCount: 3,
+          contextAttachments: [
+            {
+              path: "C:\\Project\\plan.md",
+              kind: "file",
+              name: "",
+            },
+            {
+              path: "",
+              kind: "file",
+              name: "invalid.md",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(normalized.contextPacks).toMatchObject([
+      {
+        id: "pack-1",
+        workspace: "C:\\Project",
+        name: "Review PR",
+        instructions: "Focus on regressions.",
+        prompt: "Review staged changes.",
+        mode: "machdoch",
+        createdAt: 0,
+        updatedAt: 12,
+        lastUsedAt: 18,
+        useCount: 3,
+        contextAttachments: [
+          {
+            path: "C:\\Project\\plan.md",
+            kind: "file",
+            name: "plan.md",
+          },
+        ],
+      },
+    ]);
+    expect(normalized.contextPacks[0]?.provider).toBeUndefined();
+    expect(normalized.contextPacks[0]?.model).toBeUndefined();
+  });
 });
 
 describe("applySessionRetentionPolicy", () => {

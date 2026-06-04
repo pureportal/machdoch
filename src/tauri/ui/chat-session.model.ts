@@ -88,6 +88,22 @@ export interface ShellVoiceSettings {
   rate: number;
 }
 
+export interface SmartContextPack {
+  id: string;
+  workspace: string | null;
+  name: string;
+  instructions: string;
+  prompt: string;
+  contextAttachments: ChatSessionContextAttachment[];
+  provider?: RuntimeProvider;
+  model?: string;
+  mode?: RunMode;
+  createdAt: number;
+  updatedAt: number;
+  lastUsedAt?: number;
+  useCount: number;
+}
+
 export type SessionOverviewStatus =
   | "empty"
   | "running"
@@ -99,6 +115,7 @@ export interface ShellPersistedState {
   version: 1;
   activeSessionId: string;
   sessions: ChatSessionRecord[];
+  contextPacks: SmartContextPack[];
   voice: ShellVoiceSettings;
   lastSelectedProvider: RuntimeProvider;
   lastSelectedModelByProvider: Partial<Record<RuntimeProvider, string>>;
@@ -161,6 +178,8 @@ const THINKING_TIMELINE_EVENT_PHASES: TaskThinkingTimelineEvent["phase"][] = [
 const THINKING_TIMELINE_EVENT_LIMIT = 240;
 const MAX_SESSION_TAGS = 12;
 const MAX_SESSION_TAG_LENGTH = 32;
+const MAX_CONTEXT_PACK_NAME_LENGTH = 72;
+const MAX_CONTEXT_PACK_TEXT_LENGTH = 8_000;
 const SESSION_RETENTION_DAY_MS = 24 * 60 * 60 * 1000;
 const CONTEXT_ATTACHMENT_KINDS: ChatSessionContextAttachmentKind[] = [
   "file",
@@ -170,6 +189,7 @@ const CONTEXT_ATTACHMENT_KINDS: ChatSessionContextAttachmentKind[] = [
 ];
 
 export const QUICK_VOICE_SESSION_KIND: ChatSessionSpecialKind = "quick-voice";
+export const MAX_SMART_CONTEXT_PACKS = 160;
 
 const clampVoiceRate = (value: unknown): number => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -420,6 +440,86 @@ const normalizePromptContextHistory = (
   );
 };
 
+const normalizeContextPackText = (value: unknown): string => {
+  return typeof value === "string"
+    ? value.trim().slice(0, MAX_CONTEXT_PACK_TEXT_LENGTH)
+    : "";
+};
+
+const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seenIds = new Set<string>();
+  const packs: SmartContextPack[] = [];
+
+  for (const [index, entry] of value.entries()) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const idCandidate = normalizeString(entry.id).trim();
+    const id = idCandidate || `context-pack-${index}`;
+
+    if (seenIds.has(id)) {
+      continue;
+    }
+
+    seenIds.add(id);
+
+    const rawName = normalizeString(entry.name).replace(/\s+/gu, " ").trim();
+    const name =
+      rawName.slice(0, MAX_CONTEXT_PACK_NAME_LENGTH) ||
+      `Context pack ${index + 1}`;
+    const workspaceCandidate = normalizeString(entry.workspace).trim();
+    const provider = isRuntimeProvider(entry.provider)
+      ? entry.provider
+      : undefined;
+    const model =
+      provider && normalizeString(entry.model).trim()
+        ? normalizeString(entry.model).trim()
+        : undefined;
+    const mode = normalizeOptionalStoredRunMode(entry.mode);
+    const createdAt = Math.max(0, normalizeFiniteNumber(entry.createdAt, 0));
+    const updatedAt = Math.max(
+      createdAt,
+      normalizeFiniteNumber(entry.updatedAt, createdAt),
+    );
+    const lastUsedAt = normalizeOptionalFiniteNumber(entry.lastUsedAt);
+
+    packs.push({
+      id,
+      workspace: workspaceCandidate || null,
+      name,
+      instructions: normalizeContextPackText(entry.instructions),
+      prompt: normalizeContextPackText(entry.prompt),
+      contextAttachments: normalizeContextAttachments(
+        entry.contextAttachments,
+        `context-pack-${id}`,
+      ),
+      ...(provider ? { provider } : {}),
+      ...(provider && model ? { model } : {}),
+      ...(mode ? { mode } : {}),
+      createdAt,
+      updatedAt,
+      ...(lastUsedAt !== undefined && lastUsedAt >= 0 ? { lastUsedAt } : {}),
+      useCount: Math.max(0, normalizeFiniteNumber(entry.useCount, 0)),
+    });
+
+    if (packs.length >= MAX_SMART_CONTEXT_PACKS) {
+      break;
+    }
+  }
+
+  return packs.sort((left, right) => {
+    const leftTimestamp = Math.max(left.lastUsedAt ?? 0, left.updatedAt);
+    const rightTimestamp = Math.max(right.lastUsedAt ?? 0, right.updatedAt);
+
+    return rightTimestamp - leftTimestamp;
+  });
+};
+
 export const normalizeSessionTags = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
     return [];
@@ -531,6 +631,7 @@ export const createInitialShellState = (): ShellPersistedState => {
     version: 1,
     activeSessionId: initialSession.id,
     sessions: [initialSession],
+    contextPacks: [],
     voice: createDefaultShellVoiceSettings(),
     lastSelectedProvider: DEFAULT_PROVIDER,
     lastSelectedModelByProvider: {
@@ -1252,6 +1353,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
       ? (candidate.activeSessionId as string)
       : normalizedSessions[0].id,
     sessions: normalizedSessions,
+    contextPacks: normalizeSmartContextPacks(candidate.contextPacks),
     voice: normalizedVoice,
     lastSelectedProvider,
     lastSelectedModelByProvider: {

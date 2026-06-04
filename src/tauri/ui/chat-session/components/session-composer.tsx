@@ -13,10 +13,12 @@ import {
   isQuickVoiceSession,
   type ChatSessionContextAttachment,
   type ChatSessionRecord,
+  type SmartContextPack,
 } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
 import { cn } from "../../lib/utils";
 import type { RuntimeProvider } from "../../model-catalog";
+import type { SaveSmartContextPackInput } from "../_helpers/smart-context-packs";
 import type { RUN_MODE_META } from "../_helpers/session-shell";
 import {
   AgentComposer,
@@ -24,6 +26,7 @@ import {
   type AgentComposerToggle,
 } from "./agent-composer";
 import { SessionModePicker } from "./session-mode-picker";
+import { SmartContextPackPicker } from "./smart-context-packs";
 
 export interface SessionComposerProps {
   activeSession: ChatSessionRecord;
@@ -41,6 +44,7 @@ export interface SessionComposerProps {
   isGlobalMemoryActive: boolean;
   isUiControlAvailable: boolean;
   contextAttachments: ChatSessionContextAttachment[];
+  contextPacks: SmartContextPack[];
   imageInputSupported: boolean;
   imageInputDisabledReason: string | null;
   speechInput: {
@@ -66,6 +70,9 @@ export interface SessionComposerProps {
   onPasteContextImages: (files: File[]) => Promise<void>;
   onRemoveContextAttachment: (attachmentId: string) => void;
   onClearContextAttachments: () => void;
+  onSaveContextPack: (input: SaveSmartContextPackInput) => void;
+  onApplyContextPack: (packId: string) => void;
+  onDeleteContextPack: (packId: string) => void;
   onDraftChange: (value: string) => void;
   onComposerHistoryNavigation: (
     event: KeyboardEvent<HTMLTextAreaElement>,
@@ -91,6 +98,7 @@ export const SessionComposer = ({
   isGlobalMemoryActive,
   isUiControlAvailable,
   contextAttachments,
+  contextPacks,
   imageInputSupported,
   imageInputDisabledReason,
   speechInput,
@@ -108,6 +116,9 @@ export const SessionComposer = ({
   onPasteContextImages,
   onRemoveContextAttachment,
   onClearContextAttachments,
+  onSaveContextPack,
+  onApplyContextPack,
+  onDeleteContextPack,
   onDraftChange,
   onComposerHistoryNavigation,
   onSend,
@@ -162,6 +173,19 @@ export const SessionComposer = ({
         />
         {composerWorkspaceLabel}
       </Button>
+
+      <SmartContextPackPicker
+        contextPacks={contextPacks}
+        activeDraft={activeSession.draft}
+        activeProvider={activeSession.provider}
+        activeModel={activeSession.model}
+        activeRunMode={activeRunMode}
+        contextAttachments={contextAttachments}
+        workspaceLabel={composerWorkspaceLabel}
+        onSaveContextPack={onSaveContextPack}
+        onApplyContextPack={onApplyContextPack}
+        onDeleteContextPack={onDeleteContextPack}
+      />
     </>
   );
   const toggles: AgentComposerToggle[] = [];

@@ -28,10 +28,12 @@ import {
   getSessionOverviewStatus,
   getSessionTitle,
   isQuickVoiceSession,
+  MAX_SMART_CONTEXT_PACKS,
   QUICK_VOICE_SESSION_KIND,
   type ChatSessionContextAttachment,
   type ChatSessionRecord,
   type ShellPersistedState,
+  type SmartContextPack,
   trimSessionTaskGroupsToVisibleMessageLimit,
 } from "../../chat-session.model";
 import {
@@ -60,6 +62,13 @@ import {
   type DialogSelection,
   type FileDropTarget,
 } from "./session-context-attachments";
+import {
+  areSmartContextPackWorkspacesEqual,
+  applySmartContextPackToComposer,
+  cloneContextAttachmentsForPack,
+  getSmartContextPacksForWorkspace,
+  type SaveSmartContextPackInput,
+} from "./smart-context-packs";
 import {
   getEffectiveSessionMode,
   removeSessionModeOverride,
@@ -212,6 +221,14 @@ export const useChatSessionController = (
   const defaultRunMode = runtime.runtimeSnapshot?.mode ?? "machdoch";
   const isUsingWorkspaceDefaultMode = !state.activeSession.mode;
   const hasActiveWorkspace = state.activeSession.workspace !== null;
+  const workspaceContextPacks = useMemo(
+    () =>
+      getSmartContextPacksForWorkspace(
+        state.shellState.contextPacks,
+        state.activeSession.workspace,
+      ),
+    [state.activeSession.workspace, state.shellState.contextPacks],
+  );
   const activeSessionImageInputSupported = modelSupportsImageInput(
     state.activeSession.provider,
     state.activeSession.model,
@@ -1086,6 +1103,183 @@ export const useChatSessionController = (
     ],
   );
 
+  const handleSaveContextPack = useCallback(
+    (input: SaveSmartContextPackInput): void => {
+      const name = input.name.replace(/\s+/gu, " ").trim();
+
+      if (!name) {
+        return;
+      }
+
+      const instructions = input.instructions.trim();
+      const prompt = input.includePrompt ? state.activeSession.draft.trim() : "";
+      const contextAttachments = input.includeAttachments
+        ? cloneContextAttachmentsForPack(
+            state.activeSession.draftContextAttachments,
+          )
+        : [];
+      const provider = input.includeModel
+        ? state.activeSession.provider
+        : undefined;
+      const model = input.includeModel ? state.activeSession.model : undefined;
+      const mode = input.includeMode ? activeRunMode : undefined;
+
+      if (
+        !instructions &&
+        !prompt &&
+        contextAttachments.length === 0 &&
+        !provider &&
+        !mode
+      ) {
+        return;
+      }
+
+      state.applyShellState((prev) => {
+        const now = Date.now();
+        const pack: SmartContextPack = {
+          id: crypto.randomUUID(),
+          workspace: state.activeSession.workspace,
+          name,
+          instructions,
+          prompt,
+          contextAttachments,
+          ...(provider ? { provider } : {}),
+          ...(provider && model ? { model } : {}),
+          ...(mode ? { mode } : {}),
+          createdAt: now,
+          updatedAt: now,
+          useCount: 0,
+        };
+
+        return {
+          ...prev,
+          contextPacks: [pack, ...prev.contextPacks].slice(
+            0,
+            MAX_SMART_CONTEXT_PACKS,
+          ),
+        };
+      });
+    },
+    [
+      activeRunMode,
+      state.activeSession.draft,
+      state.activeSession.draftContextAttachments,
+      state.activeSession.model,
+      state.activeSession.provider,
+      state.activeSession.workspace,
+      state.applyShellState,
+    ],
+  );
+
+  const handleApplyContextPack = useCallback(
+    (packId: string): void => {
+      const pack = state.shellState.contextPacks.find(
+        (contextPack) => contextPack.id === packId,
+      );
+
+      if (
+        !pack ||
+        !areSmartContextPackWorkspacesEqual(
+          pack.workspace,
+          state.activeSession.workspace,
+        )
+      ) {
+        return;
+      }
+
+      const application = applySmartContextPackToComposer(
+        state.activeSession.draft,
+        state.activeSession.draftContextAttachments,
+        pack,
+      );
+      const savedProvider = pack.provider;
+      const savedModel = pack.model;
+      const savedModelSelection =
+        savedProvider !== undefined &&
+        savedModel !== undefined &&
+        providerChooserState.chooserProviders.includes(savedProvider)
+          ? { provider: savedProvider, model: savedModel }
+          : null;
+
+      composerState.resetDraftHistoryState();
+      state.setDraftValue(application.draft);
+
+      state.applyShellState((prev) => {
+        const now = Date.now();
+        const nextState: ShellPersistedState = {
+          ...prev,
+          contextPacks: prev.contextPacks.map((contextPack) =>
+            contextPack.id === pack.id
+              ? {
+                  ...contextPack,
+                  lastUsedAt: now,
+                  useCount: contextPack.useCount + 1,
+                }
+              : contextPack,
+          ),
+          sessions: prev.sessions.map((session) => {
+            if (session.id !== state.activeSession.id) {
+              return session;
+            }
+
+            const nextSession: ChatSessionRecord = {
+              ...session,
+              draft: application.draft,
+              draftContextAttachments: application.contextAttachments,
+              updatedAt: now,
+            };
+
+            if (savedModelSelection) {
+              nextSession.provider = savedModelSelection.provider;
+              nextSession.model = savedModelSelection.model;
+            }
+
+            if (pack.mode) {
+              nextSession.mode = pack.mode;
+            }
+
+            return nextSession;
+          }),
+        };
+
+        if (savedModelSelection) {
+          nextState.lastSelectedProvider = savedModelSelection.provider;
+          nextState.lastSelectedModelByProvider = {
+            ...prev.lastSelectedModelByProvider,
+            [savedModelSelection.provider]: savedModelSelection.model,
+          };
+        }
+
+        if (pack.mode) {
+          nextState.lastSelectedMode = pack.mode;
+        }
+
+        return nextState;
+      });
+    },
+    [
+      composerState,
+      providerChooserState.chooserProviders,
+      state.activeSession.draft,
+      state.activeSession.draftContextAttachments,
+      state.activeSession.id,
+      state.activeSession.workspace,
+      state.applyShellState,
+      state.setDraftValue,
+      state.shellState.contextPacks,
+    ],
+  );
+
+  const handleDeleteContextPack = useCallback(
+    (packId: string): void => {
+      state.applyShellState((prev) => ({
+        ...prev,
+        contextPacks: prev.contextPacks.filter((pack) => pack.id !== packId),
+      }));
+    },
+    [state.applyShellState],
+  );
+
   const handleRemoveContextAttachment = useCallback(
     (target: FileDropTarget, attachmentId: string): void => {
       if (target === "quick-task") {
@@ -1426,6 +1620,7 @@ export const useChatSessionController = (
       isGlobalMemoryActive: memorySummaryState.isGlobalMemoryActive,
       isUiControlAvailable,
       contextAttachments: state.activeSession.draftContextAttachments,
+      contextPacks: workspaceContextPacks,
       imageInputSupported: activeSessionImageInputSupported,
       imageInputDisabledReason: activeSessionImageInputSupported
         ? null
@@ -1462,6 +1657,9 @@ export const useChatSessionController = (
         handleRemoveContextAttachment("active-session", attachmentId),
       onClearContextAttachments: () =>
         handleClearContextAttachments("active-session"),
+      onSaveContextPack: handleSaveContextPack,
+      onApplyContextPack: handleApplyContextPack,
+      onDeleteContextPack: handleDeleteContextPack,
       onDraftChange: composerState.handleDraftChange,
       onComposerHistoryNavigation: composerState.handleComposerHistoryNavigation,
       onSend: handleSend,
