@@ -1,26 +1,29 @@
 import {
-    AlertTriangle,
-    CheckCircle2,
-    ChevronDown,
-    ChevronRight,
-    LoaderCircle,
+  Activity,
+  AlertTriangle,
+  BrainCircuit,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Clock3,
+  Copy,
+  FileJson,
+  Hammer,
+  LoaderCircle,
+  RotateCcw,
+  ShieldCheck,
+  TerminalSquare,
+  type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { cn } from "./lib/utils";
 import type { TaskPanelTone } from "./task-panel.model";
 import type {
   TaskThinkingModelStream,
+  TaskThinkingTimelineEvent,
   TaskThinkingTrace,
 } from "./task-thinking.model";
-
-const entryToneDotClasses: Record<TaskPanelTone, string> = {
-  neutral: "bg-slate-500",
-  info: "bg-sky-400",
-  success: "bg-emerald-400",
-  warning: "bg-amber-400",
-  danger: "bg-rose-400",
-};
 
 const entryToneLabelClasses: Record<TaskPanelTone, string> = {
   neutral: "text-slate-200",
@@ -28,6 +31,14 @@ const entryToneLabelClasses: Record<TaskPanelTone, string> = {
   success: "text-emerald-200",
   warning: "text-amber-200",
   danger: "text-rose-200",
+};
+
+const timelineToneBorderClasses: Record<TaskPanelTone, string> = {
+  neutral: "border-slate-700/70",
+  info: "border-sky-500/35",
+  success: "border-emerald-500/35",
+  warning: "border-amber-500/35",
+  danger: "border-rose-500/35",
 };
 
 const outputLineClasses = {
@@ -39,6 +50,8 @@ type VisibleModelStreamKind = Exclude<
   TaskThinkingModelStream["kind"],
   "assistant"
 >;
+
+type PanelView = "timeline" | "streams" | "replay";
 
 const modelStreamPanelCopy: Record<
   VisibleModelStreamKind,
@@ -62,13 +75,144 @@ const modelStreamPanelCopy: Record<
   },
 };
 
+const timelineIcons: Record<TaskThinkingTimelineEvent["kind"], LucideIcon> = {
+  state: Activity,
+  "model-call": BrainCircuit,
+  "tool-call": Hammer,
+  retry: RotateCcw,
+  validator: ShieldCheck,
+  output: TerminalSquare,
+};
+
+const formatElapsedTime = (elapsedMs: number | undefined): string => {
+  const safeElapsedMs =
+    typeof elapsedMs === "number" && Number.isFinite(elapsedMs)
+      ? Math.max(0, Math.round(elapsedMs))
+      : 0;
+
+  if (safeElapsedMs < 1_000) {
+    return `${safeElapsedMs}ms`;
+  }
+
+  if (safeElapsedMs < 60_000) {
+    return `${(safeElapsedMs / 1_000).toFixed(safeElapsedMs < 10_000 ? 1 : 0)}s`;
+  }
+
+  const minutes = Math.floor(safeElapsedMs / 60_000);
+  const seconds = Math.floor((safeElapsedMs % 60_000) / 1_000);
+
+  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+};
+
+const formatTokenUsage = (
+  usage: TaskThinkingTrace["tokenUsage"] | TaskThinkingTimelineEvent["tokenUsage"],
+): string => {
+  if (!usage) {
+    return "0 tokens";
+  }
+
+  const parts = [
+    usage.inputTokens !== undefined ? `${usage.inputTokens} in` : undefined,
+    usage.outputTokens !== undefined ? `${usage.outputTokens} out` : undefined,
+    usage.totalTokens !== undefined ? `${usage.totalTokens} total` : undefined,
+    usage.cachedInputTokens !== undefined
+      ? `${usage.cachedInputTokens} cached`
+      : undefined,
+    usage.reasoningTokens !== undefined
+      ? `${usage.reasoningTokens} reasoning`
+      : undefined,
+  ].filter((part): part is string => part !== undefined);
+
+  return parts.length > 0 ? parts.join(" / ") : "0 tokens";
+};
+
+const formatMetadataKey = (value: string): string => {
+  return value
+    .replace(/([a-z])([A-Z])/gu, "$1 $2")
+    .replace(/[_-]+/gu, " ")
+    .toLowerCase();
+};
+
+const createIsoTimestamp = (value: number | undefined): string | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+
+  return new Date(value).toISOString();
+};
+
+const createReplayExport = (
+  thinking: TaskThinkingTrace,
+  timelineEvents: TaskThinkingTimelineEvent[],
+): string => {
+  const completedAt = thinking.completedAt ?? timelineEvents.at(-1)?.timestamp;
+  const elapsedMs =
+    completedAt && thinking.startedAt ? completedAt - thinking.startedAt : 0;
+
+  return JSON.stringify(
+    {
+      schema: "machdoch.execution-replay.v1",
+      task: {
+        text: thinking.task ?? "",
+        mode: thinking.mode,
+      },
+      run: {
+        status: thinking.status,
+        startedAt: createIsoTimestamp(thinking.startedAt),
+        completedAt: createIsoTimestamp(completedAt),
+        elapsedMs: Math.max(0, elapsedMs),
+      },
+      usage: thinking.tokenUsage ?? null,
+      timeline: timelineEvents.map((event) => ({
+        kind: event.kind,
+        phase: event.phase,
+        label: event.label,
+        detail: event.detail,
+        elapsedMs: event.elapsedMs,
+        timestamp: createIsoTimestamp(event.timestamp),
+        provider: event.provider,
+        model: event.model,
+        toolName: event.toolName,
+        callId: event.callId,
+        stream: event.stream,
+        tokenUsage: event.tokenUsage,
+        metadata: event.metadata,
+      })),
+      streams: {
+        assistantText: thinking.assistantText ?? "",
+        modelStream: thinking.modelStream ?? null,
+        actionOutputLines: thinking.actionOutputLines ?? [],
+      },
+    },
+    null,
+    2,
+  );
+};
+
+const createLegacyTimelineEvents = (
+  thinking: TaskThinkingTrace,
+): TaskThinkingTimelineEvent[] => {
+  const startedAt = thinking.startedAt ?? thinking.entries[0]?.timestamp ?? 0;
+
+  return thinking.entries.map((entry, index) => ({
+    id: `legacy-${entry.id}`,
+    kind: "state",
+    phase: index === thinking.entries.length - 1 ? "completed" : "started",
+    label: entry.label,
+    detail: entry.detail,
+    tone: entry.tone,
+    timestamp: entry.timestamp,
+    elapsedMs: Math.max(0, entry.timestamp - startedAt),
+  }));
+};
+
 export interface TaskThinkingPanelProps {
   thinking: TaskThinkingTrace;
 }
 
 /**
- * Small fixed-height activity panel that shows the task's live execution
- * thinking/progress feed before the final assistant response is rendered.
+ * Fixed-height execution timeline that shows live agent progress before the
+ * final assistant response is rendered.
  */
 export const TaskThinkingPanel = ({
   thinking,
@@ -81,7 +225,28 @@ export const TaskThinkingPanel = ({
   const assistantText = thinking.assistantText?.trim();
   const modelStream = thinking.modelStream;
   const actionOutputLines = thinking.actionOutputLines ?? [];
+  const timelineEvents = useMemo(
+    () =>
+      thinking.timelineEvents && thinking.timelineEvents.length > 0
+        ? thinking.timelineEvents
+        : createLegacyTimelineEvents(thinking),
+    [thinking.entries, thinking.startedAt, thinking.timelineEvents],
+  );
+  const latestTimelineEvent = timelineEvents.at(-1);
+  const elapsedMs = Math.max(
+    0,
+    (thinking.completedAt ?? latestTimelineEvent?.timestamp ?? thinking.startedAt) -
+      thinking.startedAt,
+  );
+  const replayExport = useMemo(
+    () => createReplayExport(thinking, timelineEvents),
+    [thinking, timelineEvents],
+  );
   const [isCollapsed, setIsCollapsed] = useState<boolean>(!isRunning);
+  const [activeView, setActiveView] = useState<PanelView>("timeline");
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
 
   useEffect(() => {
     if (!isRunning) {
@@ -95,11 +260,34 @@ export const TaskThinkingPanel = ({
     }
 
     node.scrollTop = node.scrollHeight;
-  }, [entries.length, isRunning]);
+  }, [timelineEvents.length, entries.length, activeView, isRunning]);
 
   useEffect(() => {
     setIsCollapsed(!isRunning);
   }, [isRunning]);
+
+  useEffect(() => {
+    if (copyState === "idle") {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setCopyState("idle"), 1_800);
+
+    return () => window.clearTimeout(timeout);
+  }, [copyState]);
+
+  const copyReplayExport = async (): Promise<void> => {
+    try {
+      if (!navigator.clipboard) {
+        throw new Error("Clipboard API unavailable.");
+      }
+
+      await navigator.clipboard.writeText(replayExport);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  };
 
   const HeaderIcon = (() => {
     if (isRunning) {
@@ -154,14 +342,31 @@ export const TaskThinkingPanel = ({
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-3">
-                <CardTitle
-                  className={cn(
-                    "font-semibold text-slate-100",
-                    isCollapsed ? "text-[12px] leading-none" : "text-sm",
-                  )}
-                >
-                  Thinking process
-                </CardTitle>
+                <div className="min-w-0">
+                  <CardTitle
+                    className={cn(
+                      "font-semibold text-slate-100",
+                      isCollapsed ? "text-[12px] leading-none" : "text-sm",
+                    )}
+                  >
+                    Execution timeline
+                  </CardTitle>
+                  {!isCollapsed ? (
+                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-slate-800 bg-slate-950/45 px-2 py-0.5">
+                        <Clock3 className="h-3 w-3" />
+                        {formatElapsedTime(elapsedMs)}
+                      </span>
+                      <span className="rounded-full border border-slate-800 bg-slate-950/45 px-2 py-0.5">
+                        {timelineEvents.length} event
+                        {timelineEvents.length === 1 ? "" : "s"}
+                      </span>
+                      <span className="rounded-full border border-slate-800 bg-slate-950/45 px-2 py-0.5">
+                        {formatTokenUsage(thinking.tokenUsage)}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
                 <button
                   type="button"
                   aria-expanded={!isCollapsed}
@@ -192,108 +397,234 @@ export const TaskThinkingPanel = ({
 
         {!isCollapsed ? (
           <CardContent className="px-0 py-0">
+            <div className="flex items-center gap-1 border-b border-slate-800/80 px-5 py-2">
+              {(
+                [
+                  ["timeline", Activity, "Timeline"],
+                  ["streams", TerminalSquare, "Streams"],
+                  ["replay", FileJson, "Replay"],
+                ] as const
+              ).map(([view, Icon, label]) => (
+                <button
+                  key={view}
+                  type="button"
+                  aria-pressed={activeView === view}
+                  onClick={() => setActiveView(view)}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors",
+                    activeView === view
+                      ? "bg-sky-500/12 text-sky-100"
+                      : "text-slate-400 hover:bg-slate-900/70 hover:text-slate-200",
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </button>
+              ))}
+            </div>
+
             <div
               ref={scrollContainerRef}
-              className="app-thinking-scroll h-44 min-w-0 overflow-y-auto px-5 py-4 [scrollbar-gutter:stable]"
+              className="app-thinking-scroll h-72 min-w-0 overflow-y-auto px-5 py-4 [scrollbar-gutter:stable]"
             >
-              {assistantText ? (
-                <div className="app-thinking-detail-block mb-4 min-w-0 rounded-xl border border-sky-500/15 bg-sky-500/5 px-3 py-2">
-                  <p className="m-0 text-[11px] font-semibold tracking-[0.16em] text-sky-200 uppercase">
-                    Live response
-                  </p>
-                  <p className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-slate-200 wrap-break-word">
-                    {assistantText}
-                  </p>
-                </div>
-              ) : null}
+              {activeView === "timeline" ? (
+                <ol className="app-thinking-entries m-0 grid gap-3 p-0 list-none">
+                  {timelineEvents.map((event, index) => {
+                    const Icon = timelineIcons[event.kind];
+                    const durationMs =
+                      typeof event.metadata?.durationMs === "number"
+                        ? event.metadata.durationMs
+                        : undefined;
+                    const metadataEntries = Object.entries(
+                      event.metadata ?? {},
+                    ).filter(
+                      ([key]) =>
+                        key !== "durationMs" &&
+                        key !== "argumentsPreview" &&
+                        key !== "outputPreview",
+                    );
+                    const previewEntries = [
+                      event.metadata?.argumentsPreview
+                        ? `arguments: ${event.metadata.argumentsPreview}`
+                        : undefined,
+                      event.metadata?.outputPreview
+                        ? `output: ${event.metadata.outputPreview}`
+                        : undefined,
+                    ].filter((line): line is string => line !== undefined);
+                    const isLastEvent = index === timelineEvents.length - 1;
 
-              {modelStream && modelStream.kind !== "assistant" ? (
-                <div className="app-thinking-detail-block mb-4 min-w-0 rounded-xl border border-violet-500/15 bg-violet-500/5 px-3 py-2">
-                  <div className="flex min-w-0 items-center justify-between gap-3">
-                    <p className="m-0 text-[11px] font-semibold tracking-[0.16em] text-violet-200 uppercase">
-                      {modelStreamPanelCopy[modelStream.kind].title}
-                    </p>
-                    <span className="shrink-0 rounded-full border border-violet-400/20 px-2 py-0.5 text-[10px] text-violet-100">
-                      {modelStream.complete
-                        ? modelStreamPanelCopy[modelStream.kind].badge
-                        : "streaming"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs font-medium text-violet-100 wrap-break-word">
-                    {modelStream.label}
-                  </p>
-                  {modelStream.content.trim() ? (
-                    <pre className="app-thinking-code mt-2 max-h-24 max-w-full overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950/80 px-3 py-2 text-xs leading-5 text-slate-300 wrap-break-word">
-                      {modelStream.content}
-                    </pre>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {actionOutputLines.length > 0 ? (
-                <div className="app-thinking-detail-block mb-4 min-w-0 rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-2">
-                  <p className="m-0 text-[11px] font-semibold tracking-[0.16em] text-slate-300 uppercase">
-                    Command output
-                  </p>
-                  <div className="mt-2 max-h-28 overflow-y-auto font-mono text-[11px] leading-5">
-                    {actionOutputLines.map((line) => (
-                      <div
-                        key={line.id}
-                        className={cn(
-                          "grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] gap-2 border-l-2 pl-2",
-                          outputLineClasses[line.stream],
-                        )}
+                    return (
+                      <li
+                        key={event.id}
+                        className="app-thinking-entry grid grid-cols-[4.25rem_auto_minmax(0,1fr)] gap-3"
                       >
-                        <span className="text-slate-500">
-                          {line.stream}
+                        <span className="pt-0.5 text-right font-mono text-[11px] text-slate-500">
+                          +{formatElapsedTime(event.elapsedMs)}
                         </span>
-                        <span className="min-w-0 break-words">
-                          {line.text}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                        <div className="flex min-h-full flex-col items-center">
+                          <span
+                            className={cn(
+                              "flex h-6 w-6 items-center justify-center rounded-lg border bg-slate-950/60",
+                              timelineToneBorderClasses[event.tone],
+                              entryToneLabelClasses[event.tone],
+                            )}
+                          >
+                            <Icon className="h-3.5 w-3.5" />
+                          </span>
+                          {!isLastEvent ? (
+                            <span className="mt-1 min-h-5 w-px flex-1 bg-slate-800/80" />
+                          ) : null}
+                        </div>
+
+                        <div className="min-w-0 pb-1">
+                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                            <p
+                              className={cn(
+                                "m-0 text-[11px] font-semibold tracking-[0.14em] uppercase",
+                                entryToneLabelClasses[event.tone],
+                              )}
+                            >
+                              {event.label}
+                            </p>
+                            <span className="rounded-full border border-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">
+                              {event.phase}
+                            </span>
+                            {durationMs !== undefined ? (
+                              <span className="rounded-full border border-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">
+                                {formatElapsedTime(durationMs)}
+                              </span>
+                            ) : null}
+                          </div>
+                          {event.detail ? (
+                            <p className="app-thinking-entry-detail mt-1 text-sm leading-6 text-slate-300 wrap-break-word">
+                              {event.detail}
+                            </p>
+                          ) : null}
+                          {event.tokenUsage ? (
+                            <p className="mt-1 text-xs text-sky-200">
+                              {formatTokenUsage(event.tokenUsage)}
+                            </p>
+                          ) : null}
+                          {metadataEntries.length > 0 ? (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {metadataEntries.map(([key, value]) => (
+                                <span
+                                  key={key}
+                                  className="rounded-md border border-slate-800 bg-slate-950/50 px-1.5 py-0.5 text-[10px] text-slate-400"
+                                >
+                                  {formatMetadataKey(key)}: {String(value)}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                          {previewEntries.length > 0 ? (
+                            <pre className="app-thinking-code mt-2 max-h-24 max-w-full overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950/80 px-3 py-2 text-xs leading-5 text-slate-300 wrap-break-word">
+                              {previewEntries.join("\n")}
+                            </pre>
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
               ) : null}
 
-              <ol className="app-thinking-entries m-0 grid gap-3 p-0 list-none">
-                {entries.map((entry, index) => {
-                  const isLastEntry = index === entries.length - 1;
+              {activeView === "streams" ? (
+                <>
+                  {assistantText ? (
+                    <div className="app-thinking-detail-block mb-4 min-w-0 rounded-xl border border-sky-500/15 bg-sky-500/5 px-3 py-2">
+                      <p className="m-0 text-[11px] font-semibold tracking-[0.16em] text-sky-200 uppercase">
+                        Live response
+                      </p>
+                      <p className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-slate-200 wrap-break-word">
+                        {assistantText}
+                      </p>
+                    </div>
+                  ) : null}
 
-                  return (
-                    <li
-                      key={entry.id}
-                      className="app-thinking-entry grid grid-cols-[auto_1fr] gap-3"
+                  {modelStream && modelStream.kind !== "assistant" ? (
+                    <div className="app-thinking-detail-block mb-4 min-w-0 rounded-xl border border-violet-500/15 bg-violet-500/5 px-3 py-2">
+                      <div className="flex min-w-0 items-center justify-between gap-3">
+                        <p className="m-0 text-[11px] font-semibold tracking-[0.16em] text-violet-200 uppercase">
+                          {modelStreamPanelCopy[modelStream.kind].title}
+                        </p>
+                        <span className="shrink-0 rounded-full border border-violet-400/20 px-2 py-0.5 text-[10px] text-violet-100">
+                          {modelStream.complete
+                            ? modelStreamPanelCopy[modelStream.kind].badge
+                            : "streaming"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs font-medium text-violet-100 wrap-break-word">
+                        {modelStream.label}
+                      </p>
+                      {modelStream.content.trim() ? (
+                        <pre className="app-thinking-code mt-2 max-h-24 max-w-full overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950/80 px-3 py-2 text-xs leading-5 text-slate-300 wrap-break-word">
+                          {modelStream.content}
+                        </pre>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {actionOutputLines.length > 0 ? (
+                    <div className="app-thinking-detail-block mb-4 min-w-0 rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-2">
+                      <p className="m-0 text-[11px] font-semibold tracking-[0.16em] text-slate-300 uppercase">
+                        Stdout / stderr
+                      </p>
+                      <div className="mt-2 max-h-40 overflow-y-auto font-mono text-[11px] leading-5">
+                        {actionOutputLines.map((line) => (
+                          <div
+                            key={line.id}
+                            className={cn(
+                              "grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] gap-2 border-l-2 pl-2",
+                              outputLineClasses[line.stream],
+                            )}
+                          >
+                            <span className="text-slate-500">
+                              {line.stream}
+                            </span>
+                            <span className="min-w-0 break-words">
+                              {line.text}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {!assistantText &&
+                  (!modelStream || modelStream.kind === "assistant") &&
+                  actionOutputLines.length === 0 ? (
+                    <p className="m-0 text-sm text-slate-400">
+                      No stream output yet.
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
+
+              {activeView === "replay" ? (
+                <div className="app-thinking-detail-block min-w-0 rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-2">
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <p className="m-0 text-[11px] font-semibold tracking-[0.16em] text-slate-300 uppercase">
+                      Replay export
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void copyReplayExport()}
+                      className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-800 bg-slate-950/70 px-2 text-[11px] font-medium text-slate-300 hover:bg-slate-900 hover:text-slate-100"
                     >
-                      <div className="flex min-h-full flex-col items-center">
-                        <span
-                          className={cn(
-                            "mt-1 h-2.5 w-2.5 rounded-full",
-                            entryToneDotClasses[entry.tone],
-                          )}
-                        />
-                        {!isLastEntry ? (
-                          <span className="mt-1 min-h-5 w-px flex-1 bg-slate-800/80" />
-                        ) : null}
-                      </div>
-
-                      <div className="min-w-0 pb-1">
-                        <p
-                          className={cn(
-                            "m-0 text-[11px] font-semibold tracking-[0.18em] uppercase",
-                            entryToneLabelClasses[entry.tone],
-                          )}
-                        >
-                          {entry.label}
-                        </p>
-                        <p className="app-thinking-entry-detail mt-1 text-sm leading-6 text-slate-300 wrap-break-word">
-                          {entry.detail}
-                        </p>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
+                      <Copy className="h-3.5 w-3.5" />
+                      {copyState === "copied"
+                        ? "Copied"
+                        : copyState === "failed"
+                          ? "Copy failed"
+                          : "Copy JSON"}
+                    </button>
+                  </div>
+                  <pre className="app-thinking-code mt-2 max-h-56 max-w-full overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950/80 px-3 py-2 text-xs leading-5 text-slate-300 wrap-break-word">
+                    {replayExport}
+                  </pre>
+                </div>
+              ) : null}
             </div>
           </CardContent>
         ) : null}

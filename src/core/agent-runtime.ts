@@ -43,6 +43,7 @@ import { createProviderAdapter } from "./_helpers/provider-adapters.js";
 import { compactTraceText, stringifyUnknown } from "./_helpers/runtime-text.js";
 import type {
   AgentModelAdapter,
+  AgentModelStreamUsage,
   AgentModelStreamEvent,
   AgentModelTurn,
   AgentModelToolCall,
@@ -62,6 +63,12 @@ import type {
 const MODEL_STREAM_PROGRESS_INTERVAL_MS = 250;
 const MODEL_STREAM_CONTENT_LIMIT = 4_000;
 
+type ProgressTimelineEvent = NonNullable<
+  TaskExecutionProgress["timelineEvent"]
+>;
+type ProgressTokenUsage = NonNullable<ProgressTimelineEvent["tokenUsage"]>;
+type ProgressMetadataValue = string | number | boolean;
+
 const limitStreamContent = (value: string): string => {
   if (value.length <= MODEL_STREAM_CONTENT_LIMIT) {
     return value;
@@ -70,12 +77,78 @@ const limitStreamContent = (value: string): string => {
   return value.slice(value.length - MODEL_STREAM_CONTENT_LIMIT);
 };
 
+const normalizeTokenCount = (value: number | undefined): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return undefined;
+  }
+
+  return Math.trunc(value);
+};
+
+const createTokenUsageSnapshot = (
+  usage: AgentModelStreamUsage,
+): ProgressTokenUsage | undefined => {
+  const inputTokens = normalizeTokenCount(usage.inputTokens);
+  const outputTokens = normalizeTokenCount(usage.outputTokens);
+  const totalTokens = normalizeTokenCount(usage.totalTokens);
+  const cachedInputTokens = normalizeTokenCount(usage.cachedInputTokens);
+  const reasoningTokens = normalizeTokenCount(usage.reasoningTokens);
+
+  if (
+    inputTokens === undefined &&
+    outputTokens === undefined &&
+    totalTokens === undefined &&
+    cachedInputTokens === undefined &&
+    reasoningTokens === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(totalTokens !== undefined ? { totalTokens } : {}),
+    ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
+    ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+  };
+};
+
+const formatTokenUsage = (usage: ProgressTokenUsage): string => {
+  const parts = [
+    usage.inputTokens !== undefined ? `${usage.inputTokens} input` : undefined,
+    usage.outputTokens !== undefined
+      ? `${usage.outputTokens} output`
+      : undefined,
+    usage.totalTokens !== undefined ? `${usage.totalTokens} total` : undefined,
+    usage.cachedInputTokens !== undefined
+      ? `${usage.cachedInputTokens} cached`
+      : undefined,
+    usage.reasoningTokens !== undefined
+      ? `${usage.reasoningTokens} reasoning`
+      : undefined,
+  ].filter((part): part is string => part !== undefined);
+
+  return parts.join(", ");
+};
+
+const createProgressMetadata = (
+  values: Record<string, ProgressMetadataValue | undefined>,
+): Record<string, ProgressMetadataValue> | undefined => {
+  const entries = Object.entries(values).filter(
+    (entry): entry is [string, ProgressMetadataValue] =>
+      entry[1] !== undefined,
+  );
+
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+};
+
 const createModelStreamProgressEmitter = (
   task: string,
   config: RuntimeConfig,
   loopState: AgentLoopState,
   state: TaskExecutionState,
   onStateChange: TaskExecutionProgressHandler | undefined,
+  createTimelineMetadata?: () => Record<string, ProgressMetadataValue> | undefined,
 ): {
   handleEvent: (event: AgentModelStreamEvent) => void;
   flush: () => Promise<void>;
@@ -234,8 +307,39 @@ const createModelStreamProgressEmitter = (
           return;
         }
 
-        case "usage":
+        case "usage": {
+          const tokenUsage = createTokenUsageSnapshot(event.usage);
+
+          if (!tokenUsage) {
+            return;
+          }
+
+          const metadata = createTimelineMetadata?.();
+
+          void emitAgentProgress(
+            task,
+            config,
+            state,
+            "Model token usage reported.",
+            loopState,
+            onStateChange,
+            undefined,
+            {
+              timelineEvent: {
+                kind: "model-call",
+                phase: "usage",
+                label: "Token usage",
+                detail: formatTokenUsage(tokenUsage),
+                tone: "info",
+                provider: event.provider ?? config.provider,
+                model: config.model,
+                tokenUsage,
+                ...(metadata ? { metadata } : {}),
+              },
+            },
+          ).catch(() => undefined);
           return;
+        }
 
         case "error": {
           modelStream = {
@@ -662,6 +766,10 @@ const runExecutorCycle = async (
     };
   }
 
+  let modelCallSequence = 1;
+  const initialModelCallLabel = `Executor model call ${modelCallSequence}`;
+  const initialModelCallStartedAt = Date.now();
+
   await emitAgentProgress(
     task,
     config,
@@ -671,6 +779,22 @@ const runExecutorCycle = async (
       : "Executor iteration 1 started.",
     loopState,
     onStateChange,
+    undefined,
+    {
+      timelineEvent: {
+        kind: "model-call",
+        phase: "started",
+        label: initialModelCallLabel,
+        detail: `Starting executor iteration ${executorIteration} with ${config.model}.`,
+        tone: "info",
+        provider: config.provider,
+        model: config.model,
+        metadata: {
+          executorIteration,
+          modelCall: modelCallSequence,
+        },
+      },
+    },
   );
 
   const modelStreamProgress = createModelStreamProgressEmitter(
@@ -679,44 +803,215 @@ const runExecutorCycle = async (
     loopState,
     "executing",
     onStateChange,
+    () =>
+      createProgressMetadata({
+        executorIteration,
+        modelCall: modelCallSequence,
+      }),
   );
 
-  let turn = await adapter.startTurn({
-    model: config.model,
-    systemPrompt: createExecutorSystemPrompt(
-      config,
-      taskContext,
-      toolSpecs,
-      conversationContext,
-      continuationRequest,
-    ),
-    userPrompt: createExecutorUserPrompt(
-      config,
-      task,
-      taskContext,
-      conversationContext,
-      continuationRequest,
-    ),
-    ...(imageInputs && imageInputs.length > 0 ? { imageInputs } : {}),
-    tools: toolSpecs,
-    ...(signal ? { signal } : {}),
-    ...(onStateChange
-      ? { onStreamEvent: modelStreamProgress.handleEvent }
-      : {}),
-  });
-  await modelStreamProgress.flush();
-  const continueTurnWithProgress = async (
-    toolResults: AgentModelToolResult[],
-  ): Promise<AgentModelTurn> => {
-    const nextTurn = await adapter.continueTurn({
-      toolResults,
+  let turn: AgentModelTurn;
+
+  try {
+    turn = await adapter.startTurn({
+      model: config.model,
+      systemPrompt: createExecutorSystemPrompt(
+        config,
+        taskContext,
+        toolSpecs,
+        conversationContext,
+        continuationRequest,
+      ),
+      userPrompt: createExecutorUserPrompt(
+        config,
+        task,
+        taskContext,
+        conversationContext,
+        continuationRequest,
+      ),
+      ...(imageInputs && imageInputs.length > 0 ? { imageInputs } : {}),
+      tools: toolSpecs,
       ...(signal ? { signal } : {}),
       ...(onStateChange
         ? { onStreamEvent: modelStreamProgress.handleEvent }
         : {}),
     });
-
     await modelStreamProgress.flush();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const metadata = createProgressMetadata({
+      executorIteration,
+      modelCall: modelCallSequence,
+      durationMs: Date.now() - initialModelCallStartedAt,
+    });
+
+    await emitAgentProgress(
+      task,
+      config,
+      "executing",
+      `${initialModelCallLabel} failed.`,
+      loopState,
+      onStateChange,
+      undefined,
+      {
+        timelineEvent: {
+          kind: "model-call",
+          phase: "failed",
+          label: initialModelCallLabel,
+          detail: message,
+          tone: "danger",
+          provider: config.provider,
+          model: config.model,
+          ...(metadata ? { metadata } : {}),
+        },
+      },
+    );
+    throw error;
+  }
+
+  {
+    const metadata = createProgressMetadata({
+      executorIteration,
+      modelCall: modelCallSequence,
+      durationMs: Date.now() - initialModelCallStartedAt,
+      toolCalls: turn.toolCalls.length,
+      ...(turn.stopReason ? { stopReason: turn.stopReason } : {}),
+    });
+
+    await emitAgentProgress(
+      task,
+      config,
+      "executing",
+      `${initialModelCallLabel} completed.`,
+      loopState,
+      onStateChange,
+      undefined,
+      {
+        timelineEvent: {
+          kind: "model-call",
+          phase: "completed",
+          label: initialModelCallLabel,
+          detail: `Returned ${turn.toolCalls.length} tool call(s).`,
+          tone: "success",
+          provider: config.provider,
+          model: config.model,
+          ...(metadata ? { metadata } : {}),
+        },
+      },
+    );
+  }
+
+  const continueTurnWithProgress = async (
+    toolResults: AgentModelToolResult[],
+  ): Promise<AgentModelTurn> => {
+    modelCallSequence += 1;
+    const modelCallLabel = `Executor model call ${modelCallSequence}`;
+    const modelCallStartedAt = Date.now();
+    const startMetadata = createProgressMetadata({
+      executorIteration,
+      modelCall: modelCallSequence,
+      toolResults: toolResults.length,
+    });
+
+    await emitAgentProgress(
+      task,
+      config,
+      "executing",
+      `${modelCallLabel} started with ${toolResults.length} tool result(s).`,
+      loopState,
+      onStateChange,
+      undefined,
+      {
+        timelineEvent: {
+          kind: "model-call",
+          phase: "started",
+          label: modelCallLabel,
+          detail: `Continuing executor iteration ${executorIteration}.`,
+          tone: "info",
+          provider: config.provider,
+          model: config.model,
+          ...(startMetadata ? { metadata: startMetadata } : {}),
+        },
+      },
+    );
+
+    let nextTurn: AgentModelTurn;
+
+    try {
+      nextTurn = await adapter.continueTurn({
+        toolResults,
+        ...(signal ? { signal } : {}),
+        ...(onStateChange
+          ? { onStreamEvent: modelStreamProgress.handleEvent }
+          : {}),
+      });
+
+      await modelStreamProgress.flush();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const metadata = createProgressMetadata({
+        executorIteration,
+        modelCall: modelCallSequence,
+        durationMs: Date.now() - modelCallStartedAt,
+        toolResults: toolResults.length,
+      });
+
+      await emitAgentProgress(
+        task,
+        config,
+        "executing",
+        `${modelCallLabel} failed.`,
+        loopState,
+        onStateChange,
+        undefined,
+        {
+          timelineEvent: {
+            kind: "model-call",
+            phase: "failed",
+            label: modelCallLabel,
+            detail: message,
+            tone: "danger",
+            provider: config.provider,
+            model: config.model,
+            ...(metadata ? { metadata } : {}),
+          },
+        },
+      );
+      throw error;
+    }
+
+    {
+      const metadata = createProgressMetadata({
+        executorIteration,
+        modelCall: modelCallSequence,
+        durationMs: Date.now() - modelCallStartedAt,
+        toolResults: toolResults.length,
+        toolCalls: nextTurn.toolCalls.length,
+        ...(nextTurn.stopReason ? { stopReason: nextTurn.stopReason } : {}),
+      });
+
+      await emitAgentProgress(
+        task,
+        config,
+        "executing",
+        `${modelCallLabel} completed.`,
+        loopState,
+        onStateChange,
+        undefined,
+        {
+          timelineEvent: {
+            kind: "model-call",
+            phase: "completed",
+            label: modelCallLabel,
+            detail: `Returned ${nextTurn.toolCalls.length} tool call(s).`,
+            tone: "success",
+            provider: config.provider,
+            model: config.model,
+            ...(metadata ? { metadata } : {}),
+          },
+        },
+      );
+    }
 
     return nextTurn;
   };
@@ -916,6 +1211,12 @@ const runExecutorCycle = async (
           signature: callSignature,
           count: lastConsecutiveToolError.count + 1,
         };
+        const retryMetadata = createProgressMetadata({
+          executorIteration,
+          turn: turnIndex,
+          retryCount: lastConsecutiveToolError.count,
+        });
+
         await emitAgentProgress(
           task,
           config,
@@ -923,17 +1224,51 @@ const runExecutorCycle = async (
           `Skipped ${formatToolName(call.name)}${createToolTargetPhrase(call)}: repeated unchanged failure.`,
           loopState,
           onStateChange,
+          undefined,
+          {
+            timelineEvent: {
+              kind: "retry",
+              phase: "skipped",
+              label: "Retry guard",
+              detail: repeatedFailureMessage,
+              tone: "danger",
+              toolName: call.name,
+              callId: call.id,
+              ...(retryMetadata ? { metadata: retryMetadata } : {}),
+            },
+          },
         );
         continue;
       }
+
+      const requestMessage = createToolRequestProgressMessage(call);
+      const requestMetadata = createProgressMetadata({
+        executorIteration,
+        turn: turnIndex,
+        argumentsPreview: compactTraceText(stringifyUnknown(call.arguments)),
+      });
+      const toolCallStartedAt = Date.now();
 
       await emitAgentProgress(
         task,
         config,
         "executing",
-        createToolRequestProgressMessage(call),
+        requestMessage,
         loopState,
         onStateChange,
+        undefined,
+        {
+          timelineEvent: {
+            kind: "tool-call",
+            phase: "started",
+            label: `Tool call: ${formatToolName(call.name)}`,
+            detail: requestMessage,
+            tone: "info",
+            toolName: call.name,
+            callId: call.id,
+            ...(requestMetadata ? { metadata: requestMetadata } : {}),
+          },
+        },
       );
 
       const executionOutcome = await executeToolCall(
@@ -989,13 +1324,34 @@ const runExecutorCycle = async (
         loopState.executedTools.push(toolDefinition.backingTool);
       }
 
+      const resultMessage = createToolResultProgressMessage(call, result);
+      const resultMetadata = createProgressMetadata({
+        executorIteration,
+        turn: turnIndex,
+        durationMs: Date.now() - toolCallStartedAt,
+        outputPreview: compactTraceText(result.toolResult.output),
+      });
+
       await emitAgentProgress(
         task,
         config,
         "executing",
-        createToolResultProgressMessage(call, result),
+        resultMessage,
         loopState,
         onStateChange,
+        undefined,
+        {
+          timelineEvent: {
+            kind: "tool-call",
+            phase: result.toolResult.isError ? "failed" : "completed",
+            label: `Tool call: ${formatToolName(call.name)}`,
+            detail: resultMessage,
+            tone: result.toolResult.isError ? "danger" : "success",
+            toolName: call.name,
+            callId: call.id,
+            ...(resultMetadata ? { metadata: resultMetadata } : {}),
+          },
+        },
       );
     }
 
@@ -1047,24 +1403,151 @@ const runAutopilotMonitorPass = async (
     `Validator pass ${monitorPass} is reviewing executor iteration ${priorDecisions.filter((decision) => decision.decision === "continue").length + 1}.`,
     cycleResult.loopState,
     onStateChange,
+    undefined,
+    {
+      timelineEvent: {
+        kind: "validator",
+        phase: "started",
+        label: `Validator pass ${monitorPass}`,
+        detail: `Reviewing executor iteration ${priorDecisions.filter((decision) => decision.decision === "continue").length + 1}.`,
+        tone: "info",
+        metadata: {
+          validatorPass: monitorPass,
+          executorIteration:
+            priorDecisions.filter((decision) => decision.decision === "continue")
+              .length + 1,
+        },
+      },
+    },
   );
 
-  const turn = await adapter.startTurn({
-    model: config.model,
-    systemPrompt: createAutopilotMonitorSystemPrompt(config),
-    userPrompt: createAutopilotMonitorUserPrompt(
+  const monitorModelCallStartedAt = Date.now();
+
+  await emitAgentProgress(
+    task,
+    config,
+    "monitoring",
+    `Validator model call ${monitorPass} started.`,
+    cycleResult.loopState,
+    onStateChange,
+    undefined,
+    {
+      timelineEvent: {
+        kind: "model-call",
+        phase: "started",
+        label: `Validator model call ${monitorPass}`,
+        detail: `Starting ${config.model} validation pass.`,
+        tone: "info",
+        provider: config.provider,
+        model: config.model,
+        metadata: {
+          validatorPass: monitorPass,
+        },
+      },
+    },
+  );
+
+  let turn: AgentModelTurn;
+
+  try {
+    turn = await adapter.startTurn({
+      model: config.model,
+      systemPrompt: createAutopilotMonitorSystemPrompt(config),
+      userPrompt: createAutopilotMonitorUserPrompt(
+        task,
+        taskContext,
+        cycleResult,
+        priorDecisions,
+      ),
+      tools: [monitorTool],
+      ...(signal ? { signal } : {}),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const metadata = createProgressMetadata({
+      validatorPass: monitorPass,
+      durationMs: Date.now() - monitorModelCallStartedAt,
+    });
+
+    await emitAgentProgress(
       task,
-      taskContext,
-      cycleResult,
-      priorDecisions,
-    ),
-    tools: [monitorTool],
-    ...(signal ? { signal } : {}),
-  });
+      config,
+      "monitoring",
+      `Validator model call ${monitorPass} failed.`,
+      cycleResult.loopState,
+      onStateChange,
+      undefined,
+      {
+        timelineEvent: {
+          kind: "model-call",
+          phase: "failed",
+          label: `Validator model call ${monitorPass}`,
+          detail: message,
+          tone: "danger",
+          provider: config.provider,
+          model: config.model,
+          ...(metadata ? { metadata } : {}),
+        },
+      },
+    );
+    throw error;
+  }
+
+  {
+    const metadata = createProgressMetadata({
+      validatorPass: monitorPass,
+      durationMs: Date.now() - monitorModelCallStartedAt,
+      toolCalls: turn.toolCalls.length,
+      ...(turn.stopReason ? { stopReason: turn.stopReason } : {}),
+    });
+
+    await emitAgentProgress(
+      task,
+      config,
+      "monitoring",
+      `Validator model call ${monitorPass} completed.`,
+      cycleResult.loopState,
+      onStateChange,
+      undefined,
+      {
+        timelineEvent: {
+          kind: "model-call",
+          phase: "completed",
+          label: `Validator model call ${monitorPass}`,
+          detail: `Returned ${turn.toolCalls.length} tool call(s).`,
+          tone: "success",
+          provider: config.provider,
+          model: config.model,
+          ...(metadata ? { metadata } : {}),
+        },
+      },
+    );
+  }
 
   const decision = parseAutopilotDecisionFromTurn(turn, monitorPass);
 
   if (!decision) {
+    await emitAgentProgress(
+      task,
+      config,
+      "monitoring",
+      `Validator pass ${monitorPass} returned an invalid decision.`,
+      cycleResult.loopState,
+      onStateChange,
+      undefined,
+      {
+        timelineEvent: {
+          kind: "validator",
+          phase: "failed",
+          label: `Validator pass ${monitorPass}`,
+          detail: "Machdoch validation did not return a structured decision.",
+          tone: "danger",
+          metadata: {
+            validatorPass: monitorPass,
+          },
+        },
+      },
+    );
     throw new Error(
       "Machdoch validation did not return a structured decision.",
     );
@@ -1079,6 +1562,25 @@ const runAutopilotMonitorPass = async (
       : `Validator pass ${monitorPass} requested continuation: ${decision.rationale}`,
     cycleResult.loopState,
     onStateChange,
+    undefined,
+    {
+      timelineEvent: {
+        kind: "validator",
+        phase:
+          decision.decision === "complete"
+            ? "passed"
+            : "requested-continuation",
+        label: `Validator pass ${monitorPass}`,
+        detail: decision.rationale,
+        tone: decision.decision === "complete" ? "success" : "warning",
+        metadata: {
+          validatorPass: monitorPass,
+          confidence: decision.confidence,
+          missingRequirements: decision.missingRequirements.length,
+          requiredActions: decision.requiredActions.length,
+        },
+      },
+    },
   );
 
   return decision;

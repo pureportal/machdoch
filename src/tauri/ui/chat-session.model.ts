@@ -1,8 +1,12 @@
 import { normalizeConversationMemoryEntries } from "../../core/memory.js";
-import { VALID_TOOLS } from "../../core/runtime-contract.generated.js";
+import {
+  MODEL_PROVIDERS,
+  VALID_TOOLS,
+} from "../../core/runtime-contract.generated.js";
 import type {
   ConversationMemoryEntry,
   RunMode,
+  TaskExecutionTokenUsage,
   TaskExecutionNarrative,
   TaskExecutionResult,
   TaskExecutionSection,
@@ -20,6 +24,7 @@ import type {
   TaskThinkingEntry,
   TaskThinkingModelStream,
   TaskThinkingSource,
+  TaskThinkingTimelineEvent,
   TaskThinkingTrace,
 } from "./task-thinking.model";
 
@@ -134,6 +139,26 @@ const MODEL_STREAM_KINDS: TaskThinkingModelStream["kind"][] = [
   "status",
   "tool-result",
 ];
+const THINKING_TIMELINE_EVENT_KINDS: TaskThinkingTimelineEvent["kind"][] = [
+  "state",
+  "model-call",
+  "tool-call",
+  "retry",
+  "validator",
+  "output",
+];
+const THINKING_TIMELINE_EVENT_PHASES: TaskThinkingTimelineEvent["phase"][] = [
+  "started",
+  "streaming",
+  "completed",
+  "failed",
+  "skipped",
+  "usage",
+  "passed",
+  "requested-continuation",
+  "rejected",
+];
+const THINKING_TIMELINE_EVENT_LIMIT = 240;
 const MAX_SESSION_TAGS = 12;
 const MAX_SESSION_TAG_LENGTH = 32;
 const SESSION_RETENTION_DAY_MS = 24 * 60 * 60 * 1000;
@@ -832,6 +857,128 @@ const normalizeThinkingActionOutputLines = (
     }));
 };
 
+const normalizeTokenCount = (value: unknown): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return undefined;
+  }
+
+  return Math.trunc(value);
+};
+
+const normalizeThinkingTokenUsage = (
+  value: unknown,
+): TaskExecutionTokenUsage | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const inputTokens = normalizeTokenCount(value.inputTokens);
+  const outputTokens = normalizeTokenCount(value.outputTokens);
+  const totalTokens = normalizeTokenCount(value.totalTokens);
+  const cachedInputTokens = normalizeTokenCount(value.cachedInputTokens);
+  const reasoningTokens = normalizeTokenCount(value.reasoningTokens);
+
+  if (
+    inputTokens === undefined &&
+    outputTokens === undefined &&
+    totalTokens === undefined &&
+    cachedInputTokens === undefined &&
+    reasoningTokens === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(totalTokens !== undefined ? { totalTokens } : {}),
+    ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
+    ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+  };
+};
+
+const normalizeThinkingTimelineMetadata = (
+  value: unknown,
+): Record<string, string | number | boolean> | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const metadata = Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [
+      string,
+      string | number | boolean,
+    ] => {
+      const entryValue = entry[1];
+
+      return (
+        typeof entryValue === "string" ||
+        typeof entryValue === "boolean" ||
+        (typeof entryValue === "number" && Number.isFinite(entryValue))
+      );
+    }),
+  );
+
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+};
+
+const normalizeThinkingTimelineEvents = (
+  value: unknown,
+): TaskThinkingTimelineEvent[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(isRecord)
+    .map((entry, index) => {
+      const tokenUsage = normalizeThinkingTokenUsage(entry.tokenUsage);
+      const metadata = normalizeThinkingTimelineMetadata(entry.metadata);
+      const provider =
+        typeof entry.provider === "string" &&
+        MODEL_PROVIDERS.includes(
+          entry.provider as (typeof MODEL_PROVIDERS)[number],
+        )
+          ? (entry.provider as (typeof MODEL_PROVIDERS)[number])
+          : undefined;
+
+      return {
+        id: normalizeString(entry.id, `thinking-timeline-${index}`),
+        kind: THINKING_TIMELINE_EVENT_KINDS.includes(
+          entry.kind as TaskThinkingTimelineEvent["kind"],
+        )
+          ? (entry.kind as TaskThinkingTimelineEvent["kind"])
+          : "state",
+        phase: THINKING_TIMELINE_EVENT_PHASES.includes(
+          entry.phase as TaskThinkingTimelineEvent["phase"],
+        )
+          ? (entry.phase as TaskThinkingTimelineEvent["phase"])
+          : "started",
+        label: normalizeString(entry.label, "Progress"),
+        detail: normalizeString(entry.detail),
+        tone: isTaskPanelTone(entry.tone) ? entry.tone : "info",
+        timestamp: normalizeFiniteNumber(entry.timestamp, index),
+        elapsedMs: normalizeFiniteNumber(entry.elapsedMs, 0),
+        ...(provider ? { provider } : {}),
+        ...(normalizeOptionalString(entry.model)
+          ? { model: normalizeOptionalString(entry.model) }
+          : {}),
+        ...(normalizeOptionalString(entry.toolName)
+          ? { toolName: normalizeOptionalString(entry.toolName) }
+          : {}),
+        ...(normalizeOptionalString(entry.callId)
+          ? { callId: normalizeOptionalString(entry.callId) }
+          : {}),
+        ...(entry.stream === "stdout" || entry.stream === "stderr"
+          ? { stream: entry.stream }
+          : {}),
+        ...(tokenUsage ? { tokenUsage } : {}),
+        ...(metadata ? { metadata } : {}),
+      };
+    })
+    .slice(-THINKING_TIMELINE_EVENT_LIMIT);
+};
+
 const normalizeThinkingTrace = (
   value: unknown,
 ): TaskThinkingTrace | undefined => {
@@ -848,6 +995,13 @@ const normalizeThinkingTrace = (
   const actionOutputLines = normalizeThinkingActionOutputLines(
     value.actionOutputLines,
   );
+  const timelineEvents = normalizeThinkingTimelineEvents(value.timelineEvents);
+  const tokenUsage = normalizeThinkingTokenUsage(value.tokenUsage);
+  const startedAt = normalizeFiniteNumber(
+    value.startedAt,
+    entries[0]?.timestamp ?? 0,
+  );
+  const completedAt = normalizeFiniteNumber(value.completedAt, 0);
 
   return {
     status:
@@ -856,12 +1010,19 @@ const normalizeThinkingTrace = (
         ? (value.status as TaskThinkingTrace["status"])
         : "complete",
     mode: normalizeStoredRunMode(value.mode),
+    startedAt,
     entries,
+    ...(normalizeOptionalString(value.task)
+      ? { task: normalizeOptionalString(value.task) }
+      : {}),
+    ...(completedAt > 0 ? { completedAt } : {}),
     ...(normalizeOptionalString(value.assistantText)
       ? { assistantText: normalizeOptionalString(value.assistantText) }
       : {}),
     ...(modelStream ? { modelStream } : {}),
     ...(actionOutputLines.length > 0 ? { actionOutputLines } : {}),
+    ...(timelineEvents.length > 0 ? { timelineEvents } : {}),
+    ...(tokenUsage ? { tokenUsage } : {}),
   };
 };
 

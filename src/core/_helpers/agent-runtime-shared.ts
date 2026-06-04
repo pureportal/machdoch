@@ -30,7 +30,7 @@ export const emitAgentProgress = async (
   result?: TaskExecutionResult,
   progressExtras: Pick<
     TaskExecutionProgress,
-    "actionOutput" | "assistantText" | "modelStream"
+    "actionOutput" | "assistantText" | "modelStream" | "timelineEvent"
   > = {},
 ): Promise<void> => {
   if (!onStateChange) {

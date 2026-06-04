@@ -10,6 +10,7 @@ import type {
   ProviderAvailability,
   RunMode,
   RuntimeConfig,
+  TaskExecutionProgress,
 } from "./types.ts";
 
 const workspacesToClean: string[] = [];
@@ -1267,5 +1268,97 @@ describe("executeTask", () => {
 
     expect(result.status).toBe("executed");
     expect(streamProgressCallbacks).toBeGreaterThan(0);
+  });
+
+  it("emits structured timeline telemetry for model usage and tool calls", async () => {
+    const workspaceRoot = await createWorkspace();
+    const timelineEvents: NonNullable<
+      TaskExecutionProgress["timelineEvent"]
+    >[] = [];
+
+    await writeFile(join(workspaceRoot, "README.md"), "# Example");
+
+    const telemetryAdapter: AgentModelAdapter = {
+      startTurn: async ({ onStreamEvent }) => {
+        onStreamEvent?.({
+          type: "usage",
+          provider: "openai",
+          usage: {
+            inputTokens: 12,
+            outputTokens: 8,
+            totalTokens: 20,
+          },
+        });
+
+        return {
+          text: "",
+          toolCalls: [
+            {
+              id: "read-readme",
+              name: "read_file",
+              arguments: {
+                path: "README.md",
+                startLine: 1,
+                endLine: 2,
+              },
+            },
+          ],
+        };
+      },
+      continueTurn: async () => ({
+        text: "",
+        toolCalls: [createFinalResponseToolCall()],
+      }),
+    };
+
+    const result = await executeTask(
+      "Read README.md and summarize it.",
+      createConfig(workspaceRoot, "ask"),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: telemetryAdapter,
+        onStateChange: (progress) => {
+          if (progress.timelineEvent) {
+            timelineEvents.push(progress.timelineEvent);
+          }
+        },
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(timelineEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "model-call",
+          phase: "started",
+          label: "Executor model call 1",
+        }),
+        expect.objectContaining({
+          kind: "model-call",
+          phase: "usage",
+          metadata: {
+            executorIteration: 1,
+            modelCall: 1,
+          },
+          tokenUsage: {
+            inputTokens: 12,
+            outputTokens: 8,
+            totalTokens: 20,
+          },
+        }),
+        expect.objectContaining({
+          kind: "tool-call",
+          phase: "started",
+          toolName: "read_file",
+          callId: "read-readme",
+        }),
+        expect.objectContaining({
+          kind: "tool-call",
+          phase: "completed",
+          toolName: "read_file",
+          callId: "read-readme",
+        }),
+      ]),
+    );
   });
 });

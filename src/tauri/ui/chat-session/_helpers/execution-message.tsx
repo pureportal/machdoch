@@ -216,6 +216,9 @@ export const createExecutionThinkingTrace = (
   return {
     status: "complete",
     mode: execution.mode,
+    startedAt: entries[0]?.timestamp ?? 0,
+    task: execution.task,
+    completedAt: entries.at(-1)?.timestamp ?? 0,
     entries,
   };
 };

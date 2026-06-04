@@ -16,6 +16,7 @@ import {
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
   DEFAULT_USER_DESKTOP_SETTINGS,
   DESKTOP_SETTING_BOUNDS,
+  MODEL_PROVIDERS,
   RUN_MODES,
   USER_AUDIO_AI_PROVIDERS,
   USER_WEB_SEARCH_PROVIDERS,
@@ -241,6 +242,38 @@ const MODEL_STREAM_KINDS = [
 ] as const satisfies ReadonlyArray<
   NonNullable<TaskExecutionProgress["modelStream"]>["kind"]
 >;
+const TASK_TIMELINE_EVENT_KINDS = [
+  "state",
+  "model-call",
+  "tool-call",
+  "retry",
+  "validator",
+  "output",
+] as const satisfies ReadonlyArray<
+  NonNullable<TaskExecutionProgress["timelineEvent"]>["kind"]
+>;
+const TASK_TIMELINE_EVENT_PHASES = [
+  "started",
+  "streaming",
+  "completed",
+  "failed",
+  "skipped",
+  "usage",
+  "passed",
+  "requested-continuation",
+  "rejected",
+] as const satisfies ReadonlyArray<
+  NonNullable<TaskExecutionProgress["timelineEvent"]>["phase"]
+>;
+const TASK_TIMELINE_EVENT_TONES = [
+  "neutral",
+  "info",
+  "success",
+  "warning",
+  "danger",
+] as const satisfies ReadonlyArray<
+  NonNullable<TaskExecutionProgress["timelineEvent"]>["tone"]
+>;
 
 const canListenToDesktopTaskProgress = (): boolean => {
   const importMeta = import.meta as ImportMeta & {
@@ -272,6 +305,73 @@ const normalizeWorkspaceRoot = (
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const isTimelineMetadataValue = (value: unknown): boolean => {
+  return (
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  );
+};
+
+const isTaskExecutionTokenUsage = (value: unknown): boolean => {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return [
+    value.inputTokens,
+    value.outputTokens,
+    value.totalTokens,
+    value.cachedInputTokens,
+    value.reasoningTokens,
+  ].every(
+    (entry) =>
+      entry === undefined ||
+      (typeof entry === "number" && Number.isFinite(entry) && entry >= 0),
+  );
+};
+
+const isTaskExecutionTimelineEvent = (value: unknown): boolean => {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    TASK_TIMELINE_EVENT_KINDS.includes(
+      value.kind as NonNullable<TaskExecutionProgress["timelineEvent"]>["kind"],
+    ) &&
+    TASK_TIMELINE_EVENT_PHASES.includes(
+      value.phase as NonNullable<
+        TaskExecutionProgress["timelineEvent"]
+      >["phase"],
+    ) &&
+    typeof value.label === "string" &&
+    (value.detail === undefined || typeof value.detail === "string") &&
+    (value.tone === undefined ||
+      TASK_TIMELINE_EVENT_TONES.includes(
+        value.tone as NonNullable<
+          TaskExecutionProgress["timelineEvent"]
+        >["tone"],
+      )) &&
+    (value.provider === undefined ||
+      MODEL_PROVIDERS.includes(
+        value.provider as (typeof MODEL_PROVIDERS)[number],
+      )) &&
+    (value.model === undefined || typeof value.model === "string") &&
+    (value.toolName === undefined || typeof value.toolName === "string") &&
+    (value.callId === undefined || typeof value.callId === "string") &&
+    (value.stream === undefined ||
+      TASK_ACTION_OUTPUT_STREAMS.includes(
+        value.stream as TaskActionOutput["stream"],
+      )) &&
+    (value.tokenUsage === undefined ||
+      isTaskExecutionTokenUsage(value.tokenUsage)) &&
+    (value.metadata === undefined ||
+      (isRecord(value.metadata) &&
+        Object.values(value.metadata).every(isTimelineMetadataValue)))
+  );
 };
 
 const isTaskExecutionProgress = (
@@ -335,7 +435,9 @@ const isTaskExecutionProgress = (
         TASK_ACTION_OUTPUT_STREAMS.includes(
           value.actionOutput.stream as TaskActionOutput["stream"],
         ) &&
-        typeof value.actionOutput.chunk === "string"))
+        typeof value.actionOutput.chunk === "string")) &&
+    (value.timelineEvent === undefined ||
+      isTaskExecutionTimelineEvent(value.timelineEvent))
   );
 };
 

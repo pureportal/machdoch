@@ -381,6 +381,48 @@ export interface TaskExecutionSection {
   tone?: "neutral" | "info" | "success" | "warning" | "danger";
 }
 
+export interface TaskExecutionTokenUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cachedInputTokens?: number;
+  reasoningTokens?: number;
+}
+
+export type TaskExecutionTimelineEventKind =
+  | "state"
+  | "model-call"
+  | "tool-call"
+  | "retry"
+  | "validator"
+  | "output";
+
+export type TaskExecutionTimelineEventPhase =
+  | "started"
+  | "streaming"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "usage"
+  | "passed"
+  | "requested-continuation"
+  | "rejected";
+
+export interface TaskExecutionTimelineEvent {
+  kind: TaskExecutionTimelineEventKind;
+  phase: TaskExecutionTimelineEventPhase;
+  label: string;
+  detail?: string;
+  tone?: "neutral" | "info" | "success" | "warning" | "danger";
+  provider?: ModelProvider;
+  model?: string;
+  toolName?: string;
+  callId?: string;
+  stream?: "stdout" | "stderr";
+  tokenUsage?: TaskExecutionTokenUsage;
+  metadata?: Record<string, string | number | boolean>;
+}
+
 export interface TaskExecutionProgress {
   task: string;
   mode: RunMode;
@@ -398,6 +440,7 @@ export interface TaskExecutionProgress {
     complete?: boolean;
   };
   actionOutput?: TaskActionOutput;
+  timelineEvent?: TaskExecutionTimelineEvent;
 }
 
 export type TaskExecutionProgressHandler = (
