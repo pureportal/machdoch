@@ -17,6 +17,10 @@ import { createBrowserToolDefinitions } from "./browser-tool-definitions.js";
 import { createFilesystemToolDefinitions } from "./filesystem-tool-definitions.js";
 import { createGitToolDefinitions } from "./git-tool-definitions.js";
 import { createMemoryToolDefinitions } from "./memory-tool-definitions.js";
+import {
+  createMacroRecorderToolDefinitions,
+  recordMacroToolCall,
+} from "./macro-recorder-tool-definitions.js";
 import { createPackageToolDefinitions } from "./package-tool-definitions.js";
 import { createUtilityToolDefinitions } from "./utility-tool-definitions.js";
 import {
@@ -95,6 +99,7 @@ export const createToolDefinitions = (
     ...createGitToolDefinitions(),
     ...createPackageToolDefinitions(),
     ...createUtilityToolDefinitions(),
+    ...createMacroRecorderToolDefinitions(),
     ...createBrowserToolDefinitions(),
     ...createShellNetworkToolDefinitions(config),
     ...createMemoryToolDefinitions(memory),
@@ -173,6 +178,16 @@ export const executeToolCall = async (
         }
       : {}),
   });
+  if (!result.toolResult.isError) {
+    recordMacroToolCall({
+      toolName: call.name,
+      backingTool: toolDefinition.backingTool,
+      riskLevel: toolDefinition.riskLevel,
+      effect: toolDefinition.effect,
+      arguments: call.arguments,
+      output: result.toolResult.output,
+    });
+  }
 
   return {
     result: {
