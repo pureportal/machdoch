@@ -20,9 +20,10 @@ import {
 import {
   ChoiceButtons,
   SettingPanel,
+  SettingsAutoSaveStatus,
   SettingsCard,
-  SettingsSaveBar,
   SettingsStatus,
+  useDebouncedAutoSave,
 } from "./shared";
 import type { AgentLimitsSettingsControls } from "./types";
 import { clampIntegerSetting, parseIntegerSettingInput } from "./number-settings";
@@ -155,6 +156,32 @@ export const AgentLimitsSettingsPanel = ({
     setup.providerAvailability.find(
       (provider) => provider.provider === reviewProvider,
     )?.configured ?? false;
+  const settingsDirty = dirty || reviewDirty;
+  const dirtyText =
+    dirty && reviewDirty
+      ? "Unsaved agent execution changes"
+      : dirty
+        ? "Unsaved agent limit changes"
+        : "Unsaved review model changes";
+  const autoSaveSignature = JSON.stringify({
+    agentLimits: normalizedDraft,
+    reviewModel: normalizedReviewDraft,
+  });
+
+  useDebouncedAutoSave({
+    dirty: settingsDirty,
+    saving: setup.saving,
+    signature: autoSaveSignature,
+    onSave: async () => {
+      if (dirty) {
+        await setup.onSave(normalizedDraft);
+      }
+
+      if (reviewDirty) {
+        await setup.onReviewModelSave(normalizedReviewDraft);
+      }
+    },
+  });
 
   useEffect(() => {
     setDraft(setup.settings);
@@ -187,7 +214,7 @@ export const AgentLimitsSettingsPanel = ({
   return (
     <SettingsCard
       title="Agent execution"
-      description="Loop limits and review model routing are validated before saving."
+      description="Loop limits and review model routing save automatically."
     >
       <div className="grid gap-0">
         <SettingPanel
@@ -354,28 +381,11 @@ export const AgentLimitsSettingsPanel = ({
         ) : null}
       </div>
 
-      <SettingsSaveBar
-        dirty={dirty}
-        dirtyText="Unsaved agent limit changes"
-        cleanText="Agent loop limits are up to date"
-        saveLabel="Save agent limits"
-        savingLabel="Saving..."
+      <SettingsAutoSaveStatus
+        dirty={settingsDirty}
+        dirtyText={dirtyText}
+        cleanText="Agent execution settings are up to date"
         saving={setup.saving}
-        onSave={() => {
-          void setup.onSave(normalizedDraft);
-        }}
-      />
-
-      <SettingsSaveBar
-        dirty={reviewDirty}
-        dirtyText="Unsaved review model changes"
-        cleanText="Review model routing is up to date"
-        saveLabel="Save review model"
-        savingLabel="Saving..."
-        saving={setup.saving}
-        onSave={() => {
-          void setup.onReviewModelSave(normalizedReviewDraft);
-        }}
       />
 
       <SettingsStatus message={setup.message} />

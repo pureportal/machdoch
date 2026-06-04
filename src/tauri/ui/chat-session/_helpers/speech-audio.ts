@@ -152,7 +152,7 @@ export const getSpeechInputAvailabilityDescription = (
     return `${providerLabel} is ready for push-to-talk transcription. New recordings are inserted into the current draft as plain text.`;
   }
 
-  return `${providerLabel} is selected for speak-to-text, but it is not configured yet. Save its API key first.`;
+  return `${providerLabel} is selected for speak-to-text, but it is not configured yet. Add its API key first.`;
 };
 
 export const resolveRecorderMimeType = (): string | undefined => {

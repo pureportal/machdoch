@@ -151,7 +151,7 @@ const renderSettingsDialog = (props: SettingsDialogProps): void => {
 };
 
 describe("SettingsDialog", () => {
-  it("validates provider API key drafts before saving", async () => {
+  it("validates provider API key drafts before auto-saving", async () => {
     const onSave = vi.fn(async () => true);
     const props = createSettingsDialogProps({
       providerSetup: {
@@ -167,19 +167,18 @@ describe("SettingsDialog", () => {
     fireEvent.change(keyInput, {
       target: { value: "   " },
     });
-    expect(screen.getByText("Unsaved provider key changes")).toBeDefined();
-
-    fireEvent.keyDown(keyInput, { key: "Enter" });
 
     expect(
-      await screen.findByText(/Enter a valid OpenAI API key before saving\./i),
+      await screen.findByText(/Enter a valid OpenAI API key\./i),
     ).toBeDefined();
     expect(onSave).not.toHaveBeenCalled();
 
     fireEvent.change(keyInput, {
       target: { value: " sk-new " },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Save provider key/i }));
+    expect(
+      screen.getByText("Provider key changes will save automatically"),
+    ).toBeDefined();
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith("sk-new");
@@ -202,11 +201,9 @@ describe("SettingsDialog", () => {
       target: { value: " pplx-new " },
     });
 
-    expect(screen.getByText("Unsaved web-search key changes")).toBeDefined();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: /Save web-search key/i }),
-    );
+    expect(
+      screen.getByText("Web-search key changes will save automatically"),
+    ).toBeDefined();
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith("pplx-new");
@@ -277,10 +274,6 @@ describe("SettingsDialog", () => {
     fireEvent.change(screen.getByLabelText("Review LLM"), {
       target: { value: "gemini-2.5-flash-lite" },
     });
-
-    fireEvent.click(
-      screen.getByRole("button", { name: /Save review model/i }),
-    );
 
     await waitFor(() => {
       expect(onReviewModelSave).toHaveBeenCalledWith({

@@ -18,7 +18,7 @@ export const ProviderEmptyState = ({
         No API Providers Configured
       </h2>
       <p className="mb-8 max-w-md text-sm leading-6 text-slate-400">
-        Save at least one provider API key in Settings to unlock the desktop
+        Add at least one provider API key in Settings to unlock the desktop
         shell.
       </p>
       <Button

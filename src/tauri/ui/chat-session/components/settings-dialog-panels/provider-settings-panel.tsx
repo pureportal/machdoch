@@ -20,7 +20,7 @@ export const ProviderSettingsPanel = ({
   return (
     <SettingsCard
       title="Model provider keys"
-      description="Provider key edits stay local until you save them."
+      description="Provider key edits save automatically after you stop typing."
     >
       <SettingsProviderChoice
         label="Provider"
@@ -39,9 +39,8 @@ export const ProviderSettingsPanel = ({
         keyValue={setup.keyValue}
         saving={setup.saving}
         message={setup.message}
-        dirtyText="Unsaved provider key changes"
+        dirtyText="Provider key changes will save automatically"
         cleanText="Provider key is up to date"
-        saveLabel="Save provider key"
         portalAction={{
           label: `Open ${providerLabel} API key settings`,
           title: `Open ${providerLabel} API key settings`,

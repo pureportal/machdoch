@@ -1187,7 +1187,13 @@ describe("ChatSession component", () => {
     render(<ChatSession />);
 
     fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /^Desktop$/i }));
+    fireEvent.click(
+      await screen.findByRole(
+        "button",
+        { name: /^Desktop$/i },
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+      ),
+    );
 
     const launchPanel = screen
       .getByText(/^Launch on sign-in$/i)
@@ -1216,8 +1222,6 @@ describe("ChatSession component", () => {
         .getAttribute("aria-pressed"),
     ).toBe("true");
 
-    fireEvent.click(screen.getByRole("button", { name: /Save desktop settings/i }));
-
     await waitFor(() => {
       expect(saveUserDesktopSettingsSpy).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1239,7 +1243,13 @@ describe("ChatSession component", () => {
     render(<ChatSession />);
 
     fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /^Desktop$/i }));
+    fireEvent.click(
+      await screen.findByRole(
+        "button",
+        { name: /^Desktop$/i },
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+      ),
+    );
 
     const adminPanel = screen
       .getByText(/^Always run as administrator$/i)
@@ -1258,8 +1268,6 @@ describe("ChatSession component", () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Save desktop settings/i }));
-
     await waitFor(() => {
       expect(saveUserDesktopSettingsSpy).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1271,7 +1279,7 @@ describe("ChatSession component", () => {
     saveUserDesktopSettingsSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
-  it("normalizes desktop numeric settings before saving", async () => {
+  it("normalizes desktop numeric settings before auto-saving", async () => {
     const saveUserDesktopSettingsSpy = vi
       .spyOn(runtime, "saveUserDesktopSettings")
       .mockImplementation(async (settings) => settings);
@@ -1279,7 +1287,13 @@ describe("ChatSession component", () => {
     render(<ChatSession />);
 
     fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /^Desktop$/i }));
+    fireEvent.click(
+      await screen.findByRole(
+        "button",
+        { name: /^Desktop$/i },
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+      ),
+    );
 
     const hideDurationPanel = screen
       .getByText(/^Hide duration$/i)
@@ -1339,8 +1353,6 @@ describe("ChatSession component", () => {
       within(quickChatPanel as HTMLElement).getByRole("spinbutton"),
       { target: { value: "999" } },
     );
-
-    fireEvent.click(screen.getByRole("button", { name: /Save desktop settings/i }));
 
     await waitFor(() => {
       expect(saveUserDesktopSettingsSpy).toHaveBeenCalledWith(

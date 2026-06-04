@@ -5,6 +5,51 @@ import { Input } from "../../../components/ui/input";
 import { cn } from "../../../lib/utils";
 import type { SettingsStatusMessage } from "./types";
 
+export const SETTINGS_AUTO_SAVE_DEBOUNCE_MS = 650;
+
+export interface UseDebouncedAutoSaveParams {
+  dirty: boolean;
+  saving: boolean;
+  signature: string;
+  delayMs?: number;
+  onSave: () => Promise<void> | void;
+}
+
+export const useDebouncedAutoSave = ({
+  dirty,
+  saving,
+  signature,
+  delayMs = SETTINGS_AUTO_SAVE_DEBOUNCE_MS,
+  onSave,
+}: UseDebouncedAutoSaveParams): void => {
+  const onSaveRef = useRef(onSave);
+  const lastAttemptedSignatureRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
+
+  useEffect(() => {
+    if (!dirty) {
+      lastAttemptedSignatureRef.current = null;
+      return;
+    }
+
+    if (saving || lastAttemptedSignatureRef.current === signature) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      lastAttemptedSignatureRef.current = signature;
+      void onSaveRef.current();
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [delayMs, dirty, saving, signature]);
+};
+
 export interface SettingsCardProps {
   title: string;
   description?: string;
@@ -179,53 +224,37 @@ export const SettingsStatus = ({
 const getApiKeyValidationMessage = (
   providerLabel: string,
   draftKey: string,
-  saveAttempted: boolean,
+  showValidation: boolean,
 ): SettingsStatusMessage | null => {
-  if (!saveAttempted || draftKey.trim().length > 0) {
+  if (!showValidation || draftKey.trim().length > 0) {
     return null;
   }
 
   return {
     tone: "error",
-    text: `Enter a valid ${providerLabel} API key before saving.`,
+    text: `Enter a valid ${providerLabel} API key.`,
   };
 };
 
-export interface SettingsSaveBarProps {
+export interface SettingsAutoSaveStatusProps {
   dirty: boolean;
   dirtyText: string;
   cleanText: string;
-  saveLabel: string;
-  savingLabel: string;
   saving: boolean;
-  disabled?: boolean;
-  onSave: () => void;
+  savingText?: string;
 }
 
-export const SettingsSaveBar = ({
+export const SettingsAutoSaveStatus = ({
   dirty,
   dirtyText,
   cleanText,
-  saveLabel,
-  savingLabel,
   saving,
-  disabled,
-  onSave,
-}: SettingsSaveBarProps): JSX.Element => {
+  savingText = "Saving changes...",
+}: SettingsAutoSaveStatusProps): JSX.Element => {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
-      <p className="text-sm leading-6 text-slate-400">
-        {dirty ? dirtyText : cleanText}
-      </p>
-      <Button
-        type="button"
-        onClick={onSave}
-        disabled={saving || disabled || !dirty}
-        className="h-10 rounded-lg bg-sky-600 px-4 text-sm text-white hover:bg-sky-500 disabled:opacity-40"
-      >
-        {saving ? savingLabel : saveLabel}
-      </Button>
-    </div>
+    <p className="border-t border-slate-800 pt-4 text-sm leading-6 text-slate-400">
+      {saving ? savingText : dirty ? dirtyText : cleanText}
+    </p>
   );
 };
 
@@ -243,10 +272,8 @@ export interface SettingsCredentialFormProps {
   message: SettingsStatusMessage | null;
   dirtyText: string;
   cleanText: string;
-  saveLabel: string;
   keyLabel?: string;
   placeholder?: string;
-  savingLabel?: string;
   portalAction?: CredentialPortalAction;
   onSave: (keyValue: string) => Promise<boolean> | boolean;
 }
@@ -259,10 +286,8 @@ export const SettingsCredentialForm = ({
   message,
   dirtyText,
   cleanText,
-  saveLabel,
   keyLabel,
   placeholder,
-  savingLabel = "Saving...",
   portalAction,
   onSave,
 }: SettingsCredentialFormProps): JSX.Element => {
@@ -270,14 +295,13 @@ export const SettingsCredentialForm = ({
   const [savedKey, setSavedKey] = useState(keyValue.trim());
   const [lastExternalKey, setLastExternalKey] = useState(keyValue);
   const [keyVisible, setKeyVisible] = useState(false);
-  const [saveAttempted, setSaveAttempted] = useState(false);
   const lastResetKeyRef = useRef(resetKey);
   const normalizedDraftKey = draftKey.trim();
   const keyDirty = normalizedDraftKey !== savedKey;
   const validationMessage = getApiKeyValidationMessage(
     providerLabel,
     draftKey,
-    saveAttempted || keyDirty,
+    keyDirty,
   );
 
   useEffect(() => {
@@ -287,7 +311,6 @@ export const SettingsCredentialForm = ({
       setSavedKey(keyValue.trim());
       setLastExternalKey(keyValue);
       setKeyVisible(false);
-      setSaveAttempted(false);
       return;
     }
 
@@ -300,20 +323,13 @@ export const SettingsCredentialForm = ({
     );
     setSavedKey(keyValue.trim());
     setLastExternalKey(keyValue);
-    setSaveAttempted(false);
   }, [keyValue, lastExternalKey, resetKey, savedKey]);
 
   const updateDraftKey = (value: string): void => {
     setDraftKey(value);
-
-    if (saveAttempted && value.trim().length > 0) {
-      setSaveAttempted(false);
-    }
   };
 
-  const saveDraftKey = async (): Promise<void> => {
-    setSaveAttempted(true);
-
+  const persistDraftKey = async (): Promise<void> => {
     if (normalizedDraftKey.length === 0) {
       return;
     }
@@ -324,9 +340,15 @@ export const SettingsCredentialForm = ({
       setDraftKey(normalizedDraftKey);
       setSavedKey(normalizedDraftKey);
       setLastExternalKey(normalizedDraftKey);
-      setSaveAttempted(false);
     }
   };
+
+  useDebouncedAutoSave({
+    dirty: keyDirty && normalizedDraftKey.length > 0 && !validationMessage,
+    saving,
+    signature: `${resetKey}:${normalizedDraftKey}`,
+    onSave: persistDraftKey,
+  });
 
   return (
     <>
@@ -341,7 +363,7 @@ export const SettingsCredentialForm = ({
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
-                void saveDraftKey();
+                void persistDraftKey();
               }
             }}
             placeholder={placeholder ?? `Paste your ${providerLabel} API key`}
@@ -386,16 +408,11 @@ export const SettingsCredentialForm = ({
         </div>
       </SettingPanel>
 
-      <SettingsSaveBar
-        dirty={keyDirty}
+      <SettingsAutoSaveStatus
+        dirty={keyDirty && !validationMessage}
         dirtyText={dirtyText}
         cleanText={cleanText}
-        saveLabel={saveLabel}
-        savingLabel={savingLabel}
         saving={saving}
-        onSave={() => {
-          void saveDraftKey();
-        }}
       />
 
       <SettingsStatus message={validationMessage ?? message} />

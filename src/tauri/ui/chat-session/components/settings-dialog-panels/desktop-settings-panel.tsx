@@ -8,9 +8,10 @@ import type { UserDesktopSettings } from "../../../runtime";
 import {
   ChoiceButtons,
   SettingPanel,
+  SettingsAutoSaveStatus,
   SettingsCard,
-  SettingsSaveBar,
   SettingsStatus,
+  useDebouncedAutoSave,
 } from "./shared";
 import type { DesktopSettingsControls } from "./types";
 import {
@@ -130,6 +131,14 @@ export const DesktopSettingsPanel = ({
   const normalizedDraft = normalizeDesktopSettingsDraft(draft);
   const dirty = hasDesktopSettingsDraftChanges(normalizedDraft, setup.settings);
   const desktopAutostartMode = getDesktopAutostartMode(draft);
+  const autoSaveSignature = JSON.stringify(normalizedDraft);
+
+  useDebouncedAutoSave({
+    dirty,
+    saving: setup.saving,
+    signature: autoSaveSignature,
+    onSave: () => setup.onSave(normalizedDraft),
+  });
 
   useEffect(() => {
     setDraft(setup.settings);
@@ -138,7 +147,7 @@ export const DesktopSettingsPanel = ({
   return (
     <SettingsCard
       title="Desktop assistant"
-      description="Desktop behavior changes are staged until saved."
+      description="Desktop behavior changes save automatically."
     >
       <div className="grid gap-0">
         <SettingPanel label="Launch on sign-in">
@@ -398,16 +407,11 @@ export const DesktopSettingsPanel = ({
         </SettingPanel>
       </div>
 
-      <SettingsSaveBar
+      <SettingsAutoSaveStatus
         dirty={dirty}
         dirtyText="Unsaved desktop changes"
         cleanText="Desktop settings are up to date"
-        saveLabel="Save desktop settings"
-        savingLabel="Saving..."
         saving={setup.saving}
-        onSave={() => {
-          void setup.onSave(normalizedDraft);
-        }}
       />
 
       <SettingsStatus message={setup.message} />

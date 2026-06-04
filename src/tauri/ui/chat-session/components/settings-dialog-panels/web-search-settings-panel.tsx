@@ -32,7 +32,7 @@ export const WebSearchSettingsPanel = ({
   return (
     <SettingsCard
       title="Web search"
-      description="Provider selection applies immediately; API key edits require saving."
+      description="Provider selection applies immediately; API key edits save automatically after you stop typing."
     >
       <SettingsProviderChoice
         label="Active web search provider"
@@ -60,9 +60,8 @@ export const WebSearchSettingsPanel = ({
         keyValue={setup.keyValue}
         saving={setup.saving}
         message={setup.message}
-        dirtyText="Unsaved web-search key changes"
+        dirtyText="Web-search key changes will save automatically"
         cleanText="Web-search key is up to date"
-        saveLabel="Save web-search key"
         onSave={setup.onSave}
       />
     </SettingsCard>
