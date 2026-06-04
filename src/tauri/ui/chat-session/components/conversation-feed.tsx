@@ -2,6 +2,7 @@ import {
   Bot,
   Play,
   RotateCcw,
+  Save,
   Square,
   User,
   Volume2,
@@ -36,6 +37,7 @@ export interface ConversationFeedProps {
   bottomRef: RefObject<HTMLDivElement | null>;
   onRetryTask: (message: ChatSessionMessage) => void;
   onContinueTask: (message: ChatSessionMessage) => void;
+  onSaveMessageAsContextPack?: (message: ChatSessionMessage) => void;
   onOpenWorkspaceFile: (relativePath: string) => void;
   onOpenAttachment?: (attachment: ChatSessionContextAttachment) => void;
   voicePlayback: {
@@ -62,6 +64,7 @@ export const ConversationFeed = ({
   bottomRef,
   onRetryTask,
   onContinueTask,
+  onSaveMessageAsContextPack,
   onOpenWorkspaceFile,
   onOpenAttachment,
   voicePlayback,
@@ -234,6 +237,21 @@ export const ConversationFeed = ({
                     onOpen={onOpenAttachment}
                     align={message.role === "user" ? "end" : "start"}
                   />
+                ) : null}
+
+                {message.role === "user" && onSaveMessageAsContextPack ? (
+                  <div className="app-message-actions flex max-w-[90%] min-w-0 flex-wrap items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onSaveMessageAsContextPack(message)}
+                      className="h-8 rounded-full border-sky-500/20 bg-sky-500/10 px-3 text-xs text-sky-100 hover:bg-sky-500/15 hover:text-white"
+                    >
+                      <Save className="mr-1.5 h-3.5 w-3.5" />
+                      Save as pack
+                    </Button>
+                  </div>
                 ) : null}
 
                 {message.source?.kind === "execution" ? (

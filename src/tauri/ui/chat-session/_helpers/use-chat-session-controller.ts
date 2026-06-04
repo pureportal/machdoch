@@ -31,6 +31,7 @@ import {
   MAX_SMART_CONTEXT_PACKS,
   QUICK_VOICE_SESSION_KIND,
   type ChatSessionContextAttachment,
+  type ChatSessionMessage,
   type ChatSessionRecord,
   type ShellPersistedState,
   type SmartContextPack,
@@ -55,6 +56,7 @@ import {
   appendTranscriptToDraft,
   clampQuickVoiceMessageLimit,
   createContextAttachment,
+  createContextAttachmentsFromTaskBlock,
   getImageAttachmentPaths,
   mergeContextAttachments,
   normalizeDialogSelection,
@@ -63,10 +65,15 @@ import {
   type FileDropTarget,
 } from "./session-context-attachments";
 import {
-  areSmartContextPackWorkspacesEqual,
   applySmartContextPackToComposer,
   cloneContextAttachmentsForPack,
+  createSmartContextPackExportPayload,
+  createSmartContextPackVariables,
+  doesSmartContextPackMatchComposer,
+  extractSmartContextPackVariables,
   getSmartContextPacksForWorkspace,
+  importSmartContextPacksIntoShellState,
+  isSmartContextPackAppliedToDraft,
   type SaveSmartContextPackInput,
 } from "./smart-context-packs";
 import {
@@ -228,6 +235,37 @@ export const useChatSessionController = (
         state.activeSession.workspace,
       ),
     [state.activeSession.workspace, state.shellState.contextPacks],
+  );
+  const autoAppliedContextPackIdsRef = useRef<Set<string>>(new Set());
+  const matchedContextPackIds = useMemo(
+    () => {
+      if (
+        !state.activeSession.draft.trim() &&
+        state.activeSession.draftContextAttachments.length === 0
+      ) {
+        return [];
+      }
+
+      const matchedIds: string[] = [];
+
+      for (const pack of workspaceContextPacks) {
+        if (
+          doesSmartContextPackMatchComposer(pack, {
+            draft: state.activeSession.draft,
+            contextAttachments: state.activeSession.draftContextAttachments,
+          })
+        ) {
+          matchedIds.push(pack.id);
+        }
+      }
+
+      return matchedIds;
+    },
+    [
+      state.activeSession.draft,
+      state.activeSession.draftContextAttachments,
+      workspaceContextPacks,
+    ],
   );
   const activeSessionImageInputSupported = modelSupportsImageInput(
     state.activeSession.provider,
@@ -1143,6 +1181,12 @@ export const useChatSessionController = (
           instructions,
           prompt,
           contextAttachments,
+          variables: createSmartContextPackVariables(input.variables),
+          trigger: {
+            phrases: input.triggerPhrases,
+            pathPatterns: input.triggerPathPatterns,
+            autoApply: input.autoApply,
+          },
           ...(provider ? { provider } : {}),
           ...(provider && model ? { model } : {}),
           ...(mode ? { mode } : {}),
@@ -1172,25 +1216,40 @@ export const useChatSessionController = (
   );
 
   const handleApplyContextPack = useCallback(
-    (packId: string): void => {
-      const pack = state.shellState.contextPacks.find(
+    async (
+      packId: string,
+      variableValues: Record<string, string> = {},
+    ): Promise<void> => {
+      const pack = workspaceContextPacks.find(
         (contextPack) => contextPack.id === packId,
       );
 
-      if (
-        !pack ||
-        !areSmartContextPackWorkspacesEqual(
-          pack.workspace,
-          state.activeSession.workspace,
-        )
-      ) {
+      if (!pack) {
         return;
       }
 
+      let contextAttachments = pack.contextAttachments;
+
+      if (pack.contextAttachments.length > 0) {
+        try {
+          const resolution = await resolveDroppedPaths(
+            pack.contextAttachments.map((attachment) => attachment.path),
+          );
+          contextAttachments = resolution.entries.map(createContextAttachment);
+        } catch (error) {
+          console.error("Failed to revalidate context pack paths", error);
+        }
+      }
+
+      const packForApplication: SmartContextPack = {
+        ...pack,
+        contextAttachments,
+      };
       const application = applySmartContextPackToComposer(
         state.activeSession.draft,
         state.activeSession.draftContextAttachments,
-        pack,
+        packForApplication,
+        variableValues,
       );
       const savedProvider = pack.provider;
       const savedModel = pack.model;
@@ -1263,10 +1322,9 @@ export const useChatSessionController = (
       state.activeSession.draft,
       state.activeSession.draftContextAttachments,
       state.activeSession.id,
-      state.activeSession.workspace,
       state.applyShellState,
       state.setDraftValue,
-      state.shellState.contextPacks,
+      workspaceContextPacks,
     ],
   );
 
@@ -1279,6 +1337,148 @@ export const useChatSessionController = (
     },
     [state.applyShellState],
   );
+
+  const handleExportContextPacks = useCallback((): void => {
+    if (workspaceContextPacks.length === 0) {
+      return;
+    }
+
+    const payload = createSmartContextPackExportPayload(workspaceContextPacks);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const date = new Date().toISOString().slice(0, 10);
+
+    anchor.href = url;
+    anchor.download = `machdoch-context-packs-${date}.json`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }, [workspaceContextPacks]);
+
+  const handleImportContextPacks = useCallback(
+    (file: File): void => {
+      void file
+        .text()
+        .then((text) => JSON.parse(text) as unknown)
+        .then((payload) => {
+          state.applyShellState((prev) =>
+            importSmartContextPacksIntoShellState(
+              prev,
+              payload,
+              state.activeSession.workspace,
+            ),
+          );
+        })
+        .catch((error) => {
+          console.error("Failed to import context packs:", error);
+        });
+    },
+    [state.activeSession.workspace, state.applyShellState],
+  );
+
+  const handleSaveMessageAsContextPack = useCallback(
+    (message: ChatSessionMessage): void => {
+      if (message.role !== "user") {
+        return;
+      }
+
+      const prompt = message.content.trim();
+
+      if (!prompt) {
+        return;
+      }
+
+      const contextAttachments =
+        message.contextAttachments?.length
+          ? message.contextAttachments
+          : createContextAttachmentsFromTaskBlock(
+              message.content,
+              `message-pack-context-${message.id}`,
+            );
+      const name =
+        prompt.replace(/\s+/gu, " ").slice(0, 48).trim() || "Context pack";
+
+      state.applyShellState((prev) => {
+        const now = Date.now();
+        const pack: SmartContextPack = {
+          id: crypto.randomUUID(),
+          workspace: state.activeSession.workspace,
+          name,
+          instructions: "",
+          prompt,
+          contextAttachments: cloneContextAttachmentsForPack(contextAttachments),
+          variables: createSmartContextPackVariables(
+            extractSmartContextPackVariables(prompt),
+          ),
+          trigger: {
+            phrases: [],
+            pathPatterns: [],
+            autoApply: false,
+          },
+          provider: state.activeSession.provider,
+          model: state.activeSession.model,
+          mode: activeRunMode,
+          createdAt: now,
+          updatedAt: now,
+          useCount: 0,
+        };
+
+        return {
+          ...prev,
+          contextPacks: [pack, ...prev.contextPacks].slice(
+            0,
+            MAX_SMART_CONTEXT_PACKS,
+          ),
+        };
+      });
+    },
+    [
+      activeRunMode,
+      state.activeSession.model,
+      state.activeSession.provider,
+      state.activeSession.workspace,
+      state.applyShellState,
+    ],
+  );
+
+  useEffect(() => {
+    autoAppliedContextPackIdsRef.current.clear();
+  }, [state.activeSession.id, state.activeSession.workspace]);
+
+  useEffect(() => {
+    if (!state.activeSession.draft.trim() && matchedContextPackIds.length === 0) {
+      return;
+    }
+
+    const autoApplyPack = workspaceContextPacks.find((pack) => {
+      return (
+        pack.trigger.autoApply &&
+        pack.variables.length === 0 &&
+        !autoAppliedContextPackIdsRef.current.has(pack.id) &&
+        matchedContextPackIds.includes(pack.id) &&
+        !isSmartContextPackAppliedToDraft(state.activeSession.draft, pack)
+      );
+    });
+
+    if (!autoApplyPack) {
+      return;
+    }
+
+    autoAppliedContextPackIdsRef.current.add(autoApplyPack.id);
+    void handleApplyContextPack(autoApplyPack.id).catch((error) => {
+      autoAppliedContextPackIdsRef.current.delete(autoApplyPack.id);
+      console.error("Failed to auto-apply context pack", error);
+    });
+  }, [
+    handleApplyContextPack,
+    matchedContextPackIds,
+    state.activeSession.draft,
+    workspaceContextPacks,
+  ]);
 
   const handleRemoveContextAttachment = useCallback(
     (target: FileDropTarget, attachmentId: string): void => {
@@ -1595,6 +1795,7 @@ export const useChatSessionController = (
       onScrollToNewest: state.scrollToNewest,
       onRetryTask: taskSubmission.handleRetryTask,
       onContinueTask: taskSubmission.handleContinueTask,
+      onSaveMessageAsContextPack: handleSaveMessageAsContextPack,
       onOpenWorkspaceFile: handleOpenWorkspaceFile,
       onOpenAttachment: handleOpenAttachment,
       voicePlayback: {
@@ -1621,6 +1822,7 @@ export const useChatSessionController = (
       isUiControlAvailable,
       contextAttachments: state.activeSession.draftContextAttachments,
       contextPacks: workspaceContextPacks,
+      matchedContextPackIds,
       imageInputSupported: activeSessionImageInputSupported,
       imageInputDisabledReason: activeSessionImageInputSupported
         ? null
@@ -1660,6 +1862,8 @@ export const useChatSessionController = (
       onSaveContextPack: handleSaveContextPack,
       onApplyContextPack: handleApplyContextPack,
       onDeleteContextPack: handleDeleteContextPack,
+      onExportContextPacks: handleExportContextPacks,
+      onImportContextPacks: handleImportContextPacks,
       onDraftChange: composerState.handleDraftChange,
       onComposerHistoryNavigation: composerState.handleComposerHistoryNavigation,
       onSend: handleSend,

@@ -45,6 +45,7 @@ export interface SessionComposerProps {
   isUiControlAvailable: boolean;
   contextAttachments: ChatSessionContextAttachment[];
   contextPacks: SmartContextPack[];
+  matchedContextPackIds: string[];
   imageInputSupported: boolean;
   imageInputDisabledReason: string | null;
   speechInput: {
@@ -71,8 +72,13 @@ export interface SessionComposerProps {
   onRemoveContextAttachment: (attachmentId: string) => void;
   onClearContextAttachments: () => void;
   onSaveContextPack: (input: SaveSmartContextPackInput) => void;
-  onApplyContextPack: (packId: string) => void;
+  onApplyContextPack: (
+    packId: string,
+    variableValues?: Record<string, string>,
+  ) => void | Promise<void>;
   onDeleteContextPack: (packId: string) => void;
+  onExportContextPacks: () => void;
+  onImportContextPacks: (file: File) => void;
   onDraftChange: (value: string) => void;
   onComposerHistoryNavigation: (
     event: KeyboardEvent<HTMLTextAreaElement>,
@@ -99,6 +105,7 @@ export const SessionComposer = ({
   isUiControlAvailable,
   contextAttachments,
   contextPacks,
+  matchedContextPackIds,
   imageInputSupported,
   imageInputDisabledReason,
   speechInput,
@@ -119,6 +126,8 @@ export const SessionComposer = ({
   onSaveContextPack,
   onApplyContextPack,
   onDeleteContextPack,
+  onExportContextPacks,
+  onImportContextPacks,
   onDraftChange,
   onComposerHistoryNavigation,
   onSend,
@@ -181,10 +190,14 @@ export const SessionComposer = ({
         activeModel={activeSession.model}
         activeRunMode={activeRunMode}
         contextAttachments={contextAttachments}
+        matchedContextPackIds={matchedContextPackIds}
+        imageInputSupported={imageInputSupported}
         workspaceLabel={composerWorkspaceLabel}
         onSaveContextPack={onSaveContextPack}
         onApplyContextPack={onApplyContextPack}
         onDeleteContextPack={onDeleteContextPack}
+        onExportContextPacks={onExportContextPacks}
+        onImportContextPacks={onImportContextPacks}
       />
     </>
   );

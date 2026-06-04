@@ -88,6 +88,17 @@ export interface ShellVoiceSettings {
   rate: number;
 }
 
+export interface SmartContextPackVariable {
+  name: string;
+  defaultValue?: string;
+}
+
+export interface SmartContextPackTrigger {
+  phrases: string[];
+  pathPatterns: string[];
+  autoApply: boolean;
+}
+
 export interface SmartContextPack {
   id: string;
   workspace: string | null;
@@ -95,6 +106,8 @@ export interface SmartContextPack {
   instructions: string;
   prompt: string;
   contextAttachments: ChatSessionContextAttachment[];
+  variables: SmartContextPackVariable[];
+  trigger: SmartContextPackTrigger;
   provider?: RuntimeProvider;
   model?: string;
   mode?: RunMode;
@@ -179,6 +192,10 @@ const THINKING_TIMELINE_EVENT_LIMIT = 240;
 const MAX_SESSION_TAGS = 12;
 const MAX_SESSION_TAG_LENGTH = 32;
 const MAX_CONTEXT_PACK_NAME_LENGTH = 72;
+const MAX_CONTEXT_PACK_VARIABLES = 12;
+const MAX_CONTEXT_PACK_VARIABLE_LENGTH = 40;
+const MAX_CONTEXT_PACK_TRIGGERS = 16;
+const MAX_CONTEXT_PACK_TRIGGER_LENGTH = 96;
 const MAX_CONTEXT_PACK_TEXT_LENGTH = 8_000;
 const SESSION_RETENTION_DAY_MS = 24 * 60 * 60 * 1000;
 const CONTEXT_ATTACHMENT_KINDS: ChatSessionContextAttachmentKind[] = [
@@ -446,6 +463,113 @@ const normalizeContextPackText = (value: unknown): string => {
     : "";
 };
 
+const normalizeContextPackToken = (
+  value: unknown,
+  maxLength: number,
+): string => {
+  return typeof value === "string"
+    ? value.replace(/\s+/gu, " ").trim().slice(0, maxLength)
+    : "";
+};
+
+const normalizeContextPackTokenArray = (
+  value: unknown,
+  options: { limit: number; maxLength: number },
+): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const tokens: string[] = [];
+  const seenTokens = new Set<string>();
+
+  for (const entry of value) {
+    const token = normalizeContextPackToken(entry, options.maxLength);
+    const key = token.toLowerCase();
+
+    if (!token || seenTokens.has(key)) {
+      continue;
+    }
+
+    seenTokens.add(key);
+    tokens.push(token);
+
+    if (tokens.length >= options.limit) {
+      break;
+    }
+  }
+
+  return tokens;
+};
+
+const normalizeContextPackVariableName = (value: unknown): string => {
+  const name = normalizeContextPackToken(
+    value,
+    MAX_CONTEXT_PACK_VARIABLE_LENGTH,
+  )
+    .replace(/^\{|\}$/gu, "")
+    .replace(/[^A-Za-z0-9_-]/gu, "_");
+
+  return /^[A-Za-z]/u.test(name) ? name : "";
+};
+
+const normalizeContextPackVariables = (
+  value: unknown,
+): SmartContextPackVariable[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const variables: SmartContextPackVariable[] = [];
+  const seenVariables = new Set<string>();
+
+  for (const entry of value) {
+    const candidate = isRecord(entry) ? entry : { name: entry };
+    const name = normalizeContextPackVariableName(candidate.name);
+    const key = name.toLowerCase();
+
+    if (!name || seenVariables.has(key)) {
+      continue;
+    }
+
+    seenVariables.add(key);
+
+    const defaultValue = normalizeContextPackToken(
+      candidate.defaultValue,
+      MAX_CONTEXT_PACK_TRIGGER_LENGTH,
+    );
+
+    variables.push({
+      name,
+      ...(defaultValue ? { defaultValue } : {}),
+    });
+
+    if (variables.length >= MAX_CONTEXT_PACK_VARIABLES) {
+      break;
+    }
+  }
+
+  return variables;
+};
+
+const normalizeContextPackTrigger = (
+  value: unknown,
+): SmartContextPackTrigger => {
+  const candidate = isRecord(value) ? value : {};
+
+  return {
+    phrases: normalizeContextPackTokenArray(candidate.phrases, {
+      limit: MAX_CONTEXT_PACK_TRIGGERS,
+      maxLength: MAX_CONTEXT_PACK_TRIGGER_LENGTH,
+    }),
+    pathPatterns: normalizeContextPackTokenArray(candidate.pathPatterns, {
+      limit: MAX_CONTEXT_PACK_TRIGGERS,
+      maxLength: MAX_CONTEXT_PACK_TRIGGER_LENGTH,
+    }),
+    autoApply: candidate.autoApply === true,
+  };
+};
+
 const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
   if (!Array.isArray(value)) {
     return [];
@@ -498,6 +622,8 @@ const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
         entry.contextAttachments,
         `context-pack-${id}`,
       ),
+      variables: normalizeContextPackVariables(entry.variables),
+      trigger: normalizeContextPackTrigger(entry.trigger),
       ...(provider ? { provider } : {}),
       ...(provider && model ? { model } : {}),
       ...(mode ? { mode } : {}),

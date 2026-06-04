@@ -311,6 +311,21 @@ describe("normalizeShellState", () => {
           updatedAt: 12,
           lastUsedAt: 18,
           useCount: 3,
+          variables: [
+            {
+              name: "target file",
+              defaultValue: " src/App.tsx ",
+            },
+            "{ticket_id}",
+            {
+              name: "target file",
+            },
+          ],
+          trigger: {
+            phrases: [" review   pr ", "review pr"],
+            pathPatterns: ["src/**/*.tsx"],
+            autoApply: true,
+          },
           contextAttachments: [
             {
               path: "C:\\Project\\plan.md",
@@ -339,6 +354,20 @@ describe("normalizeShellState", () => {
         updatedAt: 12,
         lastUsedAt: 18,
         useCount: 3,
+        variables: [
+          {
+            name: "target_file",
+            defaultValue: "src/App.tsx",
+          },
+          {
+            name: "ticket_id",
+          },
+        ],
+        trigger: {
+          phrases: ["review pr"],
+          pathPatterns: ["src/**/*.tsx"],
+          autoApply: true,
+        },
         contextAttachments: [
           {
             path: "C:\\Project\\plan.md",
