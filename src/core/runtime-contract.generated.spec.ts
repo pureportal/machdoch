@@ -5,8 +5,10 @@ import {
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
   DEFAULT_USER_DESKTOP_SETTINGS,
+  DEFAULT_USER_REVIEW_MODEL_SETTINGS,
   RUN_MODES,
   RUNTIME_ENV_KEYS,
+  USER_REVIEW_MODEL_MODES,
   USER_WEB_SEARCH_PROVIDERS,
   VALID_MODEL_PROVIDERS,
   VALID_TOOLS,
@@ -61,12 +63,18 @@ describe("generated runtime contract", () => {
     expect(USER_WEB_SEARCH_PROVIDERS).toEqual(
       contract.$defs.UserWebSearchProvider?.enum,
     );
+    expect(USER_REVIEW_MODEL_MODES).toEqual(
+      contract.$defs.UserReviewModelMode?.enum,
+    );
     expect(DEFAULT_MODEL_BY_PROVIDER).toEqual(
       contract["x-machdoch"].defaultModelByProvider,
     );
     expect(RUNTIME_ENV_KEYS).toEqual(contract["x-machdoch"].runtimeEnvKeys);
     expect(DEFAULT_USER_AGENT_LIMITS_SETTINGS).toEqual(
       readDefaults(contract.$defs.UserAgentLimitsSettings?.properties),
+    );
+    expect(DEFAULT_USER_REVIEW_MODEL_SETTINGS).toEqual(
+      readDefaults(contract.$defs.UserReviewModelSettings?.properties),
     );
     expect(DEFAULT_USER_DESKTOP_SETTINGS).toEqual(
       readDefaults(contract.$defs.UserDesktopSettings?.properties),

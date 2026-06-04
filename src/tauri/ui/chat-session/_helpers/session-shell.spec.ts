@@ -28,6 +28,9 @@ const createRuntimeSnapshot = (
       activeProvider: "none",
       providerAvailability: [],
     },
+    reviewModel: {
+      mode: "base",
+    },
     ...overrides,
   };
 };

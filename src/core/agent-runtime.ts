@@ -40,6 +40,7 @@ import {
   type PreparedConversationPromptContext,
 } from "./_helpers/conversation-prompt-context.js";
 import { createProviderAdapter } from "./_helpers/provider-adapters.js";
+import { resolveReviewModelRuntimeConfig } from "./review-model.js";
 import { compactTraceText, stringifyUnknown } from "./_helpers/runtime-text.js";
 import type {
   AgentModelAdapter,
@@ -1384,8 +1385,9 @@ const runAutopilotMonitorPass = async (
 
   const monitorPass = priorDecisions.length + 1;
   const monitorTool = createAutopilotMonitorTool();
+  const reviewConfig = resolveReviewModelRuntimeConfig(config);
   const adapter = await createProviderAdapter(
-    config,
+    reviewConfig,
     [monitorTool],
     overrideMonitorAdapter,
   );
@@ -1398,7 +1400,7 @@ const runAutopilotMonitorPass = async (
 
   await emitAgentProgress(
     task,
-    config,
+    reviewConfig,
     "monitoring",
     `Validator pass ${monitorPass} is reviewing executor iteration ${priorDecisions.filter((decision) => decision.decision === "continue").length + 1}.`,
     cycleResult.loopState,
@@ -1425,7 +1427,7 @@ const runAutopilotMonitorPass = async (
 
   await emitAgentProgress(
     task,
-    config,
+    reviewConfig,
     "monitoring",
     `Validator model call ${monitorPass} started.`,
     cycleResult.loopState,
@@ -1436,10 +1438,10 @@ const runAutopilotMonitorPass = async (
         kind: "model-call",
         phase: "started",
         label: `Validator model call ${monitorPass}`,
-        detail: `Starting ${config.model} validation pass.`,
+        detail: `Starting ${reviewConfig.model} validation pass.`,
         tone: "info",
-        provider: config.provider,
-        model: config.model,
+        provider: reviewConfig.provider,
+        model: reviewConfig.model,
         metadata: {
           validatorPass: monitorPass,
         },
@@ -1451,8 +1453,8 @@ const runAutopilotMonitorPass = async (
 
   try {
     turn = await adapter.startTurn({
-      model: config.model,
-      systemPrompt: createAutopilotMonitorSystemPrompt(config),
+      model: reviewConfig.model,
+      systemPrompt: createAutopilotMonitorSystemPrompt(reviewConfig),
       userPrompt: createAutopilotMonitorUserPrompt(
         task,
         taskContext,
@@ -1471,7 +1473,7 @@ const runAutopilotMonitorPass = async (
 
     await emitAgentProgress(
       task,
-      config,
+      reviewConfig,
       "monitoring",
       `Validator model call ${monitorPass} failed.`,
       cycleResult.loopState,
@@ -1484,8 +1486,8 @@ const runAutopilotMonitorPass = async (
           label: `Validator model call ${monitorPass}`,
           detail: message,
           tone: "danger",
-          provider: config.provider,
-          model: config.model,
+          provider: reviewConfig.provider,
+          model: reviewConfig.model,
           ...(metadata ? { metadata } : {}),
         },
       },
@@ -1503,7 +1505,7 @@ const runAutopilotMonitorPass = async (
 
     await emitAgentProgress(
       task,
-      config,
+      reviewConfig,
       "monitoring",
       `Validator model call ${monitorPass} completed.`,
       cycleResult.loopState,
@@ -1516,8 +1518,8 @@ const runAutopilotMonitorPass = async (
           label: `Validator model call ${monitorPass}`,
           detail: `Returned ${turn.toolCalls.length} tool call(s).`,
           tone: "success",
-          provider: config.provider,
-          model: config.model,
+          provider: reviewConfig.provider,
+          model: reviewConfig.model,
           ...(metadata ? { metadata } : {}),
         },
       },
@@ -1529,7 +1531,7 @@ const runAutopilotMonitorPass = async (
   if (!decision) {
     await emitAgentProgress(
       task,
-      config,
+      reviewConfig,
       "monitoring",
       `Validator pass ${monitorPass} returned an invalid decision.`,
       cycleResult.loopState,
@@ -1555,7 +1557,7 @@ const runAutopilotMonitorPass = async (
 
   await emitAgentProgress(
     task,
-    config,
+    reviewConfig,
     "monitoring",
     decision.decision === "complete"
       ? `Validator pass ${monitorPass} accepted the task as complete.`

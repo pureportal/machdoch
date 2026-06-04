@@ -13,20 +13,27 @@ import {
   DEFAULT_MAX_EXECUTOR_TURNS,
 } from "./_helpers/agent-runtime-types.js";
 import {
+  DEFAULT_USER_REVIEW_MODEL_SETTINGS,
   PROVIDER_ENV_KEY_BY_PROVIDER,
   RUNTIME_ENV_KEYS,
   USER_WEB_SEARCH_PROVIDERS,
   VALID_MODEL_PROVIDERS,
   WEB_SEARCH_ENV_KEY_BY_PROVIDER,
+  isConfiguredModelProvider,
+  isRuntimeContractValue,
   isUserWebSearchProvider as isSchemaUserWebSearchProvider,
   isVoiceAiProvider,
   isWebSearchProvider as isSchemaWebSearchProvider,
+  USER_REVIEW_MODEL_MODES,
 } from "./runtime-contract.generated.js";
 import type {
+  ConfiguredModelProvider,
   SpeechToTextProvider,
   UserAgentLimitsSettings as SharedUserAgentLimitsSettings,
   UserConfigFile as SharedUserConfigFile,
   UserDesktopSettings,
+  UserReviewModelSettings as SharedUserReviewModelSettings,
+  UserReviewModelMode,
   VoiceAiProvider,
 } from "./runtime-contract.generated.js";
 import type {
@@ -53,6 +60,7 @@ export type UserWebSearchProvider = Exclude<WebSearchProvider, "none">;
 const USER_API_PROVIDERS = VALID_MODEL_PROVIDERS;
 
 export type UserAgentLimitsSettings = SharedUserAgentLimitsSettings;
+export type UserReviewModelSettings = SharedUserReviewModelSettings;
 type UserConfigFile = SharedUserConfigFile;
 
 const stripWrappingQuotes = (value: string): string => {
@@ -147,6 +155,37 @@ const normalizeUserAgentLimitsSettings = (
       settings?.autopilotExecutorIterations,
       DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
     ),
+  };
+};
+
+const isUserReviewModelMode = (
+  value: string | undefined,
+): value is UserReviewModelMode => {
+  return isRuntimeContractValue(USER_REVIEW_MODEL_MODES, value);
+};
+
+const normalizeUserReviewModelSettings = (
+  settings: Partial<UserReviewModelSettings> | undefined,
+): UserReviewModelSettings => {
+  const mode = isUserReviewModelMode(settings?.mode)
+    ? settings.mode
+    : DEFAULT_USER_REVIEW_MODEL_SETTINGS.mode;
+  const provider = normalizeOptionalString(settings?.provider);
+  const model = normalizeOptionalString(settings?.model);
+
+  if (
+    mode !== "dedicated" ||
+    !provider ||
+    !isConfiguredModelProvider(provider) ||
+    !model
+  ) {
+    return { mode: "base" };
+  }
+
+  return {
+    mode: "dedicated",
+    provider: provider as ConfiguredModelProvider,
+    model,
   };
 };
 
@@ -583,6 +622,31 @@ export const saveUserAgentLimitsSettings = async (
   return saveUserConfigFile({
     ...config,
     agentLimits: normalizedSettings,
+  });
+};
+
+/**
+ * Loads the saved model selection for short validator and memory-manager passes.
+ */
+export const loadUserReviewModelSettings =
+  async (): Promise<UserReviewModelSettings> => {
+    const { config } = await loadUserConfigFile();
+
+    return normalizeUserReviewModelSettings(config.reviewModel);
+  };
+
+/**
+ * Persists the model selection for short validator and memory-manager passes.
+ */
+export const saveUserReviewModelSettings = async (
+  settings: UserReviewModelSettings,
+): Promise<string> => {
+  const { config } = await loadUserConfigFile();
+  const normalizedSettings = normalizeUserReviewModelSettings(settings);
+
+  return saveUserConfigFile({
+    ...config,
+    reviewModel: normalizedSettings,
   });
 };
 

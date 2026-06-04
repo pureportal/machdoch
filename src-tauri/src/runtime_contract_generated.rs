@@ -2,11 +2,20 @@
 // Source of truth: src/shared/runtime-config.schema.json
 #![allow(dead_code)]
 
-pub const RUNTIME_CONFIG_SCHEMA_ID: &str = "https://machdoch.local/schemas/runtime-config.schema.json";
+pub const RUNTIME_CONFIG_SCHEMA_ID: &str =
+    "https://machdoch.local/schemas/runtime-config.schema.json";
 pub const RUNTIME_CONFIG_SCHEMA_VERSION: u32 = 1;
 
 pub const RUN_MODES: [&str; 2] = ["ask", "machdoch"];
-pub const VALID_TOOLS: [&str; 7] = ["filesystem", "shell", "network", "browser", "git", "packages", "utilities"];
+pub const VALID_TOOLS: [&str; 7] = [
+    "filesystem",
+    "shell",
+    "network",
+    "browser",
+    "git",
+    "packages",
+    "utilities",
+];
 pub const VALID_MODEL_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
 pub const MODEL_PROVIDERS: [&str; 4] = ["openai", "anthropic", "google", "unconfigured"];
 pub const USER_API_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];
@@ -14,11 +23,34 @@ pub const USER_WEB_SEARCH_PROVIDERS: [&str; 3] = ["perplexity", "tavily", "serpe
 pub const USER_AUDIO_AI_PROVIDERS: [&str; 2] = ["openai", "google"];
 pub const VALID_WEB_SEARCH_PROVIDERS: [&str; 4] = ["none", "perplexity", "tavily", "serper"];
 pub const VALID_AUDIO_AI_PROVIDERS: [&str; 3] = ["none", "openai", "google"];
-pub const RUNTIME_ENV_KEYS: [&str; 8] = ["MACHDOCH_MODE", "MACHDOCH_MODEL", "MACHDOCH_OFFLINE", "MACHDOCH_PROFILE", "MACHDOCH_WEB_SEARCH_PROVIDER", "MACHDOCH_EXECUTOR_TURNS", "MACHDOCH_AUTOPILOT_ITERATIONS", "MACHDOCH_INFINITE"];
-pub const PROVIDER_ENV_KEYS: [(&str, &str); 3] = [("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"), ("google", "GOOGLE_API_KEY")];
-pub const WEB_SEARCH_ENV_KEYS: [(&str, &str); 3] = [("perplexity", "PERPLEXITY_API_KEY"), ("tavily", "TAVILY_API_KEY"), ("serper", "SERPER_API_KEY")];
+pub const USER_REVIEW_MODEL_MODES: [&str; 2] = ["base", "dedicated"];
+pub const RUNTIME_ENV_KEYS: [&str; 8] = [
+    "MACHDOCH_MODE",
+    "MACHDOCH_MODEL",
+    "MACHDOCH_OFFLINE",
+    "MACHDOCH_PROFILE",
+    "MACHDOCH_WEB_SEARCH_PROVIDER",
+    "MACHDOCH_EXECUTOR_TURNS",
+    "MACHDOCH_AUTOPILOT_ITERATIONS",
+    "MACHDOCH_INFINITE",
+];
+pub const PROVIDER_ENV_KEYS: [(&str, &str); 3] = [
+    ("openai", "OPENAI_API_KEY"),
+    ("anthropic", "ANTHROPIC_API_KEY"),
+    ("google", "GOOGLE_API_KEY"),
+];
+pub const WEB_SEARCH_ENV_KEYS: [(&str, &str); 3] = [
+    ("perplexity", "PERPLEXITY_API_KEY"),
+    ("tavily", "TAVILY_API_KEY"),
+    ("serper", "SERPER_API_KEY"),
+];
 pub const DEFAULT_MODEL_PROVIDER: &str = "openai";
-pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); 3] = [("openai", "gpt-5.5"), ("anthropic", "claude-sonnet-4-6"), ("google", "gemini-3.5-flash")];
+pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); 3] = [
+    ("openai", "gpt-5.5"),
+    ("anthropic", "claude-sonnet-4-6"),
+    ("google", "gemini-3.5-flash"),
+];
+pub const DEFAULT_USER_REVIEW_MODEL_MODE: &str = "base";
 
 pub const DEFAULT_USER_AGENT_LIMITS_INFINITE: bool = false;
 pub const DEFAULT_MAX_EXECUTOR_TURNS: u32 = 64;

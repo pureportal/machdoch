@@ -21,6 +21,7 @@ import {
   TASK_EXECUTION_TIMEOUT_REASON_PREFIX,
 } from "./_helpers/agent-runtime-types.js";
 import { maybeExecuteModelDrivenTask } from "./agent-runtime.js";
+import { consolidateTaskExecutionMemory } from "./memory-consolidation.js";
 import { resolveTaskContext } from "./task-context.js";
 import { resolveReadOnlyInspectionTarget } from "./task-inspection.js";
 import {
@@ -479,10 +480,23 @@ export const createTaskExecutionController = (
       );
 
       try {
-        return await runTaskExecutionStateMachine(task, config, customizations, {
-          ...options,
-          signal: managedSignal.signal,
-        });
+        const result = await runTaskExecutionStateMachine(
+          task,
+          config,
+          customizations,
+          {
+            ...options,
+            signal: managedSignal.signal,
+          },
+        );
+
+        return await consolidateTaskExecutionMemory(
+          task,
+          config,
+          result,
+          options.conversationContext,
+          { signal: managedSignal.signal },
+        );
       } finally {
         managedSignal.cleanup();
       }
@@ -502,10 +516,23 @@ export const executeTask = async (
   );
 
   try {
-    return await runTaskExecutionStateMachine(task, config, customizations, {
-      ...options,
-      signal: managedSignal.signal,
-    });
+    const result = await runTaskExecutionStateMachine(
+      task,
+      config,
+      customizations,
+      {
+        ...options,
+        signal: managedSignal.signal,
+      },
+    );
+
+    return await consolidateTaskExecutionMemory(
+      task,
+      config,
+      result,
+      options.conversationContext,
+      { signal: managedSignal.signal },
+    );
   } finally {
     managedSignal.cleanup();
   }

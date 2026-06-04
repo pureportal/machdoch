@@ -67,6 +67,10 @@
       "type": "string",
       "enum": ["session", "global"]
     },
+    "UserReviewModelMode": {
+      "type": "string",
+      "enum": ["base", "dedicated"]
+    },
     "RuntimeProfileSummary": {
       "type": "object",
       "additionalProperties": false,
@@ -244,6 +248,24 @@
         }
       }
     },
+    "RuntimeReviewModelConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/UserReviewModelMode",
+          "default": "base"
+        },
+        "provider": {
+          "$ref": "#/$defs/ConfiguredModelProvider"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "RuntimeMemoryEntry": {
       "type": "object",
       "additionalProperties": false,
@@ -344,6 +366,40 @@
           "items": {
             "$ref": "#/$defs/RuntimeMemoryEntry"
           }
+        }
+      }
+    },
+    "UserReviewModelConfigFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/UserReviewModelMode"
+        },
+        "provider": {
+          "$ref": "#/$defs/ConfiguredModelProvider"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "UserReviewModelSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/UserReviewModelMode",
+          "default": "base"
+        },
+        "provider": {
+          "$ref": "#/$defs/ConfiguredModelProvider"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -541,6 +597,9 @@
         },
         "memory": {
           "$ref": "#/$defs/UserMemoryConfigFile"
+        },
+        "reviewModel": {
+          "$ref": "#/$defs/UserReviewModelConfigFile"
         }
       }
     },
@@ -592,7 +651,8 @@
         "offline",
         "compatibility",
         "providerAvailability",
-        "webSearch"
+        "webSearch",
+        "reviewModel"
       ],
       "properties": {
         "workspaceRoot": {
@@ -639,6 +699,9 @@
         },
         "webSearch": {
           "$ref": "#/$defs/RuntimeWebSearchConfig"
+        },
+        "reviewModel": {
+          "$ref": "#/$defs/RuntimeReviewModelConfig"
         }
       }
     },
@@ -655,7 +718,8 @@
         "agentLimits",
         "compatibility",
         "providerAvailability",
-        "webSearch"
+        "webSearch",
+        "reviewModel"
       ],
       "properties": {
         "workspaceRoot": {
@@ -699,6 +763,9 @@
         },
         "webSearch": {
           "$ref": "#/$defs/RuntimeWebSearchConfig"
+        },
+        "reviewModel": {
+          "$ref": "#/$defs/RuntimeReviewModelConfig"
         },
         "uiControl": {
           "$ref": "#/$defs/UiControlAvailability"

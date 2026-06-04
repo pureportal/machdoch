@@ -266,6 +266,9 @@ const createRuntimeSnapshot = (
       activeProvider: "none",
       providerAvailability: [],
     },
+    reviewModel: {
+      mode: "base",
+    },
     ...overrides,
   };
 };
@@ -1855,6 +1858,74 @@ describe("ChatSession component", () => {
       });
 
       loadUserMemorySettingsSpy.mockRestore();
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "merges session memory updates returned by completed tasks",
+    async () => {
+      const memoryEntry = {
+        id: "session-memory-1",
+        scope: "session" as const,
+        content: "The user prefers concise implementation summaries.",
+        createdAt: 1_713_260_000_000,
+        updatedAt: 1_713_260_000_000,
+      };
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockResolvedValue({
+          execution: {
+            ...createMockExecutionFixture(
+              "remember my implementation summary preference",
+              "/mocked/tauri/path",
+            ),
+            memoryUpdates: [
+              {
+                scope: "session" as const,
+                entry: memoryEntry,
+              },
+            ],
+          },
+        });
+
+      render(<ChatSession />);
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+
+      fireEvent.change(input, {
+        target: {
+          value: "remember my implementation summary preference",
+        },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(() => {
+        const storedState = JSON.parse(
+          window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+        ) as ShellPersistedState;
+        const rememberedSession = storedState.sessions?.find((session) =>
+          session.sessionMemory.some(
+            (entry) => entry.content === memoryEntry.content,
+          ),
+        );
+
+        expect(rememberedSession?.sessionMemory).toHaveLength(1);
+      });
+
+      expect(
+        runDesktopTaskSpy.mock.calls[0]?.[2]?.conversationContext,
+      ).toMatchObject({
+        sessionMemoryEnabled: true,
+        sessionMemory: [],
+      });
+
       runDesktopTaskSpy.mockRestore();
     },
     SLOW_UI_TEST_TIMEOUT_MS,

@@ -163,6 +163,30 @@ const createExecutionPlaybookSection = (): string => {
   ].join("\n");
 };
 
+const createMemoryContract = (
+  tools: AgentModelToolSpec[],
+  conversationContext: PreparedConversationPromptContext,
+): string => {
+  const canRememberSessionMemory = hasTool(tools, "remember_session_memory");
+  const canRememberGlobalMemory = hasTool(tools, "remember_global_memory");
+
+  return [
+    "<memory_contract>",
+    conversationContext.memory.sessionEnabled && canRememberSessionMemory
+      ? "Session memory is enabled. Use `remember_session_memory` for facts, preferences, decisions, task-specific constraints, resolved errors, or technical limitations that should matter later in this same session. During execution and before the final response, decide whether any high-confidence information is worth saving."
+      : conversationContext.memory.sessionEnabled
+        ? "Session memory is enabled in the conversation state, but the `remember_session_memory` tool is not available in this run. Do not claim to save session memory."
+        : "Session memory is disabled for this run.",
+    conversationContext.memory.globalEnabled && canRememberGlobalMemory
+      ? "Global memory is enabled. Use `remember_global_memory` only for stable durable cross-session user preferences, identity, or workflow habits that will still matter in later sessions. During execution and before the final response, decide whether any high-confidence global information is worth saving."
+      : conversationContext.memory.globalEnabled
+        ? "Global memory is enabled in the conversation state, but the `remember_global_memory` tool is not available in this run. Do not claim to save global memory."
+        : "Global memory is disabled for this run.",
+    "Never store transient tool output, secrets, or speculative guesses as memory.",
+    "</memory_contract>",
+  ].join("\n");
+};
+
 export const createHostElevationRuntimeLine = (): string | undefined => {
   if (process.env.MACHDOCH_DESKTOP_HOST_ELEVATED === "true") {
     return "Desktop host elevation: administrator";
@@ -248,17 +272,7 @@ export const createExecutorSystemPrompt = (
       .filter((line): line is string => line !== undefined)
       .join("\n"),
     ["<instructions>", ...instructionLines, "</instructions>"].join("\n"),
-    [
-      "<memory_contract>",
-      conversationContext.memory.sessionEnabled
-        ? "Session memory is enabled. Use `remember_session_memory` for facts, preferences, or decisions that should matter later in this same session."
-        : "Session memory is disabled for this run.",
-      conversationContext.memory.globalEnabled
-        ? "Global memory is enabled. Use `remember_global_memory` only for durable cross-session preferences or facts that will still matter in later sessions."
-        : "Global memory is disabled for this run.",
-      "Never store transient tool output, secrets, or speculative guesses as memory.",
-      "</memory_contract>",
-    ].join("\n"),
+    createMemoryContract(tools, conversationContext),
     conversationContext.uiControlEnabled
       ? [
           "<ui_control_contract>",

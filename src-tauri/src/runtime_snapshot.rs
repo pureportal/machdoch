@@ -11,18 +11,19 @@ use tauri_plugin_autostart::ManagerExt as _;
 use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     DEFAULT_DESKTOP_SETTING_ALWAYS_RUN_AS_ADMINISTRATOR,
+    DEFAULT_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
     DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_ENABLED,
     DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_HIDE_WHEN_FULLSCREEN,
     DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     DEFAULT_DESKTOP_SETTING_AUTOSTART_MINIMIZED, DEFAULT_DESKTOP_SETTING_AUTOSTART_TO_TRAY,
-    DEFAULT_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
     DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_ENABLED, DEFAULT_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SHORTCUT,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
     DEFAULT_MAX_EXECUTOR_TURNS, DEFAULT_MODEL_BY_PROVIDER, DEFAULT_MODEL_PROVIDER,
-    DEFAULT_USER_AGENT_LIMITS_INFINITE, MAX_CONFIGURED_AUTOPILOT_ITERATIONS,
-    MAX_CONFIGURED_EXECUTOR_TURNS, MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
+    DEFAULT_USER_AGENT_LIMITS_INFINITE, DEFAULT_USER_REVIEW_MODEL_MODE,
+    MAX_CONFIGURED_AUTOPILOT_ITERATIONS, MAX_CONFIGURED_EXECUTOR_TURNS,
+    MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MAX_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
     MAX_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     MAX_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
@@ -33,8 +34,8 @@ use crate::runtime_contract_generated::{
     MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MIN_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
     PROVIDER_ENV_KEYS, RUNTIME_ENV_KEYS, USER_API_PROVIDERS, USER_AUDIO_AI_PROVIDERS,
-    USER_WEB_SEARCH_PROVIDERS, VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS,
-    VALID_WEB_SEARCH_PROVIDERS, WEB_SEARCH_ENV_KEYS,
+    USER_REVIEW_MODEL_MODES, USER_WEB_SEARCH_PROVIDERS, VALID_AUDIO_AI_PROVIDERS,
+    VALID_MODEL_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS, WEB_SEARCH_ENV_KEYS,
 };
 use crate::ui_control::UiControlAvailability;
 
@@ -66,6 +67,7 @@ pub struct RuntimeSnapshot {
     compatibility: RuntimeCompatibilityConfig,
     provider_availability: Vec<ProviderAvailability>,
     web_search: RuntimeWebSearchConfig,
+    review_model: RuntimeReviewModelConfig,
     ui_control: UiControlAvailability,
 }
 
@@ -163,6 +165,14 @@ pub struct RuntimeWebSearchConfig {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RuntimeReviewModelConfig {
+    mode: String,
+    provider: Option<String>,
+    model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserWebSearchSettings {
     active_provider: String,
     api_keys: HashMap<String, String>,
@@ -189,6 +199,14 @@ pub struct UserSpeechToTextSettings {
 pub struct UserMemorySettings {
     global_enabled: bool,
     entries: Vec<UserMemoryEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserReviewModelSettings {
+    mode: String,
+    provider: Option<String>,
+    model: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -273,6 +291,8 @@ struct UserConfigFile {
     agent_limits: UserAgentLimitsConfigFile,
     #[serde(default)]
     memory: UserMemoryConfigFile,
+    #[serde(default)]
+    review_model: UserReviewModelConfigFile,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -328,6 +348,14 @@ struct UserMemoryConfigFile {
     global_enabled: Option<bool>,
     #[serde(default)]
     entries: Vec<UserMemoryEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct UserReviewModelConfigFile {
+    mode: Option<String>,
+    provider: Option<String>,
+    model: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -432,6 +460,53 @@ fn normalize_user_agent_limits_settings_input(
             settings.autopilot_executor_iterations,
         ),
     }
+}
+
+fn is_user_review_model_mode(value: &str) -> bool {
+    USER_REVIEW_MODEL_MODES.contains(&value)
+}
+
+fn normalize_user_review_model_settings(
+    settings: &UserReviewModelConfigFile,
+) -> UserReviewModelSettings {
+    let mode = normalize_optional_string(settings.mode.as_deref())
+        .filter(|mode| is_user_review_model_mode(mode))
+        .unwrap_or_else(|| DEFAULT_USER_REVIEW_MODEL_MODE.to_string());
+    let provider = normalize_optional_string(settings.provider.as_deref());
+    let model = normalize_optional_string(settings.model.as_deref());
+
+    if mode != "dedicated" {
+        return UserReviewModelSettings {
+            mode: "base".to_string(),
+            provider: None,
+            model: None,
+        };
+    }
+
+    match (provider, model) {
+        (Some(provider), Some(model)) if is_valid_model_provider(&provider) => {
+            UserReviewModelSettings {
+                mode: "dedicated".to_string(),
+                provider: Some(provider),
+                model: Some(model),
+            }
+        }
+        _ => UserReviewModelSettings {
+            mode: "base".to_string(),
+            provider: None,
+            model: None,
+        },
+    }
+}
+
+fn normalize_user_review_model_settings_input(
+    settings: &UserReviewModelSettings,
+) -> UserReviewModelSettings {
+    normalize_user_review_model_settings(&UserReviewModelConfigFile {
+        mode: Some(settings.mode.clone()),
+        provider: settings.provider.clone(),
+        model: settings.model.clone(),
+    })
 }
 
 fn resolve_runtime_agent_limits(
@@ -1063,8 +1138,7 @@ fn unix_seconds_to_utc_date(seconds: u64) -> Option<String> {
     let year_of_era =
         (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
     let mut year = year_of_era + era * 400;
-    let day_of_year =
-        day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let month_part = (5 * day_of_year + 2) / 153;
     let day = day_of_year - (153 * month_part + 2) / 5 + 1;
     let month = month_part + if month_part < 10 { 3 } else { -9 };
@@ -1825,6 +1899,12 @@ fn load_user_memory_settings() -> Result<UserMemorySettings, String> {
     })
 }
 
+fn load_user_review_model_settings() -> Result<UserReviewModelSettings, String> {
+    let (config, _) = load_user_config_file()?;
+
+    Ok(normalize_user_review_model_settings(&config.review_model))
+}
+
 pub(crate) fn load_user_desktop_launch_preferences() -> Result<UserDesktopLaunchPreferences, String>
 {
     let (config, _) = load_user_config_file()?;
@@ -2062,6 +2142,21 @@ fn save_user_agent_limits_settings_value(
     Ok(config_path)
 }
 
+fn save_user_review_model_settings_value(
+    settings: &UserReviewModelSettings,
+) -> Result<PathBuf, String> {
+    let normalized_settings = normalize_user_review_model_settings_input(settings);
+    let (mut config, config_path) = load_user_config_file()?;
+
+    config.review_model.mode = Some(normalized_settings.mode);
+    config.review_model.provider = normalized_settings.provider;
+    config.review_model.model = normalized_settings.model;
+
+    write_user_config_file(&config, &config_path)?;
+
+    Ok(config_path)
+}
+
 fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Manager<R>>(
     manager: &M,
     settings: &UserDesktopSettings,
@@ -2180,6 +2275,11 @@ pub async fn get_user_agent_limits_settings() -> Result<UserAgentLimitsSettings,
 }
 
 #[tauri::command]
+pub async fn get_user_review_model_settings() -> Result<UserReviewModelSettings, String> {
+    load_user_review_model_settings()
+}
+
+#[tauri::command]
 pub async fn save_user_desktop_settings(
     app: tauri::AppHandle,
     settings: UserDesktopSettings,
@@ -2268,6 +2368,14 @@ pub async fn save_user_agent_limits_settings(
 }
 
 #[tauri::command]
+pub async fn save_user_review_model_settings(
+    settings: UserReviewModelSettings,
+) -> Result<UserReviewModelSettings, String> {
+    save_user_review_model_settings_value(&settings)?;
+    load_user_review_model_settings()
+}
+
+#[tauri::command]
 pub async fn get_runtime_snapshot(
     workspace_root: String,
     profile: Option<String>,
@@ -2329,6 +2437,7 @@ pub async fn get_runtime_snapshot(
         .and_then(|entry| entry.offline)
         .or(config.offline)
         .unwrap_or(false);
+    let review_model = normalize_user_review_model_settings(&user_config.review_model);
 
     Ok(RuntimeSnapshot {
         workspace_root: resolved_workspace_root,
@@ -2345,6 +2454,11 @@ pub async fn get_runtime_snapshot(
         web_search: RuntimeWebSearchConfig {
             active_provider: web_search_active_provider,
             provider_availability: web_search_provider_availability,
+        },
+        review_model: RuntimeReviewModelConfig {
+            mode: review_model.mode,
+            provider: review_model.provider,
+            model: review_model.model,
         },
         ui_control: crate::ui_control::detect_ui_control_availability(),
     })

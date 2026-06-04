@@ -9,6 +9,7 @@ import {
   loadProcessEnv,
   loadUserApiKeys,
   loadUserMemorySettings,
+  loadUserReviewModelSettings,
   loadUserWebSearchApiKeys,
   loadUserWebSearchSettings,
   loadWorkspaceEnv,
@@ -16,6 +17,7 @@ import {
   saveUserApiKey,
   saveUserDesktopSettingsPatch,
   saveUserGlobalMemoryEnabled,
+  saveUserReviewModelSettings,
   saveUserSpeechToTextActiveProvider,
   saveUserSpeechToTextInputDevice,
   saveUserVoiceActiveProvider,
@@ -259,5 +261,37 @@ describe("user config API key helpers", () => {
     expect(settings.entries[0]?.content).toBe(
       "The user prefers compact summaries.",
     );
+  });
+
+  it("persists review model settings for validator and memory passes", async () => {
+    isolateEnvironment();
+    const configDirectory = await createWorkspace();
+    process.env.MACHDOCH_USER_CONFIG_DIR = configDirectory;
+
+    expect(await loadUserReviewModelSettings()).toEqual({
+      mode: "base",
+    });
+
+    await saveUserReviewModelSettings({
+      mode: "dedicated",
+      provider: "openai",
+      model: "gpt-5.5-mini",
+    });
+
+    expect(await loadUserReviewModelSettings()).toEqual({
+      mode: "dedicated",
+      provider: "openai",
+      model: "gpt-5.5-mini",
+    });
+
+    await saveUserReviewModelSettings({
+      mode: "dedicated",
+      provider: "openai",
+      model: "",
+    });
+
+    expect(await loadUserReviewModelSettings()).toEqual({
+      mode: "base",
+    });
   });
 });

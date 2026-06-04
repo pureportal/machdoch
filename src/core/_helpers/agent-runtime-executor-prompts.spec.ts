@@ -29,6 +29,9 @@ const createRuntimeConfig = (
       activeProvider: "perplexity",
       providerAvailability: [{ provider: "perplexity", configured: true }],
     },
+    reviewModel: {
+      mode: "base",
+    },
     ...overrides,
   };
 };
@@ -188,6 +191,61 @@ describe("createExecutorSystemPrompt", () => {
       "Do not claim to have changed files, memory, packages, git state, browser state, desktop UI state, or any external system in Ask mode.",
     );
     expect(prompt).toContain("needs Machdoch mode");
+  });
+
+  it("does not advertise memory writes when memory tools are unavailable", () => {
+    const prompt = createExecutorSystemPrompt(
+      createRuntimeConfig({ mode: "ask" }),
+      createTaskContext(),
+      [createTool("read_file")],
+      createConversationContext({
+        memory: {
+          sessionEnabled: true,
+          sessionEntries: [],
+          globalEnabled: true,
+          globalEntries: [],
+        },
+      }),
+    );
+
+    expect(prompt).toContain("`remember_session_memory` tool is not available");
+    expect(prompt).toContain("`remember_global_memory` tool is not available");
+    expect(prompt).toContain("Do not claim to save session memory");
+    expect(prompt).not.toContain(
+      "Use `remember_session_memory` for facts, preferences, decisions",
+    );
+    expect(prompt).not.toContain(
+      "Use `remember_global_memory` only for stable durable cross-session",
+    );
+  });
+
+  it("advertises memory writes when memory tools are available", () => {
+    const prompt = createExecutorSystemPrompt(
+      createRuntimeConfig({ mode: "machdoch" }),
+      createTaskContext(),
+      [
+        createTool("remember_session_memory"),
+        createTool("remember_global_memory"),
+      ],
+      createConversationContext({
+        memory: {
+          sessionEnabled: true,
+          sessionEntries: [],
+          globalEnabled: true,
+          globalEntries: [],
+        },
+      }),
+    );
+
+    expect(prompt).toContain(
+      "Use `remember_session_memory` for facts, preferences, decisions",
+    );
+    expect(prompt).toContain(
+      "Use `remember_global_memory` only for stable durable cross-session",
+    );
+    expect(prompt).toContain(
+      "decide whether any high-confidence information is worth saving",
+    );
   });
 
   it("surfaces the desktop host elevation state when provided", () => {

@@ -41,6 +41,9 @@ const createRuntimeConfig = (): RuntimeConfig => ({
     activeProvider: "none",
     providerAvailability: [],
   },
+  reviewModel: {
+    mode: "base",
+  },
 });
 
 const createToolContext = (

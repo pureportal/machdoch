@@ -24,6 +24,9 @@ const createRuntimeConfig = (
       activeProvider: "none",
       providerAvailability: [],
     },
+    reviewModel: {
+      mode: "base",
+    },
     ...overrides,
   };
 };

@@ -48,9 +48,18 @@ const createSettingsDialogProps = (
       executorTurns: 64,
       autopilotExecutorIterations: 16,
     },
+    reviewModelSettings: {
+      mode: "base",
+    },
+    providerAvailability: [
+      { provider: "openai", configured: true },
+      { provider: "anthropic", configured: false },
+      { provider: "google", configured: true },
+    ],
     saving: false,
     message: null,
     onSave: vi.fn(),
+    onReviewModelSave: vi.fn(),
   },
   appearanceSetup: {
     settings: {
@@ -248,6 +257,37 @@ describe("SettingsDialog", () => {
       density: "comfortable",
       accent: "sky",
       quickChatBubbleStyle: "orbit",
+    });
+  });
+
+  it("saves a dedicated review model", async () => {
+    const onReviewModelSave = vi.fn();
+    const props = createSettingsDialogProps({
+      settingsSection: "agent",
+      agentLimitsSetup: {
+        ...createSettingsDialogProps().agentLimitsSetup,
+        onReviewModelSave,
+      },
+    });
+
+    renderSettingsDialog(props);
+
+    fireEvent.click(screen.getByRole("button", { name: "Dedicated" }));
+    fireEvent.click(screen.getByRole("button", { name: "Google" }));
+    fireEvent.change(screen.getByLabelText("Review LLM"), {
+      target: { value: "gemini-2.5-flash-lite" },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Save review model/i }),
+    );
+
+    await waitFor(() => {
+      expect(onReviewModelSave).toHaveBeenCalledWith({
+        mode: "dedicated",
+        provider: "google",
+        model: "gemini-2.5-flash-lite",
+      });
     });
   });
 });

@@ -82,6 +82,9 @@ describe("loadRuntimeConfig", () => {
       executorTurns: 64,
       autopilotExecutorIterations: 16,
     });
+    expect(config.reviewModel).toEqual({
+      mode: "base",
+    });
     expect(config.compatibility.discoverGithubCustomizations).toBe(false);
   });
 
@@ -282,6 +285,33 @@ describe("loadRuntimeConfig", () => {
     ).toEqual({
       executorTurns: 256,
       autopilotExecutorIterations: 32,
+    });
+  });
+
+  it("loads a dedicated review model from user config", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    await mkdir(join(workspaceRoot, ".user-config"), { recursive: true });
+    await writeFile(
+      join(workspaceRoot, ".user-config", "user-config.json"),
+      JSON.stringify(
+        {
+          reviewModel: {
+            mode: "dedicated",
+            provider: "openai",
+            model: "gpt-5.5-mini",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    expect((await loadRuntimeConfig(workspaceRoot)).reviewModel).toEqual({
+      mode: "dedicated",
+      provider: "openai",
+      model: "gpt-5.5-mini",
     });
   });
 

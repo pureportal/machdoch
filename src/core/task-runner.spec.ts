@@ -31,6 +31,9 @@ const createConfig = (
         { provider: "tavily", configured: false },
       ],
     },
+    reviewModel: {
+      mode: "base",
+    },
     availableProfiles: [],
   };
 };

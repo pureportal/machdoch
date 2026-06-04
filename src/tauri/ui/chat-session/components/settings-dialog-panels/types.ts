@@ -1,10 +1,12 @@
 import type {
   SpeechToTextProvider,
   SpeechToTextProviderAvailability,
+  RuntimeProviderAvailability,
   UserAgentLimitsSettings,
   UserApiKeyProvider,
   UserDesktopSettings,
   UserMemorySettings,
+  UserReviewModelSettings,
   UserWebSearchApiKeyProvider,
   VoiceAiProvider,
   VoiceProviderAvailability,
@@ -58,9 +60,12 @@ export interface DesktopSettingsControls {
 
 export interface AgentLimitsSettingsControls {
   settings: UserAgentLimitsSettings;
+  reviewModelSettings: UserReviewModelSettings;
+  providerAvailability: RuntimeProviderAvailability[];
   saving: boolean;
   message: SettingsStatusMessage | null;
   onSave: (settings: UserAgentLimitsSettings) => Promise<void> | void;
+  onReviewModelSave: (settings: UserReviewModelSettings) => Promise<void> | void;
 }
 
 export interface AppearanceSettingsControls {

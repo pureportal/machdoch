@@ -12,6 +12,7 @@ import {
   loadGlobalProviderAvailability,
   loadUserProviderApiKeys,
   loadUserAgentLimitsSettings,
+  loadUserReviewModelSettings,
   loadUserDesktopSettings,
   loadUserSpeechToTextSettings,
   loadUserMemorySettings,
@@ -23,6 +24,7 @@ import {
   saveUserSpeechToTextInputDevice,
   saveUserDesktopSettings,
   saveUserAgentLimitsSettings,
+  saveUserReviewModelSettings,
   saveUserGlobalMemoryEnabled,
   saveUserVoiceActiveProvider,
   saveUserProviderApiKey,
@@ -35,6 +37,7 @@ import {
   type RuntimeSnapshot,
   type UserSpeechToTextSettings,
   type UserAgentLimitsSettings,
+  type UserReviewModelSettings,
   type UserDesktopSettings,
   type SpeechToTextProvider,
   type UserApiKeyProvider,
@@ -87,6 +90,7 @@ export interface ChatSessionRuntimeController {
   desktopSetupSaving: boolean;
   desktopSetupMessage: SettingsStatusMessage | null;
   userAgentLimitsSettings: UserAgentLimitsSettings;
+  userReviewModelSettings: UserReviewModelSettings;
   agentLimitsSetupSaving: boolean;
   agentLimitsSetupMessage: SettingsStatusMessage | null;
   userMemorySettings: UserMemorySettings;
@@ -122,10 +126,16 @@ export interface ChatSessionRuntimeController {
   handleAgentLimitsSettingsSave: (
     settings: UserAgentLimitsSettings,
   ) => Promise<void>;
+  handleReviewModelSettingsSave: (
+    settings: UserReviewModelSettings,
+  ) => Promise<void>;
   handleGlobalMemoryEnabledSave: (enabled: boolean) => Promise<void>;
   applyLoadedUserDesktopSettings: (settings: UserDesktopSettings) => void;
   applyLoadedUserAgentLimitsSettings: (
     settings: UserAgentLimitsSettings,
+  ) => void;
+  applyLoadedUserReviewModelSettings: (
+    settings: UserReviewModelSettings,
   ) => void;
   applyLoadedUserMemorySettings: (settings: UserMemorySettings) => void;
 }
@@ -154,6 +164,12 @@ const createEmptyUserAgentLimitsSettings = (): UserAgentLimitsSettings => {
     infinite: false,
     executorTurns: 64,
     autopilotExecutorIterations: 16,
+  };
+};
+
+const createEmptyUserReviewModelSettings = (): UserReviewModelSettings => {
+  return {
+    mode: "base",
   };
 };
 
@@ -201,6 +217,16 @@ const getAgentLimitsSettingsSavedMessage = (
   }
 
   return `Agent loop limits saved. Executor turns: ${settings.executorTurns}; Machdoch continuations: ${settings.autopilotExecutorIterations}.`;
+};
+
+const getReviewModelSettingsSavedMessage = (
+  settings: UserReviewModelSettings,
+): string => {
+  if (settings.mode !== "dedicated" || !settings.provider || !settings.model) {
+    return "Review model saved. Validator and memory passes will use the base request model.";
+  }
+
+  return `Review model saved. Validator and memory passes will use ${getProviderLabel(settings.provider)} / ${settings.model}.`;
 };
 
 export const useChatSessionRuntime = (
@@ -256,6 +282,8 @@ export const useChatSessionRuntime = (
     useState<SettingsStatusMessage | null>(null);
   const [userAgentLimitsSettings, setUserAgentLimitsSettings] =
     useState<UserAgentLimitsSettings>(createEmptyUserAgentLimitsSettings());
+  const [userReviewModelSettings, setUserReviewModelSettings] =
+    useState<UserReviewModelSettings>(createEmptyUserReviewModelSettings());
   const [agentLimitsSetupSaving, setAgentLimitsSetupSaving] = useState(false);
   const [agentLimitsSetupMessage, setAgentLimitsSetupMessage] =
     useState<SettingsStatusMessage | null>(null);
@@ -305,6 +333,16 @@ export const useChatSessionRuntime = (
     (settings: UserAgentLimitsSettings): void => {
       setUserAgentLimitsSettings({
         ...createEmptyUserAgentLimitsSettings(),
+        ...settings,
+      });
+    },
+    [],
+  );
+
+  const applyLoadedUserReviewModelSettings = useCallback(
+    (settings: UserReviewModelSettings): void => {
+      setUserReviewModelSettings({
+        ...createEmptyUserReviewModelSettings(),
         ...settings,
       });
     },
@@ -542,6 +580,26 @@ export const useChatSessionRuntime = (
   }, [applyLoadedUserAgentLimitsSettings]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    void loadUserReviewModelSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          applyLoadedUserReviewModelSettings(settings);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("Failed to load user review-model settings", error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLoadedUserReviewModelSettings]);
+
+  useEffect(() => {
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
 
@@ -621,6 +679,37 @@ export const useChatSessionRuntime = (
       cancelled = true;
     };
   }, [applyLoadedUserAgentLimitsSettings, options.catalogOpen]);
+
+  useEffect(() => {
+    if (!options.catalogOpen) {
+      return;
+    }
+
+    let cancelled = false;
+
+    setAgentLimitsSetupMessage(null);
+
+    void loadUserReviewModelSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          applyLoadedUserReviewModelSettings(settings);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        console.error("Failed to load user review-model settings", error);
+        applyLoadedUserReviewModelSettings(
+          createEmptyUserReviewModelSettings(),
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLoadedUserReviewModelSettings, options.catalogOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1217,6 +1306,44 @@ export const useChatSessionRuntime = (
     ],
   );
 
+  const handleReviewModelSettingsSave = useCallback(
+    async (settings: UserReviewModelSettings): Promise<void> => {
+      setAgentLimitsSetupSaving(true);
+      setAgentLimitsSetupMessage(null);
+
+      try {
+        const nextSettings = await saveUserReviewModelSettings(settings);
+
+        applyLoadedUserReviewModelSettings(nextSettings);
+        setAgentLimitsSetupMessage({
+          tone: "success",
+          text: getReviewModelSettingsSavedMessage(nextSettings),
+        });
+
+        await refreshWorkspaceRuntimeSnapshot(
+          options.activeSessionWorkspace,
+          options.activeSessionProfile,
+        );
+      } catch (error) {
+        setAgentLimitsSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "Review model settings could not be updated.",
+        });
+      } finally {
+        setAgentLimitsSetupSaving(false);
+      }
+    },
+    [
+      applyLoadedUserReviewModelSettings,
+      options.activeSessionProfile,
+      options.activeSessionWorkspace,
+      refreshWorkspaceRuntimeSnapshot,
+    ],
+  );
+
   const handleGlobalMemoryEnabledSave = useCallback(
     async (enabled: boolean): Promise<void> => {
       if (!isTauri()) {
@@ -1281,6 +1408,7 @@ export const useChatSessionRuntime = (
     desktopSetupSaving,
     desktopSetupMessage,
     userAgentLimitsSettings,
+    userReviewModelSettings,
     agentLimitsSetupSaving,
     agentLimitsSetupMessage,
     userMemorySettings,
@@ -1301,9 +1429,11 @@ export const useChatSessionRuntime = (
     handleWebSearchSetupSave,
     handleDesktopSettingsSave,
     handleAgentLimitsSettingsSave,
+    handleReviewModelSettingsSave,
     handleGlobalMemoryEnabledSave,
     applyLoadedUserDesktopSettings,
     applyLoadedUserAgentLimitsSettings,
+    applyLoadedUserReviewModelSettings,
     applyLoadedUserMemorySettings,
   };
 };

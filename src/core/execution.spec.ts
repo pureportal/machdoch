@@ -1,6 +1,10 @@
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  loadUserMemorySettings,
+  saveUserGlobalMemoryEnabled,
+} from "./env.ts";
 import { executeTask } from "./execution.ts";
 import type {
   AgentModelAdapter,
@@ -14,6 +18,7 @@ import type {
 } from "./types.ts";
 
 const workspacesToClean: string[] = [];
+const originalUserConfigDir = process.env.MACHDOCH_USER_CONFIG_DIR;
 
 const providerAvailability: ProviderAvailability[] = [
   { provider: "openai", configured: false },
@@ -30,6 +35,7 @@ const createWorkspace = async (): Promise<string> => {
 const createConfig = (
   workspaceRoot: string,
   mode: RunMode,
+  overrides: Partial<RuntimeConfig> = {},
 ): RuntimeConfig => {
   return {
     workspaceRoot,
@@ -50,6 +56,10 @@ const createConfig = (
         { provider: "tavily", configured: false },
       ],
     },
+    reviewModel: {
+      mode: "base",
+    },
+    ...overrides,
   };
 };
 
@@ -105,7 +115,29 @@ const createAcceptingMonitorAdapter = (): AgentModelAdapter => ({
     throw new Error("The monitor adapter should only run one turn.");
   },
 });
+
+const createFinalOnlyAdapter = (summary: string): AgentModelAdapter => ({
+  startTurn: async () => ({
+    text: "",
+    toolCalls: [
+      createFinalResponseToolCall({
+        summary,
+        markdown: summary,
+      }),
+    ],
+  }),
+  continueTurn: async (): Promise<never> => {
+    throw new Error("The final-only adapter should not continue.");
+  },
+});
+
 afterEach(async () => {
+  if (originalUserConfigDir === undefined) {
+    delete process.env.MACHDOCH_USER_CONFIG_DIR;
+  } else {
+    process.env.MACHDOCH_USER_CONFIG_DIR = originalUserConfigDir;
+  }
+
   await Promise.all(
     workspacesToClean
       .splice(0)
@@ -887,6 +919,58 @@ describe("executeTask", () => {
     expect(result.executedTools).toEqual([]);
   });
 
+  it("uses the dedicated review model for validator passes", async () => {
+    const workspaceRoot = await createWorkspace();
+    const executorAdapter = createFinalOnlyAdapter("Completed with base model.");
+    const monitorAdapter: AgentModelAdapter = {
+      startTurn: async (params) => {
+        expect(params.model).toBe("gpt-5.5-mini");
+        expect(params.systemPrompt).toContain("Selected model: gpt-5.5-mini");
+
+        return {
+          text: "",
+          toolCalls: [
+            {
+              id: "monitor-1",
+              name: "report_autopilot_decision",
+              arguments: {
+                decision: "complete",
+                confidence: "high",
+                rationale: "The execution result satisfies the task.",
+                missingRequirements: [],
+                requiredActions: [],
+              },
+            },
+          ],
+        };
+      },
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The monitor adapter should only run one turn.");
+      },
+    };
+
+    const result = await executeTask(
+      "Plan a safe implementation.",
+      createConfig(workspaceRoot, "machdoch", {
+        provider: "openai",
+        model: "gpt-5.5",
+        reviewModel: {
+          mode: "dedicated",
+          provider: "openai",
+          model: "gpt-5.5-mini",
+        },
+      }),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: executorAdapter,
+        monitorModelAdapter: monitorAdapter,
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(result.summary).toBe("Completed with base model.");
+  });
+
   it("executes mutating tool calls in machdoch mode", async () => {
     const workspaceRoot = await createWorkspace();
 
@@ -935,6 +1019,206 @@ describe("executeTask", () => {
     await expect(
       stat(join(workspaceRoot, "planned-change.txt")),
     ).resolves.toBeDefined();
+  });
+
+  it("returns session memory updates from model-driven memory tool calls", async () => {
+    const workspaceRoot = await createWorkspace();
+    const memoryFact = "The user prefers concise implementation summaries.";
+
+    const memoryAdapter: AgentModelAdapter = {
+      startTurn: async (params) => {
+        expect(
+          params.tools.some((tool) => tool.name === "remember_session_memory"),
+        ).toBe(true);
+
+        return {
+          text: "",
+          toolCalls: [
+            {
+              id: "memory-1",
+              name: "remember_session_memory",
+              arguments: {
+                fact: memoryFact,
+              },
+            },
+          ],
+        };
+      },
+      continueTurn: async (params) => {
+        expect(params.toolResults[0]?.name).toBe("remember_session_memory");
+        expect(params.toolResults[0]?.isError).not.toBe(true);
+        expect(params.toolResults[0]?.output).toContain(
+          "Saved session memory",
+        );
+
+        return {
+          text: "",
+          toolCalls: [
+            createFinalResponseToolCall({
+              summary: "Saved the requested session memory.",
+              markdown: "Saved the requested session memory.",
+            }),
+          ],
+        };
+      },
+    };
+
+    const result = await executeTask(
+      "Remember that the user prefers concise implementation summaries.",
+      createConfig(workspaceRoot, "machdoch"),
+      emptyCustomizations(workspaceRoot),
+      {
+        conversationContext: {
+          history: [],
+          sessionMemoryEnabled: true,
+          sessionMemory: [],
+        },
+        modelAdapter: memoryAdapter,
+        monitorModelAdapter: createAcceptingMonitorAdapter(),
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(result.memoryUpdates).toHaveLength(1);
+    expect(result.memoryUpdates?.[0]).toMatchObject({
+      scope: "session",
+      entry: {
+        scope: "session",
+        content: memoryFact,
+      },
+    });
+    expect(
+      result.outputSections.some(
+        (section) =>
+          section.title === "Memory update" &&
+          section.lines.includes(`fact: ${memoryFact}`),
+      ),
+    ).toBe(true);
+  });
+
+  it("automatically consolidates explicit session memory after model-driven completion", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const result = await executeTask(
+      "Remember that the user prefers concise implementation summaries.",
+      createConfig(workspaceRoot, "machdoch"),
+      emptyCustomizations(workspaceRoot),
+      {
+        conversationContext: {
+          history: [],
+          sessionMemoryEnabled: true,
+          sessionMemory: [],
+        },
+        modelAdapter: createFinalOnlyAdapter("Completed without a memory tool."),
+        monitorModelAdapter: createAcceptingMonitorAdapter(),
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(result.memoryUpdates).toHaveLength(1);
+    expect(result.memoryUpdates?.[0]).toMatchObject({
+      scope: "session",
+      entry: {
+        scope: "session",
+        content: "the user prefers concise implementation summaries",
+      },
+    });
+    expect(
+      result.outputSections.some(
+        (section) =>
+          section.title === "Memory consolidation" &&
+          section.lines.includes(
+            "fact: the user prefers concise implementation summaries",
+          ),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not automatically consolidate memory in ask mode", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const result = await executeTask(
+      "Remember that the user prefers concise implementation summaries.",
+      createConfig(workspaceRoot, "ask"),
+      emptyCustomizations(workspaceRoot),
+      {
+        conversationContext: {
+          history: [],
+          sessionMemoryEnabled: true,
+          sessionMemory: [],
+        },
+        modelAdapter: createFinalOnlyAdapter("Answered read-only."),
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(result.memoryUpdates).toBeUndefined();
+  });
+
+  it("does not automatically consolidate secret-looking memory", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const result = await executeTask(
+      "Remember that my API key is sk-test-value.",
+      createConfig(workspaceRoot, "machdoch"),
+      emptyCustomizations(workspaceRoot),
+      {
+        conversationContext: {
+          history: [],
+          sessionMemoryEnabled: true,
+          sessionMemory: [],
+          globalMemoryEnabled: true,
+        },
+        modelAdapter: createFinalOnlyAdapter("Completed without saving secrets."),
+        monitorModelAdapter: createAcceptingMonitorAdapter(),
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(result.memoryUpdates).toBeUndefined();
+  });
+
+  it("persists explicit automatic global memory when global memory is enabled", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_USER_CONFIG_DIR = join(
+      workspaceRoot,
+      ".user-config",
+    );
+    await saveUserGlobalMemoryEnabled(true);
+
+    const result = await executeTask(
+      "Remember globally that the user prefers compact summaries.",
+      createConfig(workspaceRoot, "machdoch"),
+      emptyCustomizations(workspaceRoot),
+      {
+        conversationContext: {
+          history: [],
+          sessionMemoryEnabled: false,
+          sessionMemory: [],
+          globalMemoryEnabled: true,
+        },
+        modelAdapter: createFinalOnlyAdapter("Completed global memory update."),
+        monitorModelAdapter: createAcceptingMonitorAdapter(),
+      },
+    );
+
+    const settings = await loadUserMemorySettings();
+
+    expect(result.status).toBe("executed");
+    expect(result.memoryUpdates).toHaveLength(1);
+    expect(result.memoryUpdates?.[0]).toMatchObject({
+      scope: "global",
+      entry: {
+        scope: "global",
+        content: "the user prefers compact summaries",
+      },
+    });
+    expect(settings.entries).toHaveLength(1);
+    expect(settings.entries[0]?.content).toBe(
+      "the user prefers compact summaries",
+    );
+    expect(settings.globalEnabled).toBe(true);
   });
 
   it("hides side-effecting shell tools in ask mode", async () => {

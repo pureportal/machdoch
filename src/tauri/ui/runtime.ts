@@ -14,6 +14,7 @@ import type {
 import {
   AGENT_LIMIT_BOUNDS,
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
+  DEFAULT_USER_REVIEW_MODEL_SETTINGS,
   DEFAULT_USER_DESKTOP_SETTINGS,
   DESKTOP_SETTING_BOUNDS,
   MODEL_PROVIDERS,
@@ -33,6 +34,7 @@ import type {
   SpeechToTextProvider as SharedSpeechToTextProvider,
   UserAgentLimitsSettings as SharedUserAgentLimitsSettings,
   UserDesktopSettings as SharedUserDesktopSettings,
+  UserReviewModelSettings as SharedUserReviewModelSettings,
   UserProviderApiKeys as SharedUserProviderApiKeys,
   UserSpeechToTextSettings as SharedUserSpeechToTextSettings,
   UserWebSearchApiKeys as SharedUserWebSearchApiKeys,
@@ -127,6 +129,8 @@ export interface UserMemorySettings {
 }
 
 export type UserAgentLimitsSettings = SharedUserAgentLimitsSettings;
+
+export type UserReviewModelSettings = SharedUserReviewModelSettings;
 
 export type UserDesktopSettings = SharedUserDesktopSettings;
 
@@ -580,6 +584,11 @@ const createDefaultUserAgentLimitsSettings =
     return { ...DEFAULT_USER_AGENT_LIMITS_SETTINGS };
   };
 
+const createDefaultUserReviewModelSettings =
+  (): UserReviewModelSettings => {
+    return { ...DEFAULT_USER_REVIEW_MODEL_SETTINGS };
+  };
+
 const normalizeUserAgentLimitsSettings = (
   settings: UserAgentLimitsSettings,
 ): UserAgentLimitsSettings => {
@@ -597,6 +606,28 @@ const normalizeUserAgentLimitsSettings = (
       AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.max,
       DEFAULT_USER_AGENT_LIMITS_SETTINGS.autopilotExecutorIterations,
     ),
+  };
+};
+
+const normalizeUserReviewModelSettings = (
+  settings: UserReviewModelSettings,
+): UserReviewModelSettings => {
+  const provider = settings.provider?.trim();
+  const model = settings.model?.trim();
+
+  if (
+    settings.mode !== "dedicated" ||
+    !provider ||
+    !VALID_MODEL_PROVIDERS.includes(provider as (typeof VALID_MODEL_PROVIDERS)[number]) ||
+    !model
+  ) {
+    return { mode: "base" };
+  }
+
+  return {
+    mode: "dedicated",
+    provider: provider as (typeof VALID_MODEL_PROVIDERS)[number],
+    model,
   };
 };
 
@@ -895,6 +926,15 @@ export const loadUserAgentLimitsSettings =
     );
   };
 
+export const loadUserReviewModelSettings =
+  async (): Promise<UserReviewModelSettings> => {
+    return loadTauriValueOrFallback(
+      "get_user_review_model_settings",
+      createDefaultUserReviewModelSettings,
+      "Failed to load user review-model settings",
+    );
+  };
+
 export const loadDesktopLaunchId = async (): Promise<string | null> => {
   return loadTauriValueOrFallback<string | null>(
     "get_desktop_launch_id",
@@ -977,6 +1017,25 @@ export const saveUserAgentLimitsSettings = async (
   try {
     return await tauriCore.invoke<UserAgentLimitsSettings>(
       "save_user_agent_limits_settings",
+      { settings: normalizedSettings },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const saveUserReviewModelSettings = async (
+  settings: UserReviewModelSettings,
+): Promise<UserReviewModelSettings> => {
+  const normalizedSettings = normalizeUserReviewModelSettings(settings);
+
+  if (!canInvokeTauriCommands()) {
+    return normalizedSettings;
+  }
+
+  try {
+    return await tauriCore.invoke<UserReviewModelSettings>(
+      "save_user_review_model_settings",
       { settings: normalizedSettings },
     );
   } catch (error) {

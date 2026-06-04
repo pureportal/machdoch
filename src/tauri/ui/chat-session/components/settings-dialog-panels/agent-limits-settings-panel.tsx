@@ -4,7 +4,19 @@ import {
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
 } from "../../../../../core/runtime-contract.generated.js";
 import { Input } from "../../../components/ui/input";
-import type { UserAgentLimitsSettings } from "../../../runtime";
+import {
+  getCatalogModelsForProvider,
+  getDefaultModelForProvider,
+  getProviderLabel,
+  SUPPORTED_PROVIDER_ORDER,
+  type ProviderModelCatalogSnapshot,
+  type RuntimeProvider,
+} from "../../../model-catalog";
+import {
+  loadProviderModelCatalog,
+  type UserAgentLimitsSettings,
+  type UserReviewModelSettings,
+} from "../../../runtime";
 import {
   ChoiceButtons,
   SettingPanel,
@@ -18,6 +30,57 @@ import { clampIntegerSetting, parseIntegerSettingInput } from "./number-settings
 export interface AgentLimitsSettingsPanelProps {
   setup: AgentLimitsSettingsControls;
 }
+
+const DEFAULT_REVIEW_MODEL_PROVIDER: RuntimeProvider = "openai";
+
+const isRuntimeProvider = (provider: string | undefined): provider is RuntimeProvider => {
+  return SUPPORTED_PROVIDER_ORDER.includes(provider as RuntimeProvider);
+};
+
+const getDefaultReviewModelForProvider = (
+  provider: RuntimeProvider,
+  catalog: ProviderModelCatalogSnapshot | null,
+): string => {
+  const models = getCatalogModelsForProvider(provider, catalog);
+  const costOrientedModel =
+    models.find((model) => model.recommendedFor.includes("cheap")) ??
+    models.find((model) => model.recommendedFor.includes("fast")) ??
+    models[0];
+
+  return costOrientedModel?.id ?? getDefaultModelForProvider(provider);
+};
+
+export const normalizeReviewModelDraft = (
+  settings: UserReviewModelSettings,
+  catalog: ProviderModelCatalogSnapshot | null = null,
+): UserReviewModelSettings => {
+  if (settings.mode !== "dedicated") {
+    return { mode: "base" };
+  }
+
+  const provider = isRuntimeProvider(settings.provider)
+    ? settings.provider
+    : DEFAULT_REVIEW_MODEL_PROVIDER;
+  const model =
+    settings.model?.trim() || getDefaultReviewModelForProvider(provider, catalog);
+
+  return {
+    mode: "dedicated",
+    provider,
+    model,
+  };
+};
+
+export const hasReviewModelDraftChanges = (
+  left: UserReviewModelSettings,
+  right: UserReviewModelSettings,
+): boolean => {
+  return (
+    left.mode !== right.mode ||
+    left.provider !== right.provider ||
+    left.model !== right.model
+  );
+};
 
 export const normalizeAgentLimitsDraft = (
   settings: UserAgentLimitsSettings,
@@ -54,17 +117,77 @@ export const AgentLimitsSettingsPanel = ({
   setup,
 }: AgentLimitsSettingsPanelProps): JSX.Element => {
   const [draft, setDraft] = useState<UserAgentLimitsSettings>(setup.settings);
+  const [reviewDraft, setReviewDraft] = useState<UserReviewModelSettings>(
+    setup.reviewModelSettings,
+  );
+  const [providerModelCatalog, setProviderModelCatalog] =
+    useState<ProviderModelCatalogSnapshot | null>(null);
   const normalizedDraft = normalizeAgentLimitsDraft(draft);
   const dirty = hasAgentLimitsDraftChanges(normalizedDraft, setup.settings);
+  const normalizedReviewDraft = normalizeReviewModelDraft(
+    reviewDraft,
+    providerModelCatalog,
+  );
+  const normalizedSavedReviewSettings = normalizeReviewModelDraft(
+    setup.reviewModelSettings,
+    providerModelCatalog,
+  );
+  const reviewDirty = hasReviewModelDraftChanges(
+    normalizedReviewDraft,
+    normalizedSavedReviewSettings,
+  );
+  const reviewProvider =
+    normalizedReviewDraft.mode === "dedicated"
+      ? normalizedReviewDraft.provider
+      : DEFAULT_REVIEW_MODEL_PROVIDER;
+  const reviewModel =
+    normalizedReviewDraft.mode === "dedicated"
+      ? normalizedReviewDraft.model
+      : getDefaultReviewModelForProvider(reviewProvider, providerModelCatalog);
+  const reviewProviderModels = getCatalogModelsForProvider(
+    reviewProvider,
+    providerModelCatalog,
+  );
+  const reviewModelInCatalog = reviewProviderModels.some(
+    (model) => model.id === reviewModel,
+  );
+  const reviewProviderConfigured =
+    setup.providerAvailability.find(
+      (provider) => provider.provider === reviewProvider,
+    )?.configured ?? false;
 
   useEffect(() => {
     setDraft(setup.settings);
   }, [setup.settings]);
 
+  useEffect(() => {
+    setReviewDraft(setup.reviewModelSettings);
+  }, [setup.reviewModelSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadProviderModelCatalog()
+      .then((catalog) => {
+        if (!cancelled) {
+          setProviderModelCatalog(catalog);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("Failed to load provider model catalog", error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <SettingsCard
-      title="Agent loop limits"
-      description="Numeric settings are validated and normalized before saving."
+      title="Agent execution"
+      description="Loop limits and review model routing are validated before saving."
     >
       <div className="grid gap-0">
         <SettingPanel
@@ -138,6 +261,97 @@ export const AgentLimitsSettingsPanel = ({
             className="h-10 max-w-32 rounded-lg border-slate-800 bg-slate-950 text-slate-100 disabled:opacity-50"
           />
         </SettingPanel>
+
+        <SettingPanel
+          label="Review model"
+          detail="Applies to validator and memory passes."
+        >
+          <ChoiceButtons
+            value={normalizedReviewDraft.mode}
+            options={[
+              { value: "base", label: "Base" },
+              { value: "dedicated", label: "Dedicated" },
+            ]}
+            disabled={setup.saving}
+            onChange={(value) => {
+              if (value === "base") {
+                setReviewDraft({ mode: "base" });
+                return;
+              }
+
+              setReviewDraft(
+                normalizeReviewModelDraft(
+                  {
+                    mode: "dedicated",
+                    provider: reviewProvider,
+                    model: reviewModel,
+                  },
+                  providerModelCatalog,
+                ),
+              );
+            }}
+          />
+        </SettingPanel>
+
+        {normalizedReviewDraft.mode === "dedicated" ? (
+          <>
+            <SettingPanel
+              label="Review provider"
+              detail={
+                reviewProviderConfigured
+                  ? "API key is configured."
+                  : "Provider key is not configured yet."
+              }
+            >
+              <ChoiceButtons
+                value={reviewProvider}
+                options={SUPPORTED_PROVIDER_ORDER.map((provider) => ({
+                  value: provider,
+                  label: getProviderLabel(provider),
+                }))}
+                disabled={setup.saving}
+                onChange={(value) => {
+                  setReviewDraft({
+                    mode: "dedicated",
+                    provider: value,
+                    model: getDefaultReviewModelForProvider(
+                      value,
+                      providerModelCatalog,
+                    ),
+                  });
+                }}
+              />
+            </SettingPanel>
+
+            <SettingPanel
+              label="Review LLM"
+              detail="Choose a lower-cost model that still supports tool calls."
+            >
+              <select
+                aria-label="Review LLM"
+                value={reviewModel}
+                disabled={setup.saving}
+                onChange={(event) => {
+                  setReviewDraft({
+                    mode: "dedicated",
+                    provider: reviewProvider,
+                    model: event.target.value,
+                  });
+                }}
+                className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none transition-colors focus:border-sky-500/40 disabled:opacity-50"
+              >
+                {!reviewModelInCatalog ? (
+                  <option value={reviewModel}>{reviewModel}</option>
+                ) : null}
+                {reviewProviderModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.label}
+                  </option>
+                ))}
+              </select>
+            </SettingPanel>
+          </>
+        ) : null}
       </div>
 
       <SettingsSaveBar
@@ -149,6 +363,18 @@ export const AgentLimitsSettingsPanel = ({
         saving={setup.saving}
         onSave={() => {
           void setup.onSave(normalizedDraft);
+        }}
+      />
+
+      <SettingsSaveBar
+        dirty={reviewDirty}
+        dirtyText="Unsaved review model changes"
+        cleanText="Review model routing is up to date"
+        saveLabel="Save review model"
+        savingLabel="Saving..."
+        saving={setup.saving}
+        onSave={() => {
+          void setup.onReviewModelSave(normalizedReviewDraft);
         }}
       />
 

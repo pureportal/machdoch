@@ -97,6 +97,7 @@ const userWebSearchProviders = getEnum("UserWebSearchProvider");
 const audioProviders = getEnum("AudioProvider");
 const voiceProviders = getEnum("VoiceAiProvider");
 const runtimeMemoryScopes = getEnum("RuntimeMemoryScope");
+const userReviewModelModes = getEnum("UserReviewModelMode");
 const defaultModelByProvider = metadata.defaultModelByProvider;
 const defaultModelProvider = metadata.defaultModelProvider;
 const runtimeEnvKeys = metadata.runtimeEnvKeys;
@@ -104,6 +105,7 @@ const providerEnvKeys = metadata.providerEnvKeys;
 const webSearchEnvKeys = metadata.webSearchEnvKeys;
 const defaultAgentLimits = getDefaultObject("UserAgentLimitsSettings");
 const agentLimitBounds = getBoundsObject("UserAgentLimitsSettings");
+const defaultReviewModelSettings = getDefaultObject("UserReviewModelSettings");
 const defaultDesktopSettings = getDefaultObject("UserDesktopSettings");
 const desktopSettingBounds = getBoundsObject("UserDesktopSettings");
 const schemaVersion = metadata.schemaVersion;
@@ -155,6 +157,9 @@ export type SpeechToTextProvider = VoiceAiProvider;
 export const RUNTIME_MEMORY_SCOPES = ${tsReadonlyArray(runtimeMemoryScopes)} as const;
 export type RuntimeMemoryScope = (typeof RUNTIME_MEMORY_SCOPES)[number];
 
+export const USER_REVIEW_MODEL_MODES = ${tsReadonlyArray(userReviewModelModes)} as const;
+export type UserReviewModelMode = (typeof USER_REVIEW_MODEL_MODES)[number];
+
 export const DEFAULT_MODEL_PROVIDER = ${json(defaultModelProvider)} as const satisfies ConfiguredModelProvider;
 export const DEFAULT_MODEL_BY_PROVIDER = ${json(defaultModelByProvider)} as const satisfies Record<ConfiguredModelProvider, string>;
 
@@ -164,6 +169,7 @@ export const WEB_SEARCH_ENV_KEY_BY_PROVIDER = ${json(webSearchEnvKeys)} as const
 
 export const DEFAULT_USER_AGENT_LIMITS_SETTINGS = ${json(defaultAgentLimits)} as const satisfies UserAgentLimitsSettings;
 export const AGENT_LIMIT_BOUNDS = ${json(agentLimitBounds)} as const;
+export const DEFAULT_USER_REVIEW_MODEL_SETTINGS = ${json(defaultReviewModelSettings)} as const satisfies UserReviewModelSettings;
 export const DEFAULT_USER_DESKTOP_SETTINGS = ${json(defaultDesktopSettings)} as const satisfies UserDesktopSettings;
 export const DESKTOP_SETTING_BOUNDS = ${json(desktopSettingBounds)} as const;
 
@@ -263,6 +269,12 @@ export interface RuntimeWebSearchConfig {
   providerAvailability: WebSearchProviderAvailability[];
 }
 
+export interface RuntimeReviewModelConfig {
+  mode: UserReviewModelMode;
+  provider?: ConfiguredModelProvider;
+  model?: string;
+}
+
 export interface UserWebSearchSettings {
   activeProvider: WebSearchProvider;
   apiKeys: UserWebSearchApiKeys;
@@ -294,6 +306,7 @@ export interface RuntimeConfig {
   compatibility: WorkspaceCompatibilityConfig;
   providerAvailability: ProviderAvailability[];
   webSearch: RuntimeWebSearchConfig;
+  reviewModel: RuntimeReviewModelConfig;
 }
 
 export interface UiControlAvailability {
@@ -342,6 +355,12 @@ export interface UserMemoryConfigFile {
   entries?: RuntimeMemoryEntry[];
 }
 
+export interface UserReviewModelConfigFile {
+  mode?: UserReviewModelMode;
+  provider?: ConfiguredModelProvider;
+  model?: string;
+}
+
 export interface UserConfigFile {
   apiKeys?: UserProviderApiKeys;
   webSearch?: UserWebSearchConfigFile;
@@ -350,12 +369,19 @@ export interface UserConfigFile {
   desktop?: Partial<UserDesktopSettings>;
   agentLimits?: RuntimeAgentLimitOverrides;
   memory?: UserMemoryConfigFile;
+  reviewModel?: UserReviewModelConfigFile;
 }
 
 export interface UserAgentLimitsSettings {
   infinite: boolean;
   executorTurns: number;
   autopilotExecutorIterations: number;
+}
+
+export interface UserReviewModelSettings {
+  mode: UserReviewModelMode;
+  provider?: ConfiguredModelProvider;
+  model?: string;
 }
 
 export interface UserDesktopSettings {
@@ -439,11 +465,13 @@ pub const USER_WEB_SEARCH_PROVIDERS: [&str; ${userWebSearchProviders.length}] = 
 pub const USER_AUDIO_AI_PROVIDERS: [&str; ${audioProviders.length}] = ${rustStringArray(audioProviders)};
 pub const VALID_WEB_SEARCH_PROVIDERS: [&str; ${webSearchProviders.length}] = ${rustStringArray(webSearchProviders)};
 pub const VALID_AUDIO_AI_PROVIDERS: [&str; ${voiceProviders.length}] = ${rustStringArray(voiceProviders)};
+pub const USER_REVIEW_MODEL_MODES: [&str; ${userReviewModelModes.length}] = ${rustStringArray(userReviewModelModes)};
 pub const RUNTIME_ENV_KEYS: [&str; ${runtimeEnvKeys.length}] = ${rustStringArray(runtimeEnvKeys)};
 pub const PROVIDER_ENV_KEYS: [(&str, &str); ${Object.keys(providerEnvKeys).length}] = ${rustPairs(providerEnvKeys)};
 pub const WEB_SEARCH_ENV_KEYS: [(&str, &str); ${Object.keys(webSearchEnvKeys).length}] = ${rustPairs(webSearchEnvKeys)};
 pub const DEFAULT_MODEL_PROVIDER: &str = ${JSON.stringify(defaultModelProvider)};
 pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); ${Object.keys(defaultModelByProvider).length}] = ${rustPairs(defaultModelByProvider)};
+pub const DEFAULT_USER_REVIEW_MODEL_MODE: &str = ${JSON.stringify(defaultReviewModelSettings.mode ?? "base")};
 
 pub const DEFAULT_USER_AGENT_LIMITS_INFINITE: bool = ${defaultAgentLimits.infinite};
 pub const DEFAULT_MAX_EXECUTOR_TURNS: u32 = ${defaultAgentLimits.executorTurns};

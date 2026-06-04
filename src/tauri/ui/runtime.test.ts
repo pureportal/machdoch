@@ -11,9 +11,11 @@ import {
   loadActiveDesktopTaskIds,
   loadDesktopLaunchId,
   loadProviderModelCatalog,
+  loadUserReviewModelSettings,
   resolveDroppedPaths,
   runDesktopTask,
   saveClipboardImageAttachment,
+  saveUserReviewModelSettings,
   saveUserSpeechToTextInputDevice,
 } from "./runtime";
 
@@ -202,5 +204,64 @@ describe("desktop runtime fullscreen detection", () => {
       "save_user_speech_to_text_input_device",
       { inputDeviceId: "mic-2" },
     );
+  });
+
+  it("loads review model settings through the Tauri runtime", async () => {
+    invokeMock.mockResolvedValueOnce({
+      mode: "dedicated",
+      provider: "google",
+      model: "gemini-2.5-flash-lite",
+    });
+
+    await expect(loadUserReviewModelSettings()).resolves.toEqual({
+      mode: "dedicated",
+      provider: "google",
+      model: "gemini-2.5-flash-lite",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("get_user_review_model_settings");
+  });
+
+  it("saves normalized review model settings through the Tauri runtime", async () => {
+    invokeMock.mockResolvedValueOnce({
+      mode: "dedicated",
+      provider: "openai",
+      model: "gpt-5.4-mini",
+    });
+
+    await expect(
+      saveUserReviewModelSettings({
+        mode: "dedicated",
+        provider: "openai",
+        model: " gpt-5.4-mini ",
+      }),
+    ).resolves.toEqual({
+      mode: "dedicated",
+      provider: "openai",
+      model: "gpt-5.4-mini",
+    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      "save_user_review_model_settings",
+      {
+        settings: {
+          mode: "dedicated",
+          provider: "openai",
+          model: "gpt-5.4-mini",
+        },
+      },
+    );
+  });
+
+  it("falls back to base review model settings when a dedicated model is incomplete", async () => {
+    disableInvokeMock();
+
+    await expect(
+      saveUserReviewModelSettings({
+        mode: "dedicated",
+        provider: "openai",
+      }),
+    ).resolves.toEqual({
+      mode: "base",
+    });
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 });

@@ -32,6 +32,9 @@ export type SpeechToTextProvider = VoiceAiProvider;
 export const RUNTIME_MEMORY_SCOPES = ["session", "global"] as const;
 export type RuntimeMemoryScope = (typeof RUNTIME_MEMORY_SCOPES)[number];
 
+export const USER_REVIEW_MODEL_MODES = ["base", "dedicated"] as const;
+export type UserReviewModelMode = (typeof USER_REVIEW_MODEL_MODES)[number];
+
 export const DEFAULT_MODEL_PROVIDER = "openai" as const satisfies ConfiguredModelProvider;
 export const DEFAULT_MODEL_BY_PROVIDER = {
   "openai": "gpt-5.5",
@@ -66,6 +69,9 @@ export const AGENT_LIMIT_BOUNDS = {
     "max": 100
   }
 } as const;
+export const DEFAULT_USER_REVIEW_MODEL_SETTINGS = {
+  "mode": "base"
+} as const satisfies UserReviewModelSettings;
 export const DEFAULT_USER_DESKTOP_SETTINGS = {
   "autostartEnabled": false,
   "autostartMinimized": false,
@@ -205,6 +211,12 @@ export interface RuntimeWebSearchConfig {
   providerAvailability: WebSearchProviderAvailability[];
 }
 
+export interface RuntimeReviewModelConfig {
+  mode: UserReviewModelMode;
+  provider?: ConfiguredModelProvider;
+  model?: string;
+}
+
 export interface UserWebSearchSettings {
   activeProvider: WebSearchProvider;
   apiKeys: UserWebSearchApiKeys;
@@ -236,6 +248,7 @@ export interface RuntimeConfig {
   compatibility: WorkspaceCompatibilityConfig;
   providerAvailability: ProviderAvailability[];
   webSearch: RuntimeWebSearchConfig;
+  reviewModel: RuntimeReviewModelConfig;
 }
 
 export interface UiControlAvailability {
@@ -284,6 +297,12 @@ export interface UserMemoryConfigFile {
   entries?: RuntimeMemoryEntry[];
 }
 
+export interface UserReviewModelConfigFile {
+  mode?: UserReviewModelMode;
+  provider?: ConfiguredModelProvider;
+  model?: string;
+}
+
 export interface UserConfigFile {
   apiKeys?: UserProviderApiKeys;
   webSearch?: UserWebSearchConfigFile;
@@ -292,12 +311,19 @@ export interface UserConfigFile {
   desktop?: Partial<UserDesktopSettings>;
   agentLimits?: RuntimeAgentLimitOverrides;
   memory?: UserMemoryConfigFile;
+  reviewModel?: UserReviewModelConfigFile;
 }
 
 export interface UserAgentLimitsSettings {
   infinite: boolean;
   executorTurns: number;
   autopilotExecutorIterations: number;
+}
+
+export interface UserReviewModelSettings {
+  mode: UserReviewModelMode;
+  provider?: ConfiguredModelProvider;
+  model?: string;
 }
 
 export interface UserDesktopSettings {

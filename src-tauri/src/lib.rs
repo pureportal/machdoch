@@ -11,7 +11,7 @@ mod voice;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    desktop_shell::hide_console_window_for_admin_relaunch();
+    desktop_shell::hide_console_window_for_background_ui_launch();
 
     match ui_control::try_run_ui_control_bridge_from_args() {
         Ok(true) => {
@@ -102,6 +102,7 @@ pub fn run() {
             runtime_snapshot::get_provider_model_catalog,
             runtime_snapshot::get_user_memory_settings,
             runtime_snapshot::get_user_provider_api_keys,
+            runtime_snapshot::get_user_review_model_settings,
             runtime_snapshot::get_user_speech_to_text_settings,
             runtime_snapshot::get_user_voice_settings,
             runtime_snapshot::get_user_web_search_settings,
@@ -110,6 +111,7 @@ pub fn run() {
             runtime_snapshot::save_user_agent_limits_settings,
             runtime_snapshot::save_user_global_memory_enabled,
             runtime_snapshot::save_user_provider_api_key,
+            runtime_snapshot::save_user_review_model_settings,
             runtime_snapshot::save_user_speech_to_text_active_provider,
             runtime_snapshot::save_user_speech_to_text_input_device,
             runtime_snapshot::save_user_voice_active_provider,

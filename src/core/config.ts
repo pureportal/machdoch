@@ -6,6 +6,7 @@ import {
   getUserConfigPath,
   hasConfiguredValue,
   loadUserAgentLimitsSettings,
+  loadUserReviewModelSettings,
   loadUserWebSearchSettings,
   loadWorkspaceEnv,
 } from "./env.js";
@@ -367,6 +368,7 @@ export const loadRuntimeConfig = async (
   const env = await loadWorkspaceEnv(workspaceRoot);
   const userWebSearchSettings = await loadUserWebSearchSettings();
   const userAgentLimitsSettings = await loadUserAgentLimitsSettings();
+  const userReviewModelSettings = await loadUserReviewModelSettings();
   const { config, path } = await loadWorkspaceConfigFile(workspaceRoot);
   const availableProfiles = getAvailableProfiles(config.profiles);
   const { activeProfile, profile } = resolveProfile(
@@ -426,5 +428,6 @@ export const loadRuntimeConfig = async (
       ),
       providerAvailability: webSearchProviderAvailability,
     },
+    reviewModel: userReviewModelSettings,
   };
 };

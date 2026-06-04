@@ -1951,9 +1951,12 @@ export const useChatSessionController = (
       },
       agentLimitsSetup: {
         settings: runtime.userAgentLimitsSettings,
+        reviewModelSettings: runtime.userReviewModelSettings,
+        providerAvailability: runtime.globalProviders ?? [],
         saving: runtime.agentLimitsSetupSaving,
         message: runtime.agentLimitsSetupMessage,
         onSave: runtime.handleAgentLimitsSettingsSave,
+        onReviewModelSave: runtime.handleReviewModelSettingsSave,
       },
       voiceSetup: {
         supported: voice.supported,

@@ -29,6 +29,9 @@ const createRuntimeConfig = (
       activeProvider: "perplexity",
       providerAvailability: [{ provider: "perplexity", configured: true }],
     },
+    reviewModel: {
+      mode: "base",
+    },
     ...overrides,
   };
 };

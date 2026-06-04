@@ -98,10 +98,19 @@ pub(crate) fn create_desktop_launch_id() -> String {
     format!("{}-{timestamp}", std::process::id())
 }
 
-pub(crate) fn hide_console_window_for_admin_relaunch() {
+fn should_hide_console_window_for_launch_args<I, S>(args: I) -> bool
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    args.into_iter()
+        .any(|argument| matches!(argument.as_ref(), AUTOSTART_LAUNCH_ARG | ADMIN_RELAUNCH_ARG))
+}
+
+pub(crate) fn hide_console_window_for_background_ui_launch() {
     #[cfg(target_os = "windows")]
     {
-        if !env::args().skip(1).any(|arg| arg == ADMIN_RELAUNCH_ARG) {
+        if !should_hide_console_window_for_launch_args(env::args().skip(1)) {
             return;
         }
 
@@ -540,6 +549,19 @@ mod tests {
             StartupWindowMode::OpenWindow
         );
     }
+
+    #[test]
+    fn console_hiding_is_limited_to_background_ui_launches() {
+        assert!(should_hide_console_window_for_launch_args([
+            AUTOSTART_LAUNCH_ARG
+        ]));
+        assert!(should_hide_console_window_for_launch_args([
+            "--ui",
+            ADMIN_RELAUNCH_ARG
+        ]));
+        assert!(!should_hide_console_window_for_launch_args(["--ui"]));
+        assert!(!should_hide_console_window_for_launch_args(["--cli"]));
+    }
 }
 
 pub(crate) fn sync_assistant_bubble_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
@@ -551,9 +573,6 @@ pub(crate) fn sync_assistant_bubble_window<R: Runtime>(app: &AppHandle<R>) -> Re
     if settings.assistant_bubble_enabled {
         let _ = window.set_skip_taskbar(true);
         let _ = window.unminimize();
-        window
-            .show()
-            .map_err(|error| format!("Failed to show the assistant bubble window: {error}"))?;
     } else {
         let _ = window.hide();
 
