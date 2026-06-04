@@ -307,9 +307,9 @@ export const TaskThinkingPanel = ({
     <div aria-live="polite" className="app-thinking-panel min-h-0 min-w-0 w-full">
       <Card
         className={cn(
-          "app-thinking-card min-w-0 overflow-hidden border text-slate-100",
+          "app-thinking-card min-w-0 gap-0 overflow-hidden border py-0 text-slate-100",
           isCollapsed
-            ? "w-full rounded-[1.1rem] rounded-bl-sm border-slate-800/60 bg-slate-900/28 shadow-none"
+            ? "w-full rounded-2xl rounded-bl-sm border-slate-800/60 bg-slate-900/28 shadow-none"
             : "w-full rounded-3xl border-slate-800 bg-slate-900/85 shadow-xl shadow-slate-950/25",
         )}
       >

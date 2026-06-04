@@ -2728,7 +2728,7 @@ describe("ChatSession component", () => {
     expect(userMessageText).toBeDefined();
     expect(userMessageText?.textContent).not.toContain("Use this file");
     expect(screen.queryByText(/Use this file:/i)).toBeNull();
-    expect(screen.getByText("Attached")).toBeDefined();
+    expect(screen.queryByText("Attached")).toBeNull();
 
     const sentAttachment = screen.getByRole("button", {
       name: "Open plan.md preview",
@@ -2868,9 +2868,12 @@ describe("ChatSession component", () => {
 
     expect(userMessageText).toBeDefined();
     expect(userMessageText?.textContent).not.toContain("Use this image");
-    expect(
-      screen.getByRole("button", { name: "Open screen.png preview" }),
-    ).toBeDefined();
+    const sentAttachment = screen.getByRole("button", {
+      name: "Open screen.png preview",
+    });
+
+    expect(sentAttachment).toBeDefined();
+    expect(within(sentAttachment).queryByText("image")).toBeNull();
 
     resolveDroppedPathsSpy.mockRestore();
     runDesktopTaskSpy.mockRestore();
@@ -3388,7 +3391,12 @@ describe("ChatSession component", () => {
     render(<ChatSession />);
     await flushShellHydration();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Save as pack" }));
+    const saveAsPackButton = await screen.findByRole("button", {
+      name: "Save as pack",
+    });
+
+    expect(saveAsPackButton.textContent).toBe("");
+    fireEvent.click(saveAsPackButton);
 
     await waitFor(() => {
       const storedState = JSON.parse(

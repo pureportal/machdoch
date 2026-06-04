@@ -121,6 +121,8 @@ export const ConversationFeed = ({
                   `legacy-message-context-${message.id}`,
                 )
             : [];
+        const canSaveMessageAsContextPack =
+          message.role === "user" && Boolean(onSaveMessageAsContextPack);
 
         return (
           <div key={message.id} className="contents">
@@ -180,8 +182,24 @@ export const ConversationFeed = ({
                       message.role === "user"
                         ? "app-user-message-bubble rounded-tr-md bg-slate-800 text-slate-100 shadow-slate-950/20"
                         : "app-agent-message-bubble rounded-tl-sm border border-slate-800 bg-slate-900/80 pr-14 text-slate-300 shadow-slate-950/30",
+                      canSaveMessageAsContextPack &&
+                        "app-user-message-bubble-with-action pr-12",
                     )}
                   >
+                    {canSaveMessageAsContextPack ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Save as pack"
+                        title="Save as pack"
+                        onClick={() => onSaveMessageAsContextPack?.(message)}
+                        className="app-message-save-pack-button absolute top-3 right-3 h-7 w-7 rounded-full border border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white focus-visible:ring-sky-500/35"
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : null}
+
                     {message.role === "agent" &&
                     voicePlayback.supported &&
                     renderedContent.trim().length > 0 ? (
@@ -237,21 +255,6 @@ export const ConversationFeed = ({
                     onOpen={onOpenAttachment}
                     align={message.role === "user" ? "end" : "start"}
                   />
-                ) : null}
-
-                {message.role === "user" && onSaveMessageAsContextPack ? (
-                  <div className="app-message-actions flex max-w-[90%] min-w-0 flex-wrap items-center justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onSaveMessageAsContextPack(message)}
-                      className="h-8 rounded-full border-sky-500/20 bg-sky-500/10 px-3 text-xs text-sky-100 hover:bg-sky-500/15 hover:text-white"
-                    >
-                      <Save className="mr-1.5 h-3.5 w-3.5" />
-                      Save as pack
-                    </Button>
-                  </div>
                 ) : null}
 
                 {message.source?.kind === "execution" ? (

@@ -50,6 +50,10 @@ const getAttachmentKindLabel = (
   }
 };
 
+const shouldShowAttachmentKindLabel = (
+  attachment: ChatSessionContextAttachment,
+): boolean => attachment.kind !== "image";
+
 export const formatContextAttachmentKind = (
   attachment: ChatSessionContextAttachment,
 ): string => getAttachmentKindLabel(attachment);
@@ -244,9 +248,6 @@ export const MessageAttachmentsList = ({
         align === "end" ? "items-end" : "items-start",
       )}
     >
-      <div className="px-1 text-[11px] font-medium text-slate-500">
-        Attached
-      </div>
       <ul
         aria-label="Attached files"
         className={cn(
@@ -281,7 +282,9 @@ export const MessageAttachmentsList = ({
                 <span className="min-w-0 max-w-48 truncate">
                   {attachment.name}
                 </span>
-                <span className="shrink-0 text-slate-500">{kindLabel}</span>
+                {shouldShowAttachmentKindLabel(attachment) ? (
+                  <span className="shrink-0 text-slate-500">{kindLabel}</span>
+                ) : null}
               </button>
             </li>
           );

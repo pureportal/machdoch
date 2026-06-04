@@ -896,6 +896,10 @@ body {
     border-top-right-radius: 0.35rem !important;
 }
 
+:root[data-density="compact"] .app-user-message-bubble-with-action {
+    padding-right: 2.35rem !important;
+}
+
 :root[data-density="compact"] .app-agent-message-bubble {
     border-top-left-radius: 0.35rem !important;
 }
@@ -908,6 +912,18 @@ body {
 }
 
 :root[data-density="compact"] .app-message-voice-button svg {
+    width: 0.75rem !important;
+    height: 0.75rem !important;
+}
+
+:root[data-density="compact"] .app-message-save-pack-button {
+    top: 0.45rem !important;
+    right: 0.45rem !important;
+    width: 1.55rem !important;
+    height: 1.55rem !important;
+}
+
+:root[data-density="compact"] .app-message-save-pack-button svg {
     width: 0.75rem !important;
     height: 0.75rem !important;
 }
