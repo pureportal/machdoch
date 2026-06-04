@@ -91,6 +91,7 @@ pub fn run() {
             desktop_shell::reveal_main_window,
             desktop_task::cancel_desktop_task,
             desktop_task::get_active_desktop_task_ids,
+            desktop_task::open_attached_path,
             desktop_task::open_workspace_path,
             desktop_task::resolve_dropped_paths,
             desktop_task::run_desktop_task,

@@ -121,13 +121,30 @@ export const useSessionTaskSubmission = (options: {
         contextAttachments,
       );
       const visibleMessageContent =
-        submitOptions.visibleMessageContent?.trim() || executionTask;
+        submitOptions.visibleMessageContent?.trim() || normalizedTask;
       const promptHistoryContent =
         submitOptions.promptHistoryContent?.trim() || normalizedTask;
       const imagePaths = getImageAttachmentPaths(contextAttachments);
       const { sessionSnapshot } = submitOptions;
       const isQuickTaskSessionSnapshot = isQuickVoiceSession(sessionSnapshot);
       const taskId = crypto.randomUUID();
+      const userMessageCreatedAt = Date.now();
+      const userMessageContextAttachments = contextAttachments.map(
+        (attachment) => ({ ...attachment }),
+      );
+      const userMessage: ChatSessionMessage = {
+        id: crypto.randomUUID(),
+        taskId,
+        role: "user",
+        content: visibleMessageContent,
+        createdAt: userMessageCreatedAt,
+        ...(submitOptions.messageIntent
+          ? { intent: submitOptions.messageIntent }
+          : {}),
+        ...(userMessageContextAttachments.length > 0
+          ? { contextAttachments: userMessageContextAttachments }
+          : {}),
+      };
       const sessionId = sessionSnapshot.id;
       const sessionWorkspace = sessionSnapshot.workspace;
       const sessionProfile = sessionSnapshot.profile;
@@ -214,16 +231,7 @@ export const useSessionTaskSubmission = (options: {
             updatedAt: nextUpdatedAt,
             messages: [
               ...sessionWithoutArchive.messages,
-              {
-                id: crypto.randomUUID(),
-                taskId,
-                role: "user",
-                content: visibleMessageContent,
-                createdAt: Date.now(),
-                ...(submitOptions.messageIntent
-                  ? { intent: submitOptions.messageIntent }
-                  : {}),
-              },
+              userMessage,
             ],
             promptHistory: nextPromptHistory.promptHistory,
             promptContextHistory: nextPromptHistory.promptContextHistory,
@@ -271,16 +279,7 @@ export const useSessionTaskSubmission = (options: {
             updatedAt: nextUpdatedAt,
             messages: [
               ...sessionSnapshot.messages,
-              {
-                id: crypto.randomUUID(),
-                taskId,
-                role: "user",
-                content: visibleMessageContent,
-                createdAt: Date.now(),
-                ...(submitOptions.messageIntent
-                  ? { intent: submitOptions.messageIntent }
-                  : {}),
-              },
+              userMessage,
             ],
             promptHistory: nextPromptHistory.promptHistory,
             promptContextHistory: nextPromptHistory.promptContextHistory,

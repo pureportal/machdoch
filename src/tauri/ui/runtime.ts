@@ -1252,6 +1252,26 @@ export const openWorkspacePath = async (
   }
 };
 
+export const openAttachedPath = async (path: string): Promise<void> => {
+  const normalizedPath = path.trim();
+
+  if (!normalizedPath) {
+    throw new Error("Expected an attached file path.");
+  }
+
+  if (!canInvokeTauriCommands()) {
+    return;
+  }
+
+  try {
+    await tauriCore.invoke("open_attached_path", {
+      path: normalizedPath,
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
 export const saveClipboardImageAttachment = async (
   input: ClipboardImageAttachmentInput,
 ): Promise<string> => {

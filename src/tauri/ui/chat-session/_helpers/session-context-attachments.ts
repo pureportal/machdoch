@@ -146,11 +146,97 @@ const createContextAttachmentsTaskBlock = (
   ].join("\n");
 };
 
+const CONTEXT_ATTACHMENTS_TASK_BLOCK_PATTERN =
+  /(?:\r?\n){2,}(?:Use this (?:file|image|folder|path): "[^"\r\n]+"|Use these paths:(?:\r?\n- (?:file|image|folder|path): "[^"\r\n]+")+)\s*$/u;
+const CONTEXT_ATTACHMENTS_TASK_BLOCK_CAPTURE_PATTERN =
+  /(?:\r?\n){2,}(Use this (?:file|image|folder|path): "[^"\r\n]+"|Use these paths:(?:\r?\n- (?:file|image|folder|path): "[^"\r\n]+")+)\s*$/u;
+const SINGLE_CONTEXT_ATTACHMENT_LINE_PATTERN =
+  /^Use this (file|image|folder|path): "([^"\r\n]+)"$/u;
+const MULTI_CONTEXT_ATTACHMENT_LINE_PATTERN =
+  /^- (file|image|folder|path): "([^"\r\n]+)"$/u;
+
 export const appendContextAttachmentsToTask = (
   task: string,
   attachments: ChatSessionContextAttachment[],
 ): string => {
   return appendDraftBlock(task, createContextAttachmentsTaskBlock(attachments));
+};
+
+export const stripContextAttachmentsTaskBlock = (task: string): string => {
+  return task.replace(CONTEXT_ATTACHMENTS_TASK_BLOCK_PATTERN, "").trimEnd();
+};
+
+const getAttachmentKindFromTaskLabel = (
+  label: string,
+): ChatSessionContextAttachmentKind => {
+  switch (label) {
+    case "file":
+      return "file";
+    case "image":
+      return "image";
+    case "folder":
+      return "directory";
+    case "path":
+    default:
+      return "other";
+  }
+};
+
+const getAttachmentNameFromPath = (path: string): string => {
+  const name = path.replace(/\\/gu, "/").split("/").filter(Boolean).at(-1);
+
+  return name?.trim() || path;
+};
+
+const getAttachmentParentFromPath = (path: string): string | undefined => {
+  const lastSeparatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+
+  if (lastSeparatorIndex <= 0) {
+    return undefined;
+  }
+
+  return path.slice(0, lastSeparatorIndex);
+};
+
+export const createContextAttachmentsFromTaskBlock = (
+  task: string,
+  idPrefix = "context-attachment",
+): ChatSessionContextAttachment[] => {
+  const block = task.match(CONTEXT_ATTACHMENTS_TASK_BLOCK_CAPTURE_PATTERN)?.[1];
+
+  if (!block) {
+    return [];
+  }
+
+  const lines = block
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && line !== "Use these paths:");
+  const attachments: ChatSessionContextAttachment[] = [];
+
+  for (const line of lines) {
+    const match =
+      line.match(SINGLE_CONTEXT_ATTACHMENT_LINE_PATTERN) ??
+      line.match(MULTI_CONTEXT_ATTACHMENT_LINE_PATTERN);
+    const label = match?.[1];
+    const path = match?.[2]?.trim();
+
+    if (!label || !path) {
+      continue;
+    }
+
+    const parent = getAttachmentParentFromPath(path);
+
+    attachments.push({
+      id: `${idPrefix}-${attachments.length}`,
+      path,
+      kind: getAttachmentKindFromTaskLabel(label),
+      name: getAttachmentNameFromPath(path),
+      ...(parent ? { parent } : {}),
+    });
+  }
+
+  return attachments;
 };
 
 export const getImageAttachmentPaths = (

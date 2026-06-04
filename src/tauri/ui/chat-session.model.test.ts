@@ -232,6 +232,56 @@ describe("normalizeShellState", () => {
       },
     });
   });
+
+  it("preserves valid sent-message context attachments", () => {
+    const normalized = normalizeShellState({
+      activeSessionId: "attachment-session",
+      sessions: [
+        {
+          id: "attachment-session",
+          provider: "openai",
+          model: "gpt-5.5",
+          workspace: null,
+          createdAt: 1,
+          updatedAt: 2,
+          messages: [
+            {
+              id: "user-with-attachment",
+              role: "user",
+              content: "Describe this image",
+              contextAttachments: [
+                {
+                  id: "screen-attachment",
+                  path: "C:\\Docs\\screen.png",
+                  kind: "image",
+                  name: "screen.png",
+                  parent: "C:\\Docs",
+                },
+                {
+                  path: "",
+                  kind: "file",
+                  name: "invalid.txt",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(normalized.sessions[0]?.messages[0]).toMatchObject({
+      id: "user-with-attachment",
+      contextAttachments: [
+        {
+          id: "screen-attachment",
+          path: "C:\\Docs\\screen.png",
+          kind: "image",
+          name: "screen.png",
+          parent: "C:\\Docs",
+        },
+      ],
+    });
+  });
 });
 
 describe("applySessionRetentionPolicy", () => {

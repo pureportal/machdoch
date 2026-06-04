@@ -3,6 +3,7 @@ import type { Components } from "react-markdown";
 import type { TaskExecutionResult } from "../../../../core/types.js";
 import type { ChatSessionMessage } from "../../chat-session.model";
 import type { TaskThinkingTrace } from "../../task-thinking.model";
+import { stripContextAttachmentsTaskBlock } from "./session-context-attachments";
 import { getTaskActionDisplayContent } from "./task-action-prompts";
 
 export const createFallbackExecutionMarkdown = (
@@ -51,7 +52,10 @@ export const getRenderedMessageContent = (
   }
 
   if (message.role === "user") {
-    return getTaskActionDisplayContent(message.content) ?? message.content;
+    return (
+      getTaskActionDisplayContent(message.content) ??
+      stripContextAttachmentsTaskBlock(message.content)
+    );
   }
 
   return message.content;

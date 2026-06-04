@@ -8,7 +8,10 @@ import {
   WandSparkles,
 } from "lucide-react";
 import type { JSX, RefObject } from "react";
-import type { ChatSessionMessage } from "../../chat-session.model";
+import type {
+  ChatSessionContextAttachment,
+  ChatSessionMessage,
+} from "../../chat-session.model";
 import { Avatar } from "../../components/ui/avatar";
 import { Button } from "../../components/ui/button";
 import { cn } from "../../lib/utils";
@@ -22,6 +25,8 @@ import {
   createExecutionThinkingTrace,
   getRenderedMessageContent,
 } from "../_helpers/execution-message.tsx";
+import { createContextAttachmentsFromTaskBlock } from "../_helpers/session-context-attachments";
+import { MessageAttachmentsList } from "./context-attachments";
 import { ExecutionInsightRow } from "./execution-insight-row";
 import { MessageMarkdown } from "./message-markdown";
 
@@ -32,6 +37,7 @@ export interface ConversationFeedProps {
   onRetryTask: (message: ChatSessionMessage) => void;
   onContinueTask: (message: ChatSessionMessage) => void;
   onOpenWorkspaceFile: (relativePath: string) => void;
+  onOpenAttachment?: (attachment: ChatSessionContextAttachment) => void;
   voicePlayback: {
     supported: boolean;
     speakingMessageId: string | null;
@@ -57,6 +63,7 @@ export const ConversationFeed = ({
   onRetryTask,
   onContinueTask,
   onOpenWorkspaceFile,
+  onOpenAttachment,
   voicePlayback,
 }: ConversationFeedProps): JSX.Element => {
   if (visibleMessages.length === 0) {
@@ -102,6 +109,15 @@ export const ConversationFeed = ({
         const shouldRenderBubble =
           message.role === "user" || renderedContent.trim().length > 0;
         const showCrashRecoveryActions = isRecoveredTaskCrashMessage(message);
+        const messageAttachments =
+          message.role === "user"
+            ? message.contextAttachments?.length
+              ? message.contextAttachments
+              : createContextAttachmentsFromTaskBlock(
+                  message.content,
+                  `legacy-message-context-${message.id}`,
+                )
+            : [];
 
         return (
           <div key={message.id} className="contents">
@@ -210,6 +226,14 @@ export const ConversationFeed = ({
                       </div>
                     )}
                   </div>
+                ) : null}
+
+                {messageAttachments.length > 0 ? (
+                  <MessageAttachmentsList
+                    attachments={messageAttachments}
+                    onOpen={onOpenAttachment}
+                    align={message.role === "user" ? "end" : "start"}
+                  />
                 ) : null}
 
                 {message.source?.kind === "execution" ? (

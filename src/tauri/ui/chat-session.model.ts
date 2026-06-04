@@ -48,6 +48,7 @@ export interface ChatSessionMessage {
   content: string;
   createdAt?: number;
   intent?: "retry-task" | "continue-task";
+  contextAttachments?: ChatSessionContextAttachment[];
   source?: ChatSessionMessageSource;
 }
 
@@ -923,6 +924,10 @@ const normalizeSessionMessages = (
     const createdAt = normalizeOptionalFiniteNumber(entry.createdAt);
     const intent = normalizeMessageIntent(entry.intent);
     const taskId = normalizeOptionalString(entry.taskId);
+    const contextAttachments = normalizeContextAttachments(
+      entry.contextAttachments,
+      `message-context-${sessionId}-${index}`,
+    );
     const message: ChatSessionMessage = {
       id: normalizeString(entry.id, `${sessionId}-message-${index}`),
       role: entry.role,
@@ -930,6 +935,7 @@ const normalizeSessionMessages = (
       ...(taskId ? { taskId } : {}),
       ...(createdAt !== undefined ? { createdAt } : {}),
       ...(intent ? { intent } : {}),
+      ...(contextAttachments.length > 0 ? { contextAttachments } : {}),
       ...(source ? { source } : {}),
     };
 

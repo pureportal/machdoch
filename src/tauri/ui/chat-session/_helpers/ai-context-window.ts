@@ -4,6 +4,10 @@ import {
   type ChatSessionMessage,
 } from "../../chat-session.model";
 import { getRenderedMessageContent } from "./execution-message.tsx";
+import {
+  appendContextAttachmentsToTask,
+  createContextAttachmentsFromTaskBlock,
+} from "./session-context-attachments";
 import { shouldOmitTaskActionPromptFromAiContext } from "./task-action-prompts";
 
 export const DEFAULT_AI_CONTEXT_MESSAGE_LIMIT = 60;
@@ -33,7 +37,20 @@ const createConversationHistoryEntry = (
     return undefined;
   }
 
-  const content = getRenderedMessageContent(message).trim();
+  const renderedContent = getRenderedMessageContent(message).trim();
+  const contextAttachments =
+    message.role === "user"
+      ? message.contextAttachments?.length
+        ? message.contextAttachments
+        : createContextAttachmentsFromTaskBlock(
+            message.content,
+            `legacy-history-context-${message.id}`,
+          )
+      : [];
+  const content =
+    message.role === "user" && contextAttachments.length > 0
+      ? appendContextAttachmentsToTask(renderedContent, contextAttachments)
+      : renderedContent;
 
   if (content.length === 0) {
     return undefined;

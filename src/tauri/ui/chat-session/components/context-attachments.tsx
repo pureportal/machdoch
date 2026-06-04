@@ -221,3 +221,72 @@ export const ContextAttachmentsList = ({
     </div>
   );
 };
+
+export interface MessageAttachmentsListProps {
+  attachments: ChatSessionContextAttachment[];
+  onOpen?: (attachment: ChatSessionContextAttachment) => void;
+  align?: "start" | "end";
+}
+
+export const MessageAttachmentsList = ({
+  attachments,
+  onOpen,
+  align = "start",
+}: MessageAttachmentsListProps): JSX.Element | null => {
+  if (attachments.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      className={cn(
+        "app-message-attachments flex max-w-[90%] min-w-0 flex-col gap-1.5",
+        align === "end" ? "items-end" : "items-start",
+      )}
+    >
+      <div className="px-1 text-[11px] font-medium text-slate-500">
+        Attached
+      </div>
+      <ul
+        aria-label="Attached files"
+        className={cn(
+          "flex max-w-full flex-wrap gap-1.5",
+          align === "end" && "justify-end",
+        )}
+      >
+        {attachments.map((attachment) => {
+          const Icon = getAttachmentIcon(attachment);
+          const kindLabel = getAttachmentKindLabel(attachment);
+
+          return (
+            <li key={attachment.id} className="max-w-full">
+              <button
+                type="button"
+                aria-label={`Open ${attachment.name} preview`}
+                title={`Open preview: ${attachment.path}`}
+                disabled={!onOpen}
+                onClick={() => onOpen?.(attachment)}
+                className={cn(
+                  "app-message-attachment-button inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-slate-800 bg-slate-950/70 px-3 text-xs text-slate-300 shadow-sm shadow-slate-950/20 transition-colors hover:bg-slate-900 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/35 disabled:cursor-default disabled:opacity-70",
+                  attachment.kind === "image" &&
+                    "border-sky-400/30 bg-sky-400/10 text-sky-50 hover:bg-sky-400/15",
+                )}
+              >
+                <Icon
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0 text-sky-300",
+                    attachment.kind === "image" && "text-sky-200",
+                  )}
+                />
+                <span className="min-w-0 max-w-48 truncate">
+                  {attachment.name}
+                </span>
+                <span className="shrink-0 text-slate-500">{kindLabel}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+};

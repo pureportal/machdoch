@@ -39,6 +39,7 @@ import {
 } from "../../model-catalog";
 import {
   cancelDesktopTask,
+  openAttachedPath,
   openWorkspacePath,
   resolveDroppedPaths,
   saveClipboardImageAttachment,
@@ -677,6 +678,14 @@ export const useChatSessionController = (
         console.error("Failed to open workspace path", error);
       },
     );
+  };
+
+  const handleOpenAttachment = (
+    attachment: ChatSessionContextAttachment,
+  ): void => {
+    void openAttachedPath(attachment.path).catch((error) => {
+      console.error("Failed to open attached path", error);
+    });
   };
 
   const getActiveDesktopTaskIdForSession = useCallback((sessionId: string): string | null => {
@@ -1393,6 +1402,7 @@ export const useChatSessionController = (
       onRetryTask: taskSubmission.handleRetryTask,
       onContinueTask: taskSubmission.handleContinueTask,
       onOpenWorkspaceFile: handleOpenWorkspaceFile,
+      onOpenAttachment: handleOpenAttachment,
       voicePlayback: {
         supported: voice.supported,
         speakingMessageId: voice.speakingMessageId,

@@ -1611,6 +1611,36 @@ describe("ChatSession component", () => {
     expect(messageText.parentElement?.className).toContain("overflow-hidden");
   });
 
+  it("hides legacy generated attachment instructions in user messages", () => {
+    render(
+      <ConversationFeed
+        visibleMessages={[
+          {
+            id: "legacy-user-message",
+            role: "user",
+            content:
+              'Help me turn this screenshot into a short product update\n\nUse this image: "\\\\?\\C:\\Users\\ehrha\\Downloads\\ShutterCount.png"',
+          },
+        ]}
+        bottomRef={{ current: null }}
+        onRetryTask={() => {}}
+        onContinueTask={() => {}}
+        onOpenWorkspaceFile={() => {}}
+        voicePlayback={{
+          supported: false,
+          speakingMessageId: null,
+          onSpeakMessage: () => {},
+          onStopSpeaking: () => {},
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByText("Help me turn this screenshot into a short product update"),
+    ).toBeDefined();
+    expect(screen.queryByText(/Use this image/i)).toBeNull();
+  });
+
   it("visually separates insight metadata from task action buttons", () => {
     const execution = {
       ...createMockExecutionFixture(
@@ -2561,6 +2591,9 @@ describe("ChatSession component", () => {
         "C:\\Docs",
       ),
     });
+    const openAttachedPathSpy = vi
+      .spyOn(runtime, "openAttachedPath")
+      .mockResolvedValue();
 
     render(<ChatSession />);
 
@@ -2601,11 +2634,30 @@ describe("ChatSession component", () => {
           provider: expect.any(String),
         }),
       );
-      expect(screen.queryByText("plan.md")).toBeNull();
     });
+
+    const userMessageText = screen
+      .getAllByText("Summarize the plan")
+      .find((element) =>
+        element.className.includes("app-user-message-text"),
+      );
+
+    expect(userMessageText).toBeDefined();
+    expect(userMessageText?.textContent).not.toContain("Use this file");
+    expect(screen.queryByText(/Use this file:/i)).toBeNull();
+    expect(screen.getByText("Attached")).toBeDefined();
+
+    const sentAttachment = screen.getByRole("button", {
+      name: "Open plan.md preview",
+    });
+
+    expect(sentAttachment).toBeDefined();
+    fireEvent.click(sentAttachment);
+    expect(openAttachedPathSpy).toHaveBeenCalledWith("C:\\Docs\\plan.md");
 
     resolveDroppedPathsSpy.mockRestore();
     runDesktopTaskSpy.mockRestore();
+    openAttachedPathSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("adds selected folders to the main composer from the add context menu", async () => {
@@ -2724,6 +2776,18 @@ describe("ChatSession component", () => {
         }),
       );
     });
+
+    const userMessageText = screen
+      .getAllByText("Describe the screenshot")
+      .find((element) =>
+        element.className.includes("app-user-message-text"),
+      );
+
+    expect(userMessageText).toBeDefined();
+    expect(userMessageText?.textContent).not.toContain("Use this image");
+    expect(
+      screen.getByRole("button", { name: "Open screen.png preview" }),
+    ).toBeDefined();
 
     resolveDroppedPathsSpy.mockRestore();
     runDesktopTaskSpy.mockRestore();

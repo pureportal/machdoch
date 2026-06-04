@@ -851,6 +851,24 @@ fn resolve_workspace_relative_path(
     Ok(resolved_path)
 }
 
+fn resolve_attached_path(path: &str) -> Result<PathBuf, String> {
+    let normalized_path = path.trim();
+
+    if normalized_path.is_empty() {
+        return Err("Expected an attached file path to open.".to_string());
+    }
+
+    let candidate_path = PathBuf::from(normalized_path);
+
+    if !candidate_path.is_absolute() {
+        return Err("Expected an absolute attached file path.".to_string());
+    }
+
+    candidate_path
+        .canonicalize()
+        .map_err(|error| format!("Unable to resolve attached path `{normalized_path}`: {error}"))
+}
+
 fn spawn_detached_command(command: &mut Command, error_prefix: &str) -> Result<(), String> {
     command
         .stdin(Stdio::null())
@@ -1002,6 +1020,16 @@ pub async fn open_workspace_path(
     })
     .await
     .map_err(|error| format!("The workspace path opener stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn open_attached_path(path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved_path = resolve_attached_path(&path)?;
+        open_path_in_system_shell(&resolved_path)
+    })
+    .await
+    .map_err(|error| format!("The attachment opener stopped unexpectedly. {error}"))?
 }
 
 #[tauri::command]
