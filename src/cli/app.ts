@@ -15,6 +15,7 @@ import {
   printTaskPreview,
   runInteractiveChat,
 } from "./_helpers/cli-task-run.js";
+import { printSchedulerSummary } from "./_helpers/cli-scheduler-commands.js";
 
 export type { CommandName, ParsedCliArgs } from "./_helpers/cli-args.js";
 export { formatExecutionProgressLines, getHelpText, parseCliArgs };
@@ -61,6 +62,10 @@ export const runCli = async (argv: string[]): Promise<void> => {
     }
     case "profiles": {
       await printProfileSummary(args);
+      return;
+    }
+    case "scheduler": {
+      await printSchedulerSummary(args);
       return;
     }
     case "run": {

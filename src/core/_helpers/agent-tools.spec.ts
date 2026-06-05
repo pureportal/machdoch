@@ -3,7 +3,11 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RuntimeConfig } from "../types.js";
-import { executeToolCall, resolveActionDecision } from "./agent-tools.ts";
+import {
+  createToolDefinitions,
+  executeToolCall,
+  resolveActionDecision,
+} from "./agent-tools.ts";
 import type {
   AgentToolDefinition,
   ConversationMemoryRuntime,
@@ -77,6 +81,26 @@ describe("resolveActionDecision", () => {
 
     expect(decision.decision).toBe("allow");
     expect(decision.reason).toContain("Machdoch mode");
+  });
+});
+
+describe("createToolDefinitions", () => {
+  it("exposes scheduler reads in ask mode and mutations in machdoch mode", () => {
+    const askToolNames = createToolDefinitions(
+      createRuntimeConfig({ mode: "ask" }),
+      memory,
+    ).map((definition) => definition.spec.name);
+    const machdochToolNames = createToolDefinitions(
+      createRuntimeConfig({ mode: "machdoch" }),
+      memory,
+    ).map((definition) => definition.spec.name);
+
+    expect(askToolNames).toContain("list_scheduled_jobs");
+    expect(askToolNames).toContain("list_scheduled_runs");
+    expect(askToolNames).not.toContain("create_scheduled_job");
+    expect(askToolNames).not.toContain("update_scheduled_job");
+    expect(machdochToolNames).toContain("create_scheduled_job");
+    expect(machdochToolNames).toContain("update_scheduled_job");
   });
 });
 

@@ -22,6 +22,7 @@ import {
   recordMacroToolCall,
 } from "./macro-recorder-tool-definitions.js";
 import { createPackageToolDefinitions } from "./package-tool-definitions.js";
+import { createSchedulerToolDefinitions } from "./scheduler-tool-definitions.js";
 import { createUtilityToolDefinitions } from "./utility-tool-definitions.js";
 import {
   compactTraceText,
@@ -103,6 +104,7 @@ export const createToolDefinitions = (
     ...createBrowserToolDefinitions(),
     ...createShellNetworkToolDefinitions(config),
     ...createMemoryToolDefinitions(memory),
+    ...createSchedulerToolDefinitions(),
     ...createDesktopUiToolDefinitions(uiControl),
   ];
 

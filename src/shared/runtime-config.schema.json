@@ -36,6 +36,7 @@
         "browser",
         "git",
         "packages",
+        "scheduler",
         "utilities"
       ]
     },

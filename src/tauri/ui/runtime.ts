@@ -191,8 +191,299 @@ export interface DesktopTaskProgressEvent {
   timestamp: number;
 }
 
+export interface RemoteControlLogEntry {
+  createdAt: number;
+  stream: "stdout" | "stderr" | string;
+  toolName?: string;
+  chunk: string;
+}
+
+export interface RemoteControlTimelineEntry {
+  createdAt: number;
+  kind: string;
+  phase: string;
+  label: string;
+  detail?: string;
+  tone?: string;
+  toolName?: string;
+}
+
+export interface RemoteControlTaskSession {
+  taskId: string;
+  task: string;
+  mode: string;
+  state: string;
+  message: string;
+  cancellable: boolean;
+  startedAt: number;
+  updatedAt: number;
+  progressCount: number;
+  logs: RemoteControlLogEntry[];
+  timeline: RemoteControlTimelineEntry[];
+}
+
+export interface RemoteControlStatus {
+  enabled: boolean;
+  localUrl?: string;
+  lanUrl?: string;
+  displayUrl?: string;
+  qrSvg?: string;
+  tokenHint?: string;
+  startedAt?: number;
+  bindAddress?: string;
+  port?: number;
+  pairedDeviceCount?: number;
+  eventId: number;
+  sessions: RemoteControlTaskSession[];
+}
+
+export type RemoteControlCommandKind =
+  | "cancel"
+  | "retry"
+  | "continue"
+  | "follow-up"
+  | "approval-decision";
+
+export interface RemoteControlCommandEvent {
+  commandId: string;
+  kind: RemoteControlCommandKind;
+  taskId?: string;
+  prompt?: string;
+  decision?: "approve" | "reject" | string;
+  promptId?: string;
+  createdAt: number;
+}
+
+export type SchedulerJobStatus =
+  | "active"
+  | "paused"
+  | "completed"
+  | "deleted";
+
+export type SchedulerRunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "timed_out"
+  | "expired"
+  | "skipped";
+
+export type SchedulerRunSource = "schedule" | "manual" | "manual-retry";
+
+export type SchedulerMissedRunPolicy =
+  | "skip"
+  | "enqueue-latest"
+  | "enqueue-all";
+
+export type SchedulerScheduleSummary =
+  | {
+      type: "cron";
+      expression: string;
+      timezone: string;
+    }
+  | {
+      type: "interval";
+      intervalMs: number;
+      anchorAt: number;
+    }
+  | {
+      type: "delay";
+      runAt: number;
+    };
+
+export type SchedulerCreateScheduleInput =
+  | {
+      type: "cron";
+      expression: string;
+      timezone?: string;
+    }
+  | {
+      type: "interval";
+      intervalMs: number;
+    }
+  | {
+      type: "delay";
+      delayMs?: number;
+      runAt?: number;
+    };
+
+export interface SchedulerRetrySummary {
+  maxAttempts: number;
+  factor: number;
+  minTimeoutMs: number;
+  maxTimeoutMs: number;
+  randomize: boolean;
+}
+
+export interface SchedulerQueueSummary {
+  concurrencyKey: string;
+  concurrencyLimit: number;
+}
+
+export interface SchedulerJobSummary {
+  id: string;
+  name: string;
+  status: SchedulerJobStatus;
+  schedule: SchedulerScheduleSummary;
+  workspaceRoot: string;
+  prompt: string;
+  nextRunAt: number | null;
+  lastStartedAt: number | null;
+  lastFinishedAt: number | null;
+  queue: SchedulerQueueSummary;
+  retry: SchedulerRetrySummary;
+  dedupeKey: string | null;
+  ttlMs: number | null;
+  maxDurationMs: number | null;
+}
+
+export interface SchedulerRunSummary {
+  id: string;
+  jobId: string;
+  source: SchedulerRunSource;
+  status: SchedulerRunStatus;
+  scheduledFor: number;
+  enqueuedAt: number;
+  updatedAt: number;
+  attempt: number;
+  maxAttempts: number;
+  queueKey: string;
+  startedAt: number | null;
+  finishedAt: number | null;
+  nextAttemptAt: number | null;
+  expiresAt: number | null;
+  error: string | null;
+  summary: string | null;
+}
+
+export interface SchedulerContextPackInput {
+  name: string;
+  instructions?: string;
+  prompt?: string;
+  contextPaths?: string[];
+  variableValues?: Record<string, string>;
+}
+
+export interface SchedulerCreateJobInput {
+  name?: string;
+  schedule: SchedulerCreateScheduleInput;
+  prompt?: string;
+  promptFile?: string;
+  contextPaths?: string[];
+  imagePaths?: string[];
+  contextPacks?: SchedulerContextPackInput[];
+  macros?: string[];
+  missedRunPolicy?: SchedulerMissedRunPolicy;
+  missedRunGraceMs?: number;
+  retryAttempts?: number;
+  retryMinMs?: number;
+  retryMaxMs?: number;
+  retryFactor?: number;
+  retryRandomize?: boolean;
+  dedupeKey?: string;
+  ttlMs?: number;
+  maxDurationMs?: number;
+  concurrencyKey?: string;
+  concurrencyLimit?: number;
+  historyLimit?: number;
+  maxCatchUpRuns?: number;
+  mode?: RuntimeSnapshot["mode"];
+  profile?: string;
+  provider?: RuntimeProvider;
+  model?: string;
+}
+
+export interface SchedulerListJobsResult {
+  workspaceRoot: string;
+  jobs: SchedulerJobSummary[];
+}
+
+export interface SchedulerListRunsResult {
+  workspaceRoot: string;
+  runs: SchedulerRunSummary[];
+}
+
+export interface SchedulerJobActionResult {
+  job: SchedulerJobSummary;
+}
+
+export interface SchedulerRunActionResult {
+  run: SchedulerRunSummary;
+}
+
+export interface SchedulerRunHandle {
+  jobId: string;
+  runId: string;
+}
+
+export interface SchedulerEnqueueSummary {
+  handle: SchedulerRunHandle;
+  run: SchedulerRunSummary;
+  deduplicated: boolean;
+}
+
+export interface SchedulerRunDueResult {
+  queued: SchedulerRunSummary[];
+  runs: SchedulerRunSummary[];
+}
+
+export interface SchedulerTriggerResult {
+  queued: SchedulerEnqueueSummary;
+  runs: SchedulerRunSummary[];
+}
+
+export interface SchedulerRetryResult {
+  handle: SchedulerRunHandle;
+  runs: SchedulerRunSummary[];
+}
+
+export interface SchedulerPromptDefinitionSummary {
+  path: string;
+  name: string;
+  enabled: boolean;
+  warnings: string[];
+}
+
+export interface SchedulerPromptSyncResult {
+  workspaceRoot: string;
+  discovered: SchedulerPromptDefinitionSummary[];
+  syncedJobs: SchedulerJobSummary[];
+  pausedJobs: SchedulerJobSummary[];
+}
+
 const DEFAULT_MOCK_WORKSPACE_ROOT = "/mock/home/path";
 const DESKTOP_TASK_PROGRESS_EVENT = "desktop-task-progress";
+const REMOTE_CONTROL_COMMAND_EVENT = "remote-control-command";
+const REMOTE_CONTROL_COMMAND_KINDS = [
+  "cancel",
+  "retry",
+  "continue",
+  "follow-up",
+  "approval-decision",
+] as const satisfies ReadonlyArray<RemoteControlCommandKind>;
+const SCHEDULER_JOB_STATUSES = [
+  "active",
+  "paused",
+  "completed",
+  "deleted",
+] as const satisfies ReadonlyArray<SchedulerJobStatus>;
+const SCHEDULER_RUN_STATUSES = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "timed_out",
+  "expired",
+  "skipped",
+] as const satisfies ReadonlyArray<SchedulerRunStatus>;
+const SCHEDULER_RUN_SOURCES = [
+  "schedule",
+  "manual",
+  "manual-retry",
+] as const satisfies ReadonlyArray<SchedulerRunSource>;
 const CLIPBOARD_IMAGE_EXTENSION_BY_MEDIA_TYPE: Record<
   AgentModelImageMediaType,
   string
@@ -458,6 +749,594 @@ const isDesktopTaskProgressEvent = (
     Number.isFinite(value.timestamp) &&
     isTaskExecutionProgress(value.progress)
   );
+};
+
+const isRemoteControlLogEntry = (
+  value: unknown,
+): value is RemoteControlLogEntry => {
+  return (
+    isRecord(value) &&
+    typeof value.createdAt === "number" &&
+    Number.isFinite(value.createdAt) &&
+    typeof value.stream === "string" &&
+    (value.toolName === undefined || typeof value.toolName === "string") &&
+    typeof value.chunk === "string"
+  );
+};
+
+const isRemoteControlTimelineEntry = (
+  value: unknown,
+): value is RemoteControlTimelineEntry => {
+  return (
+    isRecord(value) &&
+    typeof value.createdAt === "number" &&
+    Number.isFinite(value.createdAt) &&
+    typeof value.kind === "string" &&
+    typeof value.phase === "string" &&
+    typeof value.label === "string" &&
+    (value.detail === undefined || typeof value.detail === "string") &&
+    (value.tone === undefined || typeof value.tone === "string") &&
+    (value.toolName === undefined || typeof value.toolName === "string")
+  );
+};
+
+const isRemoteControlTaskSession = (
+  value: unknown,
+): value is RemoteControlTaskSession => {
+  return (
+    isRecord(value) &&
+    typeof value.taskId === "string" &&
+    typeof value.task === "string" &&
+    typeof value.mode === "string" &&
+    typeof value.state === "string" &&
+    typeof value.message === "string" &&
+    typeof value.cancellable === "boolean" &&
+    typeof value.startedAt === "number" &&
+    Number.isFinite(value.startedAt) &&
+    typeof value.updatedAt === "number" &&
+    Number.isFinite(value.updatedAt) &&
+    typeof value.progressCount === "number" &&
+    Number.isFinite(value.progressCount) &&
+    Array.isArray(value.logs) &&
+    value.logs.every(isRemoteControlLogEntry) &&
+    Array.isArray(value.timeline) &&
+    value.timeline.every(isRemoteControlTimelineEntry)
+  );
+};
+
+const normalizeOptionalStringField = (
+  value: unknown,
+): string | undefined | null => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  return typeof value === "string" ? value : null;
+};
+
+const normalizeOptionalNumberField = (
+  value: unknown,
+): number | undefined | null => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+};
+
+const normalizeNullableStringField = (value: unknown): string | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return typeof value === "string" ? value : null;
+};
+
+const normalizeNullableNumberField = (value: unknown): number | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+};
+
+const isNullableStringPayloadField = (value: unknown): boolean => {
+  return value === null || value === undefined || typeof value === "string";
+};
+
+const isNullableNumberPayloadField = (value: unknown): boolean => {
+  return (
+    value === null ||
+    value === undefined ||
+    (typeof value === "number" && Number.isFinite(value))
+  );
+};
+
+const assignOptionalStringField = <Key extends keyof RemoteControlStatus>(
+  status: RemoteControlStatus,
+  key: Key,
+  value: string | undefined,
+): void => {
+  if (value !== undefined) {
+    Object.assign(status, { [key]: value });
+  }
+};
+
+const assignOptionalNumberField = <Key extends keyof RemoteControlStatus>(
+  status: RemoteControlStatus,
+  key: Key,
+  value: number | undefined,
+): void => {
+  if (value !== undefined) {
+    Object.assign(status, { [key]: value });
+  }
+};
+
+const normalizeRemoteControlStatus = (
+  value: unknown,
+): RemoteControlStatus | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.enabled !== "boolean" ||
+    typeof value.eventId !== "number" ||
+    !Number.isFinite(value.eventId) ||
+    !Array.isArray(value.sessions) ||
+    !value.sessions.every(isRemoteControlTaskSession)
+  ) {
+    return null;
+  }
+
+  const localUrl = normalizeOptionalStringField(value.localUrl);
+  const lanUrl = normalizeOptionalStringField(value.lanUrl);
+  const displayUrl = normalizeOptionalStringField(value.displayUrl);
+  const qrSvg = normalizeOptionalStringField(value.qrSvg);
+  const tokenHint = normalizeOptionalStringField(value.tokenHint);
+  const startedAt = normalizeOptionalNumberField(value.startedAt);
+  const bindAddress = normalizeOptionalStringField(value.bindAddress);
+  const port = normalizeOptionalNumberField(value.port);
+  const pairedDeviceCount = normalizeOptionalNumberField(value.pairedDeviceCount);
+
+  if (
+    localUrl === null ||
+    lanUrl === null ||
+    displayUrl === null ||
+    qrSvg === null ||
+    tokenHint === null ||
+    startedAt === null ||
+    bindAddress === null ||
+    port === null ||
+    pairedDeviceCount === null
+  ) {
+    return null;
+  }
+
+  const status: RemoteControlStatus = {
+    enabled: value.enabled,
+    eventId: value.eventId,
+    sessions: value.sessions,
+  };
+
+  assignOptionalStringField(status, "localUrl", localUrl);
+  assignOptionalStringField(status, "lanUrl", lanUrl);
+  assignOptionalStringField(status, "displayUrl", displayUrl);
+  assignOptionalStringField(status, "qrSvg", qrSvg);
+  assignOptionalStringField(status, "tokenHint", tokenHint);
+  assignOptionalNumberField(status, "startedAt", startedAt);
+  assignOptionalStringField(status, "bindAddress", bindAddress);
+  assignOptionalNumberField(status, "port", port);
+  assignOptionalNumberField(status, "pairedDeviceCount", pairedDeviceCount);
+
+  return status;
+};
+
+const isRemoteControlCommandEvent = (
+  value: unknown,
+): value is RemoteControlCommandEvent => {
+  return (
+    isRecord(value) &&
+    typeof value.commandId === "string" &&
+    REMOTE_CONTROL_COMMAND_KINDS.includes(
+      value.kind as RemoteControlCommandKind,
+    ) &&
+    (value.taskId === undefined || typeof value.taskId === "string") &&
+    (value.prompt === undefined || typeof value.prompt === "string") &&
+    (value.decision === undefined || typeof value.decision === "string") &&
+    (value.promptId === undefined || typeof value.promptId === "string") &&
+    typeof value.createdAt === "number" &&
+    Number.isFinite(value.createdAt)
+  );
+};
+
+const isSchedulerScheduleSummary = (
+  value: unknown,
+): value is SchedulerScheduleSummary => {
+  if (!isRecord(value) || typeof value.type !== "string") {
+    return false;
+  }
+
+  switch (value.type) {
+    case "cron":
+      return (
+        typeof value.expression === "string" &&
+        typeof value.timezone === "string"
+      );
+    case "interval":
+      return (
+        typeof value.intervalMs === "number" &&
+        Number.isFinite(value.intervalMs) &&
+        typeof value.anchorAt === "number" &&
+        Number.isFinite(value.anchorAt)
+      );
+    case "delay":
+      return typeof value.runAt === "number" && Number.isFinite(value.runAt);
+    default:
+      return false;
+  }
+};
+
+const isSchedulerRetrySummary = (
+  value: unknown,
+): value is SchedulerRetrySummary => {
+  return (
+    isRecord(value) &&
+    typeof value.maxAttempts === "number" &&
+    Number.isFinite(value.maxAttempts) &&
+    typeof value.factor === "number" &&
+    Number.isFinite(value.factor) &&
+    typeof value.minTimeoutMs === "number" &&
+    Number.isFinite(value.minTimeoutMs) &&
+    typeof value.maxTimeoutMs === "number" &&
+    Number.isFinite(value.maxTimeoutMs) &&
+    typeof value.randomize === "boolean"
+  );
+};
+
+const isSchedulerQueueSummary = (
+  value: unknown,
+): value is SchedulerQueueSummary => {
+  return (
+    isRecord(value) &&
+    typeof value.concurrencyKey === "string" &&
+    typeof value.concurrencyLimit === "number" &&
+    Number.isFinite(value.concurrencyLimit)
+  );
+};
+
+const normalizeSchedulerJobSummary = (
+  value: unknown,
+): SchedulerJobSummary | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    !SCHEDULER_JOB_STATUSES.includes(value.status as SchedulerJobStatus) ||
+    !isSchedulerScheduleSummary(value.schedule) ||
+    typeof value.workspaceRoot !== "string" ||
+    typeof value.prompt !== "string" ||
+    !isNullableNumberPayloadField(value.nextRunAt) ||
+    !isNullableNumberPayloadField(value.lastStartedAt) ||
+    !isNullableNumberPayloadField(value.lastFinishedAt) ||
+    !isSchedulerQueueSummary(value.queue) ||
+    !isSchedulerRetrySummary(value.retry) ||
+    !isNullableStringPayloadField(value.dedupeKey) ||
+    !isNullableNumberPayloadField(value.ttlMs) ||
+    !isNullableNumberPayloadField(value.maxDurationMs)
+  ) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    name: value.name,
+    status: value.status as SchedulerJobStatus,
+    schedule: value.schedule,
+    workspaceRoot: value.workspaceRoot,
+    prompt: value.prompt,
+    nextRunAt: normalizeNullableNumberField(value.nextRunAt),
+    lastStartedAt: normalizeNullableNumberField(value.lastStartedAt),
+    lastFinishedAt: normalizeNullableNumberField(value.lastFinishedAt),
+    queue: value.queue,
+    retry: value.retry,
+    dedupeKey: normalizeNullableStringField(value.dedupeKey),
+    ttlMs: normalizeNullableNumberField(value.ttlMs),
+    maxDurationMs: normalizeNullableNumberField(value.maxDurationMs),
+  };
+};
+
+const normalizeSchedulerRunSummary = (
+  value: unknown,
+): SchedulerRunSummary | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.jobId !== "string" ||
+    !SCHEDULER_RUN_SOURCES.includes(value.source as SchedulerRunSource) ||
+    !SCHEDULER_RUN_STATUSES.includes(value.status as SchedulerRunStatus) ||
+    typeof value.scheduledFor !== "number" ||
+    !Number.isFinite(value.scheduledFor) ||
+    typeof value.enqueuedAt !== "number" ||
+    !Number.isFinite(value.enqueuedAt) ||
+    typeof value.updatedAt !== "number" ||
+    !Number.isFinite(value.updatedAt) ||
+    typeof value.attempt !== "number" ||
+    !Number.isFinite(value.attempt) ||
+    typeof value.maxAttempts !== "number" ||
+    !Number.isFinite(value.maxAttempts) ||
+    typeof value.queueKey !== "string" ||
+    !isNullableNumberPayloadField(value.startedAt) ||
+    !isNullableNumberPayloadField(value.finishedAt) ||
+    !isNullableNumberPayloadField(value.nextAttemptAt) ||
+    !isNullableNumberPayloadField(value.expiresAt) ||
+    !isNullableStringPayloadField(value.error) ||
+    !isNullableStringPayloadField(value.summary)
+  ) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    jobId: value.jobId,
+    source: value.source as SchedulerRunSource,
+    status: value.status as SchedulerRunStatus,
+    scheduledFor: value.scheduledFor,
+    enqueuedAt: value.enqueuedAt,
+    updatedAt: value.updatedAt,
+    attempt: value.attempt,
+    maxAttempts: value.maxAttempts,
+    queueKey: value.queueKey,
+    startedAt: normalizeNullableNumberField(value.startedAt),
+    finishedAt: normalizeNullableNumberField(value.finishedAt),
+    nextAttemptAt: normalizeNullableNumberField(value.nextAttemptAt),
+    expiresAt: normalizeNullableNumberField(value.expiresAt),
+    error: normalizeNullableStringField(value.error),
+    summary: normalizeNullableStringField(value.summary),
+  };
+};
+
+const normalizeSchedulerRunHandle = (
+  value: unknown,
+): SchedulerRunHandle | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.jobId !== "string" ||
+    typeof value.runId !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    jobId: value.jobId,
+    runId: value.runId,
+  };
+};
+
+const normalizeSchedulerEnqueueSummary = (
+  value: unknown,
+): SchedulerEnqueueSummary | null => {
+  if (!isRecord(value) || typeof value.deduplicated !== "boolean") {
+    return null;
+  }
+
+  const handle = normalizeSchedulerRunHandle(value.handle);
+  const run = normalizeSchedulerRunSummary(value.run);
+
+  if (!handle || !run) {
+    return null;
+  }
+
+  return {
+    handle,
+    run,
+    deduplicated: value.deduplicated,
+  };
+};
+
+const normalizeSchedulerJobList = (
+  value: unknown,
+): SchedulerJobSummary[] | null => {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const jobs = value.map(normalizeSchedulerJobSummary);
+
+  return jobs.every((job): job is SchedulerJobSummary => Boolean(job))
+    ? jobs
+    : null;
+};
+
+const normalizeSchedulerRunList = (
+  value: unknown,
+): SchedulerRunSummary[] | null => {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const runs = value.map(normalizeSchedulerRunSummary);
+
+  return runs.every((run): run is SchedulerRunSummary => Boolean(run))
+    ? runs
+    : null;
+};
+
+const normalizeSchedulerListJobsResult = (
+  value: unknown,
+): SchedulerListJobsResult | null => {
+  if (!isRecord(value) || typeof value.workspaceRoot !== "string") {
+    return null;
+  }
+
+  const jobs = normalizeSchedulerJobList(value.jobs);
+
+  if (!jobs) {
+    return null;
+  }
+
+  return {
+    workspaceRoot: value.workspaceRoot,
+    jobs,
+  };
+};
+
+const normalizeSchedulerListRunsResult = (
+  value: unknown,
+): SchedulerListRunsResult | null => {
+  if (!isRecord(value) || typeof value.workspaceRoot !== "string") {
+    return null;
+  }
+
+  const runs = normalizeSchedulerRunList(value.runs);
+
+  if (!runs) {
+    return null;
+  }
+
+  return {
+    workspaceRoot: value.workspaceRoot,
+    runs,
+  };
+};
+
+const normalizeSchedulerJobActionResult = (
+  value: unknown,
+): SchedulerJobActionResult | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const job = normalizeSchedulerJobSummary(value.job);
+
+  return job ? { job } : null;
+};
+
+const normalizeSchedulerRunActionResult = (
+  value: unknown,
+): SchedulerRunActionResult | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const run = normalizeSchedulerRunSummary(value.run);
+
+  return run ? { run } : null;
+};
+
+const normalizeSchedulerRunDueResult = (
+  value: unknown,
+): SchedulerRunDueResult | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const queued = normalizeSchedulerRunList(value.queued);
+  const runs = normalizeSchedulerRunList(value.runs);
+
+  if (!queued || !runs) {
+    return null;
+  }
+
+  return {
+    queued,
+    runs,
+  };
+};
+
+const normalizeSchedulerTriggerResult = (
+  value: unknown,
+): SchedulerTriggerResult | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const queued = normalizeSchedulerEnqueueSummary(value.queued);
+  const runs = normalizeSchedulerRunList(value.runs);
+
+  if (!queued || !runs) {
+    return null;
+  }
+
+  return {
+    queued,
+    runs,
+  };
+};
+
+const normalizeSchedulerRetryResult = (
+  value: unknown,
+): SchedulerRetryResult | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const handle = normalizeSchedulerRunHandle(value.handle);
+  const runs = normalizeSchedulerRunList(value.runs);
+
+  if (!handle || !runs) {
+    return null;
+  }
+
+  return {
+    handle,
+    runs,
+  };
+};
+
+const normalizeSchedulerPromptDefinitionSummary = (
+  value: unknown,
+): SchedulerPromptDefinitionSummary | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.path !== "string" ||
+    typeof value.name !== "string" ||
+    typeof value.enabled !== "boolean" ||
+    !Array.isArray(value.warnings) ||
+    !value.warnings.every((warning) => typeof warning === "string")
+  ) {
+    return null;
+  }
+
+  return {
+    path: value.path,
+    name: value.name,
+    enabled: value.enabled,
+    warnings: value.warnings,
+  };
+};
+
+const normalizeSchedulerPromptSyncResult = (
+  value: unknown,
+): SchedulerPromptSyncResult | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.workspaceRoot !== "string" ||
+    !Array.isArray(value.discovered)
+  ) {
+    return null;
+  }
+
+  const discovered = value.discovered.map(
+    normalizeSchedulerPromptDefinitionSummary,
+  );
+  const syncedJobs = normalizeSchedulerJobList(value.syncedJobs);
+  const pausedJobs = normalizeSchedulerJobList(value.pausedJobs ?? []);
+
+  if (
+    !syncedJobs ||
+    !pausedJobs ||
+    !discovered.every(
+      (definition): definition is SchedulerPromptDefinitionSummary =>
+        Boolean(definition),
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    workspaceRoot: value.workspaceRoot,
+    discovered,
+    syncedJobs,
+    pausedJobs,
+  };
 };
 
 const createProviderAvailabilitySnapshot = (
@@ -1300,6 +2179,497 @@ export const loadWorkspaceRuntimeSnapshot = async (
 export const cancelDesktopTask = async (taskId: string): Promise<void> => {
   if (canInvokeTauriCommands()) {
     return await tauriCore.invoke("cancel_desktop_task", { taskId });
+  }
+};
+
+export const getRemoteControlStatus =
+  async (): Promise<RemoteControlStatus | null> => {
+    if (!canInvokeTauriCommands()) {
+      return {
+        enabled: false,
+        eventId: 0,
+        sessions: [],
+      };
+    }
+
+    const status = normalizeRemoteControlStatus(
+      await tauriCore.invoke<unknown>("get_remote_control_status"),
+    );
+
+    if (!status) {
+      throw new Error("The Mission Control status payload was invalid.");
+    }
+
+    return status;
+  };
+
+export const enableRemoteControlServer =
+  async (): Promise<RemoteControlStatus | null> => {
+    if (!canInvokeTauriCommands()) {
+      return {
+        enabled: false,
+        eventId: 0,
+        sessions: [],
+      };
+    }
+
+    const status = normalizeRemoteControlStatus(
+      await tauriCore.invoke<unknown>("enable_remote_control_server"),
+    );
+
+    if (!status) {
+      throw new Error("The Mission Control enable payload was invalid.");
+    }
+
+    return status;
+  };
+
+export const disableRemoteControlServer =
+  async (): Promise<RemoteControlStatus | null> => {
+    if (!canInvokeTauriCommands()) {
+      return {
+        enabled: false,
+        eventId: 0,
+        sessions: [],
+      };
+    }
+
+    const status = normalizeRemoteControlStatus(
+      await tauriCore.invoke<unknown>("disable_remote_control_server"),
+    );
+
+    if (!status) {
+      throw new Error("The Mission Control disable payload was invalid.");
+    }
+
+    return status;
+  };
+
+export const setRemoteControlPort = async (
+  port: number,
+): Promise<RemoteControlStatus | null> => {
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new Error("Mission Control port must be between 1024 and 65535.");
+  }
+
+  if (!canInvokeTauriCommands()) {
+    return {
+      enabled: false,
+      eventId: 0,
+      port,
+      sessions: [],
+    };
+  }
+
+  const status = normalizeRemoteControlStatus(
+    await tauriCore.invoke<unknown>("set_remote_control_port", { port }),
+  );
+
+  if (!status) {
+    throw new Error("The Mission Control port payload was invalid.");
+  }
+
+  return status;
+};
+
+export const forgetRemoteControlPairings =
+  async (): Promise<RemoteControlStatus | null> => {
+    if (!canInvokeTauriCommands()) {
+      return {
+        enabled: false,
+        eventId: 0,
+        pairedDeviceCount: 0,
+        sessions: [],
+      };
+    }
+
+    const status = normalizeRemoteControlStatus(
+      await tauriCore.invoke<unknown>("forget_remote_control_pairings"),
+    );
+
+    if (!status) {
+      throw new Error("The Mission Control pairing payload was invalid.");
+    }
+
+    return status;
+  };
+
+export const openRemoteControlUrl = async (
+  displayUrl?: string,
+): Promise<void> => {
+  if (canInvokeTauriCommands()) {
+    return await tauriCore.invoke("open_remote_control_url");
+  }
+
+  if (
+    displayUrl &&
+    typeof window !== "undefined" &&
+    typeof window.open === "function"
+  ) {
+    window.open(displayUrl, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  throw new Error("Mission Control could not be opened.");
+};
+
+const assertSchedulerDesktopAvailable = (): never => {
+  throw new Error("Scheduler management is only available in the desktop app.");
+};
+
+const normalizeSchedulerCommandWorkspace = (
+  workspaceRoot: string | null | undefined,
+): string => {
+  return normalizeWorkspaceRoot(workspaceRoot) ?? "";
+};
+
+const runSchedulerCommand = async <Result>(
+  workspaceRoot: string | null | undefined,
+  argumentsList: string[],
+  normalize: (value: unknown) => Result | null,
+  invalidPayloadMessage: string,
+  fallback: () => Result,
+): Promise<Result> => {
+  if (!canInvokeTauriCommands()) {
+    return fallback();
+  }
+
+  try {
+    const response = await tauriCore.invoke<unknown>("run_scheduler_command", {
+      request: {
+        workspaceRoot: normalizeSchedulerCommandWorkspace(workspaceRoot),
+        arguments: argumentsList,
+      },
+    });
+    const normalizedResponse = normalize(response);
+
+    if (!normalizedResponse) {
+      throw new Error(invalidPayloadMessage);
+    }
+
+    return normalizedResponse;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+const normalizeSchedulerCliString = (
+  value: string | null | undefined,
+): string | undefined => {
+  const normalizedValue = value?.trim();
+
+  return normalizedValue ? normalizedValue : undefined;
+};
+
+const normalizeSchedulerCliStringList = (
+  values: string[] | undefined,
+): string[] => {
+  return Array.from(
+    new Set(
+      (values ?? [])
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+    ),
+  );
+};
+
+const appendSchedulerOption = (
+  argumentsList: string[],
+  flag: string,
+  value: string | number | boolean | undefined,
+): void => {
+  if (value === undefined || value === "") {
+    return;
+  }
+
+  argumentsList.push(flag);
+  argumentsList.push(typeof value === "boolean" ? (value ? "on" : "off") : String(value));
+};
+
+const appendSchedulerRepeatedOption = (
+  argumentsList: string[],
+  flag: string,
+  values: string[] | undefined,
+): void => {
+  for (const value of normalizeSchedulerCliStringList(values)) {
+    argumentsList.push(flag);
+    argumentsList.push(value);
+  }
+};
+
+const serializeSchedulerContextPack = (
+  pack: SchedulerContextPackInput,
+): string => {
+  const name = normalizeSchedulerCliString(pack.name);
+
+  if (!name) {
+    throw new Error("Expected each scheduled context pack to include a name.");
+  }
+
+  const instructions = normalizeSchedulerCliString(pack.instructions);
+  const prompt = normalizeSchedulerCliString(pack.prompt);
+  const contextPaths = normalizeSchedulerCliStringList(pack.contextPaths);
+  const variableValues = pack.variableValues
+    ? Object.fromEntries(
+        Object.entries(pack.variableValues).filter(
+          (entry): entry is [string, string] =>
+            typeof entry[1] === "string" && entry[1].trim().length > 0,
+        ),
+      )
+    : undefined;
+
+  return JSON.stringify({
+    name,
+    ...(instructions ? { instructions } : {}),
+    ...(prompt ? { prompt } : {}),
+    ...(contextPaths.length > 0 ? { contextPaths } : {}),
+    ...(variableValues && Object.keys(variableValues).length > 0
+      ? { variableValues }
+      : {}),
+  });
+};
+
+const appendSchedulerCreateSchedule = (
+  argumentsList: string[],
+  schedule: SchedulerCreateScheduleInput,
+): void => {
+  switch (schedule.type) {
+    case "cron":
+      appendSchedulerOption(argumentsList, "--cron", schedule.expression);
+      appendSchedulerOption(
+        argumentsList,
+        "--timezone",
+        normalizeSchedulerCliString(schedule.timezone),
+      );
+      return;
+    case "interval":
+      appendSchedulerOption(argumentsList, "--interval-ms", schedule.intervalMs);
+      return;
+    case "delay":
+      appendSchedulerOption(argumentsList, "--delay-ms", schedule.delayMs);
+      appendSchedulerOption(argumentsList, "--run-at", schedule.runAt);
+      return;
+  }
+};
+
+const createSchedulerCreateArguments = (
+  input: SchedulerCreateJobInput,
+): string[] => {
+  const argumentsList = ["create"];
+  const prompt = normalizeSchedulerCliString(input.prompt);
+  const promptFile = normalizeSchedulerCliString(input.promptFile);
+
+  if (!prompt && !promptFile) {
+    throw new Error("Expected a prompt or prompt file before creating a scheduled job.");
+  }
+
+  appendSchedulerOption(argumentsList, "--name", normalizeSchedulerCliString(input.name));
+  appendSchedulerCreateSchedule(argumentsList, input.schedule);
+  appendSchedulerOption(argumentsList, "--prompt", prompt);
+  appendSchedulerOption(argumentsList, "--prompt-file", promptFile);
+  appendSchedulerRepeatedOption(argumentsList, "--context", input.contextPaths);
+  appendSchedulerRepeatedOption(argumentsList, "--image", input.imagePaths);
+  appendSchedulerRepeatedOption(
+    argumentsList,
+    "--context-pack",
+    input.contextPacks?.map(serializeSchedulerContextPack),
+  );
+  appendSchedulerRepeatedOption(argumentsList, "--macro", input.macros);
+  appendSchedulerOption(argumentsList, "--missed-run-policy", input.missedRunPolicy);
+  appendSchedulerOption(argumentsList, "--missed-run-grace-ms", input.missedRunGraceMs);
+  appendSchedulerOption(argumentsList, "--retry-attempts", input.retryAttempts);
+  appendSchedulerOption(argumentsList, "--retry-min-ms", input.retryMinMs);
+  appendSchedulerOption(argumentsList, "--retry-max-ms", input.retryMaxMs);
+  appendSchedulerOption(argumentsList, "--retry-factor", input.retryFactor);
+  appendSchedulerOption(argumentsList, "--retry-randomize", input.retryRandomize);
+  appendSchedulerOption(argumentsList, "--dedupe-key", normalizeSchedulerCliString(input.dedupeKey));
+  appendSchedulerOption(argumentsList, "--ttl-ms", input.ttlMs);
+  appendSchedulerOption(argumentsList, "--max-duration-ms", input.maxDurationMs);
+  appendSchedulerOption(
+    argumentsList,
+    "--concurrency-key",
+    normalizeSchedulerCliString(input.concurrencyKey),
+  );
+  appendSchedulerOption(argumentsList, "--concurrency-limit", input.concurrencyLimit);
+  appendSchedulerOption(argumentsList, "--history-limit", input.historyLimit);
+  appendSchedulerOption(argumentsList, "--max-catch-up-runs", input.maxCatchUpRuns);
+  appendSchedulerOption(argumentsList, "--mode", input.mode);
+  appendSchedulerOption(argumentsList, "--profile", normalizeSchedulerCliString(input.profile));
+  appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
+  appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
+
+  return argumentsList;
+};
+
+export const listSchedulerJobs = async (
+  workspaceRoot: string | null | undefined,
+): Promise<SchedulerListJobsResult> => {
+  return runSchedulerCommand(
+    workspaceRoot,
+    ["list"],
+    normalizeSchedulerListJobsResult,
+    "The scheduler jobs payload was invalid.",
+    () => ({
+      workspaceRoot: normalizeSchedulerCommandWorkspace(workspaceRoot),
+      jobs: [],
+    }),
+  );
+};
+
+export const createSchedulerJob = async (
+  workspaceRoot: string | null | undefined,
+  input: SchedulerCreateJobInput,
+): Promise<SchedulerJobActionResult> => {
+  return runSchedulerCommand(
+    workspaceRoot,
+    createSchedulerCreateArguments(input),
+    normalizeSchedulerJobActionResult,
+    "The scheduler create payload was invalid.",
+    assertSchedulerDesktopAvailable,
+  );
+};
+
+export const pauseSchedulerJob = async (
+  workspaceRoot: string | null | undefined,
+  jobId: string,
+): Promise<SchedulerJobActionResult> => {
+  return runSchedulerCommand(
+    workspaceRoot,
+    ["pause", jobId],
+    normalizeSchedulerJobActionResult,
+    "The scheduler pause payload was invalid.",
+    assertSchedulerDesktopAvailable,
+  );
+};
+
+export const resumeSchedulerJob = async (
+  workspaceRoot: string | null | undefined,
+  jobId: string,
+): Promise<SchedulerJobActionResult> => {
+  return runSchedulerCommand(
+    workspaceRoot,
+    ["resume", jobId],
+    normalizeSchedulerJobActionResult,
+    "The scheduler resume payload was invalid.",
+    assertSchedulerDesktopAvailable,
+  );
+};
+
+export const deleteSchedulerJob = async (
+  workspaceRoot: string | null | undefined,
+  jobId: string,
+): Promise<SchedulerJobActionResult> => {
+  return runSchedulerCommand(
+    workspaceRoot,
+    ["delete", jobId],
+    normalizeSchedulerJobActionResult,
+    "The scheduler delete payload was invalid.",
+    assertSchedulerDesktopAvailable,
+  );
+};
+
+export const listSchedulerRuns = async (
+  workspaceRoot: string | null | undefined,
+  jobId?: string | null,
+): Promise<SchedulerListRunsResult> => {
+  const normalizedJobId = normalizeSchedulerCliString(jobId);
+
+  return runSchedulerCommand(
+    workspaceRoot,
+    normalizedJobId ? ["runs", normalizedJobId] : ["runs"],
+    normalizeSchedulerListRunsResult,
+    "The scheduler runs payload was invalid.",
+    () => ({
+      workspaceRoot: normalizeSchedulerCommandWorkspace(workspaceRoot),
+      runs: [],
+    }),
+  );
+};
+
+export const runDueSchedulerJobs = async (
+  workspaceRoot: string | null | undefined,
+): Promise<SchedulerRunDueResult> => {
+  return runSchedulerCommand(
+    workspaceRoot,
+    ["run-due"],
+    normalizeSchedulerRunDueResult,
+    "The scheduler run-due payload was invalid.",
+    () => ({ queued: [], runs: [] }),
+  );
+};
+
+export const triggerSchedulerJob = async (
+  workspaceRoot: string | null | undefined,
+  jobId: string,
+): Promise<SchedulerTriggerResult> => {
+  return runSchedulerCommand(
+    workspaceRoot,
+    ["trigger", jobId],
+    normalizeSchedulerTriggerResult,
+    "The scheduler trigger payload was invalid.",
+    assertSchedulerDesktopAvailable,
+  );
+};
+
+export const retrySchedulerRun = async (
+  workspaceRoot: string | null | undefined,
+  runId: string,
+): Promise<SchedulerRetryResult> => {
+  return runSchedulerCommand(
+    workspaceRoot,
+    ["retry", runId],
+    normalizeSchedulerRetryResult,
+    "The scheduler retry payload was invalid.",
+    assertSchedulerDesktopAvailable,
+  );
+};
+
+export const cancelSchedulerRun = async (
+  workspaceRoot: string | null | undefined,
+  runId: string,
+): Promise<SchedulerRunActionResult> => {
+  return runSchedulerCommand(
+    workspaceRoot,
+    ["cancel", runId],
+    normalizeSchedulerRunActionResult,
+    "The scheduler cancel payload was invalid.",
+    assertSchedulerDesktopAvailable,
+  );
+};
+
+export const syncScheduledPrompts = async (
+  workspaceRoot: string | null | undefined,
+): Promise<SchedulerPromptSyncResult> => {
+  return runSchedulerCommand(
+    workspaceRoot,
+    ["sync-prompts"],
+    normalizeSchedulerPromptSyncResult,
+    "The scheduled prompt sync payload was invalid.",
+    () => ({
+      workspaceRoot: normalizeSchedulerCommandWorkspace(workspaceRoot),
+      discovered: [],
+      syncedJobs: [],
+      pausedJobs: [],
+    }),
+  );
+};
+
+export const subscribeToRemoteControlCommands = async (
+  onCommand: (event: RemoteControlCommandEvent) => void,
+): Promise<() => void> => {
+  if (!canListenToDesktopTaskProgress()) {
+    return () => {};
+  }
+
+  try {
+    return await listen<unknown>(REMOTE_CONTROL_COMMAND_EVENT, (event) => {
+      if (isRemoteControlCommandEvent(event.payload)) {
+        onCommand(event.payload);
+      }
+    });
+  } catch (error) {
+    console.error("Failed to subscribe to Mission Control commands", error);
+    return () => {};
   }
 };
 

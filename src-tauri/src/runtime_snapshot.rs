@@ -745,7 +745,7 @@ fn apply_process_env_overrides(values: &mut HashMap<String, String>) {
     }
 }
 
-fn get_user_config_directory() -> Result<PathBuf, String> {
+pub(crate) fn get_user_config_directory() -> Result<PathBuf, String> {
     if let Some(override_directory) =
         normalize_optional_string(env::var("MACHDOCH_USER_CONFIG_DIR").ok().as_deref())
     {

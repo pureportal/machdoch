@@ -7,7 +7,7 @@ export const RUNTIME_CONFIG_SCHEMA_VERSION = 1 as const;
 export const RUN_MODES = ["ask", "machdoch"] as const;
 export type RunMode = (typeof RUN_MODES)[number];
 
-export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "utilities"] as const;
+export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "scheduler", "utilities"] as const;
 export type ToolName = (typeof VALID_TOOLS)[number];
 
 export const VALID_MODEL_PROVIDERS = ["openai", "anthropic", "google"] as const;

@@ -1,6 +1,6 @@
 [package]
 name = "machdoch"
-version = "0.13.0"
+version = "0.14.0"
 description = "Local-first OS AI agent desktop shell"
 authors = ["machdoch contributors"]
 edition = "2021"
@@ -15,10 +15,13 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 base64 = "0.22"
 enigo = "0.6.1"
+getrandom = "0.3"
 image = { version = "0.25", default-features = false, features = ["png"] }
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2.7.0"

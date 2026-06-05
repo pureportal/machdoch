@@ -7,13 +7,14 @@ pub const RUNTIME_CONFIG_SCHEMA_ID: &str =
 pub const RUNTIME_CONFIG_SCHEMA_VERSION: u32 = 1;
 
 pub const RUN_MODES: [&str; 2] = ["ask", "machdoch"];
-pub const VALID_TOOLS: [&str; 7] = [
+pub const VALID_TOOLS: [&str; 8] = [
     "filesystem",
     "shell",
     "network",
     "browser",
     "git",
     "packages",
+    "scheduler",
     "utilities",
 ];
 pub const VALID_MODEL_PROVIDERS: [&str; 3] = ["openai", "anthropic", "google"];

@@ -91,6 +91,7 @@ import { useChatSessionSpeechInput } from "./use-chat-session-speech-input";
 import { useChatSessionShellState } from "./use-chat-session-shell-state";
 import { useChatSessionVoice } from "./use-chat-session-voice";
 import { useDesktopTaskProgress } from "./use-desktop-task-progress";
+import { useRemoteMissionControl } from "./use-remote-mission-control";
 import { useSessionComposerState } from "./use-session-composer-state";
 import { useSessionFileDrops } from "./use-session-file-drops";
 import { useSessionLifecycle } from "./use-session-lifecycle";
@@ -1547,6 +1548,15 @@ export const useChatSessionController = (
     applySessionMessageLimit,
     updateThinkingTrace,
   });
+  const remoteMissionControl = useRemoteMissionControl({
+    shellState: state.shellState,
+    activeSession: state.activeSession,
+    activeDesktopTasksRef,
+    submitTaskToSession: taskSubmission.submitTaskToSession,
+    onRetryTask: taskSubmission.handleRetryTask,
+    onContinueTask: taskSubmission.handleContinueTask,
+    onCancelSessionTask: requestTaskCancellation,
+  });
 
   const submitQuickVoiceCommand = useCallback(
     (
@@ -1721,6 +1731,7 @@ export const useChatSessionController = (
       onToggleMaximizeWindow: windowControls.onToggleMaximizeWindow,
       onCloseWindow: windowControls.onCloseWindow,
     },
+    missionControl: remoteMissionControl,
     openProviderSettings: () => settingsActions.openSettings("providers"),
     sidebar: {
       totalSessions: state.shellState.sessions.length,

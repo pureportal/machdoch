@@ -8,16 +8,27 @@ import {
 import {
   cancelDesktopTask,
   detectFullscreenWindowOnMonitor,
+  disableRemoteControlServer,
+  enableRemoteControlServer,
+  forgetRemoteControlPairings,
+  getRemoteControlStatus,
   loadActiveDesktopTaskIds,
   loadDesktopLaunchId,
   loadProviderModelCatalog,
+  openRemoteControlUrl,
+  setRemoteControlPort,
   loadUserReviewModelSettings,
   resolveDroppedPaths,
   runDesktopTask,
   saveClipboardImageAttachment,
   saveUserReviewModelSettings,
   saveUserSpeechToTextInputDevice,
+  subscribeToRemoteControlCommands,
 } from "./runtime";
+import {
+  desktopEventListeners,
+  listenMock,
+} from "./test/tauri-test-mocks";
 
 describe("desktop runtime fullscreen detection", () => {
   beforeEach(() => {
@@ -186,6 +197,110 @@ describe("desktop runtime fullscreen detection", () => {
     expect(invokeMock).toHaveBeenCalledWith("cancel_desktop_task", {
       taskId: "task-123",
     });
+  });
+
+  it("manages Mission Control through the Rust commands", async () => {
+    const status = {
+      enabled: true,
+      displayUrl: "http://127.0.0.1:4567/?token=secret",
+      eventId: 1,
+      pairedDeviceCount: 2,
+      port: 4567,
+      sessions: [],
+    };
+    invokeMock.mockResolvedValue(status);
+
+    await expect(getRemoteControlStatus()).resolves.toEqual(status);
+    expect(invokeMock).toHaveBeenCalledWith("get_remote_control_status");
+
+    await expect(enableRemoteControlServer()).resolves.toEqual(status);
+    expect(invokeMock).toHaveBeenCalledWith("enable_remote_control_server");
+
+    await expect(disableRemoteControlServer()).resolves.toEqual(status);
+    expect(invokeMock).toHaveBeenCalledWith("disable_remote_control_server");
+
+    await expect(setRemoteControlPort(49152)).resolves.toEqual(status);
+    expect(invokeMock).toHaveBeenCalledWith("set_remote_control_port", {
+      port: 49152,
+    });
+
+    await expect(forgetRemoteControlPairings()).resolves.toEqual(status);
+    expect(invokeMock).toHaveBeenCalledWith("forget_remote_control_pairings");
+  });
+
+  it("normalizes stopped Mission Control status payloads with null handoff fields", async () => {
+    invokeMock.mockResolvedValueOnce({
+      enabled: false,
+      localUrl: null,
+      lanUrl: null,
+      displayUrl: null,
+      qrSvg: null,
+      tokenHint: null,
+      startedAt: null,
+      bindAddress: null,
+      eventId: 2,
+      pairedDeviceCount: 0,
+      port: 4567,
+      sessions: [],
+    });
+
+    await expect(disableRemoteControlServer()).resolves.toEqual({
+      enabled: false,
+      eventId: 2,
+      pairedDeviceCount: 0,
+      port: 4567,
+      sessions: [],
+    });
+  });
+
+  it("opens Mission Control through the Rust command", async () => {
+    invokeMock.mockResolvedValueOnce(undefined);
+
+    await openRemoteControlUrl("http://127.0.0.1:4567/#token=secret");
+
+    expect(invokeMock).toHaveBeenCalledWith("open_remote_control_url");
+  });
+
+  it("filters Mission Control command events", async () => {
+    const commands: unknown[] = [];
+
+    const unsubscribe = await subscribeToRemoteControlCommands((event) => {
+      commands.push(event);
+    });
+
+    expect(listenMock).toHaveBeenCalledWith(
+      "remote-control-command",
+      expect.any(Function),
+    );
+
+    desktopEventListeners.get("remote-control-command")?.({
+      payload: {
+        commandId: "cmd-1",
+        kind: "follow-up",
+        taskId: "task-123",
+        prompt: "Inspect the failure",
+        createdAt: 123,
+      },
+    });
+    desktopEventListeners.get("remote-control-command")?.({
+      payload: {
+        commandId: "cmd-2",
+        kind: "unsupported",
+        createdAt: 124,
+      },
+    });
+
+    expect(commands).toEqual([
+      {
+        commandId: "cmd-1",
+        kind: "follow-up",
+        taskId: "task-123",
+        prompt: "Inspect the failure",
+        createdAt: 123,
+      },
+    ]);
+
+    unsubscribe();
   });
 
   it("saves the speech input device through the Rust command", async () => {

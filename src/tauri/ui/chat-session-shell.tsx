@@ -1,11 +1,13 @@
-import { Cog, TerminalSquare } from "lucide-react";
+import { CalendarClock, Cog, RadioTower, TerminalSquare } from "lucide-react";
 import { Suspense, lazy, useEffect, useState, type JSX } from "react";
 import { useAppearanceSettings } from "./chat-session/_helpers/use-appearance-settings";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
+import { MissionControlPanel } from "./chat-session/components/mission-control-panel";
 import { OnboardingWizard } from "./chat-session/components/onboarding-wizard";
 import { ProviderEmptyState } from "./chat-session/components/provider-empty-state";
+import { SchedulerPanel } from "./chat-session/components/scheduler-panel";
 import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
 import { SessionComposer } from "./chat-session/components/session-composer";
 import { SessionHeader } from "./chat-session/components/session-header";
@@ -20,6 +22,10 @@ import {
   loadOnboardingState,
   saveOnboardingState,
 } from "./lib/shell-store";
+import {
+  runDueSchedulerJobs,
+  syncScheduledPrompts,
+} from "./runtime";
 import {
   Tooltip,
   TooltipContent,
@@ -45,6 +51,7 @@ export const ChatSession = (): JSX.Element => {
   });
   const appearance = useAppearanceSettings();
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [schedulerOpen, setSchedulerOpen] = useState(false);
 
   useEffect(() => {
     if (isTestEnvironment()) {
@@ -65,6 +72,51 @@ export const ChatSession = (): JSX.Element => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (isTestEnvironment()) {
+      return;
+    }
+
+    const activeWorkspace = controller.composer.activeSession.workspace?.trim();
+
+    if (!activeWorkspace) {
+      return;
+    }
+
+    let stopped = false;
+    let running = false;
+
+    const tick = async (): Promise<void> => {
+      if (stopped || running) {
+        return;
+      }
+
+      running = true;
+
+      try {
+        await syncScheduledPrompts(activeWorkspace);
+        await runDueSchedulerJobs(activeWorkspace);
+      } catch (error) {
+        console.error("Smart Scheduler tick failed", error);
+      } finally {
+        running = false;
+      }
+    };
+
+    const initialTimer = window.setTimeout(() => {
+      void tick();
+    }, 5_000);
+    const intervalTimer = window.setInterval(() => {
+      void tick();
+    }, 60_000);
+
+    return () => {
+      stopped = true;
+      window.clearTimeout(initialTimer);
+      window.clearInterval(intervalTimer);
+    };
+  }, [controller.composer.activeSession.workspace]);
 
   const closeOnboarding = async (skipped: boolean): Promise<void> => {
     const timestamp = Date.now();
@@ -160,6 +212,38 @@ export const ChatSession = (): JSX.Element => {
                       type="button"
                       variant="ghost"
                       size="icon"
+                      aria-label="Smart Scheduler"
+                      onClick={() => setSchedulerOpen(true)}
+                      className="app-shell-rail-button h-12 w-12 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+                    >
+                      <CalendarClock className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Smart Scheduler</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Mission Control"
+                      onClick={() => controller.missionControl.setOpen(true)}
+                      className="app-shell-rail-button h-12 w-12 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+                    >
+                      <RadioTower className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Mission Control</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
                       aria-label="Settings"
                       onClick={controller.openProviderSettings}
                       className="app-shell-rail-button h-12 w-12 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
@@ -220,6 +304,28 @@ export const ChatSession = (): JSX.Element => {
             />
           </Suspense>
         ) : null}
+      </Dialog>
+
+      <Dialog
+        open={controller.missionControl.open}
+        onOpenChange={controller.missionControl.setOpen}
+      >
+        <MissionControlPanel
+          status={controller.missionControl.status}
+          loading={controller.missionControl.loading}
+          message={controller.missionControl.message}
+          onEnable={controller.missionControl.onEnable}
+          onDisable={controller.missionControl.onDisable}
+          onOpenUrl={controller.missionControl.onOpenUrl}
+          onSavePort={controller.missionControl.onSavePort}
+          onForgetPairings={controller.missionControl.onForgetPairings}
+        />
+      </Dialog>
+
+      <Dialog open={schedulerOpen} onOpenChange={setSchedulerOpen}>
+        <SchedulerPanel
+          workspaceRoot={controller.composer.activeSession.workspace}
+        />
       </Dialog>
     </TooltipProvider>
   );

@@ -376,6 +376,121 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("parses scheduler list as the default scheduler action", () => {
+    expect(
+      parseCliArgs(["--json", "--cwd", "C:/repo", "scheduler"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "scheduler",
+      scheduler: {
+        action: "list",
+      },
+      json: true,
+      verbose: false,
+      workspaceRoot: "C:/repo",
+    });
+  });
+
+  it("parses scheduler create controls for prompts, packs, queues, and retries", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--cwd",
+          "C:/repo",
+          "--mode",
+          "machdoch",
+          "--runtime-provider",
+          "openai",
+          "--model",
+          "gpt-5",
+          "--context",
+          "src",
+          "--image",
+          "mockup.png",
+          "scheduler",
+          "create",
+          "--name",
+          "Daily review",
+          "--cron",
+          "0 9 * * *",
+          "--timezone",
+          "Europe/Berlin",
+          "--prompt",
+          "/daily-review",
+          "--context-pack",
+          "{\"name\":\"release\"}",
+          "--macro",
+          "/triage --fast",
+          "--missed-run-policy",
+          "enqueue-all",
+          "--missed-run-grace-ms",
+          "60000",
+          "--retry-attempts",
+          "4",
+          "--retry-min-ms",
+          "1000",
+          "--retry-max-ms",
+          "90000",
+          "--retry-factor",
+          "1.5",
+          "--retry-randomize",
+          "off",
+          "--dedupe-key",
+          "daily-review",
+          "--ttl-ms",
+          "300000",
+          "--max-duration-ms",
+          "600000",
+          "--concurrency-key",
+          "workspace",
+          "--concurrency-limit",
+          "2",
+          "--history-limit",
+          "50",
+          "--max-catch-up-runs",
+          "10",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "scheduler",
+      mode: "machdoch",
+      runtimeProvider: "openai",
+      model: "gpt-5",
+      contextPaths: ["src"],
+      imagePaths: ["mockup.png"],
+      scheduler: {
+        action: "create",
+        name: "Daily review",
+        cron: "0 9 * * *",
+        timezone: "Europe/Berlin",
+        prompt: "/daily-review",
+        contextPacks: ["{\"name\":\"release\"}"],
+        macros: ["/triage --fast"],
+        missedRunPolicy: "enqueue-all",
+        missedRunGraceMs: 60000,
+        retryAttempts: 4,
+        retryMinMs: 1000,
+        retryMaxMs: 90000,
+        retryFactor: 1.5,
+        retryRandomize: false,
+        dedupeKey: "daily-review",
+        ttlMs: 300000,
+        maxDurationMs: 600000,
+        concurrencyKey: "workspace",
+        concurrencyLimit: 2,
+        historyLimit: 50,
+        maxCatchUpRuns: 10,
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/repo",
+    });
+  });
+
   it("enters interactive chat mode when runtime flags are provided without a task", () => {
     expect(
       parseCliArgs(["--model", "gpt-4.5"], {
@@ -556,6 +671,47 @@ describe("parseCliArgs", () => {
       ),
     ).toThrow(
       "`machdoch config set` cannot be combined with runtime override options.",
+    );
+
+    expect(() =>
+      parseCliArgs(["scheduler", "trigger"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("Expected an id after `machdoch scheduler trigger`.");
+
+    expect(() =>
+      parseCliArgs(
+        ["scheduler", "create", "--cron", "0 9 * * *", "--prompt", "review"],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).not.toThrow();
+
+    expect(() =>
+      parseCliArgs(["scheduler", "create", "--cron", "0 9 * * *"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("`machdoch scheduler create` expects --prompt or --prompt-file.");
+
+    expect(() =>
+      parseCliArgs(
+        [
+          "scheduler",
+          "create",
+          "--cron",
+          "0 9 * * *",
+          "--interval-ms",
+          "60000",
+          "--prompt",
+          "review",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toThrow(
+      "`machdoch scheduler create` expects exactly one of --cron, --interval-ms, or --delay-ms/--run-at.",
     );
   });
 

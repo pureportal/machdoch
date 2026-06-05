@@ -102,6 +102,13 @@ pub struct ClipboardImageAttachmentRequest {
     file_name: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchedulerCommandRequest {
+    workspace_root: String,
+    arguments: Vec<String>,
+}
+
 struct CliCommandOptions<'a> {
     workspace_root: &'a str,
     task: &'a str,
@@ -453,6 +460,9 @@ fn emit_progress_event(
     let Some(task_id) = task_id else {
         return;
     };
+    let timestamp = create_progress_timestamp();
+
+    crate::remote_control::record_task_progress(app_handle, task_id, &progress, timestamp);
 
     let _ = app_handle.emit_to(
         window_label,
@@ -460,7 +470,7 @@ fn emit_progress_event(
         DesktopTaskProgressEvent {
             task_id: task_id.to_string(),
             progress,
-            timestamp: create_progress_timestamp(),
+            timestamp,
         },
     );
 }
@@ -484,6 +494,20 @@ fn remember_pending_cancel(cancel_state: &mut DesktopTaskCancelState, task_id: &
     }
 
     cancel_state.pending.insert(task_id.to_string());
+}
+
+pub fn request_desktop_task_cancel(state: &DesktopTaskCancelMap, task_id: &str) {
+    let Some(task_id) = normalize_task_id(Some(task_id)) else {
+        return;
+    };
+
+    if let Ok(mut cancel_state) = state.0.lock() {
+        if let Some(cancel_flag) = cancel_state.active.get(task_id.as_str()) {
+            cancel_flag.store(true, Ordering::SeqCst);
+        } else {
+            remember_pending_cancel(&mut cancel_state, task_id.as_str());
+        }
+    }
 }
 
 fn emit_progress_from_stderr_line(
@@ -611,6 +635,56 @@ fn parse_desktop_task_response(stdout: &str) -> Result<DesktopTaskRunResponse, S
     serde_json::from_str::<DesktopTaskRunResponse>(trimmed_stdout).map_err(|error| {
         format!("Failed to parse the shared CLI JSON response: {error}. Output: {trimmed_stdout}")
     })
+}
+
+fn parse_scheduler_command_response(stdout: &str) -> Result<Value, String> {
+    let trimmed_stdout = stdout.trim();
+
+    serde_json::from_str::<Value>(trimmed_stdout).map_err(|error| {
+        format!(
+            "Failed to parse the scheduler CLI JSON response: {error}. Output: {trimmed_stdout}"
+        )
+    })
+}
+
+fn execute_scheduler_command(request: SchedulerCommandRequest) -> Result<Value, String> {
+    let workspace_path = resolve_workspace_root_path(&request.workspace_root)?;
+    let normalized_workspace_root = workspace_path.display().to_string();
+    let mut cli_args = vec![
+        "--json".to_string(),
+        "--cwd".to_string(),
+        normalized_workspace_root,
+        "scheduler".to_string(),
+    ];
+
+    for argument in request.arguments {
+        let normalized = argument.trim();
+
+        if !normalized.is_empty() {
+            cli_args.push(normalized.to_string());
+        }
+    }
+
+    let output = crate::shared_cli::create_shared_cli_command(&cli_args)?
+        .command
+        .output()
+        .map_err(|error| {
+            format!(
+                "Failed to launch the scheduler CLI. {} {error}",
+                crate::shared_cli::cli_runtime_error_hint()
+            )
+        })?;
+    let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if !output.status.success() {
+        return Err(format!(
+            "The scheduler CLI command failed. {}",
+            format_command_failure(&stderr_text, &stdout_text)
+        ));
+    }
+
+    parse_scheduler_command_response(&stdout_text)
 }
 
 fn execute_desktop_task(
@@ -942,17 +1016,7 @@ pub async fn cancel_desktop_task(
     state: tauri::State<'_, DesktopTaskCancelMap>,
     task_id: String,
 ) -> Result<(), String> {
-    let Some(task_id) = normalize_task_id(Some(&task_id)) else {
-        return Ok(());
-    };
-
-    if let Ok(mut cancel_state) = state.0.lock() {
-        if let Some(cancel_flag) = cancel_state.active.get(task_id.as_str()) {
-            cancel_flag.store(true, Ordering::SeqCst);
-        } else {
-            remember_pending_cancel(&mut cancel_state, task_id.as_str());
-        }
-    }
+    request_desktop_task_cancel(&state, &task_id);
     Ok(())
 }
 
@@ -1046,6 +1110,13 @@ pub async fn save_clipboard_image_attachment(
     tauri::async_runtime::spawn_blocking(move || save_clipboard_image_attachment_sync(request))
         .await
         .map_err(|error| format!("The clipboard image saver stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn run_scheduler_command(request: SchedulerCommandRequest) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || execute_scheduler_command(request))
+        .await
+        .map_err(|error| format!("The scheduler command bridge stopped unexpectedly. {error}"))?
 }
 
 #[cfg(test)]

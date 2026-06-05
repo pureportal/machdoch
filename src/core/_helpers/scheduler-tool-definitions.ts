@@ -1,0 +1,1153 @@
+import {
+  DurableSmartScheduler,
+  getWorkspaceSchedulerStatePath,
+  type CreateScheduledJobInput,
+  type ScheduledContextPackSnapshot,
+  type ScheduledJob,
+  type ScheduledJobRun,
+  type ScheduledJobSchedule,
+  type ScheduledJobScheduleInput,
+  type ScheduledJobStatus,
+  type ScheduledMacroReference,
+  type ScheduledMissedRunPolicy,
+  type ScheduledRetryPolicy,
+  type UpdateScheduledJobInput,
+} from "../scheduler.js";
+import type { ModelProvider, RunMode } from "../types.js";
+import {
+  coerceInteger,
+  coerceString,
+  createToolErrorResult,
+  type AgentToolDefinition,
+  type AgentToolExecutionResult,
+} from "./agent-tools-shared.js";
+import { limitText } from "./runtime-text.js";
+
+const MAX_SCHEDULER_JOBS = 100;
+const MAX_SCHEDULER_RUNS = 100;
+const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+const SCHEDULE_TYPES = ["cron", "interval", "delay"] as const;
+const JOB_STATUSES = ["active", "paused", "completed", "deleted"] as const;
+const RUN_STATUSES = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "timed_out",
+  "expired",
+  "skipped",
+] as const;
+const MISSED_RUN_POLICIES = [
+  "skip",
+  "enqueue-latest",
+  "enqueue-all",
+] as const;
+const RUN_MODES = ["ask", "machdoch"] as const;
+const MODEL_PROVIDERS = ["openai", "anthropic", "google"] as const;
+
+const scheduleInputSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    type: {
+      type: "string",
+      enum: SCHEDULE_TYPES,
+      description:
+        "Use cron for recurring calendar schedules, interval for fixed millisecond cadence, or delay for one-shot runs.",
+    },
+    expression: {
+      type: "string",
+      description:
+        "Five-field cron expression. Convert phrases like 'every Monday' yourself, for example Monday 09:00 is '0 9 * * 1'.",
+    },
+    timezone: {
+      type: "string",
+      description:
+        "IANA timezone for cron schedules. Prefer the user's local timezone when the request implies local time.",
+    },
+    intervalMs: {
+      type: "integer",
+      minimum: 1,
+      description: "Fixed interval in milliseconds.",
+    },
+    delayMs: {
+      type: "integer",
+      minimum: 1,
+      description: "One-shot delay in milliseconds from now.",
+    },
+    runAtEpochMs: {
+      type: "integer",
+      minimum: 1,
+      description: "One-shot absolute run time as Unix epoch milliseconds.",
+    },
+  },
+  required: ["type"],
+} as const;
+
+const schedulerPolicySchema = {
+  missedRunPolicy: {
+    type: "string",
+    enum: MISSED_RUN_POLICIES,
+    description:
+      "How to handle runs missed while the app was offline. Use enqueue-latest unless the user asks to catch up every missed run.",
+  },
+  missedRunGraceMs: {
+    type: "integer",
+    minimum: 1,
+    description: "Grace window for missed-run handling in milliseconds.",
+  },
+  retryAttempts: {
+    type: "integer",
+    minimum: 1,
+    description: "Maximum attempts for each scheduled run.",
+  },
+  retryMinMs: {
+    type: "integer",
+    minimum: 1,
+    description: "Initial retry backoff in milliseconds.",
+  },
+  retryMaxMs: {
+    type: "integer",
+    minimum: 1,
+    description: "Maximum retry backoff in milliseconds.",
+  },
+  retryFactor: {
+    type: "number",
+    minimum: 1,
+    description: "Retry backoff multiplier.",
+  },
+  retryRandomize: {
+    type: "boolean",
+    description: "Whether retry backoff should include jitter.",
+  },
+  dedupeKey: {
+    type: "string",
+    description:
+      "Stable identifier for this schedule. Use a durable slug when creating a user-facing recurring automation.",
+  },
+  ttlMs: {
+    type: "integer",
+    minimum: 1,
+    description: "Expire queued runs that do not start within this duration.",
+  },
+  maxDurationMs: {
+    type: "integer",
+    minimum: 1,
+    description: "Abort an executing scheduled run after this duration.",
+  },
+  concurrencyKey: {
+    type: "string",
+    description:
+      "Queue key shared by jobs that should be concurrency-limited together.",
+  },
+  concurrencyLimit: {
+    type: "integer",
+    minimum: 1,
+    description: "Maximum concurrently running jobs for the queue key.",
+  },
+  historyLimit: {
+    type: "integer",
+    minimum: 1,
+    description: "Number of historical runs to retain for this job.",
+  },
+  maxCatchUpRuns: {
+    type: "integer",
+    minimum: 1,
+    description: "Maximum missed runs to consider when catching up.",
+  },
+} as const;
+
+const schedulerTargetSchema = {
+  prompt: {
+    type: "string",
+    description:
+      "The enriched scheduled task prompt. Do not store the user's vague wording verbatim. Write a clear, durable instruction set with objective, workspace/platform assumptions, safety constraints, and verification expectations.",
+  },
+  contextPaths: {
+    type: "array",
+    items: { type: "string" },
+    description: "Workspace-relative files or folders to attach as context.",
+  },
+  imagePaths: {
+    type: "array",
+    items: { type: "string" },
+    description: "Workspace-relative image paths to attach.",
+  },
+  contextPacks: {
+    type: "array",
+    items: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        name: { type: "string" },
+        instructions: { type: "string" },
+        prompt: { type: "string" },
+        contextPaths: {
+          type: "array",
+          items: { type: "string" },
+        },
+        variableValues: {
+          type: "object",
+          additionalProperties: { type: "string" },
+        },
+      },
+      required: ["name"],
+    },
+    description: "Optional snapshots of saved context packs for this job.",
+  },
+  macroInvocations: {
+    type: "array",
+    items: { type: "string" },
+    description:
+      "Saved macro names or prompt invocations such as '/triage --scope backend'.",
+  },
+  mode: {
+    type: "string",
+    enum: RUN_MODES,
+    description: "Optional runtime mode override for scheduled executions.",
+  },
+  profile: {
+    type: "string",
+    description: "Optional runtime profile override.",
+  },
+  provider: {
+    type: "string",
+    enum: MODEL_PROVIDERS,
+    description: "Optional model provider override.",
+  },
+  model: {
+    type: "string",
+    description: "Optional model override.",
+  },
+} as const;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const coerceStringArray = (
+  record: Record<string, unknown>,
+  field: string,
+): string[] | undefined => {
+  const value = record[field];
+
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return Array.from(
+    new Set(
+      value.flatMap((entry) =>
+        typeof entry === "string" && entry.trim().length > 0
+          ? [entry.trim()]
+          : [],
+      ),
+    ),
+  );
+};
+
+const coercePositiveInteger = (
+  record: Record<string, unknown>,
+  field: string,
+): number | undefined => {
+  const value = coerceInteger(record, field);
+
+  return value !== undefined && value > 0 ? value : undefined;
+};
+
+const coercePositiveNumber = (
+  record: Record<string, unknown>,
+  field: string,
+): number | undefined => {
+  const value = record[field];
+
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
+};
+
+const normalizeEnum = <T extends string>(
+  value: string | undefined,
+  allowedValues: readonly T[],
+): T | undefined => {
+  return allowedValues.includes(value as T) ? (value as T) : undefined;
+};
+
+const createScheduler = (workspaceRoot: string): DurableSmartScheduler => {
+  return new DurableSmartScheduler({
+    statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+  });
+};
+
+const parseScheduleInput = (
+  value: unknown,
+): ScheduledJobScheduleInput | string | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!isRecord(value)) {
+    return "Expected `schedule` to be an object.";
+  }
+
+  const type = normalizeEnum(coerceString(value, "type"), SCHEDULE_TYPES);
+
+  if (!type) {
+    return "Expected `schedule.type` to be cron, interval, or delay.";
+  }
+
+  switch (type) {
+    case "cron": {
+      const expression = coerceString(value, "expression");
+      const timezone = coerceString(value, "timezone") ?? DEFAULT_TIMEZONE;
+
+      if (!expression) {
+        return "Expected cron schedules to include `schedule.expression`.";
+      }
+
+      return {
+        type: "cron",
+        expression,
+        timezone,
+      };
+    }
+    case "interval": {
+      const intervalMs = coercePositiveInteger(value, "intervalMs");
+
+      if (intervalMs === undefined) {
+        return "Expected interval schedules to include positive `schedule.intervalMs`.";
+      }
+
+      return {
+        type: "interval",
+        intervalMs,
+      };
+    }
+    case "delay": {
+      const delayMs = coercePositiveInteger(value, "delayMs");
+      const runAt = coercePositiveInteger(value, "runAtEpochMs");
+
+      if (delayMs === undefined && runAt === undefined) {
+        return "Expected delay schedules to include `schedule.delayMs` or `schedule.runAtEpochMs`.";
+      }
+
+      return {
+        type: "delay",
+        ...(delayMs !== undefined ? { delayMs } : {}),
+        ...(runAt !== undefined ? { runAt } : {}),
+      };
+    }
+  }
+};
+
+const parseContextPacks = (
+  record: Record<string, unknown>,
+): ScheduledContextPackSnapshot[] | undefined => {
+  const value = record.contextPacks;
+
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value.flatMap((entry) => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+
+    const name = coerceString(entry, "name");
+
+    if (!name) {
+      return [];
+    }
+
+    const instructions = coerceString(entry, "instructions");
+    const prompt = coerceString(entry, "prompt");
+    const variableValues = isRecord(entry.variableValues)
+      ? Object.fromEntries(
+          Object.entries(entry.variableValues).filter(
+            (candidate): candidate is [string, string] =>
+              typeof candidate[1] === "string",
+          ),
+        )
+      : undefined;
+    const contextPaths = coerceStringArray(entry, "contextPaths");
+
+    return [
+      {
+        name,
+        ...(instructions ? { instructions } : {}),
+        ...(prompt ? { prompt } : {}),
+        ...(contextPaths ? { contextPaths } : {}),
+        ...(variableValues && Object.keys(variableValues).length > 0
+          ? { variableValues }
+          : {}),
+      },
+    ];
+  });
+};
+
+const parseMacroReferences = (
+  values: string[] | undefined,
+): ScheduledMacroReference[] | undefined => {
+  if (!values) {
+    return undefined;
+  }
+
+  return values.map((value) => {
+    if (value.startsWith("/")) {
+      return {
+        name: value.slice(1).split(/\s+/u)[0] ?? "macro",
+        promptInvocation: value,
+      };
+    }
+
+    return {
+      name: value,
+    };
+  });
+};
+
+const parseRetryPolicy = (
+  record: Record<string, unknown>,
+): Partial<ScheduledRetryPolicy> | undefined => {
+  const retry: Partial<ScheduledRetryPolicy> = {};
+  const maxAttempts = coercePositiveInteger(record, "retryAttempts");
+  const minTimeoutMs = coercePositiveInteger(record, "retryMinMs");
+  const maxTimeoutMs = coercePositiveInteger(record, "retryMaxMs");
+  const factor = coercePositiveNumber(record, "retryFactor");
+
+  if (maxAttempts !== undefined) {
+    retry.maxAttempts = maxAttempts;
+  }
+
+  if (minTimeoutMs !== undefined) {
+    retry.minTimeoutMs = minTimeoutMs;
+  }
+
+  if (maxTimeoutMs !== undefined) {
+    retry.maxTimeoutMs = maxTimeoutMs;
+  }
+
+  if (factor !== undefined) {
+    retry.factor = factor;
+  }
+
+  if (typeof record.retryRandomize === "boolean") {
+    retry.randomize = record.retryRandomize;
+  }
+
+  return Object.keys(retry).length > 0 ? retry : undefined;
+};
+
+const parseQueuePolicy = (
+  record: Record<string, unknown>,
+):
+  | NonNullable<CreateScheduledJobInput["queue"]>
+  | NonNullable<UpdateScheduledJobInput["queue"]>
+  | undefined => {
+  const queue: NonNullable<CreateScheduledJobInput["queue"]> = {};
+  const concurrencyKey = coerceString(record, "concurrencyKey");
+  const concurrencyLimit = coercePositiveInteger(record, "concurrencyLimit");
+
+  if (concurrencyKey) {
+    queue.concurrencyKey = concurrencyKey;
+  }
+
+  if (concurrencyLimit !== undefined) {
+    queue.concurrencyLimit = concurrencyLimit;
+  }
+
+  return Object.keys(queue).length > 0 ? queue : undefined;
+};
+
+const parseMissedRunPolicy = (
+  record: Record<string, unknown>,
+): ScheduledMissedRunPolicy | undefined => {
+  return normalizeEnum(coerceString(record, "missedRunPolicy"), MISSED_RUN_POLICIES);
+};
+
+const parseRunMode = (record: Record<string, unknown>): RunMode | undefined => {
+  return normalizeEnum(coerceString(record, "mode"), RUN_MODES);
+};
+
+const parseProvider = (
+  record: Record<string, unknown>,
+): Exclude<ModelProvider, "unconfigured"> | undefined => {
+  return normalizeEnum(coerceString(record, "provider"), MODEL_PROVIDERS);
+};
+
+const createTargetInput = (
+  record: Record<string, unknown>,
+  workspaceRoot: string,
+  options: { requirePrompt: boolean },
+): CreateScheduledJobInput["target"] | string => {
+  const prompt = coerceString(record, "prompt");
+
+  if (options.requirePrompt && !prompt) {
+    return "Expected `prompt` to be an enriched scheduled task prompt.";
+  }
+
+  const contextPaths = coerceStringArray(record, "contextPaths");
+  const imagePaths = coerceStringArray(record, "imagePaths");
+  const contextPacks = parseContextPacks(record);
+  const macros = parseMacroReferences(
+    coerceStringArray(record, "macroInvocations"),
+  );
+  const mode = parseRunMode(record);
+  const provider = parseProvider(record);
+  const profile = coerceString(record, "profile");
+  const model = coerceString(record, "model");
+
+  return {
+    workspaceRoot,
+    prompt: prompt ?? "",
+    contextPaths: contextPaths ?? [],
+    imagePaths: imagePaths ?? [],
+    contextPacks: contextPacks ?? [],
+    macros: macros ?? [],
+    ...(mode ? { mode } : {}),
+    ...(profile ? { profile } : {}),
+    ...(provider ? { provider } : {}),
+    ...(model ? { model } : {}),
+  };
+};
+
+const createUpdateTargetInput = (
+  record: Record<string, unknown>,
+): UpdateScheduledJobInput["target"] | undefined => {
+  const target: UpdateScheduledJobInput["target"] = {};
+  const prompt = coerceString(record, "prompt");
+  const contextPaths = coerceStringArray(record, "contextPaths");
+  const imagePaths = coerceStringArray(record, "imagePaths");
+  const contextPacks = parseContextPacks(record);
+  const macros = parseMacroReferences(
+    coerceStringArray(record, "macroInvocations"),
+  );
+  const mode = parseRunMode(record);
+  const provider = parseProvider(record);
+  const profile = coerceString(record, "profile");
+  const model = coerceString(record, "model");
+
+  if (prompt !== undefined) {
+    target.prompt = prompt;
+  }
+
+  if (contextPaths !== undefined) {
+    target.contextPaths = contextPaths;
+  }
+
+  if (imagePaths !== undefined) {
+    target.imagePaths = imagePaths;
+  }
+
+  if (contextPacks !== undefined) {
+    target.contextPacks = contextPacks;
+  }
+
+  if (macros !== undefined) {
+    target.macros = macros;
+  }
+
+  if (mode !== undefined) {
+    target.mode = mode;
+  }
+
+  if (provider !== undefined) {
+    target.provider = provider;
+  }
+
+  if (profile !== undefined) {
+    target.profile = profile;
+  }
+
+  if (model !== undefined) {
+    target.model = model;
+  }
+
+  return Object.keys(target).length > 0 ? target : undefined;
+};
+
+const createJobInput = (
+  args: Record<string, unknown>,
+  workspaceRoot: string,
+): CreateScheduledJobInput | string => {
+  const schedule = parseScheduleInput(args.schedule);
+
+  if (!schedule || typeof schedule === "string") {
+    return schedule || "Expected `schedule` before creating a scheduled job.";
+  }
+
+  const target = createTargetInput(args, workspaceRoot, {
+    requirePrompt: true,
+  });
+
+  if (typeof target === "string") {
+    return target;
+  }
+
+  const missedRunPolicy = parseMissedRunPolicy(args);
+  const retry = parseRetryPolicy(args);
+  const queue = parseQueuePolicy(args);
+  const name = coerceString(args, "name");
+  const missedRunGraceMs = coercePositiveInteger(args, "missedRunGraceMs");
+  const historyLimit = coercePositiveInteger(args, "historyLimit");
+  const maxCatchUpRuns = coercePositiveInteger(args, "maxCatchUpRuns");
+  const dedupeKey = coerceString(args, "dedupeKey");
+  const ttlMs = coercePositiveInteger(args, "ttlMs");
+  const maxDurationMs = coercePositiveInteger(args, "maxDurationMs");
+
+  return {
+    ...(name ? { name } : {}),
+    schedule,
+    target,
+    ...(missedRunPolicy ? { missedRunPolicy } : {}),
+    ...(missedRunGraceMs !== undefined ? { missedRunGraceMs } : {}),
+    ...(retry ? { retry } : {}),
+    ...(queue ? { queue } : {}),
+    ...(historyLimit !== undefined ? { historyLimit } : {}),
+    ...(maxCatchUpRuns !== undefined ? { maxCatchUpRuns } : {}),
+    ...(dedupeKey ? { dedupeKey } : {}),
+    ...(ttlMs !== undefined ? { ttlMs } : {}),
+    ...(maxDurationMs !== undefined ? { maxDurationMs } : {}),
+  };
+};
+
+const createUpdateInput = (
+  args: Record<string, unknown>,
+): UpdateScheduledJobInput | string => {
+  const schedule = parseScheduleInput(args.schedule);
+
+  if (typeof schedule === "string") {
+    return schedule;
+  }
+
+  const target = createUpdateTargetInput(args);
+  const missedRunPolicy = parseMissedRunPolicy(args);
+  const retry = parseRetryPolicy(args);
+  const queue = parseQueuePolicy(args);
+  const name = coerceString(args, "name");
+  const missedRunGraceMs = coercePositiveInteger(args, "missedRunGraceMs");
+  const historyLimit = coercePositiveInteger(args, "historyLimit");
+  const maxCatchUpRuns = coercePositiveInteger(args, "maxCatchUpRuns");
+  const dedupeKey = coerceString(args, "dedupeKey");
+  const ttlMs = coercePositiveInteger(args, "ttlMs");
+  const maxDurationMs = coercePositiveInteger(args, "maxDurationMs");
+  const input: UpdateScheduledJobInput = {
+    ...(name ? { name } : {}),
+    ...(schedule ? { schedule } : {}),
+    ...(target ? { target } : {}),
+    ...(missedRunPolicy ? { missedRunPolicy } : {}),
+    ...(missedRunGraceMs !== undefined ? { missedRunGraceMs } : {}),
+    ...(retry ? { retry } : {}),
+    ...(queue ? { queue } : {}),
+    ...(historyLimit !== undefined ? { historyLimit } : {}),
+    ...(maxCatchUpRuns !== undefined ? { maxCatchUpRuns } : {}),
+    ...(dedupeKey ? { dedupeKey } : {}),
+    ...(ttlMs !== undefined ? { ttlMs } : {}),
+    ...(maxDurationMs !== undefined ? { maxDurationMs } : {}),
+  };
+
+  if (Object.keys(input).length === 0) {
+    return "Expected at least one field to update.";
+  }
+
+  return input;
+};
+
+const formatTimestamp = (timestamp: number | undefined): string => {
+  return timestamp ? new Date(timestamp).toISOString() : "none";
+};
+
+const formatSchedule = (schedule: ScheduledJobSchedule): string => {
+  switch (schedule.type) {
+    case "cron":
+      return `cron ${schedule.expression} (${schedule.timezone})`;
+    case "interval":
+      return `interval ${schedule.intervalMs}ms`;
+    case "delay":
+      return `delay until ${formatTimestamp(schedule.runAt)}`;
+  }
+};
+
+const summarizeJob = (job: ScheduledJob): Record<string, unknown> => ({
+  id: job.id,
+  name: job.name,
+  status: job.status,
+  schedule: job.schedule,
+  scheduleLabel: formatSchedule(job.schedule),
+  nextRunAt: job.nextRunAt ?? null,
+  prompt: job.target.prompt,
+  contextPaths: job.target.contextPaths,
+  imagePaths: job.target.imagePaths,
+  contextPacks: job.target.contextPacks,
+  macros: job.target.macros,
+  missedRunPolicy: job.missedRunPolicy,
+  retry: job.retry,
+  queue: job.queue,
+  dedupeKey: job.dedupeKey ?? null,
+  ttlMs: job.ttlMs ?? null,
+  maxDurationMs: job.maxDurationMs ?? null,
+  lastStartedAt: job.lastStartedAt ?? null,
+  lastFinishedAt: job.lastFinishedAt ?? null,
+});
+
+const summarizeRun = (run: ScheduledJobRun): Record<string, unknown> => ({
+  id: run.id,
+  jobId: run.jobId,
+  source: run.source,
+  status: run.status,
+  scheduledFor: run.scheduledFor,
+  enqueuedAt: run.enqueuedAt,
+  updatedAt: run.updatedAt,
+  attempt: run.attempt,
+  maxAttempts: run.maxAttempts,
+  queueKey: run.queueKey,
+  expiresAt: run.expiresAt ?? null,
+  nextAttemptAt: run.nextAttemptAt ?? null,
+  startedAt: run.startedAt ?? null,
+  finishedAt: run.finishedAt ?? null,
+  error: run.error ?? null,
+  summary: run.result?.summary ?? null,
+});
+
+const createSchedulerResult = (
+  toolName: string,
+  value: unknown,
+  sections: AgentToolExecutionResult["sections"],
+  trace: string,
+): AgentToolExecutionResult => {
+  return {
+    toolResult: {
+      callId: crypto.randomUUID(),
+      name: toolName,
+      output: JSON.stringify(value, null, 2),
+    },
+    sections,
+    traceLines: [trace],
+  };
+};
+
+const createJobSections = (
+  title: string,
+  job: ScheduledJob,
+): AgentToolExecutionResult["sections"] => {
+  return [
+    {
+      title,
+      lines: [
+        `id: ${job.id}`,
+        `name: ${job.name}`,
+        `status: ${job.status}`,
+        `schedule: ${formatSchedule(job.schedule)}`,
+        `next run: ${formatTimestamp(job.nextRunAt)}`,
+      ],
+    },
+    {
+      title: "Scheduled Prompt",
+      lines: [limitText(job.target.prompt, 1_000)],
+    },
+  ];
+};
+
+const normalizeJobStatus = (
+  value: string | undefined,
+): ScheduledJobStatus | "all" | undefined => {
+  if (value === "all") {
+    return "all";
+  }
+
+  return normalizeEnum(value, JOB_STATUSES);
+};
+
+const filterJobs = (
+  jobs: ScheduledJob[],
+  args: Record<string, unknown>,
+): ScheduledJob[] => {
+  const status = normalizeJobStatus(coerceString(args, "status"));
+  const query = coerceString(args, "query")?.toLowerCase();
+  const queryTokens = query
+    ?.split(/\s+/u)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+  const maxJobs = Math.min(
+    MAX_SCHEDULER_JOBS,
+    coercePositiveInteger(args, "maxJobs") ?? 25,
+  );
+
+  return jobs
+    .filter((job) => {
+      if (status && status !== "all" && job.status !== status) {
+        return false;
+      }
+
+      if (!queryTokens || queryTokens.length === 0) {
+        return true;
+      }
+
+      const haystack = [
+        job.id,
+        job.name,
+        job.dedupeKey,
+        job.target.prompt,
+        formatSchedule(job.schedule),
+      ]
+        .filter((part): part is string => typeof part === "string")
+        .join(" ")
+        .toLowerCase();
+
+      return queryTokens.some((token) => haystack.includes(token));
+    })
+    .slice(0, maxJobs);
+};
+
+const filterRuns = (
+  runs: ScheduledJobRun[],
+  args: Record<string, unknown>,
+): ScheduledJobRun[] => {
+  const status = normalizeEnum(coerceString(args, "status"), RUN_STATUSES);
+  const maxRuns = Math.min(
+    MAX_SCHEDULER_RUNS,
+    coercePositiveInteger(args, "maxRuns") ?? 25,
+  );
+
+  return runs
+    .filter((run) => (status ? run.status === status : true))
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, maxRuns);
+};
+
+export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
+  return [
+    {
+      spec: {
+        name: "list_scheduled_jobs",
+        description:
+          "Read durable Smart Scheduler jobs in the current workspace. Use this before updating an existing schedule from a vague reference like 'the trash cleanup job'. Search by query, inspect the returned id, then call update_scheduled_job with that id.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            query: {
+              type: "string",
+              description:
+                "Optional case-insensitive search across id, name, dedupe key, schedule, and prompt.",
+            },
+            status: {
+              type: "string",
+              enum: ["all", ...JOB_STATUSES],
+              description: "Optional job status filter.",
+            },
+            maxJobs: {
+              type: "integer",
+              minimum: 1,
+              maximum: MAX_SCHEDULER_JOBS,
+            },
+          },
+        },
+      },
+      backingTool: "scheduler",
+      riskLevel: "low",
+      effect: "read",
+      execute: async (args, context) => {
+        const jobs = filterJobs(
+          await createScheduler(context.workspaceRoot).listJobs(),
+          args,
+        );
+
+        return createSchedulerResult(
+          "list_scheduled_jobs",
+          { jobs: jobs.map(summarizeJob) },
+          [
+            {
+              title: "Scheduled Jobs",
+              lines:
+                jobs.length > 0
+                  ? jobs.map(
+                      (job) =>
+                        `${job.id} | ${job.name} | ${job.status} | ${formatSchedule(job.schedule)}`,
+                    )
+                  : ["No scheduled jobs matched."],
+            },
+          ],
+          `list_scheduled_jobs -> ${jobs.length} job(s)`,
+        );
+      },
+    },
+    {
+      spec: {
+        name: "list_scheduled_runs",
+        description:
+          "Read Smart Scheduler run history. Use this to answer status/history questions before retrying or changing a job.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            jobId: {
+              type: "string",
+              description: "Optional scheduled job id to filter run history.",
+            },
+            status: {
+              type: "string",
+              enum: RUN_STATUSES,
+              description: "Optional run status filter.",
+            },
+            maxRuns: {
+              type: "integer",
+              minimum: 1,
+              maximum: MAX_SCHEDULER_RUNS,
+            },
+          },
+        },
+      },
+      backingTool: "scheduler",
+      riskLevel: "low",
+      effect: "read",
+      execute: async (args, context) => {
+        const runs = filterRuns(
+          await createScheduler(context.workspaceRoot).listRuns(
+            coerceString(args, "jobId"),
+          ),
+          args,
+        );
+
+        return createSchedulerResult(
+          "list_scheduled_runs",
+          { runs: runs.map(summarizeRun) },
+          [
+            {
+              title: "Scheduled Runs",
+              lines:
+                runs.length > 0
+                  ? runs.map(
+                      (run) =>
+                        `${run.id} | job=${run.jobId} | ${run.status} | attempts=${run.attempt}/${run.maxAttempts}`,
+                    )
+                  : ["No scheduled runs matched."],
+            },
+          ],
+          `list_scheduled_runs -> ${runs.length} run(s)`,
+        );
+      },
+    },
+    {
+      spec: {
+        name: "create_scheduled_job",
+        description:
+          "Create a durable Smart Scheduler job from a natural-language request. You must enrich the user's request into a reusable scheduled prompt: include the exact recurring objective, platform/workspace assumptions, safety constraints, what tools/actions the scheduled AI should use, and how it should verify completion. For example, for 'clean up the Windows trash bin every Monday', create a Monday cron schedule and a prompt that clearly instructs the scheduled AI to empty the Windows Recycle Bin safely, handle missing permissions, avoid deleting unrelated files, and verify/report the result.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            name: {
+              type: "string",
+              description: "Human-readable schedule name.",
+            },
+            schedule: scheduleInputSchema,
+            ...schedulerTargetSchema,
+            ...schedulerPolicySchema,
+          },
+          required: ["schedule", "prompt"],
+        },
+      },
+      backingTool: "scheduler",
+      riskLevel: "medium",
+      effect: "write",
+      execute: async (args, context) => {
+        const input = createJobInput(args, context.workspaceRoot);
+
+        if (typeof input === "string") {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "create_scheduled_job",
+            input,
+          );
+        }
+
+        const job = await createScheduler(context.workspaceRoot).upsertJob(input);
+
+        return createSchedulerResult(
+          "create_scheduled_job",
+          { job: summarizeJob(job) },
+          createJobSections("Created Scheduled Job", job),
+          `create_scheduled_job(${job.id}) -> ${job.name}`,
+        );
+      },
+    },
+    {
+      spec: {
+        name: "update_scheduled_job",
+        description:
+          "Update an existing durable Smart Scheduler job. First call list_scheduled_jobs when the user refers to a job by description instead of id. When changing the task, replace `prompt` with a newly enriched durable scheduled prompt, not the user's shorthand. When changing cadence, supply a full updated schedule.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            jobId: {
+              type: "string",
+              description: "Scheduled job id from list_scheduled_jobs.",
+            },
+            name: {
+              type: "string",
+              description: "Updated human-readable schedule name.",
+            },
+            schedule: scheduleInputSchema,
+            ...schedulerTargetSchema,
+            ...schedulerPolicySchema,
+          },
+          required: ["jobId"],
+        },
+      },
+      backingTool: "scheduler",
+      riskLevel: "medium",
+      effect: "write",
+      execute: async (args, context) => {
+        const jobId = coerceString(args, "jobId");
+
+        if (!jobId) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "update_scheduled_job",
+            "Expected `jobId`.",
+          );
+        }
+
+        const input = createUpdateInput(args);
+
+        if (typeof input === "string") {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "update_scheduled_job",
+            input,
+          );
+        }
+
+        const job = await createScheduler(context.workspaceRoot).updateJob(
+          jobId,
+          input,
+        );
+
+        return createSchedulerResult(
+          "update_scheduled_job",
+          { job: summarizeJob(job) },
+          createJobSections("Updated Scheduled Job", job),
+          `update_scheduled_job(${job.id}) -> ${job.name}`,
+        );
+      },
+    },
+    {
+      spec: {
+        name: "pause_scheduled_job",
+        description:
+          "Pause an active Smart Scheduler job without deleting its definition or history.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            jobId: { type: "string" },
+          },
+          required: ["jobId"],
+        },
+      },
+      backingTool: "scheduler",
+      riskLevel: "medium",
+      effect: "write",
+      execute: async (args, context) => {
+        const jobId = coerceString(args, "jobId");
+
+        if (!jobId) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "pause_scheduled_job",
+            "Expected `jobId`.",
+          );
+        }
+
+        const job = await createScheduler(context.workspaceRoot).pauseJob(jobId);
+
+        return createSchedulerResult(
+          "pause_scheduled_job",
+          { job: summarizeJob(job) },
+          createJobSections("Paused Scheduled Job", job),
+          `pause_scheduled_job(${job.id})`,
+        );
+      },
+    },
+    {
+      spec: {
+        name: "resume_scheduled_job",
+        description:
+          "Resume a paused Smart Scheduler job and recalculate its next run.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            jobId: { type: "string" },
+          },
+          required: ["jobId"],
+        },
+      },
+      backingTool: "scheduler",
+      riskLevel: "medium",
+      effect: "write",
+      execute: async (args, context) => {
+        const jobId = coerceString(args, "jobId");
+
+        if (!jobId) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "resume_scheduled_job",
+            "Expected `jobId`.",
+          );
+        }
+
+        const job = await createScheduler(context.workspaceRoot).resumeJob(jobId);
+
+        return createSchedulerResult(
+          "resume_scheduled_job",
+          { job: summarizeJob(job) },
+          createJobSections("Resumed Scheduled Job", job),
+          `resume_scheduled_job(${job.id})`,
+        );
+      },
+    },
+    {
+      spec: {
+        name: "delete_scheduled_job",
+        description:
+          "Delete a Smart Scheduler job. Use pause_scheduled_job when the user wants to disable it temporarily.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            jobId: { type: "string" },
+          },
+          required: ["jobId"],
+        },
+      },
+      backingTool: "scheduler",
+      riskLevel: "medium",
+      effect: "write",
+      execute: async (args, context) => {
+        const jobId = coerceString(args, "jobId");
+
+        if (!jobId) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "delete_scheduled_job",
+            "Expected `jobId`.",
+          );
+        }
+
+        const job = await createScheduler(context.workspaceRoot).deleteJob(jobId);
+
+        return createSchedulerResult(
+          "delete_scheduled_job",
+          { job: summarizeJob(job) },
+          createJobSections("Deleted Scheduled Job", job),
+          `delete_scheduled_job(${job.id})`,
+        );
+      },
+    },
+  ];
+};

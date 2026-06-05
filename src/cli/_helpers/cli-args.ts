@@ -11,6 +11,7 @@ import type {
 export type CommandName =
   | "run"
   | "chat"
+  | "scheduler"
   | "set-api"
   | "set-config"
   | "set-global-memory"
@@ -21,9 +22,52 @@ export type CommandName =
   | "set-default-model"
   | "help";
 
+export type SchedulerCliAction =
+  | "list"
+  | "create"
+  | "pause"
+  | "resume"
+  | "delete"
+  | "runs"
+  | "run-due"
+  | "trigger"
+  | "retry"
+  | "cancel"
+  | "sync-prompts";
+
+export interface SchedulerCliOptions {
+  action: SchedulerCliAction;
+  subject?: string;
+  name?: string;
+  cron?: string;
+  intervalMs?: number;
+  delayMs?: number;
+  runAt?: number;
+  timezone?: string;
+  prompt?: string;
+  promptFile?: string;
+  contextPacks?: string[];
+  macros?: string[];
+  missedRunPolicy?: string;
+  missedRunGraceMs?: number;
+  retryAttempts?: number;
+  retryMinMs?: number;
+  retryMaxMs?: number;
+  retryFactor?: number;
+  retryRandomize?: boolean;
+  dedupeKey?: string;
+  ttlMs?: number;
+  maxDurationMs?: number;
+  concurrencyKey?: string;
+  concurrencyLimit?: number;
+  historyLimit?: number;
+  maxCatchUpRuns?: number;
+}
+
 export interface ParsedCliArgs {
   command: CommandName;
   task?: string;
+  scheduler?: SchedulerCliOptions;
   mode?: RunMode;
   profile?: string;
   provider?: UserApiProvider;
@@ -71,6 +115,21 @@ const COMMANDS_WITHOUT_POSITIONALS: ReadonlySet<CommandName> = new Set([
   "profiles",
   "help",
 ]);
+const SCHEDULER_ACTIONS: ReadonlySet<SchedulerCliAction> = new Set([
+  "list",
+  "create",
+  "pause",
+  "resume",
+  "delete",
+  "runs",
+  "run-due",
+  "trigger",
+  "retry",
+  "cancel",
+  "sync-prompts",
+]);
+const SCHEDULER_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<SchedulerCliAction> =
+  new Set(["pause", "resume", "delete", "trigger", "retry", "cancel"]);
 
 const fail = (message: string): never => {
   throw new Error(message);
@@ -82,6 +141,7 @@ const createParsedArgs = (
     | "mode"
     | "profile"
     | "task"
+    | "scheduler"
     | "provider"
     | "runtimeProvider"
     | "key"
@@ -114,6 +174,7 @@ const createParsedArgs = (
     conversationContextFile?: string;
     contextPaths?: string[];
     imagePaths?: string[];
+    scheduler?: SchedulerCliOptions;
     task?: string;
   },
 ): ParsedCliArgs => {
@@ -150,6 +211,7 @@ const createParsedArgs = (
       ? { imagePaths: options.imagePaths }
       : {}),
     ...(options?.task ? { task: options.task } : {}),
+    ...(options?.scheduler ? { scheduler: options.scheduler } : {}),
   };
 };
 
@@ -232,6 +294,30 @@ const parsePositiveInteger = (value: string, flagName: string): number => {
   return parsed;
 };
 
+const parsePositiveNumber = (value: string, flagName: string): number => {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    fail(`Expected ${flagName} to be followed by a positive number.`);
+  }
+
+  return parsed;
+};
+
+const parseOptionalPositiveInteger = (
+  value: string | undefined,
+  flagName: string,
+): number | undefined => {
+  return value ? parsePositiveInteger(value, flagName) : undefined;
+};
+
+const parseOptionalPositiveNumber = (
+  value: string | undefined,
+  flagName: string,
+): number | undefined => {
+  return value ? parsePositiveNumber(value, flagName) : undefined;
+};
+
 const normalizeContextPaths = (
   values: string[] | undefined,
 ): string[] | undefined => {
@@ -304,6 +390,13 @@ Usage:
   machdoch config set <setting> <value> [--json]
   machdoch tools [--json]
   machdoch profiles [--json]
+  machdoch scheduler list [--json]
+  machdoch scheduler create --cron <expr> --prompt <text> [--timezone <iana>] [--json]
+  machdoch scheduler pause|resume|delete|trigger <job-id> [--json]
+  machdoch scheduler runs [job-id] [--json]
+  machdoch scheduler run-due [--json]
+  machdoch scheduler retry|cancel <run-id> [--json]
+  machdoch scheduler sync-prompts [--json]
 
 Options:
   --mode <ask|machdoch>
@@ -334,6 +427,23 @@ Options:
   --image <path>          Attach an image for a vision-capable model to read. Repeat for multiple images.
   --profile <name>        Use a named profile from .machdoch/config.json.
   --cwd <path>            Use a different workspace root.
+  --cron <expr>           Scheduler cron expression for \`scheduler create\`.
+  --interval-ms <ms>      Scheduler interval in milliseconds for \`scheduler create\`.
+  --delay-ms <ms>         Scheduler one-shot delay in milliseconds for \`scheduler create\`.
+  --run-at <epoch-ms>     Scheduler one-shot absolute run time in epoch milliseconds.
+  --timezone <iana>       IANA timezone for cron schedules.
+  --prompt <text>         Scheduled task prompt text.
+  --prompt-file <path>    Read scheduled task prompt text from a file.
+  --context-pack <json>   Add a scheduled context-pack snapshot as JSON. Repeat for multiple packs.
+  --macro <name|prompt>   Add a saved macro reference or prompt invocation. Repeat for multiple macros.
+  --missed-run-policy <skip|enqueue-latest|enqueue-all>
+                          Control catch-up behavior after downtime.
+  --retry-attempts <n>    Maximum scheduler attempts for a run.
+  --ttl-ms <ms>           Expire queued runs that do not start within this duration.
+  --max-duration-ms <ms>  Abort scheduled runs that exceed this duration.
+  --dedupe-key <key>      Stable key used to update an existing schedule instead of creating a duplicate.
+  --concurrency-key <key> Share queue capacity across related scheduled jobs.
+  --concurrency-limit <n> Maximum actively running jobs for the queue key.
   --json                  Print machine-readable JSON.
   --verbose, -v           Print compact progress updates during \`machdoch run\`.
   -h, --help              Show help.
@@ -391,6 +501,30 @@ export const parseCliArgs = (
         image?: string[];
         profile?: string;
         cwd?: string;
+        name?: string;
+        cron?: string;
+        "interval-ms"?: string;
+        "delay-ms"?: string;
+        "run-at"?: string;
+        timezone?: string;
+        prompt?: string;
+        "prompt-file"?: string;
+        "context-pack"?: string[];
+        macro?: string[];
+        "missed-run-policy"?: string;
+        "missed-run-grace-ms"?: string;
+        "retry-attempts"?: string;
+        "retry-min-ms"?: string;
+        "retry-max-ms"?: string;
+        "retry-factor"?: string;
+        "retry-randomize"?: string;
+        "dedupe-key"?: string;
+        "ttl-ms"?: string;
+        "max-duration-ms"?: string;
+        "concurrency-key"?: string;
+        "concurrency-limit"?: string;
+        "history-limit"?: string;
+        "max-catch-up-runs"?: string;
       }
     | undefined;
   let positionals: string[] = [];
@@ -422,6 +556,30 @@ export const parseCliArgs = (
         image: { type: "string", multiple: true },
         profile: { type: "string" },
         cwd: { type: "string" },
+        name: { type: "string" },
+        cron: { type: "string" },
+        "interval-ms": { type: "string" },
+        "delay-ms": { type: "string" },
+        "run-at": { type: "string" },
+        timezone: { type: "string" },
+        prompt: { type: "string" },
+        "prompt-file": { type: "string" },
+        "context-pack": { type: "string", multiple: true },
+        macro: { type: "string", multiple: true },
+        "missed-run-policy": { type: "string" },
+        "missed-run-grace-ms": { type: "string" },
+        "retry-attempts": { type: "string" },
+        "retry-min-ms": { type: "string" },
+        "retry-max-ms": { type: "string" },
+        "retry-factor": { type: "string" },
+        "retry-randomize": { type: "string" },
+        "dedupe-key": { type: "string" },
+        "ttl-ms": { type: "string" },
+        "max-duration-ms": { type: "string" },
+        "concurrency-key": { type: "string" },
+        "concurrency-limit": { type: "string" },
+        "history-limit": { type: "string" },
+        "max-catch-up-runs": { type: "string" },
       },
       allowPositionals: true,
       strict: true,
@@ -465,6 +623,54 @@ export const parseCliArgs = (
   const rawContextPaths = normalizeContextPaths(values?.context);
   const rawImagePaths = normalizeImagePaths(values?.image);
   const rawProfile = normalizeOptionalString(values?.profile);
+  const rawSchedulerName = normalizeOptionalString(values?.name);
+  const rawSchedulerCron = normalizeOptionalString(values?.cron);
+  const rawSchedulerIntervalMs = normalizeOptionalString(values?.["interval-ms"]);
+  const rawSchedulerDelayMs = normalizeOptionalString(values?.["delay-ms"]);
+  const rawSchedulerRunAt = normalizeOptionalString(values?.["run-at"]);
+  const rawSchedulerTimezone = normalizeOptionalString(values?.timezone);
+  const rawSchedulerPrompt = normalizeOptionalString(values?.prompt);
+  const rawSchedulerPromptFile = normalizeOptionalString(values?.["prompt-file"]);
+  const rawSchedulerContextPacks = values?.["context-pack"]
+    ?.map((entry) => normalizeOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  const rawSchedulerMacros = values?.macro
+    ?.map((entry) => normalizeOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  const rawSchedulerMissedRunPolicy = normalizeOptionalString(
+    values?.["missed-run-policy"],
+  );
+  const rawSchedulerMissedRunGraceMs = normalizeOptionalString(
+    values?.["missed-run-grace-ms"],
+  );
+  const rawSchedulerRetryAttempts = normalizeOptionalString(
+    values?.["retry-attempts"],
+  );
+  const rawSchedulerRetryMinMs = normalizeOptionalString(values?.["retry-min-ms"]);
+  const rawSchedulerRetryMaxMs = normalizeOptionalString(values?.["retry-max-ms"]);
+  const rawSchedulerRetryFactor = normalizeOptionalString(
+    values?.["retry-factor"],
+  );
+  const rawSchedulerRetryRandomize = normalizeOptionalString(
+    values?.["retry-randomize"],
+  );
+  const rawSchedulerDedupeKey = normalizeOptionalString(values?.["dedupe-key"]);
+  const rawSchedulerTtlMs = normalizeOptionalString(values?.["ttl-ms"]);
+  const rawSchedulerMaxDurationMs = normalizeOptionalString(
+    values?.["max-duration-ms"],
+  );
+  const rawSchedulerConcurrencyKey = normalizeOptionalString(
+    values?.["concurrency-key"],
+  );
+  const rawSchedulerConcurrencyLimit = normalizeOptionalString(
+    values?.["concurrency-limit"],
+  );
+  const rawSchedulerHistoryLimit = normalizeOptionalString(
+    values?.["history-limit"],
+  );
+  const rawSchedulerMaxCatchUpRuns = normalizeOptionalString(
+    values?.["max-catch-up-runs"],
+  );
 
   if (values?.mode !== undefined && !rawMode) {
     fail(`Expected --mode to be followed by ${VALID_MODE_DESCRIPTION}.`);
@@ -764,6 +970,233 @@ export const parseCliArgs = (
   }
 
   const [first, ...rest] = positionals;
+
+  if (first === "scheduler") {
+    if (quickRunRequested || rawTask) {
+      fail("`machdoch scheduler` cannot be combined with --quick or --task.");
+    }
+
+    const [rawAction, rawSubject, ...extraPositionals] = rest;
+    const actionText = normalizeOptionalString(rawAction) ?? "list";
+
+    if (!SCHEDULER_ACTIONS.has(actionText as SchedulerCliAction)) {
+      fail(
+        `Expected \`machdoch scheduler\` action to be one of ${Array.from(
+          SCHEDULER_ACTIONS,
+        ).join(", ")}.`,
+      );
+    }
+
+    const action = actionText as SchedulerCliAction;
+
+    if (extraPositionals.length > 0) {
+      fail(
+        `Command \`scheduler ${action}\` does not accept positional arguments: ${extraPositionals.join(" ")}`,
+      );
+    }
+
+    if (
+      SCHEDULER_ACTIONS_REQUIRING_SUBJECT.has(action) &&
+      !normalizeOptionalString(rawSubject)
+    ) {
+      fail(`Expected an id after \`machdoch scheduler ${action}\`.`);
+    }
+
+    if (action === "create") {
+      const scheduleCount = [
+        rawSchedulerCron,
+        rawSchedulerIntervalMs,
+        rawSchedulerDelayMs ?? rawSchedulerRunAt,
+      ].filter(Boolean).length;
+
+      if (scheduleCount !== 1) {
+        fail(
+          "`machdoch scheduler create` expects exactly one of --cron, --interval-ms, or --delay-ms/--run-at.",
+        );
+      }
+
+      if (!rawSchedulerPrompt && !rawSchedulerPromptFile) {
+        fail(
+          "`machdoch scheduler create` expects --prompt or --prompt-file.",
+        );
+      }
+    }
+
+    return createParsedArgs(
+      {
+        ...sharedOptions,
+        command: "scheduler",
+      },
+      {
+        scheduler: {
+          action,
+          ...(normalizeOptionalString(rawSubject)
+            ? { subject: normalizeOptionalString(rawSubject) }
+            : {}),
+          ...(rawSchedulerName ? { name: rawSchedulerName } : {}),
+          ...(rawSchedulerCron ? { cron: rawSchedulerCron } : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerIntervalMs,
+            "--interval-ms",
+          ) !== undefined
+            ? {
+                intervalMs: parseOptionalPositiveInteger(
+                  rawSchedulerIntervalMs,
+                  "--interval-ms",
+                ),
+              }
+            : {}),
+          ...(parseOptionalPositiveInteger(rawSchedulerDelayMs, "--delay-ms") !==
+          undefined
+            ? {
+                delayMs: parseOptionalPositiveInteger(
+                  rawSchedulerDelayMs,
+                  "--delay-ms",
+                ),
+              }
+            : {}),
+          ...(parseOptionalPositiveInteger(rawSchedulerRunAt, "--run-at") !==
+          undefined
+            ? {
+                runAt: parseOptionalPositiveInteger(
+                  rawSchedulerRunAt,
+                  "--run-at",
+                ),
+              }
+            : {}),
+          ...(rawSchedulerTimezone ? { timezone: rawSchedulerTimezone } : {}),
+          ...(rawSchedulerPrompt ? { prompt: rawSchedulerPrompt } : {}),
+          ...(rawSchedulerPromptFile
+            ? { promptFile: rawSchedulerPromptFile }
+            : {}),
+          ...(rawSchedulerContextPacks && rawSchedulerContextPacks.length > 0
+            ? { contextPacks: rawSchedulerContextPacks }
+            : {}),
+          ...(rawSchedulerMacros && rawSchedulerMacros.length > 0
+            ? { macros: rawSchedulerMacros }
+            : {}),
+          ...(rawSchedulerMissedRunPolicy
+            ? { missedRunPolicy: rawSchedulerMissedRunPolicy }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerMissedRunGraceMs,
+            "--missed-run-grace-ms",
+          ) !== undefined
+            ? {
+                missedRunGraceMs: parseOptionalPositiveInteger(
+                  rawSchedulerMissedRunGraceMs,
+                  "--missed-run-grace-ms",
+                ),
+              }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerRetryAttempts,
+            "--retry-attempts",
+          ) !== undefined
+            ? {
+                retryAttempts: parseOptionalPositiveInteger(
+                  rawSchedulerRetryAttempts,
+                  "--retry-attempts",
+                ),
+              }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerRetryMinMs,
+            "--retry-min-ms",
+          ) !== undefined
+            ? {
+                retryMinMs: parseOptionalPositiveInteger(
+                  rawSchedulerRetryMinMs,
+                  "--retry-min-ms",
+                ),
+              }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerRetryMaxMs,
+            "--retry-max-ms",
+          ) !== undefined
+            ? {
+                retryMaxMs: parseOptionalPositiveInteger(
+                  rawSchedulerRetryMaxMs,
+                  "--retry-max-ms",
+                ),
+              }
+            : {}),
+          ...(parseOptionalPositiveNumber(
+            rawSchedulerRetryFactor,
+            "--retry-factor",
+          ) !== undefined
+            ? {
+                retryFactor: parseOptionalPositiveNumber(
+                  rawSchedulerRetryFactor,
+                  "--retry-factor",
+                ),
+              }
+            : {}),
+          ...(rawSchedulerRetryRandomize
+            ? {
+                retryRandomize: parseBooleanToggle(
+                  rawSchedulerRetryRandomize,
+                  "--retry-randomize",
+                ),
+              }
+            : {}),
+          ...(rawSchedulerDedupeKey ? { dedupeKey: rawSchedulerDedupeKey } : {}),
+          ...(parseOptionalPositiveInteger(rawSchedulerTtlMs, "--ttl-ms") !==
+          undefined
+            ? { ttlMs: parseOptionalPositiveInteger(rawSchedulerTtlMs, "--ttl-ms") }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerMaxDurationMs,
+            "--max-duration-ms",
+          ) !== undefined
+            ? {
+                maxDurationMs: parseOptionalPositiveInteger(
+                  rawSchedulerMaxDurationMs,
+                  "--max-duration-ms",
+                ),
+              }
+            : {}),
+          ...(rawSchedulerConcurrencyKey
+            ? { concurrencyKey: rawSchedulerConcurrencyKey }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerConcurrencyLimit,
+            "--concurrency-limit",
+          ) !== undefined
+            ? {
+                concurrencyLimit: parseOptionalPositiveInteger(
+                  rawSchedulerConcurrencyLimit,
+                  "--concurrency-limit",
+                ),
+              }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerHistoryLimit,
+            "--history-limit",
+          ) !== undefined
+            ? {
+                historyLimit: parseOptionalPositiveInteger(
+                  rawSchedulerHistoryLimit,
+                  "--history-limit",
+                ),
+              }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerMaxCatchUpRuns,
+            "--max-catch-up-runs",
+          ) !== undefined
+            ? {
+                maxCatchUpRuns: parseOptionalPositiveInteger(
+                  rawSchedulerMaxCatchUpRuns,
+                  "--max-catch-up-runs",
+                ),
+              }
+            : {}),
+        } as SchedulerCliOptions,
+      },
+    );
+  }
 
   if (
     first === "inspect" ||
