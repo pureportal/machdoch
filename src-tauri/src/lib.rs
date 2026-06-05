@@ -109,6 +109,7 @@ pub fn run() {
             remote_control::get_remote_control_status,
             remote_control::open_remote_control_url,
             remote_control::set_remote_control_port,
+            remote_control::update_remote_control_shell_snapshot,
             runtime_snapshot::get_user_desktop_settings,
             runtime_snapshot::get_user_agent_limits_settings,
             runtime_snapshot::get_global_provider_availability,

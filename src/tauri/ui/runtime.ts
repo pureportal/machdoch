@@ -242,16 +242,264 @@ export type RemoteControlCommandKind =
   | "retry"
   | "continue"
   | "follow-up"
-  | "approval-decision";
+  | "approval-decision"
+  | "create-session"
+  | "activate-session"
+  | "archive-session"
+  | "pin-session"
+  | "duplicate-session"
+  | "branch-session"
+  | "delete-session"
+  | "rename-session"
+  | "tag-session"
+  | "clear-session-history"
+  | "update-draft"
+  | "set-session-model"
+  | "set-session-mode"
+  | "set-session-profile"
+  | "set-session-memory"
+  | "set-global-memory"
+  | "set-ui-control"
+  | "remove-attachment"
+  | "clear-attachments"
+  | "apply-context-pack"
+  | "delete-context-pack"
+  | "save-message-context-pack"
+  | "speak-message"
+  | "stop-speaking"
+  | "scheduler-trigger"
+  | "scheduler-pause"
+  | "scheduler-resume"
+  | "scheduler-delete"
+  | "scheduler-retry-run"
+  | "scheduler-cancel-run";
 
 export interface RemoteControlCommandEvent {
   commandId: string;
   kind: RemoteControlCommandKind;
   taskId?: string;
+  sessionId?: string;
   prompt?: string;
   decision?: "approve" | "reject" | string;
   promptId?: string;
+  title?: string;
+  tags?: string[];
+  provider?: string;
+  model?: string;
+  mode?: string;
+  profile?: string;
+  workspace?: string;
+  enabled?: boolean;
+  attachmentId?: string;
+  contextPackId?: string;
+  messageId?: string;
+  jobId?: string;
+  runId?: string;
   createdAt: number;
+}
+
+export interface RemoteShellAttachmentSnapshot {
+  id: string;
+  kind: string;
+  name: string;
+  path: string;
+  parent?: string;
+}
+
+export interface RemoteShellSessionSnapshot {
+  id: string;
+  title: string;
+  status: string;
+  workspace?: string;
+  profile?: string;
+  provider: string;
+  model: string;
+  mode?: string;
+  effectiveMode: string;
+  createdAt: number;
+  updatedAt: number;
+  archivedAt?: number;
+  pinnedAt?: number;
+  tags: string[];
+  messageCount: number;
+  promptHistoryCount: number;
+  attachmentCount: number;
+  runningTaskId?: string;
+  canRename: boolean;
+  canDelete: boolean;
+  canArchive: boolean;
+  canPin: boolean;
+  canDuplicate: boolean;
+  canBranch: boolean;
+  specialKind?: string;
+}
+
+export interface RemoteShellTraceEntrySnapshot {
+  label: string;
+  detail: string;
+  tone?: string;
+  timestamp?: number;
+}
+
+export interface RemoteShellMessageSourceSnapshot {
+  kind: string;
+  status?: string;
+  title?: string;
+  summary?: string;
+  mode?: string;
+  entries: RemoteShellTraceEntrySnapshot[];
+  timeline: RemoteShellTraceEntrySnapshot[];
+}
+
+export interface RemoteShellMessageActionsSnapshot {
+  canRetry: boolean;
+  canContinue: boolean;
+  canSaveAsContextPack: boolean;
+  canSpeak: boolean;
+  isSpeaking: boolean;
+}
+
+export interface RemoteShellMessageSnapshot {
+  id: string;
+  role: string;
+  content: string;
+  createdAt?: number;
+  taskId?: string;
+  intent?: string;
+  attachments: RemoteShellAttachmentSnapshot[];
+  source?: RemoteShellMessageSourceSnapshot;
+  actions: RemoteShellMessageActionsSnapshot;
+}
+
+export interface RemoteShellComposerSnapshot {
+  sessionId: string;
+  draft: string;
+  provider: string;
+  model: string;
+  mode: string;
+  defaultMode: string;
+  workspace?: string;
+  workspaceLabel: string;
+  canSend: boolean;
+  sendDisabledReason?: string;
+  isExecuting: boolean;
+  sessionMemoryEnabled: boolean;
+  globalMemoryAvailable: boolean;
+  globalMemoryEnabled: boolean;
+  uiControlAvailable: boolean;
+  uiControlEnabled: boolean;
+  uiControlDescription: string;
+  attachments: RemoteShellAttachmentSnapshot[];
+  chooserProviders: string[];
+  matchedContextPackIds: string[];
+}
+
+export interface RemoteShellProviderStatusSnapshot {
+  provider: string;
+  available: boolean;
+  reason?: string;
+}
+
+export interface RemoteShellRuntimeCapabilitySnapshot {
+  available: boolean;
+  reason?: string;
+}
+
+export interface RemoteShellRuntimeSnapshot {
+  loading: boolean;
+  error?: string;
+  hasAnyProvider: boolean;
+  providerStatuses: RemoteShellProviderStatusSnapshot[];
+  mode?: string;
+  profile?: string;
+  uiControl?: RemoteShellRuntimeCapabilitySnapshot;
+  webSearch?: RemoteShellRuntimeCapabilitySnapshot;
+}
+
+export interface RemoteShellSchedulerJobSnapshot {
+  id: string;
+  name: string;
+  status: string;
+  schedule: string;
+  promptPreview: string;
+  nextRunAt?: number;
+  lastStartedAt?: number;
+  lastFinishedAt?: number;
+}
+
+export interface RemoteShellSchedulerRunSnapshot {
+  id: string;
+  jobId: string;
+  source: string;
+  status: string;
+  scheduledFor: number;
+  updatedAt: number;
+  attempt: number;
+  maxAttempts: number;
+  startedAt?: number;
+  finishedAt?: number;
+  nextAttemptAt?: number;
+  error?: string;
+  summary?: string;
+}
+
+export interface RemoteShellSchedulerSnapshot {
+  workspaceRoot?: string;
+  loading: boolean;
+  error?: string;
+  jobs: RemoteShellSchedulerJobSnapshot[];
+  runs: RemoteShellSchedulerRunSnapshot[];
+  updatedAt: number;
+}
+
+export interface RemoteShellContextPackSnapshot {
+  id: string;
+  name: string;
+  workspace?: string;
+  instructionsPreview: string;
+  promptPreview: string;
+  attachmentCount: number;
+  variables: string[];
+  matched: boolean;
+  provider?: string;
+  model?: string;
+  mode?: string;
+}
+
+export interface RemoteShellVoiceSnapshot {
+  supported: boolean;
+  autoSpeakResponses: boolean;
+  speakingMessageId?: string;
+  speechInputSupported: boolean;
+  speechInputEnabled: boolean;
+  speechInputStatus?: string;
+}
+
+export interface RemoteShellQuickTaskSnapshot {
+  status: string;
+  draft: string;
+  isExecuting: boolean;
+  provider: string;
+  model: string;
+  autopilotEnabled: boolean;
+  globalMemoryEnabled: boolean;
+  uiControlEnabled: boolean;
+  attachmentCount: number;
+}
+
+export interface RemoteControlShellSnapshot {
+  version: 1;
+  capturedAt: number;
+  activeSessionId?: string;
+  sessions: RemoteShellSessionSnapshot[];
+  visibleMessages: RemoteShellMessageSnapshot[];
+  composer?: RemoteShellComposerSnapshot;
+  runtime?: RemoteShellRuntimeSnapshot;
+  scheduler?: RemoteShellSchedulerSnapshot;
+  contextPacks: RemoteShellContextPackSnapshot[];
+  promptHistory: string[];
+  voice?: RemoteShellVoiceSnapshot;
+  quickTask?: RemoteShellQuickTaskSnapshot;
 }
 
 export type SchedulerJobStatus =
@@ -462,6 +710,36 @@ const REMOTE_CONTROL_COMMAND_KINDS = [
   "continue",
   "follow-up",
   "approval-decision",
+  "create-session",
+  "activate-session",
+  "archive-session",
+  "pin-session",
+  "duplicate-session",
+  "branch-session",
+  "delete-session",
+  "rename-session",
+  "tag-session",
+  "clear-session-history",
+  "update-draft",
+  "set-session-model",
+  "set-session-mode",
+  "set-session-profile",
+  "set-session-memory",
+  "set-global-memory",
+  "set-ui-control",
+  "remove-attachment",
+  "clear-attachments",
+  "apply-context-pack",
+  "delete-context-pack",
+  "save-message-context-pack",
+  "speak-message",
+  "stop-speaking",
+  "scheduler-trigger",
+  "scheduler-pause",
+  "scheduler-resume",
+  "scheduler-delete",
+  "scheduler-retry-run",
+  "scheduler-cancel-run",
 ] as const satisfies ReadonlyArray<RemoteControlCommandKind>;
 const SCHEDULER_JOB_STATUSES = [
   "active",
@@ -939,9 +1217,27 @@ const isRemoteControlCommandEvent = (
       value.kind as RemoteControlCommandKind,
     ) &&
     (value.taskId === undefined || typeof value.taskId === "string") &&
+    (value.sessionId === undefined || typeof value.sessionId === "string") &&
     (value.prompt === undefined || typeof value.prompt === "string") &&
     (value.decision === undefined || typeof value.decision === "string") &&
     (value.promptId === undefined || typeof value.promptId === "string") &&
+    (value.title === undefined || typeof value.title === "string") &&
+    (value.tags === undefined ||
+      (Array.isArray(value.tags) &&
+        value.tags.every((tag) => typeof tag === "string"))) &&
+    (value.provider === undefined || typeof value.provider === "string") &&
+    (value.model === undefined || typeof value.model === "string") &&
+    (value.mode === undefined || typeof value.mode === "string") &&
+    (value.profile === undefined || typeof value.profile === "string") &&
+    (value.workspace === undefined || typeof value.workspace === "string") &&
+    (value.enabled === undefined || typeof value.enabled === "boolean") &&
+    (value.attachmentId === undefined ||
+      typeof value.attachmentId === "string") &&
+    (value.contextPackId === undefined ||
+      typeof value.contextPackId === "string") &&
+    (value.messageId === undefined || typeof value.messageId === "string") &&
+    (value.jobId === undefined || typeof value.jobId === "string") &&
+    (value.runId === undefined || typeof value.runId === "string") &&
     typeof value.createdAt === "number" &&
     Number.isFinite(value.createdAt)
   );
@@ -2293,6 +2589,18 @@ export const forgetRemoteControlPairings =
 
     return status;
   };
+
+export const updateRemoteControlShellSnapshot = async (
+  snapshot: RemoteControlShellSnapshot,
+): Promise<void> => {
+  if (!canInvokeTauriCommands()) {
+    return;
+  }
+
+  await tauriCore.invoke("update_remote_control_shell_snapshot", {
+    snapshot,
+  });
+};
 
 export const openRemoteControlUrl = async (
   displayUrl?: string,

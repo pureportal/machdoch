@@ -19,6 +19,7 @@ const DEFAULT_TIMEZONE = "UTC";
 const DEFAULT_MISSED_RUN_POLICY: ScheduledMissedRunPolicy = "enqueue-latest";
 const DEFAULT_MISSED_RUN_GRACE_MS = 60_000;
 const DEFAULT_HISTORY_LIMIT = 100;
+const DEFAULT_EVENT_HISTORY_LIMIT = 1_000;
 const DEFAULT_MAX_CATCH_UP_RUNS = 100;
 const DEFAULT_CONCURRENCY_LIMIT = 1;
 const DEFAULT_RETRY_POLICY: ScheduledRetryPolicy = {
@@ -44,9 +45,29 @@ export type ScheduledRunStatus =
   | "expired"
   | "skipped";
 
-export type ScheduledRunSource = "schedule" | "manual" | "manual-retry";
+export type ScheduledRunSource =
+  | "schedule"
+  | "manual"
+  | "manual-retry"
+  | "event";
 
 export type ScheduledMissedRunPolicy = "skip" | "enqueue-latest" | "enqueue-all";
+
+export type ScheduledTriggerKind =
+  | "time"
+  | "manual"
+  | "app"
+  | "workspace-file"
+  | "git"
+  | "job-event"
+  | "webhook"
+  | "poll"
+  | "system"
+  | "calendar"
+  | "clipboard"
+  | "integration";
+
+export type ScheduledEventTriggerKind = Exclude<ScheduledTriggerKind, "time">;
 
 export type ScheduledJobSchedule =
   | {
@@ -80,6 +101,74 @@ export type ScheduledJobScheduleInput =
       delayMs?: number;
       runAt?: number;
     };
+
+export interface ScheduledTriggerRateLimitPolicy {
+  maxEvents: number;
+  windowMs: number;
+}
+
+export interface ScheduledTriggerGuard {
+  kind: string;
+  value?: string | number | boolean;
+}
+
+export interface ScheduledTriggerBase {
+  id: string;
+  kind: ScheduledTriggerKind;
+  enabled: boolean;
+  name?: string;
+  filters?: Record<string, unknown>;
+  guards?: ScheduledTriggerGuard[];
+  debounceMs?: number;
+  cooldownMs?: number;
+  dedupeKeyTemplate?: string;
+  maxEventsPerWindow?: ScheduledTriggerRateLimitPolicy;
+  createdAt: number;
+  updatedAt: number;
+  lastMatchedAt?: number;
+  lastFiredAt?: number;
+  lastSkippedAt?: number;
+}
+
+export interface ScheduledTimeTrigger extends ScheduledTriggerBase {
+  kind: "time";
+  schedule: ScheduledJobSchedule;
+  nextRunAt?: number;
+}
+
+export interface ScheduledEventTrigger extends ScheduledTriggerBase {
+  kind: ScheduledEventTriggerKind;
+  eventType: string;
+}
+
+export type ScheduledJobTrigger = ScheduledTimeTrigger | ScheduledEventTrigger;
+
+export interface ScheduledTriggerInputBase {
+  id?: string;
+  kind: ScheduledTriggerKind;
+  enabled?: boolean;
+  name?: string;
+  filters?: Record<string, unknown>;
+  guards?: ScheduledTriggerGuard[];
+  debounceMs?: number;
+  cooldownMs?: number;
+  dedupeKeyTemplate?: string;
+  maxEventsPerWindow?: Partial<ScheduledTriggerRateLimitPolicy>;
+}
+
+export interface ScheduledTimeTriggerInput extends ScheduledTriggerInputBase {
+  kind: "time";
+  schedule: ScheduledJobScheduleInput;
+}
+
+export interface ScheduledEventTriggerInput extends ScheduledTriggerInputBase {
+  kind: ScheduledEventTriggerKind;
+  eventType?: string;
+}
+
+export type ScheduledJobTriggerInput =
+  | ScheduledTimeTriggerInput
+  | ScheduledEventTriggerInput;
 
 export interface ScheduledContextPackSnapshot {
   name: string;
@@ -138,7 +227,8 @@ export interface ScheduledJob {
   id: string;
   name: string;
   status: ScheduledJobStatus;
-  schedule: ScheduledJobSchedule;
+  schedule?: ScheduledJobSchedule;
+  triggers: ScheduledJobTrigger[];
   target: ScheduledJobTarget;
   missedRunPolicy: ScheduledMissedRunPolicy;
   missedRunGraceMs: number;
@@ -159,7 +249,8 @@ export interface ScheduledJob {
 
 export interface CreateScheduledJobInput {
   name?: string;
-  schedule: ScheduledJobScheduleInput;
+  schedule?: ScheduledJobScheduleInput;
+  triggers?: ScheduledJobTriggerInput[];
   target: ScheduledJobTargetInput;
   missedRunPolicy?: ScheduledMissedRunPolicy;
   missedRunGraceMs?: number;
@@ -175,6 +266,7 @@ export interface CreateScheduledJobInput {
 export interface UpdateScheduledJobInput {
   name?: string;
   schedule?: ScheduledJobScheduleInput;
+  triggers?: ScheduledJobTriggerInput[];
   target?: Partial<ScheduledJobTargetInput>;
   missedRunPolicy?: ScheduledMissedRunPolicy;
   missedRunGraceMs?: number;
@@ -201,6 +293,8 @@ export interface ScheduledRunAttempt {
 export interface ScheduledJobRun {
   id: string;
   jobId: string;
+  triggerId?: string;
+  eventId?: string;
   source: ScheduledRunSource;
   status: ScheduledRunStatus;
   scheduledFor: number;
@@ -230,6 +324,44 @@ export interface SmartSchedulerState {
   updatedAt: number;
   jobs: ScheduledJob[];
   runs: ScheduledJobRun[];
+  events: ScheduledTriggerEvent[];
+}
+
+export interface ScheduledTriggerEventInput {
+  type: string;
+  kind?: ScheduledEventTriggerKind;
+  source?: string;
+  workspaceRoot?: string;
+  payload?: Record<string, unknown>;
+  dedupeKey?: string;
+  occurredAt?: number;
+}
+
+export interface ScheduledTriggerEventMatch {
+  jobId: string;
+  triggerId: string;
+  matched: boolean;
+  queuedRunId?: string;
+  deduplicated?: boolean;
+  skippedReason?: string;
+}
+
+export interface ScheduledTriggerEvent {
+  id: string;
+  type: string;
+  kind: ScheduledEventTriggerKind;
+  source: string;
+  workspaceRoot?: string;
+  payload: Record<string, unknown>;
+  dedupeKey?: string;
+  occurredAt: number;
+  receivedAt: number;
+  matches: ScheduledTriggerEventMatch[];
+}
+
+export interface ScheduledTriggerEventResult {
+  event: ScheduledTriggerEvent;
+  enqueued: ScheduledRunEnqueueResult[];
 }
 
 export interface ScheduledRunHandle {
@@ -354,10 +486,105 @@ const createEmptySchedulerState = (timestamp: number): SmartSchedulerState => ({
   updatedAt: timestamp,
   jobs: [],
   runs: [],
+  events: [],
 });
 
 export const getWorkspaceSchedulerStatePath = (workspaceRoot: string): string => {
   return join(workspaceRoot, ".machdoch", SMART_SCHEDULER_FILE_NAME);
+};
+
+const isRecordValue = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const isScheduledEventTriggerKind = (
+  value: string | undefined,
+): value is ScheduledEventTriggerKind => {
+  return (
+    value === "manual" ||
+    value === "app" ||
+    value === "workspace-file" ||
+    value === "git" ||
+    value === "job-event" ||
+    value === "webhook" ||
+    value === "poll" ||
+    value === "system" ||
+    value === "calendar" ||
+    value === "clipboard" ||
+    value === "integration"
+  );
+};
+
+const inferEventTriggerKind = (eventType: string): ScheduledEventTriggerKind => {
+  const prefix = eventType.split(".")[0];
+
+  return isScheduledEventTriggerKind(prefix) ? prefix : "manual";
+};
+
+const getPrimaryTimeTrigger = (
+  triggers: ScheduledJobTrigger[],
+): ScheduledTimeTrigger | undefined => {
+  return triggers.find(
+    (trigger): trigger is ScheduledTimeTrigger => trigger.kind === "time",
+  );
+};
+
+const getEarliestTriggerRunAt = (
+  triggers: ScheduledJobTrigger[],
+): number | undefined => {
+  return triggers
+    .flatMap((trigger) =>
+      trigger.kind === "time" && trigger.nextRunAt !== undefined
+        ? [trigger.nextRunAt]
+        : [],
+    )
+    .sort((left, right) => left - right)[0];
+};
+
+const createLegacyTimeTrigger = (
+  job: Pick<ScheduledJob, "id" | "schedule" | "createdAt" | "updatedAt" | "nextRunAt">,
+): ScheduledTimeTrigger | undefined => {
+  if (!job.schedule) {
+    return undefined;
+  }
+
+  return {
+    id: "trigger_time_primary",
+    kind: "time",
+    enabled: true,
+    name: "Time Schedule",
+    schedule: job.schedule,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    ...(job.nextRunAt !== undefined ? { nextRunAt: job.nextRunAt } : {}),
+  };
+};
+
+const migrateScheduledJobRecord = (job: ScheduledJob): ScheduledJob => {
+  const candidate = job as ScheduledJob & { triggers?: unknown };
+  const legacyTimeTrigger = createLegacyTimeTrigger(candidate);
+  const triggers =
+    Array.isArray(candidate.triggers) && candidate.triggers.length > 0
+      ? (candidate.triggers as ScheduledJobTrigger[])
+      : legacyTimeTrigger
+        ? [legacyTimeTrigger]
+        : [];
+  const primaryTimeTrigger = getPrimaryTimeTrigger(triggers);
+  const nextRunAt =
+    getEarliestTriggerRunAt(triggers) ?? candidate.nextRunAt ?? undefined;
+  const migrated: ScheduledJob = {
+    ...candidate,
+    triggers,
+    ...(primaryTimeTrigger ? { schedule: primaryTimeTrigger.schedule } : {}),
+    ...(nextRunAt !== undefined ? { nextRunAt } : {}),
+  };
+
+  if (!primaryTimeTrigger) {
+    delete migrated.schedule;
+    delete migrated.nextRunAt;
+  }
+
+  return migrated;
 };
 
 export const readSmartSchedulerState = async (
@@ -386,8 +613,9 @@ export const readSmartSchedulerState = async (
       typeof parsed.createdAt === "number" ? parsed.createdAt : Date.now(),
     updatedAt:
       typeof parsed.updatedAt === "number" ? parsed.updatedAt : Date.now(),
-    jobs: parsed.jobs,
+    jobs: parsed.jobs.map((job) => migrateScheduledJobRecord(job)),
     runs: parsed.runs,
+    events: Array.isArray(parsed.events) ? parsed.events : [],
   };
 };
 
@@ -404,7 +632,11 @@ export const writeSmartSchedulerState = async (
 
 const createJobId = (): string => `sched_${randomUUID()}`;
 
+const createTriggerId = (): string => `trigger_${randomUUID()}`;
+
 const createRunId = (): string => `run_${randomUUID()}`;
+
+const createEventId = (): string => `event_${randomUUID()}`;
 
 const normalizeText = (value: string | undefined): string | undefined => {
   const normalized = value?.replace(/\s+/gu, " ").trim();
@@ -523,6 +755,207 @@ const normalizeSchedule = (
       };
     }
   }
+};
+
+const cloneRecord = (
+  value: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined => {
+  if (!value || !isRecordValue(value)) {
+    return undefined;
+  }
+
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+};
+
+const normalizeTriggerGuard = (
+  guard: ScheduledTriggerGuard,
+): ScheduledTriggerGuard | undefined => {
+  const kind = normalizeText(guard.kind);
+
+  if (!kind) {
+    return undefined;
+  }
+
+  return {
+    kind,
+    ...(guard.value !== undefined ? { value: guard.value } : {}),
+  };
+};
+
+const normalizeTriggerGuards = (
+  guards: ScheduledTriggerGuard[] | undefined,
+): ScheduledTriggerGuard[] | undefined => {
+  const normalized = (guards ?? []).flatMap((guard) => {
+    const normalizedGuard = normalizeTriggerGuard(guard);
+
+    return normalizedGuard ? [normalizedGuard] : [];
+  });
+
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const normalizeRateLimitPolicy = (
+  value: Partial<ScheduledTriggerRateLimitPolicy> | undefined,
+): ScheduledTriggerRateLimitPolicy | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const maxEvents = normalizeOptionalPositiveInteger(value.maxEvents);
+  const windowMs = normalizeOptionalPositiveInteger(value.windowMs);
+
+  if (maxEvents === undefined || windowMs === undefined) {
+    return undefined;
+  }
+
+  return { maxEvents, windowMs };
+};
+
+const normalizeTriggerCommon = (
+  input: ScheduledTriggerInputBase,
+  timestamp: number,
+  existingTrigger?: ScheduledJobTrigger,
+): Omit<ScheduledTriggerBase, "kind"> => {
+  const name = normalizeText(input.name);
+  const debounceMs = normalizeOptionalPositiveInteger(input.debounceMs);
+  const cooldownMs = normalizeOptionalPositiveInteger(input.cooldownMs);
+  const dedupeKeyTemplate = normalizeText(input.dedupeKeyTemplate);
+  const filters = cloneRecord(input.filters);
+  const guards = normalizeTriggerGuards(input.guards);
+  const maxEventsPerWindow = normalizeRateLimitPolicy(input.maxEventsPerWindow);
+
+  return {
+    id: normalizeText(input.id) ?? existingTrigger?.id ?? createTriggerId(),
+    enabled: input.enabled ?? existingTrigger?.enabled ?? true,
+    createdAt: existingTrigger?.createdAt ?? timestamp,
+    updatedAt: timestamp,
+    ...(name ? { name } : existingTrigger?.name ? { name: existingTrigger.name } : {}),
+    ...(filters ? { filters } : existingTrigger?.filters ? { filters: existingTrigger.filters } : {}),
+    ...(guards ? { guards } : existingTrigger?.guards ? { guards: existingTrigger.guards } : {}),
+    ...(debounceMs !== undefined
+      ? { debounceMs }
+      : existingTrigger?.debounceMs !== undefined
+        ? { debounceMs: existingTrigger.debounceMs }
+        : {}),
+    ...(cooldownMs !== undefined
+      ? { cooldownMs }
+      : existingTrigger?.cooldownMs !== undefined
+        ? { cooldownMs: existingTrigger.cooldownMs }
+        : {}),
+    ...(dedupeKeyTemplate
+      ? { dedupeKeyTemplate }
+      : existingTrigger?.dedupeKeyTemplate
+        ? { dedupeKeyTemplate: existingTrigger.dedupeKeyTemplate }
+        : {}),
+    ...(maxEventsPerWindow
+      ? { maxEventsPerWindow }
+      : existingTrigger?.maxEventsPerWindow
+        ? { maxEventsPerWindow: existingTrigger.maxEventsPerWindow }
+        : {}),
+    ...(existingTrigger?.lastMatchedAt !== undefined
+      ? { lastMatchedAt: existingTrigger.lastMatchedAt }
+      : {}),
+    ...(existingTrigger?.lastFiredAt !== undefined
+      ? { lastFiredAt: existingTrigger.lastFiredAt }
+      : {}),
+    ...(existingTrigger?.lastSkippedAt !== undefined
+      ? { lastSkippedAt: existingTrigger.lastSkippedAt }
+      : {}),
+  };
+};
+
+const normalizeTriggerInput = (
+  input: ScheduledJobTriggerInput,
+  timestamp: number,
+  existingTrigger?: ScheduledJobTrigger,
+): ScheduledJobTrigger => {
+  const common = normalizeTriggerCommon(input, timestamp, existingTrigger);
+
+  if (input.kind === "time") {
+    const schedule = normalizeSchedule(input.schedule, timestamp);
+    const nextRunAt = getNextRunAfter(schedule, timestamp);
+
+    return {
+      ...common,
+      kind: "time",
+      schedule,
+      ...(nextRunAt !== undefined ? { nextRunAt } : {}),
+    };
+  }
+
+  const eventType = normalizeText(input.eventType) ?? input.kind;
+
+  return {
+    ...common,
+    kind: input.kind,
+    eventType,
+  };
+};
+
+const createTimeTriggerInput = (
+  schedule: ScheduledJobScheduleInput,
+): ScheduledTimeTriggerInput => ({
+  kind: "time",
+  name: "Time Schedule",
+  schedule,
+});
+
+const replacePrimaryTimeTrigger = (
+  triggers: ScheduledJobTrigger[],
+  schedule: ScheduledJobScheduleInput,
+  timestamp: number,
+): ScheduledJobTrigger[] => {
+  const existingTimeTrigger = getPrimaryTimeTrigger(triggers);
+  const timeTrigger = normalizeTriggerInput(
+    createTimeTriggerInput(schedule),
+    timestamp,
+    existingTimeTrigger,
+  );
+  let replaced = false;
+  const updatedTriggers = triggers.map((trigger) => {
+    if (!replaced && trigger.kind === "time") {
+      replaced = true;
+      return timeTrigger;
+    }
+
+    return trigger;
+  });
+
+  return replaced ? updatedTriggers : [timeTrigger, ...updatedTriggers];
+};
+
+const normalizeJobTriggers = (
+  input: Pick<CreateScheduledJobInput, "schedule" | "triggers">,
+  timestamp: number,
+  existingJob?: ScheduledJob,
+): ScheduledJobTrigger[] => {
+  let triggers =
+    input.triggers !== undefined
+      ? input.triggers.map((triggerInput) => {
+          const existingTrigger = existingJob?.triggers.find(
+            (trigger) =>
+              triggerInput.id !== undefined && trigger.id === triggerInput.id,
+          );
+
+          return normalizeTriggerInput(triggerInput, timestamp, existingTrigger);
+        })
+      : existingJob?.triggers ?? [];
+
+  if (input.schedule) {
+    triggers = replacePrimaryTimeTrigger(triggers, input.schedule, timestamp);
+  }
+
+  if (triggers.length === 0) {
+    throw new Error("Expected scheduled job to include at least one trigger.");
+  }
+
+  return triggers;
+};
+
+const getJobScheduleSummary = (
+  triggers: ScheduledJobTrigger[],
+): ScheduledJobSchedule | undefined => {
+  return getPrimaryTimeTrigger(triggers)?.schedule;
 };
 
 const normalizeContextPack = (
@@ -1151,7 +1584,12 @@ export const syncScheduledPromptJobs = async (
 const createRunDedupeKey = (
   job: ScheduledJob,
   scheduledFor: number,
+  suffix?: string,
 ): string | undefined => {
+  if (suffix) {
+    return `${job.dedupeKey ?? job.id}:${suffix}`;
+  }
+
   return job.dedupeKey ? `${job.dedupeKey}:${scheduledFor}` : undefined;
 };
 
@@ -1161,14 +1599,21 @@ const createRun = (
   scheduledFor: number,
   enqueuedAt: number,
   source: ScheduledRunSource,
-  parentRunId?: string,
+  options: {
+    triggerId?: string;
+    eventId?: string;
+    parentRunId?: string;
+    dedupeSuffix?: string;
+  } = {},
 ): ScheduledJobRun => {
-  const dedupeKey = createRunDedupeKey(job, scheduledFor);
+  const dedupeKey = createRunDedupeKey(job, scheduledFor, options.dedupeSuffix);
   const expiresAt = job.ttlMs ? enqueuedAt + job.ttlMs : undefined;
 
   return {
     id: createRunId(),
     jobId: job.id,
+    ...(options.triggerId ? { triggerId: options.triggerId } : {}),
+    ...(options.eventId ? { eventId: options.eventId } : {}),
     source,
     status,
     scheduledFor,
@@ -1180,7 +1625,7 @@ const createRun = (
     concurrencyLimit: job.queue.concurrencyLimit,
     attemptHistory: [],
     ...(dedupeKey ? { dedupeKey } : {}),
-    ...(parentRunId ? { parentRunId } : {}),
+    ...(options.parentRunId ? { parentRunId: options.parentRunId } : {}),
     ...(expiresAt ? { expiresAt } : {}),
   };
 };
@@ -1199,14 +1644,27 @@ const isTerminalRunStatus = (status: ScheduledRunStatus): boolean => {
 const hasExistingScheduledRun = (
   state: SmartSchedulerState,
   jobId: string,
+  triggerId: string | undefined,
   scheduledFor: number,
 ): ScheduledJobRun | undefined => {
   return state.runs.find(
     (run) =>
       run.jobId === jobId &&
       run.source === "schedule" &&
+      run.triggerId === triggerId &&
       run.scheduledFor === scheduledFor,
   );
+};
+
+const findExistingRunByDedupeKey = (
+  state: SmartSchedulerState,
+  dedupeKey: string | undefined,
+): ScheduledJobRun | undefined => {
+  if (!dedupeKey) {
+    return undefined;
+  }
+
+  return state.runs.find((run) => run.dedupeKey === dedupeKey);
 };
 
 const createRunHandle = (run: Pick<ScheduledJobRun, "jobId" | "id">): ScheduledRunHandle => ({
@@ -1551,20 +2009,42 @@ const collectDueRunTimes = (
   job: ScheduledJob,
   now: number,
 ): {
-  dueTimes: number[];
+  dueTimes: Array<{ triggerId: string; scheduledFor: number }>;
   nextRunAt?: number;
 } => {
-  const dueTimes: number[] = [];
-  let nextRunAt = job.nextRunAt ?? getNextRunAfter(job.schedule, job.createdAt);
+  const dueTimes: Array<{ triggerId: string; scheduledFor: number }> = [];
+  const nextRunCandidates: number[] = [];
 
-  while (
-    nextRunAt !== undefined &&
-    nextRunAt <= now &&
-    dueTimes.length < job.maxCatchUpRuns
-  ) {
-    dueTimes.push(nextRunAt);
-    nextRunAt = getNextRunAfter(job.schedule, nextRunAt);
+  for (const trigger of job.triggers) {
+    if (trigger.kind !== "time" || !trigger.enabled) {
+      continue;
+    }
+
+    let nextRunAt =
+      trigger.nextRunAt ?? getNextRunAfter(trigger.schedule, job.createdAt);
+
+    while (
+      nextRunAt !== undefined &&
+      nextRunAt <= now &&
+      dueTimes.length < job.maxCatchUpRuns
+    ) {
+      dueTimes.push({
+        triggerId: trigger.id,
+        scheduledFor: nextRunAt,
+      });
+      nextRunAt = getNextRunAfter(trigger.schedule, nextRunAt);
+    }
+
+    trigger.nextRunAt = nextRunAt;
+
+    if (nextRunAt !== undefined) {
+      nextRunCandidates.push(nextRunAt);
+    } else {
+      delete trigger.nextRunAt;
+    }
   }
+
+  const nextRunAt = nextRunCandidates.sort((left, right) => left - right)[0];
 
   return {
     dueTimes,
@@ -1574,11 +2054,11 @@ const collectDueRunTimes = (
 
 const splitDueTimesByMissedPolicy = (
   job: ScheduledJob,
-  dueTimes: number[],
+  dueTimes: Array<{ triggerId: string; scheduledFor: number }>,
   now: number,
 ): {
-  enqueueTimes: number[];
-  skippedTimes: number[];
+  enqueueTimes: Array<{ triggerId: string; scheduledFor: number }>;
+  skippedTimes: Array<{ triggerId: string; scheduledFor: number }>;
 } => {
   if (dueTimes.length === 0) {
     return { enqueueTimes: [], skippedTimes: [] };
@@ -1602,7 +2082,7 @@ const splitDueTimesByMissedPolicy = (
         skippedTimes: dueTimes.slice(0, -1),
       };
     case "skip": {
-      const enqueueLatest = now - latest <= job.missedRunGraceMs;
+      const enqueueLatest = now - latest.scheduledFor <= job.missedRunGraceMs;
 
       return {
         enqueueTimes: enqueueLatest ? [latest] : [],
@@ -1631,6 +2111,9 @@ const pruneRunHistory = (state: SmartSchedulerState): void => {
   }
 
   state.runs = state.runs.filter((run) => retainedRuns.has(run.id));
+  state.events = state.events
+    .sort((left, right) => right.receivedAt - left.receivedAt)
+    .slice(0, DEFAULT_EVENT_HISTORY_LIMIT);
 };
 
 const errorToMessage = (error: unknown): string => {
@@ -1676,6 +2159,173 @@ const countRunningRunsByQueue = (
   }
 
   return counts;
+};
+
+const normalizeEventPayload = (
+  payload: Record<string, unknown> | undefined,
+): Record<string, unknown> => {
+  return cloneRecord(payload) ?? {};
+};
+
+const normalizeTriggerEventInput = (
+  input: ScheduledTriggerEventInput,
+  timestamp: number,
+): ScheduledTriggerEvent => {
+  const type = normalizeText(input.type);
+
+  if (!type) {
+    throw new Error("Expected scheduler event to include a type.");
+  }
+
+  const source = normalizeText(input.source) ?? "manual";
+  const workspaceRoot = normalizeTrimmedText(input.workspaceRoot);
+  const dedupeKey = normalizeText(input.dedupeKey);
+  const occurredAt =
+    typeof input.occurredAt === "number" && Number.isFinite(input.occurredAt)
+      ? Math.trunc(input.occurredAt)
+      : timestamp;
+  const kind = input.kind ?? inferEventTriggerKind(type);
+
+  return {
+    id: createEventId(),
+    type,
+    kind,
+    source,
+    payload: normalizeEventPayload(input.payload),
+    occurredAt,
+    receivedAt: timestamp,
+    matches: [],
+    ...(workspaceRoot ? { workspaceRoot } : {}),
+    ...(dedupeKey ? { dedupeKey } : {}),
+  };
+};
+
+const getPathValue = (
+  record: Record<string, unknown>,
+  path: string,
+): unknown => {
+  return path.split(".").reduce<unknown>((current, part) => {
+    if (!isRecordValue(current)) {
+      return undefined;
+    }
+
+    return current[part];
+  }, record);
+};
+
+const matchStringPattern = (value: string, pattern: string): boolean => {
+  if (pattern === "*") {
+    return true;
+  }
+
+  if (!pattern.includes("*")) {
+    return value === pattern;
+  }
+
+  const escaped = pattern
+    .split("*")
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
+    .join(".*");
+
+  return new RegExp(`^${escaped}$`, "u").test(value);
+};
+
+const eventTypeMatches = (
+  trigger: ScheduledEventTrigger,
+  event: ScheduledTriggerEvent,
+): boolean => {
+  if (trigger.kind !== event.kind) {
+    return false;
+  }
+
+  if (trigger.eventType === "*" || trigger.eventType === event.type) {
+    return true;
+  }
+
+  return matchStringPattern(event.type, trigger.eventType);
+};
+
+const filterValueMatches = (actual: unknown, expected: unknown): boolean => {
+  if (Array.isArray(expected)) {
+    return expected.some((entry) => filterValueMatches(actual, entry));
+  }
+
+  if (typeof expected === "string") {
+    return typeof actual === "string" && matchStringPattern(actual, expected);
+  }
+
+  return Object.is(actual, expected);
+};
+
+const eventFiltersMatch = (
+  trigger: ScheduledEventTrigger,
+  event: ScheduledTriggerEvent,
+): boolean => {
+  if (!trigger.filters || Object.keys(trigger.filters).length === 0) {
+    return true;
+  }
+
+  const eventRecord: Record<string, unknown> = {
+    type: event.type,
+    kind: event.kind,
+    source: event.source,
+    workspaceRoot: event.workspaceRoot,
+    payload: event.payload,
+  };
+
+  return Object.entries(trigger.filters).every(([path, expected]) => {
+    return filterValueMatches(getPathValue(eventRecord, path), expected);
+  });
+};
+
+const renderDedupeTemplate = (
+  template: string,
+  job: ScheduledJob,
+  trigger: ScheduledEventTrigger,
+  event: ScheduledTriggerEvent,
+): string => {
+  return template.replace(/\{([a-zA-Z0-9_.-]+)\}/gu, (_match, path: string) => {
+    const record: Record<string, unknown> = {
+      jobId: job.id,
+      triggerId: trigger.id,
+      eventId: event.id,
+      eventType: event.type,
+      eventDedupeKey: event.dedupeKey,
+      source: event.source,
+      workspaceRoot: event.workspaceRoot,
+      payload: event.payload,
+    };
+    const value = getPathValue(record, path);
+
+    return value === undefined || value === null ? "" : String(value);
+  });
+};
+
+const createEventRunDedupeSuffix = (
+  job: ScheduledJob,
+  trigger: ScheduledEventTrigger,
+  event: ScheduledTriggerEvent,
+): string => {
+  if (trigger.dedupeKeyTemplate) {
+    return renderDedupeTemplate(trigger.dedupeKeyTemplate, job, trigger, event);
+  }
+
+  return `${trigger.id}:${event.dedupeKey ?? event.id}`;
+};
+
+const getTriggerCooldownSkipReason = (
+  trigger: ScheduledEventTrigger,
+  event: ScheduledTriggerEvent,
+): string | undefined => {
+  if (
+    trigger.cooldownMs === undefined ||
+    trigger.lastFiredAt === undefined ||
+    event.receivedAt - trigger.lastFiredAt >= trigger.cooldownMs
+  ) {
+    return undefined;
+  }
+
+  return `Skipped by trigger cooldown of ${trigger.cooldownMs}ms.`;
 };
 
 export class DurableSmartScheduler {
@@ -1733,11 +2383,12 @@ export class DurableSmartScheduler {
           )
         : undefined;
       const id = existingJob?.id ?? createJobId();
-      const schedule = normalizeSchedule(input.schedule, now);
+      const triggers = normalizeJobTriggers(input, now, existingJob);
+      const schedule = getJobScheduleSummary(triggers);
       const target = normalizeTarget(input.target);
       const retry = normalizeRetryPolicy(input.retry);
       const queue = normalizeQueuePolicy(id, input.queue);
-      const nextRunAt = getNextRunAfter(schedule, now);
+      const nextRunAt = getEarliestTriggerRunAt(triggers);
       const name =
         normalizeText(input.name) ??
         existingJob?.name ??
@@ -1749,7 +2400,8 @@ export class DurableSmartScheduler {
         id,
         name,
         status: "active",
-        schedule,
+        ...(schedule ? { schedule } : {}),
+        triggers,
         target,
         missedRunPolicy: normalizeMissedRunPolicy(input.missedRunPolicy),
         missedRunGraceMs: normalizePositiveInteger(
@@ -1832,11 +2484,20 @@ export class DurableSmartScheduler {
           ? { model: input.target?.model ?? existingJob.target.model }
           : {}),
       };
-      const schedule = input.schedule
-        ? normalizeSchedule(input.schedule, now)
-        : existingJob.schedule;
+      const triggers =
+        input.triggers !== undefined || input.schedule !== undefined
+          ? normalizeJobTriggers(
+              {
+                ...(input.schedule ? { schedule: input.schedule } : {}),
+                ...(input.triggers ? { triggers: input.triggers } : {}),
+              },
+              now,
+              existingJob,
+            )
+          : existingJob.triggers;
+      const schedule = getJobScheduleSummary(triggers);
       const target = normalizeTarget(targetInput);
-      const nextRunAt = getNextRunAfter(schedule, now);
+      const nextRunAt = getEarliestTriggerRunAt(triggers);
       const dedupeKey = normalizeText(input.dedupeKey) ?? existingJob.dedupeKey;
       const ttlMs =
         input.ttlMs !== undefined
@@ -1850,10 +2511,11 @@ export class DurableSmartScheduler {
         id: existingJob.id,
         name: normalizeText(input.name) ?? existingJob.name,
         status:
-          existingJob.status === "completed" && nextRunAt !== undefined
+          existingJob.status === "completed" && triggers.length > 0
             ? "active"
             : existingJob.status,
-        schedule,
+        ...(schedule ? { schedule } : {}),
+        triggers,
         target,
         missedRunPolicy:
           input.missedRunPolicy ?? existingJob.missedRunPolicy,
@@ -1935,13 +2597,37 @@ export class DurableSmartScheduler {
 
       job.status = "active";
       job.updatedAt = this.now();
-      const nextRunAt = getNextRunAfter(job.schedule, this.now());
+      const now = this.now();
+      const nextRunAtCandidates: number[] = [];
+
+      for (const trigger of job.triggers) {
+        if (trigger.kind !== "time" || !trigger.enabled) {
+          continue;
+        }
+
+        const nextRunAt = getNextRunAfter(trigger.schedule, now);
+
+        if (nextRunAt !== undefined) {
+          trigger.nextRunAt = nextRunAt;
+          nextRunAtCandidates.push(nextRunAt);
+        } else {
+          delete trigger.nextRunAt;
+        }
+      }
+
+      const nextRunAt = nextRunAtCandidates.sort((left, right) => left - right)[0];
 
       if (nextRunAt !== undefined) {
         job.nextRunAt = nextRunAt;
       } else {
         delete job.nextRunAt;
-        job.status = "completed";
+        const hasEventTrigger = job.triggers.some(
+          (trigger) => trigger.kind !== "time" && trigger.enabled,
+        );
+
+        if (!hasEventTrigger) {
+          job.status = "completed";
+        }
       }
 
       return { ...job };
@@ -1981,6 +2667,19 @@ export class DurableSmartScheduler {
         }
 
         const { dueTimes, nextRunAt } = collectDueRunTimes(job, now);
+        const scheduleSummary = getJobScheduleSummary(job.triggers);
+
+        if (scheduleSummary) {
+          job.schedule = scheduleSummary;
+        } else {
+          delete job.schedule;
+        }
+
+        if (nextRunAt !== undefined) {
+          job.nextRunAt = nextRunAt;
+        } else {
+          delete job.nextRunAt;
+        }
 
         if (dueTimes.length === 0) {
           continue;
@@ -1992,11 +2691,12 @@ export class DurableSmartScheduler {
           now,
         );
 
-        for (const scheduledFor of skippedTimes) {
+        for (const skippedTime of skippedTimes) {
           const existingRun = hasExistingScheduledRun(
             state,
             job.id,
-            scheduledFor,
+            skippedTime.triggerId,
+            skippedTime.scheduledFor,
           );
 
           if (existingRun) {
@@ -2006,9 +2706,10 @@ export class DurableSmartScheduler {
           const skippedRun = createRun(
             job,
             "skipped",
-            scheduledFor,
+            skippedTime.scheduledFor,
             now,
             "schedule",
+            { triggerId: skippedTime.triggerId },
           );
 
           skippedRun.finishedAt = now;
@@ -2016,11 +2717,12 @@ export class DurableSmartScheduler {
           state.runs.push(skippedRun);
         }
 
-        for (const scheduledFor of enqueueTimes) {
+        for (const enqueueTime of enqueueTimes) {
           const existingRun = hasExistingScheduledRun(
             state,
             job.id,
-            scheduledFor,
+            enqueueTime.triggerId,
+            enqueueTime.scheduledFor,
           );
 
           if (existingRun) {
@@ -2032,7 +2734,14 @@ export class DurableSmartScheduler {
             continue;
           }
 
-          const run = createRun(job, "queued", scheduledFor, now, "schedule");
+          const run = createRun(
+            job,
+            "queued",
+            enqueueTime.scheduledFor,
+            now,
+            "schedule",
+            { triggerId: enqueueTime.triggerId },
+          );
 
           job.lastEnqueuedAt = now;
           enqueueResults.push({
@@ -2043,7 +2752,14 @@ export class DurableSmartScheduler {
           state.runs.push(run);
         }
 
-        if (job.schedule.type === "delay" && nextRunAt === undefined) {
+        const hasEnabledRepeatingTimeTrigger = job.triggers.some(
+          (trigger) =>
+            trigger.kind === "time" &&
+            trigger.enabled &&
+            trigger.schedule.type !== "delay",
+        );
+
+        if (!hasEnabledRepeatingTimeTrigger && nextRunAt === undefined) {
           job.status = "completed";
           delete job.nextRunAt;
         } else if (nextRunAt !== undefined) {
@@ -2078,6 +2794,145 @@ export class DurableSmartScheduler {
         deduplicated: false,
       };
     });
+  }
+
+  async recordEventAndEnqueueRuns(
+    input: ScheduledTriggerEventInput,
+  ): Promise<ScheduledTriggerEventResult> {
+    return this.mutateState((state) => {
+      const now = this.now();
+      const event = normalizeTriggerEventInput(input, now);
+      const enqueued: ScheduledRunEnqueueResult[] = [];
+      const existingEvent =
+        event.dedupeKey !== undefined
+          ? state.events.find(
+              (candidate) =>
+                candidate.type === event.type &&
+                candidate.source === event.source &&
+                candidate.dedupeKey === event.dedupeKey,
+            )
+          : undefined;
+
+      if (existingEvent) {
+        return {
+          event: { ...existingEvent },
+          enqueued,
+        };
+      }
+
+      for (const job of state.jobs) {
+        if (job.status !== "active") {
+          continue;
+        }
+
+        if (
+          event.workspaceRoot &&
+          job.target.workspaceRoot !== event.workspaceRoot
+        ) {
+          continue;
+        }
+
+        for (const trigger of job.triggers) {
+          if (trigger.kind === "time" || !trigger.enabled) {
+            continue;
+          }
+
+          if (!eventTypeMatches(trigger, event)) {
+            continue;
+          }
+
+          const match: ScheduledTriggerEventMatch = {
+            jobId: job.id,
+            triggerId: trigger.id,
+            matched: false,
+          };
+
+          if (!eventFiltersMatch(trigger, event)) {
+            trigger.lastSkippedAt = now;
+            match.skippedReason = "Event did not match trigger filters.";
+            event.matches.push(match);
+            continue;
+          }
+
+          const cooldownSkipReason = getTriggerCooldownSkipReason(
+            trigger,
+            event,
+          );
+
+          if (cooldownSkipReason) {
+            trigger.lastSkippedAt = now;
+            match.skippedReason = cooldownSkipReason;
+            event.matches.push(match);
+            continue;
+          }
+
+          const dedupeSuffix = createEventRunDedupeSuffix(job, trigger, event);
+          const dedupeKey = createRunDedupeKey(
+            job,
+            event.occurredAt,
+            dedupeSuffix,
+          );
+          const existingRun = findExistingRunByDedupeKey(state, dedupeKey);
+
+          trigger.lastMatchedAt = now;
+
+          if (existingRun) {
+            match.matched = true;
+            match.queuedRunId = existingRun.id;
+            match.deduplicated = true;
+            event.matches.push(match);
+            enqueued.push({
+              handle: createRunHandle(existingRun),
+              run: { ...existingRun },
+              deduplicated: true,
+            });
+            continue;
+          }
+
+          const run = createRun(
+            job,
+            "queued",
+            event.occurredAt,
+            now,
+            "event",
+            {
+              triggerId: trigger.id,
+              eventId: event.id,
+              dedupeSuffix,
+            },
+          );
+
+          trigger.lastFiredAt = now;
+          job.lastEnqueuedAt = now;
+          job.updatedAt = now;
+          state.runs.push(run);
+          match.matched = true;
+          match.queuedRunId = run.id;
+          match.deduplicated = false;
+          event.matches.push(match);
+          enqueued.push({
+            handle: createRunHandle(run),
+            run: { ...run },
+            deduplicated: false,
+          });
+        }
+      }
+
+      state.events.push(event);
+
+      return {
+        event: { ...event },
+        enqueued,
+      };
+    });
+  }
+
+  async listEvents(): Promise<ScheduledTriggerEvent[]> {
+    const state = await this.getState();
+
+    return [...state.events].sort(
+      (left, right) => right.receivedAt - left.receivedAt,
+    );
   }
 
   async runDueJobs(
@@ -2468,7 +3323,11 @@ export class DurableSmartScheduler {
         parentRun.scheduledFor,
         now,
         "manual-retry",
-        parentRun.id,
+        {
+          parentRunId: parentRun.id,
+          triggerId: parentRun.triggerId,
+          eventId: parentRun.eventId,
+        },
       );
 
       state.runs.push(retryRun);

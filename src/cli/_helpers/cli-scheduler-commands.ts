@@ -216,11 +216,38 @@ const createScheduler = (
   });
 };
 
+const formatSchedulerTrigger = (
+  trigger: ScheduledJob["triggers"][number],
+): string => {
+  if (trigger.kind === "time") {
+    switch (trigger.schedule.type) {
+      case "cron":
+        return `cron ${trigger.schedule.expression} (${trigger.schedule.timezone})`;
+      case "interval":
+        return `interval ${trigger.schedule.intervalMs}ms`;
+      case "delay":
+        return `delay until ${new Date(trigger.schedule.runAt).toISOString()}`;
+    }
+  }
+
+  return `${trigger.kind}:${trigger.eventType}`;
+};
+
+const formatSchedulerTriggerLabel = (job: ScheduledJob): string => {
+  if (job.triggers.length === 0) {
+    return "no triggers";
+  }
+
+  return job.triggers.map(formatSchedulerTrigger).join(", ");
+};
+
 const summarizeJob = (job: ScheduledJob): Record<string, unknown> => ({
   id: job.id,
   name: job.name,
   status: job.status,
-  schedule: job.schedule,
+  schedule: job.schedule ?? null,
+  triggers: job.triggers,
+  triggerLabel: formatSchedulerTriggerLabel(job),
   workspaceRoot: job.target.workspaceRoot,
   prompt: job.target.prompt,
   nextRunAt: job.nextRunAt ?? null,
@@ -261,7 +288,7 @@ const printJobLines = (jobs: ScheduledJob[]): void => {
 
   for (const job of jobs) {
     writeStdoutLine(
-      `- ${job.id} [${job.status}] ${job.name} next=${job.nextRunAt ? new Date(job.nextRunAt).toISOString() : "none"}`,
+      `- ${job.id} [${job.status}] ${job.name} triggers=${formatSchedulerTriggerLabel(job)} next=${job.nextRunAt ? new Date(job.nextRunAt).toISOString() : "event"}`,
     );
     writeStdoutLine(`  workspace: ${job.target.workspaceRoot}`);
     writeStdoutLine(`  queue: ${job.queue.concurrencyKey} (${job.queue.concurrencyLimit})`);

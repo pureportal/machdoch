@@ -3,10 +3,13 @@ import {
   getWorkspaceSchedulerStatePath,
   type CreateScheduledJobInput,
   type ScheduledContextPackSnapshot,
+  type ScheduledEventTriggerKind,
   type ScheduledJob,
   type ScheduledJobRun,
   type ScheduledJobSchedule,
   type ScheduledJobScheduleInput,
+  type ScheduledJobTrigger,
+  type ScheduledJobTriggerInput,
   type ScheduledJobStatus,
   type ScheduledMacroReference,
   type ScheduledMissedRunPolicy,
@@ -25,8 +28,23 @@ import { limitText } from "./runtime-text.js";
 
 const MAX_SCHEDULER_JOBS = 100;
 const MAX_SCHEDULER_RUNS = 100;
+const MAX_SCHEDULER_EVENTS = 100;
 const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 const SCHEDULE_TYPES = ["cron", "interval", "delay"] as const;
+const TRIGGER_KINDS = [
+  "time",
+  "manual",
+  "app",
+  "workspace-file",
+  "git",
+  "job-event",
+  "webhook",
+  "poll",
+  "system",
+  "calendar",
+  "clipboard",
+  "integration",
+] as const;
 const JOB_STATUSES = ["active", "paused", "completed", "deleted"] as const;
 const RUN_STATUSES = [
   "queued",
@@ -38,6 +56,9 @@ const RUN_STATUSES = [
   "expired",
   "skipped",
 ] as const;
+const EVENT_TRIGGER_KINDS = TRIGGER_KINDS.filter(
+  (kind): kind is ScheduledEventTriggerKind => kind !== "time",
+);
 const MISSED_RUN_POLICIES = [
   "skip",
   "enqueue-latest",
@@ -80,6 +101,100 @@ const scheduleInputSchema = {
       type: "integer",
       minimum: 1,
       description: "One-shot absolute run time as Unix epoch milliseconds.",
+    },
+  },
+  required: ["type"],
+} as const;
+
+const triggerInputSchema = {
+  type: "array",
+  items: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      id: {
+        type: "string",
+        description: "Existing trigger id when updating a trigger.",
+      },
+      kind: {
+        type: "string",
+        enum: TRIGGER_KINDS,
+        description:
+          "Use time for cron/interval/delay. Use event categories such as workspace-file, git, webhook, app, poll, system, or integration for event-only jobs.",
+      },
+      enabled: { type: "boolean" },
+      name: { type: "string" },
+      eventType: {
+        type: "string",
+        description:
+          "Event type for non-time triggers, for example workspace-file.created, git.branch-changed, webhook.github.workflow_run, or app.workspace-opened. Supports * wildcards.",
+      },
+      schedule: scheduleInputSchema,
+      filters: {
+        type: "object",
+        additionalProperties: true,
+        description:
+          "Optional exact or wildcard filters over event fields. Use keys like payload.path, payload.branch, source, or workspaceRoot.",
+      },
+      cooldownMs: {
+        type: "integer",
+        minimum: 1,
+        description: "Minimum time between runs fired by this trigger.",
+      },
+      debounceMs: {
+        type: "integer",
+        minimum: 1,
+        description:
+          "Debounce window for bursty event sources. Watcher implementations may use this when emitting events.",
+      },
+      dedupeKeyTemplate: {
+        type: "string",
+        description:
+          "Template for event run dedupe such as invoice:{payload.path}:{payload.mtime}.",
+      },
+    },
+    required: ["kind"],
+  },
+} as const;
+
+const schedulerEventInputSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    type: {
+      type: "string",
+      description:
+        "Normalized event type, for example workspace-file.created, git.branch-changed, webhook.github.workflow_run, or app.workspace-opened.",
+    },
+    kind: {
+      type: "string",
+      enum: EVENT_TRIGGER_KINDS,
+      description:
+        "Optional trigger category. If omitted it is inferred from the event type prefix.",
+    },
+    source: {
+      type: "string",
+      description: "Event source such as ui, cli, ai, watcher, github, or test.",
+    },
+    workspaceRoot: {
+      type: "string",
+      description:
+        "Workspace root the event belongs to. Defaults to the active workspace.",
+    },
+    payload: {
+      type: "object",
+      additionalProperties: true,
+      description:
+        "Event payload. Trigger filters can match fields like payload.path or payload.branch.",
+    },
+    dedupeKey: {
+      type: "string",
+      description: "Stable source event id used to dedupe repeated deliveries.",
+    },
+    occurredAtEpochMs: {
+      type: "integer",
+      minimum: 1,
+      description: "When the event occurred as Unix epoch milliseconds.",
     },
   },
   required: ["type"],
@@ -341,6 +456,89 @@ const parseScheduleInput = (
   }
 };
 
+const parseTriggerInput = (
+  value: unknown,
+): ScheduledJobTriggerInput | string | undefined => {
+  if (!isRecord(value)) {
+    return "Expected each trigger to be an object.";
+  }
+
+  const kind = normalizeEnum(coerceString(value, "kind"), TRIGGER_KINDS);
+
+  if (!kind) {
+    return "Expected trigger.kind to be a supported scheduler trigger kind.";
+  }
+
+  const id = coerceString(value, "id");
+  const name = coerceString(value, "name");
+  const enabled =
+    typeof value.enabled === "boolean" ? value.enabled : undefined;
+  const filters = isRecord(value.filters) ? { ...value.filters } : undefined;
+  const cooldownMs = coercePositiveInteger(value, "cooldownMs");
+  const debounceMs = coercePositiveInteger(value, "debounceMs");
+  const dedupeKeyTemplate = coerceString(value, "dedupeKeyTemplate");
+
+  if (kind === "time") {
+    const schedule = parseScheduleInput(value.schedule);
+
+    if (!schedule || typeof schedule === "string") {
+      return schedule || "Expected time triggers to include a schedule.";
+    }
+
+    return {
+      kind: "time",
+      schedule,
+      ...(id ? { id } : {}),
+      ...(name ? { name } : {}),
+      ...(enabled !== undefined ? { enabled } : {}),
+      ...(filters ? { filters } : {}),
+      ...(cooldownMs !== undefined ? { cooldownMs } : {}),
+      ...(debounceMs !== undefined ? { debounceMs } : {}),
+      ...(dedupeKeyTemplate ? { dedupeKeyTemplate } : {}),
+    };
+  }
+
+  const eventType = coerceString(value, "eventType") ?? kind;
+
+  return {
+    kind: kind as ScheduledEventTriggerKind,
+    eventType,
+    ...(id ? { id } : {}),
+    ...(name ? { name } : {}),
+    ...(enabled !== undefined ? { enabled } : {}),
+    ...(filters ? { filters } : {}),
+    ...(cooldownMs !== undefined ? { cooldownMs } : {}),
+    ...(debounceMs !== undefined ? { debounceMs } : {}),
+    ...(dedupeKeyTemplate ? { dedupeKeyTemplate } : {}),
+  };
+};
+
+const parseTriggerInputs = (
+  value: unknown,
+): ScheduledJobTriggerInput[] | string | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    return "Expected `triggers` to be an array.";
+  }
+
+  const triggers: ScheduledJobTriggerInput[] = [];
+
+  for (const entry of value) {
+    const trigger = parseTriggerInput(entry);
+
+    if (!trigger || typeof trigger === "string") {
+      return trigger || "Expected each trigger to be valid.";
+    }
+
+    triggers.push(trigger);
+  }
+
+  return triggers;
+};
+
 const parseContextPacks = (
   record: Record<string, unknown>,
 ): ScheduledContextPackSnapshot[] | undefined => {
@@ -573,9 +771,20 @@ const createJobInput = (
   workspaceRoot: string,
 ): CreateScheduledJobInput | string => {
   const schedule = parseScheduleInput(args.schedule);
+  const triggers = parseTriggerInputs(args.triggers);
 
   if (!schedule || typeof schedule === "string") {
-    return schedule || "Expected `schedule` before creating a scheduled job.";
+    if (typeof schedule === "string") {
+      return schedule;
+    }
+  }
+
+  if (typeof triggers === "string") {
+    return triggers;
+  }
+
+  if (!schedule && (!triggers || triggers.length === 0)) {
+    return "Expected `schedule` or `triggers` before creating a scheduled job.";
   }
 
   const target = createTargetInput(args, workspaceRoot, {
@@ -599,7 +808,8 @@ const createJobInput = (
 
   return {
     ...(name ? { name } : {}),
-    schedule,
+    ...(schedule ? { schedule } : {}),
+    ...(triggers ? { triggers } : {}),
     target,
     ...(missedRunPolicy ? { missedRunPolicy } : {}),
     ...(missedRunGraceMs !== undefined ? { missedRunGraceMs } : {}),
@@ -617,9 +827,14 @@ const createUpdateInput = (
   args: Record<string, unknown>,
 ): UpdateScheduledJobInput | string => {
   const schedule = parseScheduleInput(args.schedule);
+  const triggers = parseTriggerInputs(args.triggers);
 
   if (typeof schedule === "string") {
     return schedule;
+  }
+
+  if (typeof triggers === "string") {
+    return triggers;
   }
 
   const target = createUpdateTargetInput(args);
@@ -636,6 +851,7 @@ const createUpdateInput = (
   const input: UpdateScheduledJobInput = {
     ...(name ? { name } : {}),
     ...(schedule ? { schedule } : {}),
+    ...(triggers ? { triggers } : {}),
     ...(target ? { target } : {}),
     ...(missedRunPolicy ? { missedRunPolicy } : {}),
     ...(missedRunGraceMs !== undefined ? { missedRunGraceMs } : {}),
@@ -670,12 +886,28 @@ const formatSchedule = (schedule: ScheduledJobSchedule): string => {
   }
 };
 
+const formatTrigger = (trigger: ScheduledJobTrigger): string => {
+  if (trigger.kind === "time") {
+    return formatSchedule(trigger.schedule);
+  }
+
+  return `${trigger.kind}:${trigger.eventType}`;
+};
+
+const formatJobTriggers = (job: ScheduledJob): string => {
+  return job.triggers.length > 0
+    ? job.triggers.map(formatTrigger).join(", ")
+    : "no triggers";
+};
+
 const summarizeJob = (job: ScheduledJob): Record<string, unknown> => ({
   id: job.id,
   name: job.name,
   status: job.status,
-  schedule: job.schedule,
-  scheduleLabel: formatSchedule(job.schedule),
+  schedule: job.schedule ?? null,
+  triggers: job.triggers,
+  triggerLabel: formatJobTriggers(job),
+  scheduleLabel: job.schedule ? formatSchedule(job.schedule) : "Event triggered",
   nextRunAt: job.nextRunAt ?? null,
   prompt: job.target.prompt,
   contextPaths: job.target.contextPaths,
@@ -739,7 +971,7 @@ const createJobSections = (
         `id: ${job.id}`,
         `name: ${job.name}`,
         `status: ${job.status}`,
-        `schedule: ${formatSchedule(job.schedule)}`,
+        `triggers: ${formatJobTriggers(job)}`,
         `next run: ${formatTimestamp(job.nextRunAt)}`,
       ],
     },
@@ -790,7 +1022,7 @@ const filterJobs = (
         job.name,
         job.dedupeKey,
         job.target.prompt,
-        formatSchedule(job.schedule),
+        formatJobTriggers(job),
       ]
         .filter((part): part is string => typeof part === "string")
         .join(" ")
@@ -865,7 +1097,7 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
                 jobs.length > 0
                   ? jobs.map(
                       (job) =>
-                        `${job.id} | ${job.name} | ${job.status} | ${formatSchedule(job.schedule)}`,
+                        `${job.id} | ${job.name} | ${job.status} | ${formatJobTriggers(job)}`,
                     )
                   : ["No scheduled jobs matched."],
             },
@@ -934,7 +1166,7 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
       spec: {
         name: "create_scheduled_job",
         description:
-          "Create a durable Smart Scheduler job from a natural-language request. You must enrich the user's request into a reusable scheduled prompt: include the exact recurring objective, platform/workspace assumptions, safety constraints, what tools/actions the scheduled AI should use, and how it should verify completion. For example, for 'clean up the Windows trash bin every Monday', create a Monday cron schedule and a prompt that clearly instructs the scheduled AI to empty the Windows Recycle Bin safely, handle missing permissions, avoid deleting unrelated files, and verify/report the result.",
+          "Create a durable Smart Scheduler job from a natural-language request. Use `schedule` for cron/interval/delay jobs or `triggers` for event-only/hybrid jobs such as workspace-file.created, git.branch-changed, webhook.github.workflow_run, or app.workspace-opened. You must enrich the user's request into a reusable scheduled prompt: include the exact objective, trigger assumptions, workspace/platform assumptions, safety constraints, what tools/actions the scheduled AI should use, and how it should verify completion.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -944,10 +1176,11 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
               description: "Human-readable schedule name.",
             },
             schedule: scheduleInputSchema,
+            triggers: triggerInputSchema,
             ...schedulerTargetSchema,
             ...schedulerPolicySchema,
           },
-          required: ["schedule", "prompt"],
+          required: ["prompt"],
         },
       },
       backingTool: "scheduler",
@@ -978,7 +1211,7 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
       spec: {
         name: "update_scheduled_job",
         description:
-          "Update an existing durable Smart Scheduler job. First call list_scheduled_jobs when the user refers to a job by description instead of id. When changing the task, replace `prompt` with a newly enriched durable scheduled prompt, not the user's shorthand. When changing cadence, supply a full updated schedule.",
+          "Update an existing durable Smart Scheduler job. First call list_scheduled_jobs when the user refers to a job by description instead of id. When changing the task, replace `prompt` with a newly enriched durable scheduled prompt, not the user's shorthand. When changing cadence or event behavior, supply a full updated schedule or triggers array.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -992,6 +1225,7 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
               description: "Updated human-readable schedule name.",
             },
             schedule: scheduleInputSchema,
+            triggers: triggerInputSchema,
             ...schedulerTargetSchema,
             ...schedulerPolicySchema,
           },

@@ -29,6 +29,7 @@ import {
   getSessionTitle,
   isQuickVoiceSession,
   MAX_SMART_CONTEXT_PACKS,
+  normalizeSessionTags,
   QUICK_VOICE_SESSION_KIND,
   type ChatSessionContextAttachment,
   type ChatSessionMessage,
@@ -1548,14 +1549,375 @@ export const useChatSessionController = (
     applySessionMessageLimit,
     updateThinkingTrace,
   });
+
+  const handleRemoteRenameSession = useCallback(
+    (sessionId: string, title: string): void => {
+      const normalizedTitle = title.trim();
+
+      if (!normalizedTitle) {
+        return;
+      }
+
+      state.updateSessionById(sessionId, (session) => {
+        if (!canRenameSession(session)) {
+          return session;
+        }
+
+        return {
+          ...session,
+          manualTitle: normalizedTitle,
+          updatedAt: Date.now(),
+        };
+      });
+    },
+    [state.updateSessionById],
+  );
+
+  const handleRemoteTagSession = useCallback(
+    (sessionId: string, tags: string[]): void => {
+      const normalizedTags = normalizeSessionTags(tags);
+
+      state.updateSessionById(sessionId, (session) => ({
+        ...session,
+        tags: normalizedTags,
+        updatedAt: Date.now(),
+      }));
+    },
+    [state.updateSessionById],
+  );
+
+  const handleRemoteClearSessionHistory = useCallback(
+    (sessionId: string): void => {
+      const taskIds = new Set<string>();
+
+      for (const [taskId, activeSessionId] of activeDesktopTasksRef.current.entries()) {
+        if (activeSessionId !== sessionId) {
+          continue;
+        }
+
+        taskIds.add(taskId);
+        activeDesktopTasksRef.current.delete(taskId);
+      }
+
+      const targetSession = state.shellState.sessions.find(
+        (session) => session.id === sessionId,
+      );
+      const latestRunningTaskId = targetSession
+        ? getLatestRunningTaskId(targetSession)
+        : null;
+
+      if (latestRunningTaskId) {
+        taskIds.add(latestRunningTaskId);
+      }
+
+      for (const taskId of taskIds) {
+        ignoredDesktopTaskIdsRef.current.add(taskId);
+        void cancelDesktopTask(taskId).catch((error) => {
+          console.error("Failed to cancel remote-cleared session task:", error);
+        });
+      }
+
+      state.updateSessionById(sessionId, (session) => ({
+        ...session,
+        messages: [],
+        promptHistory: [],
+        promptContextHistory: [],
+        sessionMemory: [],
+        updatedAt: Date.now(),
+      }));
+    },
+    [
+      activeDesktopTasksRef,
+      ignoredDesktopTaskIdsRef,
+      state.shellState.sessions,
+      state.updateSessionById,
+    ],
+  );
+
+  const handleRemoteUpdateSessionDraft = useCallback(
+    (sessionId: string, draft: string): void => {
+      state.updateSessionById(sessionId, (session) => ({
+        ...session,
+        draft,
+        updatedAt: Date.now(),
+      }));
+    },
+    [state.updateSessionById],
+  );
+
+  const handleRemoteSetSessionModel = useCallback(
+    (sessionId: string, provider: RuntimeProvider, model: string): void => {
+      if (!providerChooserState.chooserProviders.includes(provider)) {
+        return;
+      }
+
+      state.applyShellState((prev) => ({
+        ...prev,
+        lastSelectedProvider: provider,
+        lastSelectedModelByProvider: {
+          ...prev.lastSelectedModelByProvider,
+          [provider]: model,
+        },
+        sessions: prev.sessions.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                provider,
+                model,
+                updatedAt: Date.now(),
+              }
+            : session,
+        ),
+      }));
+    },
+    [providerChooserState.chooserProviders, state.applyShellState],
+  );
+
+  const handleRemoteSetSessionMode = useCallback(
+    (sessionId: string, mode: RunMode | null): void => {
+      state.applyShellState((prev) => ({
+        ...prev,
+        ...(mode ? { lastSelectedMode: mode } : {}),
+        sessions: prev.sessions.map((session) => {
+          if (session.id !== sessionId) {
+            return session;
+          }
+
+          const nextSession = mode
+            ? { ...session, mode }
+            : removeSessionModeOverride(session);
+
+          return {
+            ...nextSession,
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+    },
+    [state.applyShellState],
+  );
+
+  const handleRemoteSetSessionProfile = useCallback(
+    (sessionId: string, profile: string | null): void => {
+      state.applyShellState((prev) => ({
+        ...prev,
+        ...(profile ? { lastSelectedProfile: profile } : {}),
+        sessions: prev.sessions.map((session) => {
+          if (session.id !== sessionId) {
+            return session;
+          }
+
+          const nextSession = profile
+            ? { ...session, profile }
+            : removeSessionProfileOverride(session);
+
+          return {
+            ...nextSession,
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+    },
+    [state.applyShellState],
+  );
+
+  const handleRemoteSetSessionFlag = useCallback(
+    (
+      sessionId: string,
+      key: "sessionMemoryEnabled" | "useGlobalMemory" | "uiControlEnabled",
+      enabled: boolean,
+    ): void => {
+      state.updateSessionById(sessionId, (session) => ({
+        ...session,
+        [key]: enabled,
+        updatedAt: Date.now(),
+      }));
+    },
+    [state.updateSessionById],
+  );
+
+  const handleRemoteRemoveContextAttachment = useCallback(
+    (sessionId: string, attachmentId: string): void => {
+      state.updateSessionById(sessionId, (session) => ({
+        ...session,
+        draftContextAttachments: session.draftContextAttachments.filter(
+          (attachment) => attachment.id !== attachmentId,
+        ),
+        updatedAt: Date.now(),
+      }));
+    },
+    [state.updateSessionById],
+  );
+
+  const handleRemoteClearContextAttachments = useCallback(
+    (sessionId: string): void => {
+      state.updateSessionById(sessionId, (session) => ({
+        ...session,
+        draftContextAttachments: [],
+        updatedAt: Date.now(),
+      }));
+    },
+    [state.updateSessionById],
+  );
+
+  const handleRemoteApplyContextPack = useCallback(
+    (sessionId: string, packId: string): void => {
+      const pack = workspaceContextPacks.find(
+        (contextPack) => contextPack.id === packId,
+      );
+
+      if (!pack) {
+        return;
+      }
+
+      state.applyShellState((prev) => {
+        const now = Date.now();
+        const savedProvider = pack.provider;
+        const savedModel = pack.model;
+        const savedModelSelection =
+          savedProvider !== undefined &&
+          savedModel !== undefined &&
+          providerChooserState.chooserProviders.includes(savedProvider)
+            ? { provider: savedProvider, model: savedModel }
+            : null;
+
+        const nextState: ShellPersistedState = {
+          ...prev,
+          contextPacks: prev.contextPacks.map((contextPack) =>
+            contextPack.id === pack.id
+              ? {
+                  ...contextPack,
+                  lastUsedAt: now,
+                  useCount: contextPack.useCount + 1,
+                }
+              : contextPack,
+          ),
+          sessions: prev.sessions.map((session) => {
+            if (session.id !== sessionId) {
+              return session;
+            }
+
+            const application = applySmartContextPackToComposer(
+              session.draft,
+              session.draftContextAttachments,
+              pack,
+              {},
+            );
+            const nextSession: ChatSessionRecord = {
+              ...session,
+              draft: application.draft,
+              draftContextAttachments: application.contextAttachments,
+              updatedAt: now,
+            };
+
+            if (savedModelSelection) {
+              nextSession.provider = savedModelSelection.provider;
+              nextSession.model = savedModelSelection.model;
+            }
+
+            if (pack.mode) {
+              nextSession.mode = pack.mode;
+            }
+
+            return nextSession;
+          }),
+        };
+
+        if (savedModelSelection) {
+          nextState.lastSelectedProvider = savedModelSelection.provider;
+          nextState.lastSelectedModelByProvider = {
+            ...prev.lastSelectedModelByProvider,
+            [savedModelSelection.provider]: savedModelSelection.model,
+          };
+        }
+
+        if (pack.mode) {
+          nextState.lastSelectedMode = pack.mode;
+        }
+
+        return nextState;
+      });
+    },
+    [
+      providerChooserState.chooserProviders,
+      state.applyShellState,
+      workspaceContextPacks,
+    ],
+  );
+
   const remoteMissionControl = useRemoteMissionControl({
     shellState: state.shellState,
     activeSession: state.activeSession,
+    visibleMessages: state.visibleMessages,
+    runtimeSnapshot: runtime.runtimeSnapshot,
+    runtimeLoading: runtime.runtimeLoading,
+    runtimeError: runtime.runtimeError,
+    hasAnyProvider: providerChooserState.hasAnyProvider,
+    chooserProviders: providerChooserState.chooserProviders,
+    defaultMode,
+    activeRunMode,
+    composerWorkspaceLabel: memorySummaryState.composerWorkspaceLabel,
+    isGlobalMemoryAvailable: memorySummaryState.isGlobalMemoryAvailable,
+    isGlobalMemoryActive: memorySummaryState.isGlobalMemoryActive,
+    isUiControlAvailable,
+    uiControlDescription,
+    canSendMessage,
+    sendDisabledReason: activeSessionImageInputError,
+    workspaceContextPacks,
+    matchedContextPackIds,
+    quickTaskSession,
+    quickTaskDraft,
+    quickTaskProvider,
+    quickTaskModel,
+    quickTaskAutopilotEnabled: quickTaskEffectiveRunMode === "machdoch",
+    quickTaskGlobalMemoryEnabled,
+    quickTaskUiControlEnabled: isUiControlAvailable && quickTaskUiControlEnabled,
+    quickTaskAttachmentCount: quickTaskContextAttachments.length,
+    quickTaskStatus: quickTaskSession
+      ? getSessionOverviewStatus(quickTaskSession)
+      : "empty",
+    quickTaskIsExecuting: quickTaskSession
+      ? getSessionOverviewStatus(quickTaskSession) === "running"
+      : false,
+    voiceSupported: voice.supported,
+    speakingMessageId: voice.speakingMessageId,
+    speechInputSupported: speechInput.browserSupported,
+    speechInputEnabled: speechInput.enabled,
+    speechInputStatus: speechInput.statusText,
     activeDesktopTasksRef,
     submitTaskToSession: taskSubmission.submitTaskToSession,
     onRetryTask: taskSubmission.handleRetryTask,
     onContinueTask: taskSubmission.handleContinueTask,
     onCancelSessionTask: requestTaskCancellation,
+    onCreateSession: () => lifecycleActions.createNewSession(),
+    onActivateSession: state.setActiveSessionId,
+    onArchiveSession: lifecycleActions.archiveSession,
+    onTogglePinnedSession: lifecycleActions.togglePinnedSession,
+    onDuplicateSession: (sessionId: string) =>
+      lifecycleActions.cloneSession(sessionId, "duplicate"),
+    onBranchSession: (sessionId: string) =>
+      lifecycleActions.cloneSession(sessionId, "branch"),
+    onDeleteSession: lifecycleActions.deleteSession,
+    onRenameSession: handleRemoteRenameSession,
+    onTagSession: handleRemoteTagSession,
+    onClearSessionHistory: handleRemoteClearSessionHistory,
+    onUpdateSessionDraft: handleRemoteUpdateSessionDraft,
+    onSetSessionModel: handleRemoteSetSessionModel,
+    onSetSessionMode: handleRemoteSetSessionMode,
+    onSetSessionProfile: handleRemoteSetSessionProfile,
+    onSetSessionMemory: (sessionId: string, enabled: boolean) =>
+      handleRemoteSetSessionFlag(sessionId, "sessionMemoryEnabled", enabled),
+    onSetGlobalMemory: (sessionId: string, enabled: boolean) =>
+      handleRemoteSetSessionFlag(sessionId, "useGlobalMemory", enabled),
+    onSetUiControl: (sessionId: string, enabled: boolean) =>
+      handleRemoteSetSessionFlag(sessionId, "uiControlEnabled", enabled),
+    onRemoveContextAttachment: handleRemoteRemoveContextAttachment,
+    onClearContextAttachments: handleRemoteClearContextAttachments,
+    onApplyContextPack: handleRemoteApplyContextPack,
+    onDeleteContextPack: handleDeleteContextPack,
+    onSaveMessageAsContextPack: handleSaveMessageAsContextPack,
+    onSpeakMessage: voice.speakMessage,
+    onStopSpeaking: voice.stopSpeaking,
   });
 
   const submitQuickVoiceCommand = useCallback(

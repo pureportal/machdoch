@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   CalendarClock,
   CheckCircle2,
   Clock3,
@@ -8,7 +7,6 @@ import {
   Pause,
   Play,
   Plus,
-  RefreshCw,
   RotateCcw,
   Trash2,
   XCircle,
@@ -18,6 +16,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type JSX,
 } from "react";
@@ -42,12 +41,10 @@ import {
   resumeSchedulerJob,
   retrySchedulerRun,
   runDueSchedulerJobs,
-  syncScheduledPrompts,
   triggerSchedulerJob,
   type SchedulerCreateJobInput,
   type SchedulerJobSummary,
   type SchedulerMissedRunPolicy,
-  type SchedulerPromptSyncResult,
   type SchedulerRunStatus,
   type SchedulerRunSummary,
   type SchedulerScheduleSummary,
@@ -59,6 +56,8 @@ export interface SchedulerPanelProps {
 
 type ScheduleType = "cron" | "interval" | "delay";
 type SchedulerPanelTab = "jobs" | "runs";
+
+const SCHEDULER_PANEL_REFRESH_INTERVAL_MS = 10_000;
 
 interface SchedulerFormState {
   name: string;
@@ -165,7 +164,7 @@ const formatDuration = (milliseconds: number | null | undefined): string => {
 const formatSchedule = (schedule: SchedulerScheduleSummary): string => {
   switch (schedule.type) {
     case "cron":
-      return `${schedule.expression} · ${schedule.timezone}`;
+      return `${schedule.expression} | ${schedule.timezone}`;
     case "interval":
       return `every ${formatDuration(schedule.intervalMs)}`;
     case "delay":
@@ -328,12 +327,10 @@ export const SchedulerPanel = ({
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [tab, setTab] = useState<SchedulerPanelTab>("jobs");
   const [form, setForm] = useState<SchedulerFormState>(createDefaultFormState);
-  const [syncResult, setSyncResult] =
-    useState<SchedulerPromptSyncResult | null>(null);
-  const [loading, setLoading] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const refreshInFlightRef = useRef(false);
 
   const activeWorkspace = workspaceRoot?.trim() || null;
   const selectedJob = useMemo(() => {
@@ -341,13 +338,17 @@ export const SchedulerPanel = ({
   }, [jobs, selectedJobId]);
 
   const refresh = useCallback(async (): Promise<void> => {
+    if (refreshInFlightRef.current) {
+      return;
+    }
+
     if (!activeWorkspace) {
       setJobs([]);
       setRuns([]);
       return;
     }
 
-    setLoading(true);
+    refreshInFlightRef.current = true;
     setError(null);
 
     try {
@@ -370,13 +371,23 @@ export const SchedulerPanel = ({
         caughtError instanceof Error ? caughtError.message : String(caughtError),
       );
     } finally {
-      setLoading(false);
+      refreshInFlightRef.current = false;
     }
   }, [activeWorkspace, selectedJobId]);
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+
+    if (!activeWorkspace) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refresh();
+    }, SCHEDULER_PANEL_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [activeWorkspace, refresh]);
 
   const runAction = async (
     actionId: string,
@@ -522,17 +533,6 @@ export const SchedulerPanel = ({
     });
   };
 
-  const syncPrompts = async (): Promise<void> => {
-    await runAction("sync-prompts", async () => {
-      const result = await syncScheduledPrompts(activeWorkspace);
-
-      setSyncResult(result);
-      setMessage(
-        `Synced ${result.syncedJobs.length}; paused ${result.pausedJobs.length}.`,
-      );
-    });
-  };
-
   const runDue = async (): Promise<void> => {
     await runAction("run-due", async () => {
       const result = await runDueSchedulerJobs(activeWorkspace);
@@ -589,35 +589,6 @@ export const SchedulerPanel = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Refresh scheduler"
-                  title="Refresh scheduler"
-                  disabled={loading || Boolean(busyAction)}
-                  onClick={() => void refresh()}
-                  className="h-9 w-9 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-                >
-                  <RefreshCw
-                    className={cn("h-4 w-4", loading ? "animate-spin" : "")}
-                  />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={Boolean(busyAction)}
-                  onClick={() => void syncPrompts()}
-                  className="h-9 rounded-lg border-emerald-500/30 bg-emerald-500/10 px-3 text-xs text-emerald-100 hover:bg-emerald-500/15 hover:text-white"
-                >
-                  {actionButtonBusy("sync-prompts") ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <RotateCcw className="h-3.5 w-3.5" />
-                  )}
-                  Sync
-                </Button>
                 <Button
                   type="button"
                   size="sm"
@@ -792,14 +763,14 @@ export const SchedulerPanel = ({
                           <div>
                             <div className="text-slate-600">Queue</div>
                             <div className="truncate text-slate-300">
-                              {job.queue.concurrencyKey} ·{" "}
+                              {job.queue.concurrencyKey} |{" "}
                               {job.queue.concurrencyLimit}
                             </div>
                           </div>
                           <div>
                             <div className="text-slate-600">Retries</div>
                             <div className="text-slate-300">
-                              {job.retry.maxAttempts} ·{" "}
+                              {job.retry.maxAttempts} |{" "}
                               {formatDuration(job.maxDurationMs)}
                             </div>
                           </div>
@@ -1273,56 +1244,6 @@ export const SchedulerPanel = ({
                   </label>
                 </div>
               </div>
-
-              {syncResult ? (
-                <div className="grid gap-2 rounded-lg border border-slate-800 bg-slate-900/35 p-3">
-                  <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
-                    <RotateCcw className="h-3.5 w-3.5 text-emerald-300" />
-                    Prompt Schedules
-                  </div>
-                  <div className="grid gap-2">
-                    {syncResult.discovered.length === 0 ? (
-                      <div className="text-xs text-slate-500">
-                        No prompt schedules found.
-                      </div>
-                    ) : (
-                      syncResult.discovered.slice(0, 6).map((definition) => (
-                        <div
-                          key={definition.path}
-                          className="grid gap-1 rounded-md border border-slate-800 bg-slate-950 p-2"
-                        >
-                          <div className="flex min-w-0 items-center gap-2">
-                            <Badge
-                              variant="outline"
-                              className={
-                                definition.enabled
-                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
-                                  : "border-slate-700 bg-slate-900 text-slate-400"
-                              }
-                            >
-                              {definition.enabled ? "enabled" : "off"}
-                            </Badge>
-                            <div className="truncate text-xs text-slate-300">
-                              {definition.name}
-                            </div>
-                          </div>
-                          <div className="truncate font-mono text-[11px] text-slate-600">
-                            {definition.path}
-                          </div>
-                          {definition.warnings.length > 0 ? (
-                            <div className="flex items-start gap-1 text-[11px] text-amber-200">
-                              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                              <span className="min-w-0 truncate">
-                                {definition.warnings.join("; ")}
-                              </span>
-                            </div>
-                          ) : null}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              ) : null}
             </form>
           </aside>
         </div>
