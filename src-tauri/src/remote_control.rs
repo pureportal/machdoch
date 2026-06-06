@@ -10,7 +10,6 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Condvar, Mutex,
     },
-    thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -44,12 +43,12 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::windows::process::CommandExt;
 
 const REMOTE_CONTROL_COMMAND_EVENT: &str = "remote-control-command";
+#[allow(dead_code)]
 const MAX_HTTP_BODY_BYTES: usize = 64 * 1024;
 const MAX_SESSIONS: usize = 128;
 const MAX_LOG_ENTRIES: usize = 160;
 const MAX_TIMELINE_ENTRIES: usize = 80;
 const MAX_COMMAND_ENTRIES: usize = 100;
-const MAX_APPROVAL_PROMPTS: usize = 80;
 const MAX_PAIRED_DEVICES: usize = 32;
 const MAX_COMMAND_TEXT_CHARS: usize = 8_000;
 const MAX_REMOTE_SHELL_SESSIONS: usize = 80;
@@ -90,7 +89,6 @@ struct RemoteControlInner {
     server: Option<RemoteControlServerInfo>,
     sessions: HashMap<String, RemoteTaskSession>,
     commands: VecDeque<RemoteCommandRecord>,
-    approval_prompts: VecDeque<RemoteApprovalPrompt>,
     shell: Option<RemoteShellSnapshot>,
 }
 
@@ -176,7 +174,6 @@ struct RemoteControlSnapshot {
     event_id: u64,
     sessions: Vec<RemoteTaskSession>,
     commands: Vec<RemoteCommandRecord>,
-    approval_prompts: Vec<RemoteApprovalPrompt>,
     #[serde(skip_serializing_if = "Option::is_none")]
     shell: Option<RemoteShellSnapshot>,
 }
@@ -230,10 +227,6 @@ pub struct RemoteControlCommandEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     prompt: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    decision: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    prompt_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tags: Option<Vec<String>>,
@@ -274,28 +267,10 @@ struct RemoteCommandRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     prompt_preview: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    decision: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    prompt_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     target_preview: Option<String>,
     created_at: u64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RemoteApprovalPrompt {
-    prompt_id: String,
-    task_id: String,
-    title: String,
-    message: String,
-    details: Vec<String>,
-    status: String,
-    created_at: u64,
-    resolved_at: Option<u64>,
-    decision: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -555,8 +530,6 @@ struct RemoteCommandRequest {
     task_id: Option<String>,
     session_id: Option<String>,
     prompt: Option<String>,
-    decision: Option<String>,
-    prompt_id: Option<String>,
     title: Option<String>,
     tags: Option<Vec<String>>,
     provider: Option<String>,
@@ -572,6 +545,7 @@ struct RemoteCommandRequest {
     run_id: Option<String>,
 }
 
+#[allow(dead_code)]
 struct HttpRequest {
     method: String,
     path: String,
@@ -630,8 +604,6 @@ impl RemoteControlState {
             .local_addr()
             .map_err(|error| format!("Unable to inspect Mission Control listener: {error}"))?
             .port();
-        let listener = TokioTcpListener::from_std(listener)
-            .map_err(|error| format!("Unable to create Mission Control web listener: {error}"))?;
         let local_url = format!("http://127.0.0.1:{port}/#pair={token}");
         let lan_url = detect_lan_ip().map(|ip| format!("http://{ip}:{port}/#pair={token}"));
         let display_url = lan_url.clone().unwrap_or_else(|| local_url.clone());
@@ -755,7 +727,6 @@ impl RemoteControlState {
 
         session.progress_count = session.progress_count.saturating_add(1);
         session.updated_at = timestamp;
-        let progress_count = session.progress_count;
 
         if let Some(task) = string_field(progress, "task").filter(|value| !value.is_empty()) {
             session.task = task;
@@ -832,61 +803,6 @@ impl RemoteControlState {
             }
         }
 
-        if let Some(approval_prompt) = progress.get("approvalPrompt").and_then(Value::as_object) {
-            let prompt_id = approval_prompt
-                .get("promptId")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-                .unwrap_or_else(|| format!("{normalized_task_id}-approval-{progress_count}"));
-            let details = approval_prompt
-                .get("details")
-                .and_then(Value::as_array)
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .map(|value| truncate_chars(value, 1_000))
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            let prompt = RemoteApprovalPrompt {
-                prompt_id: prompt_id.clone(),
-                task_id: normalized_task_id.to_string(),
-                title: approval_prompt
-                    .get("title")
-                    .and_then(Value::as_str)
-                    .map(|value| truncate_chars(value, 200))
-                    .unwrap_or_else(|| "Approval requested".to_string()),
-                message: approval_prompt
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .map(|value| truncate_chars(value, 1_000))
-                    .unwrap_or_else(|| "The local session is waiting for approval.".to_string()),
-                details,
-                status: approval_prompt
-                    .get("status")
-                    .and_then(Value::as_str)
-                    .map(str::to_ascii_lowercase)
-                    .filter(|value| !value.is_empty())
-                    .unwrap_or_else(|| "pending".to_string()),
-                created_at: timestamp,
-                resolved_at: None,
-                decision: None,
-            };
-
-            if let Some(existing) = inner
-                .approval_prompts
-                .iter_mut()
-                .find(|entry| entry.prompt_id == prompt_id)
-            {
-                *existing = prompt;
-            } else {
-                push_bounded(&mut inner.approval_prompts, prompt, MAX_APPROVAL_PROMPTS);
-            }
-        }
-
         inner.event_id = inner.event_id.saturating_add(1);
         self.shared.updates.notify_all();
     }
@@ -907,8 +823,6 @@ impl RemoteControlState {
                     .prompt
                     .as_deref()
                     .map(|value| truncate_chars(value, 240)),
-                decision: event.decision.clone(),
-                prompt_id: event.prompt_id.clone(),
                 title: event.title.clone(),
                 target_preview: create_command_target_preview(event),
                 created_at: event.created_at,
@@ -917,36 +831,6 @@ impl RemoteControlState {
         );
         inner.event_id = inner.event_id.saturating_add(1);
         self.shared.updates.notify_all();
-    }
-
-    fn record_approval_decision(&self, event: &RemoteControlCommandEvent) {
-        if event.kind != "approval-decision" {
-            return;
-        }
-
-        let Some(prompt_id) = event.prompt_id.as_deref() else {
-            return;
-        };
-
-        let Ok(mut inner) = self.shared.inner.lock() else {
-            return;
-        };
-
-        if let Some(prompt) = inner
-            .approval_prompts
-            .iter_mut()
-            .find(|entry| entry.prompt_id == prompt_id)
-        {
-            prompt.status = match event.decision.as_deref() {
-                Some("approve") => "approved".to_string(),
-                Some("reject") => "rejected".to_string(),
-                _ => "resolved".to_string(),
-            };
-            prompt.decision = event.decision.clone();
-            prompt.resolved_at = Some(event.created_at);
-            inner.event_id = inner.event_id.saturating_add(1);
-            self.shared.updates.notify_all();
-        }
     }
 
     fn update_shell_snapshot(&self, snapshot: RemoteShellSnapshot) -> Result<(), String> {
@@ -1235,11 +1119,19 @@ struct RemoteWebServerState {
 }
 
 async fn run_http_server(
-    listener: TokioTcpListener,
+    listener: TcpListener,
     shared: Arc<RemoteControlShared>,
     app_handle: tauri::AppHandle,
     shutdown: Arc<AtomicBool>,
 ) {
+    let listener = match TokioTcpListener::from_std(listener) {
+        Ok(listener) => listener,
+        Err(error) => {
+            eprintln!("Unable to create Mission Control web listener: {error}");
+            shutdown.store(true, Ordering::SeqCst);
+            return;
+        }
+    };
     let state = RemoteWebServerState {
         shared,
         app_handle,
@@ -1419,7 +1311,6 @@ async fn post_remote_web_command(
         shared: state.shared.clone(),
     };
     control_state.record_command(&event);
-    control_state.record_approval_decision(&event);
 
     if event.kind == "cancel" {
         if let Some(task_id) = event.task_id.as_deref() {
@@ -1428,7 +1319,9 @@ async fn post_remote_web_command(
         }
     }
 
-    let _ = state.app_handle.emit(REMOTE_CONTROL_COMMAND_EVENT, event.clone());
+    let _ = state
+        .app_handle
+        .emit(REMOTE_CONTROL_COMMAND_EVENT, event.clone());
 
     json_response(
         StatusCode::ACCEPTED,
@@ -1465,7 +1358,10 @@ fn add_no_store_header(headers: &mut HeaderMap) {
 
 fn add_secure_html_headers(headers: &mut HeaderMap) {
     add_no_store_header(headers);
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
     headers.insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
     headers.insert(
         CONTENT_SECURITY_POLICY,
@@ -1502,7 +1398,9 @@ fn headers_have_current_pairing_token(
 }
 
 fn headers_have_web_session(headers: &HeaderMap, shared: &Arc<RemoteControlShared>) -> bool {
-    let Some(session_token) = cookie_value_from_header(header_to_str(headers, "cookie"), WEB_SESSION_COOKIE_NAME) else {
+    let Some(session_token) =
+        cookie_value_from_header(header_to_str(headers, "cookie"), WEB_SESSION_COOKIE_NAME)
+    else {
         return false;
     };
 
@@ -1547,6 +1445,7 @@ fn state_changing_headers_allowed(headers: &HeaderMap) -> bool {
     origin == format!("http://{host}")
 }
 
+#[allow(dead_code)]
 fn handle_connection(
     mut stream: TcpStream,
     shared: Arc<RemoteControlShared>,
@@ -1681,6 +1580,7 @@ fn handle_connection(
     }
 }
 
+#[allow(dead_code)]
 fn handle_sse_stream(
     mut stream: TcpStream,
     shared: Arc<RemoteControlShared>,
@@ -1744,6 +1644,7 @@ fn handle_sse_stream(
     }
 }
 
+#[allow(dead_code)]
 fn handle_command_request(
     mut stream: TcpStream,
     request: HttpRequest,
@@ -1773,7 +1674,6 @@ fn handle_command_request(
 
     let state = RemoteControlState { shared };
     state.record_command(&event);
-    state.record_approval_decision(&event);
 
     if event.kind == "cancel" {
         if let Some(task_id) = event.task_id.as_deref() {
@@ -1802,7 +1702,6 @@ fn normalize_command(request: RemoteCommandRequest) -> Result<RemoteControlComma
             | "retry"
             | "continue"
             | "follow-up"
-            | "approval-decision"
             | "create-session"
             | "activate-session"
             | "archive-session"
@@ -1896,28 +1795,6 @@ fn normalize_command(request: RemoteCommandRequest) -> Result<RemoteControlComma
         return Err("Queued follow-up commands require a prompt.".to_string());
     }
 
-    let decision = request
-        .decision
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_ascii_lowercase);
-
-    if kind == "approval-decision" && !matches!(decision.as_deref(), Some("approve" | "reject")) {
-        return Err("Approval decisions must be approve or reject.".to_string());
-    }
-
-    let prompt_id = request
-        .prompt_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
-
-    if kind == "approval-decision" && prompt_id.is_none() {
-        return Err("Approval decisions require a promptId.".to_string());
-    }
-
     let title = request
         .title
         .as_deref()
@@ -1964,6 +1841,9 @@ fn normalize_command(request: RemoteCommandRequest) -> Result<RemoteControlComma
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| truncate_chars(value, MAX_REMOTE_SHORT_TEXT_CHARS));
+    if kind == "set-session-mode" && !matches!(mode.as_deref(), Some("ask" | "machdoch")) {
+        return Err("Session mode must be ask or machdoch.".to_string());
+    }
     let profile = request
         .profile
         .as_deref()
@@ -2016,7 +1896,8 @@ fn normalize_command(request: RemoteCommandRequest) -> Result<RemoteControlComma
         .filter(|value| !value.is_empty())
         .map(str::to_string);
 
-    if matches!(kind.as_str(), "save-message-context-pack" | "speak-message") && message_id.is_none()
+    if matches!(kind.as_str(), "save-message-context-pack" | "speak-message")
+        && message_id.is_none()
     {
         return Err("This Mission Control command requires a messageId.".to_string());
     }
@@ -2043,7 +1924,10 @@ fn normalize_command(request: RemoteCommandRequest) -> Result<RemoteControlComma
         .filter(|value| !value.is_empty())
         .map(str::to_string);
 
-    if matches!(kind.as_str(), "scheduler-retry-run" | "scheduler-cancel-run") && run_id.is_none()
+    if matches!(
+        kind.as_str(),
+        "scheduler-retry-run" | "scheduler-cancel-run"
+    ) && run_id.is_none()
     {
         return Err("This Mission Control command requires a runId.".to_string());
     }
@@ -2054,8 +1938,6 @@ fn normalize_command(request: RemoteCommandRequest) -> Result<RemoteControlComma
         task_id,
         session_id,
         prompt,
-        decision,
-        prompt_id,
         title,
         tags,
         provider,
@@ -2073,6 +1955,7 @@ fn normalize_command(request: RemoteCommandRequest) -> Result<RemoteControlComma
     })
 }
 
+#[allow(dead_code)]
 fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
     let mut reader = BufReader::new(stream);
     let mut request_line = String::new();
@@ -2141,6 +2024,7 @@ fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
     })
 }
 
+#[allow(dead_code)]
 fn split_target(target: &str) -> String {
     let path_and_query = target.split('#').next().unwrap_or(target);
 
@@ -2151,6 +2035,7 @@ fn split_target(target: &str) -> String {
     path_and_query.to_string()
 }
 
+#[allow(dead_code)]
 fn request_has_bearer_token(request: &HttpRequest, token: &str) -> bool {
     request
         .headers
@@ -2160,6 +2045,7 @@ fn request_has_bearer_token(request: &HttpRequest, token: &str) -> bool {
         .unwrap_or(false)
 }
 
+#[allow(dead_code)]
 fn request_has_current_pairing_token(
     request: &HttpRequest,
     shared: &Arc<RemoteControlShared>,
@@ -2175,6 +2061,7 @@ fn request_has_current_pairing_token(
     request_has_bearer_token(request, &server.token)
 }
 
+#[allow(dead_code)]
 fn request_has_web_session(request: &HttpRequest, shared: &Arc<RemoteControlShared>) -> bool {
     let Some(session_token) = cookie_value(request, WEB_SESSION_COOKIE_NAME) else {
         return false;
@@ -2193,10 +2080,12 @@ fn request_has_web_session(request: &HttpRequest, shared: &Arc<RemoteControlShar
     })
 }
 
+#[allow(dead_code)]
 fn request_is_authorized(request: &HttpRequest, shared: &Arc<RemoteControlShared>) -> bool {
     request_has_web_session(request, shared)
 }
 
+#[allow(dead_code)]
 fn state_changing_request_is_allowed(request: &HttpRequest) -> bool {
     if request
         .headers
@@ -2227,6 +2116,7 @@ fn state_changing_request_is_allowed(request: &HttpRequest) -> bool {
     origin == &format!("http://{host}")
 }
 
+#[allow(dead_code)]
 fn cookie_value(request: &HttpRequest, name: &str) -> Option<String> {
     cookie_value_from_header(request.headers.get("cookie").map(String::as_str), name)
 }
@@ -2451,6 +2341,7 @@ fn open_url_in_system_browser(url: &str) -> Result<(), String> {
     Err("Opening Mission Control is not supported on this platform.".to_string())
 }
 
+#[allow(dead_code)]
 fn write_html_response(stream: &mut TcpStream, body: String) -> std::io::Result<()> {
     write_response(
         stream,
@@ -2468,6 +2359,7 @@ fn write_html_response(stream: &mut TcpStream, body: String) -> std::io::Result<
     )
 }
 
+#[allow(dead_code)]
 fn write_json_response(
     stream: &mut TcpStream,
     status: u16,
@@ -2483,6 +2375,7 @@ fn write_json_response(
     write_response(stream, status, bytes, &headers)
 }
 
+#[allow(dead_code)]
 fn write_response(
     stream: &mut TcpStream,
     status: u16,
@@ -2493,6 +2386,7 @@ fn write_response(
     stream.write_all(&body)
 }
 
+#[allow(dead_code)]
 fn write_headers(
     stream: &mut TcpStream,
     status: u16,
@@ -2566,7 +2460,6 @@ fn create_snapshot_locked(inner: &RemoteControlInner) -> RemoteControlSnapshot {
         event_id: inner.event_id,
         sessions: sorted_sessions(inner),
         commands: inner.commands.iter().cloned().rev().collect(),
-        approval_prompts: inner.approval_prompts.iter().cloned().rev().collect(),
         shell: inner.shell.clone(),
     }
 }
@@ -2577,7 +2470,9 @@ fn sorted_sessions(inner: &RemoteControlInner) -> Vec<RemoteTaskSession> {
     sessions
 }
 
-fn sanitize_shell_snapshot(mut snapshot: RemoteShellSnapshot) -> Result<RemoteShellSnapshot, String> {
+fn sanitize_shell_snapshot(
+    mut snapshot: RemoteShellSnapshot,
+) -> Result<RemoteShellSnapshot, String> {
     if snapshot.version == 0 {
         snapshot.version = 1;
     }
@@ -2651,7 +2546,8 @@ fn sanitize_shell_session(mut session: RemoteShellSession) -> Option<RemoteShell
         .collect();
     session.running_task_id =
         sanitize_optional_text(session.running_task_id, MAX_REMOTE_SHORT_TEXT_CHARS);
-    session.special_kind = sanitize_optional_text(session.special_kind, MAX_REMOTE_SHORT_TEXT_CHARS);
+    session.special_kind =
+        sanitize_optional_text(session.special_kind, MAX_REMOTE_SHORT_TEXT_CHARS);
 
     Some(session)
 }
@@ -2710,7 +2606,9 @@ fn sanitize_shell_trace_entry(mut entry: RemoteShellTraceEntry) -> Option<Remote
     Some(entry)
 }
 
-fn sanitize_shell_attachment(mut attachment: RemoteShellAttachment) -> Option<RemoteShellAttachment> {
+fn sanitize_shell_attachment(
+    mut attachment: RemoteShellAttachment,
+) -> Option<RemoteShellAttachment> {
     attachment.id = sanitize_text(attachment.id, MAX_REMOTE_SHORT_TEXT_CHARS);
     attachment.kind = sanitize_text(attachment.kind, MAX_REMOTE_SHORT_TEXT_CHARS);
     attachment.name = sanitize_text(attachment.name, MAX_REMOTE_SHORT_TEXT_CHARS);
@@ -2793,7 +2691,8 @@ fn sanitize_shell_runtime_capability(
 }
 
 fn sanitize_shell_scheduler(mut scheduler: RemoteShellScheduler) -> RemoteShellScheduler {
-    scheduler.workspace_root = sanitize_optional_text(scheduler.workspace_root, MAX_REMOTE_TEXT_CHARS);
+    scheduler.workspace_root =
+        sanitize_optional_text(scheduler.workspace_root, MAX_REMOTE_TEXT_CHARS);
     scheduler.error = sanitize_optional_text(scheduler.error, MAX_REMOTE_TEXT_CHARS);
     scheduler.jobs = scheduler
         .jobs
@@ -2810,7 +2709,9 @@ fn sanitize_shell_scheduler(mut scheduler: RemoteShellScheduler) -> RemoteShellS
     scheduler
 }
 
-fn sanitize_shell_scheduler_job(mut job: RemoteShellSchedulerJob) -> Option<RemoteShellSchedulerJob> {
+fn sanitize_shell_scheduler_job(
+    mut job: RemoteShellSchedulerJob,
+) -> Option<RemoteShellSchedulerJob> {
     job.id = sanitize_text(job.id, MAX_REMOTE_SHORT_TEXT_CHARS);
     if job.id.is_empty() {
         return None;
@@ -2823,7 +2724,9 @@ fn sanitize_shell_scheduler_job(mut job: RemoteShellSchedulerJob) -> Option<Remo
     Some(job)
 }
 
-fn sanitize_shell_scheduler_run(mut run: RemoteShellSchedulerRun) -> Option<RemoteShellSchedulerRun> {
+fn sanitize_shell_scheduler_run(
+    mut run: RemoteShellSchedulerRun,
+) -> Option<RemoteShellSchedulerRun> {
     run.id = sanitize_text(run.id, MAX_REMOTE_SHORT_TEXT_CHARS);
     run.job_id = sanitize_text(run.job_id, MAX_REMOTE_SHORT_TEXT_CHARS);
     if run.id.is_empty() || run.job_id.is_empty() {
@@ -2888,11 +2791,20 @@ fn sanitize_optional_text(value: Option<String>, max_chars: usize) -> Option<Str
 
 fn create_command_target_preview(event: &RemoteControlCommandEvent) -> Option<String> {
     [
-        event.session_id.as_deref().map(|value| format!("session:{value}")),
-        event.task_id.as_deref().map(|value| format!("task:{value}")),
+        event
+            .session_id
+            .as_deref()
+            .map(|value| format!("session:{value}")),
+        event
+            .task_id
+            .as_deref()
+            .map(|value| format!("task:{value}")),
         event.job_id.as_deref().map(|value| format!("job:{value}")),
         event.run_id.as_deref().map(|value| format!("run:{value}")),
-        event.message_id.as_deref().map(|value| format!("message:{value}")),
+        event
+            .message_id
+            .as_deref()
+            .map(|value| format!("message:{value}")),
         event
             .context_pack_id
             .as_deref()
@@ -3005,7 +2917,7 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 }
 
 fn mission_control_html() -> String {
-    r#"<!doctype html>
+    r##"<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -3093,7 +3005,6 @@ fn mission_control_html() -> String {
             <select id="providerSelect" aria-label="Provider"></select>
             <input id="modelInput" aria-label="Model" placeholder="Model">
             <select id="modeSelect" aria-label="Mode">
-              <option value="">Workspace default</option>
               <option value="ask">Ask</option>
               <option value="machdoch">Machdoch</option>
             </select>
@@ -3115,10 +3026,6 @@ fn mission_control_html() -> String {
       <section class="section">
         <h2>Tasks</h2>
         <div class="scroll-list" id="tasks"><p class="empty">No task progress has streamed yet.</p></div>
-      </section>
-      <section class="section">
-        <h2>Approvals</h2>
-        <div class="scroll-list" id="approvals"><p class="empty">No approval prompts are waiting.</p></div>
       </section>
       <section class="section">
         <h2>Scheduler</h2>
@@ -3154,7 +3061,6 @@ fn mission_control_html() -> String {
     const modeSelect = document.getElementById("modeSelect");
     const composerMeta = document.getElementById("composerMeta");
     const tasks = document.getElementById("tasks");
-    const approvals = document.getElementById("approvals");
     const schedulerPanel = document.getElementById("schedulerPanel");
     const contextPacks = document.getElementById("contextPacks");
     const commands = document.getElementById("commands");
@@ -3261,32 +3167,6 @@ fn mission_control_html() -> String {
           <div class="meta">${age(item.createdAt)}</div>
         </div>
       `).join("");
-    }
-
-    function renderApprovals(items) {
-      if (!items.length) {
-        approvals.innerHTML = '<p class="empty">No approval prompts are waiting.</p>';
-        return;
-      }
-
-      approvals.innerHTML = items.map((item) => {
-        const pending = item.status === "pending";
-        return `
-          <div class="event">
-            <strong>${escapeHtml(item.title)}</strong>
-            <div>${escapeHtml(item.message)}</div>
-            ${(item.details || []).map((detail) => `<div class="meta">${escapeHtml(detail)}</div>`).join("")}
-            <div class="meta">
-              <span class="pill">${escapeHtml(item.status)}</span>
-              <span>${age(item.createdAt)}</span>
-            </div>
-            <div class="actions">
-              <button data-approval="approve" data-prompt="${escapeHtml(item.promptId)}" ${pending ? "" : "disabled"}>Approve</button>
-              <button class="danger" data-approval="reject" data-prompt="${escapeHtml(item.promptId)}" ${pending ? "" : "disabled"}>Reject</button>
-            </div>
-          </div>
-        `;
-      }).join("");
     }
 
     function renderTasks(items) {
@@ -3472,7 +3352,7 @@ fn mission_control_html() -> String {
       if (document.activeElement !== modelInput) {
         modelInput.value = composer.model || "";
       }
-      modeSelect.value = session.mode || "";
+      modeSelect.value = session.mode || composer.defaultMode || "machdoch";
       composerMeta.innerHTML = `
         <span class="pill ${composer.canSend ? "good" : "bad"}">${composer.canSend ? "ready" : "blocked"}</span>
         <span>${escapeHtml(composer.sendDisabledReason || composer.workspaceLabel || "No workspace")}</span>
@@ -3566,7 +3446,6 @@ fn mission_control_html() -> String {
       renderShell(snapshot.shell || null);
       renderTasks(snapshot.sessions || []);
       renderCommands(snapshot.commands || []);
-      renderApprovals(snapshot.approvalPrompts || []);
     }
 
     remotePromptForm.addEventListener("submit", (event) => {
@@ -3613,16 +3492,6 @@ fn mission_control_html() -> String {
       render(latestSnapshot);
       void sendCommand({ kind: "activate-session", sessionId: selectedSessionId })
         .catch((error) => { toast.textContent = error.message; });
-    });
-
-    approvals.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-approval]");
-      if (!button) return;
-      void sendCommand({
-        kind: "approval-decision",
-        promptId: button.dataset.prompt,
-        decision: button.dataset.approval
-      }).catch((error) => { toast.textContent = error.message; });
     });
 
     document.addEventListener("click", (event) => {
@@ -3714,8 +3583,10 @@ fn mission_control_html() -> String {
       }
 
       if (event.target === modeSelect) {
-        void sendCommand({ kind: "set-session-mode", sessionId: selected.id, mode: modeSelect.value })
-          .catch((error) => { toast.textContent = error.message; });
+        if (modeSelect.value === "ask" || modeSelect.value === "machdoch") {
+          void sendCommand({ kind: "set-session-mode", sessionId: selected.id, mode: modeSelect.value })
+            .catch((error) => { toast.textContent = error.message; });
+        }
       }
     });
 
@@ -3754,7 +3625,7 @@ fn mission_control_html() -> String {
       .catch((error) => { connection.textContent = error.message; });
   </script>
 </body>
-</html>"#
+</html>"##
         .to_string()
 }
 
@@ -3777,8 +3648,6 @@ mod tests {
             task_id: None,
             session_id: None,
             prompt: None,
-            decision: None,
-            prompt_id: None,
             title: None,
             tags: None,
             provider: None,
@@ -3809,8 +3678,6 @@ mod tests {
             task_id: Some("task-1".to_string()),
             session_id: None,
             prompt: Some("   ".to_string()),
-            decision: None,
-            prompt_id: None,
             ..command_request("follow-up")
         });
 
@@ -3888,18 +3755,40 @@ mod tests {
     }
 
     #[test]
-    fn approval_decisions_require_prompt_id() {
+    fn approval_decision_commands_are_not_supported() {
         let result = normalize_command(RemoteCommandRequest {
             kind: "approval-decision".to_string(),
             task_id: Some("task-1".to_string()),
             session_id: None,
             prompt: None,
-            decision: Some("approve".to_string()),
-            prompt_id: None,
             ..command_request("approval-decision")
         });
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn set_session_mode_accepts_only_supported_modes() {
+        let invalid = normalize_command(RemoteCommandRequest {
+            kind: "set-session-mode".to_string(),
+            session_id: Some("session-1".to_string()),
+            mode: Some("auto".to_string()),
+            ..command_request("set-session-mode")
+        });
+
+        assert!(invalid
+            .expect_err("invalid session mode should be rejected")
+            .contains("ask or machdoch"));
+
+        let allowed = normalize_command(RemoteCommandRequest {
+            kind: "set-session-mode".to_string(),
+            session_id: Some("session-1".to_string()),
+            mode: Some("ask".to_string()),
+            ..command_request("set-session-mode")
+        })
+        .expect("supported session mode should normalize");
+
+        assert_eq!(allowed.mode.as_deref(), Some("ask"));
     }
 
     #[test]
@@ -3934,7 +3823,7 @@ mod tests {
     }
 
     #[test]
-    fn approval_prompts_round_trip_through_snapshot_and_decision() {
+    fn snapshots_do_not_expose_approval_prompts() {
         let state = RemoteControlState::default();
 
         state.record_progress(
@@ -3957,25 +3846,11 @@ mod tests {
             123,
         );
 
-        let decision = normalize_command(RemoteCommandRequest {
-            kind: "approval-decision".to_string(),
-            task_id: Some("task-1".to_string()),
-            session_id: None,
-            prompt: None,
-            decision: Some("approve".to_string()),
-            prompt_id: Some("approval-1".to_string()),
-            ..command_request("approval-decision")
-        })
-        .expect("approval decision should normalize");
-
-        state.record_approval_decision(&decision);
-
         let inner = state.shared.inner.lock().expect("state lock");
         let snapshot = create_snapshot_locked(&inner);
+        let payload = serde_json::to_value(&snapshot).expect("snapshot should serialize");
 
-        assert_eq!(snapshot.approval_prompts.len(), 1);
-        assert_eq!(snapshot.approval_prompts[0].prompt_id, "approval-1");
-        assert_eq!(snapshot.approval_prompts[0].status, "approved");
+        assert!(payload.get("approvalPrompts").is_none());
     }
 
     #[test]

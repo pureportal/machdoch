@@ -161,7 +161,14 @@ const formatDuration = (milliseconds: number | null | undefined): string => {
   return `${Math.round(milliseconds / 3_600_000)}h`;
 };
 
-const formatSchedule = (schedule: SchedulerScheduleSummary): string => {
+const formatSchedule = (
+  schedule: SchedulerScheduleSummary | null,
+  triggerLabel?: string,
+): string => {
+  if (!schedule) {
+    return triggerLabel || "Event triggered";
+  }
+
   switch (schedule.type) {
     case "cron":
       return `${schedule.expression} | ${schedule.timezone}`;
@@ -751,7 +758,7 @@ export const SchedulerPanel = ({
                           <div>
                             <div className="text-slate-600">Schedule</div>
                             <div className="truncate text-slate-300">
-                              {formatSchedule(job.schedule)}
+                              {formatSchedule(job.schedule, job.triggerLabel)}
                             </div>
                           </div>
                           <div>

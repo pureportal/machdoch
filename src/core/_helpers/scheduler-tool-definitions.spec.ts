@@ -131,5 +131,75 @@ describe("createSchedulerToolDefinitions", () => {
     });
     expect(updatedJob?.target.prompt).toContain("Every Tuesday");
     expect(updatedJob?.target.prompt).not.toContain("Every scheduled run");
+  }, 10_000);
+
+  it("creates event-only jobs and emits scheduler events through AI tools", async () => {
+    const workspaceRoot = await createWorkspace();
+    const context = createContext(workspaceRoot);
+    const createTool = getTool("create_scheduled_job");
+    const emitTool = getTool("emit_scheduler_event");
+    const eventsTool = getTool("list_scheduler_events");
+
+    const createResult = await createTool.execute(
+      {
+        name: "Summarize invoice PDFs",
+        triggers: [
+          {
+            kind: "workspace-file",
+            eventType: "workspace-file.created",
+            filters: {
+              "payload.path": "invoices/*.pdf",
+            },
+            dedupeKeyTemplate: "invoice:{payload.path}:{payload.mtime}",
+          },
+        ],
+        prompt: [
+          "When a new invoice PDF appears, summarize it for accounting review.",
+          "Read only the new PDF path from the trigger event payload.",
+          "Do not modify or delete the invoice file.",
+          "Report the invoice date, vendor, total, and any parsing blockers.",
+        ].join("\n"),
+        dedupeKey: "summarize-invoice-pdfs",
+      },
+      context,
+    );
+    const createdJob = JSON.parse(createResult.toolResult.output).job;
+
+    expect(createdJob.schedule).toBeNull();
+    expect(createdJob.triggerLabel).toBe(
+      "workspace-file:workspace-file.created",
+    );
+
+    const emitResult = await emitTool.execute(
+      {
+        type: "workspace-file.created",
+        kind: "workspace-file",
+        payload: {
+          path: "invoices/june.pdf",
+          mtime: "123",
+        },
+        dedupeKey: "file:june",
+      },
+      context,
+    );
+    const emitted = JSON.parse(emitResult.toolResult.output);
+
+    expect(emitted.enqueued).toHaveLength(1);
+    expect(emitted.enqueued[0].run.source).toBe("event");
+    expect(emitted.event.matches[0]).toMatchObject({
+      jobId: createdJob.id,
+      matched: true,
+    });
+
+    const eventsResult = await eventsTool.execute(
+      {
+        query: "june.pdf",
+      },
+      context,
+    );
+    const events = JSON.parse(eventsResult.toolResult.output).events;
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("workspace-file.created");
   });
 });

@@ -151,6 +151,13 @@ describe("DurableSmartScheduler", () => {
       type: "interval",
       intervalMs: 120_000,
     });
+    expect(jobs[0]?.triggers[0]).toMatchObject({
+      kind: "time",
+      schedule: {
+        type: "interval",
+        intervalMs: 120_000,
+      },
+    });
   });
 
   it("syncs enabled prompt frontmatter into scheduled jobs", async () => {
@@ -291,6 +298,94 @@ describe("DurableSmartScheduler", () => {
     expect(enqueued[0]?.run.scheduledFor).toBe(500);
     expect(updatedJob?.status).toBe("completed");
     expect(updatedJob?.nextRunAt).toBeUndefined();
+  });
+
+  it("creates event-only jobs and enqueues runs from matching trigger events", async () => {
+    const workspaceRoot = await createWorkspace();
+    const clock = createClock(1_000);
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+      clock,
+    });
+
+    const job = await scheduler.upsertJob({
+      name: "Summarize invoices",
+      triggers: [
+        {
+          kind: "workspace-file",
+          eventType: "workspace-file.created",
+          filters: {
+            "payload.path": "invoices/*.pdf",
+          },
+          dedupeKeyTemplate: "invoice:{payload.path}:{payload.mtime}",
+        },
+      ],
+      target: {
+        workspaceRoot,
+        prompt: "Summarize the new invoice PDF.",
+      },
+      dedupeKey: "invoice-summary",
+    });
+
+    expect(job.schedule).toBeUndefined();
+    expect(job.nextRunAt).toBeUndefined();
+    expect(job.triggers[0]).toMatchObject({
+      kind: "workspace-file",
+      eventType: "workspace-file.created",
+    });
+
+    const ignored = await scheduler.recordEventAndEnqueueRuns({
+      type: "workspace-file.created",
+      kind: "workspace-file",
+      workspaceRoot,
+      payload: {
+        path: "invoices/readme.txt",
+        mtime: 1,
+      },
+      dedupeKey: "file:readme",
+    });
+
+    expect(ignored.enqueued).toHaveLength(0);
+    expect(ignored.event.matches[0]).toMatchObject({
+      jobId: job.id,
+      matched: false,
+      skippedReason: "Event did not match trigger filters.",
+    });
+
+    const fired = await scheduler.recordEventAndEnqueueRuns({
+      type: "workspace-file.created",
+      kind: "workspace-file",
+      workspaceRoot,
+      payload: {
+        path: "invoices/june.pdf",
+        mtime: 2,
+      },
+      dedupeKey: "file:june",
+    });
+
+    expect(fired.enqueued).toHaveLength(1);
+    expect(fired.enqueued[0]?.run.source).toBe("event");
+    expect(fired.enqueued[0]?.run.triggerId).toBe(job.triggers[0]?.id);
+    expect(fired.enqueued[0]?.run.eventId).toBe(fired.event.id);
+    expect(fired.enqueued[0]?.run.dedupeKey).toBe(
+      "invoice-summary:invoice:invoices/june.pdf:2",
+    );
+
+    const duplicate = await scheduler.recordEventAndEnqueueRuns({
+      type: "workspace-file.created",
+      kind: "workspace-file",
+      workspaceRoot,
+      payload: {
+        path: "invoices/june.pdf",
+        mtime: 2,
+      },
+      dedupeKey: "file:june-redelivery",
+    });
+
+    expect(duplicate.enqueued).toHaveLength(1);
+    expect(duplicate.enqueued[0]?.deduplicated).toBe(true);
+    expect((await scheduler.listRuns(job.id))).toHaveLength(1);
+    expect(await scheduler.listEvents()).toHaveLength(3);
   });
 
   it("passes composed prompt, context, and max duration into the executor", async () => {

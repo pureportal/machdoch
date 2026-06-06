@@ -2035,9 +2035,8 @@ const collectDueRunTimes = (
       nextRunAt = getNextRunAfter(trigger.schedule, nextRunAt);
     }
 
-    trigger.nextRunAt = nextRunAt;
-
     if (nextRunAt !== undefined) {
+      trigger.nextRunAt = nextRunAt;
       nextRunCandidates.push(nextRunAt);
     } else {
       delete trigger.nextRunAt;
@@ -3325,8 +3324,8 @@ export class DurableSmartScheduler {
         "manual-retry",
         {
           parentRunId: parentRun.id,
-          triggerId: parentRun.triggerId,
-          eventId: parentRun.eventId,
+          ...(parentRun.triggerId ? { triggerId: parentRun.triggerId } : {}),
+          ...(parentRun.eventId ? { eventId: parentRun.eventId } : {}),
         },
       );
 

@@ -25,6 +25,7 @@ import {
 
 afterEach(() => {
   spawnMock.mockReset();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -60,6 +61,18 @@ const createToolContext = (
     chunks.push(output);
   },
 });
+
+const getFetchUrlTool = () => {
+  const tool = createShellNetworkToolDefinitions(createRuntimeConfig()).find(
+    (definition) => definition.spec.name === "fetch_url",
+  );
+
+  if (!tool) {
+    throw new Error("Expected fetch_url to be registered.");
+  }
+
+  return tool;
+};
 
 describe("resolveShellCommandInvocation", () => {
   it("adds a non-interactive basic-parsing bootstrap on Windows", () => {
@@ -405,5 +418,58 @@ describe("isReadOnlyShellCommand", () => {
     expect(
       isReadOnlyShellCommand({ command: "type %USERPROFILE%\\.ssh\\config" }),
     ).toBe(false);
+  });
+});
+
+describe("fetch_url", () => {
+  it("allows HTTP(S) URLs without filtering local or private targets", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("<html><body>Local page</body></html>", {
+        status: 200,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+        },
+      }),
+    );
+
+    const result = await getFetchUrlTool().execute(
+      { url: "http://127.0.0.1:8080/page" },
+      createToolContext(),
+    );
+
+    expect(result.toolResult.isError).toBeUndefined();
+    expect(result.toolResult.output).toContain("Local page");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.any(URL),
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+
+  it("rejects oversized responses before returning fetched content", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(1_000_001));
+        controller.close();
+      },
+    });
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(stream, {
+        status: 200,
+        headers: {
+          "content-type": "text/plain",
+        },
+      }),
+    );
+
+    const result = await getFetchUrlTool().execute(
+      { url: "https://example.com/large.txt" },
+      createToolContext(),
+    );
+
+    expect(result.toolResult.isError).toBe(true);
+    expect(result.toolResult.output).toContain("exceeded");
   });
 });

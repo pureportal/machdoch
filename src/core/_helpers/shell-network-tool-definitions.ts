@@ -39,6 +39,8 @@ const READ_ONLY_SHELL_PATTERNS: ReadonlyArray<RegExp> = [
   /^(?:npm|pnpm|yarn|bun)\s+(?:info|list|ls|outdated|view|why)\b/i,
   /^(?:node|npm|pnpm|yarn|bun|cargo|rustc|python|python3|pip|pip3)\s+(?:--version|-v|version)\b/i,
 ];
+const FETCH_URL_TIMEOUT_MS = 15_000;
+const MAX_FETCH_URL_RESPONSE_BYTES = 1_000_000;
 
 export const isReadOnlyShellCommand = (
   args: Record<string, unknown>,
@@ -88,6 +90,76 @@ export const resolveShellCommandInvocation = (
     shellExecutable: "sh",
     shellArgs: ["-lc", command],
   };
+};
+
+const getResponseContentLength = (response: Response): number | undefined => {
+  const rawContentLength = response.headers.get("content-length");
+
+  if (!rawContentLength) {
+    return undefined;
+  }
+
+  const contentLength = Number(rawContentLength);
+
+  return Number.isFinite(contentLength) && contentLength >= 0
+    ? contentLength
+    : undefined;
+};
+
+const createFetchUrlSizeError = (): Error => {
+  return new Error(
+    `Fetched content exceeded ${MAX_FETCH_URL_RESPONSE_BYTES} bytes.`,
+  );
+};
+
+const readLimitedResponseText = async (response: Response): Promise<string> => {
+  const contentLength = getResponseContentLength(response);
+
+  if (
+    contentLength !== undefined &&
+    contentLength > MAX_FETCH_URL_RESPONSE_BYTES
+  ) {
+    throw createFetchUrlSizeError();
+  }
+
+  if (!response.body) {
+    return "";
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    if (!value) {
+      continue;
+    }
+
+    totalBytes += value.byteLength;
+
+    if (totalBytes > MAX_FETCH_URL_RESPONSE_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw createFetchUrlSizeError();
+    }
+
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return new TextDecoder().decode(bytes);
 };
 
 export const startDetachedShellCommand = async (
@@ -668,13 +740,31 @@ export const createShellNetworkToolDefinitions = (
           );
         }
 
-        const response = await fetch(parsedUrl, {
-          headers: {
-            "user-agent": "machdoch/0.1",
-          },
-        });
+        const abortController = new AbortController();
+        const timeoutHandle = setTimeout(() => {
+          abortController.abort();
+        }, FETCH_URL_TIMEOUT_MS);
+        let response: Response;
+        let rawText: string;
 
-        const rawText = await response.text();
+        try {
+          response = await fetch(parsedUrl, {
+            headers: {
+              "user-agent": "machdoch/0.1",
+            },
+            signal: abortController.signal,
+          });
+          rawText = await readLimitedResponseText(response);
+        } catch (error) {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "fetch_url",
+            error instanceof Error ? error.message : "Failed to fetch URL.",
+          );
+        } finally {
+          clearTimeout(timeoutHandle);
+        }
+
         const contentType = response.headers.get("content-type") ?? "unknown";
         const text = contentType.includes("html")
           ? stripHtmlToText(rawText)

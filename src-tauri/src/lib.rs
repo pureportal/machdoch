@@ -56,6 +56,7 @@ pub fn run() {
             desktop_shell::handle_window_event(window, event);
         })
         .setup(move |app| {
+            app.manage(desktop_task::AttachmentPathGrantMap::default());
             app.manage(desktop_task::DesktopTaskCancelMap::default());
             app.manage(desktop_shell::DesktopLaunchId(
                 desktop_shell::create_desktop_launch_id(),

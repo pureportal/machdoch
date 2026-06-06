@@ -29,6 +29,8 @@ export type SchedulerCliAction =
   | "resume"
   | "delete"
   | "runs"
+  | "events"
+  | "event"
   | "run-due"
   | "trigger"
   | "retry"
@@ -40,6 +42,11 @@ export interface SchedulerCliOptions {
   subject?: string;
   name?: string;
   cron?: string;
+  triggers?: string[];
+  triggerFilters?: string[];
+  triggerCooldownMs?: number;
+  triggerDebounceMs?: number;
+  triggerDedupeKeyTemplate?: string;
   intervalMs?: number;
   delayMs?: number;
   runAt?: number;
@@ -62,6 +69,12 @@ export interface SchedulerCliOptions {
   concurrencyLimit?: number;
   historyLimit?: number;
   maxCatchUpRuns?: number;
+  eventType?: string;
+  eventKind?: string;
+  eventSource?: string;
+  eventPayloadJson?: string;
+  eventDedupeKey?: string;
+  eventOccurredAt?: number;
 }
 
 export interface ParsedCliArgs {
@@ -122,6 +135,8 @@ const SCHEDULER_ACTIONS: ReadonlySet<SchedulerCliAction> = new Set([
   "resume",
   "delete",
   "runs",
+  "events",
+  "event",
   "run-due",
   "trigger",
   "retry",
@@ -391,9 +406,11 @@ Usage:
   machdoch tools [--json]
   machdoch profiles [--json]
   machdoch scheduler list [--json]
-  machdoch scheduler create --cron <expr> --prompt <text> [--timezone <iana>] [--json]
+  machdoch scheduler create (--cron <expr>|--trigger <kind:event>) --prompt <text> [--timezone <iana>] [--json]
   machdoch scheduler pause|resume|delete|trigger <job-id> [--json]
   machdoch scheduler runs [job-id] [--json]
+  machdoch scheduler events [--json]
+  machdoch scheduler event --event-type <type> [--event-kind <kind>] [--json]
   machdoch scheduler run-due [--json]
   machdoch scheduler retry|cancel <run-id> [--json]
   machdoch scheduler sync-prompts [--json]
@@ -428,6 +445,15 @@ Options:
   --profile <name>        Use a named profile from .machdoch/config.json.
   --cwd <path>            Use a different workspace root.
   --cron <expr>           Scheduler cron expression for \`scheduler create\`.
+  --trigger <kind:event>  Add an event trigger for \`scheduler create\`, for example workspace-file:workspace-file.created. Repeat for multiple triggers.
+  --trigger-filter <path=value>
+                          Add an event trigger filter such as payload.path=*.pdf. Repeat for multiple filters.
+  --trigger-cooldown-ms <ms>
+                          Minimum time between runs fired by an event trigger.
+  --trigger-debounce-ms <ms>
+                          Debounce window for bursty event sources.
+  --trigger-dedupe-key-template <template>
+                          Event run dedupe template such as file:{payload.path}:{payload.mtime}.
   --interval-ms <ms>      Scheduler interval in milliseconds for \`scheduler create\`.
   --delay-ms <ms>         Scheduler one-shot delay in milliseconds for \`scheduler create\`.
   --run-at <epoch-ms>     Scheduler one-shot absolute run time in epoch milliseconds.
@@ -441,6 +467,15 @@ Options:
   --retry-attempts <n>    Maximum scheduler attempts for a run.
   --ttl-ms <ms>           Expire queued runs that do not start within this duration.
   --max-duration-ms <ms>  Abort scheduled runs that exceed this duration.
+  --event-type <type>     Event type for \`scheduler event\`, for example workspace-file.created.
+  --event-kind <kind>     Event trigger category for \`scheduler event\`.
+  --event-source <source> Event source for \`scheduler event\`.
+  --event-payload-json <json>
+                          JSON payload for \`scheduler event\`.
+  --event-dedupe-key <key>
+                          Stable source event key for \`scheduler event\`.
+  --event-occurred-at <epoch-ms>
+                          Event occurrence time in epoch milliseconds.
   --dedupe-key <key>      Stable key used to update an existing schedule instead of creating a duplicate.
   --concurrency-key <key> Share queue capacity across related scheduled jobs.
   --concurrency-limit <n> Maximum actively running jobs for the queue key.
@@ -503,6 +538,11 @@ export const parseCliArgs = (
         cwd?: string;
         name?: string;
         cron?: string;
+        trigger?: string[];
+        "trigger-filter"?: string[];
+        "trigger-cooldown-ms"?: string;
+        "trigger-debounce-ms"?: string;
+        "trigger-dedupe-key-template"?: string;
         "interval-ms"?: string;
         "delay-ms"?: string;
         "run-at"?: string;
@@ -525,6 +565,12 @@ export const parseCliArgs = (
         "concurrency-limit"?: string;
         "history-limit"?: string;
         "max-catch-up-runs"?: string;
+        "event-type"?: string;
+        "event-kind"?: string;
+        "event-source"?: string;
+        "event-payload-json"?: string;
+        "event-dedupe-key"?: string;
+        "event-occurred-at"?: string;
       }
     | undefined;
   let positionals: string[] = [];
@@ -558,6 +604,11 @@ export const parseCliArgs = (
         cwd: { type: "string" },
         name: { type: "string" },
         cron: { type: "string" },
+        trigger: { type: "string", multiple: true },
+        "trigger-filter": { type: "string", multiple: true },
+        "trigger-cooldown-ms": { type: "string" },
+        "trigger-debounce-ms": { type: "string" },
+        "trigger-dedupe-key-template": { type: "string" },
         "interval-ms": { type: "string" },
         "delay-ms": { type: "string" },
         "run-at": { type: "string" },
@@ -580,6 +631,12 @@ export const parseCliArgs = (
         "concurrency-limit": { type: "string" },
         "history-limit": { type: "string" },
         "max-catch-up-runs": { type: "string" },
+        "event-type": { type: "string" },
+        "event-kind": { type: "string" },
+        "event-source": { type: "string" },
+        "event-payload-json": { type: "string" },
+        "event-dedupe-key": { type: "string" },
+        "event-occurred-at": { type: "string" },
       },
       allowPositionals: true,
       strict: true,
@@ -625,6 +682,21 @@ export const parseCliArgs = (
   const rawProfile = normalizeOptionalString(values?.profile);
   const rawSchedulerName = normalizeOptionalString(values?.name);
   const rawSchedulerCron = normalizeOptionalString(values?.cron);
+  const rawSchedulerTriggers = values?.trigger
+    ?.map((entry) => normalizeOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  const rawSchedulerTriggerFilters = values?.["trigger-filter"]
+    ?.map((entry) => normalizeOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  const rawSchedulerTriggerCooldownMs = normalizeOptionalString(
+    values?.["trigger-cooldown-ms"],
+  );
+  const rawSchedulerTriggerDebounceMs = normalizeOptionalString(
+    values?.["trigger-debounce-ms"],
+  );
+  const rawSchedulerTriggerDedupeKeyTemplate = normalizeOptionalString(
+    values?.["trigger-dedupe-key-template"],
+  );
   const rawSchedulerIntervalMs = normalizeOptionalString(values?.["interval-ms"]);
   const rawSchedulerDelayMs = normalizeOptionalString(values?.["delay-ms"]);
   const rawSchedulerRunAt = normalizeOptionalString(values?.["run-at"]);
@@ -670,6 +742,20 @@ export const parseCliArgs = (
   );
   const rawSchedulerMaxCatchUpRuns = normalizeOptionalString(
     values?.["max-catch-up-runs"],
+  );
+  const rawSchedulerEventType = normalizeOptionalString(values?.["event-type"]);
+  const rawSchedulerEventKind = normalizeOptionalString(values?.["event-kind"]);
+  const rawSchedulerEventSource = normalizeOptionalString(
+    values?.["event-source"],
+  );
+  const rawSchedulerEventPayloadJson = normalizeOptionalString(
+    values?.["event-payload-json"],
+  );
+  const rawSchedulerEventDedupeKey = normalizeOptionalString(
+    values?.["event-dedupe-key"],
+  );
+  const rawSchedulerEventOccurredAt = normalizeOptionalString(
+    values?.["event-occurred-at"],
   );
 
   if (values?.mode !== undefined && !rawMode) {
@@ -1008,10 +1094,17 @@ export const parseCliArgs = (
         rawSchedulerIntervalMs,
         rawSchedulerDelayMs ?? rawSchedulerRunAt,
       ].filter(Boolean).length;
+      const triggerCount = rawSchedulerTriggers?.length ?? 0;
 
-      if (scheduleCount !== 1) {
+      if (scheduleCount > 1) {
         fail(
-          "`machdoch scheduler create` expects exactly one of --cron, --interval-ms, or --delay-ms/--run-at.",
+          "`machdoch scheduler create` expects at most one of --cron, --interval-ms, or --delay-ms/--run-at.",
+        );
+      }
+
+      if (scheduleCount + triggerCount === 0) {
+        fail(
+          "`machdoch scheduler create` expects --cron, --interval-ms, --delay-ms/--run-at, or --trigger.",
         );
       }
 
@@ -1020,6 +1113,10 @@ export const parseCliArgs = (
           "`machdoch scheduler create` expects --prompt or --prompt-file.",
         );
       }
+    }
+
+    if (action === "event" && !rawSchedulerEventType) {
+      fail("`machdoch scheduler event` expects --event-type.");
     }
 
     return createParsedArgs(
@@ -1035,6 +1132,37 @@ export const parseCliArgs = (
             : {}),
           ...(rawSchedulerName ? { name: rawSchedulerName } : {}),
           ...(rawSchedulerCron ? { cron: rawSchedulerCron } : {}),
+          ...(rawSchedulerTriggers && rawSchedulerTriggers.length > 0
+            ? { triggers: rawSchedulerTriggers }
+            : {}),
+          ...(rawSchedulerTriggerFilters && rawSchedulerTriggerFilters.length > 0
+            ? { triggerFilters: rawSchedulerTriggerFilters }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerTriggerCooldownMs,
+            "--trigger-cooldown-ms",
+          ) !== undefined
+            ? {
+                triggerCooldownMs: parseOptionalPositiveInteger(
+                  rawSchedulerTriggerCooldownMs,
+                  "--trigger-cooldown-ms",
+                ),
+              }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerTriggerDebounceMs,
+            "--trigger-debounce-ms",
+          ) !== undefined
+            ? {
+                triggerDebounceMs: parseOptionalPositiveInteger(
+                  rawSchedulerTriggerDebounceMs,
+                  "--trigger-debounce-ms",
+                ),
+              }
+            : {}),
+          ...(rawSchedulerTriggerDedupeKeyTemplate
+            ? { triggerDedupeKeyTemplate: rawSchedulerTriggerDedupeKeyTemplate }
+            : {}),
           ...(parseOptionalPositiveInteger(
             rawSchedulerIntervalMs,
             "--interval-ms",
@@ -1190,6 +1318,28 @@ export const parseCliArgs = (
                 maxCatchUpRuns: parseOptionalPositiveInteger(
                   rawSchedulerMaxCatchUpRuns,
                   "--max-catch-up-runs",
+                ),
+              }
+            : {}),
+          ...(rawSchedulerEventType ? { eventType: rawSchedulerEventType } : {}),
+          ...(rawSchedulerEventKind ? { eventKind: rawSchedulerEventKind } : {}),
+          ...(rawSchedulerEventSource
+            ? { eventSource: rawSchedulerEventSource }
+            : {}),
+          ...(rawSchedulerEventPayloadJson
+            ? { eventPayloadJson: rawSchedulerEventPayloadJson }
+            : {}),
+          ...(rawSchedulerEventDedupeKey
+            ? { eventDedupeKey: rawSchedulerEventDedupeKey }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerEventOccurredAt,
+            "--event-occurred-at",
+          ) !== undefined
+            ? {
+                eventOccurredAt: parseOptionalPositiveInteger(
+                  rawSchedulerEventOccurredAt,
+                  "--event-occurred-at",
                 ),
               }
             : {}),

@@ -98,12 +98,6 @@ const isRuntimeMode = (
   return Boolean(value && runtimeModes.has(value));
 };
 
-const optionalString = (value: string | null | undefined): string | undefined => {
-  const normalized = value?.trim();
-
-  return normalized ? normalized : undefined;
-};
-
 const createAttachmentSnapshot = (
   attachment: ChatSessionContextAttachment,
 ): RemoteShellAttachmentSnapshot => ({
@@ -304,7 +298,15 @@ const formatDuration = (milliseconds: number | null | undefined): string => {
   return `${Math.round(milliseconds / 3_600_000)}h`;
 };
 
-const formatSchedulerSchedule = (schedule: SchedulerJobSummary["schedule"]): string => {
+const formatSchedulerSchedule = (
+  job: SchedulerJobSummary,
+): string => {
+  const schedule = job.schedule;
+
+  if (!schedule) {
+    return job.triggerLabel || "Event triggered";
+  }
+
   switch (schedule.type) {
     case "cron":
       return `${schedule.expression} | ${schedule.timezone}`;
@@ -321,7 +323,7 @@ const createSchedulerJobSnapshot = (
   id: job.id,
   name: job.name,
   status: job.status,
-  schedule: formatSchedulerSchedule(job.schedule),
+  schedule: formatSchedulerSchedule(job),
   promptPreview: job.prompt,
   ...(job.nextRunAt ? { nextRunAt: job.nextRunAt } : {}),
   ...(job.lastStartedAt ? { lastStartedAt: job.lastStartedAt } : {}),
@@ -863,15 +865,6 @@ export const useRemoteMissionControl = (options: {
           break;
         }
 
-        case "approval-decision": {
-          setMessage(
-            command.decision
-              ? `Remote approval ${command.decision} received.`
-              : "Remote approval response received.",
-          );
-          break;
-        }
-
         case "create-session": {
           options.onCreateSession(command.workspace);
           break;
@@ -966,11 +959,8 @@ export const useRemoteMissionControl = (options: {
         }
 
         case "set-session-mode": {
-          if (command.sessionId) {
-            options.onSetSessionMode(
-              command.sessionId,
-              isRuntimeMode(command.mode) ? command.mode : null,
-            );
+          if (command.sessionId && isRuntimeMode(command.mode)) {
+            options.onSetSessionMode(command.sessionId, command.mode);
           }
           break;
         }

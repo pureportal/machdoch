@@ -15,6 +15,7 @@ import {
   loadActiveDesktopTaskIds,
   loadDesktopLaunchId,
   loadProviderModelCatalog,
+  openAttachedPath,
   openRemoteControlUrl,
   setRemoteControlPort,
   loadUserReviewModelSettings,
@@ -161,6 +162,17 @@ describe("desktop runtime fullscreen detection", () => {
     });
   });
 
+  it("passes attachment opening with the active workspace boundary", async () => {
+    invokeMock.mockResolvedValueOnce(undefined);
+
+    await openAttachedPath(" C:\\Docs\\plan.md ", " C:\\Docs ");
+
+    expect(invokeMock).toHaveBeenCalledWith("open_attached_path", {
+      path: "C:\\Docs\\plan.md",
+      workspaceRoot: "C:\\Docs",
+    });
+  });
+
   it("passes desktop task runs under the Rust command's request parameter", async () => {
     invokeMock.mockResolvedValueOnce({
       execution: {
@@ -289,6 +301,33 @@ describe("desktop runtime fullscreen detection", () => {
         createdAt: 124,
       },
     });
+    desktopEventListeners.get("remote-control-command")?.({
+      payload: {
+        commandId: "cmd-3",
+        kind: "approval-decision",
+        decision: "approve",
+        promptId: "approval-1",
+        createdAt: 125,
+      },
+    });
+    desktopEventListeners.get("remote-control-command")?.({
+      payload: {
+        commandId: "cmd-4",
+        kind: "set-session-mode",
+        sessionId: "session-1",
+        mode: "auto",
+        createdAt: 126,
+      },
+    });
+    desktopEventListeners.get("remote-control-command")?.({
+      payload: {
+        commandId: "cmd-5",
+        kind: "set-session-mode",
+        sessionId: "session-1",
+        mode: "ask",
+        createdAt: 127,
+      },
+    });
 
     expect(commands).toEqual([
       {
@@ -297,6 +336,13 @@ describe("desktop runtime fullscreen detection", () => {
         taskId: "task-123",
         prompt: "Inspect the failure",
         createdAt: 123,
+      },
+      {
+        commandId: "cmd-5",
+        kind: "set-session-mode",
+        sessionId: "session-1",
+        mode: "ask",
+        createdAt: 127,
       },
     ]);
 

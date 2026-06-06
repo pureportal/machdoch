@@ -242,7 +242,6 @@ export type RemoteControlCommandKind =
   | "retry"
   | "continue"
   | "follow-up"
-  | "approval-decision"
   | "create-session"
   | "activate-session"
   | "archive-session"
@@ -280,8 +279,6 @@ export interface RemoteControlCommandEvent {
   taskId?: string;
   sessionId?: string;
   prompt?: string;
-  decision?: "approve" | "reject" | string;
-  promptId?: string;
   title?: string;
   tags?: string[];
   provider?: string;
@@ -518,7 +515,11 @@ export type SchedulerRunStatus =
   | "expired"
   | "skipped";
 
-export type SchedulerRunSource = "schedule" | "manual" | "manual-retry";
+export type SchedulerRunSource =
+  | "schedule"
+  | "manual"
+  | "manual-retry"
+  | "event";
 
 export type SchedulerMissedRunPolicy =
   | "skip"
@@ -557,6 +558,29 @@ export type SchedulerCreateScheduleInput =
       runAt?: number;
     };
 
+export interface SchedulerTriggerSummary {
+  id: string;
+  kind: string;
+  enabled: boolean;
+  name?: string;
+  eventType?: string;
+  schedule?: SchedulerScheduleSummary;
+  nextRunAt?: number;
+}
+
+export interface SchedulerCreateTriggerInput {
+  id?: string;
+  kind: string;
+  enabled?: boolean;
+  name?: string;
+  eventType?: string;
+  schedule?: SchedulerCreateScheduleInput;
+  filters?: Record<string, unknown>;
+  cooldownMs?: number;
+  debounceMs?: number;
+  dedupeKeyTemplate?: string;
+}
+
 export interface SchedulerRetrySummary {
   maxAttempts: number;
   factor: number;
@@ -574,7 +598,9 @@ export interface SchedulerJobSummary {
   id: string;
   name: string;
   status: SchedulerJobStatus;
-  schedule: SchedulerScheduleSummary;
+  schedule: SchedulerScheduleSummary | null;
+  triggers: SchedulerTriggerSummary[];
+  triggerLabel: string;
   workspaceRoot: string;
   prompt: string;
   nextRunAt: number | null;
@@ -616,7 +642,8 @@ export interface SchedulerContextPackInput {
 
 export interface SchedulerCreateJobInput {
   name?: string;
-  schedule: SchedulerCreateScheduleInput;
+  schedule?: SchedulerCreateScheduleInput;
+  triggers?: SchedulerCreateTriggerInput[];
   prompt?: string;
   promptFile?: string;
   contextPaths?: string[];
@@ -709,7 +736,6 @@ const REMOTE_CONTROL_COMMAND_KINDS = [
   "retry",
   "continue",
   "follow-up",
-  "approval-decision",
   "create-session",
   "activate-session",
   "archive-session",
@@ -741,6 +767,7 @@ const REMOTE_CONTROL_COMMAND_KINDS = [
   "scheduler-retry-run",
   "scheduler-cancel-run",
 ] as const satisfies ReadonlyArray<RemoteControlCommandKind>;
+const REMOTE_CONTROL_RUN_MODES = ["ask", "machdoch"] as const;
 const SCHEDULER_JOB_STATUSES = [
   "active",
   "paused",
@@ -761,6 +788,7 @@ const SCHEDULER_RUN_SOURCES = [
   "schedule",
   "manual",
   "manual-retry",
+  "event",
 ] as const satisfies ReadonlyArray<SchedulerRunSource>;
 const CLIPBOARD_IMAGE_EXTENSION_BY_MEDIA_TYPE: Record<
   AgentModelImageMediaType,
@@ -1219,8 +1247,6 @@ const isRemoteControlCommandEvent = (
     (value.taskId === undefined || typeof value.taskId === "string") &&
     (value.sessionId === undefined || typeof value.sessionId === "string") &&
     (value.prompt === undefined || typeof value.prompt === "string") &&
-    (value.decision === undefined || typeof value.decision === "string") &&
-    (value.promptId === undefined || typeof value.promptId === "string") &&
     (value.title === undefined || typeof value.title === "string") &&
     (value.tags === undefined ||
       (Array.isArray(value.tags) &&
@@ -1228,6 +1254,10 @@ const isRemoteControlCommandEvent = (
     (value.provider === undefined || typeof value.provider === "string") &&
     (value.model === undefined || typeof value.model === "string") &&
     (value.mode === undefined || typeof value.mode === "string") &&
+    (value.kind !== "set-session-mode" ||
+      REMOTE_CONTROL_RUN_MODES.includes(
+        value.mode as (typeof REMOTE_CONTROL_RUN_MODES)[number],
+      )) &&
     (value.profile === undefined || typeof value.profile === "string") &&
     (value.workspace === undefined || typeof value.workspace === "string") &&
     (value.enabled === undefined || typeof value.enabled === "boolean") &&
@@ -1287,6 +1317,51 @@ const isSchedulerRetrySummary = (
   );
 };
 
+const normalizeSchedulerTriggerSummary = (
+  value: unknown,
+): SchedulerTriggerSummary | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.kind !== "string" ||
+    typeof value.enabled !== "boolean"
+  ) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    kind: value.kind,
+    enabled: value.enabled,
+    ...(typeof value.name === "string" ? { name: value.name } : {}),
+    ...(typeof value.eventType === "string"
+      ? { eventType: value.eventType }
+      : {}),
+    ...(isSchedulerScheduleSummary(value.schedule)
+      ? { schedule: value.schedule }
+      : {}),
+    ...(typeof value.nextRunAt === "number" && Number.isFinite(value.nextRunAt)
+      ? { nextRunAt: value.nextRunAt }
+      : {}),
+  };
+};
+
+const normalizeSchedulerTriggerList = (
+  value: unknown,
+): SchedulerTriggerSummary[] | null => {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const triggers = value.map(normalizeSchedulerTriggerSummary);
+
+  return triggers.every(
+    (trigger): trigger is SchedulerTriggerSummary => Boolean(trigger),
+  )
+    ? triggers
+    : null;
+};
+
 const isSchedulerQueueSummary = (
   value: unknown,
 ): value is SchedulerQueueSummary => {
@@ -1306,7 +1381,9 @@ const normalizeSchedulerJobSummary = (
     typeof value.id !== "string" ||
     typeof value.name !== "string" ||
     !SCHEDULER_JOB_STATUSES.includes(value.status as SchedulerJobStatus) ||
-    !isSchedulerScheduleSummary(value.schedule) ||
+    !(value.schedule === null || isSchedulerScheduleSummary(value.schedule)) ||
+    !normalizeSchedulerTriggerList(value.triggers) ||
+    typeof value.triggerLabel !== "string" ||
     typeof value.workspaceRoot !== "string" ||
     typeof value.prompt !== "string" ||
     !isNullableNumberPayloadField(value.nextRunAt) ||
@@ -1326,6 +1403,8 @@ const normalizeSchedulerJobSummary = (
     name: value.name,
     status: value.status as SchedulerJobStatus,
     schedule: value.schedule,
+    triggers: normalizeSchedulerTriggerList(value.triggers) ?? [],
+    triggerLabel: value.triggerLabel,
     workspaceRoot: value.workspaceRoot,
     prompt: value.prompt,
     nextRunAt: normalizeNullableNumberField(value.nextRunAt),
@@ -2760,6 +2839,45 @@ const appendSchedulerCreateSchedule = (
   }
 };
 
+const appendSchedulerCreateTriggers = (
+  argumentsList: string[],
+  triggers: SchedulerCreateTriggerInput[] | undefined,
+): void => {
+  for (const trigger of triggers ?? []) {
+    if (trigger.kind === "time" || trigger.schedule) {
+      continue;
+    }
+
+    const eventType = normalizeSchedulerCliString(trigger.eventType);
+
+    if (!eventType) {
+      continue;
+    }
+
+    appendSchedulerOption(
+      argumentsList,
+      "--trigger",
+      `${trigger.kind}:${eventType}`,
+    );
+
+    for (const [key, value] of Object.entries(trigger.filters ?? {})) {
+      appendSchedulerOption(
+        argumentsList,
+        "--trigger-filter",
+        `${key}=${String(value)}`,
+      );
+    }
+
+    appendSchedulerOption(argumentsList, "--trigger-cooldown-ms", trigger.cooldownMs);
+    appendSchedulerOption(argumentsList, "--trigger-debounce-ms", trigger.debounceMs);
+    appendSchedulerOption(
+      argumentsList,
+      "--trigger-dedupe-key-template",
+      normalizeSchedulerCliString(trigger.dedupeKeyTemplate),
+    );
+  }
+};
+
 const createSchedulerCreateArguments = (
   input: SchedulerCreateJobInput,
 ): string[] => {
@@ -2772,7 +2890,10 @@ const createSchedulerCreateArguments = (
   }
 
   appendSchedulerOption(argumentsList, "--name", normalizeSchedulerCliString(input.name));
-  appendSchedulerCreateSchedule(argumentsList, input.schedule);
+  if (input.schedule) {
+    appendSchedulerCreateSchedule(argumentsList, input.schedule);
+  }
+  appendSchedulerCreateTriggers(argumentsList, input.triggers);
   appendSchedulerOption(argumentsList, "--prompt", prompt);
   appendSchedulerOption(argumentsList, "--prompt-file", promptFile);
   appendSchedulerRepeatedOption(argumentsList, "--context", input.contextPaths);
@@ -3091,8 +3212,12 @@ export const openWorkspacePath = async (
   }
 };
 
-export const openAttachedPath = async (path: string): Promise<void> => {
+export const openAttachedPath = async (
+  path: string,
+  workspaceRoot?: string | null,
+): Promise<void> => {
   const normalizedPath = path.trim();
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
 
   if (!normalizedPath) {
     throw new Error("Expected an attached file path.");
@@ -3105,6 +3230,7 @@ export const openAttachedPath = async (path: string): Promise<void> => {
   try {
     await tauriCore.invoke("open_attached_path", {
       path: normalizedPath,
+      workspaceRoot: normalizedWorkspaceRoot,
     });
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));

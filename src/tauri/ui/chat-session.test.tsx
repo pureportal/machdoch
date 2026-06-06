@@ -2736,7 +2736,10 @@ describe("ChatSession component", () => {
 
     expect(sentAttachment).toBeDefined();
     fireEvent.click(sentAttachment);
-    expect(openAttachedPathSpy).toHaveBeenCalledWith("C:\\Docs\\plan.md");
+    expect(openAttachedPathSpy).toHaveBeenCalledWith(
+      "C:\\Docs\\plan.md",
+      "C:\\Docs",
+    );
 
     resolveDroppedPathsSpy.mockRestore();
     runDesktopTaskSpy.mockRestore();

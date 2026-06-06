@@ -491,6 +491,103 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("parses event-only scheduler creation and scheduler events", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--cwd",
+          "C:/repo",
+          "scheduler",
+          "create",
+          "--name",
+          "Summarize invoices",
+          "--trigger",
+          "workspace-file:workspace-file.created",
+          "--trigger-filter",
+          "payload.path=invoices/*.pdf",
+          "--trigger-cooldown-ms",
+          "30000",
+          "--trigger-dedupe-key-template",
+          "invoice:{payload.path}:{payload.mtime}",
+          "--prompt",
+          "Summarize the new invoice PDF.",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "scheduler",
+      scheduler: {
+        action: "create",
+        name: "Summarize invoices",
+        triggers: ["workspace-file:workspace-file.created"],
+        triggerFilters: ["payload.path=invoices/*.pdf"],
+        triggerCooldownMs: 30000,
+        triggerDedupeKeyTemplate: "invoice:{payload.path}:{payload.mtime}",
+        prompt: "Summarize the new invoice PDF.",
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/repo",
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "--json",
+          "scheduler",
+          "event",
+          "--event-type",
+          "workspace-file.created",
+          "--event-kind",
+          "workspace-file",
+          "--event-source",
+          "test",
+          "--event-payload-json",
+          "{\"path\":\"invoices/june.pdf\"}",
+          "--event-dedupe-key",
+          "file:june",
+          "--event-occurred-at",
+          "1000",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "scheduler",
+      scheduler: {
+        action: "event",
+        eventType: "workspace-file.created",
+        eventKind: "workspace-file",
+        eventSource: "test",
+        eventPayloadJson: "{\"path\":\"invoices/june.pdf\"}",
+        eventDedupeKey: "file:june",
+        eventOccurredAt: 1000,
+      },
+      json: true,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
+  it("parses scheduler event history listing", () => {
+    expect(
+      parseCliArgs(["scheduler", "events"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "scheduler",
+      scheduler: {
+        action: "events",
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
   it("enters interactive chat mode when runtime flags are provided without a task", () => {
     expect(
       parseCliArgs(["--model", "gpt-4.5"], {
@@ -711,7 +808,7 @@ describe("parseCliArgs", () => {
         },
       ),
     ).toThrow(
-      "`machdoch scheduler create` expects exactly one of --cron, --interval-ms, or --delay-ms/--run-at.",
+      "`machdoch scheduler create` expects at most one of --cron, --interval-ms, or --delay-ms/--run-at.",
     );
   });
 

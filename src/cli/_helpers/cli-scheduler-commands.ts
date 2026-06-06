@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { readFile, realpath, stat } from "node:fs/promises";
+import { isAbsolute, relative, resolve } from "node:path";
 import { loadRuntimeConfig } from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import { executeTask } from "../../core/execution.js";
@@ -9,12 +9,16 @@ import {
   syncScheduledPromptJobs,
   type CreateScheduledJobInput,
   type ScheduledContextPackSnapshot,
+  type ScheduledEventTriggerKind,
   type ScheduledJob,
   type ScheduledJobRun,
+  type ScheduledJobTriggerInput,
   type ScheduledMacroReference,
   type ScheduledMissedRunPolicy,
   type ScheduledRunEnqueueResult,
   type ScheduledTaskExecutor,
+  type ScheduledTriggerEvent,
+  type ScheduledTriggerEventInput,
 } from "../../core/scheduler.js";
 import type { TaskExecutionResult } from "../../core/types.js";
 import type {
@@ -38,15 +42,64 @@ const isMissedRunPolicy = (
   return value === "skip" || value === "enqueue-latest" || value === "enqueue-all";
 };
 
-const resolveWorkspaceFile = (workspaceRoot: string, path: string): string => {
-  return isAbsolute(path) ? path : resolve(workspaceRoot, path);
+const SCHEDULER_EVENT_TRIGGER_KINDS: ReadonlySet<ScheduledEventTriggerKind> =
+  new Set([
+    "manual",
+    "app",
+    "workspace-file",
+    "git",
+    "job-event",
+    "webhook",
+    "poll",
+    "system",
+    "calendar",
+    "clipboard",
+    "integration",
+  ]);
+
+const isPathInside = (root: string, candidate: string): boolean => {
+  const relativePath = relative(root, candidate);
+
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !isAbsolute(relativePath))
+  );
 };
 
-const readPromptFile = async (
+const resolveWorkspaceFile = async (
   workspaceRoot: string,
   path: string,
 ): Promise<string> => {
-  const resolvedPath = resolveWorkspaceFile(workspaceRoot, path);
+  const normalizedPath = path.trim();
+
+  if (!normalizedPath) {
+    throw new Error("Expected scheduler prompt file path to be non-empty.");
+  }
+
+  const resolvedWorkspaceRoot = await realpath(workspaceRoot);
+  const candidatePath = isAbsolute(normalizedPath)
+    ? normalizedPath
+    : resolve(resolvedWorkspaceRoot, normalizedPath);
+  const resolvedPath = await realpath(candidatePath);
+
+  if (!isPathInside(resolvedWorkspaceRoot, resolvedPath)) {
+    throw new Error("Refusing to read scheduler prompt file outside the workspace.");
+  }
+
+  const metadata = await stat(resolvedPath);
+
+  if (!metadata.isFile()) {
+    throw new Error("Expected scheduler prompt file path to point to a file.");
+  }
+
+  return resolvedPath;
+};
+
+export const readSchedulerPromptFile = async (
+  workspaceRoot: string,
+  path: string,
+): Promise<string> => {
+  const resolvedPath = await resolveWorkspaceFile(workspaceRoot, path);
 
   return (await readFile(resolvedPath, "utf8")).trim();
 };
@@ -102,16 +155,115 @@ const parseMacroReference = (value: string): ScheduledMacroReference => {
   };
 };
 
+const parseTriggerKind = (value: string): ScheduledEventTriggerKind => {
+  if (SCHEDULER_EVENT_TRIGGER_KINDS.has(value as ScheduledEventTriggerKind)) {
+    return value as ScheduledEventTriggerKind;
+  }
+
+  throw new Error(
+    `Expected trigger kind to be one of ${Array.from(
+      SCHEDULER_EVENT_TRIGGER_KINDS,
+    ).join(", ")}.`,
+  );
+};
+
+const parseTriggerFilters = (
+  values: string[] | undefined,
+): Record<string, string> | undefined => {
+  if (!values || values.length === 0) {
+    return undefined;
+  }
+
+  return Object.fromEntries(
+    values.map((entry) => {
+      const separatorIndex = entry.indexOf("=");
+
+      if (separatorIndex <= 0) {
+        throw new Error(
+          "Expected --trigger-filter to use path=value syntax.",
+        );
+      }
+
+      return [
+        entry.slice(0, separatorIndex).trim(),
+        entry.slice(separatorIndex + 1).trim(),
+      ];
+    }),
+  );
+};
+
+const parseTriggerSpec = (
+  value: string,
+  options: SchedulerCliOptions,
+): ScheduledJobTriggerInput => {
+  const separatorIndex = value.indexOf(":");
+  const kindText =
+    separatorIndex > 0 ? value.slice(0, separatorIndex).trim() : "";
+  const eventType =
+    separatorIndex > 0 ? value.slice(separatorIndex + 1).trim() : value.trim();
+
+  if (!kindText || !eventType) {
+    throw new Error(
+      "Expected --trigger to use kind:event-type syntax, for example workspace-file:workspace-file.created.",
+    );
+  }
+
+  const filters = parseTriggerFilters(options.triggerFilters);
+
+  return {
+    kind: parseTriggerKind(kindText),
+    eventType,
+    ...(filters ? { filters } : {}),
+    ...(options.triggerCooldownMs ? { cooldownMs: options.triggerCooldownMs } : {}),
+    ...(options.triggerDebounceMs ? { debounceMs: options.triggerDebounceMs } : {}),
+    ...(options.triggerDedupeKeyTemplate
+      ? { dedupeKeyTemplate: options.triggerDedupeKeyTemplate }
+      : {}),
+  };
+};
+
+const createTriggerInputs = (
+  options: SchedulerCliOptions,
+): ScheduledJobTriggerInput[] | undefined => {
+  return options.triggers?.map((trigger) => parseTriggerSpec(trigger, options));
+};
+
+const createSchedulerEventInput = (
+  args: ParsedCliArgs,
+  options: SchedulerCliOptions,
+): ScheduledTriggerEventInput => {
+  const eventType = options.eventType ?? fail("Expected --event-type.");
+  const payload =
+    options.eventPayloadJson !== undefined
+      ? (JSON.parse(options.eventPayloadJson) as Record<string, unknown>)
+      : undefined;
+
+  if (payload !== undefined && (!payload || typeof payload !== "object" || Array.isArray(payload))) {
+    throw new Error("Expected --event-payload-json to be a JSON object.");
+  }
+
+  return {
+    type: eventType,
+    ...(options.eventKind ? { kind: parseTriggerKind(options.eventKind) } : {}),
+    ...(options.eventSource ? { source: options.eventSource } : {}),
+    workspaceRoot: args.workspaceRoot,
+    ...(payload ? { payload } : {}),
+    ...(options.eventDedupeKey ? { dedupeKey: options.eventDedupeKey } : {}),
+    ...(options.eventOccurredAt ? { occurredAt: options.eventOccurredAt } : {}),
+  };
+};
+
 const createJobInput = async (
   args: ParsedCliArgs,
   options: SchedulerCliOptions,
 ): Promise<CreateScheduledJobInput> => {
   const prompt = options.promptFile
-    ? await readPromptFile(args.workspaceRoot, options.promptFile)
+    ? await readSchedulerPromptFile(args.workspaceRoot, options.promptFile)
     : options.prompt ?? "";
   const missedRunPolicy = isMissedRunPolicy(options.missedRunPolicy)
     ? options.missedRunPolicy
     : undefined;
+  const triggers = createTriggerInputs(options);
 
   if (options.missedRunPolicy && !missedRunPolicy) {
     fail(
@@ -121,22 +273,31 @@ const createJobInput = async (
 
   return {
     ...(options.name ? { name: options.name } : {}),
-    schedule: options.cron
+    ...(options.cron
       ? {
-          type: "cron",
-          expression: options.cron,
-          ...(options.timezone ? { timezone: options.timezone } : {}),
+          schedule: {
+            type: "cron" as const,
+            expression: options.cron,
+            ...(options.timezone ? { timezone: options.timezone } : {}),
+          },
         }
       : options.intervalMs
         ? {
-            type: "interval",
-            intervalMs: options.intervalMs,
+            schedule: {
+              type: "interval" as const,
+              intervalMs: options.intervalMs,
+            },
           }
-        : {
-            type: "delay",
-            ...(options.delayMs ? { delayMs: options.delayMs } : {}),
-            ...(options.runAt ? { runAt: options.runAt } : {}),
-          },
+        : options.delayMs || options.runAt
+          ? {
+              schedule: {
+                type: "delay" as const,
+                ...(options.delayMs ? { delayMs: options.delayMs } : {}),
+                ...(options.runAt ? { runAt: options.runAt } : {}),
+              },
+            }
+          : {}),
+    ...(triggers && triggers.length > 0 ? { triggers } : {}),
     target: {
       workspaceRoot: args.workspaceRoot,
       prompt,
@@ -279,6 +440,19 @@ const summarizeRun = (run: ScheduledJobRun): Record<string, unknown> => ({
   summary: run.result?.summary ?? null,
 });
 
+const summarizeEvent = (event: ScheduledTriggerEvent): Record<string, unknown> => ({
+  id: event.id,
+  type: event.type,
+  kind: event.kind,
+  source: event.source,
+  workspaceRoot: event.workspaceRoot ?? null,
+  payload: event.payload,
+  dedupeKey: event.dedupeKey ?? null,
+  occurredAt: event.occurredAt,
+  receivedAt: event.receivedAt,
+  matches: event.matches,
+});
+
 const printJson = (value: unknown): void => {
   writeStdoutLine(JSON.stringify(value, null, 2));
 };
@@ -308,6 +482,19 @@ const printRunLines = (runs: ScheduledJobRun[]): void => {
     if (run.error) {
       writeStdoutLine(`  error: ${run.error}`);
     }
+  }
+};
+
+const printEventLines = (events: ScheduledTriggerEvent[]): void => {
+  writeStdoutLine(`scheduler events: ${events.length}`);
+
+  for (const event of events) {
+    writeStdoutLine(
+      `- ${event.id} [${event.kind}] ${event.type} matches=${event.matches.length}`,
+    );
+    writeStdoutLine(
+      `  received: ${new Date(event.receivedAt).toISOString()} source: ${event.source}`,
+    );
   }
 };
 
@@ -403,6 +590,42 @@ export const printSchedulerSummary = async (
       }
 
       printRunLines(runs);
+      return;
+    }
+    case "events": {
+      const events = await scheduler.listEvents();
+
+      if (args.json) {
+        printJson({
+          workspaceRoot: args.workspaceRoot,
+          events: events.map(summarizeEvent),
+        });
+        return;
+      }
+
+      printEventLines(events);
+      return;
+    }
+    case "event": {
+      const result = await scheduler.recordEventAndEnqueueRuns(
+        createSchedulerEventInput(args, options),
+      );
+
+      if (args.json) {
+        printJson({
+          event: summarizeEvent(result.event),
+          enqueued: result.enqueued.map((entry) => ({
+            handle: entry.handle,
+            run: summarizeRun(entry.run),
+            deduplicated: entry.deduplicated,
+          })),
+        });
+        return;
+      }
+
+      writeStdoutLine(`event: ${result.event.id}`);
+      writeStdoutLine(`type: ${result.event.type}`);
+      writeStdoutLine(`enqueued runs: ${result.enqueued.length}`);
       return;
     }
     case "run-due": {

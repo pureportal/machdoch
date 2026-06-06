@@ -1049,6 +1049,87 @@ const filterRuns = (
     .slice(0, maxRuns);
 };
 
+type SchedulerEventList = Awaited<
+  ReturnType<DurableSmartScheduler["listEvents"]>
+>;
+
+const summarizeEvent = (event: SchedulerEventList[number]): Record<string, unknown> => ({
+  id: event.id,
+  type: event.type,
+  kind: event.kind,
+  source: event.source,
+  workspaceRoot: event.workspaceRoot ?? null,
+  payload: event.payload,
+  dedupeKey: event.dedupeKey ?? null,
+  occurredAt: event.occurredAt,
+  receivedAt: event.receivedAt,
+  matches: event.matches,
+});
+
+const filterEvents = (
+  events: SchedulerEventList,
+  args: Record<string, unknown>,
+): SchedulerEventList => {
+  const query = coerceString(args, "query")?.toLowerCase();
+  const maxEvents = Math.min(
+    MAX_SCHEDULER_EVENTS,
+    coercePositiveInteger(args, "maxEvents") ?? 25,
+  );
+
+  return events
+    .filter((event) => {
+      if (!query) {
+        return true;
+      }
+
+      const haystack = [
+        event.id,
+        event.type,
+        event.kind,
+        event.source,
+        event.workspaceRoot,
+        event.dedupeKey,
+        JSON.stringify(event.payload),
+      ]
+        .filter((part): part is string => typeof part === "string")
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(query);
+    })
+    .slice(0, maxEvents);
+};
+
+const createEventInput = (
+  args: Record<string, unknown>,
+  workspaceRoot: string,
+):
+  | Parameters<DurableSmartScheduler["recordEventAndEnqueueRuns"]>[0]
+  | string => {
+  const type = coerceString(args, "type");
+  const kind = normalizeEnum(coerceString(args, "kind"), EVENT_TRIGGER_KINDS);
+  const source = coerceString(args, "source") ?? "ai";
+  const eventWorkspaceRoot =
+    coerceString(args, "workspaceRoot") ?? workspaceRoot;
+  const payload = isRecord(args.payload) ? { ...args.payload } : undefined;
+  const dedupeKey = coerceString(args, "dedupeKey");
+  const occurredAt = coercePositiveInteger(args, "occurredAtEpochMs");
+
+  if (!type) {
+    return "Expected scheduler event `type`.";
+  }
+
+  return {
+    type,
+    ...(kind ? { kind } : {}),
+    source,
+    workspaceRoot: eventWorkspaceRoot,
+    ...(payload ? { payload } : {}),
+    ...(dedupeKey ? { dedupeKey } : {}),
+    ...(occurredAt !== undefined ? { occurredAt } : {}),
+  };
+};
+
 export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
   return [
     {
@@ -1159,6 +1240,106 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
             },
           ],
           `list_scheduled_runs -> ${runs.length} run(s)`,
+        );
+      },
+    },
+    {
+      spec: {
+        name: "list_scheduler_events",
+        description:
+          "Read durable Smart Scheduler trigger events and match decisions. Use this to explain why an event-triggered job did or did not run.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            query: {
+              type: "string",
+              description:
+                "Optional case-insensitive search across event id, type, kind, source, workspace, dedupe key, and payload.",
+            },
+            maxEvents: {
+              type: "integer",
+              minimum: 1,
+              maximum: MAX_SCHEDULER_EVENTS,
+            },
+          },
+        },
+      },
+      backingTool: "scheduler",
+      riskLevel: "low",
+      effect: "read",
+      execute: async (args, context) => {
+        const events = filterEvents(
+          await createScheduler(context.workspaceRoot).listEvents(),
+          args,
+        );
+
+        return createSchedulerResult(
+          "list_scheduler_events",
+          { events: events.map(summarizeEvent) },
+          [
+            {
+              title: "Scheduler Events",
+              lines:
+                events.length > 0
+                  ? events.map(
+                      (event) =>
+                        `${event.id} | ${event.kind} | ${event.type} | matches=${event.matches.length}`,
+                    )
+                  : ["No scheduler events matched."],
+            },
+          ],
+          `list_scheduler_events -> ${events.length} event(s)`,
+        );
+      },
+    },
+    {
+      spec: {
+        name: "emit_scheduler_event",
+        description:
+          "Emit a normalized Smart Scheduler event to test or drive event-only jobs. Use this for user requests like 'run jobs for this file-created event' or to validate a trigger. Native watchers/webhooks should emit the same event shape.",
+        inputSchema: schedulerEventInputSchema,
+      },
+      backingTool: "scheduler",
+      riskLevel: "medium",
+      effect: "write",
+      execute: async (args, context) => {
+        const input = createEventInput(args, context.workspaceRoot);
+
+        if (typeof input === "string") {
+          return createToolErrorResult(
+            crypto.randomUUID(),
+            "emit_scheduler_event",
+            input,
+          );
+        }
+
+        const result = await createScheduler(
+          context.workspaceRoot,
+        ).recordEventAndEnqueueRuns(input);
+
+        return createSchedulerResult(
+          "emit_scheduler_event",
+          {
+            event: summarizeEvent(result.event),
+            enqueued: result.enqueued.map((entry) => ({
+              handle: entry.handle,
+              run: summarizeRun(entry.run),
+              deduplicated: entry.deduplicated,
+            })),
+          },
+          [
+            {
+              title: "Scheduler Event",
+              lines: [
+                `id: ${result.event.id}`,
+                `type: ${result.event.type}`,
+                `matches: ${result.event.matches.length}`,
+                `enqueued: ${result.enqueued.length}`,
+              ],
+            },
+          ],
+          `emit_scheduler_event(${result.event.id}) -> ${result.enqueued.length} run(s)`,
         );
       },
     },

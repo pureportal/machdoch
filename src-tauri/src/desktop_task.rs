@@ -29,6 +29,8 @@ const CLI_STRUCTURED_PROGRESS_PREFIX: &str = "machdoch-progress: ";
 const DESKTOP_TASK_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
 const DESKTOP_TASK_WAIT_POLL_MS: u64 = 250;
 const MAX_PENDING_CANCEL_IDS: usize = 256;
+const MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES: usize = 20 * 1024 * 1024;
+const MAX_ATTACHMENT_PATH_GRANTS: usize = 1024;
 
 static TEMP_FILE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -45,6 +47,9 @@ impl Default for DesktopTaskCancelMap {
         Self(Mutex::new(DesktopTaskCancelState::default()))
     }
 }
+
+#[derive(Default)]
+pub struct AttachmentPathGrantMap(pub Mutex<HashSet<PathBuf>>);
 
 #[cfg(target_os = "windows")]
 const DETACHED_PROCESS: u32 = 0x00000008;
@@ -288,6 +293,75 @@ fn resolve_dropped_paths_sync(paths: Vec<String>) -> DroppedPathsResolution {
     }
 }
 
+fn remember_attachment_path_grant(
+    grants: &AttachmentPathGrantMap,
+    path: &str,
+) -> Result<(), String> {
+    let normalized_path = path.trim();
+
+    if normalized_path.is_empty() {
+        return Ok(());
+    }
+
+    let candidate_path = PathBuf::from(normalized_path);
+
+    if !candidate_path.is_absolute() {
+        return Ok(());
+    }
+
+    let resolved_path = candidate_path
+        .canonicalize()
+        .map_err(|error| format!("Unable to resolve trusted attachment path `{path}`: {error}"))?;
+    let metadata = fs::metadata(&resolved_path).map_err(|error| {
+        format!(
+            "Unable to inspect trusted attachment path `{}`: {error}",
+            resolved_path.display()
+        )
+    })?;
+
+    if !metadata.is_file() && !metadata.is_dir() {
+        return Ok(());
+    }
+
+    let mut granted_paths = grants
+        .0
+        .lock()
+        .map_err(|_| "Unable to update trusted attachment paths.".to_string())?;
+
+    if granted_paths.len() >= MAX_ATTACHMENT_PATH_GRANTS {
+        if let Some(path_to_remove) = granted_paths.iter().next().cloned() {
+            granted_paths.remove(&path_to_remove);
+        }
+    }
+
+    granted_paths.insert(resolved_path);
+
+    Ok(())
+}
+
+fn remember_dropped_path_grants(
+    grants: &AttachmentPathGrantMap,
+    resolution: &DroppedPathsResolution,
+) -> Result<(), String> {
+    for entry in &resolution.entries {
+        remember_attachment_path_grant(grants, &entry.path)?;
+    }
+
+    Ok(())
+}
+
+fn attachment_path_is_granted(
+    grants: &AttachmentPathGrantMap,
+    path: &Path,
+) -> Result<bool, String> {
+    let granted_paths = grants
+        .0
+        .lock()
+        .map_err(|_| "Unable to inspect trusted attachment paths.".to_string())?;
+
+    Ok(granted_paths.contains(path))
+}
+
 fn clipboard_image_extension(media_type: &str) -> Option<&'static str> {
     match media_type.trim().to_ascii_lowercase().as_str() {
         "image/gif" => Some("gif"),
@@ -324,6 +398,34 @@ fn sanitize_clipboard_image_file_stem(file_name: Option<&str>) -> String {
     }
 }
 
+fn base64_decoded_len_upper_bound(value: &str) -> usize {
+    let normalized = value.trim();
+    let full_chunks = normalized.len() / 4;
+    let remainder = normalized.len() % 4;
+    let remainder_bytes = match remainder {
+        0 => 0,
+        2 => 1,
+        3 => 2,
+        _ => 3,
+    };
+    let padding = normalized
+        .as_bytes()
+        .iter()
+        .rev()
+        .take_while(|byte| **byte == b'=')
+        .count()
+        .min(2);
+
+    full_chunks
+        .saturating_mul(3)
+        .saturating_add(remainder_bytes)
+        .saturating_sub(padding)
+}
+
+fn clipboard_image_attachment_directory() -> PathBuf {
+    env::temp_dir().join("machdoch").join("clipboard-images")
+}
+
 fn save_clipboard_image_attachment_sync(
     request: ClipboardImageAttachmentRequest,
 ) -> Result<String, String> {
@@ -333,15 +435,31 @@ fn save_clipboard_image_attachment_sync(
             request.media_type.trim()
         )
     })?;
+    let encoded_image = request.data_base64.trim();
+
+    if base64_decoded_len_upper_bound(encoded_image) > MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES {
+        return Err(format!(
+            "Clipboard image data is too large. Maximum supported size is {} MiB.",
+            MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES / (1024 * 1024)
+        ));
+    }
+
     let image_bytes = BASE64_STANDARD
-        .decode(request.data_base64.trim())
+        .decode(encoded_image)
         .map_err(|error| format!("Failed to decode clipboard image data: {error}"))?;
 
     if image_bytes.is_empty() {
         return Err("Clipboard image data was empty.".to_string());
     }
 
-    let output_directory = env::temp_dir().join("machdoch").join("clipboard-images");
+    if image_bytes.len() > MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES {
+        return Err(format!(
+            "Clipboard image data is too large. Maximum supported size is {} MiB.",
+            MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES / (1024 * 1024)
+        ));
+    }
+
+    let output_directory = clipboard_image_attachment_directory();
     fs::create_dir_all(&output_directory).map_err(|error| {
         format!(
             "Failed to create clipboard image directory {}: {error}",
@@ -925,7 +1043,11 @@ fn resolve_workspace_relative_path(
     Ok(resolved_path)
 }
 
-fn resolve_attached_path(path: &str) -> Result<PathBuf, String> {
+fn resolve_attached_path(
+    grants: &AttachmentPathGrantMap,
+    workspace_root: Option<&str>,
+    path: &str,
+) -> Result<PathBuf, String> {
     let normalized_path = path.trim();
 
     if normalized_path.is_empty() {
@@ -938,9 +1060,45 @@ fn resolve_attached_path(path: &str) -> Result<PathBuf, String> {
         return Err("Expected an absolute attached file path.".to_string());
     }
 
-    candidate_path
+    let resolved_path = candidate_path
         .canonicalize()
-        .map_err(|error| format!("Unable to resolve attached path `{normalized_path}`: {error}"))
+        .map_err(|error| format!("Unable to resolve attached path `{normalized_path}`: {error}"))?;
+    let resolved_metadata = fs::metadata(&resolved_path).map_err(|error| {
+        format!(
+            "Unable to inspect attached path `{}`: {error}",
+            resolved_path.display()
+        )
+    })?;
+
+    if !resolved_metadata.is_file() && !resolved_metadata.is_dir() {
+        return Err("Expected the attached path to be a file or directory.".to_string());
+    }
+
+    if !attachment_path_is_granted(grants, &resolved_path)? {
+        return Err(
+            "Refused to open an attachment path that was not selected or created by this app session."
+                .to_string(),
+        );
+    }
+
+    if let Some(normalized_workspace_root) = workspace_root
+        .map(str::trim)
+        .filter(|candidate| !candidate.is_empty())
+    {
+        let workspace_path = resolve_workspace_root_path(normalized_workspace_root)?;
+
+        if resolved_path.starts_with(&workspace_path) {
+            return Ok(resolved_path);
+        }
+    }
+
+    if let Ok(clipboard_directory) = clipboard_image_attachment_directory().canonicalize() {
+        if resolved_path.starts_with(&clipboard_directory) {
+            return Ok(resolved_path);
+        }
+    }
+
+    Err("Refused to open an attached path outside the active workspace or trusted temporary attachments.".to_string())
 }
 
 fn spawn_detached_command(command: &mut Command, error_prefix: &str) -> Result<(), String> {
@@ -1087,29 +1245,48 @@ pub async fn open_workspace_path(
 }
 
 #[tauri::command]
-pub async fn open_attached_path(path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let resolved_path = resolve_attached_path(&path)?;
-        open_path_in_system_shell(&resolved_path)
-    })
-    .await
-    .map_err(|error| format!("The attachment opener stopped unexpectedly. {error}"))?
+pub async fn open_attached_path(
+    state: tauri::State<'_, AttachmentPathGrantMap>,
+    path: String,
+    workspace_root: Option<String>,
+) -> Result<(), String> {
+    let resolved_path = resolve_attached_path(&state, workspace_root.as_deref(), &path)?;
+
+    tauri::async_runtime::spawn_blocking(move || open_path_in_system_shell(&resolved_path))
+        .await
+        .map_err(|error| format!("The attachment opener stopped unexpectedly. {error}"))?
 }
 
 #[tauri::command]
-pub async fn resolve_dropped_paths(paths: Vec<String>) -> Result<DroppedPathsResolution, String> {
-    tauri::async_runtime::spawn_blocking(move || resolve_dropped_paths_sync(paths))
-        .await
-        .map_err(|error| format!("The dropped path resolver stopped unexpectedly. {error}"))
+pub async fn resolve_dropped_paths(
+    state: tauri::State<'_, AttachmentPathGrantMap>,
+    paths: Vec<String>,
+) -> Result<DroppedPathsResolution, String> {
+    let resolution =
+        tauri::async_runtime::spawn_blocking(move || resolve_dropped_paths_sync(paths))
+            .await
+            .map_err(|error| format!("The dropped path resolver stopped unexpectedly. {error}"))?;
+
+    remember_dropped_path_grants(&state, &resolution)?;
+
+    Ok(resolution)
 }
 
 #[tauri::command]
 pub async fn save_clipboard_image_attachment(
+    state: tauri::State<'_, AttachmentPathGrantMap>,
     request: ClipboardImageAttachmentRequest,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || save_clipboard_image_attachment_sync(request))
-        .await
-        .map_err(|error| format!("The clipboard image saver stopped unexpectedly. {error}"))?
+    let path =
+        tauri::async_runtime::spawn_blocking(move || save_clipboard_image_attachment_sync(request))
+            .await
+            .map_err(|error| {
+                format!("The clipboard image saver stopped unexpectedly. {error}")
+            })??;
+
+    remember_attachment_path_grant(&state, &path)?;
+
+    Ok(path)
 }
 
 #[tauri::command]
@@ -1121,15 +1298,38 @@ pub async fn run_scheduler_command(request: SchedulerCommandRequest) -> Result<V
 
 #[cfg(test)]
 mod tests {
-    use std::thread;
+    use std::{
+        fs,
+        path::PathBuf,
+        thread,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
+    use base64::Engine as _;
     use serde_json::json;
 
     use super::{
         build_cli_args, cleanup_temporary_file, join_cli_output_and_cleanup,
-        remember_pending_cancel, write_conversation_context_file, CliCommandOptions,
+        remember_attachment_path_grant, remember_pending_cancel, resolve_attached_path,
+        save_clipboard_image_attachment_sync, write_conversation_context_file,
+        AttachmentPathGrantMap, CliCommandOptions, ClipboardImageAttachmentRequest,
         DesktopTaskCancelState, MAX_PENDING_CANCEL_IDS,
     };
+
+    fn create_test_directory(label: &str) -> PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let path = std::env::temp_dir().join(format!(
+            "machdoch-desktop-task-test-{label}-{}-{timestamp}",
+            std::process::id()
+        ));
+
+        fs::create_dir_all(&path).expect("test directory should be created");
+
+        path
+    }
 
     #[test]
     fn desktop_cli_args_force_one_shot_json_execution() {
@@ -1219,6 +1419,118 @@ mod tests {
             .expect_err("worker failure should be returned")
             .contains("stdout failed"));
         assert!(!context_path.exists());
+    }
+
+    #[test]
+    fn clipboard_image_attachment_rejects_oversized_payloads() {
+        let data_base64 =
+            base64::engine::general_purpose::STANDARD.encode(vec![0_u8; (20 * 1024 * 1024) + 1]);
+
+        let result = save_clipboard_image_attachment_sync(ClipboardImageAttachmentRequest {
+            data_base64,
+            media_type: "image/png".to_string(),
+            file_name: Some("huge.png".to_string()),
+        });
+
+        assert!(result
+            .expect_err("oversized clipboard images should be rejected")
+            .contains("too large"));
+    }
+
+    #[test]
+    fn attached_path_resolver_allows_paths_inside_active_workspace() {
+        let grants = AttachmentPathGrantMap::default();
+        let workspace_path = create_test_directory("workspace");
+        let file_path = workspace_path.join("plan.md");
+
+        fs::write(&file_path, "plan").expect("test file should be written");
+        remember_attachment_path_grant(&grants, file_path.to_string_lossy().as_ref())
+            .expect("test file should be granted");
+
+        let resolved_path = resolve_attached_path(
+            &grants,
+            Some(workspace_path.to_string_lossy().as_ref()),
+            file_path.to_string_lossy().as_ref(),
+        )
+        .expect("workspace attachment should resolve");
+
+        assert_eq!(
+            resolved_path,
+            file_path
+                .canonicalize()
+                .expect("test file should canonicalize")
+        );
+
+        let _ = fs::remove_dir_all(workspace_path);
+    }
+
+    #[test]
+    fn attached_path_resolver_rejects_paths_outside_active_workspace() {
+        let grants = AttachmentPathGrantMap::default();
+        let workspace_path = create_test_directory("workspace");
+        let outside_path = create_test_directory("outside");
+        let file_path = outside_path.join("secret.txt");
+
+        fs::write(&file_path, "secret").expect("test file should be written");
+        remember_attachment_path_grant(&grants, file_path.to_string_lossy().as_ref())
+            .expect("test file should be granted");
+
+        let error = resolve_attached_path(
+            &grants,
+            Some(workspace_path.to_string_lossy().as_ref()),
+            file_path.to_string_lossy().as_ref(),
+        )
+        .expect_err("outside attachment should be rejected");
+
+        assert!(error.contains("outside the active workspace"));
+
+        let _ = fs::remove_dir_all(workspace_path);
+        let _ = fs::remove_dir_all(outside_path);
+    }
+
+    #[test]
+    fn attached_path_resolver_rejects_ungranted_workspace_attachments() {
+        let grants = AttachmentPathGrantMap::default();
+        let workspace_path = create_test_directory("workspace");
+        let file_path = workspace_path.join("forged.md");
+
+        fs::write(&file_path, "forged").expect("test file should be written");
+
+        let error = resolve_attached_path(
+            &grants,
+            Some(workspace_path.to_string_lossy().as_ref()),
+            file_path.to_string_lossy().as_ref(),
+        )
+        .expect_err("ungranted attachment should be rejected");
+
+        assert!(error.contains("not selected or created"));
+
+        let _ = fs::remove_dir_all(workspace_path);
+    }
+
+    #[test]
+    fn attached_path_resolver_allows_granted_clipboard_image_attachments() {
+        let grants = AttachmentPathGrantMap::default();
+        let saved_path = save_clipboard_image_attachment_sync(ClipboardImageAttachmentRequest {
+            data_base64: base64::engine::general_purpose::STANDARD.encode([0_u8, 1_u8, 2_u8]),
+            media_type: "image/png".to_string(),
+            file_name: Some("clipboard.png".to_string()),
+        })
+        .expect("clipboard image attachment should be saved");
+        remember_attachment_path_grant(&grants, &saved_path)
+            .expect("clipboard image attachment should be granted");
+
+        let resolved_path = resolve_attached_path(&grants, None, &saved_path)
+            .expect("saved clipboard image attachment should resolve");
+
+        assert_eq!(
+            resolved_path,
+            PathBuf::from(&saved_path)
+                .canonicalize()
+                .expect("saved clipboard image should canonicalize")
+        );
+
+        let _ = fs::remove_file(saved_path);
     }
 
     #[test]

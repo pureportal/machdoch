@@ -97,10 +97,13 @@ describe("createToolDefinitions", () => {
 
     expect(askToolNames).toContain("list_scheduled_jobs");
     expect(askToolNames).toContain("list_scheduled_runs");
+    expect(askToolNames).toContain("list_scheduler_events");
     expect(askToolNames).not.toContain("create_scheduled_job");
     expect(askToolNames).not.toContain("update_scheduled_job");
+    expect(askToolNames).not.toContain("emit_scheduler_event");
     expect(machdochToolNames).toContain("create_scheduled_job");
     expect(machdochToolNames).toContain("update_scheduled_job");
+    expect(machdochToolNames).toContain("emit_scheduler_event");
   });
 });
 

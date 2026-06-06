@@ -740,9 +740,11 @@ export const useChatSessionController = (
   const handleOpenAttachment = (
     attachment: ChatSessionContextAttachment,
   ): void => {
-    void openAttachedPath(attachment.path).catch((error) => {
-      console.error("Failed to open attached path", error);
-    });
+    void openAttachedPath(attachment.path, state.activeSession.workspace).catch(
+      (error) => {
+        console.error("Failed to open attached path", error);
+      },
+    );
   };
 
   const getActiveDesktopTaskIdForSession = useCallback((sessionId: string): string | null => {
@@ -1854,7 +1856,7 @@ export const useChatSessionController = (
     runtimeError: runtime.runtimeError,
     hasAnyProvider: providerChooserState.hasAnyProvider,
     chooserProviders: providerChooserState.chooserProviders,
-    defaultMode,
+    defaultMode: defaultRunMode,
     activeRunMode,
     composerWorkspaceLabel: memorySummaryState.composerWorkspaceLabel,
     isGlobalMemoryAvailable: memorySummaryState.isGlobalMemoryAvailable,
