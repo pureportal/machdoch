@@ -110,9 +110,17 @@ export const normalizeOpenAIStrictInputSchema = (
   const properties = isSchemaRecord(schema.properties)
     ? schema.properties
     : null;
+  const hasObjectType =
+    schema.type === "object" ||
+    (Array.isArray(schema.type) && schema.type.includes("object")) ||
+    properties !== null;
+
+  if (hasObjectType) {
+    normalizedSchema.additionalProperties = false;
+  }
 
   if (!properties) {
-    if (schema.type === "object") {
+    if (hasObjectType) {
       normalizedSchema.required = [];
     }
 

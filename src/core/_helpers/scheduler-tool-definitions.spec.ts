@@ -147,9 +147,7 @@ describe("createSchedulerToolDefinitions", () => {
           {
             kind: "workspace-file",
             eventType: "workspace-file.created",
-            filters: {
-              "payload.path": "invoices/*.pdf",
-            },
+            filters: [{ path: "payload.path", value: "invoices/*.pdf" }],
             dedupeKeyTemplate: "invoice:{payload.path}:{payload.mtime}",
           },
         ],
@@ -174,10 +172,10 @@ describe("createSchedulerToolDefinitions", () => {
       {
         type: "workspace-file.created",
         kind: "workspace-file",
-        payload: {
-          path: "invoices/june.pdf",
-          mtime: "123",
-        },
+        payload: [
+          { path: "path", value: "invoices/june.pdf" },
+          { path: "mtime", value: "123" },
+        ],
         dedupeKey: "file:june",
       },
       context,
@@ -216,12 +214,10 @@ describe("createSchedulerToolDefinitions", () => {
             kind: "system",
             eventType: "system.disk-threshold",
             firingMode: "state",
-            filters: {
-              "payload.usedPercent": { op: ">=", value: 90 },
-            },
-            recoveryFilters: {
-              "payload.usedPercent": { op: "<=", value: 80 },
-            },
+            filters: [{ path: "payload.usedPercent", op: ">=", value: 90 }],
+            recoveryFilters: [
+              { path: "payload.usedPercent", op: "<=", value: 80 },
+            ],
             repeatIntervalMs: 3600000,
             maxEventsPerWindow: {
               maxEvents: 2,

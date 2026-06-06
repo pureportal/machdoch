@@ -67,6 +67,93 @@ const MISSED_RUN_POLICIES = [
 ] as const;
 const RUN_MODES = ["ask", "machdoch"] as const;
 const MODEL_PROVIDERS = ["openai", "anthropic", "google"] as const;
+const FILTER_OPERATORS = [
+  ">",
+  ">=",
+  "<",
+  "<=",
+  "!=",
+  "=",
+  "==",
+  "contains",
+  "endswith",
+  "eq",
+  "exists",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+  "matches",
+  "neq",
+  "not",
+  "pattern",
+  "prefix",
+  "startswith",
+  "suffix",
+] as const;
+
+const schedulerScalarValueSchema = {
+  anyOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }],
+} as const;
+
+const schedulerKeyValueEntrySchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    path: {
+      type: "string",
+      description:
+        "Field path to set, for example path, mtime, usedPercent, or nested.detail.",
+    },
+    value: {
+      ...schedulerScalarValueSchema,
+      description: "String, number, or boolean value for this field.",
+    },
+    jsonValue: {
+      type: "string",
+      description:
+        "JSON-encoded value for arrays, objects, or null when value is not expressive enough.",
+    },
+  },
+  required: ["path"],
+} as const;
+
+const schedulerFilterEntrySchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    path: {
+      type: "string",
+      description:
+        "Event field path such as payload.path, payload.branch, source, or workspaceRoot.",
+    },
+    value: {
+      ...schedulerScalarValueSchema,
+      description:
+        "Expected value. Strings support * wildcards when no operator is set.",
+    },
+    jsonValue: {
+      type: "string",
+      description:
+        "JSON-encoded expected value for arrays, objects, or null when value is not expressive enough.",
+    },
+    op: {
+      type: "string",
+      enum: FILTER_OPERATORS,
+      description:
+        "Optional comparison operator such as >=, <=, contains, matches, exists, or eq.",
+    },
+    min: {
+      type: "number",
+      description: "Optional lower numeric bound.",
+    },
+    max: {
+      type: "number",
+      description: "Optional upper numeric bound.",
+    },
+  },
+  required: ["path"],
+} as const;
 
 const scheduleInputSchema = {
   type: "object",
@@ -132,16 +219,16 @@ const triggerInputSchema = {
       },
       schedule: scheduleInputSchema,
       filters: {
-        type: "object",
-        additionalProperties: true,
+        type: "array",
+        items: schedulerFilterEntrySchema,
         description:
-          "Optional activation filters over event fields. Use exact values, wildcard strings, or operator objects such as {\"op\":\">=\",\"value\":90}. Keys can be payload.path, payload.branch, source, or workspaceRoot.",
+          "Optional activation filters over event fields. Example: [{\"path\":\"payload.path\",\"value\":\"invoices/*.pdf\"}] or [{\"path\":\"payload.usedPercent\",\"op\":\">=\",\"value\":90}].",
       },
       recoveryFilters: {
-        type: "object",
-        additionalProperties: true,
+        type: "array",
+        items: schedulerFilterEntrySchema,
         description:
-          "Optional recovery filters for stateful threshold triggers. Example: {\"payload.usedPercent\":{\"op\":\"<=\",\"value\":80}}.",
+          "Optional recovery filters for stateful threshold triggers. Example: [{\"path\":\"payload.usedPercent\",\"op\":\"<=\",\"value\":80}].",
       },
       firingMode: {
         type: "string",
@@ -217,10 +304,10 @@ const schedulerEventInputSchema = {
         "Workspace root the event belongs to. Defaults to the active workspace.",
     },
     payload: {
-      type: "object",
-      additionalProperties: true,
+      type: "array",
+      items: schedulerKeyValueEntrySchema,
       description:
-        "Event payload. Trigger filters can match fields like payload.path or payload.branch.",
+        "Event payload entries. Example: [{\"path\":\"path\",\"value\":\"invoices/june.pdf\"},{\"path\":\"mtime\",\"value\":\"123\"}]. Trigger filters can match fields like payload.path or payload.branch.",
     },
     dedupeKey: {
       type: "string",
@@ -338,8 +425,10 @@ const schedulerTargetSchema = {
           items: { type: "string" },
         },
         variableValues: {
-          type: "object",
-          additionalProperties: { type: "string" },
+          type: "array",
+          items: schedulerKeyValueEntrySchema,
+          description:
+            "Optional context-pack variables as key/value entries, for example [{\"path\":\"scope\",\"value\":\"repo\"}].",
         },
       },
       required: ["name"],
@@ -422,6 +511,226 @@ const normalizeEnum = <T extends string>(
   allowedValues: readonly T[],
 ): T | undefined => {
   return allowedValues.includes(value as T) ? (value as T) : undefined;
+};
+
+type ParsedEntryValue =
+  | {
+      hasValue: true;
+      value: unknown;
+    }
+  | {
+      hasValue: false;
+    };
+
+const hasOwnRecordKey = (
+  record: Record<string, unknown>,
+  key: string,
+): boolean => {
+  return Object.prototype.hasOwnProperty.call(record, key);
+};
+
+const parseJsonEntryValue = (value: unknown): ParsedEntryValue => {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return { hasValue: false };
+  }
+
+  try {
+    return {
+      hasValue: true,
+      value: JSON.parse(value) as unknown,
+    };
+  } catch {
+    return { hasValue: false };
+  }
+};
+
+const coerceEntryPath = (
+  entry: Record<string, unknown>,
+): string | undefined => {
+  return (
+    coerceString(entry, "path") ??
+    coerceString(entry, "key") ??
+    coerceString(entry, "name")
+  );
+};
+
+const coerceEntryValue = (
+  entry: Record<string, unknown>,
+): ParsedEntryValue => {
+  if (
+    hasOwnRecordKey(entry, "value") &&
+    entry.value !== undefined &&
+    entry.value !== null
+  ) {
+    return {
+      hasValue: true,
+      value: entry.value,
+    };
+  }
+
+  return parseJsonEntryValue(entry.jsonValue);
+};
+
+const coerceDirectEntryValue = (
+  entry: Record<string, unknown>,
+  field: string,
+): ParsedEntryValue => {
+  const value = entry[field];
+
+  return value !== undefined && value !== null
+    ? { hasValue: true, value }
+    : { hasValue: false };
+};
+
+const setNestedRecordValue = (
+  record: Record<string, unknown>,
+  path: string,
+  value: unknown,
+): void => {
+  const parts = path
+    .split(".")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  const lastPart = parts.at(-1);
+
+  if (!lastPart) {
+    return;
+  }
+
+  let current = record;
+
+  for (const part of parts.slice(0, -1)) {
+    const existing = current[part];
+
+    if (isRecord(existing)) {
+      current = existing;
+      continue;
+    }
+
+    const next: Record<string, unknown> = {};
+    current[part] = next;
+    current = next;
+  }
+
+  current[lastPart] = value;
+};
+
+const parseEntryRecord = (
+  value: unknown,
+  options: { nestedPaths: boolean },
+): Record<string, unknown> | undefined => {
+  if (isRecord(value)) {
+    return { ...value };
+  }
+
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record: Record<string, unknown> = {};
+
+  for (const entry of value) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const path = coerceEntryPath(entry);
+    const parsedValue = coerceEntryValue(entry);
+
+    if (!path || !parsedValue.hasValue) {
+      continue;
+    }
+
+    if (options.nestedPaths) {
+      setNestedRecordValue(record, path, parsedValue.value);
+      continue;
+    }
+
+    record[path] = parsedValue.value;
+  }
+
+  return Object.keys(record).length > 0 ? record : undefined;
+};
+
+const parseStringEntryRecord = (
+  value: unknown,
+): Record<string, string> | undefined => {
+  const record = parseEntryRecord(value, { nestedPaths: false });
+
+  if (!record) {
+    return undefined;
+  }
+
+  const stringRecord = Object.fromEntries(
+    Object.entries(record).filter(
+      (candidate): candidate is [string, string] =>
+        typeof candidate[1] === "string",
+    ),
+  );
+
+  return Object.keys(stringRecord).length > 0 ? stringRecord : undefined;
+};
+
+const parseFilterRecord = (
+  value: unknown,
+): Record<string, unknown> | undefined => {
+  if (isRecord(value)) {
+    return { ...value };
+  }
+
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const filters: Record<string, unknown> = {};
+
+  for (const entry of value) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const path = coerceEntryPath(entry);
+
+    if (!path) {
+      continue;
+    }
+
+    const parsedValue = coerceEntryValue(entry);
+    const op = coerceString(entry, "op") ?? coerceString(entry, "operator");
+    const min = coerceDirectEntryValue(entry, "min");
+    const max = coerceDirectEntryValue(entry, "max");
+    const usesExpression = Boolean(op) || min.hasValue || max.hasValue;
+
+    if (!usesExpression) {
+      if (parsedValue.hasValue) {
+        filters[path] = parsedValue.value;
+      }
+
+      continue;
+    }
+
+    const expression: Record<string, unknown> = {};
+
+    if (op) {
+      expression.op = op;
+    }
+
+    if (parsedValue.hasValue) {
+      expression.value = parsedValue.value;
+    }
+
+    if (min.hasValue) {
+      expression.min = min.value;
+    }
+
+    if (max.hasValue) {
+      expression.max = max.value;
+    }
+
+    filters[path] = expression;
+  }
+
+  return Object.keys(filters).length > 0 ? filters : undefined;
 };
 
 const createScheduler = (workspaceRoot: string): DurableSmartScheduler => {
@@ -508,10 +817,8 @@ const parseTriggerInput = (
   const name = coerceString(value, "name");
   const enabled =
     typeof value.enabled === "boolean" ? value.enabled : undefined;
-  const filters = isRecord(value.filters) ? { ...value.filters } : undefined;
-  const recoveryFilters = isRecord(value.recoveryFilters)
-    ? { ...value.recoveryFilters }
-    : undefined;
+  const filters = parseFilterRecord(value.filters);
+  const recoveryFilters = parseFilterRecord(value.recoveryFilters);
   const firingMode = normalizeEnum(
     coerceString(value, "firingMode"),
     TRIGGER_FIRING_MODES,
@@ -633,14 +940,7 @@ const parseContextPacks = (
 
     const instructions = coerceString(entry, "instructions");
     const prompt = coerceString(entry, "prompt");
-    const variableValues = isRecord(entry.variableValues)
-      ? Object.fromEntries(
-          Object.entries(entry.variableValues).filter(
-            (candidate): candidate is [string, string] =>
-              typeof candidate[1] === "string",
-          ),
-        )
-      : undefined;
+    const variableValues = parseStringEntryRecord(entry.variableValues);
     const contextPaths = coerceStringArray(entry, "contextPaths");
 
     return [
@@ -1183,7 +1483,7 @@ const createEventInput = (
   const source = coerceString(args, "source") ?? "ai";
   const eventWorkspaceRoot =
     coerceString(args, "workspaceRoot") ?? workspaceRoot;
-  const payload = isRecord(args.payload) ? { ...args.payload } : undefined;
+  const payload = parseEntryRecord(args.payload, { nestedPaths: true });
   const dedupeKey = coerceString(args, "dedupeKey");
   const occurredAt = coercePositiveInteger(args, "occurredAtEpochMs");
 

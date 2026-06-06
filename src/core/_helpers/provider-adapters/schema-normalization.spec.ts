@@ -40,4 +40,36 @@ describe("normalizeOpenAIStrictInputSchema", () => {
     expect(normalized.required).toEqual([]);
     expect(normalized.properties).toEqual({});
   });
+
+  it("closes map-like object schemas for OpenAI strict tools", () => {
+    const normalized = normalizeOpenAIStrictInputSchema({
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        payload: {
+          type: "object",
+          additionalProperties: true,
+        },
+        variables: {
+          type: "object",
+          additionalProperties: { type: "string" },
+        },
+      },
+    });
+
+    expect(normalized.additionalProperties).toBe(false);
+    expect(normalized.required).toEqual(["payload", "variables"]);
+    expect(normalized.properties).toMatchObject({
+      payload: {
+        type: ["object", "null"],
+        additionalProperties: false,
+        required: [],
+      },
+      variables: {
+        type: ["object", "null"],
+        additionalProperties: false,
+        required: [],
+      },
+    });
+  });
 });
