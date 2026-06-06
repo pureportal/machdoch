@@ -44,9 +44,14 @@ export interface SchedulerCliOptions {
   cron?: string;
   triggers?: string[];
   triggerFilters?: string[];
+  triggerRecoveryFilters?: string[];
+  triggerFiringMode?: string;
   triggerCooldownMs?: number;
+  triggerRepeatMs?: number;
   triggerDebounceMs?: number;
   triggerDedupeKeyTemplate?: string;
+  triggerMaxEvents?: number;
+  triggerWindowMs?: number;
   intervalMs?: number;
   delayMs?: number;
   runAt?: number;
@@ -447,13 +452,23 @@ Options:
   --cron <expr>           Scheduler cron expression for \`scheduler create\`.
   --trigger <kind:event>  Add an event trigger for \`scheduler create\`, for example workspace-file:workspace-file.created. Repeat for multiple triggers.
   --trigger-filter <path=value>
-                          Add an event trigger filter such as payload.path=*.pdf. Repeat for multiple filters.
+                          Add an activation filter such as payload.path=*.pdf or payload.usedPercent>=90. Repeat for multiple filters.
+  --trigger-recovery-filter <path=value>
+                          Add a recovery filter for stateful triggers, for example payload.usedPercent<=80.
+  --trigger-firing-mode <event|state>
+                          Use state for threshold/condition triggers that repeat only after cooldown/recovery.
   --trigger-cooldown-ms <ms>
                           Minimum time between runs fired by an event trigger.
+  --trigger-repeat-ms <ms>
+                          Repeat interval for stateful triggers while the condition remains active.
   --trigger-debounce-ms <ms>
                           Debounce window for bursty event sources.
   --trigger-dedupe-key-template <template>
                           Event run dedupe template such as file:{payload.path}:{payload.mtime}.
+  --trigger-max-events <n>
+                          Maximum trigger firings allowed per trigger window.
+  --trigger-window-ms <ms>
+                          Rolling window used with --trigger-max-events.
   --interval-ms <ms>      Scheduler interval in milliseconds for \`scheduler create\`.
   --delay-ms <ms>         Scheduler one-shot delay in milliseconds for \`scheduler create\`.
   --run-at <epoch-ms>     Scheduler one-shot absolute run time in epoch milliseconds.
@@ -540,9 +555,14 @@ export const parseCliArgs = (
         cron?: string;
         trigger?: string[];
         "trigger-filter"?: string[];
+        "trigger-recovery-filter"?: string[];
+        "trigger-firing-mode"?: string;
         "trigger-cooldown-ms"?: string;
+        "trigger-repeat-ms"?: string;
         "trigger-debounce-ms"?: string;
         "trigger-dedupe-key-template"?: string;
+        "trigger-max-events"?: string;
+        "trigger-window-ms"?: string;
         "interval-ms"?: string;
         "delay-ms"?: string;
         "run-at"?: string;
@@ -606,9 +626,14 @@ export const parseCliArgs = (
         cron: { type: "string" },
         trigger: { type: "string", multiple: true },
         "trigger-filter": { type: "string", multiple: true },
+        "trigger-recovery-filter": { type: "string", multiple: true },
+        "trigger-firing-mode": { type: "string" },
         "trigger-cooldown-ms": { type: "string" },
+        "trigger-repeat-ms": { type: "string" },
         "trigger-debounce-ms": { type: "string" },
         "trigger-dedupe-key-template": { type: "string" },
+        "trigger-max-events": { type: "string" },
+        "trigger-window-ms": { type: "string" },
         "interval-ms": { type: "string" },
         "delay-ms": { type: "string" },
         "run-at": { type: "string" },
@@ -688,14 +713,29 @@ export const parseCliArgs = (
   const rawSchedulerTriggerFilters = values?.["trigger-filter"]
     ?.map((entry) => normalizeOptionalString(entry))
     .filter((entry): entry is string => Boolean(entry));
+  const rawSchedulerTriggerRecoveryFilters = values?.["trigger-recovery-filter"]
+    ?.map((entry) => normalizeOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  const rawSchedulerTriggerFiringMode = normalizeOptionalString(
+    values?.["trigger-firing-mode"],
+  );
   const rawSchedulerTriggerCooldownMs = normalizeOptionalString(
     values?.["trigger-cooldown-ms"],
+  );
+  const rawSchedulerTriggerRepeatMs = normalizeOptionalString(
+    values?.["trigger-repeat-ms"],
   );
   const rawSchedulerTriggerDebounceMs = normalizeOptionalString(
     values?.["trigger-debounce-ms"],
   );
   const rawSchedulerTriggerDedupeKeyTemplate = normalizeOptionalString(
     values?.["trigger-dedupe-key-template"],
+  );
+  const rawSchedulerTriggerMaxEvents = normalizeOptionalString(
+    values?.["trigger-max-events"],
+  );
+  const rawSchedulerTriggerWindowMs = normalizeOptionalString(
+    values?.["trigger-window-ms"],
   );
   const rawSchedulerIntervalMs = normalizeOptionalString(values?.["interval-ms"]);
   const rawSchedulerDelayMs = normalizeOptionalString(values?.["delay-ms"]);
@@ -1138,6 +1178,13 @@ export const parseCliArgs = (
           ...(rawSchedulerTriggerFilters && rawSchedulerTriggerFilters.length > 0
             ? { triggerFilters: rawSchedulerTriggerFilters }
             : {}),
+          ...(rawSchedulerTriggerRecoveryFilters &&
+          rawSchedulerTriggerRecoveryFilters.length > 0
+            ? { triggerRecoveryFilters: rawSchedulerTriggerRecoveryFilters }
+            : {}),
+          ...(rawSchedulerTriggerFiringMode
+            ? { triggerFiringMode: rawSchedulerTriggerFiringMode }
+            : {}),
           ...(parseOptionalPositiveInteger(
             rawSchedulerTriggerCooldownMs,
             "--trigger-cooldown-ms",
@@ -1146,6 +1193,17 @@ export const parseCliArgs = (
                 triggerCooldownMs: parseOptionalPositiveInteger(
                   rawSchedulerTriggerCooldownMs,
                   "--trigger-cooldown-ms",
+                ),
+              }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerTriggerRepeatMs,
+            "--trigger-repeat-ms",
+          ) !== undefined
+            ? {
+                triggerRepeatMs: parseOptionalPositiveInteger(
+                  rawSchedulerTriggerRepeatMs,
+                  "--trigger-repeat-ms",
                 ),
               }
             : {}),
@@ -1162,6 +1220,28 @@ export const parseCliArgs = (
             : {}),
           ...(rawSchedulerTriggerDedupeKeyTemplate
             ? { triggerDedupeKeyTemplate: rawSchedulerTriggerDedupeKeyTemplate }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerTriggerMaxEvents,
+            "--trigger-max-events",
+          ) !== undefined
+            ? {
+                triggerMaxEvents: parseOptionalPositiveInteger(
+                  rawSchedulerTriggerMaxEvents,
+                  "--trigger-max-events",
+                ),
+              }
+            : {}),
+          ...(parseOptionalPositiveInteger(
+            rawSchedulerTriggerWindowMs,
+            "--trigger-window-ms",
+          ) !== undefined
+            ? {
+                triggerWindowMs: parseOptionalPositiveInteger(
+                  rawSchedulerTriggerWindowMs,
+                  "--trigger-window-ms",
+                ),
+              }
             : {}),
           ...(parseOptionalPositiveInteger(
             rawSchedulerIntervalMs,

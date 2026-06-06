@@ -388,6 +388,165 @@ describe("DurableSmartScheduler", () => {
     expect(await scheduler.listEvents()).toHaveLength(3);
   });
 
+  it("repeats stateful threshold triggers only after recovery or repeat interval", async () => {
+    const workspaceRoot = await createWorkspace();
+    const clock = createClock(1_000);
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+      clock,
+    });
+
+    const job = await scheduler.upsertJob({
+      name: "Disk pressure cleanup",
+      triggers: [
+        {
+          kind: "system",
+          eventType: "system.disk-threshold",
+          firingMode: "state",
+          filters: {
+            "payload.usedPercent": { op: ">=", value: 90 },
+          },
+          recoveryFilters: {
+            "payload.usedPercent": { op: "<=", value: 80 },
+          },
+          repeatIntervalMs: 60_000,
+          dedupeKeyTemplate: "disk:{payload.path}",
+        },
+      ],
+      target: {
+        workspaceRoot,
+        prompt: "Clean temporary files when disk pressure is high.",
+      },
+      dedupeKey: "disk-cleanup",
+    });
+
+    const first = await scheduler.recordEventAndEnqueueRuns({
+      type: "system.disk-threshold",
+      kind: "system",
+      workspaceRoot,
+      payload: { path: "C:", usedPercent: 91 },
+      dedupeKey: "disk:C:first",
+    });
+
+    expect(first.enqueued).toHaveLength(1);
+
+    clock.advance(10_000);
+
+    const repeatedTooSoon = await scheduler.recordEventAndEnqueueRuns({
+      type: "system.disk-threshold",
+      kind: "system",
+      workspaceRoot,
+      payload: { path: "C:", usedPercent: 95 },
+      dedupeKey: "disk:C:second",
+    });
+
+    expect(repeatedTooSoon.enqueued).toHaveLength(0);
+    expect(repeatedTooSoon.event.matches[0]?.skippedReason).toContain(
+      "stateful trigger remains active",
+    );
+
+    clock.advance(60_000);
+
+    const repeatedAfterInterval = await scheduler.recordEventAndEnqueueRuns({
+      type: "system.disk-threshold",
+      kind: "system",
+      workspaceRoot,
+      payload: { path: "C:", usedPercent: 96 },
+      dedupeKey: "disk:C:third",
+    });
+
+    expect(repeatedAfterInterval.enqueued).toHaveLength(1);
+
+    clock.advance(1_000);
+
+    const recovered = await scheduler.recordEventAndEnqueueRuns({
+      type: "system.disk-threshold",
+      kind: "system",
+      workspaceRoot,
+      payload: { path: "C:", usedPercent: 70 },
+      dedupeKey: "disk:C:recovered",
+    });
+
+    expect(recovered.enqueued).toHaveLength(0);
+    expect(recovered.event.matches[0]?.skippedReason).toBe(
+      "Stateful trigger recovered.",
+    );
+
+    clock.advance(1_000);
+
+    const firedAfterRecovery = await scheduler.recordEventAndEnqueueRuns({
+      type: "system.disk-threshold",
+      kind: "system",
+      workspaceRoot,
+      payload: { path: "C:", usedPercent: 92 },
+      dedupeKey: "disk:C:new-pressure",
+    });
+
+    expect(firedAfterRecovery.enqueued).toHaveLength(1);
+    expect(await scheduler.listRuns(job.id)).toHaveLength(3);
+    expect((await scheduler.getJob(job.id))?.triggers[0]).toMatchObject({
+      lastState: "active",
+    });
+  });
+
+  it("rate limits noisy event triggers inside a rolling window", async () => {
+    const workspaceRoot = await createWorkspace();
+    const clock = createClock(1_000);
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+      clock,
+    });
+
+    await scheduler.upsertJob({
+      name: "Process changed files",
+      triggers: [
+        {
+          kind: "workspace-file",
+          eventType: "workspace-file.changed",
+          filters: {
+            "payload.path": "src/*.ts",
+          },
+          maxEventsPerWindow: {
+            maxEvents: 2,
+            windowMs: 60_000,
+          },
+        },
+      ],
+      target: {
+        workspaceRoot,
+        prompt: "Review changed TypeScript files.",
+      },
+    });
+
+    const first = await scheduler.recordEventAndEnqueueRuns({
+      type: "workspace-file.changed",
+      kind: "workspace-file",
+      workspaceRoot,
+      payload: { path: "src/a.ts" },
+    });
+    clock.advance(1_000);
+    const second = await scheduler.recordEventAndEnqueueRuns({
+      type: "workspace-file.changed",
+      kind: "workspace-file",
+      workspaceRoot,
+      payload: { path: "src/b.ts" },
+    });
+    clock.advance(1_000);
+    const third = await scheduler.recordEventAndEnqueueRuns({
+      type: "workspace-file.changed",
+      kind: "workspace-file",
+      workspaceRoot,
+      payload: { path: "src/c.ts" },
+    });
+
+    expect(first.enqueued).toHaveLength(1);
+    expect(second.enqueued).toHaveLength(1);
+    expect(third.enqueued).toHaveLength(0);
+    expect(third.event.matches[0]?.skippedReason).toContain(
+      "trigger rate limit",
+    );
+  });
+
   it("passes composed prompt, context, and max duration into the executor", async () => {
     const workspaceRoot = await createWorkspace();
     const clock = createClock();

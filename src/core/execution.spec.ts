@@ -26,6 +26,12 @@ const providerAvailability: ProviderAvailability[] = [
   { provider: "google", configured: false },
 ];
 
+const configuredProviderAvailability: ProviderAvailability[] = [
+  { provider: "openai", configured: true },
+  { provider: "anthropic", configured: false },
+  { provider: "google", configured: false },
+];
+
 const createWorkspace = async (): Promise<string> => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-exec-"));
   workspacesToClean.push(workspaceRoot);
@@ -455,7 +461,7 @@ describe("executeTask", () => {
     expect(result.reason).toContain("Switch to machdoch mode");
   });
 
-  it("falls back to preview mode for unsupported tasks", async () => {
+  it("explains unsupported tasks that need an unconfigured model provider", async () => {
     const workspaceRoot = await createWorkspace();
 
     const result = await executeTask(
@@ -466,6 +472,45 @@ describe("executeTask", () => {
 
     expect(result.status).toBe("unsupported");
     expect(result.executedTools).toEqual([]);
+    expect(result.summary).toContain("no model provider is configured");
+    expect(result.reason).toContain("machdoch config set api.openai.key");
+    expect(result.outputSections.map((section) => section.title)).toContain(
+      "Live execution",
+    );
+  });
+
+  it("explains unsupported tasks when the selected provider is unavailable", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const result = await executeTask(
+      "install dependencies and commit the changes",
+      createConfig(workspaceRoot, "machdoch", {
+        provider: "openai",
+      }),
+      emptyCustomizations(workspaceRoot),
+    );
+
+    expect(result.status).toBe("unsupported");
+    expect(result.summary).toContain("selected provider `openai`");
+    expect(result.reason).toContain("api.openai.key");
+  });
+
+  it("explains unsupported tasks when offline mode disables live execution", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const result = await executeTask(
+      "install dependencies and commit the changes",
+      createConfig(workspaceRoot, "machdoch", {
+        provider: "openai",
+        providerAvailability: configuredProviderAvailability,
+        offline: true,
+      }),
+      emptyCustomizations(workspaceRoot),
+    );
+
+    expect(result.status).toBe("unsupported");
+    expect(result.summary).toContain("offline mode is enabled");
+    expect(result.reason).toContain("workspace.offline off");
   });
 
   it("executes a safe text preview for an explicit file request inside the workspace", async () => {

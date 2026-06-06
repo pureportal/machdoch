@@ -56,6 +56,7 @@ const RUN_STATUSES = [
   "expired",
   "skipped",
 ] as const;
+const TRIGGER_FIRING_MODES = ["event", "state"] as const;
 const EVENT_TRIGGER_KINDS = TRIGGER_KINDS.filter(
   (kind): kind is ScheduledEventTriggerKind => kind !== "time",
 );
@@ -134,12 +135,30 @@ const triggerInputSchema = {
         type: "object",
         additionalProperties: true,
         description:
-          "Optional exact or wildcard filters over event fields. Use keys like payload.path, payload.branch, source, or workspaceRoot.",
+          "Optional activation filters over event fields. Use exact values, wildcard strings, or operator objects such as {\"op\":\">=\",\"value\":90}. Keys can be payload.path, payload.branch, source, or workspaceRoot.",
+      },
+      recoveryFilters: {
+        type: "object",
+        additionalProperties: true,
+        description:
+          "Optional recovery filters for stateful threshold triggers. Example: {\"payload.usedPercent\":{\"op\":\"<=\",\"value\":80}}.",
+      },
+      firingMode: {
+        type: "string",
+        enum: TRIGGER_FIRING_MODES,
+        description:
+          "Use event for edge events. Use state for threshold/condition triggers that should fire once, then repeat only after repeatIntervalMs/cooldownMs until recoveryFilters match.",
       },
       cooldownMs: {
         type: "integer",
         minimum: 1,
         description: "Minimum time between runs fired by this trigger.",
+      },
+      repeatIntervalMs: {
+        type: "integer",
+        minimum: 1,
+        description:
+          "For stateful triggers, how often to repeat while the condition remains active. Defaults to a safe scheduler interval if omitted.",
       },
       debounceMs: {
         type: "integer",
@@ -151,6 +170,22 @@ const triggerInputSchema = {
         type: "string",
         description:
           "Template for event run dedupe such as invoice:{payload.path}:{payload.mtime}.",
+      },
+      maxEventsPerWindow: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          maxEvents: {
+            type: "integer",
+            minimum: 1,
+          },
+          windowMs: {
+            type: "integer",
+            minimum: 1,
+          },
+        },
+        description:
+          "Burst cap for noisy triggers, for example {\"maxEvents\":2,\"windowMs\":60000}.",
       },
     },
     required: ["kind"],
@@ -474,9 +509,34 @@ const parseTriggerInput = (
   const enabled =
     typeof value.enabled === "boolean" ? value.enabled : undefined;
   const filters = isRecord(value.filters) ? { ...value.filters } : undefined;
+  const recoveryFilters = isRecord(value.recoveryFilters)
+    ? { ...value.recoveryFilters }
+    : undefined;
+  const firingMode = normalizeEnum(
+    coerceString(value, "firingMode"),
+    TRIGGER_FIRING_MODES,
+  );
   const cooldownMs = coercePositiveInteger(value, "cooldownMs");
+  const repeatIntervalMs = coercePositiveInteger(value, "repeatIntervalMs");
   const debounceMs = coercePositiveInteger(value, "debounceMs");
   const dedupeKeyTemplate = coerceString(value, "dedupeKeyTemplate");
+  const maxEventsPerWindow = isRecord(value.maxEventsPerWindow)
+    ? {
+        maxEvents: coercePositiveInteger(
+          value.maxEventsPerWindow,
+          "maxEvents",
+        ),
+        windowMs: coercePositiveInteger(value.maxEventsPerWindow, "windowMs"),
+      }
+    : undefined;
+  const normalizedMaxEventsPerWindow =
+    maxEventsPerWindow?.maxEvents !== undefined &&
+    maxEventsPerWindow.windowMs !== undefined
+      ? {
+          maxEvents: maxEventsPerWindow.maxEvents,
+          windowMs: maxEventsPerWindow.windowMs,
+        }
+      : undefined;
 
   if (kind === "time") {
     const schedule = parseScheduleInput(value.schedule);
@@ -492,9 +552,15 @@ const parseTriggerInput = (
       ...(name ? { name } : {}),
       ...(enabled !== undefined ? { enabled } : {}),
       ...(filters ? { filters } : {}),
+      ...(recoveryFilters ? { recoveryFilters } : {}),
+      ...(firingMode ? { firingMode } : {}),
       ...(cooldownMs !== undefined ? { cooldownMs } : {}),
+      ...(repeatIntervalMs !== undefined ? { repeatIntervalMs } : {}),
       ...(debounceMs !== undefined ? { debounceMs } : {}),
       ...(dedupeKeyTemplate ? { dedupeKeyTemplate } : {}),
+      ...(normalizedMaxEventsPerWindow
+        ? { maxEventsPerWindow: normalizedMaxEventsPerWindow }
+        : {}),
     };
   }
 
@@ -507,9 +573,15 @@ const parseTriggerInput = (
     ...(name ? { name } : {}),
     ...(enabled !== undefined ? { enabled } : {}),
     ...(filters ? { filters } : {}),
+    ...(recoveryFilters ? { recoveryFilters } : {}),
+    ...(firingMode ? { firingMode } : {}),
     ...(cooldownMs !== undefined ? { cooldownMs } : {}),
+    ...(repeatIntervalMs !== undefined ? { repeatIntervalMs } : {}),
     ...(debounceMs !== undefined ? { debounceMs } : {}),
     ...(dedupeKeyTemplate ? { dedupeKeyTemplate } : {}),
+    ...(normalizedMaxEventsPerWindow
+      ? { maxEventsPerWindow: normalizedMaxEventsPerWindow }
+      : {}),
   };
 };
 
@@ -1347,7 +1419,7 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
       spec: {
         name: "create_scheduled_job",
         description:
-          "Create a durable Smart Scheduler job from a natural-language request. Use `schedule` for cron/interval/delay jobs or `triggers` for event-only/hybrid jobs such as workspace-file.created, git.branch-changed, webhook.github.workflow_run, or app.workspace-opened. You must enrich the user's request into a reusable scheduled prompt: include the exact objective, trigger assumptions, workspace/platform assumptions, safety constraints, what tools/actions the scheduled AI should use, and how it should verify completion.",
+          "Create a durable Smart Scheduler job from a natural-language request. Use `schedule` for cron/interval/delay jobs or `triggers` for event-only/hybrid jobs such as workspace-file.created, git.branch-changed, webhook.github.workflow_run, app.workspace-opened, system.disk-threshold, poll.http-status, or integration.*. Use firingMode=state with activation filters, recoveryFilters, repeatIntervalMs/cooldownMs, and maxEventsPerWindow for threshold monitors so they do not spam while a condition remains true. You must enrich the user's request into a reusable scheduled prompt: include the exact objective, trigger assumptions, workspace/platform assumptions, safety constraints, what tools/actions the scheduled AI should use, and how it should verify completion.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -1392,7 +1464,7 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
       spec: {
         name: "update_scheduled_job",
         description:
-          "Update an existing durable Smart Scheduler job. First call list_scheduled_jobs when the user refers to a job by description instead of id. When changing the task, replace `prompt` with a newly enriched durable scheduled prompt, not the user's shorthand. When changing cadence or event behavior, supply a full updated schedule or triggers array.",
+          "Update an existing durable Smart Scheduler job. First call list_scheduled_jobs when the user refers to a job by description instead of id. When changing the task, replace `prompt` with a newly enriched durable scheduled prompt, not the user's shorthand. When changing cadence or event behavior, supply a full updated schedule or triggers array, including stateful trigger recovery/repeat/rate-limit settings for threshold monitors.",
         inputSchema: {
           type: "object",
           additionalProperties: false,

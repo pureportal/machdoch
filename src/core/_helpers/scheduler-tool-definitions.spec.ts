@@ -202,4 +202,64 @@ describe("createSchedulerToolDefinitions", () => {
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe("workspace-file.created");
   });
+
+  it("creates stateful threshold triggers through AI tools", async () => {
+    const workspaceRoot = await createWorkspace();
+    const context = createContext(workspaceRoot);
+    const createTool = getTool("create_scheduled_job");
+
+    const createResult = await createTool.execute(
+      {
+        name: "Disk pressure cleanup",
+        triggers: [
+          {
+            kind: "system",
+            eventType: "system.disk-threshold",
+            firingMode: "state",
+            filters: {
+              "payload.usedPercent": { op: ">=", value: 90 },
+            },
+            recoveryFilters: {
+              "payload.usedPercent": { op: "<=", value: 80 },
+            },
+            repeatIntervalMs: 3600000,
+            maxEventsPerWindow: {
+              maxEvents: 2,
+              windowMs: 3600000,
+            },
+            dedupeKeyTemplate: "disk:{payload.path}",
+          },
+        ],
+        prompt: [
+          "When disk usage stays above 90%, clean safe temporary files.",
+          "Repeat at most hourly while the condition is still active.",
+          "Stop repeating once disk usage is at or below 80%.",
+          "Do not remove user documents or project files.",
+        ].join("\n"),
+        dedupeKey: "disk-pressure-cleanup",
+      },
+      context,
+    );
+    const createdJob = JSON.parse(createResult.toolResult.output).job;
+
+    expect(createdJob.schedule).toBeNull();
+    expect(createdJob.triggers[0]).toMatchObject({
+      kind: "system",
+      eventType: "system.disk-threshold",
+      firingMode: "state",
+      repeatIntervalMs: 3600000,
+      maxEventsPerWindow: {
+        maxEvents: 2,
+        windowMs: 3600000,
+      },
+    });
+    expect(createdJob.triggers[0].filters["payload.usedPercent"]).toEqual({
+      op: ">=",
+      value: 90,
+    });
+    expect(createdJob.triggers[0].recoveryFilters["payload.usedPercent"]).toEqual({
+      op: "<=",
+      value: 80,
+    });
+  });
 });

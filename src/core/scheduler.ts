@@ -22,6 +22,7 @@ const DEFAULT_HISTORY_LIMIT = 100;
 const DEFAULT_EVENT_HISTORY_LIMIT = 1_000;
 const DEFAULT_MAX_CATCH_UP_RUNS = 100;
 const DEFAULT_CONCURRENCY_LIMIT = 1;
+const DEFAULT_STATEFUL_TRIGGER_REPEAT_MS = 60 * 60_000;
 const DEFAULT_RETRY_POLICY: ScheduledRetryPolicy = {
   maxAttempts: 1,
   factor: 2,
@@ -68,6 +69,10 @@ export type ScheduledTriggerKind =
   | "integration";
 
 export type ScheduledEventTriggerKind = Exclude<ScheduledTriggerKind, "time">;
+
+export type ScheduledTriggerFiringMode = "event" | "state";
+
+export type ScheduledTriggerState = "idle" | "active";
 
 export type ScheduledJobSchedule =
   | {
@@ -118,9 +123,12 @@ export interface ScheduledTriggerBase {
   enabled: boolean;
   name?: string;
   filters?: Record<string, unknown>;
+  recoveryFilters?: Record<string, unknown>;
   guards?: ScheduledTriggerGuard[];
+  firingMode?: ScheduledTriggerFiringMode;
   debounceMs?: number;
   cooldownMs?: number;
+  repeatIntervalMs?: number;
   dedupeKeyTemplate?: string;
   maxEventsPerWindow?: ScheduledTriggerRateLimitPolicy;
   createdAt: number;
@@ -128,6 +136,8 @@ export interface ScheduledTriggerBase {
   lastMatchedAt?: number;
   lastFiredAt?: number;
   lastSkippedAt?: number;
+  lastState?: ScheduledTriggerState;
+  lastStateChangedAt?: number;
 }
 
 export interface ScheduledTimeTrigger extends ScheduledTriggerBase {
@@ -149,9 +159,12 @@ export interface ScheduledTriggerInputBase {
   enabled?: boolean;
   name?: string;
   filters?: Record<string, unknown>;
+  recoveryFilters?: Record<string, unknown>;
   guards?: ScheduledTriggerGuard[];
+  firingMode?: ScheduledTriggerFiringMode;
   debounceMs?: number;
   cooldownMs?: number;
+  repeatIntervalMs?: number;
   dedupeKeyTemplate?: string;
   maxEventsPerWindow?: Partial<ScheduledTriggerRateLimitPolicy>;
 }
@@ -515,6 +528,18 @@ const isScheduledEventTriggerKind = (
   );
 };
 
+const isScheduledTriggerFiringMode = (
+  value: string | undefined,
+): value is ScheduledTriggerFiringMode => {
+  return value === "event" || value === "state";
+};
+
+const isScheduledTriggerState = (
+  value: string | undefined,
+): value is ScheduledTriggerState => {
+  return value === "idle" || value === "active";
+};
+
 const inferEventTriggerKind = (eventType: string): ScheduledEventTriggerKind => {
   const prefix = eventType.split(".")[0];
 
@@ -819,9 +844,20 @@ const normalizeTriggerCommon = (
   const name = normalizeText(input.name);
   const debounceMs = normalizeOptionalPositiveInteger(input.debounceMs);
   const cooldownMs = normalizeOptionalPositiveInteger(input.cooldownMs);
+  const repeatIntervalMs = normalizeOptionalPositiveInteger(
+    input.repeatIntervalMs,
+  );
   const dedupeKeyTemplate = normalizeText(input.dedupeKeyTemplate);
   const filters = cloneRecord(input.filters);
+  const recoveryFilters = cloneRecord(input.recoveryFilters);
   const guards = normalizeTriggerGuards(input.guards);
+  const firingMode = isScheduledTriggerFiringMode(input.firingMode)
+    ? input.firingMode
+    : isScheduledTriggerFiringMode(existingTrigger?.firingMode)
+      ? existingTrigger.firingMode
+      : recoveryFilters || repeatIntervalMs !== undefined
+        ? "state"
+        : undefined;
   const maxEventsPerWindow = normalizeRateLimitPolicy(input.maxEventsPerWindow);
 
   return {
@@ -831,7 +867,13 @@ const normalizeTriggerCommon = (
     updatedAt: timestamp,
     ...(name ? { name } : existingTrigger?.name ? { name: existingTrigger.name } : {}),
     ...(filters ? { filters } : existingTrigger?.filters ? { filters: existingTrigger.filters } : {}),
+    ...(recoveryFilters
+      ? { recoveryFilters }
+      : existingTrigger?.recoveryFilters
+        ? { recoveryFilters: existingTrigger.recoveryFilters }
+        : {}),
     ...(guards ? { guards } : existingTrigger?.guards ? { guards: existingTrigger.guards } : {}),
+    ...(firingMode ? { firingMode } : {}),
     ...(debounceMs !== undefined
       ? { debounceMs }
       : existingTrigger?.debounceMs !== undefined
@@ -841,6 +883,11 @@ const normalizeTriggerCommon = (
       ? { cooldownMs }
       : existingTrigger?.cooldownMs !== undefined
         ? { cooldownMs: existingTrigger.cooldownMs }
+        : {}),
+    ...(repeatIntervalMs !== undefined
+      ? { repeatIntervalMs }
+      : existingTrigger?.repeatIntervalMs !== undefined
+        ? { repeatIntervalMs: existingTrigger.repeatIntervalMs }
         : {}),
     ...(dedupeKeyTemplate
       ? { dedupeKeyTemplate }
@@ -860,6 +907,12 @@ const normalizeTriggerCommon = (
       : {}),
     ...(existingTrigger?.lastSkippedAt !== undefined
       ? { lastSkippedAt: existingTrigger.lastSkippedAt }
+      : {}),
+    ...(isScheduledTriggerState(existingTrigger?.lastState)
+      ? { lastState: existingTrigger.lastState }
+      : {}),
+    ...(existingTrigger?.lastStateChangedAt !== undefined
+      ? { lastStateChangedAt: existingTrigger.lastStateChangedAt }
       : {}),
   };
 };
@@ -2244,9 +2297,133 @@ const eventTypeMatches = (
   return matchStringPattern(event.type, trigger.eventType);
 };
 
+const coerceFilterNumber = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  return undefined;
+};
+
+const compareFilterNumbers = (
+  actual: unknown,
+  expected: unknown,
+  predicate: (left: number, right: number) => boolean,
+): boolean => {
+  const actualNumber = coerceFilterNumber(actual);
+  const expectedNumber = coerceFilterNumber(expected);
+
+  return (
+    actualNumber !== undefined &&
+    expectedNumber !== undefined &&
+    predicate(actualNumber, expectedNumber)
+  );
+};
+
+const filterExpressionMatches = (
+  actual: unknown,
+  expression: Record<string, unknown>,
+): boolean => {
+  const operator = normalizeText(
+    typeof expression.op === "string"
+      ? expression.op
+      : typeof expression.operator === "string"
+        ? expression.operator
+        : undefined,
+  )?.toLowerCase();
+  const expected =
+    "value" in expression
+      ? expression.value
+      : "threshold" in expression
+        ? expression.threshold
+        : "equals" in expression
+          ? expression.equals
+          : undefined;
+
+  switch (operator) {
+    case ">":
+    case "gt":
+      return compareFilterNumbers(actual, expected, (left, right) => left > right);
+    case ">=":
+    case "gte":
+      return compareFilterNumbers(actual, expected, (left, right) => left >= right);
+    case "<":
+    case "lt":
+      return compareFilterNumbers(actual, expected, (left, right) => left < right);
+    case "<=":
+    case "lte":
+      return compareFilterNumbers(actual, expected, (left, right) => left <= right);
+    case "!=":
+    case "neq":
+    case "not":
+      return !filterValueMatches(actual, expected);
+    case "=":
+    case "==":
+    case "eq":
+      return filterValueMatches(actual, expected);
+    case "contains":
+      return (
+        typeof actual === "string" &&
+        typeof expected === "string" &&
+        actual.includes(expected)
+      );
+    case "startswith":
+    case "prefix":
+      return (
+        typeof actual === "string" &&
+        typeof expected === "string" &&
+        actual.startsWith(expected)
+      );
+    case "endswith":
+    case "suffix":
+      return (
+        typeof actual === "string" &&
+        typeof expected === "string" &&
+        actual.endsWith(expected)
+      );
+    case "matches":
+    case "pattern":
+      return (
+        typeof actual === "string" &&
+        typeof expected === "string" &&
+        matchStringPattern(actual, expected)
+      );
+    case "exists":
+      return expression.value === false
+        ? actual === undefined || actual === null
+        : actual !== undefined && actual !== null;
+    default:
+      if (
+        "min" in expression &&
+        !compareFilterNumbers(actual, expression.min, (left, right) => left >= right)
+      ) {
+        return false;
+      }
+
+      if (
+        "max" in expression &&
+        !compareFilterNumbers(actual, expression.max, (left, right) => left <= right)
+      ) {
+        return false;
+      }
+
+      return expected !== undefined ? filterValueMatches(actual, expected) : false;
+  }
+};
+
 const filterValueMatches = (actual: unknown, expected: unknown): boolean => {
   if (Array.isArray(expected)) {
     return expected.some((entry) => filterValueMatches(actual, entry));
+  }
+
+  if (isRecordValue(expected)) {
+    return filterExpressionMatches(actual, expected);
   }
 
   if (typeof expected === "string") {
@@ -2256,26 +2433,35 @@ const filterValueMatches = (actual: unknown, expected: unknown): boolean => {
   return Object.is(actual, expected);
 };
 
-const eventFiltersMatch = (
-  trigger: ScheduledEventTrigger,
+const createEventFilterRecord = (
+  event: ScheduledTriggerEvent,
+): Record<string, unknown> => ({
+  type: event.type,
+  kind: event.kind,
+  source: event.source,
+  workspaceRoot: event.workspaceRoot,
+  payload: event.payload,
+});
+
+const eventFilterRecordMatches = (
+  filters: Record<string, unknown> | undefined,
   event: ScheduledTriggerEvent,
 ): boolean => {
-  if (!trigger.filters || Object.keys(trigger.filters).length === 0) {
+  if (!filters || Object.keys(filters).length === 0) {
     return true;
   }
 
-  const eventRecord: Record<string, unknown> = {
-    type: event.type,
-    kind: event.kind,
-    source: event.source,
-    workspaceRoot: event.workspaceRoot,
-    payload: event.payload,
-  };
+  const eventRecord = createEventFilterRecord(event);
 
-  return Object.entries(trigger.filters).every(([path, expected]) => {
+  return Object.entries(filters).every(([path, expected]) => {
     return filterValueMatches(getPathValue(eventRecord, path), expected);
   });
 };
+
+const eventFiltersMatch = (
+  trigger: ScheduledEventTrigger,
+  event: ScheduledTriggerEvent,
+): boolean => eventFilterRecordMatches(trigger.filters, event);
 
 const renderDedupeTemplate = (
   template: string,
@@ -2305,11 +2491,66 @@ const createEventRunDedupeSuffix = (
   trigger: ScheduledEventTrigger,
   event: ScheduledTriggerEvent,
 ): string => {
-  if (trigger.dedupeKeyTemplate) {
-    return renderDedupeTemplate(trigger.dedupeKeyTemplate, job, trigger, event);
+  const baseSuffix = trigger.dedupeKeyTemplate
+    ? renderDedupeTemplate(trigger.dedupeKeyTemplate, job, trigger, event)
+    : `${trigger.id}:${event.dedupeKey ?? event.id}`;
+
+  if (getTriggerFiringMode(trigger) !== "state") {
+    return baseSuffix;
   }
 
-  return `${trigger.id}:${event.dedupeKey ?? event.id}`;
+  const repeatIntervalMs = getStatefulTriggerRepeatIntervalMs(trigger);
+  const stateStartedAt = trigger.lastStateChangedAt ?? event.receivedAt;
+  const repeatBucket = Math.max(
+    0,
+    Math.floor((event.receivedAt - stateStartedAt) / repeatIntervalMs),
+  );
+
+  return `${baseSuffix}:state:${stateStartedAt}:${repeatBucket}`;
+};
+
+const getTriggerFiringMode = (
+  trigger: ScheduledEventTrigger,
+): ScheduledTriggerFiringMode => trigger.firingMode ?? "event";
+
+const getStatefulTriggerRepeatIntervalMs = (
+  trigger: ScheduledEventTrigger,
+): number =>
+  trigger.repeatIntervalMs ??
+  trigger.cooldownMs ??
+  DEFAULT_STATEFUL_TRIGGER_REPEAT_MS;
+
+const getTriggerRecoveryMatched = (
+  trigger: ScheduledEventTrigger,
+  event: ScheduledTriggerEvent,
+  activationMatched: boolean,
+): boolean => {
+  if (trigger.recoveryFilters) {
+    return eventFilterRecordMatches(trigger.recoveryFilters, event);
+  }
+
+  return !activationMatched;
+};
+
+const getStatefulTriggerSkipReason = (
+  trigger: ScheduledEventTrigger,
+  event: ScheduledTriggerEvent,
+): string | undefined => {
+  if (getTriggerFiringMode(trigger) !== "state") {
+    return undefined;
+  }
+
+  if (trigger.lastState !== "active" || trigger.lastFiredAt === undefined) {
+    return undefined;
+  }
+
+  const repeatIntervalMs = getStatefulTriggerRepeatIntervalMs(trigger);
+
+  if (event.receivedAt - trigger.lastFiredAt >= repeatIntervalMs) {
+    return undefined;
+  }
+
+  return `Skipped while stateful trigger remains active; next repeat is allowed after ${repeatIntervalMs}ms.`;
 };
 
 const getTriggerCooldownSkipReason = (
@@ -2325,6 +2566,42 @@ const getTriggerCooldownSkipReason = (
   }
 
   return `Skipped by trigger cooldown of ${trigger.cooldownMs}ms.`;
+};
+
+const getTriggerRateLimitSkipReason = (
+  state: SmartSchedulerState,
+  trigger: ScheduledEventTrigger,
+  event: ScheduledTriggerEvent,
+): string | undefined => {
+  if (!trigger.maxEventsPerWindow) {
+    return undefined;
+  }
+
+  const windowStartedAt = event.receivedAt - trigger.maxEventsPerWindow.windowMs;
+  const firedEvents = state.events.reduce((count, candidate) => {
+    if (
+      candidate.receivedAt < windowStartedAt ||
+      candidate.receivedAt > event.receivedAt
+    ) {
+      return count;
+    }
+
+    return (
+      count +
+      candidate.matches.filter(
+        (match) =>
+          match.triggerId === trigger.id &&
+          match.matched &&
+          match.deduplicated !== true,
+      ).length
+    );
+  }, 0);
+
+  if (firedEvents < trigger.maxEventsPerWindow.maxEvents) {
+    return undefined;
+  }
+
+  return `Skipped by trigger rate limit of ${trigger.maxEventsPerWindow.maxEvents} event(s) per ${trigger.maxEventsPerWindow.windowMs}ms.`;
 };
 
 export class DurableSmartScheduler {
@@ -2846,9 +3123,44 @@ export class DurableSmartScheduler {
             matched: false,
           };
 
-          if (!eventFiltersMatch(trigger, event)) {
+          const activationMatched = eventFiltersMatch(trigger, event);
+
+          const isStatefulTrigger = getTriggerFiringMode(trigger) === "state";
+          const wasStateActive = trigger.lastState === "active";
+
+          if (
+            isStatefulTrigger &&
+            wasStateActive &&
+            getTriggerRecoveryMatched(trigger, event, activationMatched)
+          ) {
+            trigger.lastState = "idle";
+            trigger.lastStateChangedAt = now;
+            trigger.lastSkippedAt = now;
+            match.skippedReason = "Stateful trigger recovered.";
+            event.matches.push(match);
+            continue;
+          }
+
+          if (!activationMatched) {
             trigger.lastSkippedAt = now;
             match.skippedReason = "Event did not match trigger filters.";
+            event.matches.push(match);
+            continue;
+          }
+
+          if (isStatefulTrigger && !wasStateActive) {
+            trigger.lastState = "active";
+            trigger.lastStateChangedAt = now;
+          }
+
+          const statefulSkipReason = wasStateActive
+            ? getStatefulTriggerSkipReason(trigger, event)
+            : undefined;
+
+          if (statefulSkipReason) {
+            trigger.lastMatchedAt = now;
+            trigger.lastSkippedAt = now;
+            match.skippedReason = statefulSkipReason;
             event.matches.push(match);
             continue;
           }
@@ -2861,6 +3173,20 @@ export class DurableSmartScheduler {
           if (cooldownSkipReason) {
             trigger.lastSkippedAt = now;
             match.skippedReason = cooldownSkipReason;
+            event.matches.push(match);
+            continue;
+          }
+
+          const rateLimitSkipReason = getTriggerRateLimitSkipReason(
+            state,
+            trigger,
+            event,
+          );
+
+          if (rateLimitSkipReason) {
+            trigger.lastMatchedAt = now;
+            trigger.lastSkippedAt = now;
+            match.skippedReason = rateLimitSkipReason;
             event.matches.push(match);
             continue;
           }

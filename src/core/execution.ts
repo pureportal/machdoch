@@ -70,6 +70,62 @@ const createTaskExecutionTimeoutReason = (maxDurationMs: number): string => {
   return `${TASK_EXECUTION_TIMEOUT_REASON_PREFIX} of ${formatExecutionDuration(maxDurationMs)}.`;
 };
 
+const providerIsConfigured = (config: RuntimeConfig): boolean => {
+  return config.providerAvailability.some(
+    (entry) => entry.provider === config.provider && entry.configured,
+  );
+};
+
+const createLiveExecutionUnavailableMessage = (
+  config: RuntimeConfig,
+): { summary: string; reason: string; sectionLines: string[] } => {
+  const userConfigPath = config.userConfigPath?.trim();
+  const sectionLines = [
+    `mode: ${config.mode}`,
+    `provider: ${config.provider}`,
+    `offline: ${config.offline ? "true" : "false"}`,
+    ...(userConfigPath ? [`user config: ${userConfigPath}`] : []),
+  ];
+
+  if (config.offline) {
+    return {
+      summary:
+        "This task needs the model-driven agent loop, but offline mode is enabled.",
+      reason:
+        "Turn off offline mode with `machdoch config set workspace.offline off` or unset `MACHDOCH_OFFLINE`, then run the task again.",
+      sectionLines,
+    };
+  }
+
+  if (config.provider === "unconfigured") {
+    return {
+      summary:
+        "This task needs the model-driven agent loop, but no model provider is configured.",
+      reason:
+        "Configure a provider key with `machdoch config set api.openai.key <key>` or `machdoch --set-api --provider openai --key <key>`. If this command is running with sudo or elevation, check the user config path for that elevated context.",
+      sectionLines,
+    };
+  }
+
+  if (!providerIsConfigured(config)) {
+    return {
+      summary:
+        `This task needs the model-driven agent loop, but the selected provider \`${config.provider}\` is not configured.`,
+      reason:
+        `Configure \`api.${config.provider}.key\`, choose another configured provider, or check the user config path if this command is running with sudo or elevation.`,
+      sectionLines,
+    };
+  }
+
+  return {
+    summary:
+      "No deterministic execution path is available for this task without a live model executor.",
+    reason:
+      "The task does not match a built-in deterministic local action, and the live executor did not return a runnable result.",
+    sectionLines,
+  };
+};
+
 const createManagedExecutionSignal = (
   sourceSignal: AbortSignal | undefined,
   maxDurationMs: number,
@@ -285,22 +341,32 @@ const runTaskExecutionStateMachine = async (
           !runtime.createFileTarget &&
           !runtime.inspectionTarget
         ) {
+          const unavailable = createLiveExecutionUnavailableMessage(config);
+
           return emitTerminalResult(
             task,
             config,
             "unsupported",
-            "No deterministic execution path is available for this task yet.",
+            unavailable.summary,
             runtime,
             options,
-            createExecutionResult({
-              task,
-              mode: config.mode,
-              status: "unsupported",
-              summary:
-                "Live execution is not implemented for this task yet, so the CLI will fall back to a staged preview.",
-              executedTools: [],
-              outputSections: runtime.contextSections,
-            }),
+            createExecutionResult(
+              {
+                task,
+                mode: config.mode,
+                status: "unsupported",
+                summary: unavailable.summary,
+                executedTools: [],
+                outputSections: [
+                  ...runtime.contextSections,
+                  {
+                    title: "Live execution",
+                    lines: unavailable.sectionLines,
+                  },
+                ],
+              },
+              unavailable.reason,
+            ),
           );
         }
 

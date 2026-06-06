@@ -43,6 +43,7 @@ import {
   runDueSchedulerJobs,
   triggerSchedulerJob,
   type SchedulerCreateJobInput,
+  type SchedulerCreateTriggerInput,
   type SchedulerJobSummary,
   type SchedulerMissedRunPolicy,
   type SchedulerRunStatus,
@@ -54,8 +55,20 @@ export interface SchedulerPanelProps {
   workspaceRoot: string | null | undefined;
 }
 
-type ScheduleType = "cron" | "interval" | "delay";
+type ScheduleType = "cron" | "interval" | "delay" | "event";
 type SchedulerPanelTab = "jobs" | "runs";
+type SchedulerTriggerKind =
+  | "manual"
+  | "app"
+  | "workspace-file"
+  | "git"
+  | "job-event"
+  | "webhook"
+  | "poll"
+  | "system"
+  | "calendar"
+  | "clipboard"
+  | "integration";
 
 const SCHEDULER_PANEL_REFRESH_INTERVAL_MS = 10_000;
 
@@ -68,6 +81,17 @@ interface SchedulerFormState {
   intervalMs: string;
   delayMs: string;
   runAtLocal: string;
+  triggerEnabled: boolean;
+  triggerKind: SchedulerTriggerKind;
+  triggerEventType: string;
+  triggerFiringMode: "event" | "state";
+  triggerFilters: string;
+  triggerRecoveryFilters: string;
+  triggerCooldownMs: string;
+  triggerRepeatMs: string;
+  triggerMaxEvents: string;
+  triggerWindowMs: string;
+  triggerDedupeKeyTemplate: string;
   contextPaths: string;
   imagePaths: string;
   contextPackJson: string;
@@ -100,6 +124,17 @@ const createDefaultFormState = (): SchedulerFormState => ({
   intervalMs: "3600000",
   delayMs: "60000",
   runAtLocal: "",
+  triggerEnabled: false,
+  triggerKind: "workspace-file",
+  triggerEventType: "workspace-file.created",
+  triggerFiringMode: "event",
+  triggerFilters: "",
+  triggerRecoveryFilters: "",
+  triggerCooldownMs: "",
+  triggerRepeatMs: "",
+  triggerMaxEvents: "",
+  triggerWindowMs: "",
+  triggerDedupeKeyTemplate: "",
   contextPaths: "",
   imagePaths: "",
   contextPackJson: "",
@@ -122,6 +157,37 @@ const createDefaultFormState = (): SchedulerFormState => ({
   provider: "",
   model: "",
 });
+
+const triggerKindOptions: Array<{
+  value: SchedulerTriggerKind;
+  label: string;
+}> = [
+  { value: "workspace-file", label: "Workspace File" },
+  { value: "system", label: "System" },
+  { value: "git", label: "Git" },
+  { value: "webhook", label: "Webhook" },
+  { value: "poll", label: "Polling" },
+  { value: "app", label: "App Event" },
+  { value: "integration", label: "Integration" },
+  { value: "calendar", label: "Calendar" },
+  { value: "clipboard", label: "Clipboard" },
+  { value: "job-event", label: "Job Event" },
+  { value: "manual", label: "Manual Event" },
+];
+
+const defaultEventTypeByKind: Record<SchedulerTriggerKind, string> = {
+  manual: "manual.triggered",
+  app: "app.workspace-opened",
+  "workspace-file": "workspace-file.created",
+  git: "git.branch-changed",
+  "job-event": "job-event.completed",
+  webhook: "webhook.received",
+  poll: "poll.http-status",
+  system: "system.disk-threshold",
+  calendar: "calendar.event-starting",
+  clipboard: "clipboard.changed",
+  integration: "integration.event",
+};
 
 const terminalRunStatuses = new Set<SchedulerRunStatus>([
   "succeeded",
@@ -226,6 +292,65 @@ const parseOptionalPositiveNumber = (
   }
 
   return parsed;
+};
+
+const parseTriggerFilterValue = (value: string): unknown => {
+  if (value === "true") {
+    return true;
+  }
+
+  if (value === "false") {
+    return false;
+  }
+
+  if (value === "null") {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  if (value.length > 0 && Number.isFinite(parsed)) {
+    return parsed;
+  }
+
+  if (
+    (value.startsWith("{") && value.endsWith("}")) ||
+    (value.startsWith("[") && value.endsWith("]"))
+  ) {
+    return JSON.parse(value) as unknown;
+  }
+
+  return value;
+};
+
+const parseTriggerFilters = (
+  value: string,
+  label: string,
+): Record<string, unknown> | undefined => {
+  const filters = splitLines(value);
+
+  if (filters.length === 0) {
+    return undefined;
+  }
+
+  return Object.fromEntries(
+    filters.map((entry) => {
+      const match = /^(.*?)\s*(>=|<=|!=|=|>|<)\s*(.*?)$/u.exec(entry);
+
+      if (!match || !match[1]?.trim()) {
+        throw new Error(`${label} must use path=value or path>=value.`);
+      }
+
+      const path = match[1].trim();
+      const operator = match[2];
+      const filterValue = parseTriggerFilterValue(match[3]?.trim() ?? "");
+
+      return [
+        path,
+        operator === "=" ? filterValue : { op: operator, value: filterValue },
+      ];
+    }),
+  );
 };
 
 const parseContextPacks = (
@@ -456,18 +581,18 @@ export const SchedulerPanel = ({
       throw new Error("Delay or run at is required.");
     }
 
-    return {
-      ...(form.name.trim() ? { name: form.name.trim() } : {}),
-      schedule:
-        form.scheduleType === "cron"
+    const schedule =
+      form.scheduleType === "event"
+        ? undefined
+        : form.scheduleType === "cron"
           ? {
-              type: "cron",
+              type: "cron" as const,
               expression: form.cron.trim(),
               ...(form.timezone.trim() ? { timezone: form.timezone.trim() } : {}),
             }
           : form.scheduleType === "interval"
             ? {
-                type: "interval",
+                type: "interval" as const,
                 intervalMs:
                   intervalMs ??
                   (() => {
@@ -475,10 +600,80 @@ export const SchedulerPanel = ({
                   })(),
               }
             : {
-                type: "delay",
+                type: "delay" as const,
                 ...(delayMs ? { delayMs } : {}),
                 ...(runAt ? { runAt } : {}),
+              };
+    const triggerEnabled = form.triggerEnabled || form.scheduleType === "event";
+    const triggerCooldownMs = parseOptionalPositiveInteger(
+      form.triggerCooldownMs,
+      "Trigger cooldown",
+    );
+    const triggerRepeatMs = parseOptionalPositiveInteger(
+      form.triggerRepeatMs,
+      "Trigger repeat",
+    );
+    const triggerMaxEvents = parseOptionalPositiveInteger(
+      form.triggerMaxEvents,
+      "Trigger max events",
+    );
+    const triggerWindowMs = parseOptionalPositiveInteger(
+      form.triggerWindowMs,
+      "Trigger window",
+    );
+
+    if (
+      (triggerMaxEvents === undefined) !== (triggerWindowMs === undefined)
+    ) {
+      throw new Error("Trigger max events and trigger window must be set together.");
+    }
+
+    const triggers: SchedulerCreateTriggerInput[] = [];
+
+    if (triggerEnabled) {
+      const eventType = form.triggerEventType.trim();
+
+      if (!eventType) {
+        throw new Error("Trigger event type is required.");
+      }
+
+      const triggerFilters = parseTriggerFilters(
+        form.triggerFilters,
+        "Activation filters",
+      );
+      const triggerRecoveryFilters = parseTriggerFilters(
+        form.triggerRecoveryFilters,
+        "Recovery filters",
+      );
+
+      triggers.push({
+        kind: form.triggerKind,
+        eventType,
+        firingMode: form.triggerFiringMode,
+        ...(triggerFilters ? { filters: triggerFilters } : {}),
+        ...(triggerRecoveryFilters
+          ? { recoveryFilters: triggerRecoveryFilters }
+          : {}),
+        ...(triggerCooldownMs ? { cooldownMs: triggerCooldownMs } : {}),
+        ...(triggerRepeatMs ? { repeatIntervalMs: triggerRepeatMs } : {}),
+        ...(form.triggerDedupeKeyTemplate.trim()
+          ? { dedupeKeyTemplate: form.triggerDedupeKeyTemplate.trim() }
+          : {}),
+        ...(triggerMaxEvents && triggerWindowMs
+          ? {
+              maxEventsPerWindow: {
+                maxEvents: triggerMaxEvents,
+                windowMs: triggerWindowMs,
               },
+            }
+          : {}),
+      });
+    }
+
+    return {
+      ...(form.name.trim() ? { name: form.name.trim() } : {}),
+      ...(schedule ? { schedule } : {}),
+      ...(triggers.length > 0 ? { triggers } : {}),
       prompt,
       contextPaths: splitLines(form.contextPaths),
       imagePaths: splitLines(form.imagePaths),
@@ -986,14 +1181,19 @@ export const SchedulerPanel = ({
 
               <div className="grid gap-2">
                 <div className="text-xs font-medium text-slate-400">Schedule</div>
-                <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
-                  {(["cron", "interval", "delay"] as const).map((type) => (
+                <div className="grid grid-cols-4 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
+                  {(["cron", "interval", "delay", "event"] as const).map((type) => (
                     <Button
                       key={type}
                       type="button"
                       variant={form.scheduleType === type ? "secondary" : "ghost"}
                       size="sm"
-                      onClick={() => updateForm({ scheduleType: type })}
+                      onClick={() =>
+                        updateForm({
+                          scheduleType: type,
+                          ...(type === "event" ? { triggerEnabled: true } : {}),
+                        })
+                      }
                       className={cn(
                         "h-8 rounded-md px-2 text-xs capitalize",
                         form.scheduleType === type
@@ -1008,54 +1208,243 @@ export const SchedulerPanel = ({
 
                 {form.scheduleType === "cron" ? (
                   <div className="grid gap-2 sm:grid-cols-[1fr_10rem]">
-                    <Input
-                      value={form.cron}
-                      onChange={(event) => updateForm({ cron: event.target.value })}
-                      className="h-9 rounded-lg border-slate-800 bg-slate-900/70 font-mono text-sm text-slate-100"
-                    />
-                    <Input
-                      value={form.timezone}
-                      onChange={(event) =>
-                        updateForm({ timezone: event.target.value })
-                      }
-                      className="h-9 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100"
-                    />
+                    <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                      <span>Cron Expression</span>
+                      <Input
+                        value={form.cron}
+                        onChange={(event) => updateForm({ cron: event.target.value })}
+                        className="h-9 rounded-lg border-slate-800 bg-slate-900/70 font-mono text-sm text-slate-100"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                      <span>Timezone</span>
+                      <Input
+                        value={form.timezone}
+                        onChange={(event) =>
+                          updateForm({ timezone: event.target.value })
+                        }
+                        className="h-9 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100"
+                      />
+                    </label>
                   </div>
                 ) : null}
 
                 {form.scheduleType === "interval" ? (
-                  <Input
-                    type="number"
-                    min={1}
-                    value={form.intervalMs}
-                    onChange={(event) =>
-                      updateForm({ intervalMs: event.target.value })
-                    }
-                    className="h-9 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100"
-                  />
+                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                    <span>Interval ms</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={form.intervalMs}
+                      onChange={(event) =>
+                        updateForm({ intervalMs: event.target.value })
+                      }
+                      className="h-9 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100"
+                    />
+                  </label>
                 ) : null}
 
                 {form.scheduleType === "delay" ? (
                   <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                      <span>Delay ms</span>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={form.delayMs}
+                        onChange={(event) =>
+                          updateForm({ delayMs: event.target.value })
+                        }
+                        className="h-9 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                      <span>Run At</span>
+                      <Input
+                        type="datetime-local"
+                        value={form.runAtLocal}
+                        onChange={(event) =>
+                          updateForm({ runAtLocal: event.target.value })
+                        }
+                        className="h-9 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100"
+                      />
+                    </label>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/35 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs font-medium text-slate-300">
+                    Event Trigger
+                  </div>
+                  <label className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
+                    <input
+                      type="checkbox"
+                      checked={form.triggerEnabled || form.scheduleType === "event"}
+                      disabled={form.scheduleType === "event"}
+                      onChange={(event) =>
+                        updateForm({ triggerEnabled: event.target.checked })
+                      }
+                      className="h-4 w-4 accent-sky-500"
+                    />
+                    Enabled
+                  </label>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                    <span>Trigger Kind</span>
+                    <select
+                      value={form.triggerKind}
+                      onChange={(event) => {
+                        const nextKind = event.target.value as SchedulerTriggerKind;
+                        const currentDefault =
+                          defaultEventTypeByKind[form.triggerKind];
+
+                        updateForm({
+                          triggerKind: nextKind,
+                          ...(form.triggerEventType === currentDefault
+                            ? {
+                                triggerEventType:
+                                  defaultEventTypeByKind[nextKind],
+                              }
+                            : {}),
+                        });
+                      }}
+                      className="h-9 rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-slate-600"
+                    >
+                      {triggerKindOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                    <span>Event Type</span>
+                    <Input
+                      value={form.triggerEventType}
+                      onChange={(event) =>
+                        updateForm({ triggerEventType: event.target.value })
+                      }
+                      className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
+                      placeholder="system.disk-threshold"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                    <span>Firing Mode</span>
+                    <select
+                      value={form.triggerFiringMode}
+                      onChange={(event) =>
+                        updateForm({
+                          triggerFiringMode: event.target.value as "event" | "state",
+                        })
+                      }
+                      className="h-9 rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-slate-600"
+                    >
+                      <option value="event">Event</option>
+                      <option value="state">State Threshold</option>
+                    </select>
+                  </label>
+                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                    <span>Dedupe Template</span>
+                    <Input
+                      value={form.triggerDedupeKeyTemplate}
+                      onChange={(event) =>
+                        updateForm({
+                          triggerDedupeKeyTemplate: event.target.value,
+                        })
+                      }
+                      className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
+                      placeholder="disk:{payload.path}"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                    <span>Activation Filters</span>
+                    <Textarea
+                      value={form.triggerFilters}
+                      rows={2}
+                      onChange={(event) =>
+                        updateForm({ triggerFilters: event.target.value })
+                      }
+                      className="max-h-28 rounded-lg border-slate-800 bg-slate-950 font-mono text-xs text-slate-100 placeholder:text-slate-600"
+                      placeholder="payload.usedPercent>=90"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                    <span>Recovery Filters</span>
+                    <Textarea
+                      value={form.triggerRecoveryFilters}
+                      rows={2}
+                      onChange={(event) =>
+                        updateForm({
+                          triggerRecoveryFilters: event.target.value,
+                        })
+                      }
+                      className="max-h-28 rounded-lg border-slate-800 bg-slate-950 font-mono text-xs text-slate-100 placeholder:text-slate-600"
+                      placeholder="payload.usedPercent<=80"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                    <span>Cooldown ms</span>
                     <Input
                       type="number"
                       min={1}
-                      value={form.delayMs}
+                      value={form.triggerCooldownMs}
                       onChange={(event) =>
-                        updateForm({ delayMs: event.target.value })
+                        updateForm({ triggerCooldownMs: event.target.value })
                       }
-                      className="h-9 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100"
+                      className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
+                      placeholder="60000"
                     />
+                  </label>
+                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                    <span>Repeat ms</span>
                     <Input
-                      type="datetime-local"
-                      value={form.runAtLocal}
+                      type="number"
+                      min={1}
+                      value={form.triggerRepeatMs}
                       onChange={(event) =>
-                        updateForm({ runAtLocal: event.target.value })
+                        updateForm({ triggerRepeatMs: event.target.value })
                       }
-                      className="h-9 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100"
+                      className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
+                      placeholder="3600000"
                     />
-                  </div>
-                ) : null}
+                  </label>
+                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                    <span>Max Events</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={form.triggerMaxEvents}
+                      onChange={(event) =>
+                        updateForm({ triggerMaxEvents: event.target.value })
+                      }
+                      className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
+                      placeholder="2"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                    <span>Window ms</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={form.triggerWindowMs}
+                      onChange={(event) =>
+                        updateForm({ triggerWindowMs: event.target.value })
+                      }
+                      className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
+                      placeholder="60000"
+                    />
+                  </label>
+                </div>
               </div>
 
               <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/35 p-3">

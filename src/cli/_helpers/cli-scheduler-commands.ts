@@ -17,6 +17,7 @@ import {
   type ScheduledMissedRunPolicy,
   type ScheduledRunEnqueueResult,
   type ScheduledTaskExecutor,
+  type ScheduledTriggerFiringMode,
   type ScheduledTriggerEvent,
   type ScheduledTriggerEventInput,
 } from "../../core/scheduler.js";
@@ -56,6 +57,9 @@ const SCHEDULER_EVENT_TRIGGER_KINDS: ReadonlySet<ScheduledEventTriggerKind> =
     "clipboard",
     "integration",
   ]);
+
+const SCHEDULER_TRIGGER_FIRING_MODES: ReadonlySet<ScheduledTriggerFiringMode> =
+  new Set(["event", "state"]);
 
 const isPathInside = (root: string, candidate: string): boolean => {
   const relativePath = relative(root, candidate);
@@ -167,29 +171,77 @@ const parseTriggerKind = (value: string): ScheduledEventTriggerKind => {
   );
 };
 
+const parseTriggerFiringMode = (
+  value: string | undefined,
+): ScheduledTriggerFiringMode | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  if (SCHEDULER_TRIGGER_FIRING_MODES.has(value as ScheduledTriggerFiringMode)) {
+    return value as ScheduledTriggerFiringMode;
+  }
+
+  throw new Error("Expected --trigger-firing-mode to be event or state.");
+};
+
 const parseTriggerFilters = (
   values: string[] | undefined,
-): Record<string, string> | undefined => {
+): Record<string, unknown> | undefined => {
   if (!values || values.length === 0) {
     return undefined;
   }
 
   return Object.fromEntries(
     values.map((entry) => {
-      const separatorIndex = entry.indexOf("=");
+      const match = /^(.*?)\s*(>=|<=|!=|=|>|<)\s*(.*?)$/u.exec(entry);
 
-      if (separatorIndex <= 0) {
+      if (!match || !match[1]?.trim()) {
         throw new Error(
-          "Expected --trigger-filter to use path=value syntax.",
+          "Expected --trigger-filter to use path=value or path>=value syntax.",
         );
       }
 
+      const path = match[1].trim();
+      const operator = match[2];
+      const rawValue = match[3]?.trim() ?? "";
+      const value = parseTriggerFilterValue(rawValue);
+
       return [
-        entry.slice(0, separatorIndex).trim(),
-        entry.slice(separatorIndex + 1).trim(),
+        path,
+        operator === "=" ? value : { op: operator, value },
       ];
     }),
   );
+};
+
+const parseTriggerFilterValue = (value: string): unknown => {
+  if (value === "true") {
+    return true;
+  }
+
+  if (value === "false") {
+    return false;
+  }
+
+  if (value === "null") {
+    return null;
+  }
+
+  const numericValue = Number(value);
+
+  if (value.length > 0 && Number.isFinite(numericValue)) {
+    return numericValue;
+  }
+
+  if (
+    (value.startsWith("{") && value.endsWith("}")) ||
+    (value.startsWith("[") && value.endsWith("]"))
+  ) {
+    return JSON.parse(value) as unknown;
+  }
+
+  return value;
 };
 
 const parseTriggerSpec = (
@@ -209,16 +261,41 @@ const parseTriggerSpec = (
   }
 
   const filters = parseTriggerFilters(options.triggerFilters);
+  const recoveryFilters = parseTriggerFilters(options.triggerRecoveryFilters);
+  const firingMode = parseTriggerFiringMode(options.triggerFiringMode);
+
+  if (
+    (options.triggerMaxEvents === undefined) !==
+    (options.triggerWindowMs === undefined)
+  ) {
+    throw new Error(
+      "Expected --trigger-max-events and --trigger-window-ms to be provided together.",
+    );
+  }
+
+  const maxEventsPerWindow =
+    options.triggerMaxEvents !== undefined && options.triggerWindowMs !== undefined
+      ? {
+          maxEvents: options.triggerMaxEvents,
+          windowMs: options.triggerWindowMs,
+        }
+      : undefined;
 
   return {
     kind: parseTriggerKind(kindText),
     eventType,
     ...(filters ? { filters } : {}),
+    ...(recoveryFilters ? { recoveryFilters } : {}),
+    ...(firingMode ? { firingMode } : {}),
     ...(options.triggerCooldownMs ? { cooldownMs: options.triggerCooldownMs } : {}),
+    ...(options.triggerRepeatMs
+      ? { repeatIntervalMs: options.triggerRepeatMs }
+      : {}),
     ...(options.triggerDebounceMs ? { debounceMs: options.triggerDebounceMs } : {}),
     ...(options.triggerDedupeKeyTemplate
       ? { dedupeKeyTemplate: options.triggerDedupeKeyTemplate }
       : {}),
+    ...(maxEventsPerWindow ? { maxEventsPerWindow } : {}),
   };
 };
 

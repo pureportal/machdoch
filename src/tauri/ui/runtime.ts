@@ -566,6 +566,17 @@ export interface SchedulerTriggerSummary {
   eventType?: string;
   schedule?: SchedulerScheduleSummary;
   nextRunAt?: number;
+  filters?: Record<string, unknown>;
+  recoveryFilters?: Record<string, unknown>;
+  firingMode?: "event" | "state";
+  cooldownMs?: number;
+  repeatIntervalMs?: number;
+  debounceMs?: number;
+  dedupeKeyTemplate?: string;
+  maxEventsPerWindow?: {
+    maxEvents: number;
+    windowMs: number;
+  };
 }
 
 export interface SchedulerCreateTriggerInput {
@@ -576,9 +587,16 @@ export interface SchedulerCreateTriggerInput {
   eventType?: string;
   schedule?: SchedulerCreateScheduleInput;
   filters?: Record<string, unknown>;
+  recoveryFilters?: Record<string, unknown>;
+  firingMode?: "event" | "state";
   cooldownMs?: number;
+  repeatIntervalMs?: number;
   debounceMs?: number;
   dedupeKeyTemplate?: string;
+  maxEventsPerWindow?: {
+    maxEvents: number;
+    windowMs: number;
+  };
 }
 
 export interface SchedulerRetrySummary {
@@ -1342,6 +1360,38 @@ const normalizeSchedulerTriggerSummary = (
       : {}),
     ...(typeof value.nextRunAt === "number" && Number.isFinite(value.nextRunAt)
       ? { nextRunAt: value.nextRunAt }
+      : {}),
+    ...(isRecord(value.filters) ? { filters: value.filters } : {}),
+    ...(isRecord(value.recoveryFilters)
+      ? { recoveryFilters: value.recoveryFilters }
+      : {}),
+    ...(value.firingMode === "event" || value.firingMode === "state"
+      ? { firingMode: value.firingMode }
+      : {}),
+    ...(typeof value.cooldownMs === "number" && Number.isFinite(value.cooldownMs)
+      ? { cooldownMs: value.cooldownMs }
+      : {}),
+    ...(typeof value.repeatIntervalMs === "number" &&
+    Number.isFinite(value.repeatIntervalMs)
+      ? { repeatIntervalMs: value.repeatIntervalMs }
+      : {}),
+    ...(typeof value.debounceMs === "number" && Number.isFinite(value.debounceMs)
+      ? { debounceMs: value.debounceMs }
+      : {}),
+    ...(typeof value.dedupeKeyTemplate === "string"
+      ? { dedupeKeyTemplate: value.dedupeKeyTemplate }
+      : {}),
+    ...(isRecord(value.maxEventsPerWindow) &&
+    typeof value.maxEventsPerWindow.maxEvents === "number" &&
+    Number.isFinite(value.maxEventsPerWindow.maxEvents) &&
+    typeof value.maxEventsPerWindow.windowMs === "number" &&
+    Number.isFinite(value.maxEventsPerWindow.windowMs)
+      ? {
+          maxEventsPerWindow: {
+            maxEvents: value.maxEventsPerWindow.maxEvents,
+            windowMs: value.maxEventsPerWindow.windowMs,
+          },
+        }
       : {}),
   };
 };
@@ -2839,6 +2889,14 @@ const appendSchedulerCreateSchedule = (
   }
 };
 
+const serializeSchedulerTriggerFilterValue = (value: unknown): string => {
+  if (typeof value === "object" && value !== null) {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+};
+
 const appendSchedulerCreateTriggers = (
   argumentsList: string[],
   triggers: SchedulerCreateTriggerInput[] | undefined,
@@ -2864,16 +2922,40 @@ const appendSchedulerCreateTriggers = (
       appendSchedulerOption(
         argumentsList,
         "--trigger-filter",
-        `${key}=${String(value)}`,
+        `${key}=${serializeSchedulerTriggerFilterValue(value)}`,
       );
     }
 
+    for (const [key, value] of Object.entries(trigger.recoveryFilters ?? {})) {
+      appendSchedulerOption(
+        argumentsList,
+        "--trigger-recovery-filter",
+        `${key}=${serializeSchedulerTriggerFilterValue(value)}`,
+      );
+    }
+
+    appendSchedulerOption(argumentsList, "--trigger-firing-mode", trigger.firingMode);
     appendSchedulerOption(argumentsList, "--trigger-cooldown-ms", trigger.cooldownMs);
+    appendSchedulerOption(
+      argumentsList,
+      "--trigger-repeat-ms",
+      trigger.repeatIntervalMs,
+    );
     appendSchedulerOption(argumentsList, "--trigger-debounce-ms", trigger.debounceMs);
     appendSchedulerOption(
       argumentsList,
       "--trigger-dedupe-key-template",
       normalizeSchedulerCliString(trigger.dedupeKeyTemplate),
+    );
+    appendSchedulerOption(
+      argumentsList,
+      "--trigger-max-events",
+      trigger.maxEventsPerWindow?.maxEvents,
+    );
+    appendSchedulerOption(
+      argumentsList,
+      "--trigger-window-ms",
+      trigger.maxEventsPerWindow?.windowMs,
     );
   }
 };
