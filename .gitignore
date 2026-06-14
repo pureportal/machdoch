@@ -57,3 +57,7 @@ Thumbs.db
 # Temp folders
 tmp/
 temp/
+
+# Application runtime data
+.machdoch/ralph/runs/
+.machdoch/scheduler.json*
