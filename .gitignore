@@ -58,6 +58,5 @@ Thumbs.db
 tmp/
 temp/
 
-# Application runtime data
-.machdoch/ralph/runs/
-.machdoch/scheduler.json*
+# Machdoch config
+.machdoch
