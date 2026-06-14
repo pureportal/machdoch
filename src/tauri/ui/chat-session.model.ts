@@ -1,10 +1,12 @@
 import { normalizeConversationMemoryEntries } from "../../core/memory.js";
 import {
   MODEL_PROVIDERS,
+  REASONING_MODES,
   VALID_TOOLS,
 } from "../../core/runtime-contract.generated.js";
 import type {
   ConversationMemoryEntry,
+  ReasoningMode,
   RunMode,
   TaskExecutionTokenUsage,
   TaskExecutionNarrative,
@@ -16,6 +18,7 @@ import type {
 } from "../../core/types.js";
 import {
   getDefaultModelForProvider,
+  RUNNABLE_PROVIDER_ORDER,
   type RuntimeProvider,
 } from "./model-catalog";
 import type { TaskPanelSource, TaskPanelTone } from "./task-panel.model";
@@ -69,6 +72,7 @@ export interface ChatSessionRecord {
   provider: RuntimeProvider;
   model: string;
   mode?: RunMode;
+  reasoning?: ReasoningMode;
   draft: string;
   draftContextAttachments: ChatSessionContextAttachment[];
   manualTitle?: string;
@@ -111,6 +115,7 @@ export interface SmartContextPack {
   provider?: RuntimeProvider;
   model?: string;
   mode?: RunMode;
+  reasoning?: ReasoningMode;
   createdAt: number;
   updatedAt: number;
   lastUsedAt?: number;
@@ -129,11 +134,13 @@ export interface ShellPersistedState {
   activeSessionId: string;
   sessions: ChatSessionRecord[];
   contextPacks: SmartContextPack[];
+  recentWorkspaces: string[];
   voice: ShellVoiceSettings;
   lastSelectedProvider: RuntimeProvider;
   lastSelectedModelByProvider: Partial<Record<RuntimeProvider, string>>;
   lastSelectedProfile?: string;
   lastSelectedMode?: RunMode;
+  lastSelectedReasoning?: ReasoningMode;
   lastRecoveredLaunchId?: string;
 }
 
@@ -143,7 +150,8 @@ const MIN_VOICE_RATE = 0.8;
 const MAX_VOICE_RATE = 1.4;
 const SPECIAL_SESSION_KINDS = ["quick-voice"] as const;
 const RUN_MODES: RunMode[] = ["ask", "machdoch"];
-const RUNTIME_PROVIDERS: RuntimeProvider[] = ["openai", "anthropic", "google"];
+const STORED_REASONING_MODES: ReasoningMode[] = [...REASONING_MODES];
+const RUNTIME_PROVIDERS: RuntimeProvider[] = [...RUNNABLE_PROVIDER_ORDER];
 const TASK_EXECUTION_STATUSES: TaskExecutionStatus[] = [
   "planned",
   "executed",
@@ -198,6 +206,7 @@ const MAX_CONTEXT_PACK_TRIGGERS = 16;
 const MAX_CONTEXT_PACK_TRIGGER_LENGTH = 96;
 const MAX_CONTEXT_PACK_TEXT_LENGTH = 8_000;
 const SESSION_RETENTION_DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_RECENT_WORKSPACES = 10;
 const CONTEXT_ATTACHMENT_KINDS: ChatSessionContextAttachmentKind[] = [
   "file",
   "directory",
@@ -274,6 +283,15 @@ const normalizeOptionalStoredRunMode = (value: unknown): RunMode | undefined => 
     default:
       return undefined;
   }
+};
+
+const normalizeOptionalStoredReasoningMode = (
+  value: unknown,
+): ReasoningMode | undefined => {
+  return typeof value === "string" &&
+    STORED_REASONING_MODES.includes(value as ReasoningMode)
+    ? (value as ReasoningMode)
+    : undefined;
 };
 
 const isRuntimeProvider = (value: unknown): value is RuntimeProvider => {
@@ -361,6 +379,71 @@ const normalizeStringArray = (value: unknown): string[] => {
   }
 
   return value.filter((entry): entry is string => typeof entry === "string");
+};
+
+const createWorkspaceHistoryKey = (workspace: string): string => {
+  return workspace.trim().replace(/\\/gu, "/").toLowerCase();
+};
+
+export const normalizeRecentWorkspaces = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const workspaces: string[] = [];
+  const seenWorkspaces = new Set<string>();
+
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+
+    const workspace = entry.trim();
+    const workspaceKey = createWorkspaceHistoryKey(workspace);
+
+    if (!workspace || seenWorkspaces.has(workspaceKey)) {
+      continue;
+    }
+
+    seenWorkspaces.add(workspaceKey);
+    workspaces.push(workspace);
+
+    if (workspaces.length >= MAX_RECENT_WORKSPACES) {
+      break;
+    }
+  }
+
+  return workspaces;
+};
+
+export const rememberRecentWorkspace = (
+  recentWorkspaces: readonly string[],
+  workspace: string | null | undefined,
+): string[] => {
+  const normalizedWorkspace = workspace?.trim();
+
+  if (!normalizedWorkspace) {
+    return normalizeRecentWorkspaces(recentWorkspaces);
+  }
+
+  const workspaceKey = createWorkspaceHistoryKey(normalizedWorkspace);
+  const previousWorkspaces = normalizeRecentWorkspaces(recentWorkspaces).filter(
+    (entry) => createWorkspaceHistoryKey(entry) !== workspaceKey,
+  );
+
+  return normalizeRecentWorkspaces([normalizedWorkspace, ...previousWorkspaces]);
+};
+
+export const mergeRecentWorkspaces = (
+  ...workspaceLists: ReadonlyArray<readonly string[]>
+): string[] => {
+  const mergedWorkspaces: string[] = [];
+
+  for (const workspaceList of workspaceLists) {
+    mergedWorkspaces.push(...workspaceList);
+  }
+
+  return normalizeRecentWorkspaces(mergedWorkspaces);
 };
 
 const normalizeToolNames = (value: unknown): ToolName[] => {
@@ -605,6 +688,7 @@ const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
         ? normalizeString(entry.model).trim()
         : undefined;
     const mode = normalizeOptionalStoredRunMode(entry.mode);
+    const reasoning = normalizeOptionalStoredReasoningMode(entry.reasoning);
     const createdAt = Math.max(0, normalizeFiniteNumber(entry.createdAt, 0));
     const updatedAt = Math.max(
       createdAt,
@@ -627,6 +711,7 @@ const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
       ...(provider ? { provider } : {}),
       ...(provider && model ? { model } : {}),
       ...(mode ? { mode } : {}),
+      ...(reasoning ? { reasoning } : {}),
       createdAt,
       updatedAt,
       ...(lastUsedAt !== undefined && lastUsedAt >= 0 ? { lastUsedAt } : {}),
@@ -687,6 +772,7 @@ export const createSession = (
   const provider = overrides.provider ?? DEFAULT_PROVIDER;
   const now = overrides.updatedAt ?? Date.now();
   const mode = normalizeOptionalStoredRunMode(overrides.mode);
+  const reasoning = normalizeOptionalStoredReasoningMode(overrides.reasoning);
   const specialSession = isSpecialSessionKind(overrides.specialSession)
     ? overrides.specialSession
     : undefined;
@@ -708,6 +794,7 @@ export const createSession = (
     provider,
     model: overrides.model ?? getDefaultModelForProvider(provider),
     ...(mode ? { mode } : {}),
+    ...(reasoning ? { reasoning } : {}),
     draft: overrides.draft ?? "",
     draftContextAttachments: overrides.draftContextAttachments ?? [],
     ...(overrides.manualTitle ? { manualTitle: overrides.manualTitle } : {}),
@@ -758,6 +845,7 @@ export const createInitialShellState = (): ShellPersistedState => {
     activeSessionId: initialSession.id,
     sessions: [initialSession],
     contextPacks: [],
+    recentWorkspaces: [],
     voice: createDefaultShellVoiceSettings(),
     lastSelectedProvider: DEFAULT_PROVIDER,
     lastSelectedModelByProvider: {
@@ -1339,6 +1427,7 @@ const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord =
     : DEFAULT_PROVIDER;
   const preserveModel = provider === session.provider;
   const mode = normalizeOptionalStoredRunMode(session.mode);
+  const reasoning = normalizeOptionalStoredReasoningMode(session.reasoning);
   const specialSession = isSpecialSessionKind(session.specialSession)
     ? session.specialSession
     : undefined;
@@ -1352,6 +1441,7 @@ const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord =
       ? { profile: session.profile }
       : {}),
     ...(mode ? { mode } : {}),
+    ...(reasoning ? { reasoning } : {}),
     model:
       preserveModel &&
       typeof session.model === "string" &&
@@ -1389,6 +1479,18 @@ const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord =
       typeof session.pinnedAt === "number" ? session.pinnedAt : undefined,
     tags: normalizeSessionTags(session.tags),
   });
+};
+
+const deriveRecentWorkspacesFromSessions = (
+  sessions: readonly ChatSessionRecord[],
+): string[] => {
+  const orderedSessions = [...sessions].sort(
+    (left, right) => right.updatedAt - left.updatedAt,
+  );
+
+  return normalizeRecentWorkspaces(
+    orderedSessions.map((session) => session.workspace),
+  );
 };
 
 export const normalizeShellState = (value: unknown): ShellPersistedState => {
@@ -1451,6 +1553,9 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
   const lastSelectedMode = normalizeOptionalStoredRunMode(
     candidate.lastSelectedMode,
   );
+  const lastSelectedReasoning = normalizeOptionalStoredReasoningMode(
+    candidate.lastSelectedReasoning,
+  );
   const lastRecoveredLaunchId =
     typeof candidate.lastRecoveredLaunchId === "string" &&
     candidate.lastRecoveredLaunchId.trim().length > 0
@@ -1472,6 +1577,13 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
       ? { preferredVoiceURI: normalizedPreferredVoiceURI }
       : {}),
   };
+  const normalizedRecentWorkspaces = normalizeRecentWorkspaces(
+    candidate.recentWorkspaces,
+  );
+  const recentWorkspaces =
+    normalizedRecentWorkspaces.length > 0
+      ? normalizedRecentWorkspaces
+      : deriveRecentWorkspacesFromSessions(normalizedSessions);
 
   return {
     version: 1,
@@ -1480,6 +1592,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
       : normalizedSessions[0].id,
     sessions: normalizedSessions,
     contextPacks: normalizeSmartContextPacks(candidate.contextPacks),
+    recentWorkspaces,
     voice: normalizedVoice,
     lastSelectedProvider,
     lastSelectedModelByProvider: {
@@ -1488,6 +1601,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
     },
     ...(lastSelectedProfile ? { lastSelectedProfile } : {}),
     ...(lastSelectedMode ? { lastSelectedMode } : {}),
+    ...(lastSelectedReasoning ? { lastSelectedReasoning } : {}),
     ...(lastRecoveredLaunchId ? { lastRecoveredLaunchId } : {}),
   };
 };
@@ -1966,6 +2080,9 @@ const createRetentionReplacementSession = (
     updatedAt: timestamp,
     provider,
     ...(state.lastSelectedMode ? { mode: state.lastSelectedMode } : {}),
+    ...(state.lastSelectedReasoning
+      ? { reasoning: state.lastSelectedReasoning }
+      : {}),
     ...(state.lastSelectedProfile ? { profile: state.lastSelectedProfile } : {}),
     model:
       state.lastSelectedModelByProvider[provider] ??

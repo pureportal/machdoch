@@ -45,6 +45,7 @@ fn create_source_cli_command(args: &[String]) -> Option<SharedCliCommand> {
         .arg("tsx")
         .arg(cli_entry_path)
         .args(args);
+    sanitize_node_debug_environment(&mut command);
 
     Some(SharedCliCommand { command })
 }
@@ -66,8 +67,38 @@ fn create_embedded_cli_command(args: &[String]) -> Result<SharedCliCommand, Stri
     let entry_path = write_embedded_cli_entry()?;
     let mut command = Command::new(&node_path);
     command.arg(&entry_path).args(args);
+    sanitize_node_debug_environment(&mut command);
 
     Ok(SharedCliCommand { command })
+}
+
+fn sanitize_node_debug_environment(command: &mut Command) {
+    if let Ok(node_options) = env::var("NODE_OPTIONS") {
+        match sanitize_node_options(&node_options) {
+            Some(sanitized_options) => {
+                command.env("NODE_OPTIONS", sanitized_options);
+            }
+            None => {
+                command.env_remove("NODE_OPTIONS");
+            }
+        }
+    }
+
+    command.env_remove("VSCODE_INSPECTOR_OPTIONS");
+}
+
+fn sanitize_node_options(value: &str) -> Option<String> {
+    let sanitized_options = value
+        .split_whitespace()
+        .filter(|option| !option.starts_with("--inspect"))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if sanitized_options.is_empty() {
+        None
+    } else {
+        Some(sanitized_options)
+    }
 }
 
 fn embedded_cli_available() -> bool {
@@ -252,4 +283,18 @@ pub(crate) fn cli_runtime_error_hint() -> String {
     format!(
         "The bundled CLI runtime could not start. In development, ensure {BUILD_NODE_REQUIREMENT} is installed and available on PATH; for release builds, ensure Node was available at build time or set MACHDOCH_NODE_BINARY."
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_node_options;
+
+    #[test]
+    fn shared_cli_node_options_strip_debug_inspect_flags() {
+        assert_eq!(
+            sanitize_node_options("--inspect=127.0.0.1:9229 --max-old-space-size=4096"),
+            Some("--max-old-space-size=4096".to_string()),
+        );
+        assert_eq!(sanitize_node_options("--inspect-brk"), None);
+    }
 }

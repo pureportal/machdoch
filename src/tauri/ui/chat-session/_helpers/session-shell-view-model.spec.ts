@@ -3,7 +3,12 @@ import {
   createInitialShellState,
   createSession,
 } from "../../chat-session.model.ts";
-import type { RuntimeSnapshot, UserMemorySettings } from "../../runtime";
+import { RUNNABLE_PROVIDER_ORDER } from "../../model-catalog";
+import type {
+  RuntimeProviderAvailability,
+  RuntimeSnapshot,
+  UserMemorySettings,
+} from "../../runtime";
 import {
   createMemorySummaryState,
   createProviderChooserState,
@@ -215,7 +220,7 @@ describe("session shell view model helpers", () => {
     expect(imported.activeSessionId).toBe(imported.sessions[0]?.id);
   });
 
-  it("falls back to the supported provider order when desktop providers are still unconfigured", () => {
+  it("falls back to the runnable provider order when desktop providers are still unconfigured", () => {
     const providerState = createProviderChooserState({
       isDesktop: true,
       runtimeSnapshot: createRuntimeSnapshot({
@@ -233,11 +238,55 @@ describe("session shell view model helpers", () => {
     });
 
     expect(providerState.configuredProviders).toEqual([]);
-    expect(providerState.chooserProviders).toEqual([
-      "openai",
-      "anthropic",
-      "google",
-    ]);
+    expect(providerState.chooserProviders).toEqual(RUNNABLE_PROVIDER_ORDER);
+    expect(providerState.hasAnyProvider).toBe(false);
+  });
+
+  it("keeps unsupported external CLIs out of Chat model choices", () => {
+    const providerState = createProviderChooserState({
+      isDesktop: true,
+      runtimeSnapshot: createRuntimeSnapshot({
+        providerAvailability: [
+          { provider: "openai", configured: false },
+          { provider: "anthropic", configured: false },
+          { provider: "google", configured: false },
+          { provider: "codex-cli", configured: true },
+          { provider: "claude-cli", configured: true },
+          { provider: "copilot-cli", configured: true },
+        ],
+      }),
+      globalProviders: [
+        { provider: "openai", configured: false },
+        { provider: "anthropic", configured: false },
+        { provider: "google", configured: false },
+        { provider: "codex-cli", configured: true },
+        { provider: "claude-cli", configured: true },
+        { provider: "copilot-cli", configured: true },
+      ],
+    });
+
+    expect(providerState.configuredProviders).toEqual(["codex-cli"]);
+    expect(providerState.chooserProviders).toEqual(["codex-cli"]);
+    expect(providerState.hasAnyProvider).toBe(true);
+  });
+
+  it("does not treat only unsupported external CLIs as configured Chat providers", () => {
+    const providerAvailability = [
+      { provider: "openai", configured: false },
+      { provider: "anthropic", configured: false },
+      { provider: "google", configured: false },
+      { provider: "codex-cli", configured: false },
+      { provider: "claude-cli", configured: true },
+      { provider: "copilot-cli", configured: true },
+    ] satisfies RuntimeProviderAvailability[];
+    const providerState = createProviderChooserState({
+      isDesktop: true,
+      runtimeSnapshot: createRuntimeSnapshot({ providerAvailability }),
+      globalProviders: providerAvailability,
+    });
+
+    expect(providerState.configuredProviders).toEqual([]);
+    expect(providerState.chooserProviders).toEqual(RUNNABLE_PROVIDER_ORDER);
     expect(providerState.hasAnyProvider).toBe(false);
   });
 

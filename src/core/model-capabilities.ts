@@ -44,6 +44,9 @@ const IMAGE_EXTENSION_MEDIA_TYPES: Record<string, AgentModelImageMediaType> = {
   webp: "image/webp",
 };
 
+const WITHOUT_IMAGE_MEDIA_TYPES =
+  [] as const satisfies readonly AgentModelImageMediaType[];
+
 const PROVIDER_CAPABILITY_PROFILES: Record<
   ConfiguredModelProvider,
   ProviderCapabilityProfile
@@ -52,6 +55,21 @@ const PROVIDER_CAPABILITY_PROFILES: Record<
     provider: "anthropic",
     imageInputMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
     providerModes: PROVIDER_MODEL_MODES.anthropic,
+  },
+  "claude-cli": {
+    provider: "claude-cli",
+    imageInputMediaTypes: WITHOUT_IMAGE_MEDIA_TYPES,
+    providerModes: PROVIDER_MODEL_MODES["claude-cli"],
+  },
+  "codex-cli": {
+    provider: "codex-cli",
+    imageInputMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
+    providerModes: PROVIDER_MODEL_MODES["codex-cli"],
+  },
+  "copilot-cli": {
+    provider: "copilot-cli",
+    imageInputMediaTypes: WITHOUT_IMAGE_MEDIA_TYPES,
+    providerModes: PROVIDER_MODEL_MODES["copilot-cli"],
   },
   google: {
     provider: "google",

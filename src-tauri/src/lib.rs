@@ -1,5 +1,3 @@
-use tauri::Manager;
-
 mod desktop_shell;
 mod desktop_task;
 mod launcher;
@@ -50,19 +48,23 @@ pub fn run() {
         }
     }
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    #[cfg(debug_assertions)]
+    let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+
+    builder
+        .manage(desktop_task::AttachmentPathGrantMap::default())
+        .manage(desktop_task::DesktopTaskCancelMap::default())
+        .manage(desktop_shell::DesktopLaunchId(
+            desktop_shell::create_desktop_launch_id(),
+        ))
+        .manage(desktop_shell::QuickVoiceShortcutState::default())
         .manage(remote_control::RemoteControlState::default())
         .on_window_event(|window, event| {
             desktop_shell::handle_window_event(window, event);
         })
         .setup(move |app| {
-            app.manage(desktop_task::AttachmentPathGrantMap::default());
-            app.manage(desktop_task::DesktopTaskCancelMap::default());
-            app.manage(desktop_shell::DesktopLaunchId(
-                desktop_shell::create_desktop_launch_id(),
-            ));
-            app.manage(desktop_shell::QuickVoiceShortcutState::default());
-
             if let Err(error) = desktop_shell::create_tray(app.handle()) {
                 eprintln!("Failed to create tray icon: {error}");
             }
@@ -95,12 +97,18 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             desktop_shell::detect_fullscreen_window_on_monitor,
             desktop_shell::get_desktop_launch_id,
+            desktop_shell::hide_main_window_to_tray,
+            desktop_shell::quit_machdoch,
             desktop_shell::reveal_main_window,
             desktop_task::cancel_desktop_task,
             desktop_task::get_active_desktop_task_ids,
+            desktop_task::get_active_desktop_tasks,
             desktop_task::open_attached_path,
             desktop_task::open_workspace_path,
             desktop_task::resolve_dropped_paths,
+            desktop_task::run_instruction_command,
+            desktop_task::run_mcp_command,
+            desktop_task::run_ralph_command,
             desktop_task::run_scheduler_command,
             desktop_task::run_desktop_task,
             desktop_task::save_clipboard_image_attachment,
@@ -116,15 +124,18 @@ pub fn run() {
             runtime_snapshot::get_global_provider_availability,
             runtime_snapshot::get_provider_model_catalog,
             runtime_snapshot::get_user_memory_settings,
+            runtime_snapshot::get_user_mcp_config_document,
             runtime_snapshot::get_user_provider_api_keys,
             runtime_snapshot::get_user_review_model_settings,
             runtime_snapshot::get_user_speech_to_text_settings,
             runtime_snapshot::get_user_voice_settings,
             runtime_snapshot::get_user_web_search_settings,
+            runtime_snapshot::get_workspace_mcp_config_document,
             runtime_snapshot::get_runtime_snapshot,
             runtime_snapshot::save_user_desktop_settings,
             runtime_snapshot::save_user_agent_limits_settings,
             runtime_snapshot::save_user_global_memory_enabled,
+            runtime_snapshot::save_user_mcp_config_document,
             runtime_snapshot::save_user_provider_api_key,
             runtime_snapshot::save_user_review_model_settings,
             runtime_snapshot::save_user_speech_to_text_active_provider,
@@ -132,6 +143,9 @@ pub fn run() {
             runtime_snapshot::save_user_voice_active_provider,
             runtime_snapshot::save_user_web_search_active_provider,
             runtime_snapshot::save_user_web_search_api_key,
+            runtime_snapshot::save_workspace_default_mode,
+            runtime_snapshot::save_workspace_reasoning_mode,
+            runtime_snapshot::save_workspace_mcp_config_document,
             voice::synthesize_user_voice_audio,
             voice::transcribe_user_speech_audio
         ])

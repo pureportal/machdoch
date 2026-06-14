@@ -7,6 +7,7 @@ import type {
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
 import {
   OpenAIResponsesAdapter,
+  createOpenAIReasoningConfig,
   createOpenAIResponseToolSelection,
   createOpenAIUserInput,
 } from "./openai-adapter.js";
@@ -36,6 +37,15 @@ describe("OpenAI Responses conformance", () => {
     expect(createOpenAIResponseToolSelection()).toEqual({
       parallel_tool_calls: false,
       tool_choice: "required",
+    });
+  });
+
+  it("normalizes reasoning effort for the selected OpenAI model", () => {
+    expect(createOpenAIReasoningConfig("gpt-5.5", "max")).toEqual({
+      reasoning: { effort: "xhigh" },
+    });
+    expect(createOpenAIReasoningConfig("gpt-5", "none")).toEqual({
+      reasoning: { effort: "minimal" },
     });
   });
 

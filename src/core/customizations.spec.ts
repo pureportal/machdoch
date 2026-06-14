@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { discoverCustomizations } from "./customizations.ts";
 
 const workspacesToClean: string[] = [];
+const originalUserConfigDirectory = process.env.MACHDOCH_USER_CONFIG_DIR;
 
 const createWorkspace = async (): Promise<string> => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-custom-"));
@@ -12,6 +13,12 @@ const createWorkspace = async (): Promise<string> => {
 };
 
 afterEach(async () => {
+  if (originalUserConfigDirectory === undefined) {
+    delete process.env.MACHDOCH_USER_CONFIG_DIR;
+  } else {
+    process.env.MACHDOCH_USER_CONFIG_DIR = originalUserConfigDirectory;
+  }
+
   await Promise.all(
     workspacesToClean
       .splice(0)
@@ -267,10 +274,31 @@ Skill body.
     expect(withoutCompatibility.prompts).toHaveLength(0);
     expect(withoutCompatibility.skills).toHaveLength(0);
 
-    expect(withCompatibility.instructions.map((entry) => entry.path)).toEqual([
-      ".github/copilot-instructions.md",
-      "AGENTS.md",
-      ".github/instructions/repo.instructions.md",
+    expect(withCompatibility.instructions).toEqual([
+      {
+        kind: "always-on",
+        path: ".github/copilot-instructions.md",
+        name: "copilot-instructions",
+        body: "GitHub instructions",
+        keywords: [],
+        scope: "compatibility",
+      },
+      {
+        kind: "always-on",
+        path: "AGENTS.md",
+        name: "AGENTS",
+        body: "Agent instructions",
+        keywords: [],
+        scope: "compatibility",
+      },
+      {
+        kind: "conditional",
+        path: ".github/instructions/repo.instructions.md",
+        name: "Repo rules",
+        body: "Rules.",
+        keywords: ["release"],
+        scope: "compatibility",
+      },
     ]);
     expect(withCompatibility.prompts).toEqual([
       {
@@ -288,6 +316,72 @@ Skill body.
         description: "Repo skill",
         userInvocable: true,
         disableModelInvocation: false,
+      },
+    ]);
+  });
+
+  it("discovers user-global instructions when explicitly enabled", async () => {
+    const workspaceRoot = await createWorkspace();
+    const userConfigRoot = await createWorkspace();
+    process.env.MACHDOCH_USER_CONFIG_DIR = userConfigRoot;
+
+    await mkdir(join(userConfigRoot, "instructions"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(userConfigRoot, "instructions.md"),
+      "Use the user's global defaults.",
+    );
+    await writeFile(
+      join(userConfigRoot, "instructions", "typescript.instructions.md"),
+      `---
+name: User TypeScript rules
+mode: agent-requested
+audience: executor
+applyTo:
+  - src/**/*.ts
+  - tests/**/*.ts
+exclude:
+  - src/generated/**
+keywords: typescript, strict
+priority: 40
+---
+Prefer strict TypeScript.
+`,
+    );
+
+    const withoutUserInstructions = await discoverCustomizations(workspaceRoot);
+    const withUserInstructions = await discoverCustomizations(workspaceRoot, {
+      discoverUserCustomizations: true,
+    });
+
+    expect(withoutUserInstructions.instructions).toHaveLength(0);
+    expect(withUserInstructions.instructions).toEqual([
+      {
+        kind: "always-on",
+        path: join(userConfigRoot, "instructions.md"),
+        name: "user-instructions",
+        body: "Use the user's global defaults.",
+        keywords: [],
+        scope: "user",
+      },
+      {
+        kind: "conditional",
+        path: join(
+          userConfigRoot,
+          "instructions",
+          "typescript.instructions.md",
+        ),
+        name: "User TypeScript rules",
+        body: "Prefer strict TypeScript.",
+        applyTo: "src/**/*.ts",
+        applyToPatterns: ["src/**/*.ts", "tests/**/*.ts"],
+        excludePatterns: ["src/generated/**"],
+        keywords: ["typescript", "strict"],
+        priority: 40,
+        mode: "agent-requested",
+        audience: "executor",
+        scope: "user",
       },
     ]);
   });

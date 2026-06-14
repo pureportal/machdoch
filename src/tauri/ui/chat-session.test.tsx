@@ -714,6 +714,72 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "shows recent workspaces after a workspace has been selected",
+    async () => {
+      render(<ChatSession />);
+      await selectWorkspace();
+      await screen.findByRole("button", { name: "path" });
+
+      openMock.mockClear();
+      openMock.mockResolvedValue("C:\\Another\\Workspace");
+      fireEvent.click(screen.getByRole("button", { name: "path" }));
+
+      expect(
+        await screen.findByRole("button", {
+          name: /Choose new workspace folder/i,
+        }),
+      ).toBeDefined();
+      expect(openMock).not.toHaveBeenCalled();
+
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: /Choose new workspace folder/i,
+        }),
+      );
+
+      await waitFor(() => {
+        expect(openMock).toHaveBeenCalledWith({
+          directory: true,
+          multiple: false,
+          title: "Select Workspace Folder",
+        });
+      });
+      expect(
+        await screen.findByRole("button", { name: "Workspace" }),
+      ).toBeDefined();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "uses the last selected workspace for new sessions",
+    async () => {
+      const baseState = createInitialShellState();
+
+      storeShellState({
+        ...baseState,
+        recentWorkspaces: ["C:\\Docs\\Latest"],
+        sessions: baseState.sessions.map((session) => ({
+          ...session,
+          workspace: "C:\\Docs\\Current",
+        })),
+      });
+
+      render(<ChatSession />);
+      expect(
+        await screen.findByRole("button", { name: "Current" }),
+      ).toBeDefined();
+
+      fireEvent.click(screen.getByRole("button", { name: "New" }));
+
+      expect(
+        await screen.findByRole("button", { name: "Latest" }),
+      ).toBeDefined();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "shows preview-only execution state for unsupported tasks",
     async () => {
       render(<ChatSession />);

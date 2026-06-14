@@ -1,4 +1,8 @@
-import { FunctionCallingConfigMode, type GoogleGenAI } from "@google/genai";
+import {
+  FunctionCallingConfigMode,
+  ThinkingLevel,
+  type GoogleGenAI,
+} from "@google/genai";
 import type {
   AgentModelStartParams,
   AgentModelStreamEvent,
@@ -7,6 +11,7 @@ import type {
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
 import {
   GeminiChatAdapter,
+  createGeminiThinkingConfig,
   createGeminiUserMessage,
   normalizeGeminiResponse,
 } from "./gemini-adapter.js";
@@ -95,6 +100,20 @@ describe("Gemini function-calling conformance", () => {
           arguments: { key: "Ctrl+J" },
         },
       ],
+    });
+  });
+
+  it("normalizes thinking controls for the selected Gemini model", () => {
+    expect(
+      createGeminiThinkingConfig("gemini-3.1-pro-preview", "minimal"),
+    ).toEqual({
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+    });
+    expect(createGeminiThinkingConfig("gemini-2.5-pro", "none")).toEqual({
+      thinkingConfig: { thinkingBudget: 128 },
+    });
+    expect(createGeminiThinkingConfig("gemini-2.5-flash", "max")).toEqual({
+      thinkingConfig: { thinkingBudget: 8_192 },
     });
   });
 

@@ -1,9 +1,11 @@
+import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { MessageSquareMore, Mic, Zap } from "lucide-react";
-import { useEffect, useMemo, useRef, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { getSessionOverviewStatus } from "./chat-session.model";
 import {
   hideAssistantPopup,
+  isAssistantPopupVisible,
   resolveAssistantSurfaceLayout,
   setWindowPosition,
   showQuickVoiceWindow,
@@ -21,6 +23,7 @@ export const AssistantBubbleShell = () => {
   const state = useChatSessionShellState();
   const desktopSettings = useUserDesktopSettings();
   const appearance = useAppearanceSettings();
+  const [popupOpen, setPopupOpen] = useState(false);
   const temporarilyHiddenUntilRef = useRef<number>(0);
   const suppressPrimaryActionUntilRef = useRef<number>(0);
   const lastVisibilityRef = useRef<boolean | null>(null);
@@ -47,6 +50,10 @@ export const AssistantBubbleShell = () => {
   }, [state.shellState.sessions]);
 
   useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+
     const currentWindow = getCurrentWindow();
     let disposed = false;
 
@@ -145,10 +152,14 @@ export const AssistantBubbleShell = () => {
     temporarilyHiddenUntilRef.current =
       Date.now() +
       desktopSettings.assistantBubbleTemporarilyHideSeconds * 1000;
+    setPopupOpen(false);
     void hideAssistantPopup().catch((error) => {
       console.error("Failed to hide assistant popup", error);
     });
-    void getCurrentWindow().hide().catch(() => undefined);
+
+    if (isTauri()) {
+      void getCurrentWindow().hide().catch(() => undefined);
+    }
   };
 
   const handleBubbleMouseDown = (event: MouseEvent<HTMLButtonElement>): void => {
@@ -172,13 +183,25 @@ export const AssistantBubbleShell = () => {
 
     togglePopupInFlightRef.current = true;
     void toggleAssistantPopup(lastPopupPositionRef.current ?? undefined)
+      .then((nextPopupOpen) => {
+        setPopupOpen(nextPopupOpen);
+      })
       .catch((error) => {
         console.error("Failed to toggle assistant popup", error);
+        setPopupOpen(false);
       })
       .finally(() => {
         togglePopupInFlightRef.current = false;
       });
   };
+
+  const bubbleVisualState = popupOpen
+    ? "open"
+    : activeSessionSummary.runningCount > 0
+      ? "running"
+      : activeSessionSummary.pendingCount > 0
+        ? "attention"
+        : "idle";
 
   return (
     <div className="quick-chat-bubble-shell fixed inset-0 flex items-center justify-center overflow-hidden bg-transparent select-none">
@@ -186,15 +209,28 @@ export const AssistantBubbleShell = () => {
         <button
           type="button"
           aria-label="Open Quick Chat"
+          aria-expanded={popupOpen}
+          aria-haspopup="dialog"
           title="Open Quick Chat"
           data-style={appearance.settings.quickChatBubbleStyle}
+          data-state={bubbleVisualState}
+          data-running={activeSessionSummary.runningCount > 0 ? "true" : "false"}
+          data-has-notification={
+            activeSessionSummary.pendingCount > 0 ? "true" : "false"
+          }
+          data-voice-enabled={
+            desktopSettings.quickVoiceEnabled ? "true" : "false"
+          }
           onClick={handleBubbleClick}
+          onFocus={() => {
+            void isAssistantPopupVisible().then(setPopupOpen);
+          }}
           onMouseDown={handleBubbleMouseDown}
           onContextMenu={(event) => {
             event.preventDefault();
             event.stopPropagation();
           }}
-          className="quick-chat-bubble group relative flex h-17 w-17 items-center justify-center rounded-[1.35rem] border border-sky-400/25 bg-slate-950/95 text-slate-100 shadow-none outline-none transition-colors duration-150 hover:border-sky-300/45 hover:bg-slate-900/95 focus-visible:ring-0"
+          className="quick-chat-bubble group relative flex h-17 w-17 items-center justify-center rounded-[1.35rem] border border-sky-400/25 bg-slate-950/95 text-slate-100 shadow-none transition-colors duration-150 hover:border-sky-300/45 hover:bg-slate-900/95"
         >
           <span aria-hidden="true" className="quick-chat-bubble-aura" />
           <span aria-hidden="true" className="quick-chat-bubble-surface" />

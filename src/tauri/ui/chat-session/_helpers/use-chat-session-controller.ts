@@ -16,6 +16,9 @@ import {
 } from "../../../../core/model-capabilities.js";
 import type {
   AgentModelImageMediaType,
+  CustomizationDiagnostic,
+  DiscoveredInstruction,
+  ReasoningMode,
   RunMode,
 } from "../../../../core/types.js";
 import {
@@ -31,6 +34,7 @@ import {
   MAX_SMART_CONTEXT_PACKS,
   normalizeSessionTags,
   QUICK_VOICE_SESSION_KIND,
+  rememberRecentWorkspace,
   type ChatSessionContextAttachment,
   type ChatSessionMessage,
   type ChatSessionRecord,
@@ -43,10 +47,16 @@ import {
 } from "../../model-catalog";
 import {
   cancelDesktopTask,
+  createInstruction,
+  generateInstruction,
+  listInstructions,
   openAttachedPath,
   openWorkspacePath,
   resolveDroppedPaths,
+  saveInstruction,
   saveClipboardImageAttachment,
+  type InstructionMutationInput,
+  type InstructionRegistryResult,
 } from "../../runtime";
 import {
   appendThinkingProgress,
@@ -100,6 +110,7 @@ import { useSessionSettingsActions } from "./use-session-settings";
 import { useSessionTaskSubmission } from "./use-session-task-submission";
 import { useSessionWindowControls } from "./use-session-window-controls";
 import { useSpeechInputDevices } from "./use-speech-input-devices";
+import type { SettingsStatusMessage } from "../components/settings-dialog";
 
 export interface UseChatSessionControllerOptions {
   isolateActiveSession?: boolean;
@@ -115,6 +126,13 @@ const CLIPBOARD_IMAGE_MEDIA_TYPES: readonly AgentModelImageMediaType[] = [
   "image/png",
   "image/webp",
 ];
+
+const getInstructionCommandErrorMessage = (
+  error: unknown,
+  fallback: string,
+): string => {
+  return error instanceof Error ? error.message : fallback;
+};
 
 const getClipboardImageMediaType = (
   file: File,
@@ -197,6 +215,15 @@ export const useChatSessionController = (
   const speechInputDevices = useSpeechInputDevices(
     state.catalogOpen && state.settingsSection === "voice",
   );
+  const [instructionRegistry, setInstructionRegistry] =
+    useState<InstructionRegistryResult | null>(null);
+  const [instructionRegistryLoading, setInstructionRegistryLoading] =
+    useState(false);
+  const [instructionRegistrySaving, setInstructionRegistrySaving] =
+    useState(false);
+  const [instructionRegistryMessage, setInstructionRegistryMessage] =
+    useState<SettingsStatusMessage | null>(null);
+  const instructionRegistryRequestIdRef = useRef(0);
   const isDesktop = isTauri();
   const providerChooserState = createProviderChooserState({
     isDesktop,
@@ -228,7 +255,14 @@ export const useChatSessionController = (
   );
   const activeRunModeMeta = RUN_MODE_META[activeRunMode];
   const defaultRunMode = runtime.runtimeSnapshot?.mode ?? "machdoch";
+  const workspaceDefaultRunMode =
+    runtime.runtimeSnapshot?.defaultMode ?? defaultRunMode;
+  const effectiveReasoning = runtime.runtimeSnapshot?.reasoning ?? "default";
+  const workspaceDefaultReasoning =
+    runtime.runtimeSnapshot?.defaultReasoning ?? effectiveReasoning;
+  const activeReasoning = state.activeSession.reasoning ?? effectiveReasoning;
   const isUsingWorkspaceDefaultMode = !state.activeSession.mode;
+  const isUsingWorkspaceDefaultReasoning = !state.activeSession.reasoning;
   const hasActiveWorkspace = state.activeSession.workspace !== null;
   const workspaceContextPacks = useMemo(
     () =>
@@ -237,6 +271,106 @@ export const useChatSessionController = (
         state.activeSession.workspace,
       ),
     [state.activeSession.workspace, state.shellState.contextPacks],
+  );
+  const refreshInstructionRegistry = useCallback(async (): Promise<void> => {
+    const requestId = instructionRegistryRequestIdRef.current + 1;
+    instructionRegistryRequestIdRef.current = requestId;
+    setInstructionRegistryLoading(true);
+
+    try {
+      const registry = await listInstructions(state.activeSession.workspace);
+
+      if (instructionRegistryRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setInstructionRegistry(registry);
+      setInstructionRegistryMessage(null);
+    } catch (error) {
+      if (instructionRegistryRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setInstructionRegistryMessage({
+        tone: "error",
+        text: getInstructionCommandErrorMessage(
+          error,
+          "Instruction registry could not be loaded.",
+        ),
+      });
+    } finally {
+      if (instructionRegistryRequestIdRef.current === requestId) {
+        setInstructionRegistryLoading(false);
+      }
+    }
+  }, [state.activeSession.workspace]);
+
+  useEffect(() => {
+    if (state.catalogOpen && state.settingsSection === "instructions") {
+      void refreshInstructionRegistry();
+    }
+  }, [refreshInstructionRegistry, state.catalogOpen, state.settingsSection]);
+
+  const handleInstructionManualSave = useCallback(
+    async (input: InstructionMutationInput): Promise<void> => {
+      setInstructionRegistrySaving(true);
+      setInstructionRegistryMessage(null);
+
+      try {
+        const result = input.path
+          ? await saveInstruction(state.activeSession.workspace, input)
+          : await createInstruction(state.activeSession.workspace, input);
+        setInstructionRegistryMessage({
+          tone: "success",
+          text: `${result.created ? "Created" : "Updated"} ${result.scope === "user" ? "global" : "workspace"} instruction "${result.name}".`,
+        });
+        await refreshInstructionRegistry();
+      } catch (error) {
+        setInstructionRegistryMessage({
+          tone: "error",
+          text: getInstructionCommandErrorMessage(
+            error,
+            "Instruction file could not be saved.",
+          ),
+        });
+      } finally {
+        setInstructionRegistrySaving(false);
+      }
+    },
+    [refreshInstructionRegistry, state.activeSession.workspace],
+  );
+
+  const handleInstructionGenerate = useCallback(
+    async (input: InstructionMutationInput): Promise<void> => {
+      setInstructionRegistrySaving(true);
+      setInstructionRegistryMessage(null);
+
+      try {
+        const result = await generateInstruction(
+          state.activeSession.workspace,
+          input,
+        );
+        setInstructionRegistryMessage({
+          tone: result.status === "blocked" ? "error" : "success",
+          text: result.summary,
+        });
+
+        if (result.status !== "blocked") {
+          await refreshInstructionRegistry();
+        }
+      } catch (error) {
+        setInstructionRegistryMessage({
+          tone: "error",
+          text: getInstructionCommandErrorMessage(
+            error,
+            "Instruction generation could not finish.",
+          ),
+        });
+      } finally {
+        setInstructionRegistrySaving(false);
+      }
+    },
+    [refreshInstructionRegistry, state.activeSession.workspace],
   );
   const autoAppliedContextPackIdsRef = useRef<Set<string>>(new Set());
   const matchedContextPackIds = useMemo(
@@ -521,13 +655,37 @@ export const useChatSessionController = (
     state.setIsRenamingSession(false);
   };
 
+  const applyWorkspaceSelection = useCallback(
+    (workspace: string): void => {
+      const normalizedWorkspace = workspace.trim();
+
+      if (!normalizedWorkspace) {
+        return;
+      }
+
+      state.applyShellState((prev) => ({
+        ...prev,
+        recentWorkspaces: rememberRecentWorkspace(
+          prev.recentWorkspaces,
+          normalizedWorkspace,
+        ),
+        sessions: prev.sessions.map((session) =>
+          session.id === state.activeSessionId
+            ? {
+                ...session,
+                workspace: normalizedWorkspace,
+                updatedAt: Date.now(),
+              }
+            : session,
+        ),
+      }));
+    },
+    [state.activeSessionId, state.applyShellState],
+  );
+
   const handleSelectFolder = async (): Promise<void> => {
     if (!isDesktop) {
-      state.updateActiveSession((session) => ({
-        ...session,
-        workspace: "/mock/workspace/path",
-        updatedAt: Date.now(),
-      }));
+      applyWorkspaceSelection("/mock/workspace/path");
       return;
     }
 
@@ -539,11 +697,7 @@ export const useChatSessionController = (
       });
 
       if (selected && typeof selected === "string") {
-        state.updateActiveSession((session) => ({
-          ...session,
-          workspace: selected,
-          updatedAt: Date.now(),
-        }));
+        applyWorkspaceSelection(selected);
       }
     } catch (error) {
       console.error("Failed to select folder", error);
@@ -604,6 +758,44 @@ export const useChatSessionController = (
         nextState.lastSelectedMode = mode;
       } else {
         delete nextState.lastSelectedMode;
+      }
+
+      return nextState;
+    });
+  };
+
+  const handleSessionReasoningSelection = (
+    reasoning: ReasoningMode | null,
+  ): void => {
+    state.applyShellState((prev) => {
+      const nextUpdatedAt = Date.now();
+      const nextSessions = prev.sessions.map((session) => {
+        if (session.id !== state.activeSessionId) {
+          return session;
+        }
+
+        const nextSession: ChatSessionRecord = {
+          ...session,
+          updatedAt: nextUpdatedAt,
+        };
+
+        if (reasoning) {
+          nextSession.reasoning = reasoning;
+        } else {
+          delete nextSession.reasoning;
+        }
+
+        return nextSession;
+      });
+      const nextState: ShellPersistedState = {
+        ...prev,
+        sessions: nextSessions,
+      };
+
+      if (reasoning) {
+        nextState.lastSelectedReasoning = reasoning;
+      } else {
+        delete nextState.lastSelectedReasoning;
       }
 
       return nextState;
@@ -809,6 +1001,9 @@ export const useChatSessionController = (
             ? { profile: state.activeSession.profile }
             : {}),
           ...(state.activeSession.mode ? { mode: state.activeSession.mode } : {}),
+          ...(state.activeSession.reasoning
+            ? { reasoning: state.activeSession.reasoning }
+            : {}),
           useGlobalMemory: state.activeSession.useGlobalMemory,
           uiControlEnabled: state.activeSession.uiControlEnabled,
         });
@@ -825,6 +1020,7 @@ export const useChatSessionController = (
 
       const profile = baseSession.profile ?? state.activeSession.profile;
       const mode = baseSession.mode ?? state.activeSession.mode;
+      const reasoning = baseSession.reasoning ?? state.activeSession.reasoning;
 
       if (profile) {
         nextSession.profile = profile;
@@ -838,6 +1034,12 @@ export const useChatSessionController = (
         delete nextSession.mode;
       }
 
+      if (reasoning) {
+        nextSession.reasoning = reasoning;
+      } else {
+        delete nextSession.reasoning;
+      }
+
       delete nextSession.archivedAt;
       delete nextSession.manualTitle;
 
@@ -848,6 +1050,7 @@ export const useChatSessionController = (
       state.activeSession.model,
       state.activeSession.profile,
       state.activeSession.provider,
+      state.activeSession.reasoning,
       state.activeSession.uiControlEnabled,
       state.activeSession.useGlobalMemory,
       state.activeSession.workspace,
@@ -1165,13 +1368,15 @@ export const useChatSessionController = (
         : undefined;
       const model = input.includeModel ? state.activeSession.model : undefined;
       const mode = input.includeMode ? activeRunMode : undefined;
+      const reasoning = input.includeReasoning ? activeReasoning : undefined;
 
       if (
         !instructions &&
         !prompt &&
         contextAttachments.length === 0 &&
         !provider &&
-        !mode
+        !mode &&
+        !reasoning
       ) {
         return;
       }
@@ -1194,6 +1399,7 @@ export const useChatSessionController = (
           ...(provider ? { provider } : {}),
           ...(provider && model ? { model } : {}),
           ...(mode ? { mode } : {}),
+          ...(reasoning ? { reasoning } : {}),
           createdAt: now,
           updatedAt: now,
           useCount: 0,
@@ -1210,6 +1416,7 @@ export const useChatSessionController = (
     },
     [
       activeRunMode,
+      activeReasoning,
       state.activeSession.draft,
       state.activeSession.draftContextAttachments,
       state.activeSession.model,
@@ -1301,6 +1508,10 @@ export const useChatSessionController = (
               nextSession.mode = pack.mode;
             }
 
+            if (pack.reasoning) {
+              nextSession.reasoning = pack.reasoning;
+            }
+
             return nextSession;
           }),
         };
@@ -1315,6 +1526,10 @@ export const useChatSessionController = (
 
         if (pack.mode) {
           nextState.lastSelectedMode = pack.mode;
+        }
+
+        if (pack.reasoning) {
+          nextState.lastSelectedReasoning = pack.reasoning;
         }
 
         return nextState;
@@ -1699,6 +1914,43 @@ export const useChatSessionController = (
     [state.applyShellState],
   );
 
+  const handleRemoteSetSessionReasoning = useCallback(
+    (sessionId: string, reasoning: ReasoningMode | null): void => {
+      state.applyShellState((prev) => {
+        const nextState: ShellPersistedState = {
+          ...prev,
+          sessions: prev.sessions.map((session) => {
+            if (session.id !== sessionId) {
+              return session;
+            }
+
+            const nextSession: ChatSessionRecord = {
+              ...session,
+              updatedAt: Date.now(),
+            };
+
+            if (reasoning) {
+              nextSession.reasoning = reasoning;
+            } else {
+              delete nextSession.reasoning;
+            }
+
+            return nextSession;
+          }),
+        };
+
+        if (reasoning) {
+          nextState.lastSelectedReasoning = reasoning;
+        } else {
+          delete nextState.lastSelectedReasoning;
+        }
+
+        return nextState;
+      });
+    },
+    [state.applyShellState],
+  );
+
   const handleRemoteSetSessionProfile = useCallback(
     (sessionId: string, profile: string | null): void => {
       state.applyShellState((prev) => ({
@@ -1821,6 +2073,10 @@ export const useChatSessionController = (
               nextSession.mode = pack.mode;
             }
 
+            if (pack.reasoning) {
+              nextSession.reasoning = pack.reasoning;
+            }
+
             return nextSession;
           }),
         };
@@ -1835,6 +2091,10 @@ export const useChatSessionController = (
 
         if (pack.mode) {
           nextState.lastSelectedMode = pack.mode;
+        }
+
+        if (pack.reasoning) {
+          nextState.lastSelectedReasoning = pack.reasoning;
         }
 
         return nextState;
@@ -1857,7 +2117,9 @@ export const useChatSessionController = (
     hasAnyProvider: providerChooserState.hasAnyProvider,
     chooserProviders: providerChooserState.chooserProviders,
     defaultMode: defaultRunMode,
+    defaultReasoning: workspaceDefaultReasoning,
     activeRunMode,
+    activeReasoning,
     composerWorkspaceLabel: memorySummaryState.composerWorkspaceLabel,
     isGlobalMemoryAvailable: memorySummaryState.isGlobalMemoryAvailable,
     isGlobalMemoryActive: memorySummaryState.isGlobalMemoryActive,
@@ -1906,6 +2168,7 @@ export const useChatSessionController = (
     onUpdateSessionDraft: handleRemoteUpdateSessionDraft,
     onSetSessionModel: handleRemoteSetSessionModel,
     onSetSessionMode: handleRemoteSetSessionMode,
+    onSetSessionReasoning: handleRemoteSetSessionReasoning,
     onSetSessionProfile: handleRemoteSetSessionProfile,
     onSetSessionMemory: (sessionId: string, enabled: boolean) =>
       handleRemoteSetSessionFlag(sessionId, "sessionMemoryEnabled", enabled),
@@ -2058,6 +2321,11 @@ export const useChatSessionController = (
     });
   };
 
+  const instructionRegistryInstructions: DiscoveredInstruction[] =
+    instructionRegistry?.instructions ?? [];
+  const instructionRegistryDiagnostics: CustomizationDiagnostic[] =
+    instructionRegistry?.diagnostics ?? [];
+
   return {
     isDesktop,
     submitQuickVoiceCommand,
@@ -2186,8 +2454,12 @@ export const useChatSessionController = (
       activeRunMode,
       activeRunModeMeta,
       defaultRunMode,
+      defaultReasoning: workspaceDefaultReasoning,
+      activeReasoning,
       isUsingWorkspaceDefaultMode,
+      isUsingWorkspaceDefaultReasoning,
       hasActiveWorkspace,
+      recentWorkspaces: state.shellState.recentWorkspaces,
       composerWorkspaceLabel: memorySummaryState.composerWorkspaceLabel,
       sessionMemoryDescription: memorySummaryState.sessionMemoryDescription,
       globalMemoryDescription: memorySummaryState.globalMemoryDescription,
@@ -2217,8 +2489,10 @@ export const useChatSessionController = (
       canSendMessage,
       sendDisabledReason: activeSessionImageInputError,
       onSelectFolder: handleSelectFolder,
+      onWorkspaceSelection: applyWorkspaceSelection,
       onSessionModelSelection: handleSessionModelSelection,
       onSessionModeSelection: handleSessionModeSelection,
+      onSessionReasoningSelection: handleSessionReasoningSelection,
       onSessionMemoryEnabledChange: settingsActions.setSessionMemoryEnabled,
       onUseGlobalMemoryChange: settingsActions.setUseGlobalMemory,
       onUiControlEnabledChange: settingsActions.setUiControlEnabled,
@@ -2301,6 +2575,34 @@ export const useChatSessionController = (
         onKeyChange: runtime.handleProviderSetupKeyChange,
         onSave: runtime.handleProviderSetupSave,
       },
+      workspaceSetup: {
+        workspaceRoot: state.activeSession.workspace,
+        workspaceLabel: memorySummaryState.composerWorkspaceLabel,
+        defaultMode: workspaceDefaultRunMode,
+        effectiveMode: defaultRunMode,
+        defaultReasoning: workspaceDefaultReasoning,
+        effectiveReasoning,
+        reasoningProvider: state.activeSession.provider,
+        reasoningModel: state.activeSession.model,
+        ...(runtime.runtimeSnapshot?.activeProfile
+          ? { activeProfile: runtime.runtimeSnapshot.activeProfile }
+          : {}),
+        saving: runtime.workspaceSetupSaving,
+        message: runtime.workspaceSetupMessage,
+        onDefaultModeChange: runtime.handleWorkspaceDefaultModeSave,
+        onReasoningModeChange: runtime.handleWorkspaceReasoningModeSave,
+      },
+      instructionsSetup: {
+        workspaceRoot: state.activeSession.workspace,
+        instructions: instructionRegistryInstructions,
+        diagnostics: instructionRegistryDiagnostics,
+        loading: instructionRegistryLoading,
+        saving: instructionRegistrySaving,
+        message: instructionRegistryMessage,
+        onRefresh: refreshInstructionRegistry,
+        onManualSave: handleInstructionManualSave,
+        onGenerate: handleInstructionGenerate,
+      },
       webSearchSetup: {
         activeProvider: runtime.webSearchActiveProvider,
         provider: runtime.webSearchSetupProvider,
@@ -2311,6 +2613,34 @@ export const useChatSessionController = (
         onProviderChange: runtime.handleWebSearchSetupProviderChange,
         onKeyChange: runtime.handleWebSearchSetupKeyChange,
         onSave: runtime.handleWebSearchSetupSave,
+      },
+      mcpSetup: {
+        scope: runtime.mcpConfigScope,
+        document: runtime.mcpConfigDocument,
+        draft: runtime.mcpConfigDraft,
+        presets: runtime.mcpConfigPresets,
+        workspaceAvailable: runtime.mcpConfigWorkspaceAvailable,
+        loading: runtime.mcpConfigLoading,
+        saving: runtime.mcpConfigSaving,
+        discoveryServerId: runtime.mcpDiscoveryServerId,
+        discoveryBusy: runtime.mcpDiscoveryBusy,
+        discoveryOutput: runtime.mcpDiscoveryOutput,
+        oauthServerId: runtime.mcpOAuthServerId,
+        oauthCallback: runtime.mcpOAuthCallback,
+        oauthBusy: runtime.mcpOAuthBusy,
+        message: runtime.mcpConfigMessage,
+        onScopeChange: runtime.handleMcpConfigScopeChange,
+        onDraftChange: runtime.handleMcpConfigDraftChange,
+        onSave: runtime.handleMcpConfigSave,
+        onPresetInsert: runtime.handleMcpPresetInsert,
+        onDiscoveryServerIdChange: runtime.handleMcpDiscoveryServerIdChange,
+        onDiscoverServer: runtime.handleMcpDiscoverServer,
+        onRefreshDiscoveryCache: runtime.handleMcpRefreshDiscoveryCache,
+        onListDiscoveryCache: runtime.handleMcpListDiscoveryCache,
+        onOAuthServerIdChange: runtime.handleMcpOAuthServerIdChange,
+        onOAuthCallbackChange: runtime.handleMcpOAuthCallbackChange,
+        onStartOAuth: runtime.handleMcpOAuthStart,
+        onFinishOAuth: runtime.handleMcpOAuthFinish,
       },
       memorySetup: {
         settings: runtime.userMemorySettings,

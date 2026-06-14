@@ -15,6 +15,9 @@ import {
   printTaskPreview,
   runInteractiveChat,
 } from "./_helpers/cli-task-run.js";
+import { printInstructionSummary } from "./_helpers/cli-instruction-commands.js";
+import { printMcpSummary } from "./_helpers/cli-mcp-commands.js";
+import { printRalphSummary } from "./_helpers/cli-ralph-commands.js";
 import { printSchedulerSummary } from "./_helpers/cli-scheduler-commands.js";
 
 export type { CommandName, ParsedCliArgs } from "./_helpers/cli-args.js";
@@ -56,6 +59,10 @@ export const runCli = async (argv: string[]): Promise<void> => {
       await printCustomizationSummary(args);
       return;
     }
+    case "instructions": {
+      await printInstructionSummary(args);
+      return;
+    }
     case "tools": {
       await printToolSummary(args);
       return;
@@ -64,8 +71,16 @@ export const runCli = async (argv: string[]): Promise<void> => {
       await printProfileSummary(args);
       return;
     }
+    case "ralph": {
+      await printRalphSummary(args);
+      return;
+    }
     case "scheduler": {
       await printSchedulerSummary(args);
+      return;
+    }
+    case "mcp": {
+      await printMcpSummary(args);
       return;
     }
     case "run": {

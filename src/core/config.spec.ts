@@ -17,6 +17,11 @@ const ISOLATED_ENV_KEYS = [
   "MACHDOCH_EXECUTOR_TURNS",
   "MACHDOCH_AUTOPILOT_ITERATIONS",
   "MACHDOCH_INFINITE",
+  "MACHDOCH_CODEX_CLI_PATH",
+  "MACHDOCH_CLAUDE_CLI_PATH",
+  "MACHDOCH_COPILOT_CLI_PATH",
+  "PATH",
+  "PATHEXT",
 ] as const;
 
 const createWorkspace = async (): Promise<string> => {
@@ -216,6 +221,96 @@ describe("loadRuntimeConfig", () => {
 
     expect(config.provider).toBe("google");
     expect(config.model).toBe("gemini-3.5-flash");
+  });
+
+  it("detects Codex CLI from PATH and uses its default model", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+    const binaryName = process.platform === "win32" ? "codex.cmd" : "codex";
+
+    await writeFile(join(workspaceRoot, binaryName), "");
+    process.env.PATH = workspaceRoot;
+    process.env.PATHEXT = ".CMD;.EXE";
+
+    const config = await loadRuntimeConfig(workspaceRoot);
+
+    expect(config.provider).toBe("codex-cli");
+    expect(config.model).toBe("gpt-5.5");
+    expect(
+      config.providerAvailability.find(
+        (entry) => entry.provider === "codex-cli",
+      )?.configured,
+    ).toBe(true);
+  });
+
+  it("detects Claude and Copilot CLI binaries from PATH", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+    const claudeBinaryName =
+      process.platform === "win32" ? "claude.cmd" : "claude";
+    const copilotBinaryName =
+      process.platform === "win32" ? "copilot.cmd" : "copilot";
+
+    await writeFile(join(workspaceRoot, claudeBinaryName), "");
+    await writeFile(join(workspaceRoot, copilotBinaryName), "");
+    process.env.PATH = workspaceRoot;
+    process.env.PATHEXT = ".CMD;.EXE";
+
+    let config = await loadRuntimeConfig(
+      workspaceRoot,
+      undefined,
+      undefined,
+      undefined,
+      "claude-cli",
+    );
+
+    expect(config.provider).toBe("claude-cli");
+    expect(config.model).toBe("claude-sonnet-4-6");
+    expect(
+      config.providerAvailability.find(
+        (entry) => entry.provider === "claude-cli",
+      )?.configured,
+    ).toBe(true);
+
+    config = await loadRuntimeConfig(
+      workspaceRoot,
+      undefined,
+      undefined,
+      undefined,
+      "copilot-cli",
+    );
+
+    expect(config.provider).toBe("copilot-cli");
+    expect(config.model).toBe("auto");
+    expect(
+      config.providerAvailability.find(
+        (entry) => entry.provider === "copilot-cli",
+      )?.configured,
+    ).toBe(true);
+  });
+
+  it("does not treat GitHub CLI as the Copilot CLI binary", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+    const binaryName = process.platform === "win32" ? "gh.cmd" : "gh";
+
+    await writeFile(join(workspaceRoot, binaryName), "");
+    process.env.PATH = workspaceRoot;
+    process.env.PATHEXT = ".CMD;.EXE";
+
+    const config = await loadRuntimeConfig(
+      workspaceRoot,
+      undefined,
+      undefined,
+      undefined,
+      "copilot-cli",
+    );
+
+    expect(
+      config.providerAvailability.find(
+        (entry) => entry.provider === "copilot-cli",
+      )?.configured,
+    ).toBe(false);
   });
 
   it("loads agent loop limits from user config, workspace config, environment, and overrides", async () => {

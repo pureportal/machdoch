@@ -1,14 +1,18 @@
 use std::{
     collections::HashMap,
     env, fs,
+    io::Read,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
 use tauri_plugin_autostart::ManagerExt as _;
 
 use crate::runtime_contract_generated::{
+    AGENT_CLI_PROVIDERS, AGENT_CLI_PROVIDER_ENV_KEYS,
     DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     DEFAULT_DESKTOP_SETTING_ALWAYS_RUN_AS_ADMINISTRATOR,
     DEFAULT_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
@@ -33,9 +37,10 @@ use crate::runtime_contract_generated::{
     MIN_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MIN_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
-    PROVIDER_ENV_KEYS, RUNTIME_ENV_KEYS, USER_API_PROVIDERS, USER_AUDIO_AI_PROVIDERS,
-    USER_REVIEW_MODEL_MODES, USER_WEB_SEARCH_PROVIDERS, VALID_AUDIO_AI_PROVIDERS,
-    VALID_MODEL_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS, WEB_SEARCH_ENV_KEYS,
+    PROVIDER_ENV_KEYS, REASONING_MODES, RUNTIME_ENV_KEYS, USER_API_PROVIDERS,
+    USER_AUDIO_AI_PROVIDERS, USER_REVIEW_MODEL_MODES, USER_WEB_SEARCH_PROVIDERS,
+    VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS,
+    WEB_SEARCH_ENV_KEYS,
 };
 use crate::ui_control::UiControlAvailability;
 
@@ -49,6 +54,8 @@ const KNOWN_SAMPLE_SECRET_VALUES: [&str; 6] = [
     "serper-live",
 ];
 const USER_CONFIG_FILE_NAME: &str = "user-config.json";
+const MCP_CONFIG_FILE_NAME: &str = "mcp.json";
+const MCP_WORKSPACE_CONFIG_DIRECTORY: [&str; 2] = [".machdoch", "mcp"];
 const MAX_GLOBAL_MEMORY_ENTRIES: usize = 40;
 const MAX_MEMORY_CONTENT_LENGTH: usize = 280;
 
@@ -59,9 +66,12 @@ pub struct RuntimeSnapshot {
     workspace_config_path: Option<String>,
     active_profile: Option<String>,
     available_profiles: Vec<RuntimeProfileSummary>,
+    default_mode: String,
+    default_reasoning: String,
     mode: String,
     provider: String,
     model: String,
+    reasoning: String,
     offline: bool,
     agent_limits: RuntimeAgentLimits,
     compatibility: RuntimeCompatibilityConfig,
@@ -201,6 +211,15 @@ pub struct UserMemorySettings {
     entries: Vec<UserMemoryEntry>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConfigDocument {
+    scope: String,
+    path: String,
+    exists: bool,
+    raw: String,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserReviewModelSettings {
@@ -249,6 +268,7 @@ struct WorkspaceConfigFile {
     default_mode: Option<String>,
     provider: Option<String>,
     model: Option<String>,
+    reasoning: Option<String>,
     offline: Option<bool>,
     agent_limits: Option<UserAgentLimitsConfigFile>,
     compatibility: Option<WorkspaceCompatibilityConfig>,
@@ -263,6 +283,7 @@ struct WorkspaceProfileConfig {
     mode: Option<String>,
     provider: Option<String>,
     model: Option<String>,
+    reasoning: Option<String>,
     offline: Option<bool>,
     agent_limits: Option<UserAgentLimitsConfigFile>,
     compatibility: Option<WorkspaceCompatibilityConfig>,
@@ -279,6 +300,8 @@ struct WorkspaceCompatibilityConfig {
 struct UserConfigFile {
     #[serde(default)]
     api_keys: HashMap<String, String>,
+    #[serde(default)]
+    agent_cli_paths: HashMap<String, String>,
     #[serde(default)]
     web_search: UserWebSearchConfigFile,
     #[serde(default)]
@@ -802,6 +825,106 @@ fn get_user_config_path() -> Result<PathBuf, String> {
     Ok(get_user_config_directory()?.join(USER_CONFIG_FILE_NAME))
 }
 
+fn get_user_mcp_config_path() -> Result<PathBuf, String> {
+    Ok(get_user_config_directory()?.join(MCP_CONFIG_FILE_NAME))
+}
+
+fn get_workspace_mcp_config_path(workspace_root: &str) -> Result<PathBuf, String> {
+    let workspace_path = resolve_workspace_root_path(workspace_root)?;
+
+    Ok(workspace_path
+        .join(MCP_WORKSPACE_CONFIG_DIRECTORY[0])
+        .join(MCP_WORKSPACE_CONFIG_DIRECTORY[1])
+        .join(MCP_CONFIG_FILE_NAME))
+}
+
+fn create_default_mcp_config_raw() -> Result<String, String> {
+    let value = serde_json::json!({
+        "schemaVersion": 1,
+        "defaults": {
+            "enabled": true,
+            "securityProfile": "weak",
+            "exposure": "hybrid",
+            "directTools": true,
+            "timeoutMs": 60000,
+            "maxTotalTimeoutMs": 300000,
+            "idleShutdownMs": 900000,
+            "maxResponseChars": 60000,
+            "cache": {
+                "enabled": true,
+                "ttlMs": 900000,
+                "forceRefresh": false
+            },
+            "roots": "workspace",
+            "sampling": "disabled",
+            "tasks": "optional",
+            "elicitation": "disabled"
+        },
+        "servers": []
+    });
+    let serialized = serde_json::to_string_pretty(&value)
+        .map_err(|error| format!("Failed to serialize default MCP config: {error}"))?;
+
+    Ok(format!("{serialized}\n"))
+}
+
+fn normalize_mcp_config_raw(raw: &str) -> Result<String, String> {
+    let parsed = serde_json::from_str::<serde_json::Value>(raw)
+        .map_err(|error| format!("MCP config must be valid JSON: {error}"))?;
+
+    if !parsed.is_object() {
+        return Err("MCP config must be a JSON object.".to_string());
+    }
+
+    let serialized = serde_json::to_string_pretty(&parsed)
+        .map_err(|error| format!("Failed to serialize MCP config: {error}"))?;
+
+    Ok(format!("{serialized}\n"))
+}
+
+fn load_mcp_config_document(
+    scope: &str,
+    config_path: PathBuf,
+) -> Result<McpConfigDocument, String> {
+    let exists = config_path.exists();
+    let raw = if exists {
+        fs::read_to_string(&config_path)
+            .map_err(|error| format!("Failed to read {}: {error}", config_path.display()))?
+    } else {
+        create_default_mcp_config_raw()?
+    };
+
+    Ok(McpConfigDocument {
+        scope: scope.to_string(),
+        path: config_path.display().to_string(),
+        exists,
+        raw,
+    })
+}
+
+fn save_mcp_config_document(
+    scope: &str,
+    config_path: PathBuf,
+    raw: &str,
+) -> Result<McpConfigDocument, String> {
+    let normalized_raw = normalize_mcp_config_raw(raw)?;
+
+    if let Some(config_directory) = config_path.parent() {
+        fs::create_dir_all(config_directory)
+            .map_err(|error| format!("Failed to create {}: {error}", config_directory.display()))?;
+    }
+
+    fs::write(&config_path, &normalized_raw)
+        .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))?;
+
+    Ok(McpConfigDocument {
+        scope: scope.to_string(),
+        path: config_path.display().to_string(),
+        exists: true,
+        raw: normalized_raw,
+    })
+}
+
 pub(crate) fn get_default_workspace_root() -> Result<PathBuf, String> {
     #[cfg(target_os = "windows")]
     {
@@ -852,6 +975,10 @@ pub(crate) fn resolve_workspace_root_path(workspace_root: &str) -> Result<PathBu
 
 fn is_user_api_provider(value: &str) -> bool {
     USER_API_PROVIDERS.contains(&value)
+}
+
+fn is_agent_cli_provider(value: &str) -> bool {
+    AGENT_CLI_PROVIDERS.contains(&value)
 }
 
 fn is_user_web_search_provider(value: &str) -> bool {
@@ -923,6 +1050,25 @@ fn load_user_api_keys() -> Result<HashMap<String, String>, String> {
         .collect())
 }
 
+fn load_user_agent_cli_paths() -> Result<HashMap<String, String>, String> {
+    let (config, _) = load_user_config_file()?;
+
+    Ok(config
+        .agent_cli_paths
+        .into_iter()
+        .filter_map(|(provider, value)| {
+            let normalized_provider = normalize_optional_string(Some(provider.as_str()))?;
+            let normalized_value = normalize_optional_string(Some(value.as_str()))?;
+
+            if is_agent_cli_provider(&normalized_provider) {
+                Some((normalized_provider, normalized_value))
+            } else {
+                None
+            }
+        })
+        .collect())
+}
+
 fn load_user_web_search_api_keys() -> Result<HashMap<String, String>, String> {
     let (config, _) = load_user_config_file()?;
 
@@ -957,6 +1103,18 @@ fn merge_user_api_keys_into_env(values: &mut HashMap<String, String>) -> Result<
     Ok(())
 }
 
+fn merge_user_agent_cli_paths_into_env(values: &mut HashMap<String, String>) -> Result<(), String> {
+    let paths = load_user_agent_cli_paths()?;
+
+    for (provider, env_key) in AGENT_CLI_PROVIDER_ENV_KEYS {
+        if let Some(value) = paths.get(provider) {
+            values.insert(env_key.to_string(), value.clone());
+        }
+    }
+
+    Ok(())
+}
+
 fn merge_user_web_search_api_keys_into_env(
     values: &mut HashMap<String, String>,
 ) -> Result<(), String> {
@@ -974,6 +1132,7 @@ fn merge_user_web_search_api_keys_into_env(
 pub(crate) fn load_global_env() -> Result<HashMap<String, String>, String> {
     let mut values = HashMap::new();
     merge_user_api_keys_into_env(&mut values)?;
+    merge_user_agent_cli_paths_into_env(&mut values)?;
     merge_user_web_search_api_keys_into_env(&mut values)?;
     apply_process_env_overrides(&mut values);
     Ok(values)
@@ -984,6 +1143,7 @@ fn load_workspace_env(workspace_root: &Path) -> Result<HashMap<String, String>, 
     let mut values = HashMap::new();
 
     merge_user_api_keys_into_env(&mut values)?;
+    merge_user_agent_cli_paths_into_env(&mut values)?;
     merge_user_web_search_api_keys_into_env(&mut values)?;
 
     if env_path.exists() {
@@ -1014,6 +1174,92 @@ fn load_workspace_config(
     Ok((parsed, Some(config_path.display().to_string())))
 }
 
+fn load_workspace_config_json(
+    config_path: &Path,
+) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    if !config_path.exists() {
+        return Ok(serde_json::Map::new());
+    }
+
+    let raw = fs::read_to_string(config_path)
+        .map_err(|error| format!("Failed to read {}: {error}", config_path.display()))?;
+    let parsed = serde_json::from_str::<serde_json::Value>(&raw)
+        .map_err(|error| format!("Failed to parse {}: {error}", config_path.display()))?;
+
+    match parsed {
+        serde_json::Value::Object(config) => Ok(config),
+        _ => Err(format!(
+            "Expected workspace config {} to be a JSON object.",
+            config_path.display()
+        )),
+    }
+}
+
+fn write_workspace_config_json(
+    config_path: &Path,
+    config: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), String> {
+    if let Some(config_directory) = config_path.parent() {
+        fs::create_dir_all(config_directory)
+            .map_err(|error| format!("Failed to create {}: {error}", config_directory.display()))?;
+    }
+
+    let serialized = serde_json::to_string_pretty(&serde_json::Value::Object(config.clone()))
+        .map_err(|error| format!("Failed to serialize workspace config: {error}"))?;
+
+    fs::write(config_path, format!("{serialized}\n"))
+        .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))
+}
+
+fn save_workspace_default_mode_value(workspace_root: &str, mode: &str) -> Result<PathBuf, String> {
+    let normalized_mode = normalize_optional_string(Some(mode))
+        .ok_or_else(|| "Expected workspace mode to be one of ask or machdoch.".to_string())?;
+
+    if !is_valid_mode(Some(normalized_mode.as_str())) {
+        return Err("Expected workspace mode to be one of ask or machdoch.".to_string());
+    }
+
+    let workspace_path = resolve_workspace_root_path(workspace_root)?;
+    let config_path = workspace_path.join(".machdoch").join("config.json");
+    let mut config = load_workspace_config_json(&config_path)?;
+
+    config.insert(
+        "defaultMode".to_string(),
+        serde_json::Value::String(normalized_mode),
+    );
+    write_workspace_config_json(&config_path, &config)?;
+
+    Ok(config_path)
+}
+
+fn save_workspace_reasoning_mode_value(
+    workspace_root: &str,
+    reasoning: &str,
+) -> Result<PathBuf, String> {
+    let normalized_reasoning = normalize_optional_string(Some(reasoning)).ok_or_else(|| {
+        "Expected workspace reasoning to be one of default, none, minimal, low, medium, high, xhigh, or max.".to_string()
+    })?;
+
+    if !is_valid_reasoning_mode(Some(normalized_reasoning.as_str())) {
+        return Err(
+            "Expected workspace reasoning to be one of default, none, minimal, low, medium, high, xhigh, or max."
+                .to_string(),
+        );
+    }
+
+    let workspace_path = resolve_workspace_root_path(workspace_root)?;
+    let config_path = workspace_path.join(".machdoch").join("config.json");
+    let mut config = load_workspace_config_json(&config_path)?;
+
+    config.insert(
+        "reasoning".to_string(),
+        serde_json::Value::String(normalized_reasoning),
+    );
+    write_workspace_config_json(&config_path, &config)?;
+
+    Ok(config_path)
+}
+
 fn has_configured_value(value: Option<&str>) -> bool {
     let Some(value) = value.map(str::trim) else {
         return false;
@@ -1030,14 +1276,377 @@ fn has_configured_value(value: Option<&str>) -> bool {
     !PLACEHOLDER_TOKENS.iter().any(|token| value.contains(token))
 }
 
+fn agent_cli_command_candidates(provider: &str) -> &'static [&'static str] {
+    match provider {
+        "codex-cli" => &["codex"],
+        "claude-cli" => &["claude"],
+        "copilot-cli" => &["copilot"],
+        _ => &[],
+    }
+}
+
+fn env_path(env: &HashMap<String, String>, key: &str) -> Option<PathBuf> {
+    env.get(key)
+        .and_then(|value| normalize_optional_string(Some(value.as_str())))
+        .map(PathBuf::from)
+        .or_else(|| env::var_os(key).map(PathBuf::from))
+}
+
+fn home_directory_from_env(env: &HashMap<String, String>) -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        env_path(env, "USERPROFILE").or_else(|| env_path(env, "HOME"))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        env_path(env, "HOME")
+    }
+}
+
+fn default_agent_cli_path_candidates(command: &str, env: &HashMap<String, String>) -> Vec<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let user_profile = home_directory_from_env(env);
+        let app_data = env_path(env, "APPDATA").or_else(|| {
+            user_profile
+                .as_ref()
+                .map(|path| path.join("AppData").join("Roaming"))
+        });
+        let local_app_data = env_path(env, "LOCALAPPDATA").or_else(|| {
+            user_profile
+                .as_ref()
+                .map(|path| path.join("AppData").join("Local"))
+        });
+        let mut candidates = Vec::new();
+
+        if let Some(user_profile) = user_profile {
+            candidates.push(
+                user_profile
+                    .join(".local")
+                    .join("bin")
+                    .join(format!("{command}.exe")),
+            );
+        }
+
+        if let Some(app_data) = app_data {
+            candidates.push(app_data.join("npm").join(format!("{command}.cmd")));
+            candidates.push(app_data.join("npm").join(format!("{command}.exe")));
+        }
+
+        if let Some(local_app_data) = local_app_data {
+            candidates.push(
+                local_app_data
+                    .join("Microsoft")
+                    .join("WinGet")
+                    .join("Links")
+                    .join(format!("{command}.exe")),
+            );
+        }
+
+        candidates
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut candidates = Vec::new();
+
+        if let Some(home_directory) = home_directory_from_env(env) {
+            candidates.push(home_directory.join(".local").join("bin").join(command));
+        }
+
+        candidates.push(PathBuf::from("/usr/local/bin").join(command));
+        candidates.push(PathBuf::from("/opt/homebrew/bin").join(command));
+        candidates.push(PathBuf::from("/usr/bin").join(command));
+        candidates
+    }
+}
+
+fn has_path_separator(value: &str) -> bool {
+    value.contains('/') || value.contains('\\')
+}
+
+fn is_existing_file(path: &Path) -> bool {
+    path.is_file()
+}
+
+fn executable_extensions(env: &HashMap<String, String>) -> Vec<String> {
+    if cfg!(target_os = "windows") {
+        env.get("PATHEXT")
+            .cloned()
+            .or_else(|| env::var("PATHEXT").ok())
+            .map(|value| {
+                value
+                    .split(';')
+                    .filter_map(|entry| normalize_optional_string(Some(entry)))
+                    .map(|extension| {
+                        if extension.starts_with('.') {
+                            extension
+                        } else {
+                            format!(".{extension}")
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .filter(|extensions| !extensions.is_empty())
+            .unwrap_or_else(|| {
+                vec![
+                    ".COM".to_string(),
+                    ".EXE".to_string(),
+                    ".BAT".to_string(),
+                    ".CMD".to_string(),
+                ]
+            })
+    } else {
+        Vec::new()
+    }
+}
+
+fn command_file_names(command: &str, env: &HashMap<String, String>) -> Vec<String> {
+    if !cfg!(target_os = "windows") || Path::new(command).extension().is_some() {
+        return vec![command.to_string()];
+    }
+
+    let mut names = vec![command.to_string()];
+    names.extend(
+        executable_extensions(env)
+            .into_iter()
+            .map(|extension| format!("{command}{extension}")),
+    );
+    names
+}
+
+fn resolve_command_on_path(command: &str, env: &HashMap<String, String>) -> Option<PathBuf> {
+    let path_value = env
+        .get("PATH")
+        .map(std::ffi::OsString::from)
+        .or_else(|| env::var_os("PATH"))?;
+    let command_file_names = command_file_names(command, env);
+
+    for directory in env::split_paths(&path_value) {
+        for file_name in &command_file_names {
+            let candidate = directory.join(file_name);
+
+            if is_existing_file(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+fn resolve_configured_binary_path(
+    configured_path: &str,
+    env: &HashMap<String, String>,
+) -> Option<PathBuf> {
+    let candidate = PathBuf::from(configured_path);
+
+    if is_existing_file(&candidate) {
+        return Some(candidate);
+    }
+
+    if !has_path_separator(configured_path) {
+        return resolve_command_on_path(configured_path, env);
+    }
+
+    let parent = candidate.parent()?;
+    let file_name = candidate.file_name()?.to_str()?;
+
+    for candidate_file_name in command_file_names(file_name, env) {
+        let candidate = parent.join(candidate_file_name);
+
+        if is_existing_file(&candidate) {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+fn resolve_agent_cli_binary(provider: &str, env: &HashMap<String, String>) -> Option<PathBuf> {
+    if let Some((_, env_key)) = AGENT_CLI_PROVIDER_ENV_KEYS
+        .iter()
+        .find(|(entry_provider, _)| *entry_provider == provider)
+    {
+        if let Some(configured_path) = env
+            .get(*env_key)
+            .and_then(|value| normalize_optional_string(Some(value.as_str())))
+        {
+            return resolve_configured_binary_path(&configured_path, env);
+        }
+    }
+
+    for command in agent_cli_command_candidates(provider) {
+        let resolved = if has_path_separator(command) {
+            resolve_configured_binary_path(command, env)
+        } else {
+            resolve_command_on_path(command, env)
+        };
+
+        if resolved.is_some() {
+            return resolved;
+        }
+    }
+
+    for command in agent_cli_command_candidates(provider) {
+        for candidate in default_agent_cli_path_candidates(command, env) {
+            if let Some(candidate_path) = candidate.to_str() {
+                let resolved = resolve_configured_binary_path(candidate_path, env);
+
+                if resolved.is_some() {
+                    return resolved;
+                }
+            }
+        }
+    }
+
+    None
+}
+
 fn get_provider_availability(env: &HashMap<String, String>) -> Vec<ProviderAvailability> {
-    PROVIDER_ENV_KEYS
+    let mut availability = PROVIDER_ENV_KEYS
         .iter()
         .map(|(provider, env_key)| ProviderAvailability {
             provider: provider.to_string(),
             configured: has_configured_value(env.get(*env_key).map(String::as_str)),
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    availability.extend(
+        AGENT_CLI_PROVIDERS
+            .iter()
+            .map(|provider| ProviderAvailability {
+                provider: provider.to_string(),
+                configured: resolve_agent_cli_binary(provider, env).is_some(),
+            }),
+    );
+
+    availability
+}
+
+#[cfg(test)]
+mod agent_cli_resolver_tests {
+    use super::*;
+
+    fn temp_test_directory(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after the Unix epoch")
+            .as_nanos();
+
+        env::temp_dir().join(format!("machdoch-{name}-{unique}"))
+    }
+
+    fn create_file(path: &Path) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("test directory should be creatable");
+        }
+
+        fs::write(path, "").expect("test binary should be writable");
+    }
+
+    #[test]
+    fn copilot_cli_resolution_does_not_accept_github_cli() {
+        let directory = temp_test_directory("copilot-no-gh");
+        let binary_name = if cfg!(target_os = "windows") {
+            "gh.cmd"
+        } else {
+            "gh"
+        };
+
+        create_file(&directory.join(binary_name));
+
+        let mut env = HashMap::new();
+        env.insert("PATH".to_string(), directory.display().to_string());
+        env.insert("PATHEXT".to_string(), ".CMD;.EXE".to_string());
+
+        assert!(resolve_agent_cli_binary("copilot-cli", &env).is_none());
+
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn copilot_cli_resolution_checks_common_default_install_locations() {
+        let home_directory = temp_test_directory("copilot-default-path");
+        let binary_path = if cfg!(target_os = "windows") {
+            home_directory
+                .join("AppData")
+                .join("Roaming")
+                .join("npm")
+                .join("copilot.cmd")
+        } else {
+            home_directory.join(".local").join("bin").join("copilot")
+        };
+
+        create_file(&binary_path);
+
+        let mut env = HashMap::new();
+        env.insert("PATH".to_string(), String::new());
+        env.insert("PATHEXT".to_string(), ".CMD;.EXE".to_string());
+
+        if cfg!(target_os = "windows") {
+            env.insert(
+                "USERPROFILE".to_string(),
+                home_directory.display().to_string(),
+            );
+            env.insert(
+                "APPDATA".to_string(),
+                home_directory
+                    .join("AppData")
+                    .join("Roaming")
+                    .display()
+                    .to_string(),
+            );
+            env.insert(
+                "LOCALAPPDATA".to_string(),
+                home_directory
+                    .join("AppData")
+                    .join("Local")
+                    .display()
+                    .to_string(),
+            );
+        } else {
+            env.insert("HOME".to_string(), home_directory.display().to_string());
+        }
+
+        assert_eq!(
+            resolve_agent_cli_binary("copilot-cli", &env),
+            Some(binary_path)
+        );
+
+        let _ = fs::remove_dir_all(home_directory);
+    }
+
+    #[test]
+    fn copilot_cli_help_parser_extracts_models_without_telemetry_keys() {
+        let help_output = r#"
+            --model=MODEL Set the AI model you want to use. Pass auto to let Copilot pick.
+            Examples: copilot -p "Explain" -s --model claude-haiku-4.5
+            copilot -p "Fix" --model gpt-5.3-codex --allow-tool write
+            COPILOT_MODEL can be set to gpt-5.2 or claude-sonnet-4.5.
+            Telemetry fields include github.copilot.token_limit and github.copilot.aiu.
+        "#;
+        let model_ids = parse_copilot_cli_model_catalog(help_output)
+            .expect("help output should include supported Copilot model IDs")
+            .into_iter()
+            .map(|model| model.id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            model_ids,
+            vec![
+                "auto",
+                "claude-haiku-4.5",
+                "claude-sonnet-4.5",
+                "gpt-5.2",
+                "gpt-5.3-codex"
+            ]
+        );
+        assert!(!model_ids
+            .iter()
+            .any(|model_id| model_id.contains("github.copilot")));
+    }
 }
 
 fn get_web_search_provider_availability(
@@ -1531,6 +2140,537 @@ fn create_google_runtime_model(entry: &serde_json::Value) -> Option<ProviderRunt
     })
 }
 
+struct AgentCliCommandOutput {
+    exit_code: Option<i32>,
+    stdout: String,
+    stderr: String,
+}
+
+fn run_agent_cli_command(
+    executable: &Path,
+    args: &[&str],
+    env_values: &HashMap<String, String>,
+    timeout: Duration,
+) -> Result<AgentCliCommandOutput, String> {
+    let mut child = Command::new(executable)
+        .args(args)
+        .envs(env_values)
+        .env("NO_COLOR", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Failed to start {}: {error}", executable.display()))?;
+    let started_at = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started_at.elapsed() >= timeout => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "{} timed out while discovering agent CLI models.",
+                    executable.display()
+                ));
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(50)),
+            Err(error) => {
+                return Err(format!(
+                    "Failed while waiting for {}: {error}",
+                    executable.display()
+                ));
+            }
+        }
+    };
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+
+    if let Some(mut stream) = child.stdout.take() {
+        stream
+            .read_to_string(&mut stdout)
+            .map_err(|error| format!("Failed to read agent CLI stdout: {error}"))?;
+    }
+
+    if let Some(mut stream) = child.stderr.take() {
+        stream
+            .read_to_string(&mut stderr)
+            .map_err(|error| format!("Failed to read agent CLI stderr: {error}"))?;
+    }
+
+    Ok(AgentCliCommandOutput {
+        exit_code: status.code(),
+        stdout,
+        stderr,
+    })
+}
+
+fn json_string_from_keys(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(entry) = json_string(value, key) {
+            return Some(entry);
+        }
+    }
+
+    None
+}
+
+fn json_u64_from_keys(value: Option<&serde_json::Value>, keys: &[&str]) -> Option<u64> {
+    let value = value?;
+
+    for key in keys {
+        if let Some(entry) = value.get(*key).and_then(serde_json::Value::as_u64) {
+            return Some(entry);
+        }
+
+        if let Some(entry) = json_string(value, key).and_then(|entry| entry.parse::<u64>().ok()) {
+            return Some(entry);
+        }
+    }
+
+    None
+}
+
+fn is_numeric_model_version(value: &str) -> bool {
+    value
+        .split('.')
+        .all(|part| !part.is_empty() && part.chars().all(|character| character.is_ascii_digit()))
+}
+
+fn is_codex_cli_runtime_model(model_id: &str) -> bool {
+    let normalized = model_id.to_ascii_lowercase();
+
+    if normalized == "auto" || looks_like_dated_snapshot(&normalized) {
+        return false;
+    }
+
+    let Some(suffix) = normalized.strip_prefix("gpt-") else {
+        return false;
+    };
+    let mut parts = suffix.split('-');
+    let Some(version) = parts.next() else {
+        return false;
+    };
+
+    if !is_numeric_model_version(version) {
+        return false;
+    }
+
+    let suffix_parts = parts.collect::<Vec<_>>();
+
+    match suffix_parts.as_slice() {
+        [] => true,
+        ["mini"] | ["nano"] => true,
+        ["codex", ..] => true,
+        _ => false,
+    }
+}
+
+fn create_codex_cli_runtime_model(
+    model_id: &str,
+    entry: Option<&serde_json::Value>,
+) -> ProviderRuntimeModel {
+    let normalized = model_id.to_ascii_lowercase();
+    let is_fast_model = normalized.contains("mini")
+        || normalized.contains("nano")
+        || normalized.contains("codex-spark");
+    let is_text_only_preview = normalized.contains("codex-spark");
+    let mut recommended_for = vec!["coding".to_string()];
+
+    if !is_text_only_preview {
+        recommended_for.push("vision".to_string());
+    }
+
+    if is_fast_model {
+        recommended_for.push("fast".to_string());
+    }
+
+    if normalized.contains("mini") || normalized.contains("nano") {
+        recommended_for.push("cheap".to_string());
+    }
+
+    if normalized.starts_with("gpt-5.5") || normalized.starts_with("gpt-5.4") {
+        recommended_for.push("computer-use".to_string());
+    }
+
+    let label = entry
+        .and_then(|entry| {
+            json_string_from_keys(entry, &["label", "displayName", "display_name", "title"])
+        })
+        .filter(|label| label.to_ascii_lowercase() != normalized);
+    let stage = entry
+        .and_then(|entry| json_string_from_keys(entry, &["stage", "lifecycle"]))
+        .or_else(|| runtime_model_stage(model_id))
+        .or_else(|| is_text_only_preview.then(|| "preview".to_string()));
+    let release_date = entry.and_then(|entry| {
+        json_date_prefix(entry, "releaseDate")
+            .or_else(|| json_date_prefix(entry, "release_date"))
+            .or_else(|| json_date_prefix(entry, "createdAt"))
+            .or_else(|| json_date_prefix(entry, "created_at"))
+    });
+    let description = entry.and_then(|entry| json_string(entry, "description"));
+
+    ProviderRuntimeModel {
+        id: normalized,
+        label,
+        stage,
+        release_date,
+        description,
+        recommended_for,
+        capabilities: ProviderRuntimeModelCapabilities {
+            image_input: Some(!is_text_only_preview),
+            tool_use: Some(true),
+            reasoning: Some(true),
+            streaming: Some(true),
+            context_window_tokens: json_u64_from_keys(
+                entry,
+                &[
+                    "contextWindowTokens",
+                    "context_window_tokens",
+                    "contextWindow",
+                    "context_window",
+                    "maxInputTokens",
+                    "max_input_tokens",
+                    "inputTokenLimit",
+                ],
+            ),
+            max_output_tokens: json_u64_from_keys(
+                entry,
+                &[
+                    "maxOutputTokens",
+                    "max_output_tokens",
+                    "maxTokens",
+                    "max_tokens",
+                    "outputTokenLimit",
+                ],
+            ),
+            voice: Some(false),
+            computer_use: Some(!is_text_only_preview),
+        },
+        warnings: if is_text_only_preview {
+            vec![
+                "Research preview model; verify local Codex CLI availability before production use."
+                    .to_string(),
+            ]
+        } else {
+            Vec::new()
+        },
+        source: "provider-probe".to_string(),
+    }
+}
+
+fn add_codex_cli_catalog_model(
+    by_id: &mut HashMap<String, ProviderRuntimeModel>,
+    model_id: &str,
+    entry: Option<&serde_json::Value>,
+) {
+    let Some(normalized) = normalize_optional_string(Some(model_id)) else {
+        return;
+    };
+    let normalized = normalized.to_ascii_lowercase();
+
+    if !is_codex_cli_runtime_model(&normalized) {
+        return;
+    }
+
+    by_id
+        .entry(normalized.clone())
+        .or_insert_with(|| create_codex_cli_runtime_model(&normalized, entry));
+}
+
+fn collect_codex_cli_catalog_models(
+    value: &serde_json::Value,
+    by_id: &mut HashMap<String, ProviderRuntimeModel>,
+) {
+    match value {
+        serde_json::Value::Array(entries) => {
+            for entry in entries {
+                if let Some(model_id) = entry.as_str() {
+                    add_codex_cli_catalog_model(by_id, model_id, None);
+                } else {
+                    collect_codex_cli_catalog_models(entry, by_id);
+                }
+            }
+        }
+        serde_json::Value::Object(object) => {
+            if let Some(model_id) =
+                json_string_from_keys(value, &["id", "model", "modelId", "model_id", "name"])
+            {
+                add_codex_cli_catalog_model(by_id, &model_id, Some(value));
+            }
+
+            for key in [
+                "models",
+                "data",
+                "entries",
+                "modelCatalog",
+                "model_catalog",
+                "availableModels",
+                "available_models",
+            ] {
+                if let Some(entry) = object.get(key) {
+                    collect_codex_cli_catalog_models(entry, by_id);
+                }
+            }
+
+            for (key, entry) in object {
+                if is_codex_cli_runtime_model(key) {
+                    add_codex_cli_catalog_model(by_id, key, Some(entry));
+                }
+
+                if entry.is_array() || entry.is_object() {
+                    collect_codex_cli_catalog_models(entry, by_id);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn parse_json_payload(raw: &str) -> Result<serde_json::Value, String> {
+    let trimmed = raw.trim();
+
+    if trimmed.is_empty() {
+        return Err("Codex CLI returned an empty model catalog.".to_string());
+    }
+
+    serde_json::from_str(trimmed).or_else(|primary_error| {
+        let candidates = [
+            (trimmed.find('{'), trimmed.rfind('}')),
+            (trimmed.find('['), trimmed.rfind(']')),
+        ];
+
+        for (first, last) in candidates {
+            if let (Some(first), Some(last)) = (first, last) {
+                if first < last {
+                    if let Ok(payload) = serde_json::from_str(&trimmed[first..=last]) {
+                        return Ok(payload);
+                    }
+                }
+            }
+        }
+
+        Err(format!(
+            "Failed to parse Codex CLI model catalog JSON: {primary_error}"
+        ))
+    })
+}
+
+fn parse_codex_cli_model_catalog(raw: &str) -> Result<Vec<ProviderRuntimeModel>, String> {
+    let payload = parse_json_payload(raw)?;
+    let mut by_id = HashMap::<String, ProviderRuntimeModel>::new();
+
+    collect_codex_cli_catalog_models(&payload, &mut by_id);
+
+    let mut models = by_id.into_values().collect::<Vec<_>>();
+    models.sort_by(|left, right| left.id.cmp(&right.id));
+
+    if models.is_empty() {
+        return Err("Codex CLI did not return any supported GPT model IDs.".to_string());
+    }
+
+    Ok(models)
+}
+
+fn fetch_codex_cli_model_catalog(
+    env: &HashMap<String, String>,
+) -> Result<Vec<ProviderRuntimeModel>, String> {
+    let Some(binary) = resolve_agent_cli_binary("codex-cli", env) else {
+        return Err(
+            "Codex CLI binary was not found. Configure MACHDOCH_CODEX_CLI_PATH or install `codex` on PATH."
+                .to_string(),
+        );
+    };
+    let attempts: [(&[&str], &str); 2] = [
+        (&["debug", "models"], "codex debug models"),
+        (
+            &["debug", "models", "--bundled"],
+            "codex debug models --bundled",
+        ),
+    ];
+    let mut failures = Vec::new();
+
+    for (args, label) in attempts {
+        match run_agent_cli_command(&binary, args, env, Duration::from_secs(12)) {
+            Ok(output) if output.exit_code == Some(0) => {
+                match parse_codex_cli_model_catalog(&output.stdout) {
+                    Ok(models) => return Ok(models),
+                    Err(error) => failures.push(format!("{label}: {error}")),
+                }
+            }
+            Ok(output) => {
+                let detail = normalize_optional_string(Some(output.stderr.as_str()))
+                    .or_else(|| normalize_optional_string(Some(output.stdout.as_str())))
+                    .unwrap_or_else(|| {
+                        format!(
+                            "exited with code {}",
+                            output
+                                .exit_code
+                                .map(|code| code.to_string())
+                                .unwrap_or_else(|| "unknown".to_string())
+                        )
+                    });
+
+                failures.push(format!("{label}: {detail}"));
+            }
+            Err(error) => failures.push(format!("{label}: {error}")),
+        }
+    }
+
+    Err(format!(
+        "Codex CLI model discovery failed. {}",
+        failures.join(" ")
+    ))
+}
+
+fn is_copilot_cli_runtime_model(model_id: &str) -> bool {
+    let normalized = model_id.to_ascii_lowercase();
+
+    if normalized == "auto" {
+        return true;
+    }
+
+    normalized.starts_with("gpt-") || normalized.starts_with("claude-")
+}
+
+fn create_copilot_cli_runtime_model(model_id: &str) -> ProviderRuntimeModel {
+    let normalized = model_id.to_ascii_lowercase();
+    let mut recommended_for = vec!["coding".to_string()];
+
+    if normalized.contains("haiku") {
+        recommended_for.push("fast".to_string());
+        recommended_for.push("cheap".to_string());
+    } else if normalized.contains("sonnet") || normalized.contains("gpt-5.2") {
+        recommended_for.push("fast".to_string());
+    }
+
+    ProviderRuntimeModel {
+        id: normalized,
+        label: None,
+        stage: Some("stable".to_string()),
+        release_date: None,
+        description: Some(
+            "Model option reported by the local GitHub Copilot CLI help output.".to_string(),
+        ),
+        recommended_for,
+        capabilities: ProviderRuntimeModelCapabilities {
+            image_input: Some(false),
+            tool_use: Some(true),
+            reasoning: Some(true),
+            streaming: Some(true),
+            context_window_tokens: None,
+            max_output_tokens: None,
+            voice: Some(false),
+            computer_use: Some(false),
+        },
+        warnings: vec![
+            "Model availability depends on GitHub Copilot plan and organization policy."
+                .to_string(),
+        ],
+        source: "provider-probe".to_string(),
+    }
+}
+
+fn collect_copilot_cli_help_model_ids(raw: &str) -> Vec<String> {
+    let mut by_id = HashMap::<String, ()>::new();
+    let mut token = String::new();
+    let flush_token = |token: &mut String, by_id: &mut HashMap<String, ()>| {
+        if token.is_empty() {
+            return;
+        }
+
+        let normalized = token
+            .trim_matches(|character: char| !character.is_ascii_alphanumeric())
+            .to_ascii_lowercase();
+
+        if is_copilot_cli_runtime_model(&normalized) {
+            by_id.entry(normalized).or_insert(());
+        }
+
+        token.clear();
+    };
+
+    for character in raw.chars() {
+        if character.is_ascii_alphanumeric() || character == '-' || character == '.' {
+            token.push(character);
+        } else {
+            flush_token(&mut token, &mut by_id);
+        }
+    }
+
+    flush_token(&mut token, &mut by_id);
+
+    let mut ids = by_id.into_keys().collect::<Vec<_>>();
+    ids.sort_by(|left, right| {
+        let left_rank = if left == "auto" { 0 } else { 1 };
+        let right_rank = if right == "auto" { 0 } else { 1 };
+
+        left_rank.cmp(&right_rank).then_with(|| left.cmp(right))
+    });
+
+    ids
+}
+
+fn parse_copilot_cli_model_catalog(raw: &str) -> Result<Vec<ProviderRuntimeModel>, String> {
+    let ids = collect_copilot_cli_help_model_ids(raw);
+
+    if ids.is_empty() {
+        return Err("Copilot CLI help output did not include any model IDs.".to_string());
+    }
+
+    Ok(ids
+        .into_iter()
+        .map(|id| create_copilot_cli_runtime_model(&id))
+        .collect())
+}
+
+fn fetch_copilot_cli_model_catalog(
+    env: &HashMap<String, String>,
+) -> Result<Vec<ProviderRuntimeModel>, String> {
+    let Some(binary) = resolve_agent_cli_binary("copilot-cli", env) else {
+        return Err(
+            "Copilot CLI binary was not found. Configure MACHDOCH_COPILOT_CLI_PATH or install `copilot` on PATH."
+                .to_string(),
+        );
+    };
+    let attempts: [(&[&str], &str); 2] =
+        [(&["help"], "copilot help"), (&["--help"], "copilot --help")];
+    let mut failures = Vec::new();
+
+    for (args, label) in attempts {
+        match run_agent_cli_command(&binary, args, env, Duration::from_secs(8)) {
+            Ok(output) if output.exit_code == Some(0) => {
+                let combined_output = format!("{}\n{}", output.stdout, output.stderr);
+
+                match parse_copilot_cli_model_catalog(&combined_output) {
+                    Ok(models) => return Ok(models),
+                    Err(error) => failures.push(format!("{label}: {error}")),
+                }
+            }
+            Ok(output) => {
+                let detail = normalize_optional_string(Some(output.stderr.as_str()))
+                    .or_else(|| normalize_optional_string(Some(output.stdout.as_str())))
+                    .unwrap_or_else(|| {
+                        format!(
+                            "exited with code {}",
+                            output
+                                .exit_code
+                                .map(|code| code.to_string())
+                                .unwrap_or_else(|| "unknown".to_string())
+                        )
+                    });
+
+                failures.push(format!("{label}: {detail}"));
+            }
+            Err(error) => failures.push(format!("{label}: {error}")),
+        }
+    }
+
+    Err(format!(
+        "Copilot CLI model discovery failed. {}",
+        failures.join(" ")
+    ))
+}
+
 async fn fetch_openai_model_catalog(
     client: &reqwest::Client,
     api_key: &str,
@@ -1680,6 +2820,40 @@ async fn fetch_provider_model_catalog(
                 }
             }
         }
+        "codex-cli" => match fetch_codex_cli_model_catalog(env) {
+            Ok(models) => {
+                return ProviderModelCatalogProvider {
+                    provider: provider.to_string(),
+                    source: "provider-probe".to_string(),
+                    available: true,
+                    error: None,
+                    models,
+                };
+            }
+            Err(error) => {
+                return provider_model_catalog_unavailable(provider, &error);
+            }
+        },
+        "copilot-cli" => match fetch_copilot_cli_model_catalog(env) {
+            Ok(models) => {
+                return ProviderModelCatalogProvider {
+                    provider: provider.to_string(),
+                    source: "provider-probe".to_string(),
+                    available: true,
+                    error: None,
+                    models,
+                };
+            }
+            Err(error) => {
+                return provider_model_catalog_unavailable(provider, &error);
+            }
+        },
+        "claude-cli" => {
+            return provider_model_catalog_unavailable(
+                provider,
+                "Model catalog discovery is delegated to the external CLI and is not queried by Machdoch.",
+            );
+        }
         _ => {
             return provider_model_catalog_unavailable(provider, "Unsupported provider.");
         }
@@ -1763,6 +2937,12 @@ fn is_valid_mode(value: Option<&str>) -> bool {
     value
         .map(str::trim)
         .is_some_and(|value| crate::runtime_contract_generated::RUN_MODES.contains(&value))
+}
+
+fn is_valid_reasoning_mode(value: Option<&str>) -> bool {
+    value
+        .map(str::trim)
+        .is_some_and(|value| REASONING_MODES.contains(&value))
 }
 
 fn get_available_profiles(
@@ -2270,6 +3450,35 @@ pub async fn get_user_memory_settings() -> Result<UserMemorySettings, String> {
 }
 
 #[tauri::command]
+pub async fn get_user_mcp_config_document() -> Result<McpConfigDocument, String> {
+    load_mcp_config_document("user", get_user_mcp_config_path()?)
+}
+
+#[tauri::command]
+pub async fn save_user_mcp_config_document(raw: String) -> Result<McpConfigDocument, String> {
+    save_mcp_config_document("user", get_user_mcp_config_path()?, &raw)
+}
+
+#[tauri::command]
+pub async fn get_workspace_mcp_config_document(
+    workspace_root: String,
+) -> Result<McpConfigDocument, String> {
+    load_mcp_config_document("workspace", get_workspace_mcp_config_path(&workspace_root)?)
+}
+
+#[tauri::command]
+pub async fn save_workspace_mcp_config_document(
+    workspace_root: String,
+    raw: String,
+) -> Result<McpConfigDocument, String> {
+    save_mcp_config_document(
+        "workspace",
+        get_workspace_mcp_config_path(&workspace_root)?,
+        &raw,
+    )
+}
+
+#[tauri::command]
 pub async fn get_user_agent_limits_settings() -> Result<UserAgentLimitsSettings, String> {
     load_user_agent_limits_settings()
 }
@@ -2376,6 +3585,26 @@ pub async fn save_user_review_model_settings(
 }
 
 #[tauri::command]
+pub async fn save_workspace_default_mode(
+    workspace_root: String,
+    mode: String,
+) -> Result<String, String> {
+    let config_path = save_workspace_default_mode_value(&workspace_root, &mode)?;
+
+    Ok(config_path.display().to_string())
+}
+
+#[tauri::command]
+pub async fn save_workspace_reasoning_mode(
+    workspace_root: String,
+    reasoning: String,
+) -> Result<String, String> {
+    let config_path = save_workspace_reasoning_mode_value(&workspace_root, &reasoning)?;
+
+    Ok(config_path.display().to_string())
+}
+
+#[tauri::command]
 pub async fn get_runtime_snapshot(
     workspace_root: String,
     profile: Option<String>,
@@ -2392,6 +3621,26 @@ pub async fn get_runtime_snapshot(
     let web_search_active_provider =
         resolve_web_search_active_provider(user_config.web_search.active_provider.as_deref(), &env);
 
+    let default_mode = if is_valid_mode(config.default_mode.as_deref()) {
+        config
+            .default_mode
+            .as_deref()
+            .unwrap_or("machdoch")
+            .trim()
+            .to_string()
+    } else {
+        "machdoch".to_string()
+    };
+    let default_reasoning = if is_valid_reasoning_mode(config.reasoning.as_deref()) {
+        config
+            .reasoning
+            .as_deref()
+            .unwrap_or("default")
+            .trim()
+            .to_string()
+    } else {
+        "default".to_string()
+    };
     let mode = if is_valid_mode(env.get("MACHDOCH_MODE").map(String::as_str)) {
         env.get("MACHDOCH_MODE")
             .map(String::as_str)
@@ -2404,15 +3653,8 @@ pub async fn get_runtime_snapshot(
             .unwrap_or("machdoch")
             .trim()
             .to_string()
-    } else if is_valid_mode(config.default_mode.as_deref()) {
-        config
-            .default_mode
-            .as_deref()
-            .unwrap_or("machdoch")
-            .trim()
-            .to_string()
     } else {
-        "machdoch".to_string()
+        default_mode.clone()
     };
 
     let provider = resolve_provider(
@@ -2430,6 +3672,24 @@ pub async fn get_runtime_snapshot(
     )
     .unwrap_or_else(|| default_model_for_provider(&provider).to_string());
 
+    let reasoning = if is_valid_reasoning_mode(env.get("MACHDOCH_REASONING").map(String::as_str)) {
+        env.get("MACHDOCH_REASONING")
+            .map(String::as_str)
+            .unwrap_or("default")
+            .trim()
+            .to_string()
+    } else if is_valid_reasoning_mode(profile.and_then(|entry| entry.reasoning.as_deref())) {
+        profile
+            .and_then(|entry| entry.reasoning.as_deref())
+            .unwrap_or("default")
+            .trim()
+            .to_string()
+    } else if is_valid_reasoning_mode(config.reasoning.as_deref()) {
+        default_reasoning.clone()
+    } else {
+        "default".to_string()
+    };
+
     let offline = matches!(
         env.get("MACHDOCH_OFFLINE").map(String::as_str),
         Some("true")
@@ -2444,9 +3704,12 @@ pub async fn get_runtime_snapshot(
         workspace_config_path,
         active_profile,
         available_profiles: get_available_profiles(&config.profiles),
+        default_mode,
+        default_reasoning,
         mode,
         provider,
         model,
+        reasoning,
         offline,
         agent_limits: resolve_runtime_agent_limits(&user_config, &config, profile, &env),
         compatibility: resolve_compatibility(&config, profile),

@@ -11,6 +11,8 @@ export interface LocalCommandOptions {
   timeoutMs: number;
   maxBufferBytes: number;
   acceptedExitCodes?: number[];
+  env?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
 }
 
 export const normalizeProcessOutput = (value: string | Buffer): string => {
@@ -25,8 +27,10 @@ export const executeLocalCommand = async (
   return new Promise((resolve, reject) => {
     execFile(executable, args, {
       cwd: options.cwd,
+      ...(options.env ? { env: options.env } : {}),
       timeout: options.timeoutMs,
       maxBuffer: options.maxBufferBytes,
+      ...(options.signal ? { signal: options.signal } : {}),
       windowsHide: true,
       encoding: "utf8",
     }, (error, stdout, stderr) => {

@@ -255,6 +255,15 @@ GUI-only shell appearance settings are stored in the desktop shell store:
 | Accent | `sky`, `emerald`, `violet`, `amber` |
 | Quick Chat bubble style | `classic`, `glass`, `pulse`, `orbit` |
 
+Quick Chat bubble styles:
+
+| Style | Behavior |
+| --- | --- |
+| `classic` | Quiet solid launcher with hover, press, open, and focus states. |
+| `glass` | Rounded translucent launcher with a solid fallback when backdrop blur is unavailable. |
+| `pulse` | Static while idle; uses an aura only for active work or pending attention. |
+| `orbit` | Static conic ring while idle; animates the ring only while work is running. |
+
 GUI-only voice reply settings are stored with the desktop shell state:
 
 | Setting | Values |
@@ -418,6 +427,30 @@ When `compatibility.discoverGithubCustomizations` is enabled, `machdoch` also di
 - `.github/prompts/**/*.prompt.md`
 - `.github/skills/**/SKILL.md`
 - `AGENTS.md`
+
+Global instruction files are discovered from the user config directory when a
+task or management command loads customizations:
+
+- `instructions.md`
+- `instructions/**/*.instructions.md`
+
+Instruction files may declare frontmatter metadata:
+
+- `mode`: `always`, `auto`, `agent-requested`, `manual`, or `disabled`
+- `audience`: `executor`, `validator`, `generator`, or `all`
+- `applyTo` and `exclude`: workspace glob lists
+- `keywords`: task-text activation terms
+- `priority`: higher priority instructions are ordered first
+
+Manage instruction files from the desktop Settings > Instructions panel or with:
+
+```bash
+machdoch instructions list --scope workspace
+machdoch instructions show "Security defaults"
+machdoch instructions create "Review rules" --prompt "Prefer focused tests."
+machdoch instructions save "Review rules" --path .machdoch/instructions/review.instructions.md --prompt "Updated rules."
+machdoch instructions generate "Review rules" --prompt "Create durable review instructions for TypeScript work."
+```
 
 ## Capabilities
 

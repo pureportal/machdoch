@@ -35,6 +35,8 @@ export const useSessionLifecycle = (options: {
   providerChooserState: ProviderChooserState;
 }): SessionLifecycleActions => {
   const { providerChooserState, state } = options;
+  const defaultNewSessionWorkspace =
+    state.shellState.recentWorkspaces[0] ?? state.activeSession.workspace;
 
   return useMemo(
     () => ({
@@ -44,15 +46,18 @@ export const useSessionLifecycle = (options: {
             (entry) => entry === state.shellState.lastSelectedProvider,
           ) ??
           providerChooserState.chooserProviders[0] ??
-          state.shellState.lastSelectedProvider;
+            state.shellState.lastSelectedProvider;
         const session = createSession({
-          workspace: state.activeSession.workspace,
+          workspace: defaultNewSessionWorkspace,
           provider,
           ...(state.shellState.lastSelectedProfile
             ? { profile: state.shellState.lastSelectedProfile }
             : {}),
           ...(state.shellState.lastSelectedMode
             ? { mode: state.shellState.lastSelectedMode }
+            : {}),
+          ...(state.shellState.lastSelectedReasoning
+            ? { reasoning: state.shellState.lastSelectedReasoning }
             : {}),
           model:
             state.shellState.lastSelectedModelByProvider[provider] ??
@@ -84,12 +89,15 @@ export const useSessionLifecycle = (options: {
 
           if (remainingSessions.length === 0) {
             const replacement = createSession({
-              workspace: state.activeSession.workspace,
+              workspace: defaultNewSessionWorkspace,
               provider: prev.lastSelectedProvider,
               ...(prev.lastSelectedProfile
                 ? { profile: prev.lastSelectedProfile }
                 : {}),
               ...(prev.lastSelectedMode ? { mode: prev.lastSelectedMode } : {}),
+              ...(prev.lastSelectedReasoning
+                ? { reasoning: prev.lastSelectedReasoning }
+                : {}),
               model:
                 prev.lastSelectedModelByProvider[prev.lastSelectedProvider] ??
                 getDefaultModelForProvider(prev.lastSelectedProvider),
@@ -248,6 +256,6 @@ export const useSessionLifecycle = (options: {
           });
       },
     }),
-    [providerChooserState.chooserProviders, state],
+    [defaultNewSessionWorkspace, providerChooserState.chooserProviders, state],
   );
 };

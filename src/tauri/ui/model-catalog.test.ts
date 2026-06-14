@@ -5,6 +5,39 @@ import {
 } from "./model-catalog";
 
 describe("provider model catalog", () => {
+  it("keeps Codex CLI static models separate from Copilot CLI auto selection", () => {
+    expect(
+      getCatalogModelsForProvider("codex-cli").map((model) => model.id),
+    ).toEqual([
+      "gpt-5.5",
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.3-codex-spark",
+    ]);
+
+    expect(
+      getCatalogModelsForProvider("codex-cli").some(
+        (model) => model.id === "auto",
+      ),
+    ).toBe(false);
+    expect(
+      getCatalogModelsForProvider("claude-cli").map((model) => model.id),
+    ).toEqual([
+      "claude-opus-4-8",
+      "claude-sonnet-4-6",
+      "claude-haiku-4-5",
+    ]);
+    expect(
+      getCatalogModelsForProvider("copilot-cli").map((model) => model.id),
+    ).toEqual([
+      "auto",
+      "gpt-5.3-codex",
+      "gpt-5.2",
+      "claude-sonnet-4.5",
+      "claude-haiku-4.5",
+    ]);
+  });
+
   it("treats live provider catalogs as authoritative and filters OpenAI special-purpose models", () => {
     const snapshot = {
       generatedAt: 1,

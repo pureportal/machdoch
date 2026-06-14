@@ -31,6 +31,7 @@ import {
   listSchedulerRuns,
   openRemoteControlUrl,
   pauseSchedulerJob,
+  REASONING_MODE_ORDER,
   resumeSchedulerJob,
   retrySchedulerRun,
   setRemoteControlPort,
@@ -91,11 +92,18 @@ const REMOTE_SESSION_LIMIT = 80;
 const REMOTE_PROMPT_HISTORY_LIMIT = 30;
 
 const runtimeModes = new Set(["ask", "machdoch"]);
+const runtimeReasoningModes = new Set<string>(REASONING_MODE_ORDER);
 
 const isRuntimeMode = (
   value: string | undefined,
 ): value is RuntimeSnapshot["mode"] => {
   return Boolean(value && runtimeModes.has(value));
+};
+
+const isRuntimeReasoningMode = (
+  value: string | undefined,
+): value is RuntimeSnapshot["reasoning"] => {
+  return Boolean(value && runtimeReasoningModes.has(value));
 };
 
 const createAttachmentSnapshot = (
@@ -230,6 +238,7 @@ const createSessionSnapshot = (
   session: ChatSessionRecord,
   activeDesktopTasksRef: MutableRefObject<Map<string, string>>,
   defaultMode: RuntimeSnapshot["mode"],
+  defaultReasoning: RuntimeSnapshot["reasoning"],
 ) => {
   const specialKind = session.specialSession;
 
@@ -243,6 +252,8 @@ const createSessionSnapshot = (
     model: session.model,
     ...(session.mode ? { mode: session.mode } : {}),
     effectiveMode: session.mode ?? defaultMode,
+    ...(session.reasoning ? { reasoning: session.reasoning } : {}),
+    effectiveReasoning: session.reasoning ?? defaultReasoning,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     ...(typeof session.archivedAt === "number" ? { archivedAt: session.archivedAt } : {}),
@@ -363,6 +374,7 @@ const createContextPackSnapshot = (
   ...(pack.provider ? { provider: pack.provider } : {}),
   ...(pack.model ? { model: pack.model } : {}),
   ...(pack.mode ? { mode: pack.mode } : {}),
+  ...(pack.reasoning ? { reasoning: pack.reasoning } : {}),
 });
 
 const createRuntimeCapabilitySnapshot = (
@@ -428,7 +440,9 @@ export const useRemoteMissionControl = (options: {
   hasAnyProvider: boolean;
   chooserProviders: RuntimeProvider[];
   defaultMode: RuntimeSnapshot["mode"];
+  defaultReasoning: RuntimeSnapshot["reasoning"];
   activeRunMode: RuntimeSnapshot["mode"];
+  activeReasoning: RuntimeSnapshot["reasoning"];
   composerWorkspaceLabel: string;
   isGlobalMemoryAvailable: boolean;
   isGlobalMemoryActive: boolean;
@@ -477,6 +491,10 @@ export const useRemoteMissionControl = (options: {
   onSetSessionMode: (
     sessionId: string,
     mode: RuntimeSnapshot["mode"] | null,
+  ) => void;
+  onSetSessionReasoning: (
+    sessionId: string,
+    reasoning: RuntimeSnapshot["reasoning"] | null,
   ) => void;
   onSetSessionProfile: (sessionId: string, profile: string | null) => void;
   onSetSessionMemory: (sessionId: string, enabled: boolean) => void;
@@ -634,6 +652,7 @@ export const useRemoteMissionControl = (options: {
             session,
             options.activeDesktopTasksRef,
             options.defaultMode,
+            options.defaultReasoning,
           ),
         ),
       visibleMessages: options.visibleMessages
@@ -652,6 +671,8 @@ export const useRemoteMissionControl = (options: {
         model: options.activeSession.model,
         mode: options.activeRunMode,
         defaultMode: options.defaultMode,
+        reasoning: options.activeReasoning,
+        defaultReasoning: options.defaultReasoning,
         ...(options.activeSession.workspace
           ? { workspace: options.activeSession.workspace }
           : {}),
@@ -679,6 +700,9 @@ export const useRemoteMissionControl = (options: {
         hasAnyProvider: options.hasAnyProvider,
         providerStatuses: createProviderStatusSnapshots(options.runtimeSnapshot),
         ...(options.runtimeSnapshot?.mode ? { mode: options.runtimeSnapshot.mode } : {}),
+        ...(options.runtimeSnapshot?.reasoning
+          ? { reasoning: options.runtimeSnapshot.reasoning }
+          : {}),
         ...(options.runtimeSnapshot?.activeProfile
           ? { profile: options.runtimeSnapshot.activeProfile }
           : {}),
@@ -961,6 +985,18 @@ export const useRemoteMissionControl = (options: {
         case "set-session-mode": {
           if (command.sessionId && isRuntimeMode(command.mode)) {
             options.onSetSessionMode(command.sessionId, command.mode);
+          }
+          break;
+        }
+
+        case "set-session-reasoning": {
+          if (command.sessionId) {
+            options.onSetSessionReasoning(
+              command.sessionId,
+              isRuntimeReasoningMode(command.reasoning)
+                ? command.reasoning
+                : null,
+            );
           }
           break;
         }

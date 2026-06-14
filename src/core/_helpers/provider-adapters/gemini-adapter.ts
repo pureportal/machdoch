@@ -5,6 +5,7 @@ import {
   type GenerateContentResponse,
   type GoogleGenAI,
   type Part,
+  ThinkingLevel,
 } from "@google/genai";
 import type {
   AgentModelAdapter,
@@ -15,7 +16,9 @@ import type {
   AgentModelToolResult,
   AgentModelToolSpec,
   AgentModelTurn,
+  ReasoningMode,
 } from "../../types.js";
+import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
@@ -59,6 +62,98 @@ export const createGeminiTools = (tools: AgentModelToolSpec[]) => {
       })),
     },
   ];
+};
+
+const isGemini25Model = (model: string): boolean => {
+  return /\bgemini-2\.5\b/i.test(model);
+};
+
+const isGemini25ProModel = (model: string): boolean => {
+  return /\bgemini-2\.5\b.*\bpro\b/i.test(model);
+};
+
+const isGemini3ProModel = (model: string): boolean => {
+  return /\bgemini-3(?:\.\d+)?\b.*\bpro\b/i.test(model);
+};
+
+const mapReasoningToGeminiThinkingLevel = (
+  model: string,
+  reasoning: Exclude<ReasoningMode, "default">,
+): ThinkingLevel => {
+  if (reasoning === "none" || reasoning === "minimal") {
+    return isGemini3ProModel(model) ? ThinkingLevel.LOW : ThinkingLevel.MINIMAL;
+  }
+
+  if (reasoning === "xhigh" || reasoning === "max") {
+    return ThinkingLevel.HIGH;
+  }
+
+  return {
+    low: ThinkingLevel.LOW,
+    medium: ThinkingLevel.MEDIUM,
+    high: ThinkingLevel.HIGH,
+  }[reasoning];
+};
+
+const mapReasoningToGeminiThinkingBudget = (
+  model: string,
+  reasoning: Exclude<ReasoningMode, "default">,
+): number => {
+  switch (reasoning) {
+    case "none":
+      return isGemini25ProModel(model) ? 128 : 0;
+    case "minimal":
+      return isGemini25ProModel(model) ? 128 : 512;
+    case "low":
+      return 1_024;
+    case "medium":
+      return 4_096;
+    case "high":
+      return 8_192;
+    case "xhigh":
+      return 16_384;
+    case "max":
+      return 24_576;
+  }
+};
+
+export const createGeminiThinkingConfig = (
+  model: string,
+  reasoning?: ReasoningMode,
+): { thinkingConfig?: { thinkingLevel?: ThinkingLevel; thinkingBudget?: number } } => {
+  if (!reasoning || reasoning === "default") {
+    return {};
+  }
+
+  const normalizedReasoning = normalizeReasoningModeForProviderModel(
+    reasoning,
+    "google",
+    model,
+  );
+
+  if (normalizedReasoning === "default") {
+    return {};
+  }
+
+  if (isGemini25Model(model)) {
+    return {
+      thinkingConfig: {
+        thinkingBudget: mapReasoningToGeminiThinkingBudget(
+          model,
+          normalizedReasoning,
+        ),
+      },
+    };
+  }
+
+  return {
+    thinkingConfig: {
+      thinkingLevel: mapReasoningToGeminiThinkingLevel(
+        model,
+        normalizedReasoning,
+      ),
+    },
+  };
 };
 
 const createGeminiFunctionResponseParts = (
@@ -202,6 +297,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
           config: {
             systemInstruction: params.systemPrompt,
             ...this.createConfig(params.tools),
+            ...createGeminiThinkingConfig(params.model, params.reasoning),
             httpOptions: {
               timeout: TASK_EXECUTION_TIMEOUT_MS,
             },
@@ -257,6 +353,10 @@ export class GeminiChatAdapter implements AgentModelAdapter {
           config: {
             systemInstruction: startParams.systemPrompt,
             ...this.createConfig(this.tools),
+            ...createGeminiThinkingConfig(
+              startParams.model,
+              startParams.reasoning,
+            ),
             httpOptions: {
               timeout: TASK_EXECUTION_TIMEOUT_MS,
             },

@@ -94,5 +94,10 @@ export const createProviderAdapter = async (
         tools,
       );
     }
+
+    case "codex-cli":
+    case "claude-cli":
+    case "copilot-cli":
+      return undefined;
   }
 };

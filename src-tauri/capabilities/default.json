@@ -5,7 +5,8 @@
     "main",
     "assistant-bubble",
     "assistant-popup",
-    "quick-voice"
+    "quick-voice",
+    "tray-menu"
   ],
   "permissions": [
     "core:default",
@@ -23,6 +24,7 @@
     "core:window:allow-is-maximized",
     "core:window:allow-close",
     "dialog:default",
+    "mcp-bridge:default",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

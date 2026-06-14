@@ -1,4 +1,4 @@
-import type { RunMode } from "../../../../core/types.js";
+import type { ReasoningMode, RunMode } from "../../../../core/types.js";
 import type {
   ChatSessionContextAttachment,
   ShellPersistedState,
@@ -20,6 +20,7 @@ export interface SaveSmartContextPackInput {
   includeAttachments: boolean;
   includeModel: boolean;
   includeMode: boolean;
+  includeReasoning: boolean;
 }
 
 export interface SmartContextPackComposerApplication {
@@ -99,6 +100,16 @@ export const getSmartContextPacksForWorkspace = (
 
 export const getContextPackModeLabel = (mode: RunMode): string => {
   return mode === "ask" ? "Ask mode" : "Machdoch";
+};
+
+export const getContextPackReasoningLabel = (
+  reasoning: ReasoningMode,
+): string => {
+  if (reasoning === "default") {
+    return "Provider default reasoning";
+  }
+
+  return `${reasoning} reasoning`;
 };
 
 const normalizeVariableName = (value: string): string => {
@@ -444,6 +455,7 @@ export const createContextPackSummary = (
     | "contextAttachments"
     | "instructions"
     | "mode"
+    | "reasoning"
     | "prompt"
     | "provider"
     | "model"
@@ -517,6 +529,10 @@ export const createContextPackSummary = (
 
   if (pack.mode) {
     summary.push(getContextPackModeLabel(pack.mode));
+  }
+
+  if (pack.reasoning) {
+    summary.push(getContextPackReasoningLabel(pack.reasoning));
   }
 
   if (pack.provider && pack.model) {

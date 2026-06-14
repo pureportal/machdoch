@@ -27,6 +27,19 @@
       "type": "string",
       "enum": ["ask", "machdoch"]
     },
+    "ReasoningMode": {
+      "type": "string",
+      "enum": [
+        "default",
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
+    },
     "ToolName": {
       "type": "string",
       "enum": [
@@ -36,17 +49,41 @@
         "browser",
         "git",
         "packages",
+        "mcp",
         "scheduler",
         "utilities"
       ]
     },
     "ConfiguredModelProvider": {
       "type": "string",
-      "enum": ["openai", "anthropic", "google"]
+      "enum": [
+        "openai",
+        "anthropic",
+        "google",
+        "codex-cli",
+        "claude-cli",
+        "copilot-cli"
+      ]
     },
     "ModelProvider": {
       "type": "string",
-      "enum": ["openai", "anthropic", "google", "unconfigured"]
+      "enum": [
+        "openai",
+        "anthropic",
+        "google",
+        "codex-cli",
+        "claude-cli",
+        "copilot-cli",
+        "unconfigured"
+      ]
+    },
+    "UserApiProvider": {
+      "type": "string",
+      "enum": ["openai", "anthropic", "google"]
+    },
+    "AgentCliProvider": {
+      "type": "string",
+      "enum": ["codex-cli", "claude-cli", "copilot-cli"]
     },
     "WebSearchProvider": {
       "type": "string",
@@ -149,6 +186,9 @@
           "type": "string",
           "minLength": 1
         },
+        "reasoning": {
+          "$ref": "#/$defs/ReasoningMode"
+        },
         "offline": {
           "type": "boolean"
         },
@@ -176,6 +216,9 @@
         "model": {
           "type": "string",
           "minLength": 1
+        },
+        "reasoning": {
+          "$ref": "#/$defs/ReasoningMode"
         },
         "offline": {
           "type": "boolean"
@@ -302,6 +345,21 @@
           "type": "string"
         },
         "google": {
+          "type": "string"
+        }
+      }
+    },
+    "UserAgentCliPaths": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "codex-cli": {
+          "type": "string"
+        },
+        "claude-cli": {
+          "type": "string"
+        },
+        "copilot-cli": {
           "type": "string"
         }
       }
@@ -601,6 +659,9 @@
         },
         "reviewModel": {
           "$ref": "#/$defs/UserReviewModelConfigFile"
+        },
+        "agentCliPaths": {
+          "$ref": "#/$defs/UserAgentCliPaths"
         }
       }
     },
@@ -649,6 +710,7 @@
         "mode",
         "provider",
         "model",
+        "reasoning",
         "offline",
         "compatibility",
         "providerAvailability",
@@ -683,6 +745,9 @@
         "model": {
           "type": "string"
         },
+        "reasoning": {
+          "$ref": "#/$defs/ReasoningMode"
+        },
         "offline": {
           "type": "boolean"
         },
@@ -712,9 +777,12 @@
       "required": [
         "workspaceRoot",
         "availableProfiles",
+        "defaultMode",
+        "defaultReasoning",
         "mode",
         "provider",
         "model",
+        "reasoning",
         "offline",
         "agentLimits",
         "compatibility",
@@ -738,6 +806,12 @@
             "$ref": "#/$defs/RuntimeProfileSummary"
           }
         },
+        "defaultMode": {
+          "$ref": "#/$defs/RunMode"
+        },
+        "defaultReasoning": {
+          "$ref": "#/$defs/ReasoningMode"
+        },
         "mode": {
           "$ref": "#/$defs/RunMode"
         },
@@ -746,6 +820,9 @@
         },
         "model": {
           "type": "string"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/ReasoningMode"
         },
         "offline": {
           "type": "boolean"
@@ -780,22 +857,34 @@
     "defaultModelByProvider": {
       "openai": "gpt-5.5",
       "anthropic": "claude-sonnet-4-6",
-      "google": "gemini-3.5-flash"
+      "google": "gemini-3.5-flash",
+      "codex-cli": "gpt-5.5",
+      "claude-cli": "claude-sonnet-4-6",
+      "copilot-cli": "auto"
     },
     "runtimeEnvKeys": [
       "MACHDOCH_MODE",
       "MACHDOCH_MODEL",
+      "MACHDOCH_REASONING",
       "MACHDOCH_OFFLINE",
       "MACHDOCH_PROFILE",
       "MACHDOCH_WEB_SEARCH_PROVIDER",
       "MACHDOCH_EXECUTOR_TURNS",
       "MACHDOCH_AUTOPILOT_ITERATIONS",
-      "MACHDOCH_INFINITE"
+      "MACHDOCH_INFINITE",
+      "MACHDOCH_CODEX_CLI_PATH",
+      "MACHDOCH_CLAUDE_CLI_PATH",
+      "MACHDOCH_COPILOT_CLI_PATH"
     ],
     "providerEnvKeys": {
       "openai": "OPENAI_API_KEY",
       "anthropic": "ANTHROPIC_API_KEY",
       "google": "GOOGLE_API_KEY"
+    },
+    "agentCliProviderEnvKeys": {
+      "codex-cli": "MACHDOCH_CODEX_CLI_PATH",
+      "claude-cli": "MACHDOCH_CLAUDE_CLI_PATH",
+      "copilot-cli": "MACHDOCH_COPILOT_CLI_PATH"
     },
     "webSearchEnvKeys": {
       "perplexity": "PERPLEXITY_API_KEY",

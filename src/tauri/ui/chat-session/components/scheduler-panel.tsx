@@ -49,7 +49,13 @@ import {
   type SchedulerRunStatus,
   type SchedulerRunSummary,
   type SchedulerScheduleSummary,
+  type ReasoningMode,
 } from "../../runtime";
+import {
+  getReasoningModesForProvider,
+  normalizeReasoningModeForProvider,
+  REASONING_LABELS,
+} from "../../reasoning-options";
 
 export interface SchedulerPanelProps {
   workspaceRoot: string | null | undefined;
@@ -57,6 +63,7 @@ export interface SchedulerPanelProps {
 
 type ScheduleType = "cron" | "interval" | "delay" | "event";
 type SchedulerPanelTab = "jobs" | "runs";
+type SchedulerReasoningFormValue = "" | ReasoningMode;
 type SchedulerTriggerKind =
   | "manual"
   | "app"
@@ -110,6 +117,7 @@ interface SchedulerFormState {
   historyLimit: string;
   maxCatchUpRuns: string;
   mode: "" | "ask" | "machdoch";
+  reasoning: SchedulerReasoningFormValue;
   profile: string;
   provider: "" | "openai" | "anthropic" | "google";
   model: string;
@@ -153,6 +161,7 @@ const createDefaultFormState = (): SchedulerFormState => ({
   historyLimit: "100",
   maxCatchUpRuns: "100",
   mode: "",
+  reasoning: "",
   profile: "",
   provider: "",
   model: "",
@@ -465,6 +474,19 @@ export const SchedulerPanel = ({
   const refreshInFlightRef = useRef(false);
 
   const activeWorkspace = workspaceRoot?.trim() || null;
+  const selectedReasoningProvider = form.provider || null;
+  const selectedReasoningModel = form.model.trim() || null;
+  const reasoningOptions = getReasoningModesForProvider(
+    selectedReasoningProvider,
+    selectedReasoningModel,
+  );
+  const reasoningValue = form.reasoning
+    ? normalizeReasoningModeForProvider(
+        form.reasoning,
+        selectedReasoningProvider,
+        selectedReasoningModel,
+      )
+    : "";
   const selectedJob = useMemo(() => {
     return jobs.find((job) => job.id === selectedJobId) ?? null;
   }, [jobs, selectedJobId]);
@@ -719,6 +741,7 @@ export const SchedulerPanel = ({
         "Catch-up limit",
       ),
       ...(form.mode ? { mode: form.mode } : {}),
+      ...(reasoningValue ? { reasoning: reasoningValue } : {}),
       ...(form.profile.trim() ? { profile: form.profile.trim() } : {}),
       ...(form.provider ? { provider: form.provider } : {}),
       ...(form.model.trim() ? { model: form.model.trim() } : {}),
@@ -1602,18 +1625,46 @@ export const SchedulerPanel = ({
                     <span>Provider</span>
                     <select
                       value={form.provider}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const provider = event.target
+                          .value as SchedulerFormState["provider"];
                         updateForm({
-                          provider: event.target
-                            .value as SchedulerFormState["provider"],
-                        })
-                      }
+                          provider,
+                          reasoning: form.reasoning
+                            ? normalizeReasoningModeForProvider(
+                                form.reasoning,
+                                provider || null,
+                                form.model.trim() || null,
+                              )
+                            : "",
+                        });
+                      }}
                       className="h-9 rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-slate-600"
                     >
                       <option value="">Default Provider</option>
                       <option value="openai">OpenAI</option>
                       <option value="anthropic">Anthropic</option>
                       <option value="google">Google</option>
+                    </select>
+                  </label>
+                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
+                    <span>Reasoning</span>
+                    <select
+                      value={reasoningValue}
+                      onChange={(event) =>
+                        updateForm({
+                          reasoning: event.target
+                            .value as SchedulerFormState["reasoning"],
+                        })
+                      }
+                      className="h-9 rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-slate-600"
+                    >
+                      <option value="">Default Reasoning</option>
+                      {reasoningOptions.map((reasoning) => (
+                        <option key={reasoning} value={reasoning}>
+                          {REASONING_LABELS[reasoning]}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <label className="grid gap-1 text-[11px] font-medium text-slate-500">
@@ -1632,7 +1683,16 @@ export const SchedulerPanel = ({
                     <Input
                       value={form.model}
                       onChange={(event) =>
-                        updateForm({ model: event.target.value })
+                        updateForm({
+                          model: event.target.value,
+                          reasoning: form.reasoning
+                            ? normalizeReasoningModeForProvider(
+                                form.reasoning,
+                                form.provider || null,
+                                event.target.value.trim() || null,
+                              )
+                            : "",
+                        })
                       }
                       className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
                       placeholder="Workspace default"

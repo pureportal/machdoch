@@ -39,9 +39,12 @@ import {
   prepareConversationPromptContext,
   type PreparedConversationPromptContext,
 } from "./_helpers/conversation-prompt-context.js";
+import { maybeExecuteExternalAgentProviderTask } from "./_helpers/external-agent-provider.js";
+import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
 import { createProviderAdapter } from "./_helpers/provider-adapters.js";
 import { resolveReviewModelRuntimeConfig } from "./review-model.js";
 import { compactTraceText, stringifyUnknown } from "./_helpers/runtime-text.js";
+import { randomUUID } from "node:crypto";
 import type {
   AgentModelAdapter,
   AgentModelStreamUsage,
@@ -718,6 +721,7 @@ const runExecutorCycle = async (
   signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
   onActionOutput: TaskActionOutputHandler | undefined,
+  runId: string | undefined,
 ): Promise<ExecutorCycleOutcome> => {
   throwIfExecutionAborted(signal);
 
@@ -816,6 +820,7 @@ const runExecutorCycle = async (
   try {
     turn = await adapter.startTurn({
       model: config.model,
+      reasoning: config.reasoning,
       systemPrompt: createExecutorSystemPrompt(
         config,
         taskContext,
@@ -1281,6 +1286,7 @@ const runExecutorCycle = async (
         toolMap,
         call,
         onActionOutput,
+        runId,
       );
 
       const result = executionOutcome.result;
@@ -1454,7 +1460,11 @@ const runAutopilotMonitorPass = async (
   try {
     turn = await adapter.startTurn({
       model: reviewConfig.model,
-      systemPrompt: createAutopilotMonitorSystemPrompt(reviewConfig),
+      reasoning: reviewConfig.reasoning,
+      systemPrompt: createAutopilotMonitorSystemPrompt(
+        reviewConfig,
+        taskContext,
+      ),
       userPrompt: createAutopilotMonitorUserPrompt(
         task,
         taskContext,
@@ -1600,6 +1610,7 @@ const runModelDrivenLoop = async (
   signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
   onActionOutput: TaskActionOutputHandler | undefined,
+  runId: string | undefined,
 ): Promise<TaskExecutionResult> => {
   let cycleResult = await runExecutorCycle(
     task,
@@ -1613,6 +1624,7 @@ const runModelDrivenLoop = async (
     signal,
     onStateChange,
     onActionOutput,
+    runId,
   );
   let executorIterations = 1;
   const decisions: TaskAutopilotDecision[] = [];
@@ -1702,6 +1714,7 @@ const runModelDrivenLoop = async (
       signal,
       onStateChange,
       onActionOutput,
+      runId,
     );
     executorIterations += 1;
 
@@ -1743,6 +1756,13 @@ export const maybeExecuteModelDrivenTask = async (
       params.signal,
     );
 
+    if (isAgentCliProvider(params.config.provider) && !params.modelAdapter) {
+      return await maybeExecuteExternalAgentProviderTask({
+        ...params,
+        preparedConversationContext: preparedConversationContext,
+      });
+    }
+
     return await runModelDrivenLoop(
       params.task,
       params.config,
@@ -1755,6 +1775,7 @@ export const maybeExecuteModelDrivenTask = async (
       params.signal,
       params.onStateChange,
       params.onActionOutput,
+      params.runId ?? `task-${randomUUID()}`,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

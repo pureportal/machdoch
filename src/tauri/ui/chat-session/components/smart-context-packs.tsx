@@ -11,13 +11,14 @@ import {
 } from "lucide-react";
 import {
   useMemo,
+  useEffect,
   useRef,
   useState,
   type ChangeEvent,
   type FormEvent,
   type JSX,
 } from "react";
-import type { RunMode } from "../../../../core/types.js";
+import type { ReasoningMode, RunMode } from "../../../../core/types.js";
 import type {
   ChatSessionContextAttachment,
   SmartContextPack,
@@ -32,10 +33,12 @@ import {
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
+import { listRalphFlows, showRalphFlow, type RalphFlow } from "../../runtime";
 import {
   createContextPackSummary,
   createSmartContextPackPreview,
   extractSmartContextPackVariables,
+  getContextPackReasoningLabel,
   getContextPackModeLabel,
   getSmartContextPackMissingVariableNames,
   getSmartContextPackSortTimestamp,
@@ -45,10 +48,12 @@ import {
 
 export interface SmartContextPackPickerProps {
   contextPacks: SmartContextPack[];
+  workspaceRoot: string | null;
   activeDraft: string;
   activeProvider: RuntimeProvider;
   activeModel: string;
   activeRunMode: RunMode;
+  activeReasoning: ReasoningMode;
   contextAttachments: ChatSessionContextAttachment[];
   matchedContextPackIds: string[];
   imageInputSupported: boolean;
@@ -71,6 +76,7 @@ interface SmartContextPackListItem {
   preview: ReturnType<typeof createSmartContextPackPreview>;
   previewWarnings: string[];
   isMatched: boolean;
+  ralphFlowNames: string[];
 }
 
 const PACK_FORM_CLASS =
@@ -110,6 +116,24 @@ const isVariablePreviewWarning = (warning: string): boolean => {
   return warning.endsWith(" variable") || warning.endsWith(" variables");
 };
 
+const collectRalphFlowPackIds = (flow: RalphFlow): Set<string> => {
+  const packIds = new Set<string>();
+
+  for (const block of flow.blocks) {
+    for (const packId of block.settings?.packs ?? []) {
+      packIds.add(packId);
+    }
+
+    if (block.type === "PACK") {
+      for (const packId of block.packIds) {
+        packIds.add(packId);
+      }
+    }
+  }
+
+  return packIds;
+};
+
 const PackOption = ({
   label,
   checked,
@@ -145,15 +169,20 @@ const PackOption = ({
 const SmartContextPackCard = ({
   item,
   applyingPackId,
+  pendingDeletePackId,
   onApplyPack,
   onDeleteContextPack,
 }: {
   item: SmartContextPackListItem;
   applyingPackId: string | null;
+  pendingDeletePackId: string | null;
   onApplyPack: (pack: SmartContextPack) => void;
-  onDeleteContextPack: (packId: string) => void;
+  onDeleteContextPack: (pack: SmartContextPack) => void | Promise<void>;
 }): JSX.Element => {
-  const { pack, summary, preview, previewWarnings, isMatched } = item;
+  const { pack, summary, preview, previewWarnings, isMatched, ralphFlowNames } =
+    item;
+  const isPendingUsedPackDelete =
+    pendingDeletePackId === pack.id && ralphFlowNames.length > 0;
 
   return (
     <div
@@ -199,7 +228,7 @@ const SmartContextPackCard = ({
             aria-label={`Delete context pack ${pack.name}`}
             title={`Delete ${pack.name}`}
             disabled={applyingPackId === pack.id}
-            onClick={() => onDeleteContextPack(pack.id)}
+            onClick={() => void onDeleteContextPack(pack)}
             className="h-8 w-8 rounded-full border-rose-500/20 bg-rose-500/10 text-rose-100 shadow-none hover:bg-rose-500/15 hover:text-white disabled:border-slate-800 disabled:bg-slate-900/60 disabled:text-slate-600"
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -223,7 +252,20 @@ const SmartContextPackCard = ({
             {warning}
           </span>
         ))}
+        {ralphFlowNames.length > 0 ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] leading-4 text-amber-100">
+            <AlertTriangle className="h-3 w-3" />
+            Used by {ralphFlowNames.length} Ralph flow
+            {ralphFlowNames.length === 1 ? "" : "s"}
+          </span>
+        ) : null}
       </div>
+      {isPendingUsedPackDelete ? (
+        <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100">
+          This pack is used by {ralphFlowNames.join(", ")}. Click delete again to
+          remove it anyway.
+        </div>
+      ) : null}
       {summary.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
           {summary.map((entry) => (
@@ -242,10 +284,12 @@ const SmartContextPackCard = ({
 
 export const SmartContextPackPicker = ({
   contextPacks,
+  workspaceRoot,
   activeDraft,
   activeProvider,
   activeModel,
   activeRunMode,
+  activeReasoning,
   contextAttachments,
   matchedContextPackIds,
   imageInputSupported,
@@ -268,15 +312,21 @@ export const SmartContextPackPicker = ({
   const [variableValues, setVariableValues] = useState<Record<string, string>>({});
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applyingPackId, setApplyingPackId] = useState<string | null>(null);
+  const [pendingDeletePackId, setPendingDeletePackId] = useState<string | null>(null);
+  const [ralphPackUsageById, setRalphPackUsageById] = useState<
+    Record<string, string[]>
+  >({});
   const [includePrompt, setIncludePrompt] = useState(false);
   const [includeAttachments, setIncludeAttachments] = useState(false);
   const [includeModel, setIncludeModel] = useState(true);
   const [includeMode, setIncludeMode] = useState(true);
+  const [includeReasoning, setIncludeReasoning] = useState(true);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const hasPrompt = activeDraft.trim().length > 0;
   const hasAttachments = contextAttachments.length > 0;
   const currentModelLabel = `${getProviderLabel(activeProvider)} / ${activeModel}`;
   const currentModeLabel = getContextPackModeLabel(activeRunMode);
+  const currentReasoningLabel = getContextPackReasoningLabel(activeReasoning);
   const attachmentToggleLabel = formatAttachmentToggleLabel(contextAttachments);
   const matchedPackIds = useMemo(
     () => new Set(matchedContextPackIds),
@@ -304,9 +354,10 @@ export const SmartContextPackPicker = ({
           (warning) => !isVariablePreviewWarning(warning),
         ),
         isMatched: matchedPackIds.has(pack.id),
+        ralphFlowNames: ralphPackUsageById[pack.id] ?? [],
       };
     });
-  }, [imageInputSupported, matchedPackIds, sortedPacks]);
+  }, [imageInputSupported, matchedPackIds, ralphPackUsageById, sortedPacks]);
   const configuringPack =
     configuringPackId === null
       ? null
@@ -320,7 +371,8 @@ export const SmartContextPackPicker = ({
       (includeAttachments && hasAttachments) ||
       instructions.trim().length > 0 ||
       includeModel ||
-      includeMode);
+      includeMode ||
+      includeReasoning);
 
   const openSaveView = (): void => {
     setName(deriveContextPackName(activeDraft));
@@ -329,6 +381,7 @@ export const SmartContextPackPicker = ({
     setIncludeAttachments(hasAttachments);
     setIncludeModel(true);
     setIncludeMode(true);
+    setIncludeReasoning(true);
     setVariablesInput(
       formatListInputValue(extractSmartContextPackVariables(activeDraft)),
     );
@@ -376,6 +429,76 @@ export const SmartContextPackPicker = ({
       });
   };
 
+  const loadRalphPackUsage = async (): Promise<Record<string, string[]>> => {
+    if (!workspaceRoot) {
+      return {};
+    }
+
+    const nextUsage: Record<string, string[]> = {};
+    const flowList = await listRalphFlows(workspaceRoot);
+
+    for (const summary of flowList.flows) {
+      const flowResult = await showRalphFlow(workspaceRoot, summary.id);
+      const packIds = collectRalphFlowPackIds(flowResult.flow);
+
+      for (const packId of packIds) {
+        nextUsage[packId] = [
+          ...(nextUsage[packId] ?? []),
+          flowResult.flow.name || flowResult.flow.id,
+        ];
+      }
+    }
+
+    return nextUsage;
+  };
+
+  useEffect(() => {
+    if (!open || !workspaceRoot) {
+      setRalphPackUsageById({});
+      setPendingDeletePackId(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const nextUsage = await loadRalphPackUsage();
+
+      if (!cancelled) {
+        setRalphPackUsageById(nextUsage);
+      }
+    })().catch(() => {
+      if (!cancelled) {
+        setRalphPackUsageById({});
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, workspaceRoot]);
+
+  const requestDeletePack = async (pack: SmartContextPack): Promise<void> => {
+    let latestUsage = ralphPackUsageById;
+
+    try {
+      latestUsage = await loadRalphPackUsage();
+      setRalphPackUsageById(latestUsage);
+    } catch {
+      // Keep the last known usage map if the refresh fails.
+    }
+
+    const ralphFlowNames = latestUsage[pack.id] ?? [];
+
+    if (ralphFlowNames.length > 0 && pendingDeletePackId !== pack.id) {
+      setPendingDeletePackId(pack.id);
+      return;
+    }
+
+    setPendingDeletePackId(null);
+    onDeleteContextPack(pack.id);
+  };
+
   const handleSave = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
 
@@ -403,6 +526,7 @@ export const SmartContextPackPicker = ({
       includeAttachments,
       includeModel,
       includeMode,
+      includeReasoning,
     });
     setOpen(false);
     setView("apply");
@@ -561,8 +685,9 @@ export const SmartContextPackPicker = ({
                 key={item.pack.id}
                 item={item}
                 applyingPackId={applyingPackId}
+                pendingDeletePackId={pendingDeletePackId}
                 onApplyPack={applyPack}
-                onDeleteContextPack={onDeleteContextPack}
+                onDeleteContextPack={requestDeletePack}
               />
             ))}
           </div>
@@ -664,6 +789,11 @@ export const SmartContextPackPicker = ({
                   label={currentModeLabel}
                   checked={includeMode}
                   onChange={setIncludeMode}
+                />
+                <PackOption
+                  label={currentReasoningLabel}
+                  checked={includeReasoning}
+                  onChange={setIncludeReasoning}
                 />
               </div>
             </div>

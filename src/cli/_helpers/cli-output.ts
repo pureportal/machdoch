@@ -1,4 +1,5 @@
 import process from "node:process";
+import type { CustomizationDiscoveryOptions } from "../../core/customizations.js";
 import type {
   RuntimeProfileSummary,
   TaskExecutionProgress,
@@ -72,10 +73,14 @@ export const formatProfileLine = (
 
 export const createDiscoveryOptions = (
   discoverGithubCustomizations: boolean | undefined,
-): { discoverGithubCustomizations: true } | undefined => {
-  return discoverGithubCustomizations
-    ? { discoverGithubCustomizations: true }
-    : undefined;
+): CustomizationDiscoveryOptions => {
+  return {
+    discoverUserCustomizations: true,
+    includeDiagnostics: true,
+    ...(discoverGithubCustomizations
+      ? { discoverGithubCustomizations: true }
+      : {}),
+  };
 };
 
 export const createUserConfigSummaryLines = (

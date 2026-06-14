@@ -6,7 +6,9 @@ import {
   createVisibleConversationMessages,
   getLatestRunningTaskId,
   getSessionOverviewStatus,
+  normalizeRecentWorkspaces,
   normalizeShellState,
+  rememberRecentWorkspace,
   recoverInterruptedTasksForLaunch,
   QUICK_VOICE_SESSION_KIND,
 } from "./chat-session.model";
@@ -76,6 +78,100 @@ describe("normalizeShellState", () => {
     });
     expect(normalized.sessions[0]?.model.length).toBeGreaterThan(0);
     expect(normalized.lastSelectedMode).toBe("machdoch");
+  });
+
+  it("preserves persisted Codex CLI model selections", () => {
+    const normalized = normalizeShellState({
+      activeSessionId: "codex-session",
+      sessions: [
+        {
+          id: "codex-session",
+          provider: "codex-cli",
+          model: "gpt-5.4-mini",
+          workspace: "C:\\Project",
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+      lastSelectedProvider: "codex-cli",
+      lastSelectedModelByProvider: {
+        "codex-cli": "gpt-5.4-mini",
+      },
+    });
+
+    expect(normalized.lastSelectedProvider).toBe("codex-cli");
+    expect(normalized.lastSelectedModelByProvider["codex-cli"]).toBe(
+      "gpt-5.4-mini",
+    );
+    expect(normalized.sessions[0]).toMatchObject({
+      id: "codex-session",
+      provider: "codex-cli",
+      model: "gpt-5.4-mini",
+    });
+  });
+
+  it("normalizes recent workspaces as a unique latest-first list", () => {
+    expect(
+      normalizeRecentWorkspaces([
+        " C:\\Docs ",
+        "c:/docs",
+        "",
+        "/tmp/one",
+        "/tmp/two",
+        "/tmp/three",
+        "/tmp/four",
+        "/tmp/five",
+        "/tmp/six",
+        "/tmp/seven",
+        "/tmp/eight",
+        "/tmp/nine",
+        "/tmp/ten",
+      ]),
+    ).toEqual([
+      "C:\\Docs",
+      "/tmp/one",
+      "/tmp/two",
+      "/tmp/three",
+      "/tmp/four",
+      "/tmp/five",
+      "/tmp/six",
+      "/tmp/seven",
+      "/tmp/eight",
+      "/tmp/nine",
+    ]);
+
+    expect(
+      rememberRecentWorkspace(["C:\\Docs", "/tmp/one"], "/tmp/two"),
+    ).toEqual(["/tmp/two", "C:\\Docs", "/tmp/one"]);
+    expect(
+      rememberRecentWorkspace(["C:\\Docs", "/tmp/one"], "c:/docs"),
+    ).toEqual(["c:/docs", "/tmp/one"]);
+  });
+
+  it("derives recent workspaces from legacy sessions", () => {
+    const normalized = normalizeShellState({
+      activeSessionId: "newer-session",
+      sessions: [
+        {
+          id: "older-session",
+          provider: "openai",
+          model: "gpt-custom",
+          workspace: "C:\\Older",
+          createdAt: 1,
+          updatedAt: 10,
+        },
+        {
+          id: "newer-session",
+          provider: "openai",
+          model: "gpt-custom",
+          workspace: "C:\\Newer",
+          createdAt: 2,
+          updatedAt: 20,
+        },
+      ],
+    });
+
+    expect(normalized.recentWorkspaces).toEqual(["C:\\Newer", "C:\\Older"]);
   });
 
   it("repairs legacy persisted task message sources", () => {

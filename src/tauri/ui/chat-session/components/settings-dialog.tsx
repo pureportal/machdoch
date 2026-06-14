@@ -1,8 +1,11 @@
 import {
   Brain,
+  FileText,
+  Folder,
   Gauge,
   KeyRound,
   Monitor,
+  Network,
   Palette,
   Search,
   Volume2,
@@ -25,34 +28,46 @@ import {
 import { AgentLimitsSettingsPanel } from "./settings-dialog-panels/agent-limits-settings-panel";
 import { AppearanceSettingsPanel } from "./settings-dialog-panels/appearance-settings-panel";
 import { DesktopSettingsPanel } from "./settings-dialog-panels/desktop-settings-panel";
+import { InstructionSettingsPanel } from "./settings-dialog-panels/instruction-settings-panel";
 import { MemorySettingsPanel } from "./settings-dialog-panels/memory-settings-panel";
+import { McpSettingsPanel } from "./settings-dialog-panels/mcp-settings-panel";
 import { ProviderSettingsPanel } from "./settings-dialog-panels/provider-settings-panel";
 import type {
   AgentLimitsSettingsControls,
   AppearanceSettingsControls,
   DesktopSettingsControls,
+  InstructionSettingsControls,
   MemorySettingsControls,
+  McpSettingsControls,
   ProviderSetupControls,
   VoiceSettingsControls,
   WebSearchSetupControls,
+  WorkspaceSettingsControls,
 } from "./settings-dialog-panels/types";
 import { VoiceSettingsPanel } from "./settings-dialog-panels/voice-settings-panel";
 import { WebSearchSettingsPanel } from "./settings-dialog-panels/web-search-settings-panel";
+import { WorkspaceSettingsPanel } from "./settings-dialog-panels/workspace-settings-panel";
 
 export type {
   AgentLimitsSettingsControls,
   AppearanceSettingsControls,
   DesktopSettingsControls,
+  InstructionSettingsControls,
   MemorySettingsControls,
+  McpSettingsControls,
   ProviderSetupControls,
   SettingsStatusMessage,
   VoiceSettingsControls,
   WebSearchSetupControls,
+  WorkspaceSettingsControls,
 } from "./settings-dialog-panels/types";
 
 const SETTINGS_SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   providers: KeyRound,
+  workspace: Folder,
+  instructions: FileText,
   "web-search": Search,
+  mcp: Network,
   agent: Gauge,
   appearance: Palette,
   voice: Volume2,
@@ -64,7 +79,10 @@ export interface SettingsDialogProps {
   settingsSection: SettingsSection;
   onSettingsSectionChange: (section: SettingsSection) => void;
   providerSetup: ProviderSetupControls;
+  workspaceSetup: WorkspaceSettingsControls;
+  instructionsSetup: InstructionSettingsControls;
   webSearchSetup: WebSearchSetupControls;
+  mcpSetup: McpSettingsControls;
   agentLimitsSetup: AgentLimitsSettingsControls;
   appearanceSetup: AppearanceSettingsControls;
   memorySetup: MemorySettingsControls;
@@ -75,7 +93,10 @@ export interface SettingsDialogProps {
 const renderSettingsPanel = ({
   settingsSection,
   providerSetup,
+  workspaceSetup,
+  instructionsSetup,
   webSearchSetup,
+  mcpSetup,
   agentLimitsSetup,
   appearanceSetup,
   memorySetup,
@@ -86,8 +107,17 @@ const renderSettingsPanel = ({
     case "providers":
       return <ProviderSettingsPanel setup={providerSetup} />;
 
+    case "workspace":
+      return <WorkspaceSettingsPanel setup={workspaceSetup} />;
+
+    case "instructions":
+      return <InstructionSettingsPanel setup={instructionsSetup} />;
+
     case "web-search":
       return <WebSearchSettingsPanel setup={webSearchSetup} />;
+
+    case "mcp":
+      return <McpSettingsPanel setup={mcpSetup} />;
 
     case "agent":
       return <AgentLimitsSettingsPanel setup={agentLimitsSetup} />;
@@ -117,8 +147,8 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
             Settings
           </DialogTitle>
           <DialogDescription className="sr-only">
-            Configure providers, web search, appearance, voice, memory, and
-            desktop behavior.
+            Configure providers, workspace defaults, web search, appearance,
+            instruction files, MCP servers, voice, memory, and desktop behavior.
           </DialogDescription>
         </DialogHeader>
 

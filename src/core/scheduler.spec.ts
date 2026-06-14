@@ -160,6 +160,39 @@ describe("DurableSmartScheduler", () => {
     });
   });
 
+  it("serializes concurrent mutations from separate scheduler instances", async () => {
+    const workspaceRoot = await createWorkspace();
+    const clock = createClock();
+    const statePath = getWorkspaceSchedulerStatePath(workspaceRoot);
+    const jobNames = Array.from({ length: 8 }, (_value, index) => `job-${index}`);
+
+    await Promise.all(
+      jobNames.map((name, index) => {
+        const scheduler = new DurableSmartScheduler({
+          statePath,
+          clock,
+        });
+
+        return scheduler.upsertJob({
+          name,
+          schedule: { type: "delay", runAt: index + 1 },
+          target: {
+            workspaceRoot,
+            prompt: name,
+          },
+        });
+      }),
+    );
+
+    const scheduler = new DurableSmartScheduler({
+      statePath,
+      clock,
+    });
+    const jobs = await scheduler.listJobs();
+
+    expect(jobs.map((job) => job.name).sort()).toEqual(jobNames);
+  });
+
   it("syncs enabled prompt frontmatter into scheduled jobs", async () => {
     const workspaceRoot = await createWorkspace();
     const promptsRoot = join(workspaceRoot, ".machdoch", "prompts");

@@ -282,27 +282,44 @@ export const syncAssistantPopupPosition = async (): Promise<void> => {
   await applyAssistantPopupLayout(popupWindow);
 };
 
-export const toggleAssistantPopup = async (
-  popupPositionOverride?: { x: number; y: number },
-): Promise<void> => {
+export const isAssistantPopupVisible = async (): Promise<boolean> => {
   const popupWindow = await getWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL);
 
   if (!popupWindow) {
-    return;
+    return false;
+  }
+
+  try {
+    return await popupWindow.isVisible();
+  } catch (error) {
+    console.error("Failed to inspect the assistant popup visibility", error);
+    return false;
+  }
+};
+
+export const toggleAssistantPopup = async (
+  popupPositionOverride?: { x: number; y: number },
+): Promise<boolean> => {
+  const popupWindow = await getWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL);
+
+  if (!popupWindow) {
+    return false;
   }
 
   try {
     if (await popupWindow.isVisible()) {
       await popupWindow.hide();
-      return;
+      return false;
     }
 
     await applyAssistantPopupLayout(popupWindow, popupPositionOverride);
 
     await Promise.all([popupWindow.show(), popupWindow.unminimize()]);
     await popupWindow.setFocus();
+    return true;
   } catch (error) {
     console.error("Failed to toggle the assistant popup", error);
+    return false;
   }
 };
 
@@ -329,6 +346,30 @@ export const revealMainWindow = async (): Promise<void> => {
     await mainWindow.setFocus();
   } catch (error) {
     console.error("Failed to reveal the main window", error);
+  }
+};
+
+export const hideMainWindowToTray = async (): Promise<void> => {
+  if (!isTauri()) {
+    return;
+  }
+
+  try {
+    await invoke("hide_main_window_to_tray");
+  } catch (error) {
+    console.error("Failed to hide machdoch to the tray", error);
+  }
+};
+
+export const quitMachdoch = async (): Promise<void> => {
+  if (!isTauri()) {
+    return;
+  }
+
+  try {
+    await invoke("quit_machdoch");
+  } catch (error) {
+    console.error("Failed to quit machdoch", error);
   }
 };
 

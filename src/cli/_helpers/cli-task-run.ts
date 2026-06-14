@@ -326,6 +326,7 @@ export const printTaskPreview = async (
     args.model,
     args.runtimeProvider,
     args.agentLimits,
+    args.reasoning,
   );
   const imageInputs = await createImageInputsFromPaths(
     args.imagePaths,
@@ -584,6 +585,7 @@ export const runInteractiveChat = async (
     args.model,
     args.runtimeProvider,
     args.agentLimits,
+    args.reasoning,
   );
   const shellSummary = await loadDesktopShellSummary();
   const memorySettings = await loadUserMemorySettings();
@@ -597,7 +599,7 @@ export const runInteractiveChat = async (
     ? `, profile ${config.activeProfile}`
     : "";
   writeStdoutLine(
-    `machdoch chat (${config.mode}, ${config.model}${profileSuffix})`,
+    `machdoch chat (${config.mode}, ${config.model}, reasoning ${config.reasoning}${profileSuffix})`,
   );
   for (const line of createCliStartupSummaryLines(config, shellSummary)) {
     writeStdoutLine(line);

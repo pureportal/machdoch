@@ -8,6 +8,8 @@ import { inferSuggestedTools } from "./tools.js";
 import type {
   CustomizationDiscoveryResult,
   DiscoveredInstruction,
+  InstructionMode,
+  InstructionTargetAudience,
   ResolvedPromptInvocation,
   ResolvedTaskContext,
   TaskCustomizationMatch,
@@ -43,6 +45,9 @@ const GENERIC_INSTRUCTION_METADATA_TERMS = new Set([
   "rule",
   "rules",
 ]);
+
+const INSTRUCTION_REFERENCE_PATTERN =
+  /@instruction(?::|\s+)(?:"([^"]+)"|'([^']+)'|([^\s,;]+))/giu;
 
 /**
  * Tokenizes task text while dropping short words and common stop words.
@@ -112,6 +117,86 @@ const createPathMatchReason = (
 
 const createMetadataMatchReason = (matchedTerms: string[]): string => {
   return `Matched instruction metadata: ${matchedTerms.join(", ")}`;
+};
+
+const createInstructionLookupKey = (value: string): string => {
+  return value.trim().replace(/\\/gu, "/").toLowerCase();
+};
+
+const extractInstructionReferenceKeys = (value: string): Set<string> => {
+  const references = new Set<string>();
+
+  for (const match of value.matchAll(INSTRUCTION_REFERENCE_PATTERN)) {
+    const rawReference = match[1] ?? match[2] ?? match[3];
+
+    if (rawReference) {
+      references.add(createInstructionLookupKey(rawReference));
+    }
+  }
+
+  return references;
+};
+
+const getInstructionMode = (
+  instruction: DiscoveredInstruction,
+): InstructionMode => {
+  if (instruction.mode) {
+    return instruction.mode;
+  }
+
+  return instruction.kind === "always-on" ? "always" : "auto";
+};
+
+const getInstructionApplyToPatterns = (
+  instruction: DiscoveredInstruction,
+): string[] => {
+  if (instruction.applyToPatterns && instruction.applyToPatterns.length > 0) {
+    return instruction.applyToPatterns;
+  }
+
+  return instruction.applyTo ? [instruction.applyTo] : [];
+};
+
+const findMatchedWorkspacePaths = (
+  workspacePaths: string[],
+  patterns: string[],
+): { pattern: string; paths: string[] }[] => {
+  return patterns
+    .map((pattern) => ({
+      pattern,
+      paths: workspacePaths.filter((workspacePath) =>
+        matchesWorkspaceGlob(workspacePath, pattern),
+      ),
+    }))
+    .filter((match) => match.paths.length > 0);
+};
+
+const shouldInstructionRunForAudience = (
+  instruction: DiscoveredInstruction,
+  audience: InstructionTargetAudience,
+): boolean => {
+  return (
+    !instruction.audience ||
+    instruction.audience === "all" ||
+    instruction.audience === audience
+  );
+};
+
+const isInstructionExplicitlyReferenced = (
+  instruction: DiscoveredInstruction,
+  referenceKeys: Set<string>,
+): boolean => {
+  if (referenceKeys.size === 0) {
+    return false;
+  }
+
+  const candidateKeys = [
+    instruction.name,
+    instruction.path,
+    instruction.path.split("/").at(-1) ?? "",
+  ].map(createInstructionLookupKey);
+
+  return candidateKeys.some((candidateKey) => referenceKeys.has(candidateKey));
 };
 
 const compareInstructionMatches = (
@@ -216,37 +301,91 @@ const findApplicableInstructions = (
   taskText: string,
   workspacePaths: string[],
   customizations: CustomizationDiscoveryResult,
+  audience: InstructionTargetAudience,
 ): TaskCustomizationMatch[] => {
   const normalizedTask = taskText.toLowerCase();
   const taskTokens = createTokenSet(taskText);
   const taskRankingTokens = tokenizeTaskMatchText(taskText);
+  const instructionReferenceKeys = extractInstructionReferenceKeys(taskText);
 
   const matches: TaskCustomizationMatch[] = [];
 
   for (const instruction of customizations.instructions) {
-    if (instruction.kind === "always-on") {
+    const mode = getInstructionMode(instruction);
+    const explicitlyReferenced = isInstructionExplicitlyReferenced(
+      instruction,
+      instructionReferenceKeys,
+    );
+
+    if (
+      mode === "disabled" ||
+      !shouldInstructionRunForAudience(instruction, audience)
+    ) {
+      continue;
+    }
+
+    if (mode === "manual" && !explicitlyReferenced) {
+      continue;
+    }
+
+    const excludedPathMatches =
+      !explicitlyReferenced &&
+      instruction.excludePatterns &&
+      workspacePaths.length > 0
+        ? findMatchedWorkspacePaths(workspacePaths, instruction.excludePatterns)
+        : [];
+
+    if (excludedPathMatches.length > 0) {
+      continue;
+    }
+
+    const matchKind =
+      mode === "always" ? ("always-on" as const) : instruction.kind;
+
+    if (mode === "always") {
       matches.push({
-        kind: instruction.kind,
+        kind: matchKind,
         name: instruction.name,
         path: instruction.path,
         priority: instruction.priority ?? 0,
         body: instruction.body,
-        reason: "Always-on workspace instruction.",
+        reason:
+          instruction.scope === "user"
+            ? "Always-on user instruction."
+            : "Always-on workspace instruction.",
+      });
+      continue;
+    }
+
+    if (explicitlyReferenced) {
+      matches.push({
+        kind: matchKind,
+        name: instruction.name,
+        path: instruction.path,
+        priority: instruction.priority ?? 0,
+        body: instruction.body,
+        reason: "Explicitly requested instruction.",
       });
       continue;
     }
 
     const reasons: string[] = [];
     let hasApplyToPathMatch = false;
+    const applyToPatterns = getInstructionApplyToPatterns(instruction);
 
-    if (instruction.applyTo && workspacePaths.length > 0) {
-      const matchedPaths = workspacePaths.filter((workspacePath) =>
-        matchesWorkspaceGlob(workspacePath, instruction.applyTo ?? ""),
+    if (applyToPatterns.length > 0 && workspacePaths.length > 0) {
+      const pathMatches = findMatchedWorkspacePaths(
+        workspacePaths,
+        applyToPatterns,
       );
 
-      if (matchedPaths.length > 0) {
+      if (pathMatches.length > 0) {
         hasApplyToPathMatch = true;
-        reasons.push(createPathMatchReason(matchedPaths, instruction.applyTo));
+        reasons.push(
+          ...pathMatches.map((pathMatch) =>
+            createPathMatchReason(pathMatch.paths, pathMatch.pattern),
+          ),
+        );
       } else {
         continue;
       }
@@ -274,7 +413,7 @@ const findApplicableInstructions = (
     }
 
     matches.push({
-      kind: instruction.kind,
+      kind: matchKind,
       name: instruction.name,
       path: instruction.path,
       priority: instruction.priority ?? 0,
@@ -313,7 +452,11 @@ const collectWorkspacePaths = (
 export const resolveTaskContext = (
   task: string,
   customizations: CustomizationDiscoveryResult,
+  options: {
+    instructionAudience?: InstructionTargetAudience;
+  } = {},
 ): ResolvedTaskContext => {
+  const instructionAudience = options.instructionAudience ?? "executor";
   const invokedPrompt = resolvePromptInvocation(task, customizations);
   const effectiveTask = invokedPrompt?.resolvedBody.trim().length
     ? invokedPrompt.resolvedBody.trim()
@@ -336,7 +479,17 @@ export const resolveTaskContext = (
     instructionContextText,
     workspacePaths,
     customizations,
+    instructionAudience,
   );
+  const applicableValidatorInstructions =
+    instructionAudience === "validator"
+      ? applicableInstructions
+      : findApplicableInstructions(
+          instructionContextText,
+          workspacePaths,
+          customizations,
+          "validator",
+        );
 
   return {
     task,
@@ -345,7 +498,11 @@ export const resolveTaskContext = (
     instructionContextText,
     workspacePaths,
     suggestedTools,
+    instructionAudience,
     ...(invokedPrompt ? { invokedPrompt } : {}),
     applicableInstructions,
+    ...(applicableValidatorInstructions.length > 0
+      ? { applicableValidatorInstructions }
+      : {}),
   };
 };

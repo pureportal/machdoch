@@ -10,10 +10,17 @@ import {
   loadUserWebSearchSettings,
   loadWorkspaceEnv,
 } from "./env.js";
+import {
+  getAgentCliProviders,
+  resolveAgentCliProviderBinary,
+} from "./_helpers/agent-cli-providers.js";
 import { normalizeAgentLimitOverrides } from "./_helpers/agent-runtime-types.js";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_MODEL_PROVIDER,
+  PROVIDER_ENV_KEY_BY_PROVIDER,
+  isReasoningMode as isRuntimeSchemaReasoningMode,
+  USER_API_PROVIDERS,
   VALID_WEB_SEARCH_PROVIDERS,
   isConfiguredModelProvider,
   isRunMode as isRuntimeSchemaRunMode,
@@ -21,6 +28,7 @@ import {
 import type {
   ModelProvider,
   ProviderAvailability,
+  ReasoningMode,
   RuntimeAgentLimitOverrides,
   RunMode,
   RuntimeConfig,
@@ -39,6 +47,12 @@ const WORKSPACE_CONFIG_FILE_NAME = "config.json";
  */
 const isRunMode = (value: string | undefined): value is RunMode => {
   return isRuntimeSchemaRunMode(value);
+};
+
+const isReasoningMode = (
+  value: string | undefined,
+): value is ReasoningMode => {
+  return isRuntimeSchemaReasoningMode(value);
 };
 
 const isModelProvider = (
@@ -126,7 +140,7 @@ export const saveWorkspaceRuntimeProvider = async (
 
   if (!normalizedProvider || !isConfiguredModelProvider(normalizedProvider)) {
     throw new Error(
-      "Expected workspace.provider to be one of openai, anthropic, or google.",
+      "Expected workspace.provider to be one of openai, anthropic, google, codex-cli, claude-cli, or copilot-cli.",
     );
   }
 
@@ -147,6 +161,23 @@ export const saveWorkspaceDefaultMode = async (
 
   return saveWorkspaceConfigFile(workspaceRoot, {
     defaultMode: normalizedMode,
+  });
+};
+
+export const saveWorkspaceReasoningMode = async (
+  workspaceRoot: string,
+  reasoning: string,
+): Promise<string> => {
+  const normalizedReasoning = normalizeOptionalString(reasoning);
+
+  if (!normalizedReasoning || !isReasoningMode(normalizedReasoning)) {
+    throw new Error(
+      "Expected workspace.reasoning to be one of default, none, minimal, low, medium, high, xhigh, or max.",
+    );
+  }
+
+  return saveWorkspaceConfigFile(workspaceRoot, {
+    reasoning: normalizedReasoning,
   });
 };
 
@@ -229,6 +260,7 @@ const mergeProfileIntoConfig = (
     ...(profile.mode ? { defaultMode: profile.mode } : {}),
     ...(profile.provider ? { provider: profile.provider } : {}),
     ...(profile.model ? { model: profile.model } : {}),
+    ...(profile.reasoning ? { reasoning: profile.reasoning } : {}),
     ...(typeof profile.offline === "boolean"
       ? { offline: profile.offline }
       : {}),
@@ -244,18 +276,16 @@ const getProviderAvailability = (
   env: Record<string, string>,
 ): ProviderAvailability[] => {
   return [
-    {
-      provider: "openai",
-      configured: hasConfiguredValue(env.OPENAI_API_KEY),
-    },
-    {
-      provider: "anthropic",
-      configured: hasConfiguredValue(env.ANTHROPIC_API_KEY),
-    },
-    {
-      provider: "google",
-      configured: hasConfiguredValue(env.GOOGLE_API_KEY),
-    },
+    ...USER_API_PROVIDERS.map((provider) => ({
+      provider,
+      configured: hasConfiguredValue(
+        env[PROVIDER_ENV_KEY_BY_PROVIDER[provider]],
+      ),
+    })),
+    ...getAgentCliProviders().map((provider) => ({
+      provider,
+      configured: resolveAgentCliProviderBinary(provider, env).available,
+    })),
   ];
 };
 
@@ -364,6 +394,7 @@ export const loadRuntimeConfig = async (
   overrideModel?: string,
   overrideProvider?: Exclude<ModelProvider, "unconfigured">,
   overrideAgentLimits?: RuntimeAgentLimitOverrides,
+  overrideReasoning?: ReasoningMode,
 ): Promise<RuntimeConfig> => {
   const env = await loadWorkspaceEnv(workspaceRoot);
   const userWebSearchSettings = await loadUserWebSearchSettings();
@@ -387,6 +418,14 @@ export const loadRuntimeConfig = async (
     : undefined;
   const mode =
     overrideMode ?? modeFromEnv ?? configuredMode ?? "machdoch";
+  const reasoningFromEnv = isReasoningMode(env.MACHDOCH_REASONING)
+    ? env.MACHDOCH_REASONING
+    : undefined;
+  const configuredReasoning = isReasoningMode(effectiveConfig.reasoning)
+    ? effectiveConfig.reasoning
+    : undefined;
+  const reasoning =
+    overrideReasoning ?? reasoningFromEnv ?? configuredReasoning ?? "default";
   const provider = resolveProvider(
     overrideProvider ?? effectiveConfig.provider,
     providerAvailability,
@@ -414,6 +453,7 @@ export const loadRuntimeConfig = async (
     mode,
     provider,
     model,
+    reasoning,
     offline,
     agentLimits,
     compatibility: {

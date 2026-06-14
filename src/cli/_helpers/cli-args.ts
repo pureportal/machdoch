@@ -2,8 +2,16 @@ import process from "node:process";
 import { parseArgs as parseNodeArgs } from "node:util";
 import { normalizeOptionalString } from "../../common/_helpers/normalize-optional-string.js";
 import type { UserApiProvider } from "../../core/env.js";
+import {
+  REASONING_MODES,
+  VALID_MODEL_PROVIDERS,
+} from "../../core/runtime-contract.generated.js";
 import type {
   ModelProvider,
+  InstructionAudience,
+  InstructionMode,
+  InstructionScope,
+  ReasoningMode,
   RuntimeAgentLimitOverrides,
   RunMode,
 } from "../../core/types.js";
@@ -11,11 +19,14 @@ import type {
 export type CommandName =
   | "run"
   | "chat"
+  | "ralph"
   | "scheduler"
+  | "mcp"
   | "set-api"
   | "set-config"
   | "set-global-memory"
   | "inspect"
+  | "instructions"
   | "config"
   | "tools"
   | "profiles"
@@ -36,6 +47,40 @@ export type SchedulerCliAction =
   | "retry"
   | "cancel"
   | "sync-prompts";
+
+export type RalphCliAction =
+  | "list"
+  | "show"
+  | "validate"
+  | "delete"
+  | "save"
+  | "run"
+  | "revisions"
+  | "restore"
+  | "create";
+export type RalphCliGenerationMode = "do-it" | "interview";
+export type RalphCliGenerationTarget = "flow" | "prompt-block" | "refactor";
+
+export type McpCliAction =
+  | "servers"
+  | "cache"
+  | "discover"
+  | "refresh"
+  | "oauth-start"
+  | "oauth-finish"
+  | "call-tool"
+  | "read-resource"
+  | "get-prompt";
+
+export type InstructionCliAction =
+  | "list"
+  | "show"
+  | "validate"
+  | "create"
+  | "save"
+  | "generate";
+
+export type InstructionCliScope = InstructionScope;
 
 export interface SchedulerCliOptions {
   action: SchedulerCliAction;
@@ -82,10 +127,57 @@ export interface SchedulerCliOptions {
   eventOccurredAt?: number;
 }
 
+export interface RalphCliOptions {
+  action: RalphCliAction;
+  subject?: string;
+  name?: string;
+  prompt?: string;
+  promptFile?: string;
+  flowJson?: string;
+  flowJsonFile?: string;
+  existingFlowJson?: string;
+  existingFlowJsonFile?: string;
+  revision?: string;
+  generationMode?: RalphCliGenerationMode;
+  target?: RalphCliGenerationTarget;
+  params?: string[];
+  paramsFile?: string;
+  maxRounds?: number;
+  maxTransitions?: number;
+}
+
+export interface McpCliOptions {
+  action: McpCliAction;
+  serverId?: string;
+  target?: string;
+  argumentsJson?: string;
+  includeDisabled?: boolean;
+}
+
+export interface InstructionCliOptions {
+  action: InstructionCliAction;
+  subject?: string;
+  name?: string;
+  scope?: InstructionCliScope;
+  prompt?: string;
+  promptFile?: string;
+  path?: string;
+  applyTo?: string[];
+  exclude?: string[];
+  keywords?: string[];
+  mode?: InstructionMode;
+  audience?: InstructionAudience;
+  priority?: number;
+  maxRounds?: number;
+}
+
 export interface ParsedCliArgs {
   command: CommandName;
   task?: string;
+  ralph?: RalphCliOptions;
   scheduler?: SchedulerCliOptions;
+  mcp?: McpCliOptions;
+  instructions?: InstructionCliOptions;
   mode?: RunMode;
   profile?: string;
   provider?: UserApiProvider;
@@ -95,6 +187,7 @@ export interface ParsedCliArgs {
   configValue?: string;
   model?: string;
   defaultModel?: string;
+  reasoning?: ReasoningMode;
   sessionMemoryEnabled?: boolean;
   globalMemoryEnabled?: boolean;
   setGlobalMemoryEnabled?: boolean;
@@ -119,7 +212,14 @@ const VALID_PROVIDERS: ReadonlySet<UserApiProvider> = new Set([
 ]);
 const VALID_RUNTIME_PROVIDERS: ReadonlySet<
   Exclude<ModelProvider, "unconfigured">
-> = new Set(["openai", "anthropic", "google"]);
+> = new Set(VALID_MODEL_PROVIDERS);
+const VALID_RUNTIME_PROVIDER_DESCRIPTION =
+  "openai, anthropic, google, codex-cli, claude-cli, or copilot-cli";
+const VALID_REASONING_MODES: ReadonlySet<ReasoningMode> = new Set(
+  REASONING_MODES,
+);
+const VALID_REASONING_MODE_DESCRIPTION =
+  "default, none, minimal, low, medium, high, xhigh, or max";
 const VALID_BOOLEAN_TOGGLE_VALUES: ReadonlySet<string> = new Set(["on", "off"]);
 const VALID_MEMORY_OVERRIDE_VALUES: ReadonlySet<string> = new Set([
   "inherit",
@@ -150,6 +250,89 @@ const SCHEDULER_ACTIONS: ReadonlySet<SchedulerCliAction> = new Set([
 ]);
 const SCHEDULER_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<SchedulerCliAction> =
   new Set(["pause", "resume", "delete", "trigger", "retry", "cancel"]);
+const MCP_ACTIONS: ReadonlySet<McpCliAction> = new Set([
+  "servers",
+  "cache",
+  "discover",
+  "refresh",
+  "oauth-start",
+  "oauth-finish",
+  "call-tool",
+  "read-resource",
+  "get-prompt",
+]);
+const MCP_ACTIONS_REQUIRING_SERVER: ReadonlySet<McpCliAction> = new Set([
+  "discover",
+  "refresh",
+  "oauth-start",
+  "oauth-finish",
+  "call-tool",
+  "read-resource",
+  "get-prompt",
+]);
+const MCP_ACTIONS_REQUIRING_TARGET: ReadonlySet<McpCliAction> = new Set([
+  "oauth-finish",
+  "call-tool",
+  "read-resource",
+  "get-prompt",
+]);
+const INSTRUCTION_ACTIONS: ReadonlySet<InstructionCliAction> = new Set([
+  "list",
+  "show",
+  "validate",
+  "create",
+  "save",
+  "generate",
+]);
+const INSTRUCTION_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<InstructionCliAction> =
+  new Set(["show"]);
+const INSTRUCTION_SCOPES: ReadonlySet<InstructionCliScope> = new Set([
+  "user",
+  "workspace",
+  "compatibility",
+]);
+const INSTRUCTION_MODES: ReadonlySet<InstructionMode> = new Set([
+  "always",
+  "auto",
+  "agent-requested",
+  "manual",
+  "disabled",
+]);
+const INSTRUCTION_AUDIENCES: ReadonlySet<InstructionAudience> = new Set([
+  "executor",
+  "validator",
+  "generator",
+  "all",
+]);
+const RALPH_ACTIONS: ReadonlySet<RalphCliAction> = new Set([
+  "list",
+  "show",
+  "validate",
+  "delete",
+  "save",
+  "run",
+  "revisions",
+  "restore",
+  "create",
+]);
+const RALPH_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<RalphCliAction> = new Set([
+  "show",
+  "validate",
+  "delete",
+  "save",
+  "run",
+  "revisions",
+  "restore",
+]);
+const RALPH_GENERATION_MODES: ReadonlySet<RalphCliGenerationMode> = new Set([
+  "do-it",
+  "interview",
+]);
+const RALPH_GENERATION_TARGETS: ReadonlySet<RalphCliGenerationTarget> = new Set([
+  "flow",
+  "prompt-block",
+  "refactor",
+]);
 
 const fail = (message: string): never => {
   throw new Error(message);
@@ -161,7 +344,10 @@ const createParsedArgs = (
     | "mode"
     | "profile"
     | "task"
+    | "ralph"
     | "scheduler"
+    | "mcp"
+    | "instructions"
     | "provider"
     | "runtimeProvider"
     | "key"
@@ -169,6 +355,7 @@ const createParsedArgs = (
     | "configValue"
     | "model"
     | "defaultModel"
+    | "reasoning"
     | "sessionMemoryEnabled"
     | "globalMemoryEnabled"
     | "setGlobalMemoryEnabled"
@@ -187,6 +374,7 @@ const createParsedArgs = (
     configValue?: string;
     model?: string;
     defaultModel?: string;
+    reasoning?: ReasoningMode;
     sessionMemoryEnabled?: boolean;
     globalMemoryEnabled?: boolean;
     setGlobalMemoryEnabled?: boolean;
@@ -194,7 +382,10 @@ const createParsedArgs = (
     conversationContextFile?: string;
     contextPaths?: string[];
     imagePaths?: string[];
+    ralph?: RalphCliOptions;
     scheduler?: SchedulerCliOptions;
+    mcp?: McpCliOptions;
+    instructions?: InstructionCliOptions;
     task?: string;
   },
 ): ParsedCliArgs => {
@@ -211,6 +402,7 @@ const createParsedArgs = (
     ...(options?.configValue ? { configValue: options.configValue } : {}),
     ...(options?.model ? { model: options.model } : {}),
     ...(options?.defaultModel ? { defaultModel: options.defaultModel } : {}),
+    ...(options?.reasoning ? { reasoning: options.reasoning } : {}),
     ...(options?.sessionMemoryEnabled !== undefined
       ? { sessionMemoryEnabled: options.sessionMemoryEnabled }
       : {}),
@@ -231,7 +423,10 @@ const createParsedArgs = (
       ? { imagePaths: options.imagePaths }
       : {}),
     ...(options?.task ? { task: options.task } : {}),
+    ...(options?.ralph ? { ralph: options.ralph } : {}),
     ...(options?.scheduler ? { scheduler: options.scheduler } : {}),
+    ...(options?.mcp ? { mcp: options.mcp } : {}),
+    ...(options?.instructions ? { instructions: options.instructions } : {}),
   };
 };
 
@@ -244,6 +439,7 @@ const createSharedParsedOptions = (options: {
   runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
   model?: string;
   defaultModel?: string;
+  reasoning?: ReasoningMode;
   sessionMemoryEnabled?: boolean;
   globalMemoryEnabled?: boolean;
   agentLimits?: RuntimeAgentLimitOverrides;
@@ -262,6 +458,7 @@ const createSharedParsedOptions = (options: {
       : {}),
     ...(options.model ? { model: options.model } : {}),
     ...(options.defaultModel ? { defaultModel: options.defaultModel } : {}),
+    ...(options.reasoning ? { reasoning: options.reasoning } : {}),
     ...(options.sessionMemoryEnabled !== undefined
       ? { sessionMemoryEnabled: options.sessionMemoryEnabled }
       : {}),
@@ -338,6 +535,23 @@ const parseOptionalPositiveNumber = (
   return value ? parsePositiveNumber(value, flagName) : undefined;
 };
 
+const parseOptionalInteger = (
+  value: string | undefined,
+  flagName: string,
+): number | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    fail(`Expected ${flagName} to be followed by an integer.`);
+  }
+
+  return parsed;
+};
+
 const normalizeContextPaths = (
   values: string[] | undefined,
 ): string[] | undefined => {
@@ -402,14 +616,34 @@ Usage:
   machdoch --quick --task <task> [--mode <ask|machdoch>]
   machdoch --set-api --provider <openai|anthropic|google> --key <value>
   machdoch --set-global-memory <on|off>
-  machdoch --runtime-provider <openai|anthropic|google>
+  machdoch --runtime-provider <openai|anthropic|google|codex-cli|claude-cli|copilot-cli>
   machdoch --model <name>
+  machdoch --reasoning <default|none|minimal|low|medium|high|xhigh|max>
   machdoch --default-model <name>
   machdoch inspect [--json]
   machdoch config [--json]
   machdoch config set <setting> <value> [--json]
   machdoch tools [--json]
   machdoch profiles [--json]
+  machdoch instructions list|validate [--scope <user|workspace|compatibility>] [--json]
+  machdoch instructions show <name-or-path> [--scope <user|workspace|compatibility>] [--json]
+  machdoch instructions create [name] --prompt <text> [--scope <user|workspace>] [--apply-to <glob>] [--json]
+  machdoch instructions save [name] --prompt <text> [--path <file>] [--scope <user|workspace>] [--apply-to <glob>] [--json]
+  machdoch instructions generate [name] --prompt <wish> [--path <file>] [--scope <user|workspace>] [--apply-to <glob>] [--max-rounds <n>] [--json]
+  machdoch ralph list|show|validate|delete <flow> [--json]
+  machdoch ralph revisions <flow> [--json]
+  machdoch ralph restore <flow> --revision <revision-id> [--json]
+  machdoch ralph save <flow> --flow-json <json> [--json]
+  machdoch ralph run <flow> [--param <name=value>] [--json]
+  machdoch ralph create [flow] --prompt <text> [--name <flow>] [--flow-target <flow|prompt-block|refactor>] [--generation-mode <do-it|interview>] [--max-rounds <n>] [--json]
+  machdoch mcp servers [--include-disabled] [--json]
+  machdoch mcp cache [--json]
+  machdoch mcp discover|refresh <server-id> [--json]
+  machdoch mcp oauth-start <server-id> [--json]
+  machdoch mcp oauth-finish <server-id> <callback-url-or-code> [--json]
+  machdoch mcp call-tool <server-id> <tool-name> [--arguments-json <json>] [--json]
+  machdoch mcp read-resource <server-id> <uri> [--json]
+  machdoch mcp get-prompt <server-id> <prompt-name> [--arguments-json <json>] [--json]
   machdoch scheduler list [--json]
   machdoch scheduler create (--cron <expr>|--trigger <kind:event>) --prompt <text> [--timezone <iana>] [--json]
   machdoch scheduler pause|resume|delete|trigger <job-id> [--json]
@@ -431,6 +665,7 @@ Options:
   --key <value>           API key value for --set-api.
   --task <text>           Provide the task text explicitly instead of positionals.
   --model <name>          Override the active model for this run or chat session.
+  --reasoning <mode>      Override model reasoning effort for this run or chat session.
   --default-model <name>  Persist the workspace default model to .machdoch/config.json.
   --set-global-memory <on|off>
                           Persist whether cross-session global memory is enabled.
@@ -475,6 +710,27 @@ Options:
   --timezone <iana>       IANA timezone for cron schedules.
   --prompt <text>         Scheduled task prompt text.
   --prompt-file <path>    Read scheduled task prompt text from a file.
+  --scope <user|workspace|compatibility>
+                          Instruction scope filter for reads; writes support user or workspace.
+  --path <file>           Instruction file path for explicit save or generation updates.
+  --apply-to <glob>       Workspace glob that auto-attaches an instruction. Repeat for multiple globs.
+  --exclude <glob>        Workspace glob that prevents an instruction from attaching. Repeat for multiple globs.
+  --keyword <term>        Keyword that auto-attaches an instruction. Repeat for multiple terms.
+  --instruction-mode <mode>
+                          Instruction activation: always, auto, agent-requested, manual, or disabled.
+  --audience <target>     Instruction audience: executor, validator, generator, or all.
+  --priority <integer>    Instruction ordering priority.
+  --flow-json <json>      Save a complete Ralph flow JSON document for \`ralph save\`.
+  --existing-flow-json <json>
+                          Provide the current Ralph flow JSON to \`ralph create\` for AI-assisted edits.
+  --revision <id>         Ralph flow revision id for \`ralph restore\`.
+  --flow-target <target>  Ralph generation target: flow, prompt-block, or refactor.
+  --generation-mode <mode>
+                          Ralph generation style: do-it or interview.
+  --param <name=value>    Set a Ralph flow variable for \`ralph run\`. Repeat for multiple variables.
+  --max-rounds <n>        Maximum generator/validator rounds for \`ralph create\` or \`instructions generate\`.
+  --include-disabled      Include disabled preset and configured MCP servers in \`mcp servers\`.
+  --arguments-json <json> JSON object arguments for \`mcp call-tool\` or \`mcp get-prompt\`.
   --context-pack <json>   Add a scheduled context-pack snapshot as JSON. Repeat for multiple packs.
   --macro <name|prompt>   Add a saved macro reference or prompt invocation. Repeat for multiple macros.
   --missed-run-policy <skip|enqueue-latest|enqueue-all>
@@ -500,6 +756,7 @@ Options:
 
 Config settings accepted by \`machdoch config set\`:
   api.<openai|anthropic|google>.key
+  agent-cli.<codex-cli|claude-cli|copilot-cli>.path
   web-search.provider
   web-search.<perplexity|tavily|serper>.key
   voice.provider
@@ -507,7 +764,7 @@ Config settings accepted by \`machdoch config set\`:
   desktop.<setting>
   memory.global
   agent-limits.<infinite|executor-turns|autopilot-iterations>
-  workspace.<model|provider|mode|offline>
+  workspace.<model|provider|mode|reasoning|offline>
 
 Default CLI mode is interactive and keeps running until /exit, /quit, or Ctrl+C.
 \`machdoch <task>\` and \`machdoch --task <text>\` start interactive chat with an initial task.
@@ -540,6 +797,7 @@ export const parseCliArgs = (
         key?: string;
         task?: string;
         model?: string;
+        reasoning?: string;
         "default-model"?: string;
         "session-memory"?: string;
         "global-memory"?: string;
@@ -569,6 +827,17 @@ export const parseCliArgs = (
         timezone?: string;
         prompt?: string;
         "prompt-file"?: string;
+        "flow-json"?: string;
+        "flow-json-file"?: string;
+        "existing-flow-json"?: string;
+        "existing-flow-json-file"?: string;
+        revision?: string;
+        "flow-target"?: string;
+        "generation-mode"?: string;
+        param?: string[];
+        "params-file"?: string;
+        "max-rounds"?: string;
+        "max-transitions"?: string;
         "context-pack"?: string[];
         macro?: string[];
         "missed-run-policy"?: string;
@@ -591,6 +860,16 @@ export const parseCliArgs = (
         "event-payload-json"?: string;
         "event-dedupe-key"?: string;
         "event-occurred-at"?: string;
+        "arguments-json"?: string;
+        "include-disabled"?: boolean;
+        scope?: string;
+        path?: string;
+        "apply-to"?: string[];
+        exclude?: string[];
+        keyword?: string[];
+        "instruction-mode"?: string;
+        audience?: string;
+        priority?: string;
       }
     | undefined;
   let positionals: string[] = [];
@@ -611,6 +890,7 @@ export const parseCliArgs = (
         key: { type: "string" },
         task: { type: "string" },
         model: { type: "string" },
+        reasoning: { type: "string" },
         "default-model": { type: "string" },
         "session-memory": { type: "string" },
         "global-memory": { type: "string" },
@@ -640,6 +920,17 @@ export const parseCliArgs = (
         timezone: { type: "string" },
         prompt: { type: "string" },
         "prompt-file": { type: "string" },
+        "flow-json": { type: "string" },
+        "flow-json-file": { type: "string" },
+        "existing-flow-json": { type: "string" },
+        "existing-flow-json-file": { type: "string" },
+        revision: { type: "string" },
+        "flow-target": { type: "string" },
+        "generation-mode": { type: "string" },
+        param: { type: "string", multiple: true },
+        "params-file": { type: "string" },
+        "max-rounds": { type: "string" },
+        "max-transitions": { type: "string" },
         "context-pack": { type: "string", multiple: true },
         macro: { type: "string", multiple: true },
         "missed-run-policy": { type: "string" },
@@ -662,6 +953,16 @@ export const parseCliArgs = (
         "event-payload-json": { type: "string" },
         "event-dedupe-key": { type: "string" },
         "event-occurred-at": { type: "string" },
+        "arguments-json": { type: "string" },
+        "include-disabled": { type: "boolean" },
+        scope: { type: "string" },
+        path: { type: "string" },
+        "apply-to": { type: "string", multiple: true },
+        exclude: { type: "string", multiple: true },
+        keyword: { type: "string", multiple: true },
+        "instruction-mode": { type: "string" },
+        audience: { type: "string" },
+        priority: { type: "string" },
       },
       allowPositionals: true,
       strict: true,
@@ -689,6 +990,7 @@ export const parseCliArgs = (
   const rawKey = normalizeOptionalString(values?.key);
   const rawTask = normalizeOptionalString(values?.task);
   const rawModel = normalizeOptionalString(values?.model);
+  const rawReasoning = normalizeOptionalString(values?.reasoning);
   const rawDefaultModel = normalizeOptionalString(values?.["default-model"]);
   const rawSessionMemory = normalizeOptionalString(values?.["session-memory"]);
   const rawGlobalMemory = normalizeOptionalString(values?.["global-memory"]);
@@ -743,6 +1045,25 @@ export const parseCliArgs = (
   const rawSchedulerTimezone = normalizeOptionalString(values?.timezone);
   const rawSchedulerPrompt = normalizeOptionalString(values?.prompt);
   const rawSchedulerPromptFile = normalizeOptionalString(values?.["prompt-file"]);
+  const rawRalphFlowJson = normalizeOptionalString(values?.["flow-json"]);
+  const rawRalphFlowJsonFile = normalizeOptionalString(values?.["flow-json-file"]);
+  const rawRalphExistingFlowJson = normalizeOptionalString(
+    values?.["existing-flow-json"],
+  );
+  const rawRalphExistingFlowJsonFile = normalizeOptionalString(
+    values?.["existing-flow-json-file"],
+  );
+  const rawRalphRevision = normalizeOptionalString(values?.revision);
+  const rawRalphFlowTarget = normalizeOptionalString(values?.["flow-target"]);
+  const rawRalphGenerationMode = normalizeOptionalString(
+    values?.["generation-mode"],
+  );
+  const rawRalphParams = values?.param
+    ?.map((entry) => normalizeOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  const rawRalphParamsFile = normalizeOptionalString(values?.["params-file"]);
+  const rawRalphMaxRounds = normalizeOptionalString(values?.["max-rounds"]);
+  const rawRalphMaxTransitions = normalizeOptionalString(values?.["max-transitions"]);
   const rawSchedulerContextPacks = values?.["context-pack"]
     ?.map((entry) => normalizeOptionalString(entry))
     .filter((entry): entry is string => Boolean(entry));
@@ -797,6 +1118,24 @@ export const parseCliArgs = (
   const rawSchedulerEventOccurredAt = normalizeOptionalString(
     values?.["event-occurred-at"],
   );
+  const rawMcpArgumentsJson = normalizeOptionalString(values?.["arguments-json"]);
+  const includeDisabledMcp = values?.["include-disabled"] === true;
+  const rawInstructionScope = normalizeOptionalString(values?.scope);
+  const rawInstructionPath = normalizeOptionalString(values?.path);
+  const rawInstructionApplyTo = values?.["apply-to"]
+    ?.map((entry) => normalizeOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  const rawInstructionExclude = values?.exclude
+    ?.map((entry) => normalizeOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  const rawInstructionKeywords = values?.keyword
+    ?.map((entry) => normalizeOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  const rawInstructionMode = normalizeOptionalString(
+    values?.["instruction-mode"],
+  );
+  const rawInstructionAudience = normalizeOptionalString(values?.audience);
+  const rawInstructionPriority = normalizeOptionalString(values?.priority);
 
   if (values?.mode !== undefined && !rawMode) {
     fail(`Expected --mode to be followed by ${VALID_MODE_DESCRIPTION}.`);
@@ -810,13 +1149,50 @@ export const parseCliArgs = (
     fail("Expected --profile to be followed by a profile name.");
   }
 
+  if (values?.scope !== undefined && !rawInstructionScope) {
+    fail("Expected --scope to be followed by user, workspace, or compatibility.");
+  }
+
+  if (
+    rawInstructionScope &&
+    !INSTRUCTION_SCOPES.has(rawInstructionScope as InstructionCliScope)
+  ) {
+    fail("Expected --scope to be followed by user, workspace, or compatibility.");
+  }
+
+  if (values?.["instruction-mode"] !== undefined && !rawInstructionMode) {
+    fail(
+      "Expected --instruction-mode to be followed by always, auto, agent-requested, manual, or disabled.",
+    );
+  }
+
+  if (
+    rawInstructionMode &&
+    !INSTRUCTION_MODES.has(rawInstructionMode as InstructionMode)
+  ) {
+    fail(
+      "Expected --instruction-mode to be followed by always, auto, agent-requested, manual, or disabled.",
+    );
+  }
+
+  if (values?.audience !== undefined && !rawInstructionAudience) {
+    fail("Expected --audience to be followed by executor, validator, generator, or all.");
+  }
+
+  if (
+    rawInstructionAudience &&
+    !INSTRUCTION_AUDIENCES.has(rawInstructionAudience as InstructionAudience)
+  ) {
+    fail("Expected --audience to be followed by executor, validator, generator, or all.");
+  }
+
   if (values?.provider !== undefined && !rawProvider) {
     fail("Expected --provider to be followed by openai, anthropic, or google.");
   }
 
   if (values?.["runtime-provider"] !== undefined && !rawRuntimeProvider) {
     fail(
-      "Expected --runtime-provider to be followed by openai, anthropic, or google.",
+      `Expected --runtime-provider to be followed by ${VALID_RUNTIME_PROVIDER_DESCRIPTION}.`,
     );
   }
 
@@ -831,7 +1207,7 @@ export const parseCliArgs = (
     )
   ) {
     fail(
-      "Expected --runtime-provider to be followed by openai, anthropic, or google.",
+      `Expected --runtime-provider to be followed by ${VALID_RUNTIME_PROVIDER_DESCRIPTION}.`,
     );
   }
 
@@ -845,6 +1221,21 @@ export const parseCliArgs = (
 
   if (values?.model !== undefined && !rawModel) {
     fail("Expected --model to be followed by a model name.");
+  }
+
+  if (values?.reasoning !== undefined && !rawReasoning) {
+    fail(
+      `Expected --reasoning to be followed by ${VALID_REASONING_MODE_DESCRIPTION}.`,
+    );
+  }
+
+  if (
+    rawReasoning &&
+    !VALID_REASONING_MODES.has(rawReasoning as ReasoningMode)
+  ) {
+    fail(
+      `Expected --reasoning to be followed by ${VALID_REASONING_MODE_DESCRIPTION}.`,
+    );
   }
 
   if (values?.["default-model"] !== undefined && !rawDefaultModel) {
@@ -899,6 +1290,10 @@ export const parseCliArgs = (
     ? parsePositiveInteger(rawAutopilotIterations, "--autopilot-iterations")
     : undefined;
   const infinite = values?.infinite === true;
+  const instructionPriority = parseOptionalInteger(
+    rawInstructionPriority,
+    "--priority",
+  );
   const agentLimits: RuntimeAgentLimitOverrides | undefined = infinite
     ? { infinite: true }
     : executorTurns !== undefined || autopilotExecutorIterations !== undefined
@@ -929,6 +1324,10 @@ export const parseCliArgs = (
     fail("--default-model cannot be combined with --image.");
   }
 
+  if (rawDefaultModel && rawReasoning) {
+    fail("--default-model cannot be combined with --reasoning.");
+  }
+
   if (rawDefaultModel && agentLimits) {
     fail("--default-model cannot be combined with runtime loop limit overrides.");
   }
@@ -957,6 +1356,7 @@ export const parseCliArgs = (
       positionals.length > 0 ||
       rawModel ||
       rawDefaultModel ||
+      rawReasoning ||
       rawProfile ||
       rawRuntimeProvider ||
       rawMode ||
@@ -1005,6 +1405,7 @@ export const parseCliArgs = (
       : {}),
     ...(rawModel ? { model: rawModel } : {}),
     ...(rawDefaultModel ? { defaultModel: rawDefaultModel } : {}),
+    ...(rawReasoning ? { reasoning: rawReasoning as ReasoningMode } : {}),
     ...(sessionMemoryEnabled !== undefined ? { sessionMemoryEnabled } : {}),
     ...(globalMemoryEnabled !== undefined ? { globalMemoryEnabled } : {}),
     ...(agentLimits ? { agentLimits } : {}),
@@ -1021,6 +1422,7 @@ export const parseCliArgs = (
       positionals.length > 0 ||
       rawModel ||
       rawDefaultModel ||
+      rawReasoning ||
       rawProfile ||
       rawRuntimeProvider ||
       rawMode ||
@@ -1096,6 +1498,379 @@ export const parseCliArgs = (
   }
 
   const [first, ...rest] = positionals;
+
+  if (first === "mcp") {
+    if (quickRunRequested || rawTask) {
+      fail("`machdoch mcp` cannot be combined with --quick or --task.");
+    }
+
+    const [rawAction, rawServerId, rawTarget, ...extraPositionals] = rest;
+    const actionText = normalizeOptionalString(rawAction) ?? "servers";
+
+    if (!MCP_ACTIONS.has(actionText as McpCliAction)) {
+      fail(
+        `Expected \`machdoch mcp\` action to be one of ${Array.from(
+          MCP_ACTIONS,
+        ).join(", ")}.`,
+      );
+    }
+
+    const action = actionText as McpCliAction;
+    const serverId = normalizeOptionalString(rawServerId);
+    const target = normalizeOptionalString(rawTarget);
+
+    if (extraPositionals.length > 0) {
+      fail(
+        `Command \`mcp ${action}\` does not accept positional arguments: ${extraPositionals.join(" ")}`,
+      );
+    }
+
+    if (MCP_ACTIONS_REQUIRING_SERVER.has(action) && !serverId) {
+      fail(`Expected a server id after \`machdoch mcp ${action}\`.`);
+    }
+
+    if (MCP_ACTIONS_REQUIRING_TARGET.has(action) && !target) {
+      fail(`Expected a target after \`machdoch mcp ${action} ${serverId ?? ""}\`.`);
+    }
+
+    if (!MCP_ACTIONS_REQUIRING_SERVER.has(action) && serverId) {
+      fail(`Command \`mcp ${action}\` does not accept a server id.`);
+    }
+
+    if (!MCP_ACTIONS_REQUIRING_TARGET.has(action) && target) {
+      fail(`Command \`mcp ${action}\` does not accept a target.`);
+    }
+
+    if (
+      rawMcpArgumentsJson &&
+      action !== "call-tool" &&
+      action !== "get-prompt"
+    ) {
+      fail("--arguments-json is only valid for `machdoch mcp call-tool` or `machdoch mcp get-prompt`.");
+    }
+
+    if (includeDisabledMcp && action !== "servers") {
+      fail("--include-disabled is only valid for `machdoch mcp servers`.");
+    }
+
+    return createParsedArgs(
+      {
+        ...sharedOptions,
+        command: "mcp",
+      },
+      {
+        mcp: {
+          action,
+          ...(serverId ? { serverId } : {}),
+          ...(target ? { target } : {}),
+          ...(rawMcpArgumentsJson ? { argumentsJson: rawMcpArgumentsJson } : {}),
+          ...(includeDisabledMcp ? { includeDisabled: true } : {}),
+        },
+      },
+    );
+  }
+
+  if (first === "ralph") {
+    if (quickRunRequested || rawTask) {
+      fail("`machdoch ralph` cannot be combined with --quick or --task.");
+    }
+
+    const [rawAction, rawSubject, ...extraPositionals] = rest;
+    const actionText = normalizeOptionalString(rawAction) ?? "list";
+
+    if (!RALPH_ACTIONS.has(actionText as RalphCliAction)) {
+      fail(
+        `Expected \`machdoch ralph\` action to be one of ${Array.from(
+          RALPH_ACTIONS,
+        ).join(", ")}.`,
+      );
+    }
+
+    const action = actionText as RalphCliAction;
+
+    if (extraPositionals.length > 0) {
+      fail(
+        `Command \`ralph ${action}\` does not accept positional arguments: ${extraPositionals.join(" ")}`,
+      );
+    }
+
+    if (
+      RALPH_ACTIONS_REQUIRING_SUBJECT.has(action) &&
+      !normalizeOptionalString(rawSubject)
+    ) {
+      fail(`Expected a flow id after \`machdoch ralph ${action}\`.`);
+    }
+
+    if (action === "create" && !rawSchedulerPrompt && !rawSchedulerPromptFile) {
+      fail("`machdoch ralph create` expects --prompt or --prompt-file.");
+    }
+
+    if (action !== "create" && (rawSchedulerPrompt || rawSchedulerPromptFile)) {
+      fail("--prompt and --prompt-file are only valid for `machdoch ralph create`.");
+    }
+
+    if (action === "save" && !rawRalphFlowJson && !rawRalphFlowJsonFile) {
+      fail(
+        "`machdoch ralph save` expects --flow-json. Use --flow-json-file for large payloads.",
+      );
+    }
+
+    if (action === "save" && rawRalphFlowJson && rawRalphFlowJsonFile) {
+      fail("Use either --flow-json or --flow-json-file for `machdoch ralph save`, not both.");
+    }
+
+    if (action !== "save" && rawRalphFlowJson) {
+      fail("--flow-json is only valid for `machdoch ralph save`.");
+    }
+
+    if (action !== "save" && rawRalphFlowJsonFile) {
+      fail("--flow-json-file is only valid for `machdoch ralph save`.");
+    }
+
+    if (action === "create" && rawRalphExistingFlowJson && rawRalphExistingFlowJsonFile) {
+      fail("Use either --existing-flow-json or --existing-flow-json-file for `machdoch ralph create`, not both.");
+    }
+
+    if (
+      action !== "create" &&
+      (rawRalphExistingFlowJson || rawRalphExistingFlowJsonFile)
+    ) {
+      if (rawRalphExistingFlowJson) {
+        fail("--existing-flow-json is only valid for `machdoch ralph create`.");
+      }
+
+      fail("--existing-flow-json-file is only valid for `machdoch ralph create`.");
+    }
+
+    if (action === "restore" && !rawRalphRevision) {
+      fail("`machdoch ralph restore` expects --revision.");
+    }
+
+    if (action !== "restore" && rawRalphRevision) {
+      fail("--revision is only valid for `machdoch ralph restore`.");
+    }
+
+    if (action !== "create" && rawRalphFlowTarget) {
+      fail("--flow-target is only valid for `machdoch ralph create`.");
+    }
+
+    if (
+      rawRalphFlowTarget &&
+      !RALPH_GENERATION_TARGETS.has(rawRalphFlowTarget as RalphCliGenerationTarget)
+    ) {
+      fail("Expected --flow-target to be followed by flow, prompt-block, or refactor.");
+    }
+
+    if (action !== "create" && rawRalphGenerationMode) {
+      fail("--generation-mode is only valid for `machdoch ralph create`.");
+    }
+
+    if (
+      rawRalphGenerationMode &&
+      !RALPH_GENERATION_MODES.has(
+        rawRalphGenerationMode as RalphCliGenerationMode,
+      )
+    ) {
+      fail("Expected --generation-mode to be followed by do-it or interview.");
+    }
+
+    if (action !== "run" && rawRalphParams && rawRalphParams.length > 0) {
+      fail("--param is only valid for `machdoch ralph run`.");
+    }
+
+    if (action !== "run" && rawRalphParamsFile) {
+      fail("--params-file is only valid for `machdoch ralph run`.");
+    }
+
+    if (action !== "create" && rawRalphMaxRounds) {
+      fail("--max-rounds is only valid for `machdoch ralph create`.");
+    }
+
+    if (action !== "run" && rawRalphMaxTransitions) {
+      fail("--max-transitions is only valid for `machdoch ralph run`.");
+    }
+
+    const ralphSubject = normalizeOptionalString(rawSubject);
+    const ralphMaxRounds = parseOptionalPositiveInteger(
+      rawRalphMaxRounds,
+      "--max-rounds",
+    );
+    const ralphMaxTransitions = parseOptionalPositiveInteger(
+      rawRalphMaxTransitions,
+      "--max-transitions",
+    );
+
+    return createParsedArgs(
+      {
+        ...sharedOptions,
+        command: "ralph",
+      },
+      {
+        ralph: {
+          action,
+          ...(ralphSubject ? { subject: ralphSubject } : {}),
+          ...(rawSchedulerName ? { name: rawSchedulerName } : {}),
+          ...(rawSchedulerPrompt ? { prompt: rawSchedulerPrompt } : {}),
+          ...(rawSchedulerPromptFile ? { promptFile: rawSchedulerPromptFile } : {}),
+          ...(rawRalphFlowJson ? { flowJson: rawRalphFlowJson } : {}),
+          ...(rawRalphFlowJsonFile ? { flowJsonFile: rawRalphFlowJsonFile } : {}),
+          ...(rawRalphExistingFlowJson
+            ? { existingFlowJson: rawRalphExistingFlowJson }
+            : {}),
+          ...(rawRalphExistingFlowJsonFile
+            ? { existingFlowJsonFile: rawRalphExistingFlowJsonFile }
+            : {}),
+          ...(rawRalphRevision ? { revision: rawRalphRevision } : {}),
+          ...(rawRalphFlowTarget
+            ? { target: rawRalphFlowTarget as RalphCliGenerationTarget }
+            : {}),
+          ...(rawRalphGenerationMode
+            ? { generationMode: rawRalphGenerationMode as RalphCliGenerationMode }
+            : {}),
+          ...(rawRalphParams && rawRalphParams.length > 0
+            ? { params: rawRalphParams }
+            : {}),
+          ...(rawRalphParamsFile ? { paramsFile: rawRalphParamsFile } : {}),
+          ...(ralphMaxRounds !== undefined ? { maxRounds: ralphMaxRounds } : {}),
+          ...(ralphMaxTransitions !== undefined
+            ? { maxTransitions: ralphMaxTransitions }
+            : {}),
+        },
+      },
+    );
+  }
+
+  if (first === "instructions") {
+    if (quickRunRequested || rawTask) {
+      fail("`machdoch instructions` cannot be combined with --quick or --task.");
+    }
+
+    const [rawAction, rawSubject, ...extraPositionals] = rest;
+    const actionText = normalizeOptionalString(rawAction) ?? "list";
+
+    if (!INSTRUCTION_ACTIONS.has(actionText as InstructionCliAction)) {
+      fail(
+        `Expected \`machdoch instructions\` action to be one of ${Array.from(
+          INSTRUCTION_ACTIONS,
+        ).join(", ")}.`,
+      );
+    }
+
+    const action = actionText as InstructionCliAction;
+
+    if (extraPositionals.length > 0) {
+      fail(
+        `Command \`instructions ${action}\` does not accept positional arguments: ${extraPositionals.join(" ")}`,
+      );
+    }
+
+    if (
+      INSTRUCTION_ACTIONS_REQUIRING_SUBJECT.has(action) &&
+      !normalizeOptionalString(rawSubject)
+    ) {
+      fail(`Expected an instruction name or path after \`machdoch instructions ${action}\`.`);
+    }
+
+    if (
+      (action === "create" || action === "save" || action === "generate") &&
+      !normalizeOptionalString(rawSubject) &&
+      !rawSchedulerName
+    ) {
+      fail(`\`machdoch instructions ${action}\` expects a name or --name.`);
+    }
+
+    if (
+      (action === "create" || action === "save" || action === "generate") &&
+      !rawSchedulerPrompt &&
+      !rawSchedulerPromptFile
+    ) {
+      fail(`\`machdoch instructions ${action}\` expects --prompt or --prompt-file.`);
+    }
+
+    if (
+      (action === "create" || action === "save" || action === "generate") &&
+      rawSchedulerPrompt &&
+      rawSchedulerPromptFile
+    ) {
+      fail(`Use either --prompt or --prompt-file for \`machdoch instructions ${action}\`, not both.`);
+    }
+
+    if (
+      action !== "create" &&
+      action !== "save" &&
+      action !== "generate" &&
+      (rawSchedulerPrompt || rawSchedulerPromptFile)
+    ) {
+      fail("--prompt and --prompt-file are only valid for `machdoch instructions create`, `machdoch instructions save`, or `machdoch instructions generate`.");
+    }
+
+    if (
+      action !== "create" &&
+      action !== "save" &&
+      action !== "generate" &&
+      rawInstructionPath
+    ) {
+      fail("--path is only valid for `machdoch instructions create`, `machdoch instructions save`, or `machdoch instructions generate`.");
+    }
+
+    if (action !== "generate" && rawRalphMaxRounds) {
+      fail("--max-rounds is only valid for `machdoch instructions generate`.");
+    }
+
+    if (
+      (action === "create" || action === "save" || action === "generate") &&
+      rawInstructionScope === "compatibility"
+    ) {
+      fail("Compatibility instruction files are read-only; use user or workspace scope.");
+    }
+
+    const instructionSubject = normalizeOptionalString(rawSubject);
+    const instructionMaxRounds = parseOptionalPositiveInteger(
+      rawRalphMaxRounds,
+      "--max-rounds",
+    );
+
+    return createParsedArgs(
+      {
+        ...sharedOptions,
+        command: "instructions",
+      },
+      {
+        instructions: {
+          action,
+          ...(instructionSubject ? { subject: instructionSubject } : {}),
+          ...(rawSchedulerName ? { name: rawSchedulerName } : {}),
+          ...(rawInstructionScope
+            ? { scope: rawInstructionScope as InstructionCliScope }
+            : {}),
+          ...(rawSchedulerPrompt ? { prompt: rawSchedulerPrompt } : {}),
+          ...(rawSchedulerPromptFile ? { promptFile: rawSchedulerPromptFile } : {}),
+          ...(rawInstructionPath ? { path: rawInstructionPath } : {}),
+          ...(rawInstructionApplyTo && rawInstructionApplyTo.length > 0
+            ? { applyTo: rawInstructionApplyTo }
+            : {}),
+          ...(rawInstructionExclude && rawInstructionExclude.length > 0
+            ? { exclude: rawInstructionExclude }
+            : {}),
+          ...(rawInstructionKeywords && rawInstructionKeywords.length > 0
+            ? { keywords: rawInstructionKeywords }
+            : {}),
+          ...(rawInstructionMode
+            ? { mode: rawInstructionMode as InstructionMode }
+            : {}),
+          ...(rawInstructionAudience
+            ? { audience: rawInstructionAudience as InstructionAudience }
+            : {}),
+          ...(instructionPriority !== undefined
+            ? { priority: instructionPriority }
+            : {}),
+          ...(instructionMaxRounds !== undefined
+            ? { maxRounds: instructionMaxRounds }
+            : {}),
+        },
+      },
+    );
+  }
 
   if (first === "scheduler") {
     if (quickRunRequested || rawTask) {
@@ -1480,6 +2255,7 @@ export const parseCliArgs = (
     if (
       rawModel ||
       rawDefaultModel ||
+      rawReasoning ||
       rawProfile ||
       rawRuntimeProvider ||
       rawMode ||

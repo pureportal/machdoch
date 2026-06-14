@@ -17,6 +17,10 @@ import {
 } from "./_helpers/execution-state.js";
 import { TASK_EXECUTION_STATUS_TO_TERMINAL_STATE } from "./_helpers/execution-progress.js";
 import {
+  getAgentCliProviderLabel,
+  isAgentCliProvider,
+} from "./_helpers/agent-cli-providers.js";
+import {
   TASK_EXECUTION_TIMEOUT_MS,
   TASK_EXECUTION_TIMEOUT_REASON_PREFIX,
 } from "./_helpers/agent-runtime-types.js";
@@ -108,6 +112,18 @@ const createLiveExecutionUnavailableMessage = (
   }
 
   if (!providerIsConfigured(config)) {
+    if (isAgentCliProvider(config.provider)) {
+      const label = getAgentCliProviderLabel(config.provider);
+
+      return {
+        summary:
+          `This task needs the model-driven agent loop, but the selected provider \`${config.provider}\` is not configured.`,
+        reason:
+          `Install ${label} so its binary is on PATH, or configure \`agent-cli.${config.provider}.path\` with the CLI binary path.`,
+        sectionLines,
+      };
+    }
+
     return {
       summary:
         `This task needs the model-driven agent loop, but the selected provider \`${config.provider}\` is not configured.`,
@@ -209,7 +225,11 @@ const runTaskExecutionStateMachine = async (
       }
 
       case "resolving-context": {
-        runtime.taskContext = resolveTaskContext(task, customizations);
+        runtime.taskContext = resolveTaskContext(task, customizations, {
+          ...(options.instructionAudience
+            ? { instructionAudience: options.instructionAudience }
+            : {}),
+        });
         runtime.contextSections = createContextSections(runtime.taskContext);
         state = "checking-inputs";
         message =
@@ -292,6 +312,7 @@ const runTaskExecutionStateMachine = async (
             taskContext: runtime.taskContext,
             contextSections: runtime.contextSections,
             ...(options.signal ? { signal: options.signal } : {}),
+            ...(options.runId ? { runId: options.runId } : {}),
             ...(options.conversationContext
               ? { conversationContext: options.conversationContext }
               : {}),

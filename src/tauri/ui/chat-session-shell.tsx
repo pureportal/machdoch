@@ -1,5 +1,8 @@
-import { CalendarClock, Cog, RadioTower, TerminalSquare } from "lucide-react";
-import { Suspense, lazy, useEffect, useState, type JSX } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, type JSX } from "react";
+import {
+  AppRail,
+  type AppActivityState,
+} from "./app-shell/app-rail";
 import { useAppearanceSettings } from "./chat-session/_helpers/use-appearance-settings";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
@@ -13,25 +16,26 @@ import { SessionComposer } from "./chat-session/components/session-composer";
 import { SessionHeader } from "./chat-session/components/session-header";
 import { SessionsSidebar } from "./chat-session/components/sessions-sidebar";
 import { ShellTitlebar } from "./chat-session/components/shell-titlebar";
-import { Button } from "./components/ui/button";
 import { Dialog } from "./components/ui/dialog";
 import { ScrollArea } from "./components/ui/scroll-area";
-import { Separator } from "./components/ui/separator";
 import { VoiceInputOverlay } from "./components/voice-input-overlay";
 import {
+  DEFAULT_APP_SHELL_STATE,
+  loadAppShellState,
   loadOnboardingState,
+  saveAppShellState,
   saveOnboardingState,
+  type AppShellState,
+  type MainAppId,
 } from "./lib/shell-store";
+import { cn } from "./lib/utils";
+import { RalphApp } from "./ralph/ralph-app";
+import { useRalphActivity } from "./ralph/use-ralph-activity";
 import {
   runDueSchedulerJobs,
   syncScheduledPrompts,
 } from "./runtime";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "./components/ui/tooltip";
+import { TooltipProvider } from "./components/ui/tooltip";
 
 const SettingsDialog = lazy(async () => {
   const module = await import("./chat-session/components/settings-dialog");
@@ -45,13 +49,104 @@ const isTestEnvironment = (): boolean => {
   return typeof process !== "undefined" && process.env.NODE_ENV === "test";
 };
 
+const toActivityState = (
+  running: boolean,
+  completed: boolean,
+): AppActivityState => {
+  if (running && completed) {
+    return "running-and-completed";
+  }
+
+  if (running) {
+    return "running";
+  }
+
+  return completed ? "completed" : "idle";
+};
+
 export const ChatSession = (): JSX.Element => {
   const controller = useChatSessionController({
     fileDropTarget: "active-session",
   });
   const appearance = useAppearanceSettings();
+  const [appShellState, setAppShellState] = useState<AppShellState>(
+    DEFAULT_APP_SHELL_STATE,
+  );
+  const [appShellLoaded, setAppShellLoaded] = useState(false);
+  const [chatCompletedSinceView, setChatCompletedSinceView] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
+  const [ralphMounted, setRalphMounted] = useState(false);
+  const previousChatRunningRef = useRef(false);
+  const activeApp = appShellState.activeApp;
+  const ralphActivity = useRalphActivity(activeApp);
+
+  const chatRunning =
+    controller.composer.isExecuting || controller.quickTask.status === "running";
+  const chatActivity = toActivityState(chatRunning, chatCompletedSinceView);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadAppShellState()
+      .then((state) => {
+        if (!cancelled) {
+          setAppShellState(state);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAppShellLoaded(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!appShellLoaded) {
+      return;
+    }
+
+    void saveAppShellState(appShellState);
+  }, [appShellLoaded, appShellState]);
+
+  const selectApp = (nextApp: MainAppId): void => {
+    setAppShellState((current) => ({
+      version: 1,
+      activeApp: nextApp,
+      lastViewedAt: {
+        ...current.lastViewedAt,
+        [nextApp]: Date.now(),
+      },
+    }));
+  };
+
+  useEffect(() => {
+    if (activeApp === "ralph") {
+      setRalphMounted(true);
+    }
+  }, [activeApp]);
+
+  useEffect(() => {
+    if (activeApp === "chat") {
+      setChatCompletedSinceView(false);
+    }
+  }, [activeApp]);
+
+  useEffect(() => {
+    if (
+      previousChatRunningRef.current &&
+      !chatRunning &&
+      activeApp !== "chat"
+    ) {
+      setChatCompletedSinceView(true);
+    }
+
+    previousChatRunningRef.current = chatRunning;
+  }, [activeApp, chatRunning]);
 
   useEffect(() => {
     if (isTestEnvironment()) {
@@ -130,7 +225,7 @@ export const ChatSession = (): JSX.Element => {
   };
 
   return (
-    <TooltipProvider delayDuration={250}>
+    <TooltipProvider delayDuration={300}>
       <Dialog
         open={controller.catalogOpen}
         onOpenChange={controller.setCatalogOpen}
@@ -196,94 +291,69 @@ export const ChatSession = (): JSX.Element => {
           ) : null}
 
           <div className="flex min-h-0 min-w-0 flex-1 w-full overflow-hidden bg-slate-950">
-            <aside className="app-shell-rail z-10 flex w-20 shrink-0 flex-col items-center justify-between border-r border-slate-900 bg-slate-950 py-6">
-              <div className="app-shell-rail-group flex flex-col items-center gap-4">
-                <div className="app-shell-logo flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 shadow-lg shadow-sky-500/10">
-                  <TerminalSquare className="h-6 w-6 text-sky-400" />
-                </div>
+            <AppRail
+              activeApp={activeApp}
+              chatActivity={chatActivity}
+              ralphActivity={ralphActivity}
+              onSelectApp={selectApp}
+              onOpenScheduler={() => setSchedulerOpen(true)}
+              onOpenMissionControl={() => controller.missionControl.setOpen(true)}
+              onOpenSettings={controller.openProviderSettings}
+            />
 
-                <Separator className="w-10 bg-slate-900" />
-              </div>
+            <div
+              hidden={activeApp !== "chat"}
+              className={cn(
+                "min-h-0 min-w-0 flex-1 overflow-hidden",
+                activeApp === "chat" ? "flex" : "hidden",
+              )}
+            >
+                <SessionsSidebar {...controller.sidebar} />
 
-              <div className="app-shell-rail-group flex flex-col items-center gap-3">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Smart Scheduler"
-                      onClick={() => setSchedulerOpen(true)}
-                      className="app-shell-rail-button h-12 w-12 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-                    >
-                      <CalendarClock className="h-5 w-5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">Smart Scheduler</TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Mission Control"
-                      onClick={() => controller.missionControl.setOpen(true)}
-                      className="app-shell-rail-button h-12 w-12 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-                    >
-                      <RadioTower className="h-5 w-5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">Mission Control</TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Settings"
-                      onClick={controller.openProviderSettings}
-                      className="app-shell-rail-button h-12 w-12 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-                    >
-                      <Cog className="h-5 w-5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">Settings</TooltipContent>
-                </Tooltip>
-              </div>
-            </aside>
-
-            <SessionsSidebar {...controller.sidebar} />
-
-            {controller.isDesktop && !controller.hasAnyProvider ? (
-              <ProviderEmptyState
-                onOpenSettings={controller.openProviderSettings}
-              />
-            ) : (
-              <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
-                <SessionHeader {...controller.header} />
-
-                <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-                  <ScrollArea className="h-full min-w-0" type="always">
-                    <ConversationFeed {...controller.conversation} />
-                  </ScrollArea>
-                  <ScrollToNewestButton
-                    visible={controller.conversation.showScrollToNewestButton}
-                    onClick={controller.conversation.onScrollToNewest}
-                    className="bottom-4 left-1/2 -translate-x-1/2"
+                {controller.isDesktop && !controller.hasAnyProvider ? (
+                  <ProviderEmptyState
+                    onOpenSettings={controller.openProviderSettings}
                   />
-                </div>
+                ) : (
+                  <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
+                    <SessionHeader {...controller.header} />
 
-                <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-8 pb-5 pt-3 backdrop-blur-xl">
-                  <div className="mx-auto w-full max-w-5xl min-w-0">
-                    <SessionComposer {...controller.composer} />
-                  </div>
-                </footer>
-              </main>
-            )}
+                    <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+                      <ScrollArea className="h-full min-w-0" type="always">
+                        <ConversationFeed {...controller.conversation} />
+                      </ScrollArea>
+                      <ScrollToNewestButton
+                        visible={
+                          controller.conversation.showScrollToNewestButton
+                        }
+                        onClick={controller.conversation.onScrollToNewest}
+                        className="bottom-4 left-1/2 -translate-x-1/2"
+                      />
+                    </div>
+
+                    <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-8 pb-5 pt-3 backdrop-blur-xl">
+                      <div className="mx-auto w-full max-w-5xl min-w-0">
+                        <SessionComposer {...controller.composer} />
+                      </div>
+                    </footer>
+                  </main>
+                )}
+            </div>
+
+            <div
+              hidden={activeApp !== "ralph"}
+              className={cn(
+                "min-h-0 min-w-0 flex-1 overflow-hidden",
+                activeApp === "ralph" ? "flex" : "hidden",
+              )}
+            >
+              {ralphMounted ? (
+                <RalphApp
+                  isActive={activeApp === "ralph"}
+                  providerStatuses={controller.titlebar.providerStatuses}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -295,7 +365,10 @@ export const ChatSession = (): JSX.Element => {
                 controller.settingsDialog.onSettingsSectionChange
               }
               providerSetup={controller.settingsDialog.providerSetup}
+              workspaceSetup={controller.settingsDialog.workspaceSetup}
+              instructionsSetup={controller.settingsDialog.instructionsSetup}
               webSearchSetup={controller.settingsDialog.webSearchSetup}
+              mcpSetup={controller.settingsDialog.mcpSetup}
               agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}
               appearanceSetup={appearance}
               memorySetup={controller.settingsDialog.memorySetup}

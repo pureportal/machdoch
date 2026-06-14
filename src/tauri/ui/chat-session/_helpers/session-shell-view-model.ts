@@ -2,7 +2,7 @@ import {
   type ChatSessionRecord,
 } from "../../chat-session.model";
 import {
-  SUPPORTED_PROVIDER_ORDER,
+  RUNNABLE_PROVIDER_ORDER,
   type RuntimeProvider,
 } from "../../model-catalog";
 import type {
@@ -60,17 +60,17 @@ export const createProviderChooserState = (options: {
     activeProviderStats.map((entry) => [entry.provider, entry.configured]),
   );
   const configuredProviders = options.isDesktop
-    ? SUPPORTED_PROVIDER_ORDER.filter(
+    ? RUNNABLE_PROVIDER_ORDER.filter(
         (provider) => runtimeProviderLookup.get(provider) ?? false,
       )
-    : [...SUPPORTED_PROVIDER_ORDER];
+    : [...RUNNABLE_PROVIDER_ORDER];
   const chooserProviders =
     configuredProviders.length > 0
       ? configuredProviders
-      : [...SUPPORTED_PROVIDER_ORDER];
+      : [...RUNNABLE_PROVIDER_ORDER];
   const hasAnyProvider =
     options.isDesktop && options.globalProviders !== null
-      ? activeProviderStats.some((entry) => entry.configured)
+      ? configuredProviders.length > 0
       : true;
 
   return {

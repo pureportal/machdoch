@@ -1,5 +1,6 @@
 import type {
   ModelProvider,
+  ReasoningMode,
   RunMode,
   ToolName,
 } from "./runtime-contract.generated.js";
@@ -7,6 +8,7 @@ import type {
 export type {
   ModelProvider,
   ProviderAvailability,
+  ReasoningMode,
   RuntimeAgentLimitOverrides,
   RuntimeAgentLimits,
   RuntimeConfig,
@@ -44,6 +46,14 @@ export interface ParsedMarkdownDocument {
   body: string;
 }
 
+export type InstructionScope = "user" | "workspace" | "compatibility";
+
+export type InstructionMode = "always" | "auto" | "agent-requested" | "manual" | "disabled";
+
+export type InstructionAudience = "executor" | "validator" | "generator" | "all";
+
+export type InstructionTargetAudience = Exclude<InstructionAudience, "all">;
+
 export interface DiscoveredInstruction {
   kind: "always-on" | "conditional";
   path: string;
@@ -51,8 +61,21 @@ export interface DiscoveredInstruction {
   body: string;
   description?: string;
   applyTo?: string;
+  applyToPatterns?: string[];
+  excludePatterns?: string[];
   keywords: string[];
   priority?: number;
+  mode?: InstructionMode;
+  audience?: InstructionAudience;
+  scope?: InstructionScope;
+  sizeBytes?: number;
+}
+
+export interface CustomizationDiagnostic {
+  level: "warning" | "error";
+  code: string;
+  message: string;
+  path?: string;
 }
 
 export interface DiscoveredPrompt {
@@ -81,6 +104,7 @@ export interface CustomizationDiscoveryResult {
   instructions: DiscoveredInstruction[];
   prompts: DiscoveredPrompt[];
   skills: DiscoveredSkill[];
+  diagnostics?: CustomizationDiagnostic[];
 }
 
 export interface TaskPlanStep {
@@ -279,6 +303,7 @@ export type AgentModelStreamEventHandler = (
 
 export interface AgentModelStartParams {
   model: string;
+  reasoning?: ReasoningMode;
   systemPrompt: string;
   userPrompt: string;
   imageInputs?: AgentModelImageInput[];
@@ -329,8 +354,10 @@ export interface ResolvedTaskContext {
   instructionContextText: string;
   workspacePaths: string[];
   suggestedTools: ToolName[];
+  instructionAudience?: InstructionTargetAudience;
   invokedPrompt?: ResolvedPromptInvocation;
   applicableInstructions: TaskCustomizationMatch[];
+  applicableValidatorInstructions?: TaskCustomizationMatch[];
 }
 
 export interface TaskRunPreview {
@@ -489,10 +516,12 @@ export interface TaskExecutionNarrative {
 
 export interface TaskExecutionOptions {
   signal?: AbortSignal;
+  runId?: string;
   onStateChange?: TaskExecutionProgressHandler;
   onActionOutput?: TaskActionOutputHandler;
   modelAdapter?: AgentModelAdapter;
   monitorModelAdapter?: AgentModelAdapter;
+  instructionAudience?: InstructionTargetAudience;
   conversationContext?: TaskConversationContext;
   imageInputs?: AgentModelImageInput[];
   maxDurationMs?: number;

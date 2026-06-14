@@ -89,9 +89,12 @@ const rustConstName = (prefix, propertyName) =>
   `${prefix}_${pascalToScreamingSnake(propertyName)}`;
 
 const runtimeModes = getEnum("RunMode");
+const reasoningModes = getEnum("ReasoningMode");
 const validTools = getEnum("ToolName");
 const configuredModelProviders = getEnum("ConfiguredModelProvider");
 const modelProviders = getEnum("ModelProvider");
+const userApiProviders = getEnum("UserApiProvider");
+const agentCliProviders = getEnum("AgentCliProvider");
 const webSearchProviders = getEnum("WebSearchProvider");
 const userWebSearchProviders = getEnum("UserWebSearchProvider");
 const audioProviders = getEnum("AudioProvider");
@@ -102,6 +105,7 @@ const defaultModelByProvider = metadata.defaultModelByProvider;
 const defaultModelProvider = metadata.defaultModelProvider;
 const runtimeEnvKeys = metadata.runtimeEnvKeys;
 const providerEnvKeys = metadata.providerEnvKeys;
+const agentCliProviderEnvKeys = metadata.agentCliProviderEnvKeys;
 const webSearchEnvKeys = metadata.webSearchEnvKeys;
 const defaultAgentLimits = getDefaultObject("UserAgentLimitsSettings");
 const agentLimitBounds = getBoundsObject("UserAgentLimitsSettings");
@@ -115,6 +119,7 @@ for (const [name, value] of Object.entries({
   defaultModelProvider,
   runtimeEnvKeys,
   providerEnvKeys,
+  agentCliProviderEnvKeys,
   webSearchEnvKeys,
   schemaVersion,
 })) {
@@ -132,6 +137,9 @@ export const RUNTIME_CONFIG_SCHEMA_VERSION = ${schemaVersion} as const;
 export const RUN_MODES = ${tsReadonlyArray(runtimeModes)} as const;
 export type RunMode = (typeof RUN_MODES)[number];
 
+export const REASONING_MODES = ${tsReadonlyArray(reasoningModes)} as const;
+export type ReasoningMode = (typeof REASONING_MODES)[number];
+
 export const VALID_TOOLS = ${tsReadonlyArray(validTools)} as const;
 export type ToolName = (typeof VALID_TOOLS)[number];
 
@@ -140,6 +148,12 @@ export type ConfiguredModelProvider = (typeof VALID_MODEL_PROVIDERS)[number];
 
 export const MODEL_PROVIDERS = ${tsReadonlyArray(modelProviders)} as const;
 export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
+
+export const USER_API_PROVIDERS = ${tsReadonlyArray(userApiProviders)} as const;
+export type UserApiProvider = (typeof USER_API_PROVIDERS)[number];
+
+export const AGENT_CLI_PROVIDERS = ${tsReadonlyArray(agentCliProviders)} as const;
+export type AgentCliProvider = (typeof AGENT_CLI_PROVIDERS)[number];
 
 export const VALID_WEB_SEARCH_PROVIDERS = ${tsReadonlyArray(webSearchProviders)} as const;
 export type WebSearchProvider = (typeof VALID_WEB_SEARCH_PROVIDERS)[number];
@@ -164,7 +178,8 @@ export const DEFAULT_MODEL_PROVIDER = ${json(defaultModelProvider)} as const sat
 export const DEFAULT_MODEL_BY_PROVIDER = ${json(defaultModelByProvider)} as const satisfies Record<ConfiguredModelProvider, string>;
 
 export const RUNTIME_ENV_KEYS = ${tsReadonlyArray(runtimeEnvKeys)} as const;
-export const PROVIDER_ENV_KEY_BY_PROVIDER = ${json(providerEnvKeys)} as const satisfies Record<ConfiguredModelProvider, string>;
+export const PROVIDER_ENV_KEY_BY_PROVIDER = ${json(providerEnvKeys)} as const satisfies Record<UserApiProvider, string>;
+export const AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER = ${json(agentCliProviderEnvKeys)} as const satisfies Record<AgentCliProvider, string>;
 export const WEB_SEARCH_ENV_KEY_BY_PROVIDER = ${json(webSearchEnvKeys)} as const satisfies Record<UserWebSearchProvider, string>;
 
 export const DEFAULT_USER_AGENT_LIMITS_SETTINGS = ${json(defaultAgentLimits)} as const satisfies UserAgentLimitsSettings;
@@ -182,6 +197,11 @@ export const isRuntimeContractValue = <T extends readonly string[]>(
 export const isRunMode = (value: string | undefined): value is RunMode =>
   isRuntimeContractValue(RUN_MODES, value);
 
+export const isReasoningMode = (
+  value: string | undefined,
+): value is ReasoningMode =>
+  isRuntimeContractValue(REASONING_MODES, value);
+
 export const isConfiguredModelProvider = (
   value: string | undefined,
 ): value is ConfiguredModelProvider =>
@@ -189,6 +209,12 @@ export const isConfiguredModelProvider = (
 
 export const isModelProvider = (value: string | undefined): value is ModelProvider =>
   isRuntimeContractValue(MODEL_PROVIDERS, value);
+
+export const isUserApiProvider = (value: string | undefined): value is UserApiProvider =>
+  isRuntimeContractValue(USER_API_PROVIDERS, value);
+
+export const isAgentCliProvider = (value: string | undefined): value is AgentCliProvider =>
+  isRuntimeContractValue(AGENT_CLI_PROVIDERS, value);
 
 export const isWebSearchProvider = (
   value: string | undefined,
@@ -233,6 +259,7 @@ export interface WorkspaceProfileConfig {
   mode?: RunMode;
   provider?: ConfiguredModelProvider;
   model?: string;
+  reasoning?: ReasoningMode;
   offline?: boolean;
   agentLimits?: RuntimeAgentLimitOverrides;
   compatibility?: WorkspaceCompatibilityConfig;
@@ -243,6 +270,7 @@ export interface WorkspaceConfigFile {
   defaultMode?: RunMode;
   provider?: ConfiguredModelProvider;
   model?: string;
+  reasoning?: ReasoningMode;
   offline?: boolean;
   agentLimits?: RuntimeAgentLimitOverrides;
   compatibility?: WorkspaceCompatibilityConfig;
@@ -301,6 +329,7 @@ export interface RuntimeConfig {
   mode: RunMode;
   provider: ModelProvider;
   model: string;
+  reasoning: ReasoningMode;
   offline: boolean;
   agentLimits?: RuntimeAgentLimits;
   compatibility: WorkspaceCompatibilityConfig;
@@ -320,12 +349,14 @@ export interface UiControlAvailability {
 }
 
 export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits"> {
+  defaultMode: RunMode;
+  defaultReasoning: ReasoningMode;
   agentLimits: RuntimeAgentLimits;
   uiControl?: UiControlAvailability;
 }
 
-export type UserApiProvider = ConfiguredModelProvider;
 export type UserProviderApiKeys = Partial<Record<UserApiProvider, string>>;
+export type UserAgentCliPaths = Partial<Record<AgentCliProvider, string>>;
 export type UserWebSearchApiKeys = Partial<Record<UserWebSearchProvider, string>>;
 
 export interface UserWebSearchConfigFile {
@@ -363,6 +394,7 @@ export interface UserReviewModelConfigFile {
 
 export interface UserConfigFile {
   apiKeys?: UserProviderApiKeys;
+  agentCliPaths?: UserAgentCliPaths;
   webSearch?: UserWebSearchConfigFile;
   voice?: UserVoiceConfigFile;
   speechToText?: UserSpeechToTextConfigFile;
@@ -457,10 +489,12 @@ const rustOutput = `${rustHeader}pub const RUNTIME_CONFIG_SCHEMA_ID: &str = ${JS
 pub const RUNTIME_CONFIG_SCHEMA_VERSION: u32 = ${schemaVersion};
 
 pub const RUN_MODES: [&str; ${runtimeModes.length}] = ${rustStringArray(runtimeModes)};
+pub const REASONING_MODES: [&str; ${reasoningModes.length}] = ${rustStringArray(reasoningModes)};
 pub const VALID_TOOLS: [&str; ${validTools.length}] = ${rustStringArray(validTools)};
 pub const VALID_MODEL_PROVIDERS: [&str; ${configuredModelProviders.length}] = ${rustStringArray(configuredModelProviders)};
 pub const MODEL_PROVIDERS: [&str; ${modelProviders.length}] = ${rustStringArray(modelProviders)};
-pub const USER_API_PROVIDERS: [&str; ${configuredModelProviders.length}] = ${rustStringArray(configuredModelProviders)};
+pub const USER_API_PROVIDERS: [&str; ${userApiProviders.length}] = ${rustStringArray(userApiProviders)};
+pub const AGENT_CLI_PROVIDERS: [&str; ${agentCliProviders.length}] = ${rustStringArray(agentCliProviders)};
 pub const USER_WEB_SEARCH_PROVIDERS: [&str; ${userWebSearchProviders.length}] = ${rustStringArray(userWebSearchProviders)};
 pub const USER_AUDIO_AI_PROVIDERS: [&str; ${audioProviders.length}] = ${rustStringArray(audioProviders)};
 pub const VALID_WEB_SEARCH_PROVIDERS: [&str; ${webSearchProviders.length}] = ${rustStringArray(webSearchProviders)};
@@ -468,6 +502,7 @@ pub const VALID_AUDIO_AI_PROVIDERS: [&str; ${voiceProviders.length}] = ${rustStr
 pub const USER_REVIEW_MODEL_MODES: [&str; ${userReviewModelModes.length}] = ${rustStringArray(userReviewModelModes)};
 pub const RUNTIME_ENV_KEYS: [&str; ${runtimeEnvKeys.length}] = ${rustStringArray(runtimeEnvKeys)};
 pub const PROVIDER_ENV_KEYS: [(&str, &str); ${Object.keys(providerEnvKeys).length}] = ${rustPairs(providerEnvKeys)};
+pub const AGENT_CLI_PROVIDER_ENV_KEYS: [(&str, &str); ${Object.keys(agentCliProviderEnvKeys).length}] = ${rustPairs(agentCliProviderEnvKeys)};
 pub const WEB_SEARCH_ENV_KEYS: [(&str, &str); ${Object.keys(webSearchEnvKeys).length}] = ${rustPairs(webSearchEnvKeys)};
 pub const DEFAULT_MODEL_PROVIDER: &str = ${JSON.stringify(defaultModelProvider)};
 pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); ${Object.keys(defaultModelByProvider).length}] = ${rustPairs(defaultModelByProvider)};

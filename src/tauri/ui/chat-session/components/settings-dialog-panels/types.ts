@@ -1,18 +1,29 @@
 import type {
+  McpConfigDocument,
+  McpConfigScope,
+  McpPresetSummary,
   SpeechToTextProvider,
   SpeechToTextProviderAvailability,
   RuntimeProviderAvailability,
+  InstructionMutationInput,
   UserAgentLimitsSettings,
   UserApiKeyProvider,
   UserDesktopSettings,
   UserMemorySettings,
   UserReviewModelSettings,
+  ReasoningMode,
   UserWebSearchApiKeyProvider,
   VoiceAiProvider,
   VoiceProviderAvailability,
   WebSearchProvider,
 } from "../../../runtime";
+import type {
+  CustomizationDiagnostic,
+  DiscoveredInstruction,
+  RunMode,
+} from "../../../../../core/types.js";
 import type { AppearanceSettings } from "../../../lib/shell-store";
+import type { RuntimeProvider } from "../../../model-catalog";
 import type { SpeechInputDeviceOption } from "../../_helpers/speech-audio";
 import type { ChatSessionVoiceOption } from "../../_helpers/use-chat-session-voice";
 
@@ -49,6 +60,66 @@ export interface MemorySettingsControls {
   saving: boolean;
   message: SettingsStatusMessage | null;
   onGlobalEnabledChange: (enabled: boolean) => Promise<void> | void;
+}
+
+export interface WorkspaceSettingsControls {
+  workspaceRoot: string | null;
+  workspaceLabel: string;
+  defaultMode: RunMode;
+  effectiveMode: RunMode;
+  defaultReasoning: ReasoningMode;
+  effectiveReasoning: ReasoningMode;
+  reasoningProvider?: RuntimeProvider;
+  reasoningModel?: string;
+  activeProfile?: string;
+  saving: boolean;
+  message: SettingsStatusMessage | null;
+  onDefaultModeChange: (mode: RunMode) => Promise<void> | void;
+  onReasoningModeChange: (reasoning: ReasoningMode) => Promise<void> | void;
+}
+
+export interface McpSettingsControls {
+  scope: McpConfigScope;
+  document: McpConfigDocument;
+  draft: string;
+  presets: readonly McpPresetSummary[];
+  workspaceAvailable: boolean;
+  loading: boolean;
+  saving: boolean;
+  discoveryServerId: string;
+  discoveryBusy: boolean;
+  discoveryOutput: string | null;
+  oauthServerId: string;
+  oauthCallback: string;
+  oauthBusy: boolean;
+  message: SettingsStatusMessage | null;
+  onScopeChange: (scope: McpConfigScope) => void;
+  onDraftChange: (value: string) => void;
+  onSave: () => Promise<void> | void;
+  onPresetInsert: (presetId: string) => void;
+  onDiscoveryServerIdChange: (serverId: string) => void;
+  onDiscoverServer: (serverId?: string) => Promise<void> | void;
+  onRefreshDiscoveryCache: (serverId?: string) => Promise<void> | void;
+  onListDiscoveryCache: () => Promise<void> | void;
+  onOAuthServerIdChange: (serverId: string) => void;
+  onOAuthCallbackChange: (value: string) => void;
+  onStartOAuth: (serverId?: string) => Promise<void> | void;
+  onFinishOAuth: (
+    serverId?: string,
+    authorizationResponse?: string,
+  ) => Promise<void> | void;
+}
+
+export interface InstructionSettingsControls {
+  workspaceRoot: string | null;
+  instructions: DiscoveredInstruction[];
+  diagnostics: CustomizationDiagnostic[];
+  loading: boolean;
+  saving: boolean;
+  message: SettingsStatusMessage | null;
+  onRefresh: () => Promise<void> | void;
+  onManualSave: (input: InstructionMutationInput) => Promise<void> | void;
+  onGenerate: (input: InstructionMutationInput) => Promise<void> | void;
 }
 
 export interface DesktopSettingsControls {

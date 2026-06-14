@@ -124,6 +124,26 @@ const TOOL_REGISTRY: ToolDefinition[] = [
     ],
   },
   {
+    name: "mcp",
+    title: "MCP Servers",
+    description:
+      "Connect to configured Model Context Protocol servers for tools, resources, prompts, and remote automations.",
+    riskLevel: "high",
+    keywords: [
+      "mcp",
+      "model context protocol",
+      "serper",
+      "github",
+      "chrome mcp",
+      "browser mcp",
+      "external tool",
+      "remote tool",
+      "resource",
+      "prompt",
+      "connector",
+    ],
+  },
+  {
     name: "scheduler",
     title: "Smart Scheduler",
     description:

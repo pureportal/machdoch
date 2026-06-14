@@ -7,21 +7,41 @@ import {
 } from "./test/tauri-test-mocks";
 import {
   cancelDesktopTask,
+  beginMcpOAuth,
+  createInstruction,
+  createMcpConfigRawWithPreset,
+  generateInstruction,
   detectFullscreenWindowOnMonitor,
+  discoverMcpServer,
   disableRemoteControlServer,
   enableRemoteControlServer,
+  finishMcpOAuth,
   forgetRemoteControlPairings,
   getRemoteControlStatus,
   loadActiveDesktopTaskIds,
+  loadActiveDesktopTasks,
   loadDesktopLaunchId,
+  listMcpCachedCapabilities,
+  listMcpServers,
+  listInstructions,
+  loadMcpConfigDocument,
   loadProviderModelCatalog,
   openAttachedPath,
   openRemoteControlUrl,
+  createRalphFlow,
+  deleteRalphFlow,
+  listRalphFlowRevisions,
+  restoreRalphFlowRevision,
+  saveRalphFlow,
   setRemoteControlPort,
   loadUserReviewModelSettings,
   resolveDroppedPaths,
+  refreshMcpDiscoveryCache,
+  runRalphFlow,
   runDesktopTask,
   saveClipboardImageAttachment,
+  saveInstruction,
+  saveMcpConfigDocument,
   saveUserReviewModelSettings,
   saveUserSpeechToTextInputDevice,
   subscribeToRemoteControlCommands,
@@ -81,6 +101,29 @@ describe("desktop runtime fullscreen detection", () => {
     expect(invokeMock).toHaveBeenCalledWith("get_active_desktop_task_ids");
   });
 
+  it("loads active desktop task metadata through the Tauri runtime", async () => {
+    invokeMock.mockResolvedValueOnce([
+      {
+        id: "ralph-task",
+        kind: "ralph",
+        workspaceRoot: "C:\\Project",
+        arguments: ["run", "flow-id"],
+        startedAt: 123,
+      },
+    ]);
+
+    await expect(loadActiveDesktopTasks()).resolves.toEqual([
+      {
+        id: "ralph-task",
+        kind: "ralph",
+        workspaceRoot: "C:\\Project",
+        arguments: ["run", "flow-id"],
+        startedAt: 123,
+      },
+    ]);
+    expect(invokeMock).toHaveBeenCalledWith("get_active_desktop_tasks");
+  });
+
   it("loads the provider model catalog through the Tauri runtime", async () => {
     invokeMock.mockResolvedValueOnce({
       generatedAt: 123,
@@ -104,6 +147,588 @@ describe("desktop runtime fullscreen detection", () => {
       ],
     });
     expect(invokeMock).toHaveBeenCalledWith("get_provider_model_catalog");
+  });
+
+  it("stages MCP preset server config in visible JSON", () => {
+    const raw = createMcpConfigRawWithPreset(
+      '{ "schemaVersion": 1, "servers": [] }',
+      "serper-search",
+    );
+    const parsed = JSON.parse(raw) as {
+      servers: Array<{
+        id: string;
+        preset: string;
+        enabled: boolean;
+        transport: { type: string; command: string };
+      }>;
+    };
+
+    expect(parsed.servers).toHaveLength(1);
+    expect(parsed.servers[0]).toMatchObject({
+      id: "serper",
+      preset: "serper-search",
+      enabled: true,
+      transport: {
+        type: "stdio",
+        command: "npx",
+      },
+    });
+  });
+
+  it("stages the Tauri MCP server preset in visible JSON", () => {
+    const raw = createMcpConfigRawWithPreset(
+      '{ "schemaVersion": 1, "servers": [] }',
+      "tauri-mcp-server",
+    );
+    const parsed = JSON.parse(raw) as {
+      servers: Array<{
+        id: string;
+        preset: string;
+        enabled: boolean;
+        transport: {
+          type: string;
+          command: string;
+          args: string[];
+          cwd: string;
+          inheritEnvironment: boolean;
+        };
+      }>;
+    };
+
+    expect(parsed.servers).toHaveLength(1);
+    expect(parsed.servers[0]).toMatchObject({
+      id: "tauri",
+      preset: "tauri-mcp-server",
+      enabled: true,
+      transport: {
+        type: "stdio",
+        command: "npx",
+        args: ["-y", "@hypothesi/tauri-mcp-server"],
+        cwd: "${workspaceRoot}",
+        inheritEnvironment: true,
+      },
+    });
+  });
+
+  it("loads and saves workspace MCP config through Tauri commands", async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        scope: "workspace",
+        path: "C:\\Project\\.machdoch\\mcp\\mcp.json",
+        exists: false,
+        raw: '{\n  "schemaVersion": 1,\n  "servers": []\n}\n',
+      })
+      .mockResolvedValueOnce({
+        scope: "workspace",
+        path: "C:\\Project\\.machdoch\\mcp\\mcp.json",
+        exists: true,
+        raw: '{\n  "schemaVersion": 1,\n  "servers": []\n}\n',
+      });
+
+    await expect(loadMcpConfigDocument("workspace", "C:\\Project")).resolves.toMatchObject({
+      scope: "workspace",
+      exists: false,
+    });
+    await expect(
+      saveMcpConfigDocument(
+        "workspace",
+        '{ "schemaVersion": 1, "servers": [] }',
+        "C:\\Project",
+      ),
+    ).resolves.toMatchObject({
+      scope: "workspace",
+      exists: true,
+    });
+
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      1,
+      "get_workspace_mcp_config_document",
+      { workspaceRoot: "C:\\Project" },
+    );
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      2,
+      "save_workspace_mcp_config_document",
+      {
+        workspaceRoot: "C:\\Project",
+        raw: '{\n  "schemaVersion": 1,\n  "servers": []\n}\n',
+      },
+    );
+  });
+
+  it("runs MCP management commands through the desktop bridge", async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        workspaceRoot: "C:\\Project",
+        servers: [],
+      })
+      .mockResolvedValueOnce({
+        workspaceRoot: "C:\\Project",
+        servers: {},
+      })
+      .mockResolvedValueOnce({
+        workspaceRoot: "C:\\Project",
+        discovery: { serverId: "serper" },
+        cachePath: null,
+      })
+      .mockResolvedValueOnce({
+        workspaceRoot: "C:\\Project",
+        discovery: { serverId: "serper" },
+        cachePath: "C:\\Project\\.machdoch\\mcp\\discovery-cache.json",
+      })
+      .mockResolvedValueOnce({
+        workspaceRoot: "C:\\Project",
+        result: {
+          serverId: "github",
+          status: "authorization-required",
+          configPath: "C:\\Users\\Test\\AppData\\Roaming\\machdoch\\mcp.json",
+          authorizationUrl: "https://github.com/login/oauth/authorize",
+        },
+      })
+      .mockResolvedValueOnce({
+        workspaceRoot: "C:\\Project",
+        result: {
+          serverId: "github",
+          status: "authorized",
+          configPath: "C:\\Users\\Test\\AppData\\Roaming\\machdoch\\mcp.json",
+          stateVerified: true,
+        },
+      });
+
+    await listMcpServers("C:\\Project", true);
+    await listMcpCachedCapabilities("C:\\Project");
+    await discoverMcpServer("C:\\Project", "serper");
+    await refreshMcpDiscoveryCache("C:\\Project", "serper");
+    await beginMcpOAuth("C:\\Project", "github");
+    await finishMcpOAuth(
+      "C:\\Project",
+      "github",
+      "http://127.0.0.1:43110/oauth/callback?code=abc&state=xyz",
+    );
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "run_mcp_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: ["servers", "--include-disabled"],
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "run_mcp_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: ["cache"],
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(3, "run_mcp_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: ["discover", "serper"],
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(4, "run_mcp_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: ["refresh", "serper"],
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(5, "run_mcp_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: ["oauth-start", "github"],
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(6, "run_mcp_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: [
+          "oauth-finish",
+          "github",
+          "http://127.0.0.1:43110/oauth/callback?code=abc&state=xyz",
+        ],
+      },
+    });
+  });
+
+  it("runs instruction management commands through the desktop bridge", async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        workspaceRoot: "C:\\Project",
+        instructions: [],
+        diagnostics: [],
+      })
+      .mockResolvedValueOnce({
+        path: "C:\\Project\\.machdoch\\instructions\\new-review.instructions.md",
+        scope: "workspace",
+        name: "New Review",
+        created: true,
+      })
+      .mockResolvedValueOnce({
+        path: "C:\\Project\\.machdoch\\instructions\\review.instructions.md",
+        scope: "workspace",
+        name: "Review Rules",
+        created: false,
+      })
+      .mockResolvedValueOnce({
+        status: "updated",
+        path: "C:\\Project\\.machdoch\\instructions\\review.instructions.md",
+        scope: "workspace",
+        name: "Review Rules",
+        rounds: 2,
+        validation: { valid: true, diagnostics: [] },
+        generatorResults: [],
+        summary: "Updated workspace instruction.",
+      });
+
+    await listInstructions("C:\\Project");
+    await createInstruction("C:\\Project", {
+      name: "New Review",
+      prompt: "Prefer focused tests.",
+      scope: "workspace",
+      maxRounds: 3,
+    });
+    await saveInstruction("C:\\Project", {
+      name: "Review Rules",
+      prompt: "Prefer strict TypeScript.",
+      path: ".machdoch/instructions/review.instructions.md",
+      scope: "workspace",
+      mode: "auto",
+      audience: "executor",
+      applyTo: ["src/**/*.ts"],
+      exclude: ["dist/**"],
+      keywords: ["review"],
+      priority: 40,
+      maxRounds: 3,
+    });
+    await generateInstruction("C:\\Project", {
+      name: "Review Rules",
+      prompt: "Create durable review instructions.",
+      path: ".machdoch/instructions/review.instructions.md",
+      scope: "workspace",
+      maxRounds: 2,
+    });
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "run_instruction_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: ["list"],
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "run_instruction_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: [
+          "create",
+          "New Review",
+          "--prompt",
+          "Prefer focused tests.",
+          "--scope",
+          "workspace",
+        ],
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(3, "run_instruction_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: [
+          "save",
+          "Review Rules",
+          "--prompt",
+          "Prefer strict TypeScript.",
+          "--path",
+          ".machdoch/instructions/review.instructions.md",
+          "--scope",
+          "workspace",
+          "--instruction-mode",
+          "auto",
+          "--audience",
+          "executor",
+          "--priority",
+          "40",
+          "--apply-to",
+          "src/**/*.ts",
+          "--exclude",
+          "dist/**",
+          "--keyword",
+          "review",
+        ],
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(4, "run_instruction_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: [
+          "generate",
+          "Review Rules",
+          "--prompt",
+          "Create durable review instructions.",
+          "--path",
+          ".machdoch/instructions/review.instructions.md",
+          "--scope",
+          "workspace",
+          "--max-rounds",
+          "2",
+        ],
+      },
+    });
+  });
+
+  it("passes active runtime options to Ralph flow creation", async () => {
+    invokeMock.mockResolvedValueOnce({
+      status: "created",
+      flowPath: "C:\\Project\\.machdoch\\ralph\\flows\\refactor.json",
+      rounds: 1,
+      validation: {
+        valid: true,
+        errors: [],
+        warnings: [],
+        errorIssues: [],
+        warningIssues: [],
+        variables: [],
+      },
+      summary: "Created.",
+      flow: null,
+    });
+
+    await createRalphFlow("C:\\Project", {
+      name: "refactor",
+      prompt: "Refactor imports",
+      existingFlow: {
+        schemaVersion: 1,
+        id: "refactor",
+        name: "Refactor",
+        blocks: [],
+        edges: [],
+      },
+      target: "refactor",
+      generationMode: "do-it",
+      mode: "machdoch",
+      profile: "workspace",
+      provider: "openai",
+      model: "gpt-5.5",
+      maxRounds: 2,
+      taskId: "ralph-generation-task",
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("run_ralph_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: [
+          "create",
+          "--mode",
+          "machdoch",
+          "--profile",
+          "workspace",
+          "--runtime-provider",
+          "openai",
+          "--model",
+          "gpt-5.5",
+          "--name",
+          "refactor",
+          "--prompt",
+          "Refactor imports",
+          "--existing-flow-json",
+          JSON.stringify({
+            schemaVersion: 1,
+            id: "refactor",
+            name: "Refactor",
+            blocks: [],
+            edges: [],
+          }),
+          "--flow-target",
+          "refactor",
+          "--generation-mode",
+          "do-it",
+          "--max-rounds",
+          "2",
+        ],
+        taskId: "ralph-generation-task",
+      },
+    });
+  });
+
+  it("saves edited Ralph flows through the desktop command bridge", async () => {
+    invokeMock.mockResolvedValueOnce({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\refactor.json",
+      flow: {
+        schemaVersion: 1,
+        id: "refactor",
+        name: "Refactor",
+        blocks: [],
+        edges: [],
+      },
+      validation: {
+        valid: true,
+        errors: [],
+        warnings: [],
+        errorIssues: [],
+        warningIssues: [],
+        variables: [],
+      },
+    });
+
+    await saveRalphFlow("C:\\Project", {
+      flow: {
+        schemaVersion: 1,
+        id: "refactor",
+        name: "Refactor",
+        blocks: [],
+        edges: [],
+      },
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("run_ralph_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: [
+          "save",
+          "refactor",
+          "--flow-json",
+          JSON.stringify({
+            schemaVersion: 1,
+            id: "refactor",
+            name: "Refactor",
+            blocks: [],
+            edges: [],
+          }),
+        ],
+      },
+    });
+  });
+
+  it("deletes Ralph flows through the desktop command bridge", async () => {
+    invokeMock.mockResolvedValueOnce({
+      id: "refactor",
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\refactor.json",
+      revisionDirectory: "C:\\Project\\.machdoch\\ralph\\revisions\\refactor",
+      deletedRevisions: true,
+    });
+
+    await deleteRalphFlow("C:\\Project", "refactor");
+
+    expect(invokeMock).toHaveBeenCalledWith("run_ralph_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: ["delete", "refactor"],
+      },
+    });
+  });
+
+  it("lists Ralph flow revisions through the desktop command bridge", async () => {
+    invokeMock.mockResolvedValueOnce({
+      flow: "refactor",
+      revisions: [
+        {
+          id: "2026-06-13T10-00-00-000Z",
+          path: "C:\\Project\\.machdoch\\ralph\\revisions\\refactor\\2026-06-13T10-00-00-000Z.json",
+          createdAt: "2026-06-13T10:00:00.000Z",
+          flowName: "Refactor",
+          blockCount: 4,
+          edgeCount: 4,
+          valid: true,
+        },
+      ],
+    });
+
+    await listRalphFlowRevisions("C:\\Project", "refactor");
+
+    expect(invokeMock).toHaveBeenCalledWith("run_ralph_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: ["revisions", "refactor"],
+      },
+    });
+  });
+
+  it("restores Ralph flow revisions through the desktop command bridge", async () => {
+    invokeMock.mockResolvedValueOnce({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\refactor.json",
+      flow: {
+        schemaVersion: 1,
+        id: "refactor",
+        name: "Refactor",
+        blocks: [],
+        edges: [],
+      },
+      validation: {
+        valid: true,
+        errors: [],
+        warnings: [],
+        errorIssues: [],
+        warningIssues: [],
+        variables: [],
+      },
+      revision: {
+        id: "2026-06-13T10-00-00-000Z",
+        path: "C:\\Project\\.machdoch\\ralph\\revisions\\refactor\\2026-06-13T10-00-00-000Z.json",
+        createdAt: "2026-06-13T10:00:00.000Z",
+        flowName: "Refactor",
+        blockCount: 4,
+        edgeCount: 4,
+        valid: true,
+      },
+    });
+
+    await restoreRalphFlowRevision("C:\\Project", {
+      name: "refactor",
+      revision: "2026-06-13T10-00-00-000Z",
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("run_ralph_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: [
+          "restore",
+          "refactor",
+          "--revision",
+          "2026-06-13T10-00-00-000Z",
+        ],
+      },
+    });
+  });
+
+  it("passes active runtime options and variables to Ralph flow runs", async () => {
+    invokeMock.mockResolvedValueOnce({
+      run: {
+        flow: "refactor",
+        status: "completed",
+        summary: "Done.",
+        missingVariables: [],
+        unknownVariables: [],
+        events: [],
+        blockResults: [],
+      },
+    });
+
+    await runRalphFlow("C:\\Project", {
+      name: "refactor",
+      taskId: "ralph-refactor-run-1",
+      params: {
+        scope: "src/core",
+      },
+      mode: "ask",
+      profile: "review",
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("run_ralph_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        taskId: "ralph-refactor-run-1",
+        arguments: [
+          "run",
+          "refactor",
+          "--mode",
+          "ask",
+          "--profile",
+          "review",
+          "--runtime-provider",
+          "anthropic",
+          "--model",
+          "claude-sonnet-4-6",
+          "--param",
+          "scope=src/core",
+        ],
+      },
+    });
   });
 
   it("returns no active desktop task snapshot when Tauri commands are unavailable", async () => {

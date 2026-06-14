@@ -16,6 +16,7 @@
     "frontendDist": "../dist/ui-preview"
   },
   "app": {
+    "withGlobalTauri": true,
     "security": {
       "capabilities": [
         "default"
@@ -91,6 +92,25 @@
         "preventOverflow": {
           "width": 24,
           "height": 24
+        }
+      },
+      {
+        "label": "tray-menu",
+        "title": "machdoch",
+        "width": 324,
+        "height": 252,
+        "minWidth": 324,
+        "minHeight": 252,
+        "visible": false,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "preventOverflow": {
+          "width": 12,
+          "height": 12
         }
       }
     ]

@@ -4,6 +4,7 @@ import {
   ASSISTANT_BUBBLE_WINDOW_LABEL,
   ASSISTANT_POPUP_WINDOW_LABEL,
   QUICK_VOICE_WINDOW_LABEL,
+  TRAY_MENU_WINDOW_LABEL,
 } from "../runtime";
 
 const AssistantBubbleShell = lazy(async () => {
@@ -38,6 +39,43 @@ const QuickVoiceShell = lazy(async () => {
   };
 });
 
+const TrayMenuShell = lazy(async () => {
+  const module = await import("../tray-menu-shell");
+
+  return {
+    default: module.TrayMenuShell,
+  };
+});
+
+const previewWindowLabels = new Set<string>([
+  ASSISTANT_BUBBLE_WINDOW_LABEL,
+  ASSISTANT_POPUP_WINDOW_LABEL,
+  QUICK_VOICE_WINDOW_LABEL,
+  TRAY_MENU_WINDOW_LABEL,
+]);
+
+const getPreviewWindowLabel = (): string | null => {
+  const currentWindowLabel = getCurrentShellWindowLabel();
+
+  if (currentWindowLabel) {
+    return currentWindowLabel;
+  }
+
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const previewLabel = new URLSearchParams(window.location.search).get(
+    "window",
+  );
+
+  if (!previewLabel || !previewWindowLabels.has(previewLabel)) {
+    return null;
+  }
+
+  return previewLabel;
+};
+
 const WindowLoadingFallback = ({
   windowLabel,
 }: {
@@ -49,7 +87,8 @@ const WindowLoadingFallback = ({
 
   if (
     windowLabel === ASSISTANT_POPUP_WINDOW_LABEL ||
-    windowLabel === QUICK_VOICE_WINDOW_LABEL
+    windowLabel === QUICK_VOICE_WINDOW_LABEL ||
+    windowLabel === TRAY_MENU_WINDOW_LABEL
   ) {
     return (
       <div className="fixed inset-0 overflow-hidden rounded-3xl bg-slate-950/98" />
@@ -60,7 +99,7 @@ const WindowLoadingFallback = ({
 };
 
 export const App = (): JSX.Element => {
-  const windowLabel = getCurrentShellWindowLabel();
+  const windowLabel = getPreviewWindowLabel();
   const fallback = <WindowLoadingFallback windowLabel={windowLabel} />;
 
   if (windowLabel === ASSISTANT_BUBBLE_WINDOW_LABEL) {
@@ -83,6 +122,14 @@ export const App = (): JSX.Element => {
     return (
       <Suspense fallback={fallback}>
         <QuickVoiceShell />
+      </Suspense>
+    );
+  }
+
+  if (windowLabel === TRAY_MENU_WINDOW_LABEL) {
+    return (
+      <Suspense fallback={fallback}>
+        <TrayMenuShell />
       </Suspense>
     );
   }

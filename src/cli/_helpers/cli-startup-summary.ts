@@ -92,6 +92,9 @@ const PROVIDER_LABELS: Record<RuntimeProvider, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
   google: "Google",
+  "codex-cli": "Codex CLI",
+  "claude-cli": "Claude CLI",
+  "copilot-cli": "Copilot CLI",
 };
 
 const WEB_SEARCH_PROVIDER_LABELS: Record<WebSearchProvider, string> = {

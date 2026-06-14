@@ -7,6 +7,7 @@ import {
   getUserWebSearchProviderAvailability,
   hasConfiguredValue,
   loadProcessEnv,
+  loadUserAgentCliPaths,
   loadUserApiKeys,
   loadUserMemorySettings,
   loadUserReviewModelSettings,
@@ -14,6 +15,7 @@ import {
   loadUserWebSearchSettings,
   loadWorkspaceEnv,
   rememberUserGlobalMemory,
+  saveUserAgentCliPath,
   saveUserApiKey,
   saveUserDesktopSettingsPatch,
   saveUserGlobalMemoryEnabled,
@@ -40,6 +42,9 @@ const ISOLATED_ENV_KEYS = [
   "MACHDOCH_PROFILE",
   "MACHDOCH_WEB_SEARCH_PROVIDER",
   "MACHDOCH_USER_CONFIG_DIR",
+  "MACHDOCH_CODEX_CLI_PATH",
+  "MACHDOCH_CLAUDE_CLI_PATH",
+  "MACHDOCH_COPILOT_CLI_PATH",
 ] as const;
 
 const createWorkspace = async (): Promise<string> => {
@@ -168,6 +173,23 @@ describe("user config API key helpers", () => {
       { provider: "anthropic", configured: false },
       { provider: "google", configured: false },
     ]);
+  });
+
+  it("persists agent CLI binary paths in the user-scoped config file", async () => {
+    isolateEnvironment();
+    const configDirectory = await createWorkspace();
+    const binaryPath = join(configDirectory, "codex.cmd");
+
+    process.env.MACHDOCH_USER_CONFIG_DIR = configDirectory;
+    await writeFile(binaryPath, "");
+
+    const savedPath = await saveUserAgentCliPath("codex-cli", binaryPath);
+    const paths = await loadUserAgentCliPaths();
+    const env = await loadWorkspaceEnv(configDirectory);
+
+    expect(savedPath).toBe(join(configDirectory, "user-config.json"));
+    expect(paths["codex-cli"]).toBe(binaryPath);
+    expect(env.MACHDOCH_CODEX_CLI_PATH).toBe(binaryPath);
   });
 
   it("persists web-search settings in the user-scoped config file", async () => {

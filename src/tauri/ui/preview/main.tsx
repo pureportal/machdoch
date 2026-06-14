@@ -9,6 +9,14 @@ if (!rootElement) {
   throw new Error("The UI preview root element was not found.");
 }
 
+document.addEventListener(
+  "contextmenu",
+  (event) => {
+    event.preventDefault();
+  },
+  { capture: true },
+);
+
 createRoot(rootElement).render(
   <StrictMode>
     <App />

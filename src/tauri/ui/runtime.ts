@@ -3,14 +3,36 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
+  CustomizationDiagnostic,
+  DiscoveredInstruction,
   AgentModelImageMediaType,
   ConversationMemoryEntry,
+  InstructionAudience,
+  InstructionMode,
+  InstructionScope,
+  RunMode,
   TaskConversationContext,
   TaskActionOutput,
   TaskExecutionProgress,
   TaskExecutionResult,
   TaskRunPreview,
 } from "../../core/types.js";
+import type {
+  RalphFlow,
+  RalphFlowDeleteResult,
+  RalphFlowRevisionSummary,
+  RalphFlowSummary,
+  RalphRunResult,
+  RalphValidationResult,
+} from "../../core/ralph.js";
+export type {
+  RalphFlow,
+  RalphFlowDeleteResult,
+  RalphFlowRevisionSummary,
+  RalphFlowSummary,
+  RalphRunResult,
+  RalphValidationResult,
+} from "../../core/ralph.js";
 import {
   AGENT_LIMIT_BOUNDS,
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
@@ -18,11 +40,20 @@ import {
   DEFAULT_USER_DESKTOP_SETTINGS,
   DESKTOP_SETTING_BOUNDS,
   MODEL_PROVIDERS,
+  REASONING_MODES,
   RUN_MODES,
+  USER_API_PROVIDERS,
   USER_AUDIO_AI_PROVIDERS,
   USER_WEB_SEARCH_PROVIDERS,
   VALID_MODEL_PROVIDERS,
 } from "../../core/runtime-contract.generated.js";
+import { MCP_PRESETS } from "../../core/mcp/presets.js";
+import {
+  MCP_CONFIG_SCHEMA_VERSION,
+  type McpConfigFile,
+  type McpOAuthFlowResult,
+  type McpServerConfig,
+} from "../../core/mcp/types.js";
 import type {
   AudioProvider,
   AudioProviderAvailability as SharedAudioProviderAvailability,
@@ -30,10 +61,12 @@ import type {
   RuntimeCompatibilityConfig as SharedRuntimeCompatibilityConfig,
   RuntimeProfileSummary as SharedRuntimeProfileSummary,
   RuntimeSnapshot as SharedRuntimeSnapshot,
+  ReasoningMode as SharedReasoningMode,
   RuntimeWebSearchConfig as SharedRuntimeWebSearchConfig,
   SpeechToTextProvider as SharedSpeechToTextProvider,
   UserAgentLimitsSettings as SharedUserAgentLimitsSettings,
   UserDesktopSettings as SharedUserDesktopSettings,
+  UserApiProvider as SharedUserApiProvider,
   UserReviewModelSettings as SharedUserReviewModelSettings,
   UserProviderApiKeys as SharedUserProviderApiKeys,
   UserSpeechToTextSettings as SharedUserSpeechToTextSettings,
@@ -56,7 +89,7 @@ import {
   createPreviewFixture,
 } from "./preview/fixtures";
 
-export type UserApiKeyProvider = RuntimeProvider;
+export type UserApiKeyProvider = SharedUserApiProvider;
 
 export type WebSearchProvider = SharedWebSearchProvider;
 
@@ -74,12 +107,13 @@ export const MAIN_WINDOW_LABEL = "main";
 export const ASSISTANT_BUBBLE_WINDOW_LABEL = "assistant-bubble";
 export const ASSISTANT_POPUP_WINDOW_LABEL = "assistant-popup";
 export const QUICK_VOICE_WINDOW_LABEL = "quick-voice";
+export const TRAY_MENU_WINDOW_LABEL = "tray-menu";
 export const DESKTOP_SETTINGS_CHANGED_EVENT =
   "machdoch://desktop-settings-changed";
 export const QUICK_VOICE_START_EVENT = "machdoch://quick-voice-start";
 
 export const USER_API_KEY_PROVIDER_ORDER: UserApiKeyProvider[] = [
-  ...VALID_MODEL_PROVIDERS,
+  ...USER_API_PROVIDERS,
 ];
 
 export const USER_VOICE_AI_PROVIDER_ORDER: UserVoiceAiProvider[] = [
@@ -102,6 +136,23 @@ export const USER_API_KEY_PROVIDER_PORTAL_URLS: Record<
 export const USER_WEB_SEARCH_PROVIDER_ORDER: UserWebSearchApiKeyProvider[] = [
   ...USER_WEB_SEARCH_PROVIDERS,
 ];
+
+export const MCP_CONFIG_SCOPE_OPTIONS: ReadonlyArray<{
+  value: McpConfigScope;
+  label: string;
+}> = [
+  { value: "user", label: "Global" },
+  { value: "workspace", label: "Workspace" },
+];
+
+export const MCP_PRESET_SUMMARIES: readonly McpPresetSummary[] =
+  MCP_PRESETS.map((preset) => ({
+    id: preset.id,
+    title: preset.title,
+    description: preset.description,
+    serverId: preset.server.id,
+    serverTitle: preset.server.title ?? preset.server.id,
+  }));
 
 export type UserProviderApiKeys = SharedUserProviderApiKeys;
 
@@ -133,6 +184,71 @@ export type UserAgentLimitsSettings = SharedUserAgentLimitsSettings;
 export type UserReviewModelSettings = SharedUserReviewModelSettings;
 
 export type UserDesktopSettings = SharedUserDesktopSettings;
+
+export type McpConfigScope = "user" | "workspace";
+
+export interface McpConfigDocument {
+  scope: McpConfigScope;
+  path: string;
+  exists: boolean;
+  raw: string;
+}
+
+export interface McpPresetSummary {
+  id: string;
+  title: string;
+  description: string;
+  serverId: string;
+  serverTitle: string;
+}
+
+export type WritableInstructionScope = Extract<
+  InstructionScope,
+  "user" | "workspace"
+>;
+
+export interface InstructionRegistryResult {
+  workspaceRoot: string;
+  instructions: DiscoveredInstruction[];
+  diagnostics: CustomizationDiagnostic[];
+}
+
+export interface InstructionValidationResult {
+  valid: boolean;
+  diagnostics: CustomizationDiagnostic[];
+}
+
+export interface InstructionWriteResult {
+  path: string;
+  scope: WritableInstructionScope;
+  name: string;
+  created?: boolean;
+}
+
+export interface InstructionGenerationResult {
+  status: "created" | "updated" | "blocked";
+  path: string;
+  scope: WritableInstructionScope;
+  name: string;
+  rounds: number;
+  validation: InstructionValidationResult;
+  generatorResults: TaskExecutionResult[];
+  summary: string;
+}
+
+export interface InstructionMutationInput {
+  name: string;
+  prompt: string;
+  path?: string;
+  scope?: WritableInstructionScope;
+  mode?: InstructionMode;
+  audience?: InstructionAudience;
+  applyTo?: string[];
+  exclude?: string[];
+  keywords?: string[];
+  priority?: number;
+  maxRounds?: number;
+}
 
 export interface MonitorBoundsInput {
   x: number;
@@ -179,6 +295,12 @@ export type RuntimeCompatibilityConfig = SharedRuntimeCompatibilityConfig;
 export type RuntimeAgentLimits = SharedRuntimeAgentLimits;
 
 export type RuntimeSnapshot = SharedRuntimeSnapshot;
+
+export type ReasoningMode = SharedReasoningMode;
+
+export const REASONING_MODE_ORDER: readonly ReasoningMode[] = [
+  ...REASONING_MODES,
+];
 
 export interface DesktopTaskRunResponse {
   execution: TaskExecutionResult;
@@ -255,6 +377,7 @@ export type RemoteControlCommandKind =
   | "update-draft"
   | "set-session-model"
   | "set-session-mode"
+  | "set-session-reasoning"
   | "set-session-profile"
   | "set-session-memory"
   | "set-global-memory"
@@ -284,6 +407,7 @@ export interface RemoteControlCommandEvent {
   provider?: string;
   model?: string;
   mode?: string;
+  reasoning?: string;
   profile?: string;
   workspace?: string;
   enabled?: boolean;
@@ -313,6 +437,8 @@ export interface RemoteShellSessionSnapshot {
   model: string;
   mode?: string;
   effectiveMode: string;
+  reasoning?: string;
+  effectiveReasoning?: string;
   createdAt: number;
   updatedAt: number;
   archivedAt?: number;
@@ -375,6 +501,8 @@ export interface RemoteShellComposerSnapshot {
   model: string;
   mode: string;
   defaultMode: string;
+  reasoning: string;
+  defaultReasoning: string;
   workspace?: string;
   workspaceLabel: string;
   canSend: boolean;
@@ -408,6 +536,7 @@ export interface RemoteShellRuntimeSnapshot {
   hasAnyProvider: boolean;
   providerStatuses: RemoteShellProviderStatusSnapshot[];
   mode?: string;
+  reasoning?: string;
   profile?: string;
   uiControl?: RemoteShellRuntimeCapabilitySnapshot;
   webSearch?: RemoteShellRuntimeCapabilitySnapshot;
@@ -461,6 +590,7 @@ export interface RemoteShellContextPackSnapshot {
   provider?: string;
   model?: string;
   mode?: string;
+  reasoning?: string;
 }
 
 export interface RemoteShellVoiceSnapshot {
@@ -686,6 +816,7 @@ export interface SchedulerCreateJobInput {
   profile?: string;
   provider?: RuntimeProvider;
   model?: string;
+  reasoning?: RuntimeSnapshot["reasoning"];
 }
 
 export interface SchedulerListJobsResult {
@@ -746,6 +877,124 @@ export interface SchedulerPromptSyncResult {
   pausedJobs: SchedulerJobSummary[];
 }
 
+export interface McpCommandDiscoveryResult {
+  workspaceRoot: string;
+  discovery: unknown;
+  cachePath?: string | null;
+}
+
+export interface McpCommandServersResult {
+  workspaceRoot: string;
+  defaults?: unknown;
+  paths?: unknown;
+  servers: unknown[];
+}
+
+export interface McpCommandCacheResult {
+  workspaceRoot: string;
+  cachePath?: string;
+  servers: Record<string, unknown>;
+}
+
+export interface McpCommandOAuthResult {
+  workspaceRoot: string;
+  result: McpOAuthFlowResult;
+}
+
+export interface RalphListFlowsResult {
+  workspaceRoot: string;
+  flows: RalphFlowSummary[];
+}
+
+export interface RalphFlowResult {
+  path: string;
+  flow: RalphFlow;
+}
+
+export interface RalphValidateFlowResult {
+  path: string;
+  validation: RalphValidationResult;
+}
+
+export interface RalphListFlowRevisionsResult {
+  flow: string;
+  revisions: RalphFlowRevisionSummary[];
+}
+
+export interface RalphCreateFlowInput {
+  name?: string;
+  prompt: string;
+  maxRounds?: number;
+  existingFlow?: RalphFlow;
+  target?: "flow" | "prompt-block" | "refactor";
+  generationMode?: "do-it" | "interview";
+  mode?: RunMode;
+  profile?: string;
+  provider?: RuntimeProvider;
+  model?: string;
+  reasoning?: RuntimeSnapshot["reasoning"];
+  taskId?: string;
+  maxTransitions?: number;
+}
+
+export interface RalphCreateFlowResult {
+  status: "created" | "blocked";
+  flowPath: string;
+  rounds: number;
+  validation: RalphValidationResult;
+  summary: string;
+  flow: RalphFlow | null;
+}
+
+export interface RalphSaveFlowInput {
+  flow: RalphFlow;
+}
+
+export interface RalphSaveFlowResult {
+  path: string;
+  flow: RalphFlow;
+  validation: RalphValidationResult;
+}
+
+export type RalphDeleteFlowResult = RalphFlowDeleteResult;
+
+export interface RalphRestoreFlowRevisionInput {
+  name: string;
+  revision: string;
+}
+
+export interface RalphRestoreFlowRevisionResult {
+  path: string;
+  flow: RalphFlow;
+  validation: RalphValidationResult;
+  revision: RalphFlowRevisionSummary;
+}
+
+export interface RalphRunFlowInput {
+  name: string;
+  params?: Record<string, string>;
+  mode?: RunMode;
+  profile?: string;
+  provider?: RuntimeProvider;
+  model?: string;
+  reasoning?: RuntimeSnapshot["reasoning"];
+  taskId?: string;
+  maxTransitions?: number;
+}
+
+export interface RalphRunFlowResult {
+  run: RalphRunResult;
+  runLogPath?: string;
+}
+
+export interface ActiveDesktopTaskSummary {
+  id: string;
+  kind: string;
+  workspaceRoot: string;
+  arguments: string[];
+  startedAt: number;
+}
+
 const DEFAULT_MOCK_WORKSPACE_ROOT = "/mock/home/path";
 const DESKTOP_TASK_PROGRESS_EVENT = "desktop-task-progress";
 const REMOTE_CONTROL_COMMAND_EVENT = "remote-control-command";
@@ -767,6 +1016,7 @@ const REMOTE_CONTROL_COMMAND_KINDS = [
   "update-draft",
   "set-session-model",
   "set-session-mode",
+  "set-session-reasoning",
   "set-session-profile",
   "set-session-memory",
   "set-global-memory",
@@ -920,6 +1170,16 @@ const normalizeWorkspaceRoot = (
   const normalizedWorkspaceRoot = workspaceRoot?.trim();
 
   return normalizedWorkspaceRoot ? normalizedWorkspaceRoot : null;
+};
+
+const isRuntimeRunMode = (mode: string): mode is RuntimeSnapshot["mode"] => {
+  return RUN_MODES.includes(mode as RuntimeSnapshot["mode"]);
+};
+
+const isRuntimeReasoningMode = (
+  reasoning: string,
+): reasoning is RuntimeSnapshot["reasoning"] => {
+  return REASONING_MODES.includes(reasoning as RuntimeSnapshot["reasoning"]);
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -1276,6 +1536,10 @@ const isRemoteControlCommandEvent = (
       REMOTE_CONTROL_RUN_MODES.includes(
         value.mode as (typeof REMOTE_CONTROL_RUN_MODES)[number],
       )) &&
+    (value.reasoning === undefined || typeof value.reasoning === "string") &&
+    (value.kind !== "set-session-reasoning" ||
+      value.reasoning === undefined ||
+      isRuntimeReasoningMode(value.reasoning)) &&
     (value.profile === undefined || typeof value.profile === "string") &&
     (value.workspace === undefined || typeof value.workspace === "string") &&
     (value.enabled === undefined || typeof value.enabled === "boolean") &&
@@ -1857,6 +2121,176 @@ const createDefaultUserMemorySettings = (): UserMemorySettings => {
   };
 };
 
+const createDefaultMcpConfig = (): McpConfigFile => {
+  return {
+    schemaVersion: MCP_CONFIG_SCHEMA_VERSION,
+    defaults: {
+      enabled: true,
+      securityProfile: "weak",
+      exposure: "hybrid",
+      directTools: true,
+      timeoutMs: 60_000,
+      maxTotalTimeoutMs: 300_000,
+      idleShutdownMs: 900_000,
+      maxResponseChars: 60_000,
+      cache: {
+        enabled: true,
+        ttlMs: 900_000,
+        forceRefresh: false,
+      },
+      roots: "workspace",
+      sampling: "disabled",
+      tasks: "optional",
+      elicitation: "disabled",
+    },
+    servers: [],
+  };
+};
+
+export const createDefaultMcpConfigRaw = (): string => {
+  return `${JSON.stringify(createDefaultMcpConfig(), null, 2)}\n`;
+};
+
+const createFallbackMcpConfigPath = (
+  scope: McpConfigScope,
+  workspaceRoot?: string | null,
+): string => {
+  if (scope === "user") {
+    return "Global MCP config path is available in the desktop app.";
+  }
+
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+  if (!normalizedWorkspaceRoot) {
+    return "Select a workspace to edit workspace MCP config.";
+  }
+
+  return `${normalizedWorkspaceRoot.replace(/\\/gu, "/")}/.machdoch/mcp/mcp.json`;
+};
+
+export const createFallbackMcpConfigDocument = (
+  scope: McpConfigScope,
+  workspaceRoot?: string | null,
+): McpConfigDocument => {
+  return {
+    scope,
+    path: createFallbackMcpConfigPath(scope, workspaceRoot),
+    exists: false,
+    raw: createDefaultMcpConfigRaw(),
+  };
+};
+
+const parseMcpConfigObject = (raw: string): Record<string, unknown> => {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `MCP config must be valid JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error },
+    );
+  }
+
+  if (!isRecord(parsed)) {
+    throw new Error("MCP config must be a JSON object.");
+  }
+
+  return parsed;
+};
+
+export const normalizeMcpConfigRaw = (raw: string): string => {
+  return `${JSON.stringify(parseMcpConfigObject(raw), null, 2)}\n`;
+};
+
+const normalizeMcpServerId = (value: string): string => {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 80);
+};
+
+const cloneMcpServerConfig = (
+  server: McpServerConfig,
+): Record<string, unknown> => {
+  return JSON.parse(JSON.stringify(server)) as Record<string, unknown>;
+};
+
+const getMcpConfigServerArray = (
+  value: unknown,
+): Array<Record<string, unknown>> => {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => (isRecord(entry) ? [{ ...entry }] : []));
+  }
+
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  return Object.entries(value).flatMap(([id, entry]) => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+
+    return [{ id, ...entry }];
+  });
+};
+
+export const createMcpConfigRawWithPreset = (
+  raw: string,
+  presetId: string,
+): string => {
+  const config = parseMcpConfigObject(raw);
+  const preset = MCP_PRESETS.find((candidate) => candidate.id === presetId);
+
+  if (!preset) {
+    throw new Error(`Unknown MCP preset \`${presetId}\`.`);
+  }
+
+  const servers = getMcpConfigServerArray(config.servers);
+  const presetServer = {
+    ...cloneMcpServerConfig(preset.server),
+    id: preset.server.id,
+    preset: preset.id,
+    enabled: true,
+  };
+  const existingIndex = servers.findIndex((server) => {
+    return (
+      typeof server.id === "string" &&
+      normalizeMcpServerId(server.id) === preset.server.id
+    );
+  });
+
+  if (existingIndex >= 0) {
+    servers[existingIndex] = {
+      ...presetServer,
+      ...servers[existingIndex],
+      id: preset.server.id,
+      preset: preset.id,
+      enabled: true,
+    };
+  } else {
+    servers.push(presetServer);
+  }
+
+  return `${JSON.stringify(
+    {
+      ...config,
+      schemaVersion: MCP_CONFIG_SCHEMA_VERSION,
+      defaults: isRecord(config.defaults)
+        ? config.defaults
+        : createDefaultMcpConfig().defaults,
+      servers,
+    },
+    null,
+    2,
+  )}\n`;
+};
+
 const clampIntegerSetting = (
   value: unknown,
   min: number,
@@ -2221,6 +2655,46 @@ export const loadUserMemorySettings = async (): Promise<UserMemorySettings> => {
   );
 };
 
+export const loadMcpConfigDocument = async (
+  scope: McpConfigScope,
+  workspaceRoot?: string | null,
+): Promise<McpConfigDocument> => {
+  if (scope === "workspace") {
+    const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+    if (!normalizedWorkspaceRoot) {
+      return createFallbackMcpConfigDocument("workspace", workspaceRoot);
+    }
+
+    if (!canInvokeTauriCommands()) {
+      return createFallbackMcpConfigDocument("workspace", normalizedWorkspaceRoot);
+    }
+
+    try {
+      return await tauriCore.invoke<McpConfigDocument>(
+        "get_workspace_mcp_config_document",
+        { workspaceRoot: normalizedWorkspaceRoot },
+      );
+    } catch (error) {
+      console.error("Failed to load workspace MCP config", error);
+      return createFallbackMcpConfigDocument("workspace", normalizedWorkspaceRoot);
+    }
+  }
+
+  if (!canInvokeTauriCommands()) {
+    return createFallbackMcpConfigDocument("user");
+  }
+
+  try {
+    return await tauriCore.invoke<McpConfigDocument>(
+      "get_user_mcp_config_document",
+    );
+  } catch (error) {
+    console.error("Failed to load global MCP config", error);
+    return createFallbackMcpConfigDocument("user");
+  }
+};
+
 export const loadUserAgentLimitsSettings =
   async (): Promise<UserAgentLimitsSettings> => {
     return loadTauriValueOrFallback(
@@ -2261,6 +2735,23 @@ export const loadActiveDesktopTaskIds = async (): Promise<string[] | null> => {
   }
 };
 
+export const loadActiveDesktopTasks = async (): Promise<
+  ActiveDesktopTaskSummary[] | null
+> => {
+  if (!canInvokeTauriCommands()) {
+    return null;
+  }
+
+  try {
+    return await tauriCore.invoke<ActiveDesktopTaskSummary[]>(
+      "get_active_desktop_tasks",
+    );
+  } catch (error) {
+    console.error("Failed to load active desktop tasks", error);
+    return null;
+  }
+};
+
 export const saveUserGlobalMemoryEnabled = async (
   enabled: boolean,
 ): Promise<UserMemorySettings> => {
@@ -2275,6 +2766,59 @@ export const saveUserGlobalMemoryEnabled = async (
     return await tauriCore.invoke<UserMemorySettings>(
       "save_user_global_memory_enabled",
       { enabled },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const saveMcpConfigDocument = async (
+  scope: McpConfigScope,
+  raw: string,
+  workspaceRoot?: string | null,
+): Promise<McpConfigDocument> => {
+  const normalizedRaw = normalizeMcpConfigRaw(raw);
+
+  if (scope === "workspace") {
+    const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+    if (!normalizedWorkspaceRoot) {
+      throw new Error("Select a workspace before saving workspace MCP config.");
+    }
+
+    if (!canInvokeTauriCommands()) {
+      return {
+        ...createFallbackMcpConfigDocument("workspace", normalizedWorkspaceRoot),
+        exists: true,
+        raw: normalizedRaw,
+      };
+    }
+
+    try {
+      return await tauriCore.invoke<McpConfigDocument>(
+        "save_workspace_mcp_config_document",
+        {
+          workspaceRoot: normalizedWorkspaceRoot,
+          raw: normalizedRaw,
+        },
+      );
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  if (!canInvokeTauriCommands()) {
+    return {
+      ...createFallbackMcpConfigDocument("user"),
+      exists: true,
+      raw: normalizedRaw,
+    };
+  }
+
+  try {
+    return await tauriCore.invoke<McpConfigDocument>(
+      "save_user_mcp_config_document",
+      { raw: normalizedRaw },
     );
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
@@ -2342,6 +2886,64 @@ export const saveUserReviewModelSettings = async (
       "save_user_review_model_settings",
       { settings: normalizedSettings },
     );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const saveWorkspaceDefaultMode = async (
+  workspaceRoot: string | null | undefined,
+  mode: RuntimeSnapshot["mode"],
+): Promise<string | null> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before changing its default mode.");
+  }
+
+  if (!isRuntimeRunMode(mode)) {
+    throw new Error("Expected workspace mode to be one of ask or machdoch.");
+  }
+
+  if (!canInvokeTauriCommands()) {
+    return null;
+  }
+
+  try {
+    return await tauriCore.invoke<string>("save_workspace_default_mode", {
+      workspaceRoot: normalizedWorkspaceRoot,
+      mode,
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const saveWorkspaceReasoningMode = async (
+  workspaceRoot: string | null | undefined,
+  reasoning: RuntimeSnapshot["reasoning"],
+): Promise<string | null> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before changing its reasoning mode.");
+  }
+
+  if (!isRuntimeReasoningMode(reasoning)) {
+    throw new Error(
+      "Expected workspace reasoning to be one of default, none, minimal, low, medium, high, xhigh, or max.",
+    );
+  }
+
+  if (!canInvokeTauriCommands()) {
+    return null;
+  }
+
+  try {
+    return await tauriCore.invoke<string>("save_workspace_reasoning_mode", {
+      workspaceRoot: normalizedWorkspaceRoot,
+      reasoning,
+    });
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -2754,10 +3356,609 @@ const assertSchedulerDesktopAvailable = (): never => {
   throw new Error("Scheduler management is only available in the desktop app.");
 };
 
+const assertRalphDesktopAvailable = (): never => {
+  throw new Error("Ralph flow management is only available in the desktop app.");
+};
+
+const assertMcpDesktopAvailable = (): never => {
+  throw new Error("MCP management is only available in the desktop app.");
+};
+
+const assertInstructionDesktopAvailable = (): never => {
+  throw new Error("Instruction management is only available in the desktop app.");
+};
+
 const normalizeSchedulerCommandWorkspace = (
   workspaceRoot: string | null | undefined,
 ): string => {
   return normalizeWorkspaceRoot(workspaceRoot) ?? "";
+};
+
+const normalizeMcpCommandWorkspace = (
+  workspaceRoot: string | null | undefined,
+): string => {
+  return normalizeWorkspaceRoot(workspaceRoot) ?? "";
+};
+
+const normalizeRalphCommandWorkspace = (
+  workspaceRoot: string | null | undefined,
+): string => {
+  return normalizeWorkspaceRoot(workspaceRoot) ?? "";
+};
+
+const normalizeInstructionCommandWorkspace = (
+  workspaceRoot: string | null | undefined,
+): string => {
+  return normalizeWorkspaceRoot(workspaceRoot) ?? "";
+};
+
+const normalizeInstructionCliString = (
+  value: string | null | undefined,
+): string | undefined => {
+  const normalizedValue = value?.trim();
+
+  return normalizedValue ? normalizedValue : undefined;
+};
+
+const normalizeInstructionCliStringList = (
+  values: string[] | undefined,
+): string[] => {
+  return Array.from(
+    new Set(
+      (values ?? [])
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+    ),
+  );
+};
+
+const appendInstructionOption = (
+  argumentsList: string[],
+  flag: string,
+  value: string | number | undefined,
+): void => {
+  if (value === undefined || value === "") {
+    return;
+  }
+
+  argumentsList.push(flag);
+  argumentsList.push(String(value));
+};
+
+const appendInstructionRepeatedOption = (
+  argumentsList: string[],
+  flag: string,
+  values: string[] | undefined,
+): void => {
+  for (const value of normalizeInstructionCliStringList(values)) {
+    argumentsList.push(flag);
+    argumentsList.push(value);
+  }
+};
+
+const createInstructionMutationArguments = (
+  action: "create" | "save" | "generate",
+  input: InstructionMutationInput,
+): string[] => {
+  const name = normalizeInstructionCliString(input.name);
+  const prompt = normalizeInstructionCliString(input.prompt);
+
+  if (!name) {
+    throw new Error("Expected an instruction name.");
+  }
+
+  if (!prompt) {
+    throw new Error("Expected instruction text or generation prompt.");
+  }
+
+  const argumentsList = [action, name];
+  appendInstructionOption(argumentsList, "--prompt", prompt);
+  appendInstructionOption(argumentsList, "--path", input.path);
+  appendInstructionOption(argumentsList, "--scope", input.scope);
+  appendInstructionOption(argumentsList, "--instruction-mode", input.mode);
+  appendInstructionOption(argumentsList, "--audience", input.audience);
+  appendInstructionOption(argumentsList, "--priority", input.priority);
+  if (action === "generate") {
+    appendInstructionOption(argumentsList, "--max-rounds", input.maxRounds);
+  }
+  appendInstructionRepeatedOption(argumentsList, "--apply-to", input.applyTo);
+  appendInstructionRepeatedOption(argumentsList, "--exclude", input.exclude);
+  appendInstructionRepeatedOption(argumentsList, "--keyword", input.keywords);
+
+  return argumentsList;
+};
+
+const runInstructionCommand = async <Result>(
+  workspaceRoot: string | null | undefined,
+  argumentsList: string[],
+  fallback: () => Result,
+): Promise<Result> => {
+  if (!canInvokeTauriCommands()) {
+    return fallback();
+  }
+
+  try {
+    return await tauriCore.invoke<Result>("run_instruction_command", {
+      request: {
+        workspaceRoot: normalizeInstructionCommandWorkspace(workspaceRoot),
+        arguments: argumentsList,
+      },
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const listInstructions = async (
+  workspaceRoot: string | null | undefined,
+): Promise<InstructionRegistryResult> => {
+  return runInstructionCommand(
+    workspaceRoot,
+    ["list"],
+    () => ({
+      workspaceRoot: normalizeInstructionCommandWorkspace(workspaceRoot),
+      instructions: [],
+      diagnostics: [],
+    }),
+  );
+};
+
+export const showInstruction = async (
+  workspaceRoot: string | null | undefined,
+  subject: string,
+): Promise<DiscoveredInstruction> => {
+  const normalizedSubject = normalizeInstructionCliString(subject);
+
+  if (!normalizedSubject) {
+    throw new Error("Expected an instruction name or path.");
+  }
+
+  return runInstructionCommand(
+    workspaceRoot,
+    ["show", normalizedSubject],
+    assertInstructionDesktopAvailable,
+  );
+};
+
+export const validateInstructions = async (
+  workspaceRoot: string | null | undefined,
+): Promise<InstructionValidationResult> => {
+  return runInstructionCommand(
+    workspaceRoot,
+    ["validate"],
+    () => ({ valid: true, diagnostics: [] }),
+  );
+};
+
+export const createInstruction = async (
+  workspaceRoot: string | null | undefined,
+  input: InstructionMutationInput,
+): Promise<InstructionWriteResult> => {
+  return runInstructionCommand(
+    workspaceRoot,
+    createInstructionMutationArguments("create", input),
+    assertInstructionDesktopAvailable,
+  );
+};
+
+export const saveInstruction = async (
+  workspaceRoot: string | null | undefined,
+  input: InstructionMutationInput,
+): Promise<InstructionWriteResult> => {
+  return runInstructionCommand(
+    workspaceRoot,
+    createInstructionMutationArguments("save", input),
+    assertInstructionDesktopAvailable,
+  );
+};
+
+export const generateInstruction = async (
+  workspaceRoot: string | null | undefined,
+  input: InstructionMutationInput,
+): Promise<InstructionGenerationResult> => {
+  return runInstructionCommand(
+    workspaceRoot,
+    createInstructionMutationArguments("generate", input),
+    assertInstructionDesktopAvailable,
+  );
+};
+
+const runMcpCommand = async <Result>(
+  workspaceRoot: string | null | undefined,
+  argumentsList: string[],
+  fallback: () => Result,
+): Promise<Result> => {
+  if (!canInvokeTauriCommands()) {
+    return fallback();
+  }
+
+  try {
+    return await tauriCore.invoke<Result>("run_mcp_command", {
+      request: {
+        workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
+        arguments: argumentsList,
+      },
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const listMcpServers = async (
+  workspaceRoot: string | null | undefined,
+  includeDisabled = false,
+): Promise<McpCommandServersResult> => {
+  const argumentsList = includeDisabled
+    ? ["servers", "--include-disabled"]
+    : ["servers"];
+
+  return runMcpCommand(
+    workspaceRoot,
+    argumentsList,
+    () => ({
+      workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
+      servers: [],
+    }),
+  );
+};
+
+export const listMcpCachedCapabilities = async (
+  workspaceRoot: string | null | undefined,
+): Promise<McpCommandCacheResult> => {
+  return runMcpCommand(
+    workspaceRoot,
+    ["cache"],
+    () => ({
+      workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
+      servers: {},
+    }),
+  );
+};
+
+export const discoverMcpServer = async (
+  workspaceRoot: string | null | undefined,
+  serverId: string,
+): Promise<McpCommandDiscoveryResult> => {
+  const normalizedServerId = serverId.trim();
+
+  if (!normalizedServerId) {
+    throw new Error("Expected an MCP server id.");
+  }
+
+  return runMcpCommand(
+    workspaceRoot,
+    ["discover", normalizedServerId],
+    assertMcpDesktopAvailable,
+  );
+};
+
+export const refreshMcpDiscoveryCache = async (
+  workspaceRoot: string | null | undefined,
+  serverId: string,
+): Promise<McpCommandDiscoveryResult> => {
+  const normalizedServerId = serverId.trim();
+
+  if (!normalizedServerId) {
+    throw new Error("Expected an MCP server id.");
+  }
+
+  return runMcpCommand(
+    workspaceRoot,
+    ["refresh", normalizedServerId],
+    assertMcpDesktopAvailable,
+  );
+};
+
+export const beginMcpOAuth = async (
+  workspaceRoot: string | null | undefined,
+  serverId: string,
+): Promise<McpCommandOAuthResult> => {
+  const normalizedServerId = serverId.trim();
+
+  if (!normalizedServerId) {
+    throw new Error("Expected an MCP server id.");
+  }
+
+  return runMcpCommand(
+    workspaceRoot,
+    ["oauth-start", normalizedServerId],
+    assertMcpDesktopAvailable,
+  );
+};
+
+export const finishMcpOAuth = async (
+  workspaceRoot: string | null | undefined,
+  serverId: string,
+  authorizationResponse: string,
+): Promise<McpCommandOAuthResult> => {
+  const normalizedServerId = serverId.trim();
+  const normalizedAuthorizationResponse = authorizationResponse.trim();
+
+  if (!normalizedServerId) {
+    throw new Error("Expected an MCP server id.");
+  }
+
+  if (!normalizedAuthorizationResponse) {
+    throw new Error("Expected an OAuth callback URL or authorization code.");
+  }
+
+  return runMcpCommand(
+    workspaceRoot,
+    ["oauth-finish", normalizedServerId, normalizedAuthorizationResponse],
+    assertMcpDesktopAvailable,
+  );
+};
+
+export const openMcpOAuthAuthorizationUrl = async (
+  authorizationUrl: string,
+): Promise<void> => {
+  const parsedUrl = new URL(authorizationUrl);
+
+  if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
+    throw new Error("OAuth authorization URL must use HTTP or HTTPS.");
+  }
+
+  if (tauriCore.isTauri()) {
+    try {
+      await openUrl(parsedUrl.href);
+      return;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  if (typeof window !== "undefined" && typeof window.open === "function") {
+    window.open(parsedUrl.href, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  throw new Error("The OAuth authorization URL could not be opened.");
+};
+
+const runRalphCommand = async <Result>(
+  workspaceRoot: string | null | undefined,
+  argumentsList: string[],
+  fallback: () => Result,
+  options?: { taskId?: string },
+): Promise<Result> => {
+  if (!canInvokeTauriCommands()) {
+    return fallback();
+  }
+
+  try {
+    return await tauriCore.invoke<Result>("run_ralph_command", {
+      request: {
+        workspaceRoot: normalizeRalphCommandWorkspace(workspaceRoot),
+        arguments: argumentsList,
+        ...(options?.taskId ? { taskId: options.taskId } : {}),
+      },
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+const createRalphRunArguments = (
+  input: RalphRunFlowInput,
+): string[] => {
+  const normalizedName = input.name.trim();
+
+  if (!normalizedName) {
+    throw new Error("Expected a Ralph flow id or alias.");
+  }
+
+  const argumentsList = ["run", normalizedName];
+
+  appendSchedulerOption(argumentsList, "--mode", input.mode);
+  appendSchedulerOption(argumentsList, "--profile", normalizeSchedulerCliString(input.profile));
+  appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
+  appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
+  appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
+  appendSchedulerOption(argumentsList, "--max-transitions", input.maxTransitions);
+
+  for (const [name, value] of Object.entries(input.params ?? {})) {
+    const normalizedParamName = name.trim();
+
+    if (!normalizedParamName) {
+      continue;
+    }
+
+    argumentsList.push("--param");
+    argumentsList.push(`${normalizedParamName}=${value}`);
+  }
+
+  return argumentsList;
+};
+
+const createRalphCreateArguments = (
+  input: RalphCreateFlowInput,
+): string[] => {
+  const prompt = input.prompt.trim();
+
+  if (!prompt) {
+    throw new Error("Expected a prompt before creating a Ralph flow.");
+  }
+
+  const argumentsList = ["create"];
+
+  appendSchedulerOption(argumentsList, "--mode", input.mode);
+  appendSchedulerOption(argumentsList, "--profile", normalizeSchedulerCliString(input.profile));
+  appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
+  appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
+  appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
+  appendSchedulerOption(argumentsList, "--name", normalizeSchedulerCliString(input.name));
+  appendSchedulerOption(argumentsList, "--prompt", prompt);
+  appendSchedulerOption(argumentsList, "--existing-flow-json", input.existingFlow
+    ? JSON.stringify(input.existingFlow)
+    : undefined);
+  appendSchedulerOption(argumentsList, "--flow-target", input.target);
+  appendSchedulerOption(argumentsList, "--generation-mode", input.generationMode);
+  appendSchedulerOption(argumentsList, "--max-rounds", input.maxRounds);
+
+  return argumentsList;
+};
+
+const createRalphSaveArguments = (
+  input: RalphSaveFlowInput,
+): string[] => {
+  const flowId = input.flow.id.trim();
+
+  if (!flowId) {
+    throw new Error("Expected a Ralph flow id.");
+  }
+
+  return ["save", flowId, "--flow-json", JSON.stringify(input.flow)];
+};
+
+const createRalphDeleteArguments = (name: string): string[] => {
+  const normalizedName = name.trim();
+
+  if (!normalizedName) {
+    throw new Error("Expected a Ralph flow id or alias.");
+  }
+
+  return ["delete", normalizedName];
+};
+
+const createRalphRestoreArguments = (
+  input: RalphRestoreFlowRevisionInput,
+): string[] => {
+  const flowId = input.name.trim();
+  const revisionId = input.revision.trim();
+
+  if (!flowId) {
+    throw new Error("Expected a Ralph flow id or alias.");
+  }
+
+  if (!revisionId) {
+    throw new Error("Expected a Ralph revision id.");
+  }
+
+  return ["restore", flowId, "--revision", revisionId];
+};
+
+export const listRalphFlows = async (
+  workspaceRoot: string | null | undefined,
+): Promise<RalphListFlowsResult> => {
+  return runRalphCommand(
+    workspaceRoot,
+    ["list"],
+    () => ({
+      workspaceRoot: normalizeRalphCommandWorkspace(workspaceRoot),
+      flows: [],
+    }),
+  );
+};
+
+export const showRalphFlow = async (
+  workspaceRoot: string | null | undefined,
+  name: string,
+): Promise<RalphFlowResult> => {
+  const normalizedName = name.trim();
+
+  if (!normalizedName) {
+    throw new Error("Expected a Ralph flow id or alias.");
+  }
+
+  return runRalphCommand(
+    workspaceRoot,
+    ["show", normalizedName],
+    assertRalphDesktopAvailable,
+  );
+};
+
+export const validateRalphFlow = async (
+  workspaceRoot: string | null | undefined,
+  name: string,
+): Promise<RalphValidateFlowResult> => {
+  const normalizedName = name.trim();
+
+  if (!normalizedName) {
+    throw new Error("Expected a Ralph flow id or alias.");
+  }
+
+  return runRalphCommand(
+    workspaceRoot,
+    ["validate", normalizedName],
+    assertRalphDesktopAvailable,
+  );
+};
+
+export const listRalphFlowRevisions = async (
+  workspaceRoot: string | null | undefined,
+  name: string,
+): Promise<RalphListFlowRevisionsResult> => {
+  const normalizedName = name.trim();
+
+  if (!normalizedName) {
+    throw new Error("Expected a Ralph flow id or alias.");
+  }
+
+  return runRalphCommand(
+    workspaceRoot,
+    ["revisions", normalizedName],
+    () => ({
+      flow: normalizedName,
+      revisions: [],
+    }),
+  );
+};
+
+export const createRalphFlow = async (
+  workspaceRoot: string | null | undefined,
+  input: RalphCreateFlowInput,
+): Promise<RalphCreateFlowResult> => {
+  return runRalphCommand(
+    workspaceRoot,
+    createRalphCreateArguments(input),
+    assertRalphDesktopAvailable,
+    input.taskId ? { taskId: input.taskId } : undefined,
+  );
+};
+
+export const saveRalphFlow = async (
+  workspaceRoot: string | null | undefined,
+  input: RalphSaveFlowInput,
+): Promise<RalphSaveFlowResult> => {
+  return runRalphCommand(
+    workspaceRoot,
+    createRalphSaveArguments(input),
+    assertRalphDesktopAvailable,
+  );
+};
+
+export const deleteRalphFlow = async (
+  workspaceRoot: string | null | undefined,
+  name: string,
+): Promise<RalphDeleteFlowResult> => {
+  return runRalphCommand(
+    workspaceRoot,
+    createRalphDeleteArguments(name),
+    assertRalphDesktopAvailable,
+  );
+};
+
+export const restoreRalphFlowRevision = async (
+  workspaceRoot: string | null | undefined,
+  input: RalphRestoreFlowRevisionInput,
+): Promise<RalphRestoreFlowRevisionResult> => {
+  return runRalphCommand(
+    workspaceRoot,
+    createRalphRestoreArguments(input),
+    assertRalphDesktopAvailable,
+  );
+};
+
+export const runRalphFlow = async (
+  workspaceRoot: string | null | undefined,
+  input: RalphRunFlowInput,
+): Promise<RalphRunFlowResult> => {
+  return runRalphCommand(
+    workspaceRoot,
+    createRalphRunArguments(input),
+    assertRalphDesktopAvailable,
+    input.taskId ? { taskId: input.taskId } : undefined,
+  );
 };
 
 const runSchedulerCommand = async <Result>(
@@ -3008,6 +4209,7 @@ const createSchedulerCreateArguments = (
   appendSchedulerOption(argumentsList, "--profile", normalizeSchedulerCliString(input.profile));
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
   appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
+  appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
 
   return argumentsList;
 };
@@ -3194,6 +4396,7 @@ export const runDesktopTask = async (
     model?: string;
     profile?: string;
     provider?: RuntimeProvider;
+    reasoning?: RuntimeSnapshot["reasoning"];
     taskId?: string;
   } = {},
 ): Promise<DesktopTaskRunResponse> => {
@@ -3211,6 +4414,7 @@ export const runDesktopTask = async (
   const normalizedMode = context.mode;
   const normalizedProfile = context.profile?.trim();
   const normalizedProvider = context.provider;
+  const normalizedReasoning = context.reasoning;
   const normalizedTaskId = context.taskId?.trim();
 
   if (!canInvokeTauriCommands()) {
@@ -3234,6 +4438,7 @@ export const runDesktopTask = async (
         ...(normalizedTaskId ? { taskId: normalizedTaskId } : {}),
         ...(normalizedProvider ? { provider: normalizedProvider } : {}),
         ...(normalizedModel ? { model: normalizedModel } : {}),
+        ...(normalizedReasoning ? { reasoning: normalizedReasoning } : {}),
         ...(normalizedImagePaths.length > 0
           ? { imagePaths: normalizedImagePaths }
           : {}),

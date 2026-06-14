@@ -25,6 +25,7 @@ import {
 } from "../../model-catalog";
 import {
   loadProviderModelCatalog,
+  USER_API_KEY_PROVIDER_ORDER,
   type RuntimeSnapshot,
   type UserApiKeyProvider,
   type UserDesktopSettings,
@@ -104,9 +105,7 @@ const getPrimaryModelChoices = (
   provider: RuntimeProvider,
   catalog: ProviderModelCatalogSnapshot | null,
 ) => {
-  return getCatalogModelsForProvider(provider, catalog)
-    .filter((model) => model.stage !== "deprecated")
-    .slice(0, 4);
+  return getCatalogModelsForProvider(provider, catalog).slice(0, 4);
 };
 
 const normalizeShortcutDraft = (draft: UserDesktopSettings): UserDesktopSettings => {
@@ -194,7 +193,10 @@ export const OnboardingWizard = ({
   const canGoNext = activeStepIndex < ONBOARDING_STEPS.length - 1;
 
   const selectProvider = (provider: RuntimeProvider): void => {
-    providerSetup.onProviderChange(provider as UserApiKeyProvider);
+    if (USER_API_KEY_PROVIDER_ORDER.includes(provider as UserApiKeyProvider)) {
+      providerSetup.onProviderChange(provider as UserApiKeyProvider);
+    }
+
     onSessionModelSelection(provider, getDefaultModelForProvider(provider));
   };
 
@@ -311,7 +313,7 @@ export const OnboardingWizard = ({
               aria-pressed={activeSession.model === model.id}
               onClick={() => onSessionModelSelection(activeProvider, model.id)}
               className={cn(
-                "min-h-20 rounded-2xl border px-3 py-3 text-left transition",
+                "rounded-2xl border px-3 py-3 text-left transition",
                 activeSession.model === model.id
                   ? "border-sky-400/40 bg-sky-400/10 text-sky-100"
                   : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700 hover:bg-slate-900",
@@ -320,9 +322,6 @@ export const OnboardingWizard = ({
               <span className="flex items-center gap-2 text-sm font-semibold">
                 <Bot className="h-4 w-4 text-sky-300" />
                 {model.label}
-              </span>
-              <span className="mt-1 line-clamp-2 block text-xs leading-5 text-slate-500">
-                {model.description}
               </span>
             </button>
           ))}

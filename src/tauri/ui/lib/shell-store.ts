@@ -2,8 +2,17 @@ import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LazyStore } from "@tauri-apps/plugin-store";
+import { REASONING_MODES } from "../../../core/runtime-contract.generated.js";
+import type { ReasoningMode } from "../../../core/types.js";
+import {
+  getDefaultModelForProvider,
+  SUPPORTED_PROVIDER_ORDER,
+  type RuntimeProvider,
+} from "../model-catalog";
 
 const STORAGE_KEY = "machdoch.desktop.shell-state";
+const APP_SHELL_STORAGE_KEY = "machdoch.desktop.app-shell-state";
+const RALPH_SETTINGS_STORAGE_KEY = "machdoch.desktop.ralph-settings";
 const ONBOARDING_STORAGE_KEY = "machdoch.desktop.onboarding-state";
 const APPEARANCE_STORAGE_KEY = "machdoch.desktop.appearance-state";
 const STORE_FILE = "machdoch-shell-state.json";
@@ -29,6 +38,28 @@ export interface OnboardingState {
   skippedAt?: number;
 }
 
+export type MainAppId = "chat" | "ralph";
+
+export interface AppShellState {
+  version: 1;
+  activeApp: MainAppId;
+  lastViewedAt: Record<MainAppId, number>;
+}
+
+export interface RalphSettings {
+  version: 1;
+  workspaceRoot: string | null;
+  generationProvider: RuntimeProvider;
+  generationModel: string;
+  generationProfile?: string;
+  generationReasoning?: ReasoningMode;
+  runProvider: RuntimeProvider;
+  runModel: string;
+  runProfile?: string;
+  runReasoning?: ReasoningMode;
+  defaultMaxTransitions?: number;
+}
+
 export type AppearanceTheme = "dark" | "light";
 export type AppearanceDensity = "comfortable" | "compact";
 export type AppearanceAccent = "sky" | "emerald" | "violet" | "amber";
@@ -50,8 +81,126 @@ export const DEFAULT_APPEARANCE_SETTINGS = {
   quickChatBubbleStyle: "classic",
 } as const satisfies AppearanceSettings;
 
+const DEFAULT_RALPH_PROVIDER = SUPPORTED_PROVIDER_ORDER[0] ?? "openai";
+
+export const DEFAULT_APP_SHELL_STATE = {
+  version: 1,
+  activeApp: "chat",
+  lastViewedAt: {
+    chat: 0,
+    ralph: 0,
+  },
+} as const satisfies AppShellState;
+
+export const DEFAULT_RALPH_SETTINGS = {
+  version: 1,
+  workspaceRoot: null,
+  generationProvider: DEFAULT_RALPH_PROVIDER,
+  generationModel: getDefaultModelForProvider(DEFAULT_RALPH_PROVIDER),
+  runProvider: DEFAULT_RALPH_PROVIDER,
+  runModel: getDefaultModelForProvider(DEFAULT_RALPH_PROVIDER),
+} as const satisfies RalphSettings;
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
+};
+
+const isRuntimeProvider = (value: unknown): value is RuntimeProvider => {
+  return SUPPORTED_PROVIDER_ORDER.includes(value as RuntimeProvider);
+};
+
+const isReasoningMode = (value: unknown): value is ReasoningMode => {
+  return REASONING_MODES.includes(value as ReasoningMode);
+};
+
+const normalizeOptionalString = (value: unknown): string | undefined => {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+};
+
+const normalizeWorkspaceRoot = (value: unknown): string | null => {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+};
+
+const normalizeMainAppId = (value: unknown): MainAppId => {
+  return value === "ralph" ? "ralph" : "chat";
+};
+
+const normalizeAppShellState = (value: unknown): AppShellState => {
+  if (!isRecord(value)) {
+    return DEFAULT_APP_SHELL_STATE;
+  }
+
+  const lastViewedAt = isRecord(value.lastViewedAt)
+    ? value.lastViewedAt
+    : {};
+
+  return {
+    version: 1,
+    activeApp: normalizeMainAppId(value.activeApp),
+    lastViewedAt: {
+      chat:
+        typeof lastViewedAt.chat === "number"
+          ? lastViewedAt.chat
+          : DEFAULT_APP_SHELL_STATE.lastViewedAt.chat,
+      ralph:
+        typeof lastViewedAt.ralph === "number"
+          ? lastViewedAt.ralph
+          : DEFAULT_APP_SHELL_STATE.lastViewedAt.ralph,
+    },
+  };
+};
+
+const normalizeRalphProvider = (value: unknown): RuntimeProvider => {
+  return isRuntimeProvider(value) ? value : DEFAULT_RALPH_PROVIDER;
+};
+
+const normalizeRalphModel = (
+  value: unknown,
+  provider: RuntimeProvider,
+): string => {
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : getDefaultModelForProvider(provider);
+};
+
+const normalizeRalphSettings = (value: unknown): RalphSettings => {
+  if (!isRecord(value)) {
+    return DEFAULT_RALPH_SETTINGS;
+  }
+
+  const generationProvider = normalizeRalphProvider(value.generationProvider);
+  const runProvider = normalizeRalphProvider(value.runProvider);
+  const defaultMaxTransitions =
+    typeof value.defaultMaxTransitions === "number" &&
+    Number.isFinite(value.defaultMaxTransitions) &&
+    value.defaultMaxTransitions > 0
+      ? Math.floor(value.defaultMaxTransitions)
+      : undefined;
+
+  return {
+    version: 1,
+    workspaceRoot: normalizeWorkspaceRoot(value.workspaceRoot),
+    generationProvider,
+    generationModel: normalizeRalphModel(
+      value.generationModel,
+      generationProvider,
+    ),
+    ...(normalizeOptionalString(value.generationProfile)
+      ? { generationProfile: normalizeOptionalString(value.generationProfile) }
+      : {}),
+    ...(isReasoningMode(value.generationReasoning)
+      ? { generationReasoning: value.generationReasoning }
+      : {}),
+    runProvider,
+    runModel: normalizeRalphModel(value.runModel, runProvider),
+    ...(normalizeOptionalString(value.runProfile)
+      ? { runProfile: normalizeOptionalString(value.runProfile) }
+      : {}),
+    ...(isReasoningMode(value.runReasoning)
+      ? { runReasoning: value.runReasoning }
+      : {}),
+    ...(defaultMaxTransitions ? { defaultMaxTransitions } : {}),
+  };
 };
 
 const normalizeAppearanceSettings = (value: unknown): AppearanceSettings => {
@@ -178,6 +327,127 @@ export const saveShellState = async <T>(state: T): Promise<void> => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (error) {
     console.error("Failed to persist shell state to localStorage", error);
+  }
+};
+
+export const loadAppShellState = async (): Promise<AppShellState> => {
+  if (canUseTauriStore()) {
+    try {
+      const value = await getStore().get<AppShellState>(APP_SHELL_STORAGE_KEY);
+
+      if (value !== null && value !== undefined) {
+        return normalizeAppShellState(value);
+      }
+    } catch (error) {
+      console.error("Failed to load app shell state from Tauri store", error);
+    }
+  }
+
+  const localStorage = getLocalStorage();
+
+  if (!localStorage) {
+    return DEFAULT_APP_SHELL_STATE;
+  }
+
+  try {
+    const raw = localStorage.getItem(APP_SHELL_STORAGE_KEY);
+    return raw
+      ? normalizeAppShellState(JSON.parse(raw))
+      : DEFAULT_APP_SHELL_STATE;
+  } catch (error) {
+    console.error("Failed to load app shell state from localStorage", error);
+    return DEFAULT_APP_SHELL_STATE;
+  }
+};
+
+export const saveAppShellState = async (
+  state: AppShellState,
+): Promise<void> => {
+  const normalizedState = normalizeAppShellState(state);
+
+  if (canUseTauriStore()) {
+    try {
+      const store = getStore();
+      await store.set(APP_SHELL_STORAGE_KEY, normalizedState);
+      await store.save();
+      return;
+    } catch (error) {
+      console.error("Failed to persist app shell state to Tauri store", error);
+    }
+  }
+
+  const localStorage = getLocalStorage();
+
+  if (!localStorage) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(APP_SHELL_STORAGE_KEY, JSON.stringify(normalizedState));
+  } catch (error) {
+    console.error("Failed to persist app shell state to localStorage", error);
+  }
+};
+
+export const loadRalphSettings = async (): Promise<RalphSettings> => {
+  if (canUseTauriStore()) {
+    try {
+      const value = await getStore().get<RalphSettings>(
+        RALPH_SETTINGS_STORAGE_KEY,
+      );
+
+      if (value !== null && value !== undefined) {
+        return normalizeRalphSettings(value);
+      }
+    } catch (error) {
+      console.error("Failed to load Ralph settings from Tauri store", error);
+    }
+  }
+
+  const localStorage = getLocalStorage();
+
+  if (!localStorage) {
+    return DEFAULT_RALPH_SETTINGS;
+  }
+
+  try {
+    const raw = localStorage.getItem(RALPH_SETTINGS_STORAGE_KEY);
+    return raw ? normalizeRalphSettings(JSON.parse(raw)) : DEFAULT_RALPH_SETTINGS;
+  } catch (error) {
+    console.error("Failed to load Ralph settings from localStorage", error);
+    return DEFAULT_RALPH_SETTINGS;
+  }
+};
+
+export const saveRalphSettings = async (
+  settings: RalphSettings,
+): Promise<void> => {
+  const normalizedSettings = normalizeRalphSettings(settings);
+
+  if (canUseTauriStore()) {
+    try {
+      const store = getStore();
+      await store.set(RALPH_SETTINGS_STORAGE_KEY, normalizedSettings);
+      await store.save();
+      return;
+    } catch (error) {
+      console.error("Failed to persist Ralph settings to Tauri store", error);
+    }
+  }
+
+  const localStorage = getLocalStorage();
+
+  if (!localStorage) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      RALPH_SETTINGS_STORAGE_KEY,
+      JSON.stringify(normalizedSettings),
+    );
+  } catch (error) {
+    console.error("Failed to persist Ralph settings to localStorage", error);
   }
 };
 

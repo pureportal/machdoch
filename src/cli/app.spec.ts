@@ -392,6 +392,396 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("parses MCP management commands", () => {
+    expect(
+      parseCliArgs(["--json", "--cwd", "C:/repo", "mcp"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "mcp",
+      mcp: {
+        action: "servers",
+      },
+      json: true,
+      verbose: false,
+      workspaceRoot: "C:/repo",
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "mcp",
+          "call-tool",
+          "serper",
+          "search",
+          "--arguments-json",
+          '{"q":"model context protocol"}',
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "mcp",
+      mcp: {
+        action: "call-tool",
+        serverId: "serper",
+        target: "search",
+        argumentsJson: '{"q":"model context protocol"}',
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "mcp",
+          "oauth-finish",
+          "github",
+          "http://127.0.0.1:43110/oauth/callback?code=abc&state=xyz",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "mcp",
+      mcp: {
+        action: "oauth-finish",
+        serverId: "github",
+        target: "http://127.0.0.1:43110/oauth/callback?code=abc&state=xyz",
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(() =>
+      parseCliArgs(["mcp", "refresh", "github", "--include-disabled"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("--include-disabled is only valid for `machdoch mcp servers`.");
+  });
+
+  it("parses instruction management commands", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--json",
+          "--cwd",
+          "C:/repo",
+          "instructions",
+          "create",
+          "TypeScript rules",
+          "--prompt",
+          "Prefer strict types.",
+          "--scope",
+          "workspace",
+          "--apply-to",
+          "src/**/*.ts",
+          "--apply-to",
+          "tests/**/*.ts",
+          "--exclude",
+          "src/generated/**",
+          "--keyword",
+          "typescript",
+          "--instruction-mode",
+          "auto",
+          "--audience",
+          "executor",
+          "--priority",
+          "25",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "instructions",
+      instructions: {
+        action: "create",
+        subject: "TypeScript rules",
+        scope: "workspace",
+        prompt: "Prefer strict types.",
+        applyTo: ["src/**/*.ts", "tests/**/*.ts"],
+        exclude: ["src/generated/**"],
+        keywords: ["typescript"],
+        mode: "auto",
+        audience: "executor",
+        priority: 25,
+      },
+      json: true,
+      verbose: false,
+      workspaceRoot: "C:/repo",
+    });
+
+    expect(
+      parseCliArgs(
+        ["instructions", "list", "--scope", "compatibility"],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "instructions",
+      instructions: {
+        action: "list",
+        scope: "compatibility",
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "instructions",
+          "save",
+          "TypeScript rules",
+          "--prompt",
+          "Prefer strict types and regression tests.",
+          "--path",
+          ".machdoch/instructions/typescript-rules.instructions.md",
+          "--scope",
+          "workspace",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "instructions",
+      instructions: {
+        action: "save",
+        subject: "TypeScript rules",
+        prompt: "Prefer strict types and regression tests.",
+        path: ".machdoch/instructions/typescript-rules.instructions.md",
+        scope: "workspace",
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "instructions",
+          "generate",
+          "Review rules",
+          "--prompt",
+          "Create review instructions for React accessibility work.",
+          "--path",
+          "instructions/review-rules.instructions.md",
+          "--scope",
+          "user",
+          "--max-rounds",
+          "3",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "instructions",
+      instructions: {
+        action: "generate",
+        subject: "Review rules",
+        prompt: "Create review instructions for React accessibility work.",
+        path: "instructions/review-rules.instructions.md",
+        scope: "user",
+        maxRounds: 3,
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(() =>
+      parseCliArgs(
+        ["instructions", "save", "Rules", "--prompt", "Body", "--max-rounds", "2"],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toThrow("--max-rounds is only valid for `machdoch instructions generate`.");
+
+    expect(() =>
+      parseCliArgs(
+        [
+          "instructions",
+          "generate",
+          "Rules",
+          "--prompt",
+          "Body",
+          "--scope",
+          "compatibility",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toThrow(
+      "Compatibility instruction files are read-only; use user or workspace scope.",
+    );
+  });
+
+  it("parses Ralph flow commands", () => {
+    expect(
+      parseCliArgs(["--json", "--cwd", "C:/repo", "ralph"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "ralph",
+      ralph: {
+        action: "list",
+      },
+      json: true,
+      verbose: false,
+      workspaceRoot: "C:/repo",
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "--mode",
+          "machdoch",
+          "ralph",
+          "run",
+          "refactor-scope",
+          "--param",
+          "scope=src/core",
+          "--param",
+          "workspace=C:/repo",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "ralph",
+      mode: "machdoch",
+      ralph: {
+        action: "run",
+        subject: "refactor-scope",
+        params: ["scope=src/core", "workspace=C:/repo"],
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "ralph",
+          "create",
+          "refactor-scope",
+          "--name",
+          "refactor-scope",
+          "--prompt",
+          "Create a refactor loop.",
+          "--existing-flow-json",
+          '{"schemaVersion":1,"id":"refactor-scope","name":"Refactor","blocks":[],"edges":[]}',
+          "--flow-target",
+          "refactor",
+          "--generation-mode",
+          "do-it",
+          "--max-rounds",
+          "2",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "ralph",
+      ralph: {
+        action: "create",
+        subject: "refactor-scope",
+        name: "refactor-scope",
+        prompt: "Create a refactor loop.",
+        existingFlowJson:
+          '{"schemaVersion":1,"id":"refactor-scope","name":"Refactor","blocks":[],"edges":[]}',
+        target: "refactor",
+        generationMode: "do-it",
+        maxRounds: 2,
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "ralph",
+          "save",
+          "refactor-scope",
+          "--flow-json",
+          '{"schemaVersion":1,"id":"refactor-scope","name":"Refactor","blocks":[],"edges":[]}',
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "ralph",
+      ralph: {
+        action: "save",
+        subject: "refactor-scope",
+        flowJson:
+          '{"schemaVersion":1,"id":"refactor-scope","name":"Refactor","blocks":[],"edges":[]}',
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(["ralph", "revisions", "refactor-scope"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "ralph",
+      ralph: {
+        action: "revisions",
+        subject: "refactor-scope",
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "ralph",
+          "restore",
+          "refactor-scope",
+          "--revision",
+          "2026-06-13T10-00-00-000Z",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "ralph",
+      ralph: {
+        action: "restore",
+        subject: "refactor-scope",
+        revision: "2026-06-13T10-00-00-000Z",
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
   it("parses scheduler create controls for prompts, packs, queues, and retries", () => {
     expect(
       parseCliArgs(
@@ -728,7 +1118,7 @@ describe("parseCliArgs", () => {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toThrow(
-      "Expected --runtime-provider to be followed by openai, anthropic, or google.",
+      "Expected --runtime-provider to be followed by openai, anthropic, google, codex-cli, claude-cli, or copilot-cli.",
     );
 
     expect(() =>
@@ -790,6 +1180,88 @@ describe("parseCliArgs", () => {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toThrow("Expected an id after `machdoch scheduler trigger`.");
+
+    expect(() =>
+      parseCliArgs(["ralph", "run"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("Expected a flow id after `machdoch ralph run`.");
+
+    expect(() =>
+      parseCliArgs(["ralph", "delete"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("Expected a flow id after `machdoch ralph delete`.");
+
+    expect(() =>
+      parseCliArgs(["ralph", "create", "template"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("`machdoch ralph create` expects --prompt or --prompt-file.");
+
+    expect(() =>
+      parseCliArgs(["ralph", "validate", "template", "--param", "scope=src"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("--param is only valid for `machdoch ralph run`.");
+
+    expect(() =>
+      parseCliArgs(["ralph", "save", "template"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("`machdoch ralph save` expects --flow-json.");
+
+    expect(() =>
+      parseCliArgs(["ralph", "run", "template", "--flow-json", "{}"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("--flow-json is only valid for `machdoch ralph save`.");
+
+    expect(() =>
+      parseCliArgs(["ralph", "restore", "template"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("`machdoch ralph restore` expects --revision.");
+
+    expect(() =>
+      parseCliArgs(["ralph", "run", "template", "--revision", "rev-1"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("--revision is only valid for `machdoch ralph restore`.");
+
+    expect(() =>
+      parseCliArgs(["ralph", "run", "template", "--flow-target", "refactor"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("--flow-target is only valid for `machdoch ralph create`.");
+
+    expect(() =>
+      parseCliArgs(
+        ["ralph", "create", "template", "--prompt", "x", "--flow-target", "bad"],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toThrow(
+      "Expected --flow-target to be followed by flow, prompt-block, or refactor.",
+    );
+
+    expect(() =>
+      parseCliArgs(
+        [
+          "ralph",
+          "create",
+          "template",
+          "--prompt",
+          "x",
+          "--generation-mode",
+          "bad",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toThrow("Expected --generation-mode to be followed by do-it or interview.");
 
     expect(() =>
       parseCliArgs(

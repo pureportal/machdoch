@@ -5,6 +5,7 @@ export type ConfiguredModelProvider = Exclude<ModelProvider, "unconfigured">;
 
 export type ProviderModelMode =
   | "anthropic-messages"
+  | "external-agent-cli"
   | "gemini-chat"
   | "gemini-function-calling-any"
   | "openai-responses";
@@ -92,6 +93,9 @@ export const PROVIDER_MODEL_MODES: Record<
   readonly ProviderModelMode[]
 > = {
   anthropic: ["anthropic-messages"],
+  "claude-cli": ["external-agent-cli"],
+  "codex-cli": ["external-agent-cli"],
+  "copilot-cli": ["external-agent-cli"],
   google: ["gemini-chat", "gemini-function-calling-any"],
   openai: ["openai-responses"],
 };
@@ -148,6 +152,32 @@ const createGoogleCapabilities = (
     ...overrides,
   });
 
+const createCodexCliCapabilities = (
+  overrides: Partial<ProviderModelCapabilityMetadata>,
+): ProviderModelCapabilityMetadata =>
+  createCapabilities("codex-cli", {
+    imageInput: true,
+    reasoning: true,
+    supportedImageMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
+    ...overrides,
+  });
+
+const createClaudeCliCapabilities = (
+  overrides: Partial<ProviderModelCapabilityMetadata>,
+): ProviderModelCapabilityMetadata =>
+  createCapabilities("claude-cli", {
+    reasoning: true,
+    ...overrides,
+  });
+
+const createCopilotCliCapabilities = (
+  overrides: Partial<ProviderModelCapabilityMetadata>,
+): ProviderModelCapabilityMetadata =>
+  createCapabilities("copilot-cli", {
+    reasoning: true,
+    ...overrides,
+  });
+
 export const DEFAULT_MODEL_BY_PROVIDER = CONTRACT_DEFAULT_MODEL_BY_PROVIDER;
 
 export const PROVIDER_CATALOG_METADATA: readonly ProviderCatalogMetadata[] = [
@@ -168,6 +198,25 @@ export const PROVIDER_CATALOG_METADATA: readonly ProviderCatalogMetadata[] = [
     docsUrl: "https://ai.google.dev/gemini-api/docs/models",
     note:
       "Gemini model metadata is available through the Models API, including generation methods and token limits.",
+  },
+  {
+    provider: "codex-cli",
+    docsUrl: "https://developers.openai.com/codex/models",
+    note:
+      "Codex CLI runs through `codex exec`; model selection is delegated with the CLI `--model` flag and can be discovered from `codex debug models` when the local CLI is available.",
+  },
+  {
+    provider: "claude-cli",
+    docsUrl: "https://code.claude.com/docs/en/cli-reference",
+    note:
+      "Claude CLI runs through `claude -p` in non-interactive mode; model selection is delegated with `--model`.",
+  },
+  {
+    provider: "copilot-cli",
+    docsUrl:
+      "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-programmatic-reference",
+    note:
+      "Copilot CLI runs through `copilot -p` in non-interactive mode; model selection is delegated with `--model` unless Auto is selected.",
   },
 ] as const;
 
@@ -411,6 +460,225 @@ export const PROVIDER_MODEL_METADATA = [
       maxOutputTokens: 65_536,
     }),
     warnings: [],
+    source: "curated-fallback",
+  },
+  {
+    provider: "codex-cli",
+    id: "gpt-5.5",
+    label: "GPT-5.5",
+    lifecycle: "stable",
+    releaseDate: "2026-05-01",
+    description:
+      "Recommended Codex CLI model for complex coding and local agent workflows.",
+    recommendedFor: ["coding", "vision"],
+    capabilities: createCodexCliCapabilities({
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [
+      "Runs through the locally installed Codex CLI; availability depends on Codex authentication and CLI configuration.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "codex-cli",
+    id: "gpt-5.4",
+    label: "GPT-5.4",
+    lifecycle: "stable",
+    releaseDate: "2026-03-05",
+    description:
+      "Flagship Codex CLI model for professional coding, reasoning, and local agent workflows.",
+    recommendedFor: ["coding", "vision"],
+    capabilities: createCodexCliCapabilities({
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [
+      "Runs through the locally installed Codex CLI; availability depends on Codex authentication and CLI configuration.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "codex-cli",
+    id: "gpt-5.4-mini",
+    label: "GPT-5.4 mini",
+    lifecycle: "stable",
+    releaseDate: "2026-03-17",
+    description:
+      "Faster Codex CLI model option for lower-latency coding tasks.",
+    recommendedFor: ["coding", "fast", "cheap", "vision"],
+    capabilities: createCodexCliCapabilities({
+      contextWindowTokens: 400_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [
+      "Runs through the locally installed Codex CLI; availability depends on Codex authentication and CLI configuration.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "codex-cli",
+    id: "gpt-5.3-codex-spark",
+    label: "GPT-5.3 Codex Spark",
+    lifecycle: "preview",
+    releaseDate: "2026-01-01",
+    description:
+      "Text-only Codex CLI research preview model for near-instant coding iteration.",
+    recommendedFor: ["coding", "fast"],
+    capabilities: createCodexCliCapabilities({
+      imageInput: false,
+      supportedImageMediaTypes: withoutImages,
+      computerUse: false,
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Research preview model for ChatGPT Pro users; verify local Codex CLI availability before selecting it.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "claude-cli",
+    id: "claude-opus-4-8",
+    label: "Claude Opus 4.8",
+    lifecycle: "stable",
+    releaseDate: "2026-05-28",
+    description:
+      "Most capable Claude CLI model option for complex delegated coding work.",
+    recommendedFor: ["coding"],
+    capabilities: createClaudeCliCapabilities({
+      contextWindowTokens: 1_000_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [
+      "Runs through the locally installed Claude CLI; availability depends on Claude authentication and CLI configuration.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "claude-cli",
+    id: "claude-sonnet-4-6",
+    label: "Claude Sonnet 4.6",
+    lifecycle: "stable",
+    releaseDate: "2026-02-17",
+    description:
+      "Default Claude CLI model for delegated local Claude Code agent execution.",
+    recommendedFor: ["coding", "fast"],
+    capabilities: createClaudeCliCapabilities({
+      contextWindowTokens: 1_000_000,
+      maxOutputTokens: 64_000,
+    }),
+    warnings: [
+      "Runs through the locally installed Claude CLI; availability depends on Claude authentication and CLI configuration.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "claude-cli",
+    id: "claude-haiku-4-5",
+    label: "Claude Haiku 4.5",
+    lifecycle: "stable",
+    releaseDate: "2025-10-15",
+    description:
+      "Fast Claude CLI model option for lightweight delegated passes.",
+    recommendedFor: ["fast", "cheap"],
+    capabilities: createClaudeCliCapabilities({
+      contextWindowTokens: 200_000,
+      maxOutputTokens: 64_000,
+    }),
+    warnings: [
+      "Runs through the locally installed Claude CLI; availability depends on Claude authentication and CLI configuration.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "copilot-cli",
+    id: "auto",
+    label: "Auto",
+    lifecycle: "stable",
+    releaseDate: "2026-01-01",
+    description:
+      "Lets Copilot CLI select the model through its own default model selection.",
+    recommendedFor: ["coding"],
+    capabilities: createCopilotCliCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Runs through the locally installed Copilot CLI; availability depends on GitHub Copilot authentication and CLI configuration.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "copilot-cli",
+    id: "gpt-5.3-codex",
+    label: "GPT-5.3 Codex",
+    lifecycle: "stable",
+    releaseDate: "2026-01-01",
+    description:
+      "Copilot CLI coding model option for complex debugging and refactoring tasks.",
+    recommendedFor: ["coding"],
+    capabilities: createCopilotCliCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Runs through the locally installed Copilot CLI; model availability depends on GitHub Copilot plan and organization policy.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "copilot-cli",
+    id: "gpt-5.2",
+    label: "GPT-5.2",
+    lifecycle: "stable",
+    releaseDate: "2025-12-01",
+    description:
+      "Copilot CLI general-purpose model option documented for programmatic runs.",
+    recommendedFor: ["coding", "fast"],
+    capabilities: createCopilotCliCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Runs through the locally installed Copilot CLI; model availability depends on GitHub Copilot plan and organization policy.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "copilot-cli",
+    id: "claude-sonnet-4.5",
+    label: "Claude Sonnet 4.5",
+    lifecycle: "stable",
+    releaseDate: "2025-09-29",
+    description:
+      "Claude Sonnet option exposed through GitHub Copilot CLI model selection.",
+    recommendedFor: ["coding", "fast"],
+    capabilities: createCopilotCliCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Runs through the locally installed Copilot CLI; model availability depends on GitHub Copilot plan and organization policy.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "copilot-cli",
+    id: "claude-haiku-4.5",
+    label: "Claude Haiku 4.5",
+    lifecycle: "stable",
+    releaseDate: "2025-10-15",
+    description:
+      "Fast Claude Haiku option exposed through GitHub Copilot CLI model selection.",
+    recommendedFor: ["fast", "cheap"],
+    capabilities: createCopilotCliCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Runs through the locally installed Copilot CLI; model availability depends on GitHub Copilot plan and organization policy.",
+    ],
     source: "curated-fallback",
   },
 ] as const satisfies readonly ProviderModelMetadata[];

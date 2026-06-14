@@ -6,6 +6,7 @@ import { defineConfig } from "vite";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const previewRoot = path.resolve(currentDirectory, "./src/tauri/ui/preview");
+const rootNodeModules = path.resolve(currentDirectory, "./node_modules");
 const tauriDebug = process.env.TAURI_ENV_DEBUG === "true";
 const tauriDevHost = process.env.TAURI_DEV_HOST;
 const tauriPlatform = process.env.TAURI_ENV_PLATFORM;
@@ -21,8 +22,17 @@ export default defineConfig({
   root: previewRoot,
   plugins: [react(), tailwindcss()],
   resolve: {
+    dedupe: ["react", "react-dom"],
     alias: {
       "@": path.resolve(currentDirectory, "./src"),
+      react: path.resolve(rootNodeModules, "react"),
+      "react-dom": path.resolve(rootNodeModules, "react-dom"),
+      "react-dom/client": path.resolve(rootNodeModules, "react-dom/client"),
+      "react/jsx-dev-runtime": path.resolve(
+        rootNodeModules,
+        "react/jsx-dev-runtime",
+      ),
+      "react/jsx-runtime": path.resolve(rootNodeModules, "react/jsx-runtime"),
     },
   },
   server: {

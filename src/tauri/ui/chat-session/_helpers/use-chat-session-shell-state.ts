@@ -12,6 +12,7 @@ import {
   createInitialShellState,
   createVisibleConversationMessages,
   getSessionTitle,
+  mergeRecentWorkspaces,
   normalizeShellState,
   recoverInterruptedTasksForLaunch,
   sortSessionsByUpdatedAt,
@@ -271,6 +272,14 @@ const mergeShellStateForPersistence = (
       : sessionIds.has(latestState.activeSessionId)
         ? latestState.activeSessionId
         : sessions[0]?.id;
+  const localRecentWorkspacesChanged = !areShellFragmentsEqual(
+    localState.recentWorkspaces,
+    baseState.recentWorkspaces,
+  );
+  const latestRecentWorkspacesChanged = !areShellFragmentsEqual(
+    latestState.recentWorkspaces,
+    baseState.recentWorkspaces,
+  );
   const mergedState: ShellPersistedState = {
     ...latestState,
     version: 1,
@@ -281,6 +290,15 @@ const mergeShellStateForPersistence = (
       baseState.contextPacks,
       latestState.contextPacks,
     ),
+    recentWorkspaces:
+      localRecentWorkspacesChanged && latestRecentWorkspacesChanged
+        ? mergeRecentWorkspaces(
+            localState.recentWorkspaces,
+            latestState.recentWorkspaces,
+          )
+        : localRecentWorkspacesChanged
+          ? localState.recentWorkspaces
+          : latestState.recentWorkspaces,
     voice: areShellFragmentsEqual(localState.voice, baseState.voice)
       ? latestState.voice
       : localState.voice,

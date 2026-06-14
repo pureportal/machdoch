@@ -1,11 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
 import { parseMarkdownDocument } from "./frontmatter.js";
 import type {
   FrontmatterValue,
   ModelProvider,
+  ReasoningMode,
   RunMode,
   TaskExecutionOptions,
   TaskExecutionResult,
@@ -30,6 +39,16 @@ const DEFAULT_RETRY_POLICY: ScheduledRetryPolicy = {
   maxTimeoutMs: 60_000,
   randomize: true,
 };
+const SCHEDULER_STATE_LOCK_RETRY_MS = 25;
+const SCHEDULER_STATE_LOCK_STALE_MS = 5 * 60_000;
+const SCHEDULER_STATE_REPLACE_RETRY_DELAYS_MS = [
+  0,
+  10,
+  25,
+  50,
+  100,
+  250,
+] as const;
 const MINUTE_MS = 60_000;
 const CRON_LOOKAHEAD_MS = 366 * 24 * 60 * MINUTE_MS;
 const SCHEDULER_TIMEOUT_REASON_PREFIX = "Scheduled run exceeded max duration";
@@ -208,6 +227,7 @@ export interface ScheduledJobTarget {
   profile?: string;
   provider?: Exclude<ModelProvider, "unconfigured">;
   model?: string;
+  reasoning?: ReasoningMode;
 }
 
 export interface ScheduledJobTargetInput {
@@ -221,6 +241,7 @@ export interface ScheduledJobTargetInput {
   profile?: string;
   provider?: Exclude<ModelProvider, "unconfigured">;
   model?: string;
+  reasoning?: ReasoningMode;
 }
 
 export interface ScheduledRetryPolicy {
@@ -399,6 +420,7 @@ export interface ScheduledTaskExecutionRequest {
   profile?: string;
   provider?: Exclude<ModelProvider, "unconfigured">;
   model?: string;
+  reasoning?: ReasoningMode;
 }
 
 export interface ScheduledTaskExecutor {
@@ -504,6 +526,124 @@ const createEmptySchedulerState = (timestamp: number): SmartSchedulerState => ({
 
 export const getWorkspaceSchedulerStatePath = (workspaceRoot: string): string => {
   return join(workspaceRoot, ".machdoch", SMART_SCHEDULER_FILE_NAME);
+};
+
+const sleep = async (durationMs: number): Promise<void> => {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+};
+
+const isErrorWithCode = (error: unknown, code: string): boolean => {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === code
+  );
+};
+
+const isTransientStateReplaceError = (error: unknown): boolean => {
+  return (
+    isErrorWithCode(error, "EBUSY") ||
+    isErrorWithCode(error, "EACCES") ||
+    isErrorWithCode(error, "EPERM")
+  );
+};
+
+const getSchedulerStateLockPath = (statePath: string): string => {
+  return `${statePath}.lock`;
+};
+
+const removeStaleSchedulerStateLock = async (lockPath: string): Promise<void> => {
+  try {
+    const metadata = await stat(lockPath);
+
+    if (Date.now() - metadata.mtimeMs <= SCHEDULER_STATE_LOCK_STALE_MS) {
+      return;
+    }
+
+    await rm(lockPath, { recursive: true, force: true });
+  } catch (error) {
+    if (!isErrorWithCode(error, "ENOENT")) {
+      throw error;
+    }
+  }
+};
+
+const releaseSchedulerStateLock = async (
+  lockPath: string,
+  token: string,
+): Promise<void> => {
+  const tokenPath = join(lockPath, "owner");
+
+  try {
+    const currentToken = (await readFile(tokenPath, "utf8")).trim();
+
+    if (currentToken === token) {
+      await rm(lockPath, { recursive: true, force: true });
+    }
+  } catch (error) {
+    if (!isErrorWithCode(error, "ENOENT")) {
+      throw error;
+    }
+  }
+};
+
+const acquireSchedulerStateLock = async (
+  statePath: string,
+): Promise<() => Promise<void>> => {
+  const lockPath = getSchedulerStateLockPath(statePath);
+  const token = `${process.pid}:${Date.now()}:${randomUUID()}`;
+
+  await mkdir(dirname(statePath), { recursive: true });
+
+  for (;;) {
+    try {
+      await mkdir(lockPath);
+
+      try {
+        await writeFile(join(lockPath, "owner"), token, "utf8");
+      } catch (error) {
+        await rm(lockPath, { recursive: true, force: true });
+        throw error;
+      }
+
+      return () => releaseSchedulerStateLock(lockPath, token);
+    } catch (error) {
+      if (!isErrorWithCode(error, "EEXIST")) {
+        throw error;
+      }
+
+      await removeStaleSchedulerStateLock(lockPath);
+      await sleep(SCHEDULER_STATE_LOCK_RETRY_MS);
+    }
+  }
+};
+
+const withSchedulerStateLock = async <T>(
+  statePath: string,
+  operation: () => Promise<T>,
+): Promise<T> => {
+  const releaseLock = await acquireSchedulerStateLock(statePath);
+  let operationCompleted = false;
+
+  try {
+    const result = await operation();
+    operationCompleted = true;
+    await releaseLock();
+    return result;
+  } catch (error) {
+    if (!operationCompleted) {
+      try {
+        await releaseLock();
+      } catch {
+        // Preserve the original scheduler failure; stale locks are reclaimed.
+      }
+    }
+
+    throw error;
+  }
 };
 
 const isRecordValue = (value: unknown): value is Record<string, unknown> => {
@@ -644,15 +784,56 @@ export const readSmartSchedulerState = async (
   };
 };
 
-export const writeSmartSchedulerState = async (
+const replaceSmartSchedulerStateFile = async (
+  tempPath: string,
+  statePath: string,
+): Promise<void> => {
+  let lastError: unknown;
+
+  for (const delayMs of SCHEDULER_STATE_REPLACE_RETRY_DELAYS_MS) {
+    if (delayMs > 0) {
+      await sleep(delayMs);
+    }
+
+    try {
+      await rename(tempPath, statePath);
+      return;
+    } catch (error) {
+      if (!isTransientStateReplaceError(error)) {
+        throw error;
+      }
+
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+};
+
+const writeSmartSchedulerStateUnlocked = async (
   statePath: string,
   state: SmartSchedulerState,
 ): Promise<void> => {
   await mkdir(dirname(statePath), { recursive: true });
 
-  const tempPath = `${statePath}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-  await rename(tempPath, statePath);
+  const tempPath = `${statePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
+
+  try {
+    await writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    await replaceSmartSchedulerStateFile(tempPath, statePath);
+  } catch (error) {
+    await rm(tempPath, { force: true });
+    throw error;
+  }
+};
+
+export const writeSmartSchedulerState = async (
+  statePath: string,
+  state: SmartSchedulerState,
+): Promise<void> => {
+  await withSchedulerStateLock(statePath, () =>
+    writeSmartSchedulerStateUnlocked(statePath, state),
+  );
 };
 
 const createJobId = (): string => `sched_${randomUUID()}`;
@@ -1087,6 +1268,7 @@ const normalizeTarget = (target: ScheduledJobTargetInput): ScheduledJobTarget =>
     ...(target.profile ? { profile: target.profile } : {}),
     ...(target.provider ? { provider: target.provider } : {}),
     ...(target.model ? { model: target.model } : {}),
+    ...(target.reasoning ? { reasoning: target.reasoning } : {}),
   };
 };
 
@@ -2627,14 +2809,16 @@ export class DurableSmartScheduler {
     mutator: (state: SmartSchedulerState) => T | Promise<T>,
   ): Promise<T> {
     const mutation = this.stateMutation.then(async () => {
-      const state = await readSmartSchedulerState(this.statePath);
-      const result = await mutator(state);
+      return withSchedulerStateLock(this.statePath, async () => {
+        const state = await readSmartSchedulerState(this.statePath);
+        const result = await mutator(state);
 
-      state.updatedAt = this.now();
-      pruneRunHistory(state);
-      await writeSmartSchedulerState(this.statePath, state);
+        state.updatedAt = this.now();
+        pruneRunHistory(state);
+        await writeSmartSchedulerStateUnlocked(this.statePath, state);
 
-      return result;
+        return result;
+      });
     });
 
     this.stateMutation = mutation.then(
@@ -2646,7 +2830,9 @@ export class DurableSmartScheduler {
   }
 
   async getState(): Promise<SmartSchedulerState> {
-    return readSmartSchedulerState(this.statePath);
+    return withSchedulerStateLock(this.statePath, () =>
+      readSmartSchedulerState(this.statePath),
+    );
   }
 
   async upsertJob(input: CreateScheduledJobInput): Promise<ScheduledJob> {
@@ -2758,6 +2944,9 @@ export class DurableSmartScheduler {
           : {}),
         ...(input.target?.model ?? existingJob.target.model
           ? { model: input.target?.model ?? existingJob.target.model }
+          : {}),
+        ...(input.target?.reasoning ?? existingJob.target.reasoning
+          ? { reasoning: input.target?.reasoning ?? existingJob.target.reasoning }
           : {}),
       };
       const triggers =
@@ -3422,6 +3611,7 @@ export class DurableSmartScheduler {
       ...(job.target.profile ? { profile: job.target.profile } : {}),
       ...(job.target.provider ? { provider: job.target.provider } : {}),
       ...(job.target.model ? { model: job.target.model } : {}),
+      ...(job.target.reasoning ? { reasoning: job.target.reasoning } : {}),
     };
   }
 

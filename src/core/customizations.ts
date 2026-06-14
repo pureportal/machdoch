@@ -1,12 +1,18 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { basename, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
+import { getUserConfigPath } from "./env.js";
 import { parseMarkdownDocument } from "./frontmatter.js";
 import type {
+  CustomizationDiagnostic,
   CustomizationDiscoveryResult,
   DiscoveredInstruction,
   DiscoveredPrompt,
   DiscoveredSkill,
+  FrontmatterValue,
+  InstructionAudience,
+  InstructionMode,
+  InstructionScope,
   ToolName,
 } from "./types.js";
 
@@ -74,9 +80,28 @@ const PROMPT_TOOL_ALIASES: Record<string, ToolName> = {
   yarn: "packages",
 };
 
-interface CustomizationDiscoveryOptions {
+export interface CustomizationDiscoveryOptions {
   discoverGithubCustomizations?: boolean;
+  discoverUserCustomizations?: boolean;
+  includeDiagnostics?: boolean;
 }
+
+const MAX_INSTRUCTION_FILE_BYTES = 128 * 1024;
+
+const INSTRUCTION_MODE_VALUES = new Set<InstructionMode>([
+  "always",
+  "auto",
+  "agent-requested",
+  "manual",
+  "disabled",
+]);
+
+const INSTRUCTION_AUDIENCE_VALUES = new Set<InstructionAudience>([
+  "executor",
+  "validator",
+  "generator",
+  "all",
+]);
 
 /**
  * Converts an absolute path into a normalized workspace-relative path.
@@ -86,6 +111,30 @@ const toWorkspaceRelativePath = (
   absolutePath: string,
 ): string => {
   return relative(workspaceRoot, absolutePath).split("\\").join("/");
+};
+
+export const getUserCustomizationRoot = (): string => {
+  return dirname(getUserConfigPath());
+};
+
+export const getUserInstructionDirectory = (): string => {
+  return join(getUserCustomizationRoot(), "instructions");
+};
+
+/**
+ * Uses absolute paths for user-global instructions and workspace-relative paths
+ * for repository-owned instruction files.
+ */
+const toInstructionPath = (
+  workspaceRoot: string,
+  absolutePath: string,
+  scope?: InstructionScope,
+): string => {
+  if (scope === "user") {
+    return absolutePath;
+  }
+
+  return toWorkspaceRelativePath(workspaceRoot, absolutePath);
 };
 
 /**
@@ -123,6 +172,128 @@ const deriveDocumentName = (filePath: string, suffix: string): string => {
     : fileName;
 };
 
+const readStringAttribute = (
+  attributes: Record<string, FrontmatterValue>,
+  names: string[],
+): string | undefined => {
+  for (const name of names) {
+    const value = attributes[name];
+
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+};
+
+const readStringListAttribute = (
+  attributes: Record<string, FrontmatterValue>,
+  names: string[],
+): string[] => {
+  const values: string[] = [];
+
+  for (const name of names) {
+    const value = attributes[name];
+
+    if (Array.isArray(value)) {
+      values.push(...value);
+      continue;
+    }
+
+    if (typeof value === "string") {
+      values.push(...value.split(/[,;\n]/u));
+    }
+  }
+
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+    ),
+  );
+};
+
+const readNumberAttribute = (
+  attributes: Record<string, FrontmatterValue>,
+  name: string,
+): number | undefined => {
+  const value = attributes[name];
+
+  return typeof value === "number" ? value : undefined;
+};
+
+const normalizeInstructionModeValue = (
+  value: string,
+): InstructionMode | undefined => {
+  const normalizedValue = value.trim().toLowerCase().replace(/_/gu, "-");
+
+  if (normalizedValue === "always-on") {
+    return "always";
+  }
+
+  if (normalizedValue === "auto-attached") {
+    return "auto";
+  }
+
+  return INSTRUCTION_MODE_VALUES.has(normalizedValue as InstructionMode)
+    ? (normalizedValue as InstructionMode)
+    : undefined;
+};
+
+const readInstructionMode = (
+  attributes: Record<string, FrontmatterValue>,
+  filePath: string,
+  diagnostics?: CustomizationDiagnostic[],
+): InstructionMode | undefined => {
+  const value = readStringAttribute(attributes, ["mode", "activation"]);
+
+  if (!value) {
+    return undefined;
+  }
+
+  const mode = normalizeInstructionModeValue(value);
+
+  if (!mode) {
+    diagnostics?.push({
+      level: "warning",
+      code: "invalid-instruction-mode",
+      message: `Unsupported instruction mode "${value}". Expected always, auto, agent-requested, manual, disabled.`,
+      path: filePath,
+    });
+  }
+
+  return mode;
+};
+
+const readInstructionAudience = (
+  attributes: Record<string, FrontmatterValue>,
+  filePath: string,
+  diagnostics?: CustomizationDiagnostic[],
+): InstructionAudience | undefined => {
+  const value = readStringAttribute(attributes, ["audience"]);
+
+  if (!value) {
+    return undefined;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+
+  if (INSTRUCTION_AUDIENCE_VALUES.has(normalizedValue as InstructionAudience)) {
+    return normalizedValue as InstructionAudience;
+  }
+
+  diagnostics?.push({
+    level: "warning",
+    code: "invalid-instruction-audience",
+    message: `Unsupported instruction audience "${value}". Expected executor, validator, generator, or all.`,
+    path: filePath,
+  });
+
+  return undefined;
+};
+
 /**
  * Maps prompt-declared tool aliases to canonical internal tool names.
  */
@@ -153,43 +324,87 @@ const normalizePromptTools = (tools: unknown): ToolName[] => {
 /**
  * Loads a discovered instruction document and normalizes its metadata.
  */
+interface LoadInstructionOptions {
+  fallbackName?: string;
+  scope?: InstructionScope;
+  diagnostics?: CustomizationDiagnostic[];
+}
+
 const loadInstruction = async (
   workspaceRoot: string,
   filePath: string,
   kind: DiscoveredInstruction["kind"],
-  fallbackName?: string,
+  options?: LoadInstructionOptions,
 ): Promise<DiscoveredInstruction> => {
   const content = await readFile(filePath, "utf8");
-  const document = parseMarkdownDocument(content);
-  const description =
-    typeof document.attributes.description === "string"
-      ? document.attributes.description
-      : undefined;
-  const applyTo =
-    typeof document.attributes.applyTo === "string"
-      ? document.attributes.applyTo
-      : undefined;
-  const priority =
-    typeof document.attributes.priority === "number"
-      ? document.attributes.priority
-      : undefined;
+  const sizeBytes = Buffer.byteLength(content, "utf8");
+  const effectiveContent =
+    sizeBytes > MAX_INSTRUCTION_FILE_BYTES
+      ? content.slice(0, MAX_INSTRUCTION_FILE_BYTES)
+      : content;
+
+  if (sizeBytes > MAX_INSTRUCTION_FILE_BYTES) {
+    options?.diagnostics?.push({
+      level: "warning",
+      code: "instruction-file-too-large",
+      message: `Instruction file exceeds ${MAX_INSTRUCTION_FILE_BYTES} bytes and was truncated during discovery.`,
+      path: filePath,
+    });
+  }
+
+  const document = parseMarkdownDocument(effectiveContent);
+  const description = readStringAttribute(document.attributes, ["description"]);
+  const applyToPatterns = readStringListAttribute(document.attributes, [
+    "applyTo",
+    "apply_to",
+    "apply-to",
+    "globs",
+    "paths",
+  ]);
+  const excludePatterns = readStringListAttribute(document.attributes, [
+    "exclude",
+    "excludeTo",
+    "exclude_to",
+    "exclude-to",
+    "excludePaths",
+    "exclude_paths",
+  ]);
+  const mode = readInstructionMode(
+    document.attributes,
+    filePath,
+    options?.diagnostics,
+  );
+  const audience = readInstructionAudience(
+    document.attributes,
+    filePath,
+    options?.diagnostics,
+  );
+  const priority = readNumberAttribute(document.attributes, "priority");
+  const primaryApplyTo = applyToPatterns[0];
 
   return {
     kind,
-    path: toWorkspaceRelativePath(workspaceRoot, filePath),
+    path: toInstructionPath(workspaceRoot, filePath, options?.scope),
     name:
       typeof document.attributes.name === "string"
         ? document.attributes.name
-        : typeof fallbackName === "string"
-          ? fallbackName
+        : typeof options?.fallbackName === "string"
+          ? options.fallbackName
           : deriveDocumentName(filePath, ".instructions.md"),
     body: document.body,
     ...(description ? { description } : {}),
-    ...(applyTo ? { applyTo } : {}),
-    keywords: Array.isArray(document.attributes.keywords)
-      ? document.attributes.keywords
-      : [],
+    ...(primaryApplyTo ? { applyTo: primaryApplyTo } : {}),
+    ...(applyToPatterns.length > 1 ? { applyToPatterns } : {}),
+    ...(excludePatterns.length > 0 ? { excludePatterns } : {}),
+    keywords: readStringListAttribute(document.attributes, [
+      "keywords",
+      "keyword",
+    ]),
     ...(typeof priority === "number" ? { priority } : {}),
+    ...(mode ? { mode } : {}),
+    ...(audience ? { audience } : {}),
+    ...(options?.scope ? { scope: options.scope } : {}),
+    ...(sizeBytes > MAX_INSTRUCTION_FILE_BYTES ? { sizeBytes } : {}),
   };
 };
 
@@ -285,8 +500,16 @@ export const discoverCustomizations = async (
   workspaceRoot: string,
   options?: CustomizationDiscoveryOptions,
 ): Promise<CustomizationDiscoveryResult> => {
+  const diagnostics: CustomizationDiagnostic[] | undefined =
+    options?.includeDiagnostics ? [] : undefined;
+  const userCustomizationRoot = getUserCustomizationRoot();
   const machdochRoot = join(workspaceRoot, ".machdoch");
   const githubRoot = join(workspaceRoot, ".github");
+  const userAlwaysOnInstructionPath = join(
+    userCustomizationRoot,
+    "instructions.md",
+  );
+  const userConditionalInstructionRoot = getUserInstructionDirectory();
   const alwaysOnInstructionPath = join(machdochRoot, "instructions.md");
   const conditionalInstructionRoot = join(machdochRoot, "instructions");
   const promptsRoot = join(machdochRoot, "prompts");
@@ -301,6 +524,30 @@ export const discoverCustomizations = async (
   const agentsInstructionPath = join(workspaceRoot, "AGENTS.md");
 
   const instructions: DiscoveredInstruction[] = [];
+  const instructionOptions = (
+    base: LoadInstructionOptions = {},
+  ): LoadInstructionOptions => {
+    return {
+      ...base,
+      ...(diagnostics ? { diagnostics } : {}),
+    };
+  };
+
+  if (options?.discoverUserCustomizations) {
+    if (existsSync(userAlwaysOnInstructionPath)) {
+      instructions.push(
+        await loadInstruction(
+          workspaceRoot,
+          userAlwaysOnInstructionPath,
+          "always-on",
+          instructionOptions({
+            fallbackName: "user-instructions",
+            scope: "user",
+          }),
+        ),
+      );
+    }
+  }
 
   if (existsSync(alwaysOnInstructionPath)) {
     instructions.push(
@@ -308,6 +555,7 @@ export const discoverCustomizations = async (
         workspaceRoot,
         alwaysOnInstructionPath,
         "always-on",
+        instructionOptions(),
       ),
     );
   }
@@ -319,7 +567,10 @@ export const discoverCustomizations = async (
           workspaceRoot,
           githubAlwaysOnInstructionPath,
           "always-on",
-          "copilot-instructions",
+          instructionOptions({
+            fallbackName: "copilot-instructions",
+            scope: "compatibility",
+          }),
         ),
       );
     }
@@ -330,12 +581,20 @@ export const discoverCustomizations = async (
           workspaceRoot,
           agentsInstructionPath,
           "always-on",
-          "AGENTS",
+          instructionOptions({
+            fallbackName: "AGENTS",
+            scope: "compatibility",
+          }),
         ),
       );
     }
   }
 
+  const userConditionalInstructionPaths = options?.discoverUserCustomizations
+    ? (await walkFiles(userConditionalInstructionRoot)).filter((filePath) =>
+        filePath.endsWith(".instructions.md"),
+      )
+    : [];
   const conditionalInstructionPaths = (
     await walkFiles(conditionalInstructionRoot)
   ).filter((filePath) => filePath.endsWith(".instructions.md"));
@@ -364,11 +623,26 @@ export const discoverCustomizations = async (
     : [];
 
   for (const filePath of [
+    ...userConditionalInstructionPaths,
     ...conditionalInstructionPaths,
     ...githubConditionalInstructionPaths,
   ].sort()) {
+    const isUserInstruction = userConditionalInstructionPaths.includes(filePath);
+    const isCompatibilityInstruction =
+      githubConditionalInstructionPaths.includes(filePath);
     instructions.push(
-      await loadInstruction(workspaceRoot, filePath, "conditional"),
+      await loadInstruction(
+        workspaceRoot,
+        filePath,
+        "conditional",
+        instructionOptions(
+          isUserInstruction
+            ? { scope: "user" }
+            : isCompatibilityInstruction
+              ? { scope: "compatibility" }
+              : {},
+        ),
+      ),
     );
   }
 
@@ -388,5 +662,6 @@ export const discoverCustomizations = async (
     instructions,
     prompts,
     skills,
+    ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {}),
   };
 };

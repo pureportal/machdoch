@@ -7,14 +7,23 @@ export const RUNTIME_CONFIG_SCHEMA_VERSION = 1 as const;
 export const RUN_MODES = ["ask", "machdoch"] as const;
 export type RunMode = (typeof RUN_MODES)[number];
 
-export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "scheduler", "utilities"] as const;
+export const REASONING_MODES = ["default", "none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export type ReasoningMode = (typeof REASONING_MODES)[number];
+
+export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "mcp", "scheduler", "utilities"] as const;
 export type ToolName = (typeof VALID_TOOLS)[number];
 
-export const VALID_MODEL_PROVIDERS = ["openai", "anthropic", "google"] as const;
+export const VALID_MODEL_PROVIDERS = ["openai", "anthropic", "google", "codex-cli", "claude-cli", "copilot-cli"] as const;
 export type ConfiguredModelProvider = (typeof VALID_MODEL_PROVIDERS)[number];
 
-export const MODEL_PROVIDERS = ["openai", "anthropic", "google", "unconfigured"] as const;
+export const MODEL_PROVIDERS = ["openai", "anthropic", "google", "codex-cli", "claude-cli", "copilot-cli", "unconfigured"] as const;
 export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
+
+export const USER_API_PROVIDERS = ["openai", "anthropic", "google"] as const;
+export type UserApiProvider = (typeof USER_API_PROVIDERS)[number];
+
+export const AGENT_CLI_PROVIDERS = ["codex-cli", "claude-cli", "copilot-cli"] as const;
+export type AgentCliProvider = (typeof AGENT_CLI_PROVIDERS)[number];
 
 export const VALID_WEB_SEARCH_PROVIDERS = ["none", "perplexity", "tavily", "serper"] as const;
 export type WebSearchProvider = (typeof VALID_WEB_SEARCH_PROVIDERS)[number];
@@ -39,15 +48,23 @@ export const DEFAULT_MODEL_PROVIDER = "openai" as const satisfies ConfiguredMode
 export const DEFAULT_MODEL_BY_PROVIDER = {
   "openai": "gpt-5.5",
   "anthropic": "claude-sonnet-4-6",
-  "google": "gemini-3.5-flash"
+  "google": "gemini-3.5-flash",
+  "codex-cli": "gpt-5.5",
+  "claude-cli": "claude-sonnet-4-6",
+  "copilot-cli": "auto"
 } as const satisfies Record<ConfiguredModelProvider, string>;
 
-export const RUNTIME_ENV_KEYS = ["MACHDOCH_MODE", "MACHDOCH_MODEL", "MACHDOCH_OFFLINE", "MACHDOCH_PROFILE", "MACHDOCH_WEB_SEARCH_PROVIDER", "MACHDOCH_EXECUTOR_TURNS", "MACHDOCH_AUTOPILOT_ITERATIONS", "MACHDOCH_INFINITE"] as const;
+export const RUNTIME_ENV_KEYS = ["MACHDOCH_MODE", "MACHDOCH_MODEL", "MACHDOCH_REASONING", "MACHDOCH_OFFLINE", "MACHDOCH_PROFILE", "MACHDOCH_WEB_SEARCH_PROVIDER", "MACHDOCH_EXECUTOR_TURNS", "MACHDOCH_AUTOPILOT_ITERATIONS", "MACHDOCH_INFINITE", "MACHDOCH_CODEX_CLI_PATH", "MACHDOCH_CLAUDE_CLI_PATH", "MACHDOCH_COPILOT_CLI_PATH"] as const;
 export const PROVIDER_ENV_KEY_BY_PROVIDER = {
   "openai": "OPENAI_API_KEY",
   "anthropic": "ANTHROPIC_API_KEY",
   "google": "GOOGLE_API_KEY"
-} as const satisfies Record<ConfiguredModelProvider, string>;
+} as const satisfies Record<UserApiProvider, string>;
+export const AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER = {
+  "codex-cli": "MACHDOCH_CODEX_CLI_PATH",
+  "claude-cli": "MACHDOCH_CLAUDE_CLI_PATH",
+  "copilot-cli": "MACHDOCH_COPILOT_CLI_PATH"
+} as const satisfies Record<AgentCliProvider, string>;
 export const WEB_SEARCH_ENV_KEY_BY_PROVIDER = {
   "perplexity": "PERPLEXITY_API_KEY",
   "tavily": "TAVILY_API_KEY",
@@ -124,6 +141,11 @@ export const isRuntimeContractValue = <T extends readonly string[]>(
 export const isRunMode = (value: string | undefined): value is RunMode =>
   isRuntimeContractValue(RUN_MODES, value);
 
+export const isReasoningMode = (
+  value: string | undefined,
+): value is ReasoningMode =>
+  isRuntimeContractValue(REASONING_MODES, value);
+
 export const isConfiguredModelProvider = (
   value: string | undefined,
 ): value is ConfiguredModelProvider =>
@@ -131,6 +153,12 @@ export const isConfiguredModelProvider = (
 
 export const isModelProvider = (value: string | undefined): value is ModelProvider =>
   isRuntimeContractValue(MODEL_PROVIDERS, value);
+
+export const isUserApiProvider = (value: string | undefined): value is UserApiProvider =>
+  isRuntimeContractValue(USER_API_PROVIDERS, value);
+
+export const isAgentCliProvider = (value: string | undefined): value is AgentCliProvider =>
+  isRuntimeContractValue(AGENT_CLI_PROVIDERS, value);
 
 export const isWebSearchProvider = (
   value: string | undefined,
@@ -175,6 +203,7 @@ export interface WorkspaceProfileConfig {
   mode?: RunMode;
   provider?: ConfiguredModelProvider;
   model?: string;
+  reasoning?: ReasoningMode;
   offline?: boolean;
   agentLimits?: RuntimeAgentLimitOverrides;
   compatibility?: WorkspaceCompatibilityConfig;
@@ -185,6 +214,7 @@ export interface WorkspaceConfigFile {
   defaultMode?: RunMode;
   provider?: ConfiguredModelProvider;
   model?: string;
+  reasoning?: ReasoningMode;
   offline?: boolean;
   agentLimits?: RuntimeAgentLimitOverrides;
   compatibility?: WorkspaceCompatibilityConfig;
@@ -243,6 +273,7 @@ export interface RuntimeConfig {
   mode: RunMode;
   provider: ModelProvider;
   model: string;
+  reasoning: ReasoningMode;
   offline: boolean;
   agentLimits?: RuntimeAgentLimits;
   compatibility: WorkspaceCompatibilityConfig;
@@ -262,12 +293,14 @@ export interface UiControlAvailability {
 }
 
 export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits"> {
+  defaultMode: RunMode;
+  defaultReasoning: ReasoningMode;
   agentLimits: RuntimeAgentLimits;
   uiControl?: UiControlAvailability;
 }
 
-export type UserApiProvider = ConfiguredModelProvider;
 export type UserProviderApiKeys = Partial<Record<UserApiProvider, string>>;
+export type UserAgentCliPaths = Partial<Record<AgentCliProvider, string>>;
 export type UserWebSearchApiKeys = Partial<Record<UserWebSearchProvider, string>>;
 
 export interface UserWebSearchConfigFile {
@@ -305,6 +338,7 @@ export interface UserReviewModelConfigFile {
 
 export interface UserConfigFile {
   apiKeys?: UserProviderApiKeys;
+  agentCliPaths?: UserAgentCliPaths;
   webSearch?: UserWebSearchConfigFile;
   voice?: UserVoiceConfigFile;
   speechToText?: UserSpeechToTextConfigFile;

@@ -248,6 +248,23 @@ body,
     min-height: 100%;
 }
 
+:where(html, body, #root, #root *) {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+:where(
+    input,
+    textarea,
+    [contenteditable="true"],
+    [contenteditable="true"] *,
+    [contenteditable="plaintext-only"],
+    [contenteditable="plaintext-only"] *
+) {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
 body {
     margin: 0;
     background: transparent;
@@ -328,6 +345,18 @@ body {
     border-color: var(--app-border);
 }
 
+.app-tooltip-content {
+    background: rgb(15 23 34 / 0.96);
+    border-color: rgb(118 143 172 / 0.22);
+    color: #f4f7fb;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.38);
+}
+
+.app-tooltip-arrow {
+    fill: rgb(15 23 34 / 0.96);
+    stroke: rgb(118 143 172 / 0.22);
+}
+
 .app-settings-dialog {
     box-shadow: var(--app-elevated-shadow);
 }
@@ -349,6 +378,13 @@ body {
 .quick-chat-bubble-shell {
     color: var(--app-text);
     color-scheme: dark;
+    --quick-motion-fast: 83ms;
+    --quick-motion-short: 167ms;
+    --quick-motion-medium: 250ms;
+    --quick-motion-long: 333ms;
+    --quick-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --quick-ease-decelerate: cubic-bezier(0, 0, 0, 1);
+    --quick-ease-emphasized: cubic-bezier(0.05, 0.7, 0.1, 1);
 }
 
 :root[data-theme="light"] .quick-chat-bubble-shell {
@@ -377,16 +413,24 @@ body {
 
     width: 4.25rem !important;
     height: 4.25rem !important;
+    isolation: isolate;
     overflow: visible;
     border-color: var(--quick-bubble-border) !important;
-    background: var(--quick-bubble-bg) !important;
+    background:
+        linear-gradient(
+            180deg,
+            color-mix(in srgb, white 3%, var(--quick-bubble-bg)),
+            var(--quick-bubble-bg)
+        ) !important;
     color: var(--app-text) !important;
     box-shadow: var(--quick-bubble-shadow) !important;
+    transform-origin: 70% 70%;
     transition:
-        transform 160ms ease,
-        border-color 160ms ease,
-        background-color 160ms ease,
-        box-shadow 160ms ease;
+        transform var(--quick-motion-short) var(--quick-ease-emphasized),
+        border-color var(--quick-motion-short) var(--quick-ease-standard),
+        background var(--quick-motion-short) var(--quick-ease-standard),
+        box-shadow var(--quick-motion-short) var(--quick-ease-standard),
+        filter var(--quick-motion-short) var(--quick-ease-standard);
 }
 
 :root[data-theme="light"] .quick-chat-bubble {
@@ -402,10 +446,54 @@ body {
 .quick-chat-bubble:hover {
     transform: translateY(-1px);
     border-color: var(--quick-bubble-border-strong) !important;
+    box-shadow:
+        var(--quick-bubble-shadow),
+        0 0 0 1px color-mix(in srgb, var(--app-sky-300) 12%, transparent) !important;
 }
 
 .quick-chat-bubble:active {
-    transform: translateY(0);
+    transform: translateY(0) scale(0.97);
+    transition-duration: var(--quick-motion-fast);
+}
+
+.quick-chat-bubble:focus-visible {
+    outline: 2px solid var(--app-sky-300);
+    outline-offset: 3px;
+    box-shadow:
+        var(--quick-bubble-shadow),
+        0 0 0 5px color-mix(in srgb, var(--app-sky-400) 22%, transparent) !important;
+}
+
+.quick-chat-bubble[data-state="open"] {
+    transform: translateY(-1px);
+    border-color: var(--quick-bubble-border-strong) !important;
+    box-shadow:
+        var(--quick-bubble-shadow),
+        0 0 0 1px color-mix(in srgb, var(--app-sky-300) 20%, transparent),
+        0 0 26px color-mix(in srgb, var(--app-sky-400) 16%, transparent) !important;
+}
+
+.quick-chat-bubble::before,
+.quick-chat-bubble::after {
+    position: absolute;
+    border-radius: inherit;
+    content: "";
+    opacity: 0;
+    pointer-events: none;
+    transition:
+        opacity var(--quick-motion-short) var(--quick-ease-standard),
+        transform var(--quick-motion-medium) var(--quick-ease-standard);
+}
+
+.quick-chat-bubble::before {
+    inset: -0.125rem;
+    z-index: 0;
+}
+
+.quick-chat-bubble::after {
+    inset: 0.0625rem;
+    z-index: 0;
+    background: var(--quick-bubble-bg);
 }
 
 .quick-chat-bubble-aura,
@@ -415,13 +503,17 @@ body {
 }
 
 .quick-chat-bubble-aura {
-    inset: -0.35rem;
+    inset: -0.45rem;
     z-index: 0;
     border-radius: 1.65rem;
     background:
         radial-gradient(circle at 65% 25%, color-mix(in srgb, var(--app-sky-400) 34%, transparent), transparent 42%),
         radial-gradient(circle at 25% 85%, color-mix(in srgb, var(--app-violet-400) 30%, transparent), transparent 46%);
     opacity: 0;
+    transform: scale(0.92);
+    transition:
+        opacity var(--quick-motion-medium) var(--quick-ease-standard),
+        transform var(--quick-motion-medium) var(--quick-ease-standard);
 }
 
 .quick-chat-bubble-surface {
@@ -429,19 +521,47 @@ body {
     z-index: 1;
     border-radius: 1.05rem;
     background: var(--quick-bubble-surface);
+    transition:
+        background var(--quick-motion-short) var(--quick-ease-standard),
+        transform var(--quick-motion-short) var(--quick-ease-emphasized);
+}
+
+.quick-chat-bubble:hover .quick-chat-bubble-surface,
+.quick-chat-bubble[data-state="open"] .quick-chat-bubble-surface {
+    background: color-mix(in srgb, var(--quick-bubble-surface) 72%, var(--app-sky-400) 28%);
 }
 
 .quick-chat-bubble-icon {
     color: var(--quick-bubble-icon) !important;
+    transition:
+        color var(--quick-motion-short) var(--quick-ease-standard),
+        transform var(--quick-motion-short) var(--quick-ease-emphasized);
+}
+
+.quick-chat-bubble:hover .quick-chat-bubble-icon,
+.quick-chat-bubble[data-state="open"] .quick-chat-bubble-icon {
+    transform: translateY(-0.0625rem);
 }
 
 .quick-chat-bubble-zap {
     color: var(--quick-bubble-zap) !important;
+    opacity: 0.56;
+    transition:
+        color var(--quick-motion-short) var(--quick-ease-standard),
+        opacity var(--quick-motion-short) var(--quick-ease-standard),
+        transform var(--quick-motion-short) var(--quick-ease-emphasized);
+}
+
+.quick-chat-bubble[data-state="open"] .quick-chat-bubble-zap,
+.quick-chat-bubble[data-running="true"] .quick-chat-bubble-zap,
+.quick-chat-bubble[data-has-notification="true"] .quick-chat-bubble-zap {
+    opacity: 1;
 }
 
 .quick-chat-bubble-badge {
     background: var(--app-sky-500) !important;
     color: var(--app-slate-950) !important;
+    animation: quick-chat-bubble-badge-pop var(--quick-motion-long) var(--quick-ease-emphasized) both;
 }
 
 :root[data-theme="light"] .quick-chat-bubble-badge {
@@ -450,13 +570,58 @@ body {
 
 .quick-chat-voice-button {
     border-color: color-mix(in srgb, var(--app-violet-300) 54%, transparent) !important;
-    background: var(--app-violet-500) !important;
+    background:
+        linear-gradient(
+            180deg,
+            color-mix(in srgb, white 8%, var(--app-violet-500)),
+            var(--app-violet-500)
+        ) !important;
     color: white !important;
-    box-shadow: none !important;
+    box-shadow:
+        0 9px 18px hsl(263 50% 8% / 0.28),
+        inset 0 1px 0 color-mix(in srgb, white 18%, transparent) !important;
+    isolation: isolate;
+    outline: none;
+    transition:
+        transform var(--quick-motion-short) var(--quick-ease-emphasized),
+        border-color var(--quick-motion-short) var(--quick-ease-standard),
+        background var(--quick-motion-short) var(--quick-ease-standard),
+        box-shadow var(--quick-motion-short) var(--quick-ease-standard),
+        opacity var(--quick-motion-short) var(--quick-ease-standard);
+}
+
+.quick-chat-voice-button::before {
+    position: absolute;
+    right: -0.42rem;
+    bottom: 0.36rem;
+    z-index: -1;
+    width: 0.65rem;
+    height: 0.9rem;
+    border: 1px solid color-mix(in srgb, var(--app-violet-300) 28%, transparent);
+    border-left: 0;
+    border-radius: 0 0.55rem 0.55rem 0;
+    background: color-mix(in srgb, var(--app-violet-500) 72%, transparent);
+    content: "";
+    opacity: 0.78;
 }
 
 .quick-chat-voice-button:hover {
     background: var(--app-violet-400) !important;
+    border-color: color-mix(in srgb, var(--app-violet-200) 70%, transparent) !important;
+    transform: translateY(-1px);
+}
+
+.quick-chat-voice-button:active {
+    transform: translateY(0) scale(0.96);
+    transition-duration: var(--quick-motion-fast);
+}
+
+.quick-chat-voice-button:focus-visible {
+    outline: 2px solid var(--app-violet-200);
+    outline-offset: 2px;
+    box-shadow:
+        0 9px 18px hsl(263 50% 8% / 0.28),
+        0 0 0 5px color-mix(in srgb, var(--app-violet-400) 22%, transparent) !important;
 }
 
 .quick-chat-voice-button:disabled {
@@ -464,6 +629,14 @@ body {
     background: var(--app-surface-muted) !important;
     color: var(--app-text-faint) !important;
     box-shadow: none !important;
+    opacity: 0.84;
+    transform: none;
+}
+
+.quick-chat-voice-button:disabled::before {
+    border-color: var(--app-border-strong);
+    background: var(--app-surface-muted);
+    opacity: 0.62;
 }
 
 .quick-chat-bubble[data-style="glass"] {
@@ -474,7 +647,18 @@ body {
             color-mix(in srgb, var(--quick-bubble-bg) 88%, transparent),
             color-mix(in srgb, var(--app-sky-500) 12%, var(--quick-bubble-bg))
         ) !important;
-    backdrop-filter: blur(12px);
+}
+
+@supports (backdrop-filter: blur(1px)) {
+    .quick-chat-bubble[data-style="glass"] {
+        background:
+            linear-gradient(
+                135deg,
+                color-mix(in srgb, var(--quick-bubble-bg) 78%, transparent),
+                color-mix(in srgb, var(--app-sky-500) 16%, var(--quick-bubble-bg))
+            ) !important;
+        backdrop-filter: blur(12px) saturate(1.22);
+    }
 }
 
 .quick-chat-bubble[data-style="glass"] .quick-chat-bubble-surface {
@@ -504,26 +688,51 @@ body {
 }
 
 .quick-chat-bubble[data-style="pulse"] .quick-chat-bubble-aura {
-    opacity: 0.9;
-    animation: quick-chat-bubble-pulse 2.4s ease-in-out infinite;
+    opacity: 0.18;
+    transform: scale(1);
+}
+
+.quick-chat-bubble[data-style="pulse"][data-running="true"] .quick-chat-bubble-aura {
+    opacity: 0.76;
+    animation: quick-chat-bubble-pulse 1.8s ease-in-out infinite;
+}
+
+.quick-chat-bubble[data-style="pulse"][data-has-notification="true"]:not([data-running="true"]) .quick-chat-bubble-aura {
+    opacity: 0.42;
+    animation: quick-chat-bubble-attention 900ms var(--quick-ease-emphasized) 1;
 }
 
 .quick-chat-bubble[data-style="orbit"] {
     border-color: transparent !important;
-    background:
-        linear-gradient(var(--quick-bubble-bg), var(--quick-bubble-bg)) padding-box,
-        conic-gradient(
-            from 160deg,
-            color-mix(in srgb, var(--app-sky-300) 82%, transparent),
-            color-mix(in srgb, var(--app-violet-400) 64%, transparent),
-            color-mix(in srgb, var(--app-emerald-400) 58%, transparent),
-            color-mix(in srgb, var(--app-sky-300) 82%, transparent)
-        ) border-box !important;
-    animation: quick-chat-bubble-float 3.8s ease-in-out infinite;
+    background: transparent !important;
 }
 
-.quick-chat-bubble[data-style="orbit"] .quick-chat-bubble-zap {
-    animation: quick-chat-bubble-spark 1.8s ease-in-out infinite;
+.quick-chat-bubble[data-style="orbit"]::before {
+    background:
+        conic-gradient(
+            from 160deg,
+            color-mix(in srgb, var(--app-sky-300) 86%, transparent),
+            color-mix(in srgb, var(--app-violet-400) 68%, transparent),
+            color-mix(in srgb, var(--app-emerald-400) 62%, transparent),
+            color-mix(in srgb, var(--app-sky-300) 86%, transparent)
+        );
+    opacity: 0.82;
+}
+
+.quick-chat-bubble[data-style="orbit"]::after {
+    opacity: 1;
+}
+
+.quick-chat-bubble[data-style="orbit"][data-running="true"]::before {
+    animation: quick-chat-bubble-orbit-spin 2.8s linear infinite;
+}
+
+.quick-chat-bubble[data-style="orbit"][data-has-notification="true"]:not([data-running="true"])::before {
+    animation: quick-chat-bubble-attention 900ms var(--quick-ease-emphasized) 1;
+}
+
+.quick-chat-bubble[data-style="orbit"][data-running="true"] .quick-chat-bubble-zap {
+    animation: quick-chat-bubble-spark 900ms ease-in-out infinite alternate;
 }
 
 @keyframes quick-chat-bubble-pulse {
@@ -539,14 +748,43 @@ body {
     }
 }
 
-@keyframes quick-chat-bubble-float {
-    0%,
-    100% {
-        transform: translateY(0);
+@keyframes quick-chat-bubble-attention {
+    0% {
+        transform: scale(0.9);
+        opacity: 0.12;
     }
 
-    50% {
-        transform: translateY(-2px);
+    45% {
+        transform: scale(1.12);
+        opacity: 0.62;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 0.3;
+    }
+}
+
+@keyframes quick-chat-bubble-orbit-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes quick-chat-bubble-badge-pop {
+    0% {
+        transform: scale(0.72);
+        opacity: 0;
+    }
+
+    70% {
+        transform: scale(1.08);
+        opacity: 1;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
     }
 }
 
@@ -563,10 +801,29 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
     .quick-chat-bubble,
+    .quick-chat-bubble::before,
+    .quick-chat-bubble::after,
     .quick-chat-bubble-aura,
-    .quick-chat-bubble-zap {
+    .quick-chat-bubble-badge,
+    .quick-chat-bubble-icon,
+    .quick-chat-bubble-surface,
+    .quick-chat-bubble-zap,
+    .quick-chat-voice-button,
+    .quick-chat-voice-button::before {
         animation: none !important;
         transition: none !important;
+    }
+
+    .quick-chat-bubble,
+    .quick-chat-bubble:hover,
+    .quick-chat-bubble:active,
+    .quick-chat-bubble[data-state="open"],
+    .quick-chat-bubble[data-style="orbit"]::before,
+    .quick-chat-voice-button,
+    .quick-chat-voice-button::before,
+    .quick-chat-voice-button:hover,
+    .quick-chat-voice-button:active {
+        transform: none !important;
     }
 }
 

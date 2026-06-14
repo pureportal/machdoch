@@ -14,7 +14,9 @@ import type {
   AgentModelToolResult,
   AgentModelToolSpec,
   AgentModelTurn,
+  ReasoningMode,
 } from "../../types.js";
+import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
@@ -34,6 +36,36 @@ export const createAnthropicToolSelection = () => ({
     disable_parallel_tool_use: true,
   },
 });
+
+type AnthropicEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
+export const createAnthropicOutputConfig = (
+  model: string,
+  reasoning?: ReasoningMode,
+): { output_config?: { effort: AnthropicEffort } } => {
+  if (!reasoning || reasoning === "default") {
+    return {};
+  }
+
+  const normalizedReasoning = normalizeReasoningModeForProviderModel(
+    reasoning,
+    "anthropic",
+    model,
+  );
+
+  if (normalizedReasoning === "default") {
+    return {};
+  }
+
+  return {
+    output_config: {
+      effort:
+        normalizedReasoning === "none" || normalizedReasoning === "minimal"
+          ? "low"
+          : normalizedReasoning,
+    },
+  };
+};
 
 export const createAnthropicUserContent = (
   params: Pick<AgentModelStartParams, "imageInputs" | "userPrompt">,
@@ -132,6 +164,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
           system: params.systemPrompt,
           messages: [...this.messages],
           tools: createAnthropicTools(params.tools),
+          ...createAnthropicOutputConfig(params.model, params.reasoning),
           ...createAnthropicToolSelection(),
         };
 
@@ -197,6 +230,10 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
           system: startParams.systemPrompt,
           messages: [...this.messages],
           tools: createAnthropicTools(this.tools),
+          ...createAnthropicOutputConfig(
+            startParams.model,
+            startParams.reasoning,
+          ),
           ...createAnthropicToolSelection(),
         };
 

@@ -116,6 +116,7 @@ export interface ModelDrivenExecutionParams {
   monitorModelAdapter?: AgentModelAdapter;
   onStateChange?: TaskExecutionProgressHandler;
   onActionOutput?: TaskActionOutputHandler;
+  runId?: string;
   signal?: AbortSignal;
 }
 

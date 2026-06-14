@@ -36,7 +36,7 @@ static TEMP_FILE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::Atom
 
 #[derive(Default)]
 pub struct DesktopTaskCancelState {
-    active: HashMap<String, Arc<AtomicBool>>,
+    active: HashMap<String, ActiveDesktopTask>,
     pending: HashSet<String>,
 }
 
@@ -50,6 +50,24 @@ impl Default for DesktopTaskCancelMap {
 
 #[derive(Default)]
 pub struct AttachmentPathGrantMap(pub Mutex<HashSet<PathBuf>>);
+
+struct ActiveDesktopTask {
+    cancel_flag: Arc<AtomicBool>,
+    kind: String,
+    workspace_root: String,
+    arguments: Vec<String>,
+    started_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveDesktopTaskSummary {
+    id: String,
+    kind: String,
+    workspace_root: String,
+    arguments: Vec<String>,
+    started_at: u64,
+}
 
 #[cfg(target_os = "windows")]
 const DETACHED_PROCESS: u32 = 0x00000008;
@@ -77,6 +95,7 @@ pub struct DesktopTaskRunRequest {
     profile: Option<String>,
     provider: Option<String>,
     model: Option<String>,
+    reasoning: Option<String>,
     conversation_context: Option<Value>,
     image_paths: Option<Vec<String>>,
     task_id: Option<String>,
@@ -114,6 +133,28 @@ pub struct SchedulerCommandRequest {
     arguments: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RalphCommandRequest {
+    workspace_root: String,
+    arguments: Vec<String>,
+    task_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpCommandRequest {
+    workspace_root: String,
+    arguments: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstructionCommandRequest {
+    workspace_root: String,
+    arguments: Vec<String>,
+}
+
 struct CliCommandOptions<'a> {
     workspace_root: &'a str,
     task: &'a str,
@@ -121,6 +162,7 @@ struct CliCommandOptions<'a> {
     profile: Option<&'a str>,
     provider: Option<&'a str>,
     model: Option<&'a str>,
+    reasoning: Option<&'a str>,
     conversation_context_file: Option<&'a Path>,
     image_paths: &'a [String],
 }
@@ -134,19 +176,32 @@ struct DesktopTaskProgressEvent {
 }
 
 fn format_command_failure(stderr: &str, stdout: &str) -> String {
-    let stderr_text = stderr.trim().to_string();
+    let stderr_text = sanitize_command_diagnostics(stderr);
 
     if !stderr_text.is_empty() {
         return stderr_text;
     }
 
-    let stdout_text = stdout.trim().to_string();
+    let stdout_text = sanitize_command_diagnostics(stdout);
 
     if !stdout_text.is_empty() {
         return stdout_text;
     }
 
     "The shared CLI exited without additional diagnostics.".to_string()
+}
+
+fn sanitize_command_diagnostics(value: &str) -> String {
+    value
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            !line.is_empty()
+                && *line != "Debugger attached."
+                && *line != "Waiting for the debugger to disconnect..."
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn build_cli_args(options: CliCommandOptions<'_>) -> Vec<String> {
@@ -178,6 +233,11 @@ fn build_cli_args(options: CliCommandOptions<'_>) -> Vec<String> {
     if let Some(model) = options.model {
         args.push("--model".to_string());
         args.push(model.to_string());
+    }
+
+    if let Some(reasoning) = options.reasoning {
+        args.push("--reasoning".to_string());
+        args.push(reasoning.to_string());
     }
 
     if let Some(conversation_context_file) = options.conversation_context_file {
@@ -218,6 +278,114 @@ fn cleanup_temporary_file(path: Option<&PathBuf>) {
     if let Some(path) = path {
         let _ = fs::remove_file(path);
     }
+}
+
+fn cleanup_temporary_files(paths: &[PathBuf]) {
+    for path in paths {
+        cleanup_temporary_file(Some(path));
+    }
+}
+
+fn write_workspace_payload_file(
+    workspace_root: &str,
+    label: &str,
+    contents: &str,
+) -> Result<PathBuf, String> {
+    let unique_id = TEMP_FILE_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let directory = Path::new(workspace_root)
+        .join(".machdoch")
+        .join("ralph")
+        .join("payloads");
+    let file_path = directory.join(format!(
+        ".machdoch-ralph-{label}-{}-{}-{}.tmp",
+        std::process::id(),
+        create_progress_timestamp(),
+        unique_id
+    ));
+
+    fs::create_dir_all(&directory).map_err(|error| {
+        format!(
+            "Failed to prepare the Ralph payload directory {}: {error}",
+            directory.display()
+        )
+    })?;
+    fs::write(&file_path, contents).map_err(|error| {
+        format!(
+            "Failed to write the Ralph payload file {}: {error}",
+            file_path.display()
+        )
+    })?;
+
+    Ok(file_path)
+}
+
+fn rewrite_ralph_payload_arguments(
+    workspace_root: &str,
+    arguments: Vec<String>,
+) -> Result<(Vec<String>, Vec<PathBuf>), String> {
+    let mut rewritten = Vec::new();
+    let mut payload_paths = Vec::new();
+    let mut params = Vec::new();
+    let mut index = 0;
+
+    while index < arguments.len() {
+        let argument = &arguments[index];
+        let replacement_flag = match argument.as_str() {
+            "--prompt" => Some(("--prompt-file", "prompt")),
+            "--flow-json" => Some(("--flow-json-file", "flow-json")),
+            "--existing-flow-json" => Some(("--existing-flow-json-file", "existing-flow-json")),
+            _ => None,
+        };
+
+        if let Some((flag, label)) = replacement_flag {
+            let Some(value) = arguments.get(index + 1) else {
+                cleanup_temporary_files(&payload_paths);
+                return Err(format!("Expected {argument} to include a value."));
+            };
+            let path = match write_workspace_payload_file(workspace_root, label, value) {
+                Ok(path) => path,
+                Err(error) => {
+                    cleanup_temporary_files(&payload_paths);
+                    return Err(error);
+                }
+            };
+            rewritten.push(flag.to_string());
+            rewritten.push(path.display().to_string());
+            payload_paths.push(path);
+            index += 2;
+            continue;
+        }
+
+        if argument == "--param" {
+            let Some(value) = arguments.get(index + 1) else {
+                cleanup_temporary_files(&payload_paths);
+                return Err("Expected --param to include a value.".to_string());
+            };
+            params.push(value.clone());
+            index += 2;
+            continue;
+        }
+
+        rewritten.push(argument.clone());
+        index += 1;
+    }
+
+    if !params.is_empty() {
+        let serialized = serde_json::to_string(&params)
+            .map_err(|error| format!("Failed to serialize Ralph params: {error}"))?;
+        let path = match write_workspace_payload_file(workspace_root, "params", &serialized) {
+            Ok(path) => path,
+            Err(error) => {
+                cleanup_temporary_files(&payload_paths);
+                return Err(error);
+            }
+        };
+        rewritten.push("--params-file".to_string());
+        rewritten.push(path.display().to_string());
+        payload_paths.push(path);
+    }
+
+    Ok((rewritten, payload_paths))
 }
 
 fn format_path_for_ui(path: &Path) -> String {
@@ -620,8 +788,8 @@ pub fn request_desktop_task_cancel(state: &DesktopTaskCancelMap, task_id: &str) 
     };
 
     if let Ok(mut cancel_state) = state.0.lock() {
-        if let Some(cancel_flag) = cancel_state.active.get(task_id.as_str()) {
-            cancel_flag.store(true, Ordering::SeqCst);
+        if let Some(active_task) = cancel_state.active.get(task_id.as_str()) {
+            active_task.cancel_flag.store(true, Ordering::SeqCst);
         } else {
             remember_pending_cancel(&mut cancel_state, task_id.as_str());
         }
@@ -765,6 +933,32 @@ fn parse_scheduler_command_response(stdout: &str) -> Result<Value, String> {
     })
 }
 
+fn parse_ralph_command_response(stdout: &str) -> Result<Value, String> {
+    let trimmed_stdout = stdout.trim();
+
+    serde_json::from_str::<Value>(trimmed_stdout).map_err(|error| {
+        format!("Failed to parse the Ralph CLI JSON response: {error}. Output: {trimmed_stdout}")
+    })
+}
+
+fn parse_mcp_command_response(stdout: &str) -> Result<Value, String> {
+    let trimmed_stdout = stdout.trim();
+
+    serde_json::from_str::<Value>(trimmed_stdout).map_err(|error| {
+        format!("Failed to parse the MCP CLI JSON response: {error}. Output: {trimmed_stdout}")
+    })
+}
+
+fn parse_instruction_command_response(stdout: &str) -> Result<Value, String> {
+    let trimmed_stdout = stdout.trim();
+
+    serde_json::from_str::<Value>(trimmed_stdout).map_err(|error| {
+        format!(
+            "Failed to parse the instruction CLI JSON response: {error}. Output: {trimmed_stdout}"
+        )
+    })
+}
+
 fn execute_scheduler_command(request: SchedulerCommandRequest) -> Result<Value, String> {
     let workspace_path = resolve_workspace_root_path(&request.workspace_root)?;
     let normalized_workspace_root = workspace_path.display().to_string();
@@ -805,6 +999,228 @@ fn execute_scheduler_command(request: SchedulerCommandRequest) -> Result<Value, 
     parse_scheduler_command_response(&stdout_text)
 }
 
+fn execute_ralph_command(
+    app_handle: tauri::AppHandle,
+    window_label: String,
+    request: RalphCommandRequest,
+    cancel_flag: Arc<AtomicBool>,
+) -> Result<Value, String> {
+    let workspace_path = resolve_workspace_root_path(&request.workspace_root)?;
+    let normalized_workspace_root = workspace_path.display().to_string();
+    let payload_workspace_root = normalized_workspace_root.clone();
+    let task_id = normalize_task_id(request.task_id.as_deref());
+    let mut cli_args = vec![
+        "--json".to_string(),
+        "--cwd".to_string(),
+        normalized_workspace_root,
+        "ralph".to_string(),
+    ];
+    let (arguments, payload_paths) =
+        rewrite_ralph_payload_arguments(payload_workspace_root.as_str(), request.arguments)?;
+
+    for argument in arguments {
+        let normalized = argument.trim();
+
+        if !normalized.is_empty() {
+            cli_args.push(normalized.to_string());
+        }
+    }
+
+    let mut cli_command = match crate::shared_cli::create_shared_cli_command(&cli_args) {
+        Ok(command) => command,
+        Err(error) => {
+            cleanup_temporary_files(&payload_paths);
+            return Err(error);
+        }
+    };
+
+    cli_command
+        .command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    {
+        cli_command
+            .command
+            .creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
+    }
+
+    #[cfg(unix)]
+    {
+        cli_command.command.process_group(0);
+    }
+
+    let mut child = match cli_command.command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            cleanup_temporary_files(&payload_paths);
+            return Err(format!(
+                "Failed to launch the Ralph CLI. {} {error}",
+                crate::shared_cli::cli_runtime_error_hint()
+            ));
+        }
+    };
+
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            terminate_child_process_tree(&mut child);
+            let _ = child.wait();
+            cleanup_temporary_files(&payload_paths);
+            return Err("The Ralph CLI did not expose a stdout stream.".to_string());
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            terminate_child_process_tree(&mut child);
+            let _ = child.wait();
+            cleanup_temporary_files(&payload_paths);
+            return Err("The Ralph CLI did not expose a stderr stream.".to_string());
+        }
+    };
+
+    let stdout_worker = thread::spawn(move || read_stdout(stdout));
+    let stderr_worker =
+        thread::spawn(move || read_stderr(stderr, app_handle, window_label, task_id));
+
+    let status = loop {
+        match child
+            .try_wait()
+            .map_err(|error| format!("Failed to wait for the Ralph CLI to finish: {error}"))?
+        {
+            Some(status) => break status,
+            None => {
+                if cancel_flag.load(Ordering::SeqCst) {
+                    terminate_child_process_tree(&mut child);
+                    let _ = child.wait();
+
+                    let (stdout_text, stderr_text) =
+                        match join_cli_output_and_cleanup(stdout_worker, stderr_worker, None) {
+                            Ok(output) => output,
+                            Err(error) => {
+                                cleanup_temporary_files(&payload_paths);
+                                return Err(error);
+                            }
+                        };
+                    let failure_tail = format_command_failure(&stderr_text, &stdout_text);
+                    cleanup_temporary_files(&payload_paths);
+
+                    if failure_tail == "The shared CLI exited without additional diagnostics." {
+                        return Err("The Ralph CLI command was cancelled.".to_string());
+                    }
+
+                    return Err(format!(
+                        "The Ralph CLI command was cancelled. {}",
+                        failure_tail
+                    ));
+                }
+
+                thread::sleep(Duration::from_millis(DESKTOP_TASK_WAIT_POLL_MS));
+            }
+        }
+    };
+    let (stdout_text, stderr_text) =
+        match join_cli_output_and_cleanup(stdout_worker, stderr_worker, None) {
+            Ok(output) => output,
+            Err(error) => {
+                cleanup_temporary_files(&payload_paths);
+                return Err(error);
+            }
+        };
+    cleanup_temporary_files(&payload_paths);
+
+    if !status.success() {
+        return Err(format!(
+            "The Ralph CLI command failed. {}",
+            format_command_failure(&stderr_text, &stdout_text)
+        ));
+    }
+
+    parse_ralph_command_response(&stdout_text)
+}
+
+fn execute_mcp_command(request: McpCommandRequest) -> Result<Value, String> {
+    let workspace_path = resolve_workspace_root_path(&request.workspace_root)?;
+    let normalized_workspace_root = workspace_path.display().to_string();
+    let mut cli_args = vec![
+        "--json".to_string(),
+        "--cwd".to_string(),
+        normalized_workspace_root,
+        "mcp".to_string(),
+    ];
+
+    for argument in request.arguments {
+        let normalized = argument.trim();
+
+        if !normalized.is_empty() {
+            cli_args.push(normalized.to_string());
+        }
+    }
+
+    let output = crate::shared_cli::create_shared_cli_command(&cli_args)?
+        .command
+        .output()
+        .map_err(|error| {
+            format!(
+                "Failed to launch the MCP CLI. {} {error}",
+                crate::shared_cli::cli_runtime_error_hint()
+            )
+        })?;
+    let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if !output.status.success() {
+        return Err(format!(
+            "The MCP CLI command failed. {}",
+            format_command_failure(&stderr_text, &stdout_text)
+        ));
+    }
+
+    parse_mcp_command_response(&stdout_text)
+}
+
+fn execute_instruction_command(request: InstructionCommandRequest) -> Result<Value, String> {
+    let workspace_path = resolve_workspace_root_path(&request.workspace_root)?;
+    let normalized_workspace_root = workspace_path.display().to_string();
+    let mut cli_args = vec![
+        "--json".to_string(),
+        "--cwd".to_string(),
+        normalized_workspace_root,
+        "instructions".to_string(),
+    ];
+
+    for argument in request.arguments {
+        let normalized = argument.trim();
+
+        if !normalized.is_empty() {
+            cli_args.push(normalized.to_string());
+        }
+    }
+
+    let output = crate::shared_cli::create_shared_cli_command(&cli_args)?
+        .command
+        .output()
+        .map_err(|error| {
+            format!(
+                "Failed to launch the instruction CLI. {} {error}",
+                crate::shared_cli::cli_runtime_error_hint()
+            )
+        })?;
+    let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if !output.status.success() {
+        return Err(format!(
+            "The instruction CLI command failed. {}",
+            format_command_failure(&stderr_text, &stdout_text)
+        ));
+    }
+
+    parse_instruction_command_response(&stdout_text)
+}
+
 fn execute_desktop_task(
     app_handle: tauri::AppHandle,
     window_label: String,
@@ -818,6 +1234,7 @@ fn execute_desktop_task(
         profile,
         provider,
         model,
+        reasoning,
         conversation_context,
         image_paths,
         task_id,
@@ -835,6 +1252,7 @@ fn execute_desktop_task(
     let normalized_mode = normalize_optional_string(mode.as_deref());
     let normalized_profile = normalize_optional_string(profile.as_deref());
     let normalized_model = normalize_optional_string(model.as_deref());
+    let normalized_reasoning = normalize_optional_string(reasoning.as_deref());
     let conversation_context = enrich_ui_control_conversation_context(conversation_context)?;
     let conversation_context_path = conversation_context
         .as_ref()
@@ -848,6 +1266,7 @@ fn execute_desktop_task(
         profile: normalized_profile.as_deref(),
         provider: normalized_provider.as_deref(),
         model: normalized_model.as_deref(),
+        reasoning: normalized_reasoning.as_deref(),
         conversation_context_file: conversation_context_path.as_deref(),
         image_paths: image_paths.as_deref().unwrap_or(&[]),
     });
@@ -1194,6 +1613,31 @@ pub async fn get_active_desktop_task_ids(
 }
 
 #[tauri::command]
+pub async fn get_active_desktop_tasks(
+    state: tauri::State<'_, DesktopTaskCancelMap>,
+) -> Result<Vec<ActiveDesktopTaskSummary>, String> {
+    let cancel_state = state.0.lock().map_err(|_| {
+        "Unable to inspect active desktop tasks because the task registry lock is unavailable."
+            .to_string()
+    })?;
+    let mut tasks = cancel_state
+        .active
+        .iter()
+        .map(|(id, task)| ActiveDesktopTaskSummary {
+            id: id.clone(),
+            kind: task.kind.clone(),
+            workspace_root: task.workspace_root.clone(),
+            arguments: task.arguments.clone(),
+            started_at: task.started_at,
+        })
+        .collect::<Vec<_>>();
+
+    tasks.sort_by(|left, right| left.id.cmp(&right.id));
+
+    Ok(tasks)
+}
+
+#[tauri::command]
 pub async fn run_desktop_task(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, DesktopTaskCancelMap>,
@@ -1211,7 +1655,16 @@ pub async fn run_desktop_task(
                 cancel_flag.store(true, Ordering::SeqCst);
             }
 
-            cancel_state.active.insert(id.clone(), cancel_flag.clone());
+            cancel_state.active.insert(
+                id.clone(),
+                ActiveDesktopTask {
+                    cancel_flag: cancel_flag.clone(),
+                    kind: "desktop".to_string(),
+                    workspace_root: request.workspace_root.clone(),
+                    arguments: Vec::new(),
+                    started_at: create_progress_timestamp(),
+                },
+            );
         }
     }
 
@@ -1296,6 +1749,67 @@ pub async fn run_scheduler_command(request: SchedulerCommandRequest) -> Result<V
         .map_err(|error| format!("The scheduler command bridge stopped unexpectedly. {error}"))?
 }
 
+#[tauri::command]
+pub async fn run_ralph_command(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, DesktopTaskCancelMap>,
+    window: tauri::WebviewWindow,
+    mut request: RalphCommandRequest,
+) -> Result<Value, String> {
+    let window_label = window.label().to_string();
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let task_id = normalize_task_id(request.task_id.as_deref());
+    request.task_id = task_id.clone();
+
+    if let Some(id) = &task_id {
+        if let Ok(mut cancel_state) = state.0.lock() {
+            if cancel_state.pending.remove(id) {
+                cancel_flag.store(true, Ordering::SeqCst);
+            }
+
+            cancel_state.active.insert(
+                id.clone(),
+                ActiveDesktopTask {
+                    cancel_flag: cancel_flag.clone(),
+                    kind: "ralph".to_string(),
+                    workspace_root: request.workspace_root.clone(),
+                    arguments: request.arguments.clone(),
+                    started_at: create_progress_timestamp(),
+                },
+            );
+        }
+    }
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        execute_ralph_command(app_handle, window_label, request, cancel_flag)
+    })
+    .await
+    .map_err(|error| format!("The Ralph command bridge stopped unexpectedly. {error}"));
+
+    if let Some(id) = &task_id {
+        if let Ok(mut cancel_state) = state.0.lock() {
+            cancel_state.active.remove(id);
+            cancel_state.pending.remove(id);
+        }
+    }
+
+    result?
+}
+
+#[tauri::command]
+pub async fn run_mcp_command(request: McpCommandRequest) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || execute_mcp_command(request))
+        .await
+        .map_err(|error| format!("The MCP command bridge stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn run_instruction_command(request: InstructionCommandRequest) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || execute_instruction_command(request))
+        .await
+        .map_err(|error| format!("The instruction command bridge stopped unexpectedly. {error}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -1309,11 +1823,11 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        build_cli_args, cleanup_temporary_file, join_cli_output_and_cleanup,
-        remember_attachment_path_grant, remember_pending_cancel, resolve_attached_path,
-        save_clipboard_image_attachment_sync, write_conversation_context_file,
-        AttachmentPathGrantMap, CliCommandOptions, ClipboardImageAttachmentRequest,
-        DesktopTaskCancelState, MAX_PENDING_CANCEL_IDS,
+        build_cli_args, cleanup_temporary_file, format_command_failure,
+        join_cli_output_and_cleanup, remember_attachment_path_grant, remember_pending_cancel,
+        resolve_attached_path, save_clipboard_image_attachment_sync,
+        write_conversation_context_file, AttachmentPathGrantMap, CliCommandOptions,
+        ClipboardImageAttachmentRequest, DesktopTaskCancelState, MAX_PENDING_CANCEL_IDS,
     };
 
     fn create_test_directory(label: &str) -> PathBuf {
@@ -1340,6 +1854,7 @@ mod tests {
             profile: None,
             provider: Some("openai"),
             model: Some("gpt-5.2"),
+            reasoning: Some("high"),
             conversation_context_file: None,
             image_paths: &[],
         });
@@ -1348,6 +1863,8 @@ mod tests {
         assert!(args.contains(&"--json".to_string()));
         assert!(args.contains(&"--task".to_string()));
         assert!(args.contains(&"How is the weather?".to_string()));
+        assert!(args.contains(&"--reasoning".to_string()));
+        assert!(args.contains(&"high".to_string()));
     }
 
     #[test]
@@ -1363,6 +1880,7 @@ mod tests {
             profile: None,
             provider: Some("openai"),
             model: Some("gpt-5.5"),
+            reasoning: None,
             conversation_context_file: None,
             image_paths: &image_paths,
         });
@@ -1374,6 +1892,16 @@ mod tests {
                 .collect::<Vec<_>>(),
             image_paths,
         );
+    }
+
+    #[test]
+    fn command_failure_diagnostics_strip_node_debugger_noise() {
+        let message = format_command_failure(
+            "Debugger attached.\nmachdoch: Ralph flow `ralph-flow` is invalid.\nWaiting for the debugger to disconnect...\n",
+            "",
+        );
+
+        assert_eq!(message, "machdoch: Ralph flow `ralph-flow` is invalid.");
     }
 
     #[test]

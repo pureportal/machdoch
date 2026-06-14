@@ -165,8 +165,27 @@ const createTraceTranscript = (
   return limitText(traceLines.join("\n"), maxChars);
 };
 
+const createValidatorInstructionSection = (
+  taskContext: ResolvedTaskContext | undefined,
+): string => {
+  const validatorInstructions = taskContext?.applicableValidatorInstructions ?? [];
+  const instructionLines =
+    validatorInstructions.length > 0
+      ? validatorInstructions.map(
+          (instruction) => `${instruction.name}: ${instruction.body}`,
+        )
+      : ["No validator-specific instruction files were discovered for this task."];
+
+  return [
+    "<validator_instructions>",
+    ...instructionLines,
+    "</validator_instructions>",
+  ].join("\n");
+};
+
 export const createAutopilotMonitorSystemPrompt = (
   config: RuntimeConfig,
+  taskContext?: ResolvedTaskContext,
 ): string => {
   return [
     "<role>You are Machdoch Monitor, a separate validator agent that judges whether the executor fully satisfied the user's request.</role>",
@@ -193,6 +212,7 @@ export const createAutopilotMonitorSystemPrompt = (
     ]
       .filter((line): line is string => line !== undefined)
       .join("\n"),
+    createValidatorInstructionSection(taskContext),
   ].join("\n\n");
 };
 

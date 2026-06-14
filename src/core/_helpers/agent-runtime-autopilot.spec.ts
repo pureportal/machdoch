@@ -95,6 +95,28 @@ describe("autopilot monitor prompts", () => {
     expect(prompt).toContain("repeated identical failing tool calls");
   });
 
+  it("includes validator-targeted instruction context in the system prompt", () => {
+    const prompt = createAutopilotMonitorSystemPrompt(
+      createRuntimeConfig(),
+      createTaskContext({
+        applicableValidatorInstructions: [
+          {
+            kind: "conditional",
+            name: "Strict validation",
+            path: ".machdoch/instructions/strict-validation.instructions.md",
+            priority: 80,
+            reason: "Matched terms: review",
+            body: "Reject completion without concrete verification output.",
+          },
+        ],
+      }),
+    );
+
+    expect(prompt).toContain("<validator_instructions>");
+    expect(prompt).toContain("Strict validation");
+    expect(prompt).toContain("Reject completion without concrete verification output.");
+  });
+
   it("includes research expectations, verification expectations, and the tool trace in the user prompt", () => {
     const prompt = createAutopilotMonitorUserPrompt(
       "Investigate online best practices and improve the autonomous coding agent.",

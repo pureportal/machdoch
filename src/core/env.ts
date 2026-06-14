@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -13,13 +13,15 @@ import {
   DEFAULT_MAX_EXECUTOR_TURNS,
 } from "./_helpers/agent-runtime-types.js";
 import {
+  AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER,
   DEFAULT_USER_REVIEW_MODEL_SETTINGS,
   PROVIDER_ENV_KEY_BY_PROVIDER,
   RUNTIME_ENV_KEYS,
+  USER_API_PROVIDERS as SCHEMA_USER_API_PROVIDERS,
   USER_WEB_SEARCH_PROVIDERS,
-  VALID_MODEL_PROVIDERS,
   WEB_SEARCH_ENV_KEY_BY_PROVIDER,
   isConfiguredModelProvider,
+  isUserApiProvider as isSchemaUserApiProvider,
   isRuntimeContractValue,
   isUserWebSearchProvider as isSchemaUserWebSearchProvider,
   isVoiceAiProvider,
@@ -29,9 +31,12 @@ import {
 import type {
   ConfiguredModelProvider,
   SpeechToTextProvider,
+  AgentCliProvider,
   UserAgentLimitsSettings as SharedUserAgentLimitsSettings,
+  UserAgentCliPaths as SharedUserAgentCliPaths,
   UserConfigFile as SharedUserConfigFile,
   UserDesktopSettings,
+  UserApiProvider,
   UserReviewModelSettings as SharedUserReviewModelSettings,
   UserReviewModelMode,
   VoiceAiProvider,
@@ -55,13 +60,15 @@ const KNOWN_SAMPLE_SECRET_VALUES = new Set([
 ]);
 const USER_CONFIG_FILE_NAME = "user-config.json";
 const WORKSPACE_ENV_FILE_NAME = ".env";
-export type UserApiProvider = ProviderAvailability["provider"];
 export type UserWebSearchProvider = Exclude<WebSearchProvider, "none">;
-const USER_API_PROVIDERS = VALID_MODEL_PROVIDERS;
+export type UserAgentCliPaths = SharedUserAgentCliPaths;
+const USER_API_PROVIDERS = SCHEMA_USER_API_PROVIDERS;
 
 export type UserAgentLimitsSettings = SharedUserAgentLimitsSettings;
 export type UserReviewModelSettings = SharedUserReviewModelSettings;
 type UserConfigFile = SharedUserConfigFile;
+
+export type { AgentCliProvider, UserApiProvider } from "./runtime-contract.generated.js";
 
 const stripWrappingQuotes = (value: string): string => {
   const trimmed = value.trim();
@@ -118,7 +125,22 @@ const parseDotEnvFile = async (
  * Returns whether a provider id is supported by the user API config file.
  */
 const isUserApiProvider = (value: string): value is UserApiProvider => {
-  return USER_API_PROVIDERS.includes(value as UserApiProvider);
+  return isSchemaUserApiProvider(value);
+};
+
+const isAgentCliProvider = (value: string): value is AgentCliProvider => {
+  return Object.prototype.hasOwnProperty.call(
+    AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER,
+    value,
+  );
+};
+
+const isExistingFile = (path: string): boolean => {
+  try {
+    return existsSync(path) && statSync(path).isFile();
+  } catch {
+    return false;
+  }
 };
 
 const isWebSearchProvider = (value: string): value is WebSearchProvider => {
@@ -251,6 +273,7 @@ export const loadWorkspaceEnv = async (
 ): Promise<Record<string, string>> => {
   const env: Record<string, string> = {};
   const userApiKeys = await loadUserApiKeys();
+  const userAgentCliPaths = await loadUserAgentCliPaths();
   const userWebSearchApiKeys = await loadUserWebSearchApiKeys();
 
   for (const [provider, key] of Object.entries(userApiKeys)) {
@@ -260,6 +283,17 @@ export const loadWorkspaceEnv = async (
       key.trim().length > 0
     ) {
       env[PROVIDER_ENV_KEY_BY_PROVIDER[provider]] = key.trim();
+    }
+  }
+
+  for (const [provider, binaryPath] of Object.entries(userAgentCliPaths)) {
+    if (
+      isAgentCliProvider(provider) &&
+      typeof binaryPath === "string" &&
+      binaryPath.trim().length > 0
+    ) {
+      env[AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER[provider]] =
+        binaryPath.trim();
     }
   }
 
@@ -353,6 +387,22 @@ export const loadUserApiKeys = async (): Promise<
   );
 };
 
+export const loadUserAgentCliPaths = async (): Promise<UserAgentCliPaths> => {
+  const { config } = await loadUserConfigFile();
+  const paths = config.agentCliPaths ?? {};
+
+  return Object.fromEntries(
+    Object.entries(paths)
+      .filter(
+        (entry): entry is [AgentCliProvider, string] =>
+          isAgentCliProvider(entry[0]) &&
+          typeof entry[1] === "string" &&
+          entry[1].trim().length > 0,
+      )
+      .map(([provider, value]) => [provider, value.trim()]),
+  );
+};
+
 /**
  * Loads the configured web-search API keys from the user-scoped config file.
  */
@@ -401,6 +451,42 @@ export const saveUserApiKey = async (
     apiKeys: {
       ...(config.apiKeys ?? {}),
       [normalizedProvider]: normalizedApiKey,
+    },
+  });
+
+  return path;
+};
+
+export const saveUserAgentCliPath = async (
+  provider: AgentCliProvider,
+  binaryPath: string,
+): Promise<string> => {
+  const normalizedProvider = normalizeOptionalString(provider);
+  const normalizedBinaryPath = normalizeOptionalString(binaryPath);
+
+  if (!normalizedProvider || !isAgentCliProvider(normalizedProvider)) {
+    throw new Error(
+      "Expected provider to be one of codex-cli, claude-cli, or copilot-cli.",
+    );
+  }
+
+  if (!normalizedBinaryPath) {
+    throw new Error("Expected a non-empty CLI binary path.");
+  }
+
+  if (!isExistingFile(normalizedBinaryPath)) {
+    throw new Error(
+      `Expected ${normalizedBinaryPath} to point to an existing CLI binary file.`,
+    );
+  }
+
+  const { config, path } = await loadUserConfigFile();
+
+  await saveUserConfigFile({
+    ...config,
+    agentCliPaths: {
+      ...(config.agentCliPaths ?? {}),
+      [normalizedProvider]: normalizedBinaryPath,
     },
   });
 

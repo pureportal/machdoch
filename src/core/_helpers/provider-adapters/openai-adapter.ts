@@ -9,7 +9,9 @@ import type {
   AgentModelToolResult,
   AgentModelToolSpec,
   AgentModelTurn,
+  ReasoningMode,
 } from "../../types.js";
+import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
@@ -39,6 +41,39 @@ export const createOpenAIResponseToolSelection = () => ({
   parallel_tool_calls: false,
   tool_choice: "required" as const,
 });
+
+type OpenAIReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
+
+export const createOpenAIReasoningConfig = (
+  model: string,
+  reasoning?: ReasoningMode,
+): { reasoning?: { effort: OpenAIReasoningEffort } } => {
+  if (!reasoning || reasoning === "default") {
+    return {};
+  }
+
+  const normalizedReasoning = normalizeReasoningModeForProviderModel(
+    reasoning,
+    "openai",
+    model,
+  );
+
+  if (normalizedReasoning === "default") {
+    return {};
+  }
+
+  return {
+    reasoning: {
+      effort: normalizedReasoning === "max" ? "xhigh" : normalizedReasoning,
+    },
+  };
+};
 
 export const createOpenAIUserInput = (
   params: Pick<AgentModelStartParams, "imageInputs" | "userPrompt">,
@@ -126,6 +161,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
           instructions: params.systemPrompt,
           input: createOpenAIUserInput(params),
           tools: createOpenAITools(params.tools),
+          ...createOpenAIReasoningConfig(params.model, params.reasoning),
           ...createOpenAIResponseToolSelection(),
         };
 
@@ -181,6 +217,10 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
             output: createOpenAIFunctionCallOutput(toolResult),
           })),
           tools: createOpenAITools(this.tools),
+          ...createOpenAIReasoningConfig(
+            startParams.model,
+            startParams.reasoning,
+          ),
           ...createOpenAIResponseToolSelection(),
         };
 

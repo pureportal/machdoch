@@ -6,7 +6,7 @@ import {
 import { Input } from "../../../components/ui/input";
 import {
   getCatalogModelsForProvider,
-  getDefaultModelForProvider,
+  getDefaultReviewModelForProvider,
   getProviderLabel,
   SUPPORTED_PROVIDER_ORDER,
   type ProviderModelCatalogSnapshot,
@@ -36,19 +36,6 @@ const DEFAULT_REVIEW_MODEL_PROVIDER: RuntimeProvider = "openai";
 
 const isRuntimeProvider = (provider: string | undefined): provider is RuntimeProvider => {
   return SUPPORTED_PROVIDER_ORDER.includes(provider as RuntimeProvider);
-};
-
-const getDefaultReviewModelForProvider = (
-  provider: RuntimeProvider,
-  catalog: ProviderModelCatalogSnapshot | null,
-): string => {
-  const models = getCatalogModelsForProvider(provider, catalog);
-  const costOrientedModel =
-    models.find((model) => model.recommendedFor.includes("cheap")) ??
-    models.find((model) => model.recommendedFor.includes("fast")) ??
-    models[0];
-
-  return costOrientedModel?.id ?? getDefaultModelForProvider(provider);
 };
 
 export const normalizeReviewModelDraft = (

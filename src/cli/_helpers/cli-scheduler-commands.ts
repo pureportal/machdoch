@@ -386,6 +386,7 @@ const createJobInput = async (
       ...(args.profile ? { profile: args.profile } : {}),
       ...(args.runtimeProvider ? { provider: args.runtimeProvider } : {}),
       ...(args.model ? { model: args.model } : {}),
+      ...(args.reasoning ? { reasoning: args.reasoning } : {}),
     },
     ...(missedRunPolicy ? { missedRunPolicy } : {}),
     ...(options.missedRunGraceMs ? { missedRunGraceMs: options.missedRunGraceMs } : {}),
@@ -420,6 +421,8 @@ const createSchedulerExecutor = (): ScheduledTaskExecutor => ({
       request.profile,
       request.model,
       request.provider,
+      undefined,
+      request.reasoning,
     );
     const task = await applyContextPathsToTask(
       request.task,

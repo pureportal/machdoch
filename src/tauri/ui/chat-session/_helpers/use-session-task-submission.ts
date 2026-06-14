@@ -161,6 +161,9 @@ export const useSessionTaskSubmission = (options: {
         model: sessionSnapshot.model,
         ...(sessionProfile ? { profile: sessionProfile } : {}),
         provider: sessionSnapshot.provider,
+        ...(sessionSnapshot.reasoning
+          ? { reasoning: sessionSnapshot.reasoning }
+          : {}),
         ...(sessionMode ? { mode: sessionMode } : {}),
         taskId,
       });
@@ -247,6 +250,12 @@ export const useSessionTaskSubmission = (options: {
             nextSession.mode = sessionSnapshot.mode;
           } else {
             delete nextSession.mode;
+          }
+
+          if (sessionSnapshot.reasoning) {
+            nextSession.reasoning = sessionSnapshot.reasoning;
+          } else {
+            delete nextSession.reasoning;
           }
 
           if (sessionSnapshot.specialSession) {

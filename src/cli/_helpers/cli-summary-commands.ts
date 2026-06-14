@@ -3,12 +3,14 @@ import {
   saveWorkspaceDefaultModel,
   saveWorkspaceDefaultMode,
   saveWorkspaceOffline,
+  saveWorkspaceReasoningMode,
   saveWorkspaceRuntimeProvider,
 } from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import {
   loadUserAgentLimitsSettings,
   loadUserMemorySettings,
+  saveUserAgentCliPath,
   saveUserApiKey,
   saveUserAgentLimitsSettings,
   saveUserDesktopSettingsPatch,
@@ -21,13 +23,14 @@ import {
 } from "../../core/env.js";
 import {
   DESKTOP_SETTING_BOUNDS,
-  isConfiguredModelProvider,
+  isAgentCliProvider,
+  isUserApiProvider,
   isUserWebSearchProvider,
   isVoiceAiProvider,
   isWebSearchProvider,
 } from "../../core/runtime-contract.generated.js";
 import type {
-  ConfiguredModelProvider,
+  AgentCliProvider,
   SpeechToTextProvider,
   UserDesktopSettings,
   UserWebSearchProvider,
@@ -136,6 +139,7 @@ const isDesktopConfigSetting = (
 
 const SUPPORTED_CONFIG_SET_SETTINGS = [
   "api.<openai|anthropic|google>.key",
+  "agent-cli.<codex-cli|claude-cli|copilot-cli>.path",
   "web-search.provider",
   "web-search.<perplexity|tavily|serper>.key",
   "voice.provider",
@@ -149,6 +153,7 @@ const SUPPORTED_CONFIG_SET_SETTINGS = [
   "workspace.model",
   "workspace.provider",
   "workspace.mode",
+  "workspace.reasoning",
   "workspace.offline",
 ] as const;
 
@@ -294,15 +299,38 @@ const saveConfigSetting = async (
   ) {
     const provider = parts[1];
 
-    if (!isConfiguredModelProvider(provider)) {
+    if (!isUserApiProvider(provider)) {
       return unsupportedConfigSetting(setting);
     }
 
     return {
       setting: normalizedSetting,
       scope: "user",
-      configPath: await saveUserApiKey(provider as ConfiguredModelProvider, value),
+      configPath: await saveUserApiKey(provider, value),
       status: "configured",
+    };
+  }
+
+  if (
+    parts.length === 3 &&
+    parts[0] === "agent-cli" &&
+    parts[2] === "path"
+  ) {
+    const provider = parts[1];
+
+    if (!isAgentCliProvider(provider)) {
+      return unsupportedConfigSetting(setting);
+    }
+
+    return {
+      setting: normalizedSetting,
+      scope: "user",
+      configPath: await saveUserAgentCliPath(
+        provider as AgentCliProvider,
+        value,
+      ),
+      status: "configured",
+      value,
     };
   }
 
@@ -499,6 +527,16 @@ const saveConfigSetting = async (
     };
   }
 
+  if (normalizedSetting === "workspace.reasoning") {
+    return {
+      setting: normalizedSetting,
+      scope: "workspace",
+      configPath: await saveWorkspaceReasoningMode(workspaceRoot, value),
+      status: "configured",
+      value,
+    };
+  }
+
   if (normalizedSetting === "workspace.offline") {
     const offline = parseConfigBoolean(normalizedSetting, value);
 
@@ -524,6 +562,7 @@ export const printConfigSummary = async (
     args.model,
     args.runtimeProvider,
     args.agentLimits,
+    args.reasoning,
   );
   const memorySettings = await loadUserMemorySettings();
   const agentLimits = resolveRuntimeAgentLimits(config);
@@ -553,6 +592,7 @@ export const printConfigSummary = async (
   writeStdoutLine(`mode: ${config.mode}`);
   writeStdoutLine(`provider: ${config.provider}`);
   writeStdoutLine(`model: ${config.model}`);
+  writeStdoutLine(`reasoning: ${config.reasoning}`);
   writeStdoutLine(`offline: ${config.offline ? "true" : "false"}`);
   writeStdoutLine(`executor turns: ${formatLimit(agentLimits.executorTurns)}`);
   writeStdoutLine(
@@ -590,6 +630,7 @@ export const printCustomizationSummary = async (
     args.model,
     args.runtimeProvider,
     args.agentLimits,
+    args.reasoning,
   );
   const customizations = await discoverCustomizations(
     args.workspaceRoot,
@@ -628,6 +669,7 @@ export const printToolSummary = async (args: ParsedCliArgs): Promise<void> => {
     args.model,
     args.runtimeProvider,
     args.agentLimits,
+    args.reasoning,
   );
   const agentTools = createToolDefinitions(config, {
     sessionEnabled: false,
@@ -708,6 +750,7 @@ export const printProfileSummary = async (
     args.model,
     args.runtimeProvider,
     args.agentLimits,
+    args.reasoning,
   );
 
   if (args.json) {

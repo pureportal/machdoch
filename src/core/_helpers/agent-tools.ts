@@ -17,6 +17,7 @@ import { createBrowserToolDefinitions } from "./browser-tool-definitions.js";
 import { createFilesystemToolDefinitions } from "./filesystem-tool-definitions.js";
 import { createGitToolDefinitions } from "./git-tool-definitions.js";
 import { createMemoryToolDefinitions } from "./memory-tool-definitions.js";
+import { createMcpToolDefinitions } from "../mcp/tool-definitions.js";
 import {
   createMacroRecorderToolDefinitions,
   recordMacroToolCall,
@@ -103,6 +104,7 @@ export const createToolDefinitions = (
     ...createMacroRecorderToolDefinitions(),
     ...createBrowserToolDefinitions(),
     ...createShellNetworkToolDefinitions(config),
+    ...createMcpToolDefinitions(config.workspaceRoot),
     ...createMemoryToolDefinitions(memory),
     ...createSchedulerToolDefinitions(),
     ...createDesktopUiToolDefinitions(uiControl),
@@ -122,6 +124,7 @@ export const executeToolCall = async (
   toolDefinitions: Map<string, AgentToolDefinition>,
   call: AgentModelToolCall,
   onActionOutput?: TaskActionOutputHandler,
+  runId?: string,
 ): Promise<{
   result?: AgentToolExecutionResult;
 }> => {
@@ -161,6 +164,7 @@ export const executeToolCall = async (
 
   const result = await toolDefinition.execute(call.arguments, {
     workspaceRoot: config.workspaceRoot,
+    ...(runId ? { runId } : {}),
     memory,
     ...(uiControl !== undefined ? { uiControl } : {}),
     ...(onActionOutput

@@ -7,6 +7,7 @@ import type {
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
 import {
   AnthropicMessagesAdapter,
+  createAnthropicOutputConfig,
   createAnthropicToolSelection,
   createAnthropicUserContent,
 } from "./anthropic-adapter.js";
@@ -39,6 +40,22 @@ describe("Anthropic Messages conformance", () => {
         disable_parallel_tool_use: true,
       },
     });
+  });
+
+  it("normalizes effort for the selected Claude model", () => {
+    expect(
+      createAnthropicOutputConfig("claude-sonnet-4-6", "xhigh"),
+    ).toEqual({
+      output_config: { effort: "high" },
+    });
+    expect(
+      createAnthropicOutputConfig("claude-sonnet-4-6", "max"),
+    ).toEqual({
+      output_config: { effort: "max" },
+    });
+    expect(createAnthropicOutputConfig("claude-haiku-4-5", "high")).toEqual(
+      {},
+    );
   });
 
   it("places image blocks before text", () => {

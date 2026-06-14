@@ -1,6 +1,5 @@
-import { AlertTriangle, Bot, Check, ChevronDown } from "lucide-react";
+import { Bot, Check, ChevronDown } from "lucide-react";
 import { useEffect, useState, type JSX } from "react";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
   Popover,
@@ -15,10 +14,6 @@ import {
   type RuntimeProvider,
 } from "../../model-catalog";
 import { loadProviderModelCatalog } from "../../runtime";
-import {
-  MODEL_STAGE_CLASSES,
-  MODEL_STAGE_LABELS,
-} from "../_helpers/session-shell";
 
 export interface SessionModelPickerProps {
   chooserProviders: RuntimeProvider[];
@@ -71,9 +66,6 @@ export const SessionModelPicker = ({
     selectedProvider,
     providerModelCatalog,
   );
-  const selectedProviderCatalog = providerModelCatalog?.providers.find(
-    (provider) => provider.provider === selectedProvider,
-  );
 
   const handleSessionModelSelection = (
     provider: RuntimeProvider,
@@ -115,16 +107,6 @@ export const SessionModelPicker = ({
                 {getProviderLabel(activeProvider)} / {activeModelLabel}
               </p>
             </div>
-            {activeModelMeta ? (
-              <Badge
-                className={cn(
-                  "border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide",
-                  MODEL_STAGE_CLASSES[activeModelMeta.stage],
-                )}
-              >
-                {MODEL_STAGE_LABELS[activeModelMeta.stage]}
-              </Badge>
-            ) : null}
           </div>
         </div>
 
@@ -169,15 +151,6 @@ export const SessionModelPicker = ({
                   {selectedProviderModels.length} available
                 </span>
               </div>
-              {selectedProviderCatalog?.available ? (
-                <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/10 px-3 py-2 text-[11px] leading-4 text-emerald-100">
-                  Live provider catalog loaded from the configured API key.
-                </div>
-              ) : selectedProviderCatalog?.error ? (
-                <div className="rounded-xl border border-amber-500/15 bg-amber-500/10 px-3 py-2 text-[11px] leading-4 text-amber-100">
-                  {selectedProviderCatalog.error}
-                </div>
-              ) : null}
 
               <div className="grid max-h-72 gap-1.5 overflow-y-auto pr-1">
                 {selectedProviderModels.map((model) => {
@@ -189,7 +162,7 @@ export const SessionModelPicker = ({
                     <button
                       key={`${selectedProvider}-${model.id}`}
                       type="button"
-                      aria-label={`Choose ${getProviderLabel(selectedProvider)} ${model.label}. ${model.description}`}
+                      aria-label={`Choose ${getProviderLabel(selectedProvider)} ${model.label}`}
                       aria-pressed={isSelected}
                       onClick={() =>
                         handleSessionModelSelection(selectedProvider, model.id)
@@ -213,40 +186,12 @@ export const SessionModelPicker = ({
                       </span>
 
                       <span className="grid min-w-0 gap-1">
-                        <span className="flex min-w-0 items-center justify-between gap-2">
-                          <span className="min-w-0 truncate text-sm font-semibold text-slate-100">
-                            {model.label}
-                          </span>
-                          <span
-                            className={cn(
-                              "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                              MODEL_STAGE_CLASSES[model.stage],
-                            )}
-                          >
-                            {MODEL_STAGE_LABELS[model.stage]}
-                          </span>
+                        <span className="min-w-0 truncate text-sm font-semibold text-slate-100">
+                          {model.label}
                         </span>
-                        <span className="line-clamp-2 text-xs leading-5 text-slate-400">
-                          {model.description}
-                        </span>
-                        {model.capabilityHighlights.length > 0 ? (
-                          <span className="flex flex-wrap gap-1 pt-1">
-                            {model.capabilityHighlights.map((capability) => (
-                              <span
-                                key={capability}
-                                className="rounded-full border border-slate-700/80 bg-slate-950/70 px-1.5 py-0.5 text-[10px] leading-4 font-medium text-slate-400"
-                              >
-                                {capability}
-                              </span>
-                            ))}
-                          </span>
-                        ) : null}
-                        {model.warnings.length > 0 ? (
-                          <span className="flex min-w-0 items-start gap-1.5 rounded-lg border border-amber-500/15 bg-amber-500/10 px-2 py-1 text-[10px] leading-4 text-amber-100">
-                            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                            <span className="line-clamp-2">
-                              {model.warnings[0]}
-                            </span>
+                        {model.description ? (
+                          <span className="text-xs leading-5 text-slate-500">
+                            {model.description}
                           </span>
                         ) : null}
                       </span>

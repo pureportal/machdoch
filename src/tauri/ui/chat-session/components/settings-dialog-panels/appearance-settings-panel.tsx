@@ -131,7 +131,7 @@ export const AppearanceSettingsPanel = ({
 
       <SettingPanel
         label="Quick Chat bubble"
-        detail="Controls the floating launcher style."
+        detail="Controls the launcher material and attention treatment."
       >
         <ChoiceButtons
           value={setup.settings.quickChatBubbleStyle}

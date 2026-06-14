@@ -1,21 +1,19 @@
 import {
   Brain,
   BrainCircuit,
-  FolderOpen,
   LoaderCircle,
   Mic,
   Monitor,
   Square,
 } from "lucide-react";
 import type { JSX, KeyboardEvent } from "react";
-import type { RunMode } from "../../../../core/types.js";
+import type { ReasoningMode, RunMode } from "../../../../core/types.js";
 import {
   isQuickVoiceSession,
   type ChatSessionContextAttachment,
   type ChatSessionRecord,
   type SmartContextPack,
 } from "../../chat-session.model";
-import { Button } from "../../components/ui/button";
 import { cn } from "../../lib/utils";
 import type { RuntimeProvider } from "../../model-catalog";
 import type { SaveSmartContextPackInput } from "../_helpers/smart-context-packs";
@@ -26,7 +24,9 @@ import {
   type AgentComposerToggle,
 } from "./agent-composer";
 import { SessionModePicker } from "./session-mode-picker";
+import { SessionReasoningPicker } from "./session-reasoning-picker";
 import { SmartContextPackPicker } from "./smart-context-packs";
+import { WorkspacePicker } from "./workspace-picker";
 
 export interface SessionComposerProps {
   activeSession: ChatSessionRecord;
@@ -34,8 +34,12 @@ export interface SessionComposerProps {
   activeRunMode: RunMode;
   activeRunModeMeta: (typeof RUN_MODE_META)[RunMode];
   defaultRunMode: RunMode;
+  defaultReasoning: ReasoningMode;
+  activeReasoning: ReasoningMode;
   isUsingWorkspaceDefaultMode: boolean;
+  isUsingWorkspaceDefaultReasoning: boolean;
   hasActiveWorkspace: boolean;
+  recentWorkspaces: string[];
   composerWorkspaceLabel: string;
   sessionMemoryDescription: string;
   globalMemoryDescription: string;
@@ -60,8 +64,10 @@ export interface SessionComposerProps {
   canSendMessage: boolean;
   sendDisabledReason: string | null;
   onSelectFolder: () => Promise<void>;
+  onWorkspaceSelection: (workspace: string) => void;
   onSessionModelSelection: (provider: RuntimeProvider, model: string) => void;
   onSessionModeSelection: (mode: RunMode | null) => void;
+  onSessionReasoningSelection: (reasoning: ReasoningMode | null) => void;
   onSessionMemoryEnabledChange: (enabled: boolean) => void;
   onUseGlobalMemoryChange: (enabled: boolean) => void;
   onUiControlEnabledChange: (enabled: boolean) => void;
@@ -94,8 +100,12 @@ export const SessionComposer = ({
   activeRunMode,
   activeRunModeMeta,
   defaultRunMode,
+  defaultReasoning,
+  activeReasoning,
   isUsingWorkspaceDefaultMode,
+  isUsingWorkspaceDefaultReasoning,
   hasActiveWorkspace,
+  recentWorkspaces,
   composerWorkspaceLabel,
   sessionMemoryDescription,
   globalMemoryDescription,
@@ -112,8 +122,10 @@ export const SessionComposer = ({
   canSendMessage,
   sendDisabledReason,
   onSelectFolder,
+  onWorkspaceSelection,
   onSessionModelSelection,
   onSessionModeSelection,
+  onSessionReasoningSelection,
   onSessionMemoryEnabledChange,
   onUseGlobalMemoryChange,
   onUiControlEnabledChange,
@@ -161,34 +173,32 @@ export const SessionComposer = ({
         onSessionModeSelection={onSessionModeSelection}
       />
 
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => {
-          void onSelectFolder();
-        }}
-        className={cn(
-          "h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100",
-          "app-composer-toolbar-pill",
-          hasActiveWorkspace &&
-            "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15",
-        )}
-      >
-        <FolderOpen
-          className={cn(
-            "mr-2 h-3.5 w-3.5",
-            hasActiveWorkspace ? "text-sky-300" : "text-slate-500",
-          )}
-        />
-        {composerWorkspaceLabel}
-      </Button>
+      <SessionReasoningPicker
+        provider={activeSession.provider}
+        model={activeSession.model}
+        activeReasoning={activeReasoning}
+        defaultReasoning={defaultReasoning}
+        isUsingWorkspaceDefaultReasoning={isUsingWorkspaceDefaultReasoning}
+        onSessionReasoningSelection={onSessionReasoningSelection}
+      />
+
+      <WorkspacePicker
+        currentWorkspace={activeSession.workspace}
+        workspaceLabel={composerWorkspaceLabel}
+        recentWorkspaces={recentWorkspaces}
+        hasActiveWorkspace={hasActiveWorkspace}
+        onSelectWorkspace={onWorkspaceSelection}
+        onChooseNewWorkspace={onSelectFolder}
+      />
 
       <SmartContextPackPicker
         contextPacks={contextPacks}
+        workspaceRoot={activeSession.workspace}
         activeDraft={activeSession.draft}
         activeProvider={activeSession.provider}
         activeModel={activeSession.model}
         activeRunMode={activeRunMode}
+        activeReasoning={activeReasoning}
         contextAttachments={contextAttachments}
         matchedContextPackIds={matchedContextPackIds}
         imageInputSupported={imageInputSupported}

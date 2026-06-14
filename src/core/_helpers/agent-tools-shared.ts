@@ -43,6 +43,7 @@ export interface ConversationMemoryRuntime {
 
 export interface AgentToolExecutionContext {
   workspaceRoot: string;
+  runId?: string;
   memory: ConversationMemoryRuntime;
   uiControl?: UiControlRuntimeInfo;
   onOutput?: (

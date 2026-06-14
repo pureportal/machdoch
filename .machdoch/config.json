@@ -1,6 +1,9 @@
 {
+  "compatibility": {
+    "discoverGithubCustomizations": false
+  },
+  "defaultMode": "machdoch",
   "defaultProfile": "workspace",
-  "defaultMode": "ask",
   "enabledTools": [
     "filesystem",
     "shell",
@@ -10,26 +13,27 @@
     "packages",
     "utilities"
   ],
-  "provider": "openai",
   "model": "gpt-5.5",
   "offline": false,
   "profiles": {
-    "workspace": {
-      "description": "Default interactive workspace profile.",
-      "mode": "ask"
+    "local-model": {
+      "description": "Prefer an alternate experimental provider profile.",
+      "model": "gemini-2.5-flash",
+      "provider": "google"
     },
     "safe-review": {
       "description": "Read-focused review mode with approval gates and limited tools.",
-      "mode": "safe",
-      "enabledTools": ["filesystem", "git", "utilities"]
+      "enabledTools": [
+        "filesystem",
+        "git",
+        "utilities"
+      ],
+      "mode": "safe"
     },
-    "local-model": {
-      "description": "Prefer an alternate experimental provider profile.",
-      "provider": "google",
-      "model": "gemini-2.5-flash"
+    "workspace": {
+      "description": "Default interactive workspace profile.",
+      "mode": "ask"
     }
   },
-  "compatibility": {
-    "discoverGithubCustomizations": false
-  }
+  "provider": "openai"
 }

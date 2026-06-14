@@ -20,7 +20,7 @@ import {
   type ChatSessionRecord,
   type SessionOverviewStatus,
 } from "../../chat-session.model";
-import { getProviderLabel, type CatalogModelStage } from "../../model-catalog";
+import { getProviderLabel } from "../../model-catalog";
 import {
   USER_WEB_SEARCH_PROVIDER_ORDER,
   type RuntimeSnapshot,
@@ -35,7 +35,10 @@ import {
 
 export type SettingsSection =
   | "providers"
+  | "workspace"
+  | "instructions"
   | "web-search"
+  | "mcp"
   | "agent"
   | "appearance"
   | "voice"
@@ -49,27 +52,16 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
   label: string;
 }> = [
   { id: "providers", label: "Providers" },
+  { id: "workspace", label: "Workspace" },
+  { id: "instructions", label: "Instructions" },
   { id: "web-search", label: "Web search" },
+  { id: "mcp", label: "MCP" },
   { id: "agent", label: "Agent" },
   { id: "appearance", label: "Appearance" },
   { id: "voice", label: "Voice" },
   { id: "memory", label: "Memory" },
   { id: "desktop", label: "Desktop" },
 ];
-
-export const MODEL_STAGE_LABELS: Record<CatalogModelStage, string> = {
-  deprecated: "Deprecated",
-  stable: "Stable",
-  preview: "Preview",
-  open: "Open",
-};
-
-export const MODEL_STAGE_CLASSES: Record<CatalogModelStage, string> = {
-  deprecated: "border-rose-500/20 bg-rose-500/10 text-rose-200",
-  stable: "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
-  preview: "border-amber-500/20 bg-amber-500/10 text-amber-200",
-  open: "border-violet-500/20 bg-violet-500/10 text-violet-200",
-};
 
 export const RUN_MODE_ORDER = [
   "ask",

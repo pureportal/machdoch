@@ -1,4 +1,5 @@
 import { previewTaskRun } from "./task-runner.ts";
+import { resolveTaskContext } from "./task-context.ts";
 import type {
   CustomizationDiscoveryResult,
   ProviderAvailability,
@@ -400,6 +401,162 @@ describe("previewTaskRun", () => {
     expect(preview.applicableInstructions.map((entry) => entry.name)).toEqual([
       "Workspace defaults",
     ]);
+  });
+
+  it("matches multiple applyTo globs and respects exclude patterns", () => {
+    const customizations = createCustomizations();
+
+    customizations.instructions.push({
+      kind: "conditional",
+      path: ".machdoch/instructions/source-files.instructions.md",
+      name: "Source file rules",
+      body: "Use source-file conventions.",
+      applyTo: "src/**/*.ts",
+      applyToPatterns: ["src/**/*.ts", "tests/**/*.ts"],
+      excludePatterns: ["src/generated/**"],
+      keywords: [],
+    });
+
+    const matchedPreview = previewTaskRun(
+      "review tests\\core\\task-runner.spec.ts",
+      createConfig(),
+      customizations,
+    );
+    const excludedPreview = previewTaskRun(
+      "review src\\generated\\runtime-contract.ts",
+      createConfig(),
+      customizations,
+    );
+
+    expect(
+      matchedPreview.applicableInstructions.map((entry) => entry.name),
+    ).toEqual(["Workspace defaults", "Source file rules"]);
+    expect(
+      excludedPreview.applicableInstructions.map((entry) => entry.name),
+    ).toEqual(["Workspace defaults"]);
+  });
+
+  it("skips manual, disabled, and non-executor instructions during automatic matching", () => {
+    const customizations = createCustomizations();
+
+    customizations.instructions.push(
+      {
+        kind: "conditional",
+        path: ".machdoch/instructions/manual.instructions.md",
+        name: "Manual rules",
+        body: "Only apply when manually attached.",
+        keywords: ["install"],
+        mode: "manual",
+      },
+      {
+        kind: "always-on",
+        path: ".machdoch/disabled.md",
+        name: "Disabled rules",
+        body: "Do not apply.",
+        keywords: [],
+        mode: "disabled",
+      },
+      {
+        kind: "conditional",
+        path: ".machdoch/instructions/validator.instructions.md",
+        name: "Validator rules",
+        body: "Only apply to validators.",
+        keywords: ["install"],
+        audience: "validator",
+      },
+      {
+        kind: "conditional",
+        path: ".machdoch/instructions/always.instructions.md",
+        name: "Pinned rules",
+        body: "Always apply despite the conditional file path.",
+        keywords: [],
+        mode: "always",
+      },
+    );
+
+    const preview = previewTaskRun(
+      "install dependencies",
+      createConfig(),
+      customizations,
+    );
+
+    expect(preview.applicableInstructions.map((entry) => entry.name)).toEqual([
+      "Workspace defaults",
+      "Pinned rules",
+      "Security defaults",
+    ]);
+  });
+
+  it("allows manual instructions to be explicitly referenced by name", () => {
+    const customizations = createCustomizations();
+
+    customizations.instructions.push({
+      kind: "conditional",
+      path: ".machdoch/instructions/manual.instructions.md",
+      name: "Manual rules",
+      body: "Only apply when explicitly attached.",
+      keywords: [],
+      mode: "manual",
+    });
+
+    const preview = previewTaskRun(
+      '@instruction:"Manual rules" review README.md',
+      createConfig(),
+      customizations,
+    );
+
+    expect(preview.applicableInstructions.map((entry) => entry.name)).toEqual([
+      "Workspace defaults",
+      "Manual rules",
+    ]);
+    expect(preview.applicableInstructions[1]?.reason).toBe(
+      "Explicitly requested instruction.",
+    );
+  });
+
+  it("resolves validator and generator instruction audiences separately", () => {
+    const customizations = createCustomizations();
+
+    customizations.instructions.push(
+      {
+        kind: "conditional",
+        path: ".machdoch/instructions/generator.instructions.md",
+        name: "Generator rules",
+        body: "Prefer durable generated instruction files.",
+        keywords: ["instructions"],
+        audience: "generator",
+      },
+      {
+        kind: "conditional",
+        path: ".machdoch/instructions/validator.instructions.md",
+        name: "Validator rules",
+        body: "Reject unverified completion claims.",
+        keywords: ["instructions"],
+        audience: "validator",
+      },
+    );
+
+    const executorContext = resolveTaskContext(
+      "generate instructions for reviews",
+      customizations,
+    );
+    const generatorContext = resolveTaskContext(
+      "generate instructions for reviews",
+      customizations,
+      { instructionAudience: "generator" },
+    );
+
+    expect(executorContext.applicableInstructions.map((entry) => entry.name)).toEqual([
+      "Workspace defaults",
+    ]);
+    expect(
+      generatorContext.applicableInstructions.map((entry) => entry.name),
+    ).toEqual(["Workspace defaults", "Generator rules"]);
+    expect(
+      generatorContext.applicableValidatorInstructions?.map(
+        (entry) => entry.name,
+      ),
+    ).toEqual(["Workspace defaults", "Validator rules"]);
   });
 
   it("orders applicable instructions by descending priority and preserves their bodies", () => {
