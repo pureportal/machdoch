@@ -1342,6 +1342,27 @@ fn default_agent_cli_path_candidates(command: &str, env: &HashMap<String, String
                     .join("Links")
                     .join(format!("{command}.exe")),
             );
+            candidates.push(
+                local_app_data
+                    .join("Microsoft")
+                    .join("WindowsApps")
+                    .join(format!("{command}.exe")),
+            );
+
+            if command == "codex" {
+                let codex_bin = local_app_data.join("OpenAI").join("Codex").join("bin");
+                candidates.push(codex_bin.join("codex.exe"));
+
+                if let Ok(entries) = fs::read_dir(&codex_bin) {
+                    for entry in entries.flatten() {
+                        let candidate = entry.path().join("codex.exe");
+
+                        if candidate.is_file() {
+                            candidates.push(candidate);
+                        }
+                    }
+                }
+            }
         }
 
         candidates
@@ -1612,6 +1633,77 @@ mod agent_cli_resolver_tests {
 
         assert_eq!(
             resolve_agent_cli_binary("copilot-cli", &env),
+            Some(binary_path)
+        );
+
+        let _ = fs::remove_dir_all(home_directory);
+    }
+
+    #[test]
+    fn codex_cli_resolution_checks_windows_app_install_locations() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+
+        let home_directory = temp_test_directory("codex-windows-app-path");
+        let local_app_data = home_directory.join("AppData").join("Local");
+        let binary_path = local_app_data
+            .join("OpenAI")
+            .join("Codex")
+            .join("bin")
+            .join("codex.exe");
+
+        create_file(&binary_path);
+
+        let mut env = HashMap::new();
+        env.insert("PATH".to_string(), String::new());
+        env.insert("PATHEXT".to_string(), ".CMD;.EXE".to_string());
+        env.insert(
+            "USERPROFILE".to_string(),
+            home_directory.display().to_string(),
+        );
+        env.insert(
+            "LOCALAPPDATA".to_string(),
+            local_app_data.display().to_string(),
+        );
+
+        assert_eq!(
+            resolve_agent_cli_binary("codex-cli", &env),
+            Some(binary_path)
+        );
+
+        let _ = fs::remove_dir_all(home_directory);
+    }
+
+    #[test]
+    fn codex_cli_resolution_checks_windows_app_execution_alias_location() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+
+        let home_directory = temp_test_directory("codex-windows-app-alias");
+        let local_app_data = home_directory.join("AppData").join("Local");
+        let binary_path = local_app_data
+            .join("Microsoft")
+            .join("WindowsApps")
+            .join("codex.exe");
+
+        create_file(&binary_path);
+
+        let mut env = HashMap::new();
+        env.insert("PATH".to_string(), String::new());
+        env.insert("PATHEXT".to_string(), ".CMD;.EXE".to_string());
+        env.insert(
+            "USERPROFILE".to_string(),
+            home_directory.display().to_string(),
+        );
+        env.insert(
+            "LOCALAPPDATA".to_string(),
+            local_app_data.display().to_string(),
+        );
+
+        assert_eq!(
+            resolve_agent_cli_binary("codex-cli", &env),
             Some(binary_path)
         );
 

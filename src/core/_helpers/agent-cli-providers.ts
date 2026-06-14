@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, join } from "node:path";
 import { normalizeOptionalString } from "../../common/_helpers/normalize-optional-string.js";
@@ -17,7 +17,7 @@ export interface AgentCliProviderDefinition {
   label: string;
   envKey: string;
   commandCandidates: readonly string[];
-  defaultPathCandidates: readonly string[];
+  defaultPathCandidates: (env: NodeJS.ProcessEnv) => readonly string[];
 }
 
 export interface AgentCliBinaryResolution {
@@ -36,17 +36,35 @@ const WINDOWS_EXECUTABLE_EXTENSIONS = [
 ] as const;
 
 const userHomeDirectory = homedir();
-const userProfileDirectory = process.env.USERPROFILE ?? userHomeDirectory;
-const windowsAppDataDirectory =
-  process.env.APPDATA ?? join(userProfileDirectory, "AppData", "Roaming");
-const windowsLocalAppDataDirectory =
-  process.env.LOCALAPPDATA ?? join(userProfileDirectory, "AppData", "Local");
+
+const listExistingChildCommandPathCandidates = (
+  directory: string,
+  fileName: string,
+): string[] => {
+  try {
+    return readdirSync(directory, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(directory, entry.name, fileName))
+      .filter((candidate) => isExistingFile(candidate));
+  } catch {
+    return [];
+  }
+};
 
 const createDefaultCommandPathCandidates = (
   command: string,
+  env: NodeJS.ProcessEnv,
 ): readonly string[] => {
   if (process.platform === "win32") {
-    return [
+    const userProfileDirectory =
+      normalizeOptionalString(env.USERPROFILE) ?? userHomeDirectory;
+    const windowsAppDataDirectory =
+      normalizeOptionalString(env.APPDATA) ??
+      join(userProfileDirectory, "AppData", "Roaming");
+    const windowsLocalAppDataDirectory =
+      normalizeOptionalString(env.LOCALAPPDATA) ??
+      join(userProfileDirectory, "AppData", "Local");
+    const candidates = [
       join(userProfileDirectory, ".local", "bin", `${command}.exe`),
       join(windowsAppDataDirectory, "npm", `${command}.cmd`),
       join(windowsAppDataDirectory, "npm", `${command}.exe`),
@@ -57,7 +75,32 @@ const createDefaultCommandPathCandidates = (
         "Links",
         `${command}.exe`,
       ),
+      join(
+        windowsLocalAppDataDirectory,
+        "Microsoft",
+        "WindowsApps",
+        `${command}.exe`,
+      ),
     ];
+
+    if (command === "codex") {
+      const codexBinDirectory = join(
+        windowsLocalAppDataDirectory,
+        "OpenAI",
+        "Codex",
+        "bin",
+      );
+
+      candidates.push(
+        join(codexBinDirectory, "codex.exe"),
+        ...listExistingChildCommandPathCandidates(
+          codexBinDirectory,
+          "codex.exe",
+        ),
+      );
+    }
+
+    return candidates;
   }
 
   return [
@@ -77,21 +120,23 @@ export const AGENT_CLI_PROVIDER_DEFINITIONS: Record<
     label: "Codex CLI",
     envKey: AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER["codex-cli"],
     commandCandidates: ["codex"],
-    defaultPathCandidates: createDefaultCommandPathCandidates("codex"),
+    defaultPathCandidates: (env) => createDefaultCommandPathCandidates("codex", env),
   },
   "claude-cli": {
     provider: "claude-cli",
     label: "Claude CLI",
     envKey: AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER["claude-cli"],
     commandCandidates: ["claude"],
-    defaultPathCandidates: createDefaultCommandPathCandidates("claude"),
+    defaultPathCandidates: (env) =>
+      createDefaultCommandPathCandidates("claude", env),
   },
   "copilot-cli": {
     provider: "copilot-cli",
     label: "Copilot CLI",
     envKey: AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER["copilot-cli"],
     commandCandidates: ["copilot"],
-    defaultPathCandidates: createDefaultCommandPathCandidates("copilot"),
+    defaultPathCandidates: (env) =>
+      createDefaultCommandPathCandidates("copilot", env),
   },
 };
 
@@ -252,7 +297,7 @@ export const resolveAgentCliProviderBinary = (
     }
   }
 
-  for (const candidate of definition.defaultPathCandidates) {
+  for (const candidate of definition.defaultPathCandidates(env)) {
     const executable = resolveConfiguredBinaryPath(candidate, env);
 
     if (executable) {
