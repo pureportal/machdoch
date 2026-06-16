@@ -141,6 +141,15 @@ const cleanCliText = (value: string): string => {
   return value.replace(ANSI_ESCAPE_PATTERN, "").trim();
 };
 
+const extractStructuredErrorMessage = (value: string): string | undefined => {
+  const messageMatch = /"message"\s*:\s*"(?<message>(?:\\.|[^"\\])*)"/u.exec(
+    value,
+  );
+  const message = messageMatch?.groups?.message;
+
+  return message ? cleanCliText(message.replace(/\\"/gu, '"')) : undefined;
+};
+
 const createExternalAgentFailureReason = (
   providerLabel: string,
   stdout: string,
@@ -155,6 +164,12 @@ const createExternalAgentFailureReason = (
 
   if (quotaLine) {
     return `${providerLabel} quota exceeded: ${quotaLine.replace(/^ERROR:\s*/iu, "")}`;
+  }
+
+  const structuredErrorMessage = extractStructuredErrorMessage(combined);
+
+  if (structuredErrorMessage) {
+    return `${providerLabel} failed: ${structuredErrorMessage}`;
   }
 
   const errorLines = combined
@@ -189,6 +204,55 @@ const formatSectionForPrompt = (section: TaskExecutionSection): string => {
   ].join("\n");
 };
 
+const getExternalAgentDelegationMode = (
+  params: ExternalAgentExecutionParams,
+): ExternalAgentDelegationMode => {
+  const audience = params.taskContext.instructionAudience;
+
+  return params.config.mode === "ask" &&
+    (audience === "generator" || audience === "validator")
+    ? "read-only-artifact"
+    : "full-access";
+};
+
+const createExternalAgentOperatingInstructions = (
+  delegationMode: ExternalAgentDelegationMode,
+): string[] => {
+  if (delegationMode === "read-only-artifact") {
+    return [
+      "Run as a bounded artifact worker for Machdoch.",
+      "Use available tools when they materially reduce uncertainty; prefer short read-only workspace inspection.",
+      "For simple self-contained requests, produce the artifact directly from the supplied task and resolved context.",
+      "Do not modify files, start or restart servers, install packages, run long-running commands, or perform broad workspace verification.",
+      "Keep tool use tight and stop inspecting as soon as the artifact can be produced.",
+      "Do not ask the user for permission or clarification; return a concise blocker only if the requested artifact cannot be produced from the supplied prompt.",
+    ];
+  }
+
+  return [
+    "Run with full local access: make requested changes, run commands, and use available tools without asking for permission.",
+    "Run autonomously. Do not ask the user for permission or clarification; stop only when the task is complete or a concrete blocker prevents progress.",
+    "Follow all repository instructions discovered in the workspace. Do not start dev servers unless the repository instructions explicitly allow it.",
+  ];
+};
+
+const createExternalAgentCompletionContract = (
+  delegationMode: ExternalAgentDelegationMode,
+): string[] => {
+  if (delegationMode === "read-only-artifact") {
+    return [
+      "Return exactly the artifact or answer requested by the user task.",
+      "Preserve any output contract in the user task exactly.",
+      "Do not add change summaries, verification summaries, or follow-up prose unless the user task explicitly asks for them.",
+    ];
+  }
+
+  return [
+    "Work until the task is complete or a concrete blocker prevents progress.",
+    "Final response must summarize what changed, verification performed, anything that could not be verified, and remaining assumptions or risks.",
+  ];
+};
+
 const createExternalAgentPrompt = (
   task: string,
   config: RuntimeConfig,
@@ -196,15 +260,14 @@ const createExternalAgentPrompt = (
   conversationContext: PreparedConversationPromptContext,
   providerLabel: string,
   attachmentPaths: readonly string[],
+  delegationMode: ExternalAgentDelegationMode,
 ): string => {
   return [
     `You are running as a delegated ${providerLabel} agent for Machdoch.`,
     `Workspace: ${config.workspaceRoot}`,
     `Machdoch mode: ${config.mode}`,
     `Reasoning mode: ${config.reasoning}`,
-    "Run with full local access: make requested changes, run commands, and use available tools without asking for permission.",
-    "Run autonomously. Do not ask the user for permission or clarification; stop only when the task is complete or a concrete blocker prevents progress.",
-    "Follow all repository instructions discovered in the workspace. Do not start dev servers unless the repository instructions explicitly allow it.",
+    ...createExternalAgentOperatingInstructions(delegationMode),
     attachmentPaths.length > 0
       ? [
           "Attached files/images available to the delegated agent:",
@@ -219,8 +282,9 @@ const createExternalAgentPrompt = (
       .map(formatSectionForPrompt)
       .join("\n\n"),
     "Completion contract:",
-    "- Work until the task is complete or a concrete blocker prevents progress.",
-    "- Final response must summarize what changed, verification performed, anything that could not be verified, and remaining assumptions or risks.",
+    ...createExternalAgentCompletionContract(delegationMode).map(
+      (line) => `- ${line}`,
+    ),
   ]
     .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
     .join("\n\n");
@@ -537,7 +601,10 @@ interface ExternalAgentCommandFactoryParams {
   config: RuntimeConfig;
   prompt: string;
   imageInputs: ModelDrivenExecutionParams["imageInputs"];
+  delegationMode: ExternalAgentDelegationMode;
 }
+
+type ExternalAgentDelegationMode = "full-access" | "read-only-artifact";
 
 const getExecutorTurnLimit = (config: RuntimeConfig): number | undefined => {
   const limit = config.agentLimits?.executorTurns;
@@ -547,28 +614,48 @@ const getExecutorTurnLimit = (config: RuntimeConfig): number | undefined => {
     : undefined;
 };
 
+const normalizeCodexCliReasoningEffort = (
+  effort: CodexCliReasoningEffort | undefined,
+): CodexCliReasoningEffort | undefined => {
+  return effort === "minimal" ? "low" : effort;
+};
+
 const createCodexArgs = (
   config: RuntimeConfig,
   imageInputs: ModelDrivenExecutionParams["imageInputs"],
+  delegationMode: ExternalAgentDelegationMode,
 ): ExternalAgentCommand => {
-  const reasoningEffort = mapReasoningToCodexCliEffort(
-    config.model,
-    config.reasoning,
+  const reasoningEffort = normalizeCodexCliReasoningEffort(
+    mapReasoningToCodexCliEffort(config.model, config.reasoning),
   );
   const args = [
     "exec",
-    "--dangerously-bypass-approvals-and-sandbox",
+  ];
+
+  if (delegationMode === "read-only-artifact") {
+    args.push("--sandbox", "read-only", "--ephemeral", "--ignore-user-config");
+  } else {
+    args.push("--dangerously-bypass-approvals-and-sandbox");
+  }
+
+  args.push(
     "--skip-git-repo-check",
     "--ignore-rules",
-    "--dangerously-bypass-hook-trust",
+    ...(delegationMode === "read-only-artifact"
+      ? []
+      : ["--dangerously-bypass-hook-trust"]),
     "--cd",
     config.workspaceRoot,
     "--model",
     config.model,
-  ];
+  );
 
   if (reasoningEffort) {
     args.push("--config", `model_reasoning_effort="${reasoningEffort}"`);
+  }
+
+  if (delegationMode === "read-only-artifact") {
+    args.push("--config", 'model_verbosity="low"');
   }
 
   for (const imageInput of imageInputs ?? []) {
@@ -580,21 +667,47 @@ const createCodexArgs = (
   return {
     args,
     runDetail:
-      "Running codex exec with approvals, sandbox, git-repo guard, execpolicy rules, and hook trust bypassed.",
-    startMessage: "Starting Codex CLI with full local access.",
+      delegationMode === "read-only-artifact"
+        ? "Running codex exec in a read-only artifact-generation sandbox with user config, git-repo guard, and execpolicy rules ignored."
+        : "Running codex exec with approvals, sandbox, git-repo guard, execpolicy rules, and hook trust bypassed.",
+    startMessage:
+      delegationMode === "read-only-artifact"
+        ? "Starting Codex CLI in constrained read-only artifact mode."
+        : "Starting Codex CLI with full local access.",
     successDetail: "codex exec exited successfully.",
     commandLines: [
-      "access: full local access",
+      delegationMode === "read-only-artifact"
+        ? "access: read-only artifact generation"
+        : "access: full local access",
+      ...(delegationMode === "read-only-artifact"
+        ? ["user config: ignored"]
+        : []),
       "git repo check: skipped",
       "execpolicy rules: ignored",
-      "hook trust: bypassed",
+      ...(delegationMode === "read-only-artifact"
+        ? []
+        : ["hook trust: bypassed"]),
+      ...(reasoningEffort ? [`reasoning effort: ${reasoningEffort}`] : []),
+      ...(delegationMode === "read-only-artifact"
+        ? ["model verbosity: low"]
+        : []),
     ],
     metadata: {
-      access: "dangerously-bypass-approvals-and-sandbox",
+      access:
+        delegationMode === "read-only-artifact"
+          ? "read-only-artifact"
+          : "dangerously-bypass-approvals-and-sandbox",
+      userConfig:
+        delegationMode === "read-only-artifact" ? "ignored" : "loaded",
       gitRepoCheck: "skipped",
       execpolicyRules: "ignored",
-      hookTrust: "bypassed",
-      reasoning: config.reasoning,
+      hookTrust:
+        delegationMode === "read-only-artifact" ? "not-bypassed" : "bypassed",
+      requestedReasoning: config.reasoning,
+      effectiveReasoning: reasoningEffort ?? "default",
+      ...(delegationMode === "read-only-artifact"
+        ? { modelVerbosity: "low" }
+        : {}),
     },
   };
 };
@@ -603,8 +716,9 @@ const createCodexCommand = ({
   config,
   prompt,
   imageInputs,
+  delegationMode,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => ({
-  ...createCodexArgs(config, imageInputs),
+  ...createCodexArgs(config, imageInputs, delegationMode),
   input: prompt,
 });
 
@@ -757,6 +871,7 @@ const executeExternalAgentCliTask = async (
   }
 
   const imagePaths = (params.imageInputs ?? []).map((imageInput) => imageInput.path);
+  const delegationMode = getExternalAgentDelegationMode(params);
   const prompt = createExternalAgentPrompt(
     params.task,
     params.config,
@@ -764,6 +879,7 @@ const executeExternalAgentCliTask = async (
     params.preparedConversationContext,
     providerLabel,
     imagePaths,
+    delegationMode,
   );
   const command = createExternalAgentCommand(
     provider,
@@ -771,6 +887,7 @@ const executeExternalAgentCliTask = async (
       config: params.config,
       prompt,
       imageInputs: params.imageInputs,
+      delegationMode,
     },
   );
 

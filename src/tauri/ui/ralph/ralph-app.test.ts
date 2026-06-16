@@ -32,7 +32,7 @@ describe("Ralph provider choices", () => {
     ]);
   });
 
-  it("keeps the existing no-provider fallback when nothing runnable is connected", () => {
+  it("keeps the full provider choice list when nothing runnable is connected", () => {
     const availability = [
       { provider: "openai", configured: false },
       { provider: "anthropic", configured: false },
@@ -72,7 +72,7 @@ describe("Ralph provider choices", () => {
     ).toEqual(["codex-cli"]);
   });
 
-  it("normalizes stale saved Ralph selections to a connected provider", () => {
+  it("preserves saved Ralph provider selections when different providers are connected", () => {
     const settings = {
       ...DEFAULT_RALPH_SETTINGS,
       generationProvider: "anthropic",
@@ -83,15 +83,15 @@ describe("Ralph provider choices", () => {
       runReasoning: "low",
     } satisfies RalphSettings;
 
-    const normalized = normalizeRalphRuntimeSettings(settings, ["codex-cli"]);
+    const normalized = normalizeRalphRuntimeSettings(settings);
 
     expect(normalized).toMatchObject({
-      generationProvider: "codex-cli",
-      generationModel: "gpt-5.5",
-      runProvider: "codex-cli",
-      runModel: "gpt-5.5",
+      generationProvider: "anthropic",
+      generationModel: "claude-opus-4-1",
+      runProvider: "openai",
+      runModel: "gpt-5.4",
     });
-    expect(normalized.generationReasoning).toBeUndefined();
-    expect(normalized.runReasoning).toBeUndefined();
+    expect(normalized.generationReasoning).toBe("high");
+    expect(normalized.runReasoning).toBe("low");
   });
 });

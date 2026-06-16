@@ -22,10 +22,6 @@ import {
   providerSupportsImageInputMediaType,
 } from "./model-capabilities.js";
 import {
-  getDefaultModelForProvider,
-  type ConfiguredModelProvider,
-} from "./provider-model-registry.js";
-import {
   coerceMcpConfigOverride,
   getEnabledMcpServer,
   loadMcpDiscoveryCacheSync,
@@ -45,6 +41,7 @@ import type {
   TaskExecutionOptions,
   TaskConversationContext,
   TaskActionOutput,
+  TaskExecutionProgress,
   TaskExecutionProgressHandler,
   TaskExecutionResult,
 } from "./types.js";
@@ -58,7 +55,7 @@ type PlaywrightBrowserChannel = (typeof RALPH_UI_BROWSER_CHANNELS)[number];
 export const RALPH_FLOW_SCHEMA_VERSION = 1;
 export const DEFAULT_RALPH_GENERATION_MAX_ROUNDS = 3;
 export const MAX_RALPH_GENERATION_MAX_ROUNDS = 25;
-const DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS = 10 * 60 * 1_000;
+const DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS = 3 * 60 * 1_000;
 export const MAX_RALPH_RESULT_CHARS = 16_000;
 const MAX_RALPH_SIMPLE_LOG_CHARS = 4_000;
 const MAX_RALPH_TRACE_TEXT_CHARS = 32_000;
@@ -609,12 +606,13 @@ export type RalphGenerationEventType =
   | "round-start"
   | "generator-start"
   | "generator-output"
+  | "actor-progress"
+  | "actor-output"
   | "generator-file-written"
   | "schema-validation-start"
   | "schema-validation-result"
   | "validator-start"
   | "validator-result"
-  | "fallback-provider"
   | "retry-feedback"
   | "created"
   | "blocked"
@@ -641,6 +639,10 @@ export interface RalphGenerationEvent {
   blockCount?: number;
   edgeCount?: number;
   durationMs?: number;
+  actorState?: TaskExecutionProgress["state"];
+  actionToolName?: string;
+  actionStream?: TaskActionOutput["stream"];
+  detail?: string;
 }
 
 export type RalphLogEntryKind =
@@ -7692,13 +7694,21 @@ const createFlowGenerationTask = (
   mode: RalphFlowGenerationOptions["mode"],
   existingFlow: RalphFlow | undefined,
   validatorFeedback: string | undefined,
+  includeVisualGuidance: boolean,
   workspaceHints: string,
 ): string => {
   return [
     "Create or update a Ralph flow graph.",
     "",
-    "Write the finished flow JSON to this exact workspace path:",
+    "Ralph will persist the finished flow locally after parsing your response.",
+    "Target workspace path:",
     flowPath,
+    "",
+    "Output contract:",
+    "- Return one complete Ralph flow JSON object in your final answer.",
+    "- Wrap the JSON in <ralph_flow_json>...</ralph_flow_json> tags.",
+    "- Do not include comments, trailing commas, or explanatory prose inside the tags.",
+    "- Do not write files yourself; Ralph validates and writes the parsed JSON locally.",
     "",
     "Ralph flow requirements:",
     "- Use graph blocks: START, PROMPT, VALIDATOR, DECISION, PACK, UTILITY, END.",
@@ -7714,15 +7724,22 @@ const createFlowGenerationTask = (
     "- Use block result placeholders such as {{lastResult}}, {{summary:block-id}}, and {{result:block-id}} where useful.",
     "- Use structured utility data placeholders such as {{data:block-id:path.to.value}} where useful.",
     "- Set settings.maxTransitions on flows with cycles. UI improvement loops should usually use 25-40 transitions unless the user asks otherwise.",
-    "- Keep UI-improvement loops compact: prefer one loop with 7-10 meaningful nodes, and combine suggestion plus implementation when that keeps the graph readable.",
+    ...(includeVisualGuidance
+      ? [
+          "- Keep UI-improvement loops compact: prefer one loop with 7-10 meaningful nodes, and combine suggestion plus implementation when that keeps the graph readable.",
+          "- For UI quality requests, prefer a UI_ANALYZE utility before deciding DONE. Use adapter=browser with targetUrl for web UI, adapter=image with screenshotPath for manual screenshots, or adapter=tauri-mcp/playwright-mcp with mcpServerId and mcpToolName when workspace hints list a matching live tool.",
+          "- UI_ANALYZE must not start or restart servers. Use server.mode=existing with a healthUrl/targetUrl for already-running apps, or server.mode=none for screenshots/static evidence.",
+          "- If no live visual target is available, use variables such as {{targetUrl:url=}}, {{screenshotPath:path=}}, or {{visualEvidence:text=}} and fall back to deterministic code-level checks.",
+        ]
+      : []),
     "- Do not use PACK blocks or block settings.packs unless the workspace hints list available packs; pack ids are metadata-only without backing context injection.",
-    "- For UI quality requests, prefer a UI_ANALYZE utility before deciding DONE. Use adapter=browser with targetUrl for web UI, adapter=image with screenshotPath for manual screenshots, or adapter=tauri-mcp/playwright-mcp with mcpServerId and mcpToolName when workspace hints list a matching live tool.",
-    "- UI_ANALYZE must not start or restart servers. Use server.mode=existing with a healthUrl/targetUrl for already-running apps, or server.mode=none for screenshots/static evidence.",
-    "- If no live visual target is available, use variables such as {{targetUrl:url=}}, {{screenshotPath:path=}}, or {{visualEvidence:text=}} and fall back to deterministic code-level checks.",
     "- Use package-manager-aware commands from the workspace hints. Do not default to npm when another package manager is detected.",
     "- For SEARCH_FILES, use the narrowest source root that fits the request; avoid scanning the workspace root when possible.",
     "- Keep block ids stable kebab-case.",
     "- Store graph positions so the canvas is readable.",
+    "- Use tools only when they materially reduce uncertainty. For simple self-contained requests, produce the flow directly from this prompt.",
+    "- If needed, inspect workspace files or run short read-only commands to understand local conventions.",
+    "- Do not write files, modify code, start or restart servers, install packages, run long-running commands, or perform broad verification yourself. Ralph performs parsing, validation, and persistence after your response.",
     "",
     `Generation target: ${target ?? "flow"}.`,
     `Generation mode: ${mode ?? "do-it"}.`,
@@ -7808,10 +7825,147 @@ const createFlowGenerationTask = (
     prompt,
     "</user_request>",
     "",
-    "After writing the file, validate the graph against the rules above.",
+    "Before submitting the final response, validate the graph against the rules above.",
   ]
     .filter((line): line is string => line !== undefined)
     .join("\n");
+};
+
+type GeneratedRalphFlowSource =
+  | "file"
+  | "tagged-response"
+  | "fenced-response"
+  | "raw-response";
+
+interface GeneratedRalphFlowReadResult {
+  flow?: RalphFlow;
+  source?: GeneratedRalphFlowSource;
+  error?: string;
+}
+
+interface GeneratedRalphFlowJsonCandidate {
+  source: Exclude<GeneratedRalphFlowSource, "file">;
+  raw: string;
+}
+
+const RALPH_FLOW_JSON_TAG_PATTERN =
+  /<ralph_flow_json>\s*([\s\S]*?)\s*<\/ralph_flow_json>/giu;
+const FENCED_JSON_PATTERN = /```(?:json)?\s*([\s\S]*?)```/giu;
+
+const looksLikeRalphFlowJsonText = (value: string): boolean => {
+  const text = value.trim();
+
+  return (
+    text.includes('"schemaVersion"') &&
+    text.includes('"blocks"') &&
+    text.includes('"edges"')
+  );
+};
+
+const getGenerationResultTextCandidates = (
+  result: TaskExecutionResult,
+): string[] => {
+  const candidates = [
+    result.response?.markdown,
+    ...result.outputSections.map((section) => section.lines.join("\n")),
+    result.summary,
+  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const seen = new Set<string>();
+  const uniqueCandidates: string[] = [];
+
+  for (const candidate of candidates) {
+    if (seen.has(candidate)) {
+      continue;
+    }
+
+    seen.add(candidate);
+    uniqueCandidates.push(candidate);
+  }
+
+  return uniqueCandidates;
+};
+
+const extractGeneratedRalphFlowJsonCandidates = (
+  text: string,
+): GeneratedRalphFlowJsonCandidate[] => {
+  const candidates: GeneratedRalphFlowJsonCandidate[] = [];
+
+  for (const match of text.matchAll(RALPH_FLOW_JSON_TAG_PATTERN)) {
+    const raw = match[1]?.trim();
+
+    if (raw) {
+      candidates.push({ source: "tagged-response", raw });
+    }
+  }
+
+  for (const match of text.matchAll(FENCED_JSON_PATTERN)) {
+    const raw = match[1]?.trim();
+
+    if (raw && looksLikeRalphFlowJsonText(raw)) {
+      candidates.push({ source: "fenced-response", raw });
+    }
+  }
+
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{") && looksLikeRalphFlowJsonText(trimmed)) {
+    candidates.push({ source: "raw-response", raw: trimmed });
+  }
+
+  return candidates;
+};
+
+const tryParseGeneratedRalphFlowJson = (
+  raw: string,
+): { flow?: RalphFlow; error?: string } => {
+  try {
+    return { flow: parseRalphFlowJson(raw) };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+};
+
+const readGeneratedRalphFlow = async (
+  generationFlowPath: string,
+  result: TaskExecutionResult,
+): Promise<GeneratedRalphFlowReadResult> => {
+  const errors: string[] = [];
+
+  if (existsSync(generationFlowPath)) {
+    const parsed = tryParseGeneratedRalphFlowJson(
+      await readFile(generationFlowPath, "utf8"),
+    );
+
+    if (parsed.flow) {
+      return { flow: parsed.flow, source: "file" };
+    }
+
+    errors.push(
+      `Generated file was not valid Ralph JSON: ${parsed.error ?? "unknown error"}`,
+    );
+  }
+
+  for (const text of getGenerationResultTextCandidates(result)) {
+    for (const candidate of extractGeneratedRalphFlowJsonCandidates(text)) {
+      const parsed = tryParseGeneratedRalphFlowJson(candidate.raw);
+
+      if (parsed.flow) {
+        return { flow: parsed.flow, source: candidate.source };
+      }
+
+      errors.push(
+        `Generator ${candidate.source} JSON was invalid: ${parsed.error ?? "unknown error"}`,
+      );
+    }
+  }
+
+  return {
+    error:
+      errors.length > 0
+        ? errors.join(" ")
+        : "The generator did not create a parseable Ralph flow JSON object in its file output or final response.",
+  };
 };
 
 const RALPH_GENERATION_SEMANTIC_STOP_WORDS = new Set([
@@ -8216,17 +8370,44 @@ const createMcpVisualCapabilityHints = (workspaceRoot: string): string[] => {
   }
 };
 
+const RALPH_VISUAL_GENERATION_REQUEST_PATTERN =
+  /\b(?:a11y|accessibility|browser|canvas|css|dom|frontend|front-end|html|image|layout|page|pixel|playwright|responsive|screen|screenshot|style|tauri|targetUrl|ui|ux|visual|viewport)\b/iu;
+
+const flowUsesUiAnalyze = (flow: RalphFlow | undefined): boolean =>
+  Boolean(
+    flow?.blocks.some(
+      (block) => block.type === "UTILITY" && block.utility.type === "UI_ANALYZE",
+    ),
+  );
+
+const shouldIncludeVisualGenerationGuidance = (
+  prompt: string,
+  existingFlow: RalphFlow | undefined,
+): boolean =>
+  RALPH_VISUAL_GENERATION_REQUEST_PATTERN.test(prompt) ||
+  flowUsesUiAnalyze(existingFlow);
+
 const createFlowGenerationWorkspaceHints = async (
   workspaceRoot: string,
+  includeVisualHints: boolean,
 ): Promise<string> => {
   const packageHints = await createPackageVerificationHints(workspaceRoot);
-  const mcpHints = createMcpVisualCapabilityHints(workspaceRoot);
 
-  return [
+  const lines = [
     "Workspace-specific generation hints:",
     "",
     "Verification commands:",
     ...packageHints,
+  ];
+
+  if (!includeVisualHints) {
+    return lines.join("\n");
+  }
+
+  const mcpHints = createMcpVisualCapabilityHints(workspaceRoot);
+
+  return [
+    ...lines,
     "",
     "Live UI / screenshot / browser evidence options:",
     ...mcpHints,
@@ -8276,66 +8457,24 @@ const createGenerationActorResultMessage = (
     : `Ralph ${actor} returned ${result.status}${summary ? `: ${summary}` : "."}`;
 };
 
-const RALPH_GENERATION_FALLBACK_PROVIDER_ORDER = [
-  "claude-cli",
-  "copilot-cli",
-  "anthropic",
-  "google",
-  "openai",
-  "codex-cli",
-] as const satisfies readonly ConfiguredModelProvider[];
-
-const PROVIDER_CAPACITY_FAILURE_PATTERN =
-  /quota exceeded|billing details|insufficient[_ -]?quota|rate limit|rate_limit|too many requests|resource_exhausted|overloaded|capacity/iu;
-
-const isConfiguredProvider = (
-  provider: ModelProvider,
-): provider is ConfiguredModelProvider => provider !== "unconfigured";
-
-const isProviderCapacityFailure = (result: TaskExecutionResult): boolean => {
-  const text = [
-    result.reason,
-    result.summary,
-    result.response?.markdown,
-    ...result.outputSections.flatMap((section) => section.lines),
-  ]
-    .filter((line): line is string => typeof line === "string" && line.length > 0)
-    .join("\n");
-
-  return PROVIDER_CAPACITY_FAILURE_PATTERN.test(text);
-};
-
-const getConfiguredFallbackProviders = (
+const createGenerationActorRuntimeConfig = (
   config: RuntimeConfig,
-): ConfiguredModelProvider[] => {
-  const configuredProviders = new Set(
-    config.providerAvailability
-      .filter((entry) => entry.configured && isConfiguredProvider(entry.provider))
-      .map((entry) => entry.provider as ConfiguredModelProvider),
-  );
+  actor: RalphGenerationActor,
+): RuntimeConfig => {
+  if (actor !== "generator") {
+    return config;
+  }
 
-  return RALPH_GENERATION_FALLBACK_PROVIDER_ORDER.filter(
-    (provider) => provider !== config.provider && configuredProviders.has(provider),
-  );
+  return {
+    ...config,
+    mode: "ask",
+    reasoning: config.reasoning === "default" ? "medium" : config.reasoning,
+  };
 };
-
-const createFallbackRuntimeConfig = (
-  config: RuntimeConfig,
-  provider: ConfiguredModelProvider,
-): RuntimeConfig => ({
-  ...config,
-  provider,
-  model: getDefaultModelForProvider(provider),
-});
 
 const createGenerationAttemptConfigs = (
   config: RuntimeConfig,
-): RuntimeConfig[] => [
-  config,
-  ...getConfiguredFallbackProviders(config).map((provider) =>
-    createFallbackRuntimeConfig(config, provider),
-  ),
-];
+): RuntimeConfig[] => [config];
 
 const createGenerationFeedbackExcerpt = (value: string | undefined): string => {
   const normalized = value?.replace(/\s+/gu, " ").trim() ?? "";
@@ -8368,6 +8507,11 @@ const createGenerationDidNotConvergeSummary = (
   ].join(" ");
 };
 
+interface RalphGenerationActorTracePaths {
+  flowPath: string;
+  generationFlowPath: string;
+}
+
 const executeGenerationActorWithFallback = async (
   actor: "generator" | "validator",
   task: string,
@@ -8378,9 +8522,8 @@ const executeGenerationActorWithFallback = async (
   round: number,
   maxRounds: number,
   emitGenerationEvent: EmitRalphGenerationEvent,
+  paths: RalphGenerationActorTracePaths,
 ): Promise<TaskExecutionResult> => {
-  let lastResult: TaskExecutionResult | undefined;
-
   for (let attemptIndex = 0; attemptIndex < attemptConfigs.length; attemptIndex += 1) {
     const attemptConfig = attemptConfigs[attemptIndex];
 
@@ -8388,6 +8531,7 @@ const executeGenerationActorWithFallback = async (
       continue;
     }
 
+    const actorConfig = createGenerationActorRuntimeConfig(attemptConfig, actor);
     const startedAt = Date.now();
 
     await emitGenerationEvent({
@@ -8395,31 +8539,94 @@ const executeGenerationActorWithFallback = async (
       actor,
       round,
       maxRounds,
-      provider: attemptConfig.provider,
-      model: attemptConfig.model,
-      message: `Starting Ralph ${actor} with ${attemptConfig.provider}/${attemptConfig.model}.`,
+      provider: actorConfig.provider,
+      model: actorConfig.model,
+      message: `Starting Ralph ${actor} with ${actorConfig.provider}/${actorConfig.model}.`,
     });
 
-    const executionOptions = await createExecutionOptions(
-      options,
-      attemptConfig,
-    );
-    const result = await executeTask(task, attemptConfig, customizations, {
+    const executionOptions = await createExecutionOptions(options, actorConfig);
+    const baseOnStateChange = executionOptions.onStateChange;
+    const baseOnActionOutput = executionOptions.onActionOutput;
+    let lastProgressSignature = "";
+
+    const result = await executeTask(task, actorConfig, customizations, {
       ...executionOptions,
+      onStateChange: async (progress) => {
+        await baseOnStateChange?.(progress);
+
+        const message =
+          progress.message.trim() ||
+          progress.timelineEvent?.label ||
+          `Ralph ${actor} reported ${progress.state}.`;
+        const detail =
+          progress.reason ??
+          progress.timelineEvent?.detail ??
+          progress.assistantText ??
+          progress.modelStream?.content;
+        const signature = [
+          progress.state,
+          message,
+          detail ? detail.slice(0, 240) : "",
+        ].join("\n");
+
+        if (signature === lastProgressSignature) {
+          return;
+        }
+
+        lastProgressSignature = signature;
+        await emitGenerationEvent({
+          type: "actor-progress",
+          actor,
+          round,
+          maxRounds,
+          provider: actorConfig.provider,
+          model: actorConfig.model,
+          flowPath: paths.flowPath,
+          generationFlowPath: paths.generationFlowPath,
+          durationMs: Date.now() - startedAt,
+          actorState: progress.state,
+          ...(detail ? { detail: capLogText(detail, MAX_RALPH_SIMPLE_LOG_CHARS) } : {}),
+          message: `Ralph ${actor} ${progress.state}: ${createGenerationFeedbackExcerpt(message)}`,
+        });
+      },
+      onActionOutput: async (output) => {
+        await baseOnActionOutput?.(output);
+
+        const safeOutput: TaskActionOutput = {
+          ...output,
+          chunk: capLogText(output.chunk, MAX_RALPH_SIMPLE_LOG_CHARS),
+        };
+        const excerpt = createGenerationFeedbackExcerpt(safeOutput.chunk);
+
+        await emitGenerationEvent({
+          type: "actor-output",
+          actor,
+          round,
+          maxRounds,
+          provider: actorConfig.provider,
+          model: actorConfig.model,
+          flowPath: paths.flowPath,
+          generationFlowPath: paths.generationFlowPath,
+          durationMs: Date.now() - startedAt,
+          actionToolName: safeOutput.toolName,
+          actionStream: safeOutput.stream,
+          detail: safeOutput.chunk,
+          message: `Ralph ${actor} ${safeOutput.toolName} ${safeOutput.stream}${excerpt ? `: ${excerpt}` : "."}`,
+        });
+      },
       maxDurationMs:
         executionOptions.maxDurationMs ?? DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS,
       instructionAudience: actor,
     });
     results.push(result);
-    lastResult = result;
 
     await emitGenerationEvent({
       type: actor === "generator" ? "generator-output" : "validator-result",
       actor,
       round,
       maxRounds,
-      provider: attemptConfig.provider,
-      model: attemptConfig.model,
+      provider: actorConfig.provider,
+      model: actorConfig.model,
       durationMs: Date.now() - startedAt,
       message: createGenerationActorResultMessage(actor, result),
     });
@@ -8428,26 +8635,19 @@ const executeGenerationActorWithFallback = async (
       return result;
     }
 
-    if (!isProviderCapacityFailure(result)) {
-      return result;
-    }
-
-    const nextConfig = attemptConfigs[attemptIndex + 1];
-
-    if (nextConfig) {
-      await emitGenerationEvent({
-        type: "fallback-provider",
-        actor,
-        round,
-        maxRounds,
-        provider: nextConfig.provider,
-        model: nextConfig.model,
-        message: `Ralph ${actor} hit provider capacity and is falling back to ${nextConfig.provider}/${nextConfig.model}.`,
-      });
-    }
+    return result;
   }
 
-  return lastResult as TaskExecutionResult;
+  return {
+    task,
+    mode: attemptConfigs[0]?.mode ?? "ask",
+    status: "blocked",
+    summary: `Ralph ${actor} could not start because no configured provider was selected.`,
+    executedTools: [],
+    reason:
+      "Select and configure a model provider before starting Ralph generation.",
+    outputSections: [],
+  };
 };
 
 export const createRalphFlowWithAgent = async (
@@ -8561,9 +8761,13 @@ export const createRalphFlowWithAgent = async (
   const generatorResults: TaskExecutionResult[] = [];
   const validatorResults: TaskExecutionResult[] = [];
   const attemptConfigs = createGenerationAttemptConfigs(config);
+  const includeVisualGuidance = shouldIncludeVisualGenerationGuidance(
+    options.prompt,
+    options.existingFlow,
+  );
   let validatorFeedback: string | undefined;
   let latestValidation = createValidationResult([]);
-  const workspaceHints = await createFlowGenerationWorkspaceHints(workspaceRoot);
+  let workspaceHints: string | undefined;
 
   await mkdir(getRalphFlowStorageDirectory(workspaceRoot, scope), { recursive: true });
   const generationLogger = await createRalphGenerationLogger(workspaceRoot, {
@@ -8613,7 +8817,12 @@ export const createRalphFlowWithAgent = async (
           options.mode,
           options.existingFlow,
           validatorFeedback,
-          workspaceHints,
+          includeVisualGuidance,
+          workspaceHints ??
+            (workspaceHints = await createFlowGenerationWorkspaceHints(
+              workspaceRoot,
+              includeVisualGuidance,
+            )),
         ),
         customizations,
         { ...options, runId: generationRunId },
@@ -8622,6 +8831,7 @@ export const createRalphFlowWithAgent = async (
         round,
         maxRounds,
         emitGenerationEvent,
+        { flowPath, generationFlowPath },
       );
 
       if (generatorResult.status !== "executed") {
@@ -8654,9 +8864,18 @@ export const createRalphFlowWithAgent = async (
           maxRounds,
           flowPath,
           generationFlowPath,
-          message: "Reading generated Ralph flow JSON.",
+          message: "Reading generated Ralph flow JSON from file output or generator response.",
         });
-        flow = parseRalphFlowJson(await readFile(generationFlowPath, "utf8"));
+        const generatedFlow = await readGeneratedRalphFlow(
+          generationFlowPath,
+          generatorResult,
+        );
+
+        if (!generatedFlow.flow) {
+          throw new Error(generatedFlow.error ?? "Generated Ralph flow JSON was missing.");
+        }
+
+        flow = generatedFlow.flow;
         flow = {
           ...flow,
           id,
@@ -8665,7 +8884,7 @@ export const createRalphFlowWithAgent = async (
         };
         flow = normalizeRalphFlowLayout(flow);
       } catch (error) {
-        validatorFeedback = `The generated file is not valid Ralph JSON: ${error instanceof Error ? error.message : String(error)}`;
+        validatorFeedback = `The generator did not produce valid Ralph JSON: ${error instanceof Error ? error.message : String(error)}`;
         await emitGenerationEvent({
           type: "schema-validation-result",
           round,

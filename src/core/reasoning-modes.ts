@@ -100,7 +100,6 @@ const GEMINI_25_PRO_REASONING_MODES = [
 
 const CODEX_CLI_REASONING_MODES = [
   "default",
-  "minimal",
   "low",
   "medium",
   "high",

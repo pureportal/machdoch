@@ -68,7 +68,6 @@ describe("provider model reasoning modes", () => {
   it("matches CLI provider effort switches", () => {
     expect(getReasoningModesForProviderModel("codex-cli", "gpt-5.5")).toEqual([
       "default",
-      "minimal",
       "low",
       "medium",
       "high",
@@ -124,6 +123,6 @@ describe("provider model reasoning modes", () => {
     ).toBe("minimal");
     expect(
       normalizeReasoningModeForProviderModel("none", "codex-cli", "gpt-5.5"),
-    ).toBe("minimal");
+    ).toBe("low");
   });
 });

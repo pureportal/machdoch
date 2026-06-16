@@ -8,7 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { maybeExecuteExternalAgentProviderTask } from "./external-agent-provider.ts";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.ts";
 import type { ModelDrivenExecutionParams } from "./agent-runtime-types.ts";
-import type { RuntimeConfig, TaskExecutionSection } from "../types.ts";
+import type {
+  InstructionTargetAudience,
+  RuntimeConfig,
+  TaskExecutionSection,
+} from "../types.ts";
 
 interface MockChildProcess extends EventEmitter {
   stdin: PassThrough;
@@ -174,22 +178,30 @@ const contextSections: TaskExecutionSection[] = [
 
 const createParams = (
   workspaceRoot: string,
-  overrides: Partial<Pick<
-    RuntimeConfig,
-    "mode" | "provider" | "model" | "reasoning" | "agentLimits"
-  >> = {},
+  overrides: Partial<
+    Pick<
+      RuntimeConfig,
+      "mode" | "provider" | "model" | "reasoning" | "agentLimits"
+    >
+  > & {
+    instructionAudience?: InstructionTargetAudience;
+    task?: string;
+  } = {},
 ): ModelDrivenExecutionParams & {
   preparedConversationContext: PreparedConversationPromptContext;
 } => ({
-  task: "inspect README.md",
+  task: overrides.task ?? "inspect README.md",
   config: createConfig(workspaceRoot, overrides),
   taskContext: {
-    task: "inspect README.md",
-    effectiveTask: "inspect README.md",
+    task: overrides.task ?? "inspect README.md",
+    effectiveTask: overrides.task ?? "inspect README.md",
     taskContextText: "",
     instructionContextText: "",
     workspacePaths: [],
     suggestedTools: [],
+    ...(overrides.instructionAudience
+      ? { instructionAudience: overrides.instructionAudience }
+      : {}),
     applicableInstructions: [],
   },
   contextSections,
@@ -258,6 +270,66 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.response?.markdown).toBe("Codex delegated answer.");
   });
 
+  it("runs ask-mode generator tasks as constrained read-only Codex artifact jobs", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        mode: "ask",
+        provider: "codex-cli",
+        model: "gpt-5.5",
+        reasoning: "minimal",
+        instructionAudience: "generator",
+        task: [
+          "Create or update a Ralph flow graph.",
+          "Output contract:",
+          "- Return one complete Ralph flow JSON object in your final answer.",
+          "- Wrap the JSON in <ralph_flow_json>...</ralph_flow_json> tags.",
+        ].join("\n"),
+      }),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+
+    expect(call?.args).toContain("--sandbox");
+    expect(call?.args).toContain("read-only");
+    expect(call?.args).toContain("--ephemeral");
+    expect(call?.args).toContain("--ignore-user-config");
+    expect(call?.args).not.toContain(
+      "--dangerously-bypass-approvals-and-sandbox",
+    );
+    expect(call?.args).not.toContain("--dangerously-bypass-hook-trust");
+    expect(call?.args).toContain("--config");
+    expect(call?.args).toContain('model_reasoning_effort="low"');
+    expect(call?.args).not.toContain('model_reasoning_effort="minimal"');
+    expect(call?.args).toContain('model_verbosity="low"');
+    expect(call?.child.stdinText).toContain(
+      "Run as a bounded artifact worker for Machdoch.",
+    );
+    expect(call?.child.stdinText).toContain(
+      "Use available tools when they materially reduce uncertainty; prefer short read-only workspace inspection.",
+    );
+    expect(call?.child.stdinText).toContain(
+      "Do not modify files, start or restart servers, install packages, run long-running commands, or perform broad workspace verification.",
+    );
+    expect(call?.child.stdinText).toContain(
+      "Return exactly the artifact or answer requested by the user task.",
+    );
+    expect(call?.child.stdinText).not.toContain("Run with full local access");
+    expect(call?.child.stdinText).not.toContain("make requested changes");
+    expect(call?.child.stdinText).not.toContain(
+      "Final response must summarize what changed",
+    );
+
+    call?.child.stdout.write("<ralph_flow_json>{}</ralph_flow_json>");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
   it("returns a blocked result when codex exec exits nonzero", async () => {
     const workspaceRoot = await createWorkspace();
 
@@ -308,6 +380,41 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       "Codex CLI quota exceeded: Quota exceeded. Check your plan and billing details.",
     );
     expect(result?.reason).not.toContain("delegated Codex CLI agent");
+  });
+
+  it("summarizes structured codex api failures", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+
+    call?.child.stderr.write(
+      [
+        "ERROR: {",
+        '  "type": "error",',
+        '  "error": {',
+        '    "type": "invalid_request_error",',
+        '    "message": "The following tools cannot be used with reasoning.effort minimal: image_gen, web_search.",',
+        '    "param": "tools"',
+        "  },",
+        '  "status": 400',
+        "}",
+      ].join("\n"),
+    );
+    call?.child.emit("close", 1, null);
+
+    const result = await resultPromise;
+
+    expect(result?.status).toBe("blocked");
+    expect(result?.reason).toBe(
+      "Codex CLI failed: The following tools cannot be used with reasoning.effort minimal: image_gen, web_search.",
+    );
   });
 
   it("does not leak OpenAI API keys into Codex CLI authentication", async () => {

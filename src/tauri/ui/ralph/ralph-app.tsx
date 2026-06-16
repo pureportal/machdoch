@@ -344,33 +344,23 @@ const getPendingRalphProviderChoices = (
 const normalizeRalphProviderModel = (
   provider: RuntimeProvider,
   model: string,
-  providers: readonly RuntimeProvider[] = RUNNABLE_PROVIDER_ORDER,
 ): { provider: RuntimeProvider; model: string } => {
-  if (providers.includes(provider)) {
-    return { provider, model };
-  }
-
-  const fallbackProvider = providers[0] ?? RUNNABLE_PROVIDER_ORDER[0] ?? "openai";
-
   return {
-    provider: fallbackProvider,
-    model: getDefaultModelForProvider(fallbackProvider),
+    provider,
+    model: model.trim() ? model : getDefaultModelForProvider(provider),
   };
 };
 
 export const normalizeRalphRuntimeSettings = (
   settings: RalphSettings,
-  providers: readonly RuntimeProvider[] = RUNNABLE_PROVIDER_ORDER,
 ): RalphSettings => {
   const generation = normalizeRalphProviderModel(
     settings.generationProvider,
     settings.generationModel,
-    providers,
   );
   const run = normalizeRalphProviderModel(
     settings.runProvider,
     settings.runModel,
-    providers,
   );
 
   return {
@@ -517,14 +507,11 @@ export const RalphApp = ({
   }, []);
 
   useEffect(() => {
-    if (!settingsLoaded || effectiveProviderAvailability === null) {
+    if (!settingsLoaded) {
       return;
     }
 
-    const normalizedSettings = normalizeRalphRuntimeSettings(
-      settings,
-      providerChoices,
-    );
+    const normalizedSettings = normalizeRalphRuntimeSettings(settings);
 
     if (!hasRalphRuntimeSelectionChanged(settings, normalizedSettings)) {
       return;
@@ -532,7 +519,7 @@ export const RalphApp = ({
 
     setSettings(normalizedSettings);
     void saveRalphSettings(normalizedSettings);
-  }, [effectiveProviderAvailability, providerChoices, settings, settingsLoaded]);
+  }, [settings, settingsLoaded]);
 
   useEffect(() => {
     if (

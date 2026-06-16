@@ -15,6 +15,23 @@ import {
 vi.mock("../execution.js", () => ({
   executeTask: vi.fn(),
 }));
+
+const createGeneratedFlowResult = (
+  flow = createFlow({
+    settings: { maxTransitions: 10 },
+  }),
+) =>
+  createExecutionResult({
+    summary: "Generated Ralph flow JSON.",
+    response: {
+      markdown: `<ralph_flow_json>\n${JSON.stringify(flow, null, 2)}\n</ralph_flow_json>`,
+      highlights: [],
+      relatedFiles: [],
+      verification: [],
+      followUps: [],
+    },
+  });
+
 describe("createRalphFlowWithAgent", () => {
   beforeEach(() => {
     vi.mocked(executeTask).mockReset();
@@ -82,29 +99,15 @@ describe("createRalphFlowWithAgent", () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
 
     try {
-      vi.mocked(executeTask).mockImplementation(async (task) => {
-        const flowPath = /Write the finished flow JSON to this exact workspace path:\n(.+)/u
-          .exec(task)?.[1]
-          ?.trim();
-
-        if (flowPath) {
-          await writeFile(
-            flowPath,
-            JSON.stringify(
-              createFlow({
-                id: "blocked-flow",
-                alias: "blocked-flow",
-                name: "Blocked flow",
-              }),
-            ),
-            "utf8",
-          );
-
-          return createExecutionResult();
-        }
-
-        throw new Error("Ralph generation should not launch a delegated validator.");
-      });
+      vi.mocked(executeTask).mockResolvedValue(
+        createGeneratedFlowResult(
+          createFlow({
+            id: "blocked-flow",
+            alias: "blocked-flow",
+            name: "Blocked flow",
+          }),
+        ),
+      );
 
       const result = await createRalphFlowWithAgent(workspace, {
         name: "blocked-flow",
@@ -133,17 +136,18 @@ describe("createRalphFlowWithAgent", () => {
     const events: RalphGenerationEvent[] = [];
 
     try {
-      vi.mocked(executeTask).mockImplementation(async (task) => {
-        const flowPath = /Write the finished flow JSON to this exact workspace path:\n(.+)/u
-          .exec(task)?.[1]
-          ?.trim();
-
-        if (flowPath) {
-          await writeFile(flowPath, "{ not json", "utf8");
-        }
-
-        return createExecutionResult();
-      });
+      vi.mocked(executeTask).mockResolvedValue(
+        createExecutionResult({
+          summary: "Generated invalid Ralph flow JSON.",
+          response: {
+            markdown: "<ralph_flow_json>\n{ not json\n</ralph_flow_json>",
+            highlights: [],
+            relatedFiles: [],
+            verification: [],
+            followUps: [],
+          },
+        }),
+      );
 
       const result = await createRalphFlowWithAgent(workspace, {
         name: "invalid-json-flow",
@@ -180,30 +184,16 @@ describe("createRalphFlowWithAgent", () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
 
     try {
-      vi.mocked(executeTask).mockImplementation(async (task) => {
-        const flowPath = /Write the finished flow JSON to this exact workspace path:\n(.+)/u
-          .exec(task)?.[1]
-          ?.trim();
-
-        if (flowPath) {
-          await writeFile(
-            flowPath,
-            JSON.stringify(
-              createFlow({
-                id: "generated-flow",
-                alias: "generated-flow",
-                name: "Generated flow",
-                settings: { maxTransitions: 10 },
-              }),
-            ),
-            "utf8",
-          );
-
-          return createExecutionResult();
-        }
-
-        throw new Error("Ralph generation should not launch a delegated validator.");
-      });
+      vi.mocked(executeTask).mockResolvedValue(
+        createGeneratedFlowResult(
+          createFlow({
+            id: "generated-flow",
+            alias: "generated-flow",
+            name: "Generated flow",
+            settings: { maxTransitions: 10 },
+          }),
+        ),
+      );
 
       const result = await createRalphFlowWithAgent(workspace, {
         name: "generated-flow",
@@ -215,6 +205,10 @@ describe("createRalphFlowWithAgent", () => {
 
       expect(result.status).toBe("created");
       expect(executeTask).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(executeTask).mock.calls[0]?.[1].mode).toBe("ask");
+      expect(vi.mocked(executeTask).mock.calls[0]?.[1].reasoning).toBe(
+        "medium",
+      );
       expect(result.validatorResults).toHaveLength(1);
       expect(result.validatorResults[0]?.summary).toContain(
         "Local Ralph generation validator returned DONE.",
@@ -232,30 +226,16 @@ describe("createRalphFlowWithAgent", () => {
     const events: RalphGenerationEvent[] = [];
 
     try {
-      vi.mocked(executeTask).mockImplementation(async (task) => {
-        const flowPath = /Write the finished flow JSON to this exact workspace path:\n(.+)/u
-          .exec(task)?.[1]
-          ?.trim();
-
-        if (flowPath) {
-          await writeFile(
-            flowPath,
-            JSON.stringify(
-              createFlow({
-                id: "observable-flow",
-                alias: "observable-flow",
-                name: "Observable flow",
-                settings: { maxTransitions: 10 },
-              }),
-            ),
-            "utf8",
-          );
-
-          return createExecutionResult();
-        }
-
-        throw new Error("Ralph generation should not launch a delegated validator.");
-      });
+      vi.mocked(executeTask).mockResolvedValue(
+        createGeneratedFlowResult(
+          createFlow({
+            id: "observable-flow",
+            alias: "observable-flow",
+            name: "Observable flow",
+            settings: { maxTransitions: 10 },
+          }),
+        ),
+      );
 
       const result = await createRalphFlowWithAgent(workspace, {
         name: "observable-flow",
@@ -289,6 +269,74 @@ describe("createRalphFlowWithAgent", () => {
         .toContain("Created Ralph flow `Observable flow`");
       await expect(readFile(result.traceLogPath ?? "", "utf8")).resolves
         .toContain('"type":"created"');
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("emits delegated actor progress and output events while generating", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
+    const events: RalphGenerationEvent[] = [];
+
+    try {
+      vi.mocked(executeTask).mockImplementation(
+        async (task, _attemptConfig, _customizations, executionOptions) => {
+          await executionOptions?.onStateChange?.({
+            task: "Ralph generator",
+            mode: runtimeConfig.mode,
+            state: "checking-tools",
+            message: "Resolve the available tool surface before any execution starts.",
+            executedTools: [],
+            outputSections: [],
+            cancellable: true,
+          });
+          await executionOptions?.onActionOutput?.({
+            toolName: "codex-cli",
+            stream: "stderr",
+            chunk: "generator is still checking tools",
+          });
+
+          expect(task).toContain("<ralph_flow_json>");
+
+          return createGeneratedFlowResult(
+            createFlow({
+              id: "observable-actor-flow",
+              alias: "observable-actor-flow",
+              name: "Observable actor flow",
+              settings: { maxTransitions: 10 },
+            }),
+          );
+        },
+      );
+
+      const result = await createRalphFlowWithAgent(workspace, {
+        name: "observable-actor-flow",
+        prompt: "Create a small observable actor flow.",
+        maxRounds: 1,
+        config: runtimeConfig,
+        customizations,
+        onGenerationEvent: (event) => {
+          events.push(event);
+        },
+      });
+
+      expect(result.status).toBe("created");
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "actor-progress",
+            actor: "generator",
+            actorState: "checking-tools",
+          }),
+          expect.objectContaining({
+            type: "actor-output",
+            actor: "generator",
+            actionToolName: "codex-cli",
+            actionStream: "stderr",
+            detail: "generator is still checking tools",
+          }),
+        ]),
+      );
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -365,39 +413,25 @@ describe("createRalphFlowWithAgent", () => {
         "utf8",
       );
 
-      vi.mocked(executeTask).mockImplementation(async (task) => {
-        const flowPath = /Write the finished flow JSON to this exact workspace path:\n(.+)/u
-          .exec(task)?.[1]
-          ?.trim();
-
-        if (flowPath) {
-          await writeFile(
-            flowPath,
-            JSON.stringify(
-              createFlow({
-                id: "ui-improvement-flow",
-                alias: "ui-improvement-flow",
-                name: "UI improvement loop",
-                settings: {
-                  maxTransitions: 30,
-                },
-                variables: [
-                  {
-                    name: "screenshotPath",
-                    type: "path",
-                    required: false,
-                  },
-                ],
-              }),
-            ),
-            "utf8",
-          );
-
-          return createExecutionResult();
-        }
-
-        throw new Error("Ralph generation should not launch a delegated validator.");
-      });
+      vi.mocked(executeTask).mockResolvedValue(
+        createGeneratedFlowResult(
+          createFlow({
+            id: "ui-improvement-flow",
+            alias: "ui-improvement-flow",
+            name: "UI improvement loop",
+            settings: {
+              maxTransitions: 30,
+            },
+            variables: [
+              {
+                name: "screenshotPath",
+                type: "path",
+                required: false,
+              },
+            ],
+          }),
+        ),
+      );
 
       const result = await createRalphFlowWithAgent(workspace, {
         name: "ui-improvement-flow",
@@ -409,6 +443,12 @@ describe("createRalphFlowWithAgent", () => {
       const generatorTask = vi.mocked(executeTask).mock.calls[0]?.[0] ?? "";
 
       expect(result.status).toBe("created");
+      expect(generatorTask).toContain("Output contract:");
+      expect(generatorTask).toContain("<ralph_flow_json>");
+      expect(generatorTask).toContain("Do not write files yourself");
+      expect(generatorTask).toContain("Use tools only when they materially reduce uncertainty.");
+      expect(generatorTask).toContain("inspect workspace files or run short read-only commands");
+      expect(generatorTask).toContain("Do not write files, modify code");
       expect(generatorTask).toContain("Detected package manager: pnpm.");
       expect(generatorTask).toContain(
         "Prefer UI verification commands in this order: pnpm typecheck:ui && pnpm build:ui && pnpm build.",
@@ -426,34 +466,124 @@ describe("createRalphFlowWithAgent", () => {
     }
   });
 
+  it("omits visual MCP guidance for non-visual generator tasks", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
+
+    try {
+      await writeFile(
+        join(workspace, "package.json"),
+        JSON.stringify(
+          {
+            packageManager: "pnpm@10.12.1",
+            scripts: {
+              build: "tsc -p tsconfig.json",
+            },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      await mkdir(join(workspace, ".machdoch", "mcp"), { recursive: true });
+      await writeFile(
+        join(workspace, ".machdoch", "mcp", "mcp.json"),
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            servers: [
+              {
+                id: "tauri-live",
+                enabled: true,
+                transport: {
+                  type: "stdio",
+                  command: "tauri-driver",
+                },
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      await writeFile(
+        join(workspace, ".machdoch", "mcp", "discovery-cache.json"),
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            servers: {
+              "tauri-live": {
+                serverId: "tauri-live",
+                discoveredAt: "2026-06-16T00:00:00.000Z",
+                transportType: "stdio",
+                tools: [
+                  {
+                    name: "capture_screenshot",
+                    description: "Capture a screenshot of the live Tauri window.",
+                    inputSchema: {},
+                  },
+                ],
+                resources: [],
+                resourceTemplates: [],
+                prompts: [],
+              },
+            },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+
+      vi.mocked(executeTask).mockResolvedValue(
+        createGeneratedFlowResult(
+          createFlow({
+            id: "type-reexport-cleanup-flow",
+            alias: "type-reexport-cleanup-flow",
+            name: "Type re-export cleanup flow",
+            settings: { maxTransitions: 10 },
+          }),
+        ),
+      );
+
+      const result = await createRalphFlowWithAgent(workspace, {
+        name: "type-reexport-cleanup-flow",
+        prompt: "Create a TypeScript re-export cleanup flow.",
+        maxRounds: 1,
+        config: runtimeConfig,
+        customizations,
+      });
+      const generatorTask = vi.mocked(executeTask).mock.calls[0]?.[0] ?? "";
+
+      expect(result.status).toBe("created");
+      expect(generatorTask).toContain("Detected package manager: pnpm.");
+      expect(generatorTask).not.toContain(
+        "Live UI / screenshot / browser evidence options",
+      );
+      expect(generatorTask).not.toContain("MCP_TOOL candidate");
+      expect(generatorTask).not.toContain("Keep UI-improvement loops compact");
+      expect(generatorTask).not.toContain(
+        "prefer a UI_ANALYZE utility before deciding DONE",
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("applies a default timeout to generation actor executions", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
 
     try {
-      vi.mocked(executeTask).mockImplementation(async (task) => {
-        const flowPath = /Write the finished flow JSON to this exact workspace path:\n(.+)/u
-          .exec(task)?.[1]
-          ?.trim();
-
-        if (flowPath) {
-          await writeFile(
-            flowPath,
-            JSON.stringify(
-              createFlow({
-                id: "timeout-flow",
-                alias: "timeout-flow",
-                name: "Timeout flow",
-                settings: { maxTransitions: 10 },
-              }),
-            ),
-            "utf8",
-          );
-
-          return createExecutionResult();
-        }
-
-        throw new Error("Ralph generation should not launch a delegated validator.");
-      });
+      vi.mocked(executeTask).mockResolvedValue(
+        createGeneratedFlowResult(
+          createFlow({
+            id: "timeout-flow",
+            alias: "timeout-flow",
+            name: "Timeout flow",
+            settings: { maxTransitions: 10 },
+          }),
+        ),
+      );
 
       const result = await createRalphFlowWithAgent(workspace, {
         name: "timeout-flow",
@@ -468,7 +598,7 @@ describe("createRalphFlowWithAgent", () => {
         vi.mocked(executeTask).mock.calls.map(([, , , options]) =>
           options?.maxDurationMs,
         ),
-      ).toEqual([600_000]);
+      ).toEqual([180_000]);
       expect(result.validatorResults).toHaveLength(1);
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -507,9 +637,65 @@ describe("createRalphFlowWithAgent", () => {
     }
   });
 
-  it("retries flow generation with a configured fallback provider after quota failures", async () => {
+  it.each([
+    "openai",
+    "anthropic",
+    "google",
+    "codex-cli",
+    "claude-cli",
+    "copilot-cli",
+  ] as const)(
+    "does not fall back from %s to another provider after quota failures",
+    async (provider) => {
+      const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
+      const selectedProviderConfig: RuntimeConfig = {
+        ...runtimeConfig,
+        provider,
+        model: "gpt-5.5",
+        providerAvailability: [
+          { provider: "openai", configured: true },
+          { provider: "anthropic", configured: true },
+          { provider: "google", configured: true },
+          { provider: "codex-cli", configured: true },
+          { provider: "claude-cli", configured: true },
+          { provider: "copilot-cli", configured: true },
+        ],
+      };
+
+      try {
+        vi.mocked(executeTask).mockResolvedValue(
+          createExecutionResult({
+            status: "blocked",
+            summary: `${provider} execution failed before completing the task.`,
+            reason:
+              `${provider} quota exceeded: Quota exceeded. Check your plan and billing details.`,
+          }),
+        );
+
+        const result = await createRalphFlowWithAgent(workspace, {
+          name: "provider-isolation-flow",
+          prompt: "Create a small test flow.",
+          maxRounds: 1,
+          config: selectedProviderConfig,
+          customizations,
+        });
+
+        expect(result.status).toBe("blocked");
+        expect(
+          vi.mocked(executeTask).mock.calls.map(([, config]) => config.provider),
+        ).toEqual([provider]);
+        expect(result.generatorResults).toHaveLength(1);
+        expect(result.validatorResults).toHaveLength(0);
+        expect(result.summary).toContain(`${provider} quota exceeded`);
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("does not fall back from Codex CLI to API or other CLI providers", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
-    const fallbackConfig: RuntimeConfig = {
+    const selectedProviderConfig: RuntimeConfig = {
       ...runtimeConfig,
       provider: "codex-cli",
       model: "gpt-5.5",
@@ -521,59 +707,81 @@ describe("createRalphFlowWithAgent", () => {
     };
 
     try {
-      vi.mocked(executeTask).mockImplementation(async (task, attemptConfig) => {
-        if (attemptConfig.provider === "codex-cli") {
-          return createExecutionResult({
-            status: "blocked",
-            summary: "Codex CLI execution failed before completing the task.",
-            reason:
-              "Codex CLI quota exceeded: Quota exceeded. Check your plan and billing details.",
-          });
-        }
-
-        const flowPath = /Write the finished flow JSON to this exact workspace path:\n(.+)/u
-          .exec(task)?.[1]
-          ?.trim();
-
-        if (flowPath) {
-          await writeFile(
-            flowPath,
-            JSON.stringify(
-              createFlow({
-                id: "generated-flow",
-                alias: "generated-flow",
-                name: "Generated flow",
-                settings: { maxTransitions: 10 },
-              }),
-            ),
-            "utf8",
+      vi.mocked(executeTask).mockImplementation(async (_task, attemptConfig) => {
+        if (attemptConfig.provider !== "codex-cli") {
+          throw new Error(
+            `Unexpected additional Ralph provider attempt with ${attemptConfig.provider}.`,
           );
-
-          return createExecutionResult();
         }
 
-        throw new Error("Ralph generation should not launch a delegated validator.");
+        return createExecutionResult({
+          status: "blocked",
+          summary: "Codex CLI execution failed before completing the task.",
+          reason:
+            "Codex CLI quota exceeded: Quota exceeded. Check your plan and billing details.",
+        });
       });
 
       const result = await createRalphFlowWithAgent(workspace, {
-        name: "generated-flow",
+        name: "codex-only-flow",
         prompt: "Create a small test flow.",
         maxRounds: 1,
-        config: fallbackConfig,
+        config: selectedProviderConfig,
         customizations,
       });
 
-      expect(result.status).toBe("created");
+      expect(result.status).toBe("blocked");
       expect(vi.mocked(executeTask).mock.calls.map(([, config]) => config.provider))
-        .toEqual(["codex-cli", "claude-cli"]);
-      expect(result.generatorResults).toHaveLength(2);
-      expect(result.validatorResults).toHaveLength(1);
-      expect(result.validatorResults[0]?.summary).toContain(
-        "Local Ralph generation validator returned DONE.",
-      );
-      await expect(readFile(result.flowPath, "utf8")).resolves.toContain(
-        '"schemaVersion": 1',
-      );
+        .toEqual(["codex-cli"]);
+      expect(result.generatorResults).toHaveLength(1);
+      expect(result.validatorResults).toHaveLength(0);
+      expect(result.summary).toContain("Codex CLI quota exceeded");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("does not fall back from Codex CLI after safety timeouts", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
+    const selectedProviderConfig: RuntimeConfig = {
+      ...runtimeConfig,
+      provider: "codex-cli",
+      model: "gpt-5.5",
+      providerAvailability: [
+        { provider: "openai", configured: true },
+        { provider: "codex-cli", configured: true },
+        { provider: "claude-cli", configured: true },
+      ],
+    };
+
+    try {
+      vi.mocked(executeTask).mockImplementation(async (_task, attemptConfig) => {
+        if (attemptConfig.provider !== "codex-cli") {
+          throw new Error(
+            `Unexpected additional Ralph provider attempt with ${attemptConfig.provider}.`,
+          );
+        }
+
+        return createExecutionResult({
+          status: "cancelled",
+          summary: "Execution stopped after exceeding the safety timeout of 3 minutes.",
+          reason: "Execution stopped after exceeding the safety timeout of 3 minutes.",
+        });
+      });
+
+      const result = await createRalphFlowWithAgent(workspace, {
+        name: "timeout-codex-flow",
+        prompt: "Create a small test flow.",
+        maxRounds: 1,
+        config: selectedProviderConfig,
+        customizations,
+      });
+
+      expect(result.status).toBe("blocked");
+      expect(vi.mocked(executeTask).mock.calls.map(([, config]) => config.provider))
+        .toEqual(["codex-cli"]);
+      expect(vi.mocked(executeTask).mock.calls.map(([, config]) => config.mode))
+        .toEqual(["ask"]);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

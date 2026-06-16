@@ -429,6 +429,10 @@ const createRalphGenerationProgressMessage = (
       return "Starting Ralph generator.";
     case "generator-output":
       return "Ralph generator produced output.";
+    case "actor-progress":
+      return "Ralph generation actor reported progress.";
+    case "actor-output":
+      return "Ralph generation actor produced output.";
     case "generator-file-written":
       return "Ralph generated flow file was written.";
     case "schema-validation-start":
@@ -439,8 +443,6 @@ const createRalphGenerationProgressMessage = (
       return "Starting Ralph generation validator.";
     case "validator-result":
       return "Ralph generation validator finished.";
-    case "fallback-provider":
-      return "Ralph generation is trying a fallback provider.";
     case "retry-feedback":
       return "Ralph generation is retrying with feedback.";
     case "created":
@@ -516,6 +518,22 @@ const createRalphGenerationTimeline = (
     metadata.ralphGenerationDurationMs = event.durationMs;
   }
 
+  if (event.actorState) {
+    metadata.ralphGenerationActorState = event.actorState;
+  }
+
+  if (event.actionToolName) {
+    metadata.ralphGenerationActionToolName = event.actionToolName;
+  }
+
+  if (event.actionStream) {
+    metadata.ralphGenerationActionStream = event.actionStream;
+  }
+
+  if (event.detail) {
+    metadata.ralphGenerationDetail = event.detail;
+  }
+
   const phase: NonNullable<TaskExecutionProgress["timelineEvent"]>["phase"] =
     event.type === "created"
       ? "completed"
@@ -523,20 +541,26 @@ const createRalphGenerationTimeline = (
         ? "failed"
         : event.type === "cancelled"
           ? "rejected"
+          : event.type === "actor-output"
+            ? "streaming"
           : event.type === "retry-feedback"
             ? "requested-continuation"
             : event.type.endsWith("-result") || event.type === "generator-file-written"
               ? "completed"
               : "started";
   const kind: NonNullable<TaskExecutionProgress["timelineEvent"]>["kind"] =
-    event.type === "generator-start" || event.type === "generator-output"
+    event.type === "actor-output"
+      ? "output"
+      : event.type === "generator-start" ||
+          event.type === "generator-output" ||
+          event.type === "actor-progress"
       ? "model-call"
       : event.type === "validator-start" ||
           event.type === "validator-result" ||
           event.type === "schema-validation-start" ||
           event.type === "schema-validation-result"
         ? "validator"
-        : event.type === "retry-feedback" || event.type === "fallback-provider"
+        : event.type === "retry-feedback"
           ? "retry"
           : event.type === "generator-file-written"
             ? "output"
@@ -546,7 +570,9 @@ const createRalphGenerationTimeline = (
       ? "success"
       : event.type === "blocked" || event.type === "failed" || event.type === "cancelled"
         ? "danger"
-        : event.type === "retry-feedback" || event.type === "fallback-provider"
+        : event.type === "actor-output" && event.actionStream === "stderr"
+          ? "warning"
+        : event.type === "retry-feedback"
           ? "warning"
           : "info";
 
@@ -579,6 +605,8 @@ const createRalphGenerationProgressReporter = (
             ? "cancelled"
             : event.type === "blocked" || event.type === "failed"
               ? "blocked"
+              : event.type === "actor-progress" && event.actorState
+                ? event.actorState
               : event.type === "schema-validation-start" ||
                   event.type === "schema-validation-result" ||
                   event.type === "validator-start" ||
@@ -734,6 +762,8 @@ export const printRalphSummary = async (
           return;
         }
       }
+
+      return fail(`Unsupported Ralph watch action: ${watchAction}.`);
     }
     case "list": {
       const flows = await listRalphFlows(args.workspaceRoot, { scope });
