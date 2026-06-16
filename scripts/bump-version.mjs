@@ -111,7 +111,15 @@ if (nextVersion === currentVersion) {
 const fileUpdates = [];
 for (const targetFile of targetFiles) {
   const filePath = resolve(projectRoot, targetFile.path);
-  const originalContent = await readFile(filePath, "utf8");
+  let originalContent;
+  try {
+    originalContent = await readFile(filePath, "utf8");
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      continue;
+    }
+    throw error;
+  }
   const nextContent = targetFile.update(originalContent, currentVersion, nextVersion);
 
   if (nextContent === originalContent) {
