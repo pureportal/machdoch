@@ -6,7 +6,7 @@ import {
   MAX_SESSION_MEMORY_ENTRIES,
   mergeConversationMemoryEntries,
 } from "../../../../core/memory.js";
-import type { RunMode } from "../../../../core/types.js";
+import type { RunMode } from "../../../../core/runtime-contract.generated.js";
 import {
   isQuickVoiceSession,
   isSessionArchived,

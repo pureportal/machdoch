@@ -24,7 +24,7 @@ const AssistantPopupShell = lazy(async () => {
 });
 
 const ChatSession = lazy(async () => {
-  const module = await import("../chat-session");
+  const module = await import("../chat-session-shell");
 
   return {
     default: module.ChatSession,

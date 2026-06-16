@@ -20,8 +20,8 @@ import type {
 import type {
   CustomizationDiagnostic,
   DiscoveredInstruction,
-  RunMode,
 } from "../../../../../core/types.js";
+import type { RunMode } from "../../../../../core/runtime-contract.generated.js";
 import type { AppearanceSettings } from "../../../lib/shell-store";
 import type { RuntimeProvider } from "../../../model-catalog";
 import type { SpeechInputDeviceOption } from "../../_helpers/speech-audio";

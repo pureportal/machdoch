@@ -14,17 +14,19 @@ import {
   getAgentCliProviderLabel,
   isAgentCliProvider,
   resolveAgentCliProviderBinary,
-  type AgentCliProvider,
 } from "./agent-cli-providers.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
 import { createTextSection, limitText } from "./runtime-text.js";
 import type {
-  ReasoningMode,
-  RuntimeConfig,
   TaskActionOutputHandler,
   TaskExecutionResult,
   TaskExecutionSection,
 } from "../types.js";
+import type {
+  AgentCliProvider,
+  ReasoningMode,
+  RuntimeConfig,
+} from "../runtime-contract.generated.js";
 import { normalizeReasoningModeForProviderModel } from "../reasoning-modes.js";
 
 interface SpawnedAgentResult {

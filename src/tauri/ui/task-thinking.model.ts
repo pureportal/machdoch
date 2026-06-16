@@ -1,10 +1,10 @@
 import type {
-  RunMode,
   TaskExecutionProgress,
   TaskExecutionState,
   TaskExecutionTimelineEvent,
   TaskExecutionTokenUsage,
 } from "../../core/types.js";
+import type { RunMode } from "../../core/runtime-contract.generated.js";
 import type { TaskPanelTone } from "./task-panel.model";
 
 const THINKING_STATE_LABELS: Record<TaskExecutionState, string> = {

@@ -1,20 +1,22 @@
 import process from "node:process";
 import { parseArgs as parseNodeArgs } from "node:util";
 import { normalizeOptionalString } from "../../common/_helpers/normalize-optional-string.js";
-import type { UserApiProvider } from "../../core/env.js";
 import {
   REASONING_MODES,
   VALID_MODEL_PROVIDERS,
 } from "../../core/runtime-contract.generated.js";
 import type {
-  ModelProvider,
   InstructionAudience,
   InstructionMode,
   InstructionScope,
+} from "../../core/types.js";
+import type {
+  ModelProvider,
   ReasoningMode,
   RuntimeAgentLimitOverrides,
   RunMode,
-} from "../../core/types.js";
+  UserApiProvider,
+} from "../../core/runtime-contract.generated.js";
 
 export type CommandName =
   | "run"

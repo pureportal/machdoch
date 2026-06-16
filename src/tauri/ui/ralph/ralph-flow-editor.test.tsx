@@ -49,6 +49,8 @@ const renderRalphFlowEditor = (
     Pick<
       RalphFlowEditorProps,
       | "providerOptions"
+      | "flowLibraryMode"
+      | "onFlowLibraryModeChange"
       | "generationPromptHistory"
       | "onGenerationPromptHistoryChange"
     >
@@ -224,7 +226,7 @@ describe("RalphFlowEditor", () => {
     expect(screen.getByRole("button", { name: "Prompt" })).toBeTruthy();
 
     await waitFor(() => {
-      expect(screen.getByText("No Ralph flows found.")).toBeTruthy();
+      expect(screen.getByText("No workspace Ralph flows found.")).toBeTruthy();
     });
   });
 
@@ -246,7 +248,148 @@ describe("RalphFlowEditor", () => {
 
     resolveFlows?.({ workspaceRoot: "C:\\Project", flows: [] });
 
-    expect(await screen.findByText("No Ralph flows found.")).toBeTruthy();
+    expect(await screen.findByText("No workspace Ralph flows found.")).toBeTruthy();
+  });
+
+  it("loads global Ralph flows when the Global library is selected", async () => {
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      scope: "user",
+      flows: [
+        {
+          id: "global-review",
+          alias: "review",
+          name: "Global Review",
+          scope: "user",
+          path: "C:\\Users\\andreas\\AppData\\Roaming\\machdoch\\ralph\\flows\\global-review.json",
+          blockCount: 2,
+          edgeCount: 1,
+          variableCount: 0,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Users\\andreas\\AppData\\Roaming\\machdoch\\ralph\\flows\\global-review.json",
+      scope: "user",
+      flow: {
+        schemaVersion: 1,
+        id: "global-review",
+        alias: "review",
+        name: "Global Review",
+        blocks: [],
+        edges: [],
+      },
+    });
+
+    renderRalphFlowEditor("Review {{scope:path=ALL}}", {
+      flowLibraryMode: "user",
+    });
+
+    expect(await screen.findAllByText("Global Review")).not.toHaveLength(0);
+    await waitFor(() => {
+      expect(listRalphFlows).toHaveBeenCalledWith(
+        expect.stringContaining("Project"),
+        "user",
+      );
+      expect(showRalphFlow).toHaveBeenCalledWith(
+        expect.stringContaining("Project"),
+        "global-review",
+        "user",
+      );
+    });
+  });
+
+  it("saves new global flows through the selected creation scope", async () => {
+    renderRalphFlowEditor("Global audit flow", {
+      flowLibraryMode: "user",
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "New" }));
+    await waitFor(() => {
+      expect(
+        screen
+          .getAllByRole("button", { name: "Save" })
+          .some((button) => !button.hasAttribute("disabled")),
+      ).toBe(true);
+    });
+    const saveButton = screen
+      .getAllByRole("button", { name: "Save" })
+      .find((button) => !button.hasAttribute("disabled"));
+    expect(saveButton).toBeTruthy();
+    fireEvent.click(saveButton as HTMLElement);
+
+    await waitFor(() => {
+      expect(saveRalphFlow).toHaveBeenCalledWith(
+        expect.stringContaining("Project"),
+        expect.objectContaining({
+          scope: "user",
+          flow: expect.objectContaining({
+            alias: "global-audit-flow",
+          }),
+        }),
+      );
+    });
+  });
+
+  it("disambiguates workspace and global flows with the same alias", async () => {
+    vi.mocked(listRalphFlows).mockImplementation(async (_workspaceRoot, scope) => {
+      const resolvedScope = scope ?? "workspace";
+      const isGlobal = resolvedScope === "user";
+
+      return {
+        workspaceRoot: "C:\\Project",
+        scope: resolvedScope,
+        flows: [
+          {
+            id: isGlobal ? "global-review" : "workspace-review",
+            alias: "review",
+            name: isGlobal ? "Global Review" : "Workspace Review",
+            scope: resolvedScope,
+            path: isGlobal
+              ? "C:\\Users\\andreas\\AppData\\Roaming\\machdoch\\ralph\\flows\\global-review.json"
+              : "C:\\Project\\.machdoch\\ralph\\flows\\workspace-review.json",
+            blockCount: 2,
+            edgeCount: 1,
+            variableCount: 0,
+          },
+        ],
+      };
+    });
+    vi.mocked(showRalphFlow).mockImplementation(async (_workspaceRoot, id, scope) => ({
+      path:
+        scope === "user"
+          ? "C:\\Users\\andreas\\AppData\\Roaming\\machdoch\\ralph\\flows\\global-review.json"
+          : "C:\\Project\\.machdoch\\ralph\\flows\\workspace-review.json",
+      scope,
+      flow: {
+        schemaVersion: 1,
+        id,
+        alias: "review",
+        name: scope === "user" ? "Global Review" : "Workspace Review",
+        blocks: [],
+        edges: [],
+      },
+    }));
+
+    renderRalphFlowEditor("Review {{scope:path=ALL}}", {
+      flowLibraryMode: "all",
+    });
+
+    expect(await screen.findAllByText("Workspace Review")).not.toHaveLength(0);
+    expect(await screen.findAllByText("Global Review")).not.toHaveLength(0);
+    const globalFlowButton = screen
+      .getAllByRole("button", { name: /Global Review/u })
+      .at(0);
+    expect(globalFlowButton).toBeTruthy();
+    fireEvent.click(globalFlowButton as HTMLElement);
+
+    await waitFor(() => {
+      expect(showRalphFlow).toHaveBeenCalledWith(
+        expect.stringContaining("Project"),
+        "global-review",
+        "user",
+      );
+    });
   });
 
   it("creates an editable draft with condition route selectors", async () => {
@@ -883,6 +1026,7 @@ describe("RalphFlowEditor", () => {
       expect(showRalphFlow).toHaveBeenCalledWith(
         expect.stringContaining("Project"),
         "existing-flow",
+        "workspace",
       );
     });
 
@@ -937,24 +1081,152 @@ describe("RalphFlowEditor", () => {
 
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "Delete Ralph flow Existing Flow",
-      }),
-    );
+    const flowButton = await screen.findByRole("button", {
+      name: /Existing Flow/u,
+    });
+    expect(
+      screen.queryByRole("button", { name: "Delete Ralph flow Existing Flow" }),
+    ).toBeNull();
+    fireEvent.contextMenu(flowButton);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
 
     await waitFor(() => {
       expect(deleteRalphFlow).toHaveBeenCalledWith(
         expect.stringContaining("Project"),
         "existing-flow",
+        "workspace",
       );
     });
     expect(confirmMock).toHaveBeenCalledWith(
       'Delete Ralph flow "Existing Flow"? This removes the saved flow and its revisions.',
     );
-    expect(
-      screen.queryByRole("button", { name: "Delete Ralph flow Existing Flow" }),
-    ).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Delete" })).toBeNull();
+  });
+
+  it("copies saved Ralph flows to global from the row context menu", async () => {
+    const flowPath = "C:\\Project\\.machdoch\\ralph\\flows\\existing-flow.json";
+
+    vi.mocked(listRalphFlows).mockImplementation(async (_workspaceRoot, scope) => ({
+      workspaceRoot: "C:\\Project",
+      ...(scope ? { scope } : {}),
+      flows:
+        scope === "user"
+          ? []
+          : [
+              {
+                id: "existing-flow",
+                name: "Existing Flow",
+                path: flowPath,
+                blockCount: 2,
+                edgeCount: 1,
+                variableCount: 0,
+              },
+            ],
+    }));
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: flowPath,
+      scope: "workspace",
+      flow: {
+        schemaVersion: 1,
+        id: "existing-flow",
+        name: "Existing Flow",
+        blocks: [],
+        edges: [],
+      },
+    });
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    fireEvent.contextMenu(
+      await screen.findByRole("button", { name: /Existing Flow/u }),
+    );
+
+    expect(screen.getByRole("menuitem", { name: "Copy to global" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Copy to workspace" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Move to global" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Move to workspace" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy to global" }));
+
+    await waitFor(() => {
+      expect(showRalphFlow).toHaveBeenCalledWith(
+        expect.stringContaining("Project"),
+        "existing-flow",
+        "workspace",
+      );
+      expect(saveRalphFlow).toHaveBeenCalledWith(
+        expect.stringContaining("Project"),
+        expect.objectContaining({
+          scope: "user",
+          flow: expect.objectContaining({ id: "existing-flow" }),
+        }),
+      );
+    });
+    expect(deleteRalphFlow).not.toHaveBeenCalled();
+  });
+
+  it("moves saved Ralph flows to global from the row context menu", async () => {
+    const flowPath = "C:\\Project\\.machdoch\\ralph\\flows\\existing-flow.json";
+    const confirmMock = vi.mocked(window.confirm);
+
+    vi.mocked(listRalphFlows).mockImplementation(async (_workspaceRoot, scope) => ({
+      workspaceRoot: "C:\\Project",
+      ...(scope ? { scope } : {}),
+      flows:
+        scope === "user"
+          ? []
+          : [
+              {
+                id: "existing-flow",
+                name: "Existing Flow",
+                path: flowPath,
+                blockCount: 2,
+                edgeCount: 1,
+                variableCount: 0,
+              },
+            ],
+    }));
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: flowPath,
+      scope: "workspace",
+      flow: {
+        schemaVersion: 1,
+        id: "existing-flow",
+        name: "Existing Flow",
+        blocks: [],
+        edges: [],
+      },
+    });
+    vi.mocked(deleteRalphFlow).mockResolvedValue({
+      id: "existing-flow",
+      path: flowPath,
+      revisionDirectory: "C:\\Project\\.machdoch\\ralph\\revisions\\existing-flow",
+      deletedRevisions: true,
+    });
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    fireEvent.contextMenu(
+      await screen.findByRole("button", { name: /Existing Flow/u }),
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Move to global" }));
+
+    await waitFor(() => {
+      expect(saveRalphFlow).toHaveBeenCalledWith(
+        expect.stringContaining("Project"),
+        expect.objectContaining({
+          scope: "user",
+          flow: expect.objectContaining({ id: "existing-flow" }),
+        }),
+      );
+      expect(deleteRalphFlow).toHaveBeenCalledWith(
+        expect.stringContaining("Project"),
+        "existing-flow",
+        "workspace",
+      );
+    });
+    expect(confirmMock).toHaveBeenCalledWith(
+      'Move Ralph flow "Existing Flow" from workspace to global?',
+    );
   });
 
   it("uses labeled provider and catalog-backed model selectors", async () => {
@@ -1304,6 +1576,7 @@ describe("RalphFlowEditor", () => {
             alias: "refactor-scope-path-src",
             name: "Saved on close",
           }),
+          scope: "workspace",
         },
       );
     });
@@ -1350,7 +1623,7 @@ describe("RalphFlowEditor", () => {
     fireEvent.click(runButton as HTMLElement);
 
     expect(await screen.findByText("Background Ralph runs")).toBeTruthy();
-    expect(await screen.findByText("Running")).toBeTruthy();
+    expect(await screen.findByLabelText("Flow status: Running")).toBeTruthy();
     view.unmount();
 
     await waitFor(() => {
@@ -1487,7 +1760,7 @@ describe("RalphFlowEditor", () => {
     await waitFor(() => {
       expect(loadActiveDesktopTasks).toHaveBeenCalled();
     });
-    expect(await screen.findByText("Running")).toBeTruthy();
+    expect(await screen.findByLabelText("Flow status: Running")).toBeTruthy();
   });
 
   it("stops an active Ralph run through the desktop cancel bridge", async () => {

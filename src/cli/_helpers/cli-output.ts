@@ -1,10 +1,10 @@
 import process from "node:process";
 import type { CustomizationDiscoveryOptions } from "../../core/customizations.js";
 import type {
-  RuntimeProfileSummary,
   TaskExecutionProgress,
   TaskExecutionState,
 } from "../../core/types.js";
+import type { RuntimeProfileSummary } from "../../core/runtime-contract.generated.js";
 
 const createStateProgressLine = (
   progress: TaskExecutionProgress,

@@ -1008,7 +1008,7 @@ export const printRalphSummary = async (
       ]);
       const logger = await createRalphRunLogger(args.workspaceRoot, flow, {
         variableValues,
-        scope: "workspace",
+        scope,
       });
       const result = await runRalphFlow(flow, config, customizations, {
         variableValues,
@@ -1027,7 +1027,7 @@ export const printRalphSummary = async (
         variableValues,
         runId: logger.runId,
         ...(logger.paths ? { paths: logger.paths } : {}),
-        scope: "workspace",
+        scope,
       });
 
       if (args.json) {

@@ -8,7 +8,7 @@ import type {
   RunMode,
   WebSearchProvider,
   WebSearchProviderAvailability,
-} from "../../core/types.js";
+} from "../../core/runtime-contract.generated.js";
 
 const DESKTOP_APP_IDENTIFIER = "com.machdoch.desktop";
 const DESKTOP_STORE_FILE_NAME = "machdoch-shell-state.json";

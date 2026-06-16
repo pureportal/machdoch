@@ -5,14 +5,16 @@ import type {
 } from "../task-paths.js";
 import type {
   ResolvedTaskContext,
-  RuntimeConfig,
   TaskExecutionOptions,
   TaskExecutionProgress,
   TaskExecutionResult,
   TaskExecutionSection,
   TaskExecutionState,
-  ToolName,
 } from "../types.js";
+import type {
+  RuntimeConfig,
+  ToolName,
+} from "../runtime-contract.generated.js";
 import { TASK_EXECUTION_TIMEOUT_REASON_PREFIX } from "./agent-runtime-types.js";
 import { isTerminalTaskExecutionState } from "./execution-progress.js";
 

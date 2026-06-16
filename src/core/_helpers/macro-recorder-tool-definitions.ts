@@ -1,7 +1,11 @@
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { ToolCallEffect, ToolName, ToolRiskLevel } from "../types.js";
+import type {
+  ToolCallEffect,
+  ToolRiskLevel,
+} from "../types.js";
+import type { ToolName } from "../runtime-contract.generated.js";
 import {
   coerceBoolean,
   coerceString,

@@ -8,11 +8,11 @@ import type {
   CustomizationDiscoveryResult,
   DiscoveredPrompt,
   ResolvedPromptInvocation,
-  RuntimeConfig,
   TaskPlanStep,
   TaskRunPreview,
   TaskSuggestion,
 } from "./types.js";
+import type { RuntimeConfig } from "./runtime-contract.generated.js";
 
 const WEB_SEARCH_TASK_PATTERN =
   /(?:search|research|look up|lookup|find).*(?:web|internet|online)|(?:web|internet|online).*(?:search|research|look up|lookup|find)|\b(perplexity|tavily)\b/i;

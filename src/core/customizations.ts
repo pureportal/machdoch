@@ -13,8 +13,8 @@ import type {
   InstructionAudience,
   InstructionMode,
   InstructionScope,
-  ToolName,
 } from "./types.js";
+import type { ToolName } from "./runtime-contract.generated.js";
 
 const PROMPT_TOOL_ALIASES: Record<string, ToolName> = {
   api: "network",

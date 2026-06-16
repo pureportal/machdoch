@@ -99,10 +99,13 @@ import type {
   RalphFlow,
   RalphFlowBlock,
   RalphFlowEdge,
+  RalphFlowScope,
   RalphFlowRevisionSummary,
   RalphFlowSummary,
+  RalphGenerationEvent,
   RalphPosition,
   RalphRunResult,
+  RalphRunSummary,
   RalphUtilityCondition,
   RalphUtilityConfig,
   RalphUtilityConditionStyle,
@@ -110,11 +113,11 @@ import type {
   RalphValidationScope,
   RalphVariableType,
 } from "../../../core/ralph.js";
+import type { TaskExecutionProgress } from "../../../core/types.js";
 import type {
   ReasoningMode,
   RunMode,
-  TaskExecutionProgress,
-} from "../../../core/types.js";
+} from "../../../core/runtime-contract.generated.js";
 import {
   getCatalogModelsForProvider,
   getDefaultModelForProvider,
@@ -142,8 +145,6 @@ import {
   type ActiveDesktopTaskSummary,
   type DroppedPathEntry,
   type RalphCreateFlowResult,
-  type RalphGenerationEvent,
-  type RalphRunSummary,
 } from "../runtime";
 import type { ChatSessionContextAttachment } from "../chat-session.model";
 import { Button } from "../components/ui/button";
@@ -184,6 +185,8 @@ export interface RalphFlowEditorProps {
   workspaceRoot: string | null;
   initialPrompt?: string;
   isActive?: boolean;
+  flowLibraryMode?: RalphFlowLibraryMode;
+  onFlowLibraryModeChange?: (mode: RalphFlowLibraryMode) => void;
   runMode: RunMode;
   generationProvider: RuntimeProvider;
   generationModel: string;
@@ -224,6 +227,7 @@ type LocalIssue = {
 type RalphEditorMode = "design" | "generate" | "run" | "review";
 type RalphAiTarget = "flow" | "prompt-block" | "refactor";
 type RalphAiGenerationMode = "do-it" | "interview";
+export type RalphFlowLibraryMode = RalphFlowScope | "all";
 type RalphRunPanelTab = "setup" | "live" | "history" | "logs";
 type ActiveRalphRunStatus = "running" | "stopping";
 type ClipboardCopyState = "idle" | "copied" | "failed";
@@ -261,9 +265,27 @@ type RalphCanvasMenu =
       edgeId: string;
     };
 
+type RalphFlowListRow =
+  | {
+      type: "heading";
+      scope: RalphFlowScope;
+      count: number;
+    }
+  | {
+      type: "flow";
+      flow: RalphFlowSummary;
+    };
+
+interface RalphFlowListMenu {
+  left: number;
+  top: number;
+  flow: RalphFlowSummary;
+}
+
 interface ActiveRalphRun {
   id: string;
   flowId: string;
+  scope: RalphFlowScope;
   flowName: string;
   startedAt: number;
   status: ActiveRalphRunStatus;
@@ -277,6 +299,7 @@ interface RalphGenerationJob {
   id: string;
   target: RalphAiTarget;
   mode: RalphAiGenerationMode;
+  scope: RalphFlowScope;
   targetFlowId: string | null;
   targetAlias: string;
   startedAt: number;
@@ -343,6 +366,49 @@ const getFlowRunStatusLabel = (runs: ActiveRalphRun[]): string | null => {
   }
 
   return runs.length > 1 ? `${runs.length} running` : "Running";
+};
+
+const getFlowStatusPresentation = (
+  statusLabel: string,
+): {
+  icon: LucideIcon;
+  className: string;
+  spin?: boolean;
+} => {
+  const normalizedStatus = statusLabel.toLowerCase();
+
+  if (
+    normalizedStatus.includes("running") ||
+    normalizedStatus.includes("stopping")
+  ) {
+    return {
+      icon: LoaderCircle,
+      className: "text-sky-200",
+      spin: true,
+    };
+  }
+
+  if (statusLabel === "Generated") {
+    return { icon: Sparkles, className: "text-emerald-200" };
+  }
+
+  if (statusLabel === "Unsaved") {
+    return { icon: FileText, className: "text-amber-200" };
+  }
+
+  if (statusLabel === "Warnings") {
+    return { icon: AlertTriangle, className: "text-amber-200" };
+  }
+
+  if (statusLabel === "Errors") {
+    return { icon: AlertTriangle, className: "text-red-200" };
+  }
+
+  if (statusLabel === "Ready") {
+    return { icon: Check, className: "text-emerald-200" };
+  }
+
+  return { icon: CheckCircle2, className: "text-slate-500" };
 };
 
 const EDITOR_MODES: Array<{
@@ -437,6 +503,81 @@ const RALPH_VARIABLE_SNIPPETS = [
   "{{targetUrl:url=http://localhost:1420}}",
   "{{verificationCommand:string=pnpm typecheck:ui}}",
 ] as const;
+const RALPH_FLOW_SCOPES = ["workspace", "user"] as const satisfies readonly RalphFlowScope[];
+const RALPH_FLOW_LIBRARY_MODES = [
+  "workspace",
+  "user",
+  "all",
+] as const satisfies readonly RalphFlowLibraryMode[];
+const RALPH_FLOW_SCOPE_LABELS = {
+  workspace: "Workspace",
+  user: "Global",
+} as const satisfies Record<RalphFlowScope, string>;
+const RALPH_FLOW_LIBRARY_LABELS = {
+  ...RALPH_FLOW_SCOPE_LABELS,
+  all: "All",
+} as const satisfies Record<RalphFlowLibraryMode, string>;
+const DEFAULT_RALPH_FLOW_SCOPE: RalphFlowScope = "workspace";
+
+const normalizeRalphFlowScope = (
+  value: string | null | undefined,
+): RalphFlowScope => {
+  return value === "user" ? "user" : DEFAULT_RALPH_FLOW_SCOPE;
+};
+
+const getFlowSummaryScope = (flow: RalphFlowSummary): RalphFlowScope => {
+  return flow.scope ?? DEFAULT_RALPH_FLOW_SCOPE;
+};
+
+const getFlowSelectionKey = (
+  flowId: string,
+  scope: RalphFlowScope,
+): string => `${scope}:${flowId}`;
+
+const getFlowSummarySelectionKey = (flow: RalphFlowSummary): string => {
+  return getFlowSelectionKey(flow.id, getFlowSummaryScope(flow));
+};
+
+const hasFlowSelection = (
+  flow: RalphFlowSummary,
+  flowId: string,
+  scope: RalphFlowScope,
+): boolean => flow.id === flowId && getFlowSummaryScope(flow) === scope;
+
+const withFlowSummaryScope = (
+  flow: RalphFlowSummary,
+  scope: RalphFlowScope,
+): RalphFlowSummary => ({
+  ...flow,
+  scope: flow.scope ?? scope,
+});
+
+const compareFlowSummaries = (
+  left: RalphFlowSummary,
+  right: RalphFlowSummary,
+): number => {
+  const leftScope = getFlowSummaryScope(left);
+  const rightScope = getFlowSummaryScope(right);
+
+  if (leftScope !== rightScope) {
+    return RALPH_FLOW_SCOPES.indexOf(leftScope) - RALPH_FLOW_SCOPES.indexOf(rightScope);
+  }
+
+  return (left.alias ?? left.name ?? left.id).localeCompare(
+    right.alias ?? right.name ?? right.id,
+  );
+};
+
+const getDefaultCreationScope = (
+  libraryMode: RalphFlowLibraryMode,
+): RalphFlowScope => {
+  return libraryMode === "user" ? "user" : "workspace";
+};
+
+const isFlowScopeVisibleInLibraryMode = (
+  scope: RalphFlowScope,
+  libraryMode: RalphFlowLibraryMode,
+): boolean => libraryMode === "all" || libraryMode === scope;
 
 const clampRalphInspectorWidth = (
   value: number,
@@ -1268,6 +1409,12 @@ const getRalphTaskFlowReference = (
   }
 
   return null;
+};
+
+const getRalphTaskFlowScope = (
+  task: ActiveDesktopTaskSummary,
+): RalphFlowScope => {
+  return normalizeRalphFlowScope(getRalphArgumentValue(task.arguments, "--scope"));
 };
 
 const ACTIVE_TASK_REGISTRATION_GRACE_MS = 5_000;
@@ -2356,11 +2503,16 @@ const createBlankFlow = (alias: string): RalphFlow => {
   };
 };
 
-const flowToSummary = (flow: RalphFlow, path = ""): RalphFlowSummary => {
+const flowToSummary = (
+  flow: RalphFlow,
+  path = "",
+  scope: RalphFlowScope = DEFAULT_RALPH_FLOW_SCOPE,
+): RalphFlowSummary => {
   return {
     id: flow.id,
     alias: flow.alias,
     name: flow.name,
+    scope,
     path,
     description: flow.description,
     blockCount: flow.blocks.length,
@@ -2373,18 +2525,18 @@ const upsertFlowSummary = (
   flows: RalphFlowSummary[],
   summary: RalphFlowSummary,
 ): RalphFlowSummary[] => {
-  const withoutExisting = flows.filter((flow) => flow.id !== summary.id);
-
-  return [summary, ...withoutExisting].sort((left, right) =>
-    (left.alias ?? left.name ?? left.id).localeCompare(
-      right.alias ?? right.name ?? right.id,
-    ),
+  const summaryScope = getFlowSummaryScope(summary);
+  const withoutExisting = flows.filter(
+    (flow) => !(flow.id === summary.id && getFlowSummaryScope(flow) === summaryScope),
   );
+
+  return [summary, ...withoutExisting].sort(compareFlowSummaries);
 };
 
 const isFlowAliasUsed = (
   flows: RalphFlowSummary[],
   alias: string,
+  scope: RalphFlowScope,
   currentFlowId?: string,
 ): boolean => {
   const normalizedAlias = createFlowAlias(alias);
@@ -2394,7 +2546,7 @@ const isFlowAliasUsed = (
   }
 
   return flows.some((flow) => {
-    if (flow.id === currentFlowId) {
+    if (getFlowSummaryScope(flow) !== scope || flow.id === currentFlowId) {
       return false;
     }
 
@@ -2408,17 +2560,18 @@ const isFlowAliasUsed = (
 const createUniqueFlowAlias = (
   baseAlias: string,
   flows: RalphFlowSummary[],
+  scope: RalphFlowScope,
 ): string => {
   const base = createFlowAlias(baseAlias) || "ralph-flow";
 
-  if (!isFlowAliasUsed(flows, base)) {
+  if (!isFlowAliasUsed(flows, base, scope)) {
     return base;
   }
 
   for (let index = 2; index < 1000; index += 1) {
     const candidate = createFlowAlias(`${base}-${index}`);
 
-    if (!isFlowAliasUsed(flows, candidate)) {
+    if (!isFlowAliasUsed(flows, candidate, scope)) {
       return candidate;
     }
   }
@@ -2488,6 +2641,7 @@ const validateFlowLocally = (
   flow: RalphFlow,
   modelCatalog: ProviderModelCatalogSnapshot | null,
   flowSummaries: RalphFlowSummary[],
+  scope: RalphFlowScope,
 ): LocalIssue[] => {
   const issues: LocalIssue[] = [];
   const blockIds = new Set<string>();
@@ -2500,7 +2654,7 @@ const validateFlowLocally = (
       level: "error",
       message: "Flow alias cannot be empty.",
     });
-  } else if (alias && isFlowAliasUsed(flowSummaries, alias, flow.id)) {
+  } else if (alias && isFlowAliasUsed(flowSummaries, alias, scope, flow.id)) {
     issues.push({
       level: "error",
       message: `Flow alias ${alias} is already used by another flow.`,
@@ -3687,6 +3841,8 @@ export const RalphFlowEditor = ({
   workspaceRoot,
   initialPrompt = "",
   isActive = true,
+  flowLibraryMode = "workspace",
+  onFlowLibraryModeChange,
   runMode,
   generationProvider,
   generationModel,
@@ -3704,10 +3860,16 @@ export const RalphFlowEditor = ({
   const [flows, setFlows] = useState<RalphFlowSummary[]>([]);
   const [revisions, setRevisions] = useState<RalphFlowRevisionSummary[]>([]);
   const [selectedId, setSelectedId] = useState("");
+  const [selectedScope, setSelectedScope] = useState<RalphFlowScope>(
+    DEFAULT_RALPH_FLOW_SCOPE,
+  );
   const [draftFlow, setDraftFlow] = useState<RalphFlow | null>(null);
   const [canvasNodes, setCanvasNodes] = useState<RalphCanvasNode[]>([]);
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [unsavedFlowId, setUnsavedFlowId] = useState<string | null>(null);
+  const [unsavedFlowScope, setUnsavedFlowScope] = useState<RalphFlowScope>(
+    DEFAULT_RALPH_FLOW_SCOPE,
+  );
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [flowAliasDraft, setFlowAliasDraft] = useState("");
   const [aiPromptDraft, setAiPromptDraft] = useState("");
@@ -3734,6 +3896,9 @@ export const RalphFlowEditor = ({
   const [expandedEditorDraft, setExpandedEditorDraft] = useState("");
   const [expandedEditorWrap, setExpandedEditorWrap] = useState(true);
   const [aiTarget, setAiTarget] = useState<RalphAiTarget>("flow");
+  const [creationScope, setCreationScope] = useState<RalphFlowScope>(() =>
+    getDefaultCreationScope(flowLibraryMode),
+  );
   const [aiGenerationMode, setAiGenerationMode] =
     useState<RalphAiGenerationMode>("do-it");
   const [modelCatalog, setModelCatalog] =
@@ -3766,6 +3931,9 @@ export const RalphFlowEditor = ({
   const [copiedBlock, setCopiedBlock] = useState<RalphFlowBlock | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [canvasMenu, setCanvasMenu] = useState<RalphCanvasMenu | null>(null);
+  const [flowListMenu, setFlowListMenu] = useState<RalphFlowListMenu | null>(
+    null,
+  );
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const [utilityJsonDraft, setUtilityJsonDraft] = useState("");
   const [utilityJsonError, setUtilityJsonError] = useState<string | null>(null);
@@ -3775,6 +3943,7 @@ export const RalphFlowEditor = ({
   const reactFlowInstanceRef =
     useRef<ReactFlowInstance<RalphCanvasNode, RalphCanvasEdge> | null>(null);
   const selectedIdRef = useRef(selectedId);
+  const selectedScopeRef = useRef(selectedScope);
   const draftFlowRef = useRef<RalphFlow | null>(draftFlow);
   const savedSnapshotRef = useRef(savedSnapshot);
   const flowListRequestRef = useRef(0);
@@ -3786,9 +3955,14 @@ export const RalphFlowEditor = ({
   const activeModel = runModel;
   const showInspectorPanel = editorMode === "design" && inspectorOpen;
   const hasDraftFlow = Boolean(draftFlow);
-  const replaceSelectedId = (nextSelectedId: string): void => {
+  const replaceSelectedId = (
+    nextSelectedId: string,
+    nextSelectedScope: RalphFlowScope = selectedScopeRef.current,
+  ): void => {
     selectedIdRef.current = nextSelectedId;
+    selectedScopeRef.current = nextSelectedScope;
     setSelectedId(nextSelectedId);
+    setSelectedScope(nextSelectedScope);
   };
   const replaceDraftFlow = (nextDraftFlow: RalphFlow | null): void => {
     draftFlowRef.current = nextDraftFlow;
@@ -3797,14 +3971,18 @@ export const RalphFlowEditor = ({
     setRedoStack([]);
     setSelectedEdgeId(null);
     setCanvasMenu(null);
+    setFlowListMenu(null);
   };
   const replaceSavedSnapshot = (nextSavedSnapshot: string): void => {
     savedSnapshotRef.current = nextSavedSnapshot;
     setSavedSnapshot(nextSavedSnapshot);
   };
   const issues = useMemo(
-    () => (draftFlow ? validateFlowLocally(draftFlow, modelCatalog, flows) : []),
-    [draftFlow, flows, modelCatalog],
+    () =>
+      draftFlow
+        ? validateFlowLocally(draftFlow, modelCatalog, flows, selectedScope)
+        : [],
+    [draftFlow, flows, modelCatalog, selectedScope],
   );
   const dirty = draftFlow ? savedSnapshot !== getFlowSnapshot(draftFlow) : false;
   const canUndo = undoStack.length > 0;
@@ -3843,6 +4021,16 @@ export const RalphFlowEditor = ({
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    selectedScopeRef.current = selectedScope;
+  }, [selectedScope]);
+
+  useEffect(() => {
+    if (flowLibraryMode === "workspace" || flowLibraryMode === "user") {
+      setCreationScope(flowLibraryMode);
+    }
+  }, [flowLibraryMode]);
 
   useEffect(() => {
     draftFlowRef.current = draftFlow;
@@ -4299,25 +4487,44 @@ export const RalphFlowEditor = ({
 
     setActiveInspectorSection(availableInspectorSections[0]?.id ?? "content");
   }, [activeInspectorSection, availableInspectorSections]);
+  const selectedFlowKey = selectedId
+    ? getFlowSelectionKey(selectedId, selectedScope)
+    : "";
   const selectedSummary = useMemo(
-    () => flows.find((flow) => flow.id === selectedId) ?? null,
-    [flows, selectedId],
+    () =>
+      flows.find((flow) => hasFlowSelection(flow, selectedId, selectedScope)) ??
+      null,
+    [flows, selectedId, selectedScope],
   );
+  const selectedFlowUnsaved =
+    Boolean(selectedId) &&
+    unsavedFlowId === selectedId &&
+    unsavedFlowScope === selectedScope;
+  const selectedScopeLabel = RALPH_FLOW_SCOPE_LABELS[selectedScope];
+  const creationScopeLabel = RALPH_FLOW_SCOPE_LABELS[creationScope];
   const displayFlows = useMemo(() => {
     const visibleFlows = [...flows];
 
-    if (draftFlow && !visibleFlows.some((flow) => flow.id === draftFlow.id)) {
-      visibleFlows.unshift(flowToSummary(draftFlow));
+    if (
+      draftFlow &&
+      !visibleFlows.some((flow) => hasFlowSelection(flow, draftFlow.id, selectedScope))
+    ) {
+      visibleFlows.unshift(flowToSummary(draftFlow, "", selectedScope));
     }
 
     for (const run of activeRuns) {
-      if (visibleFlows.some((flow) => flow.id === run.flowId)) {
+      if (
+        visibleFlows.some((flow) =>
+          hasFlowSelection(flow, run.flowId, run.scope),
+        )
+      ) {
         continue;
       }
 
       visibleFlows.push({
         id: run.flowId,
         name: run.flowName,
+        scope: run.scope,
         path: "",
         blockCount: 0,
         edgeCount: 0,
@@ -4325,31 +4532,57 @@ export const RalphFlowEditor = ({
       });
     }
 
-    return visibleFlows;
-  }, [activeRuns, draftFlow, flows]);
-  const activeRunsByFlowId = useMemo(() => {
-    const runsByFlowId = new Map<string, ActiveRalphRun[]>();
+    return visibleFlows.sort(compareFlowSummaries);
+  }, [activeRuns, draftFlow, flows, selectedScope]);
+  const displayFlowRows = useMemo<RalphFlowListRow[]>(() => {
+    if (flowLibraryMode !== "all") {
+      return displayFlows.map((flow) => ({ type: "flow", flow }));
+    }
+
+    return RALPH_FLOW_SCOPES.flatMap((scope) => {
+      const scopedFlows = displayFlows.filter(
+        (flow) => getFlowSummaryScope(flow) === scope,
+      );
+
+      return scopedFlows.length > 0
+        ? [
+            {
+              type: "heading" as const,
+              scope,
+              count: scopedFlows.length,
+            },
+            ...scopedFlows.map((flow) => ({ type: "flow" as const, flow })),
+          ]
+        : [];
+    });
+  }, [displayFlows, flowLibraryMode]);
+  const activeRunsByFlowKey = useMemo(() => {
+    const runsByFlowKey = new Map<string, ActiveRalphRun[]>();
 
     for (const run of activeRuns) {
-      const existingRuns = runsByFlowId.get(run.flowId);
+      const key = getFlowSelectionKey(run.flowId, run.scope);
+      const existingRuns = runsByFlowKey.get(key);
 
       if (existingRuns) {
         existingRuns.push(run);
       } else {
-        runsByFlowId.set(run.flowId, [run]);
+        runsByFlowKey.set(key, [run]);
       }
     }
 
-    return runsByFlowId;
+    return runsByFlowKey;
   }, [activeRuns]);
   const activeCanvasRun = useMemo(
     () =>
       draftFlow
         ? activeRuns.find(
-            (run) => run.flowId === draftFlow.id && run.currentBlockId,
+            (run) =>
+              run.flowId === draftFlow.id &&
+              run.scope === selectedScope &&
+              run.currentBlockId,
           ) ?? null
         : null,
-    [activeRuns, draftFlow],
+    [activeRuns, draftFlow, selectedScope],
   );
   const activeCanvasBlockId = activeCanvasRun?.currentBlockId ?? null;
   const flowNodes = useMemo(
@@ -4436,7 +4669,7 @@ export const RalphFlowEditor = ({
       return "Finish loading the selected flow before running.";
     }
 
-    if (!selectedId || dirty || unsavedFlowId === selectedId) {
+    if (!selectedId || dirty || selectedFlowUnsaved) {
       return "Save flow before running.";
     }
 
@@ -4460,8 +4693,8 @@ export const RalphFlowEditor = ({
     loading,
     requiredMissingVariables,
     selectedId,
+    selectedFlowUnsaved,
     selectedMatchesDraft,
-    unsavedFlowId,
     workspaceRoot,
   ]);
   const runReadyMessage =
@@ -4533,6 +4766,7 @@ export const RalphFlowEditor = ({
                     id: event.taskId,
                     target: "flow",
                     mode: "do-it",
+                    scope: DEFAULT_RALPH_FLOW_SCOPE,
                     targetFlowId: null,
                     targetAlias: "ralph-flow",
                     startedAt: event.timestamp,
@@ -4634,39 +4868,83 @@ export const RalphFlowEditor = ({
     setMessage(null);
 
     try {
-      const result = await listRalphFlows(workspaceRoot);
+      const scopeResults =
+        flowLibraryMode === "all"
+          ? await Promise.all(
+              RALPH_FLOW_SCOPES.map(async (scope) => ({
+                scope,
+                result: await listRalphFlows(workspaceRoot, scope),
+              })),
+            )
+          : [
+              {
+                scope: flowLibraryMode,
+                result: await listRalphFlows(workspaceRoot, flowLibraryMode),
+              },
+            ];
       if (requestId !== flowListRequestRef.current) {
         return;
       }
 
-      setFlows(result.flows);
-      setSelectedId((current) => {
-        const currentDraft = draftFlowRef.current;
-        const currentDraftDirty = Boolean(
-          currentDraft && getFlowSnapshot(currentDraft) !== savedSnapshotRef.current,
+      const loadedFlows = scopeResults
+        .flatMap(({ scope, result }) =>
+          result.flows.map((flow) => withFlowSummaryScope(flow, scope)),
+        )
+        .sort(compareFlowSummaries);
+      setFlows(loadedFlows);
+
+      const currentId = selectedIdRef.current;
+      const currentScope = selectedScopeRef.current;
+      const currentDraft = draftFlowRef.current;
+      const currentDraftDirty = Boolean(
+        currentDraft && getFlowSnapshot(currentDraft) !== savedSnapshotRef.current,
+      );
+      const currentDraftUnsaved =
+        Boolean(currentDraft) &&
+        unsavedFlowId === currentDraft?.id &&
+        unsavedFlowScope === currentScope;
+      const nextSelection = (() => {
+        if (!currentId) {
+          if (loadedFlows[0]) {
+            return {
+              id: loadedFlows[0].id,
+              scope: getFlowSummaryScope(loadedFlows[0]),
+            };
+          }
+
+          return currentDraft
+            ? { id: currentDraft.id, scope: currentScope }
+            : { id: "", scope: currentScope };
+        }
+
+        if (
+          currentDraft?.id === currentId &&
+          (currentDraftUnsaved || currentDraftDirty)
+        ) {
+          return { id: currentId, scope: currentScope };
+        }
+
+        const currentFlowStillVisible = loadedFlows.find((flow) =>
+          hasFlowSelection(flow, currentId, currentScope),
         );
-        const nextSelectedId = (() => {
-          if (!current) {
-            return result.flows[0]?.id || currentDraft?.id || "";
-          }
 
-          if (
-            currentDraft?.id === current &&
-            (unsavedFlowId === current || currentDraftDirty)
-          ) {
-            return current;
-          }
+        if (currentFlowStillVisible) {
+          return { id: currentId, scope: currentScope };
+        }
 
-          if (result.flows.some((flow) => flow.id === current)) {
-            return current;
-          }
+        if (loadedFlows[0]) {
+          return {
+            id: loadedFlows[0].id,
+            scope: getFlowSummaryScope(loadedFlows[0]),
+          };
+        }
 
-          return result.flows[0]?.id || draftFlowRef.current?.id || "";
-        })();
+        return currentDraft
+          ? { id: currentDraft.id, scope: currentScope }
+          : { id: "", scope: currentScope };
+      })();
 
-        selectedIdRef.current = nextSelectedId;
-        return nextSelectedId;
-      });
+      replaceSelectedId(nextSelection.id, nextSelection.scope);
     } catch (error) {
       if (requestId === flowListRequestRef.current) {
         setMessage(error instanceof Error ? error.message : String(error));
@@ -4678,7 +4956,10 @@ export const RalphFlowEditor = ({
     }
   };
 
-  const refreshRevisions = async (flowId: string): Promise<void> => {
+  const refreshRevisions = async (
+    flowId: string,
+    scope: RalphFlowScope = selectedScopeRef.current,
+  ): Promise<void> => {
     if (!workspaceRoot || !flowId) {
       setRevisions([]);
       setRevisionsLoading(false);
@@ -4688,7 +4969,7 @@ export const RalphFlowEditor = ({
     setRevisionsLoading(true);
 
     try {
-      const result = await listRalphFlowRevisions(workspaceRoot, flowId);
+      const result = await listRalphFlowRevisions(workspaceRoot, flowId, scope);
       setRevisions(result.revisions);
     } catch (error) {
       setRevisions([]);
@@ -4698,7 +4979,10 @@ export const RalphFlowEditor = ({
     }
   };
 
-  const refreshRunHistory = async (flowId: string | null = selectedIdRef.current): Promise<void> => {
+  const refreshRunHistory = async (
+    flowId: string | null = selectedIdRef.current,
+    scope: RalphFlowScope = selectedScopeRef.current,
+  ): Promise<void> => {
     if (!workspaceRoot) {
       setRunHistory([]);
       setRunHistoryLoading(false);
@@ -4708,7 +4992,7 @@ export const RalphFlowEditor = ({
     setRunHistoryLoading(true);
 
     try {
-      const result = await listRalphRuns(workspaceRoot, flowId || undefined);
+      const result = await listRalphRuns(workspaceRoot, flowId || undefined, scope);
       setRunHistory(result.runs);
     } catch (error) {
       setRunHistory([]);
@@ -4721,6 +5005,7 @@ export const RalphFlowEditor = ({
   const openRunLog = async (
     runId: string,
     kind: "simple" | "trace",
+    scope: RalphFlowScope = selectedScopeRef.current,
   ): Promise<void> => {
     if (!workspaceRoot) {
       return;
@@ -4729,7 +5014,7 @@ export const RalphFlowEditor = ({
     setRunLogLoading(true);
 
     try {
-      const result = await showRalphRunLog(workspaceRoot, runId, kind);
+      const result = await showRalphRunLog(workspaceRoot, runId, kind, scope);
       setSelectedRunLog({
         runId: result.id,
         kind: result.kind,
@@ -4758,23 +5043,38 @@ export const RalphFlowEditor = ({
         task.kind === "ralph" &&
         normalizeWorkspaceForTaskComparison(task.workspaceRoot) === workspaceKey,
     );
-    const flowNameById = new Map(flows.map((flow) => [flow.id, flow.name] as const));
+    const flowNameByKey = new Map(
+      flows.map((flow) => [
+        getFlowSummarySelectionKey(flow),
+        flow.name,
+      ] as const),
+    );
     const flowIdByReference = new Map<string, string>();
 
     for (const flow of flows) {
-      flowIdByReference.set(flow.id, flow.id);
+      const scope = getFlowSummaryScope(flow);
+      flowIdByReference.set(getFlowSelectionKey(flow.id, scope), flow.id);
 
       if (flow.alias) {
-        flowIdByReference.set(flow.alias, flow.id);
+        flowIdByReference.set(getFlowSelectionKey(flow.alias, scope), flow.id);
       }
     }
 
     if (draftFlow) {
-      flowNameById.set(draftFlow.id, draftFlow.name || draftFlow.id);
-      flowIdByReference.set(draftFlow.id, draftFlow.id);
+      flowNameByKey.set(
+        getFlowSelectionKey(draftFlow.id, selectedScope),
+        draftFlow.name || draftFlow.id,
+      );
+      flowIdByReference.set(
+        getFlowSelectionKey(draftFlow.id, selectedScope),
+        draftFlow.id,
+      );
 
       if (draftFlow.alias) {
-        flowIdByReference.set(draftFlow.alias, draftFlow.id);
+        flowIdByReference.set(
+          getFlowSelectionKey(draftFlow.alias, selectedScope),
+          draftFlow.id,
+        );
       }
     }
 
@@ -4782,9 +5082,12 @@ export const RalphFlowEditor = ({
       .filter((task) => getRalphTaskAction(task) === "run")
       .map((task) => {
         const flowReference = getRalphTaskFlowReference(task);
+        const scope = getRalphTaskFlowScope(task);
         const parsed = parseRalphRunTaskId(task.id);
         const flowId =
-          (flowReference ? flowIdByReference.get(flowReference) : undefined) ??
+          (flowReference
+            ? flowIdByReference.get(getFlowSelectionKey(flowReference, scope))
+            : undefined) ??
           flowReference ??
           parsed?.flowId;
 
@@ -4792,12 +5095,20 @@ export const RalphFlowEditor = ({
           ? {
               id: task.id,
               flowId,
+              scope,
               startedAt: task.startedAt || parsed?.startedAt || Date.now(),
             }
           : null;
       })
-      .filter((task): task is { id: string; flowId: string; startedAt: number } =>
-        Boolean(task),
+      .filter(
+        (
+          task,
+        ): task is {
+          id: string;
+          flowId: string;
+          scope: RalphFlowScope;
+          startedAt: number;
+        } => Boolean(task),
       );
     const activeIds = new Set(activeRalphRunTasks.map((task) => task.id));
     const now = Date.now();
@@ -4808,7 +5119,9 @@ export const RalphFlowEditor = ({
         .filter((run) => activeIds.has(run.id) || now - run.startedAt < 5_000)
         .map((run) => ({
           ...run,
-          flowName: flowNameById.get(run.flowId) ?? run.flowName,
+          flowName:
+            flowNameByKey.get(getFlowSelectionKey(run.flowId, run.scope)) ??
+            run.flowName,
         }));
 
       for (const task of activeRalphRunTasks) {
@@ -4819,7 +5132,10 @@ export const RalphFlowEditor = ({
         next.push({
           id: task.id,
           flowId: task.flowId,
-          flowName: flowNameById.get(task.flowId) ?? titleFromId(task.flowId),
+          scope: task.scope,
+          flowName:
+            flowNameByKey.get(getFlowSelectionKey(task.flowId, task.scope)) ??
+            titleFromId(task.flowId),
           startedAt: task.startedAt,
           status: "running",
         });
@@ -4876,6 +5192,7 @@ export const RalphFlowEditor = ({
           id: newestGenerationTask.id,
           target: "flow",
           mode: "do-it",
+          scope: getRalphTaskFlowScope(newestGenerationTask),
           targetFlowId: null,
           targetAlias: alias,
           startedAt: newestGenerationTask.startedAt,
@@ -4895,7 +5212,7 @@ export const RalphFlowEditor = ({
     }
 
     void refreshFlows();
-  }, [isActive, workspaceRoot]);
+  }, [flowLibraryMode, isActive, workspaceRoot]);
 
   useEffect(() => {
     if (!isActive || !workspaceRoot) {
@@ -4924,29 +5241,30 @@ export const RalphFlowEditor = ({
     generationJob?.id,
     generationJob?.status,
     isActive,
+    selectedScope,
     workspaceRoot,
   ]);
 
   useEffect(() => {
-    if (!isActive || !workspaceRoot || !selectedId || unsavedFlowId === selectedId) {
+    if (!isActive || !workspaceRoot || !selectedId || selectedFlowUnsaved) {
       setRevisions([]);
       setRevisionsLoading(false);
       return;
     }
 
-    void refreshRevisions(selectedId);
-  }, [isActive, selectedId, unsavedFlowId, workspaceRoot]);
+    void refreshRevisions(selectedId, selectedScope);
+  }, [isActive, selectedFlowUnsaved, selectedId, selectedScope, workspaceRoot]);
 
   useEffect(() => {
-    if (!isActive || !workspaceRoot || !selectedId || unsavedFlowId === selectedId) {
+    if (!isActive || !workspaceRoot || !selectedId || selectedFlowUnsaved) {
       setRunHistory([]);
       setRunHistoryLoading(false);
       setSelectedRunLog(null);
       return;
     }
 
-    void refreshRunHistory(selectedId);
-  }, [isActive, selectedId, unsavedFlowId, workspaceRoot]);
+    void refreshRunHistory(selectedId, selectedScope);
+  }, [isActive, selectedFlowUnsaved, selectedId, selectedScope, workspaceRoot]);
 
   useEffect(() => {
     if (!isActive || !hasDraftFlow) {
@@ -4994,7 +5312,7 @@ export const RalphFlowEditor = ({
       return;
     }
 
-    if (unsavedFlowId === selectedId && draftFlow?.id === selectedId) {
+    if (selectedFlowUnsaved && draftFlow?.id === selectedId) {
       setDetailsLoading(false);
       return;
     }
@@ -5002,7 +5320,7 @@ export const RalphFlowEditor = ({
     let cancelled = false;
 
     setDetailsLoading(true);
-    void showRalphFlow(workspaceRoot, selectedId)
+    void showRalphFlow(workspaceRoot, selectedId, selectedScope)
       .then((result) => {
         if (cancelled) {
           return;
@@ -5040,7 +5358,14 @@ export const RalphFlowEditor = ({
     return () => {
       cancelled = true;
     };
-  }, [draftFlow?.id, isActive, selectedId, unsavedFlowId, workspaceRoot]);
+  }, [
+    draftFlow?.id,
+    isActive,
+    selectedFlowUnsaved,
+    selectedId,
+    selectedScope,
+    workspaceRoot,
+  ]);
 
   const restoreDraftSnapshotFromHistory = (snapshot: string): RalphFlow | null => {
     try {
@@ -5467,14 +5792,16 @@ export const RalphFlowEditor = ({
     const nextAlias = createUniqueFlowAlias(
       normalizedFlowAliasDraft || "ralph-flow",
       displayFlows,
+      creationScope,
     );
     const nextFlow = createBlankFlow(nextAlias);
 
     setDetailsLoading(false);
     replaceDraftFlow(nextFlow);
     replaceSavedSnapshot("");
-    replaceSelectedId(nextFlow.id);
+    replaceSelectedId(nextFlow.id, creationScope);
     setUnsavedFlowId(nextFlow.id);
+    setUnsavedFlowScope(creationScope);
     setFlowAliasDraft(nextAlias);
     setSelectedBlockId("start");
     setVariableValues({});
@@ -5484,11 +5811,16 @@ export const RalphFlowEditor = ({
     setMessage("Draft flow created. Save it before running.");
   };
 
-  const applyGeneratedFlow = (generatedFlow: RalphFlow): void => {
+  const applyGeneratedFlow = (
+    generatedFlow: RalphFlow,
+    scope: RalphFlowScope,
+  ): void => {
     replaceDraftFlow(generatedFlow);
     replaceSavedSnapshot(getFlowSnapshot(generatedFlow));
-    replaceSelectedId(generatedFlow.id);
-    setUnsavedFlowId((current) => (current === generatedFlow.id ? null : current));
+    replaceSelectedId(generatedFlow.id, scope);
+    setUnsavedFlowId((current) =>
+      current === generatedFlow.id && unsavedFlowScope === scope ? null : current,
+    );
     setSelectedBlockId(generatedFlow.blocks[0]?.id ?? null);
     setVariableValues(
       Object.fromEntries(
@@ -5509,9 +5841,14 @@ export const RalphFlowEditor = ({
       return;
     }
 
+    const targetScope = aiTarget === "flow" ? creationScope : selectedScope;
     const targetFlowName =
       aiTarget === "flow"
-        ? createUniqueFlowAlias(normalizedFlowAliasDraft || "ralph-flow", displayFlows)
+        ? createUniqueFlowAlias(
+            normalizedFlowAliasDraft || "ralph-flow",
+            displayFlows,
+            targetScope,
+          )
         : draftFlow
           ? getFlowAlias(draftFlow)
           : "";
@@ -5527,6 +5864,7 @@ export const RalphFlowEditor = ({
 
     const jobId = `generation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const selectedIdAtStart = selectedIdRef.current;
+    const selectedScopeAtStart = selectedScopeRef.current;
     const targetFlowId = existingFlow?.id ?? null;
     const draftSnapshotAtStart = draftFlowRef.current
       ? getFlowSnapshot(draftFlowRef.current)
@@ -5542,6 +5880,7 @@ export const RalphFlowEditor = ({
       id: jobId,
       target: aiTarget,
       mode: aiGenerationMode,
+      scope: targetScope,
       targetFlowId,
       targetAlias: targetFlowName,
       startedAt: Date.now(),
@@ -5559,6 +5898,7 @@ export const RalphFlowEditor = ({
     try {
       const result = await createRalphFlow(workspaceRoot, {
         prompt: aiPromptDraft,
+        scope: targetScope,
         mode: runMode,
         provider: generationProvider,
         model: generationModel,
@@ -5629,7 +5969,10 @@ export const RalphFlowEditor = ({
 
       if (result.flow?.id) {
         setFlows((current) =>
-          upsertFlowSummary(current, flowToSummary(result.flow, result.flowPath)),
+          upsertFlowSummary(
+            current,
+            flowToSummary(result.flow, result.flowPath, targetScope),
+          ),
         );
         const currentDraft = draftFlowRef.current;
         const currentDraftSnapshot = currentDraft
@@ -5639,15 +5982,19 @@ export const RalphFlowEditor = ({
           selectedIdRef.current === selectedIdAtStart &&
           (aiTarget === "flow"
             ? !draftWasDirtyAtStart
-            : currentDraft?.id === targetFlowId &&
+            : selectedScopeRef.current === selectedScopeAtStart &&
+              selectedScopeRef.current === targetScope &&
+              currentDraft?.id === targetFlowId &&
               currentDraftSnapshot === draftSnapshotAtStart);
 
         if (canAdoptGeneratedFlow) {
           replaceDraftFlow(result.flow);
           replaceSavedSnapshot(getFlowSnapshot(result.flow));
-          replaceSelectedId(result.flow.id);
+          replaceSelectedId(result.flow.id, targetScope);
           setUnsavedFlowId((current) =>
-            current === result.flow?.id ? null : current,
+            current === result.flow?.id && unsavedFlowScope === targetScope
+              ? null
+              : current,
           );
           setSelectedBlockId(result.flow.blocks[0]?.id ?? null);
           setVariableValues(
@@ -5717,6 +6064,7 @@ export const RalphFlowEditor = ({
 
     const requestId = saveRequestRef.current + 1;
     saveRequestRef.current = requestId;
+    const saveScope = selectedScope;
     const flowToSave = normalizeDerivedGroupMembership(draftFlow);
     setLoading(true);
     setMessage(null);
@@ -5724,6 +6072,7 @@ export const RalphFlowEditor = ({
     try {
       const result = await saveRalphFlow(workspaceRoot, {
         flow: flowToSave,
+        scope: saveScope,
       });
       if (requestId !== saveRequestRef.current) {
         return false;
@@ -5731,8 +6080,12 @@ export const RalphFlowEditor = ({
 
       replaceDraftFlow(result.flow);
       replaceSavedSnapshot(getFlowSnapshot(result.flow));
-      replaceSelectedId(result.flow.id);
-      setUnsavedFlowId((current) => (current === result.flow.id ? null : current));
+      replaceSelectedId(result.flow.id, saveScope);
+      setUnsavedFlowId((current) =>
+        current === result.flow.id && unsavedFlowScope === saveScope
+          ? null
+          : current,
+      );
       setVariableValues(
         Object.fromEntries(
           (result.flow.variables ?? []).map((variable) => [
@@ -5743,7 +6096,10 @@ export const RalphFlowEditor = ({
       );
       setMessage(formatMessage(result));
       setFlows((current) =>
-        upsertFlowSummary(current, flowToSummary(result.flow, result.path)),
+        upsertFlowSummary(
+          current,
+          flowToSummary(result.flow, result.path, saveScope),
+        ),
       );
       setRevisions([]);
       return true;
@@ -5799,6 +6155,7 @@ export const RalphFlowEditor = ({
 
   const openGeneratedFlow = async (): Promise<void> => {
     const generatedFlow = generationJob?.result?.flow;
+    const generatedScope = generationJob?.scope ?? creationScope;
 
     if (!generatedFlow) {
       return;
@@ -5808,15 +6165,19 @@ export const RalphFlowEditor = ({
       return;
     }
 
-    applyGeneratedFlow(generatedFlow);
+    applyGeneratedFlow(generatedFlow, generatedScope);
   };
 
   const selectFlow = async (flow: RalphFlowSummary): Promise<void> => {
-    if (flow.id === selectedId) {
+    const flowScope = getFlowSummaryScope(flow);
+
+    if (flow.id === selectedId && flowScope === selectedScope) {
       return;
     }
 
-    const canLoadFlow = Boolean(flow.path) || draftFlow?.id === flow.id;
+    const canLoadFlow =
+      Boolean(flow.path) ||
+      (draftFlow?.id === flow.id && flowScope === selectedScope);
 
     if (!canLoadFlow) {
       setMessage(
@@ -5830,15 +6191,190 @@ export const RalphFlowEditor = ({
       return;
     }
 
-    replaceSelectedId(flow.id);
+    replaceSelectedId(flow.id, flowScope);
   };
 
-  const deleteFlow = async (flow: RalphFlowSummary): Promise<void> => {
+  const closeFlowListMenu = (): void => {
+    setFlowListMenu(null);
+  };
+
+  const getFlowActiveRuns = (flow: RalphFlowSummary): ActiveRalphRun[] => {
+    return (
+      activeRunsByFlowKey.get(
+        getFlowSelectionKey(flow.id, getFlowSummaryScope(flow)),
+      ) ?? []
+    );
+  };
+
+  const isGenerationTargetingFlow = (flow: RalphFlowSummary): boolean => {
+    return Boolean(
+      generationRunning &&
+        generationJob?.targetFlowId === flow.id &&
+        generationJob.scope === getFlowSummaryScope(flow),
+    );
+  };
+
+  const loadTargetFlowExists = async (
+    flow: RalphFlowSummary,
+    targetScope: RalphFlowScope,
+  ): Promise<boolean> => {
+    if (flows.some((candidate) => hasFlowSelection(candidate, flow.id, targetScope))) {
+      return true;
+    }
+
+    if (isFlowScopeVisibleInLibraryMode(targetScope, flowLibraryMode)) {
+      return false;
+    }
+
+    const result = await listRalphFlows(workspaceRoot, targetScope);
+
+    return result.flows.some((candidate) => candidate.id === flow.id);
+  };
+
+  const copyOrMoveFlowToScope = async (
+    flow: RalphFlowSummary,
+    targetScope: RalphFlowScope,
+    operation: "copy" | "move",
+  ): Promise<void> => {
+    closeFlowListMenu();
+
     if (!workspaceRoot || !flow.path) {
       return;
     }
 
-    const activeFlowRuns = activeRunsByFlowId.get(flow.id) ?? [];
+    const sourceScope = getFlowSummaryScope(flow);
+    const sourceScopeLabel = RALPH_FLOW_SCOPE_LABELS[sourceScope].toLowerCase();
+    const targetScopeLabel = RALPH_FLOW_SCOPE_LABELS[targetScope].toLowerCase();
+
+    if (sourceScope === targetScope) {
+      setMessage(`Ralph flow \`${flow.name}\` is already ${targetScopeLabel}.`);
+      return;
+    }
+
+    const activeFlowRuns = getFlowActiveRuns(flow);
+
+    if (operation === "move" && activeFlowRuns.length > 0) {
+      setMessage(`Stop Ralph run \`${flow.name}\` before moving this flow.`);
+      setEditorMode("run");
+      return;
+    }
+
+    if (operation === "move" && isGenerationTargetingFlow(flow)) {
+      setMessage("Wait for the current AI flow change to finish before moving this flow.");
+      return;
+    }
+
+    const selectedSourceFlow =
+      selectedIdRef.current === flow.id &&
+      selectedScopeRef.current === sourceScope;
+
+    if (
+      selectedSourceFlow &&
+      !(await saveDirtyDraftBeforeReplacement(
+        operation === "move" ? "moving this flow" : "copying this flow",
+      ))
+    ) {
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      const targetExists = await loadTargetFlowExists(flow, targetScope);
+
+      if (
+        (targetExists || operation === "move") &&
+        !window.confirm(
+          targetExists
+            ? `${operation === "move" ? "Move" : "Copy"} Ralph flow "${flow.name}" to ${targetScopeLabel} and overwrite the existing ${targetScopeLabel} flow?`
+            : `Move Ralph flow "${flow.name}" from ${sourceScopeLabel} to ${targetScopeLabel}?`,
+        )
+      ) {
+        return;
+      }
+
+      const sourceResult = await showRalphFlow(workspaceRoot, flow.id, sourceScope);
+      const savedResult = await saveRalphFlow(workspaceRoot, {
+        flow: sourceResult.flow,
+        scope: targetScope,
+      });
+      const targetSummary = flowToSummary(
+        savedResult.flow,
+        savedResult.path,
+        targetScope,
+      );
+      const sourceFlowKey = getFlowSelectionKey(flow.id, sourceScope);
+      let deletedPath: string | null = null;
+
+      if (operation === "move") {
+        const deleteResult = await deleteRalphFlow(workspaceRoot, flow.id, sourceScope);
+        deletedPath = deleteResult.path;
+      }
+
+      setFlows((current) => {
+        const withoutMovedSource =
+          operation === "move"
+            ? current.filter(
+                (candidate) =>
+                  getFlowSummarySelectionKey(candidate) !== sourceFlowKey &&
+                  candidate.path !== deletedPath,
+              )
+            : current;
+
+        if (
+          !isFlowScopeVisibleInLibraryMode(targetScope, flowLibraryMode) &&
+          !(operation === "move" && selectedSourceFlow)
+        ) {
+          return withoutMovedSource;
+        }
+
+        return upsertFlowSummary(withoutMovedSource, targetSummary);
+      });
+
+      if (operation === "move" && selectedSourceFlow) {
+        replaceSelectedId(savedResult.flow.id, targetScope);
+        replaceDraftFlow(savedResult.flow);
+        replaceSavedSnapshot(getFlowSnapshot(savedResult.flow));
+        setUnsavedFlowId(null);
+        setRevisions([]);
+        setLastRun(null);
+        onFlowLibraryModeChange?.(targetScope);
+      }
+
+      setMessage(
+        `${operation === "move" ? "Moved" : "Copied"} Ralph flow \`${flow.name}\` to ${targetScopeLabel}.`,
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openFlowListMenu = (
+    event: ReactMouseEvent,
+    flow: RalphFlowSummary,
+  ): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    setCanvasMenu(null);
+    setFlowListMenu({
+      flow,
+      ...getCanvasMenuPlacement(event),
+    });
+  };
+
+  const deleteFlow = async (flow: RalphFlowSummary): Promise<void> => {
+    closeFlowListMenu();
+
+    if (!workspaceRoot || !flow.path) {
+      return;
+    }
+
+    const flowScope = getFlowSummaryScope(flow);
+    const flowKey = getFlowSelectionKey(flow.id, flowScope);
+    const activeFlowRuns = getFlowActiveRuns(flow);
 
     if (activeFlowRuns.length > 0) {
       setMessage(`Stop Ralph run \`${flow.name}\` before deleting this flow.`);
@@ -5846,7 +6382,7 @@ export const RalphFlowEditor = ({
       return;
     }
 
-    if (generationRunning && generationJob?.targetFlowId === flow.id) {
+    if (isGenerationTargetingFlow(flow)) {
       setMessage("Wait for the current AI flow change to finish before deleting this flow.");
       return;
     }
@@ -5863,18 +6399,25 @@ export const RalphFlowEditor = ({
     setMessage(null);
 
     try {
-      const result = await deleteRalphFlow(workspaceRoot, flow.id);
+      const result = await deleteRalphFlow(workspaceRoot, flow.id, flowScope);
       setFlows((current) =>
         current.filter(
           (candidate) =>
-            candidate.id !== flow.id &&
-            candidate.id !== result.id &&
+            getFlowSummarySelectionKey(candidate) !== flowKey &&
+            !(
+              candidate.id === result.id &&
+              getFlowSummaryScope(candidate) === flowScope
+            ) &&
             candidate.path !== result.path,
         ),
       );
 
-      if (selectedIdRef.current === flow.id || selectedIdRef.current === result.id) {
-        replaceSelectedId("");
+      if (
+        (selectedIdRef.current === flow.id ||
+          selectedIdRef.current === result.id) &&
+        selectedScopeRef.current === flowScope
+      ) {
+        replaceSelectedId("", flowScope);
         replaceDraftFlow(null);
         replaceSavedSnapshot("");
         setUnsavedFlowId(null);
@@ -5911,6 +6454,7 @@ export const RalphFlowEditor = ({
     const requestId = restoreRequestRef.current + 1;
     restoreRequestRef.current = requestId;
     const selectedIdAtStart = selectedId;
+    const selectedScopeAtStart = selectedScope;
     setLoading(true);
     setMessage(null);
 
@@ -5918,17 +6462,19 @@ export const RalphFlowEditor = ({
       const result = await restoreRalphFlowRevision(workspaceRoot, {
         name: selectedId,
         revision: revisionId,
+        scope: selectedScopeAtStart,
       });
       if (
         requestId !== restoreRequestRef.current ||
-        selectedIdRef.current !== selectedIdAtStart
+        selectedIdRef.current !== selectedIdAtStart ||
+        selectedScopeRef.current !== selectedScopeAtStart
       ) {
         return;
       }
 
       replaceDraftFlow(result.flow);
       replaceSavedSnapshot(getFlowSnapshot(result.flow));
-      replaceSelectedId(result.flow.id);
+      replaceSelectedId(result.flow.id, selectedScopeAtStart);
       setUnsavedFlowId(null);
       setSelectedBlockId(result.flow.blocks[0]?.id ?? null);
       setVariableValues(
@@ -5946,7 +6492,10 @@ export const RalphFlowEditor = ({
           : "Revision restored.",
       );
       setFlows((current) =>
-        upsertFlowSummary(current, flowToSummary(result.flow, result.path)),
+        upsertFlowSummary(
+          current,
+          flowToSummary(result.flow, result.path, selectedScopeAtStart),
+        ),
       );
       setRevisions([result.revision]);
     } catch (error) {
@@ -6044,6 +6593,7 @@ export const RalphFlowEditor = ({
     }
 
     const flowToRun = draftFlow;
+    const runScope = selectedScope;
     const flowSnapshotAtStart = getFlowSnapshot(flowToRun);
     const taskId = createRalphRunTaskId(flowToRun.id);
     const flowName = flowToRun.name || flowToRun.id;
@@ -6051,6 +6601,7 @@ export const RalphFlowEditor = ({
       {
         id: taskId,
         flowId: flowToRun.id,
+        scope: runScope,
         flowName,
         startedAt: Date.now(),
         status: "running",
@@ -6066,6 +6617,7 @@ export const RalphFlowEditor = ({
       try {
         const result = await runRalphFlow(workspaceRoot, {
           name: flowToRun.id,
+          scope: runScope,
           taskId,
           mode: runMode,
           provider: runProvider,
@@ -6084,6 +6636,7 @@ export const RalphFlowEditor = ({
         const currentDraft = draftFlowRef.current;
         const stillViewingSameSnapshot =
           selectedIdRef.current === flowToRun.id &&
+          selectedScopeRef.current === runScope &&
           currentDraft?.id === flowToRun.id &&
           getFlowSnapshot(currentDraft) === flowSnapshotAtStart;
 
@@ -6099,18 +6652,22 @@ export const RalphFlowEditor = ({
               ? `${formatRunMessage(result.run)} Run log: ${result.runLogPath}`
               : formatRunMessage(result.run),
           );
-          void refreshRunHistory(flowToRun.id);
-        } else if (selectedIdRef.current === flowToRun.id) {
+          void refreshRunHistory(flowToRun.id, runScope);
+        } else if (
+          selectedIdRef.current === flowToRun.id &&
+          selectedScopeRef.current === runScope
+        ) {
           setMessage(
             `Ralph run \`${flowName}\` finished for an older flow version.`,
           );
-          void refreshRunHistory(flowToRun.id);
+          void refreshRunHistory(flowToRun.id, runScope);
         }
       } catch (error) {
         const currentDraft = draftFlowRef.current;
 
         if (
           selectedIdRef.current === flowToRun.id &&
+          selectedScopeRef.current === runScope &&
           currentDraft?.id === flowToRun.id &&
           getFlowSnapshot(currentDraft) === flowSnapshotAtStart
         ) {
@@ -6714,6 +7271,7 @@ export const RalphFlowEditor = ({
 
   const openPaneMenu = (event: ReactMouseEvent): void => {
     event.preventDefault();
+    setFlowListMenu(null);
     setSelectedBlockId(null);
     setSelectedEdgeId(null);
     setCanvasMenu({
@@ -6728,6 +7286,7 @@ export const RalphFlowEditor = ({
     node: RalphCanvasNode,
   ): void => {
     event.preventDefault();
+    setFlowListMenu(null);
     setSelectedBlockId(node.id);
     setSelectedEdgeId(null);
     setCanvasMenu({
@@ -6742,6 +7301,7 @@ export const RalphFlowEditor = ({
     edge: RalphCanvasEdge,
   ): void => {
     event.preventDefault();
+    setFlowListMenu(null);
     setSelectedEdgeId(edge.id);
     setSelectedBlockId(null);
     setCanvasMenu({
@@ -6804,6 +7364,24 @@ export const RalphFlowEditor = ({
   };
 
   useEffect(() => {
+    if (!flowListMenu) {
+      return;
+    }
+
+    const closeMenu = (): void => {
+      setFlowListMenu(null);
+    };
+
+    window.addEventListener("mousedown", closeMenu);
+    window.addEventListener("contextmenu", closeMenu);
+
+    return () => {
+      window.removeEventListener("mousedown", closeMenu);
+      window.removeEventListener("contextmenu", closeMenu);
+    };
+  }, [flowListMenu]);
+
+  useEffect(() => {
     if (!isActive) {
       return;
     }
@@ -6812,9 +7390,10 @@ export const RalphFlowEditor = ({
       const key = event.key.toLowerCase();
       const hasModifier = event.ctrlKey || event.metaKey;
 
-      if (key === "escape" && canvasMenu) {
+      if (key === "escape" && (canvasMenu || flowListMenu)) {
         event.preventDefault();
         closeCanvasMenu();
+        closeFlowListMenu();
         return;
       }
 
@@ -6891,6 +7470,7 @@ export const RalphFlowEditor = ({
     canRunFlow,
     canSaveFlow,
     canvasMenu,
+    flowListMenu,
     isActive,
     selectedBlock,
     selectedCanvasBlockIds,
@@ -6950,6 +7530,82 @@ export const RalphFlowEditor = ({
       icon: tone.icon,
       iconClassName: tone.badgeClassName,
     });
+  };
+
+  const renderFlowListContextMenu = (): JSX.Element | null => {
+    if (!flowListMenu) {
+      return null;
+    }
+
+    const flow = flowListMenu.flow;
+    const flowScope = getFlowSummaryScope(flow);
+    const activeFlowRuns = getFlowActiveRuns(flow);
+    const baseDisabled = !workspaceRoot || !flow.path || loading;
+    const mutationDisabled =
+      baseDisabled || activeFlowRuns.length > 0 || isGenerationTargetingFlow(flow);
+    const globalScope: RalphFlowScope = "user";
+    const workspaceScope: RalphFlowScope = "workspace";
+
+    return (
+      <div
+        role="menu"
+        className="fixed z-[130] w-56 rounded-lg border border-slate-700 bg-slate-950 p-1.5 shadow-2xl shadow-black/45"
+        style={{ left: flowListMenu.left, top: flowListMenu.top }}
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+      >
+        <div className="min-w-0 px-2 pb-1 pt-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <span className="block truncate">{flow.name}</span>
+        </div>
+        {renderCanvasMenuButton(
+          "Copy to global",
+          () => void copyOrMoveFlowToScope(flow, globalScope, "copy"),
+          {
+            disabled: baseDisabled || flowScope === globalScope,
+            icon: Copy,
+            iconClassName: "text-sky-300",
+          },
+        )}
+        {renderCanvasMenuButton(
+          "Copy to workspace",
+          () => void copyOrMoveFlowToScope(flow, workspaceScope, "copy"),
+          {
+            disabled: baseDisabled || flowScope === workspaceScope,
+            icon: Copy,
+            iconClassName: "text-emerald-300",
+          },
+        )}
+        <div className="my-1 h-px bg-slate-800" />
+        {renderCanvasMenuButton(
+          "Move to global",
+          () => void copyOrMoveFlowToScope(flow, globalScope, "move"),
+          {
+            disabled: mutationDisabled || flowScope === globalScope,
+            icon: Route,
+            iconClassName: "text-sky-300",
+          },
+        )}
+        {renderCanvasMenuButton(
+          "Move to workspace",
+          () => void copyOrMoveFlowToScope(flow, workspaceScope, "move"),
+          {
+            disabled: mutationDisabled || flowScope === workspaceScope,
+            icon: Route,
+            iconClassName: "text-emerald-300",
+          },
+        )}
+        <div className="my-1 h-px bg-slate-800" />
+        {renderCanvasMenuButton("Delete", () => void deleteFlow(flow), {
+          disabled: mutationDisabled,
+          danger: true,
+          icon: Trash2,
+        })}
+      </div>
+    );
   };
 
   const renderCanvasContextMenu = (): JSX.Element | null => {
@@ -8358,6 +9014,30 @@ export const RalphFlowEditor = ({
                     </Button>
                   </div>
                 </div>
+                <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
+                  {RALPH_FLOW_LIBRARY_MODES.map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={flowLibraryMode === mode}
+                      onClick={() => onFlowLibraryModeChange?.(mode)}
+                      className={cn(
+                        "h-7 min-w-0 rounded-md px-2 text-xs font-semibold",
+                        flowLibraryMode === mode
+                          ? mode === "user"
+                            ? "bg-sky-500/20 text-sky-100"
+                            : mode === "workspace"
+                              ? "bg-emerald-500/20 text-emerald-100"
+                              : "bg-slate-700 text-white"
+                          : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                      )}
+                    >
+                      <span className="block truncate">
+                        {RALPH_FLOW_LIBRARY_LABELS[mode]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
                 <Input
                   value={flowAliasDraft}
                   aria-label="Ralph flow alias"
@@ -8367,6 +9047,35 @@ export const RalphFlowEditor = ({
                   }
                   className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100 placeholder:text-slate-600"
                 />
+                <div className="grid gap-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Save new to
+                    </span>
+                    <span className="text-[0.68rem] text-slate-500">
+                      {creationScopeLabel}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
+                    {RALPH_FLOW_SCOPES.map((scope) => (
+                      <button
+                        key={scope}
+                        type="button"
+                        onClick={() => setCreationScope(scope)}
+                        className={cn(
+                          "h-7 rounded-md px-2 text-xs font-semibold",
+                          creationScope === scope
+                            ? scope === "user"
+                              ? "bg-sky-500/20 text-sky-100"
+                              : "bg-emerald-500/20 text-emerald-100"
+                            : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                        )}
+                      >
+                        {RALPH_FLOW_SCOPE_LABELS[scope]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Button
                     type="button"
@@ -8410,7 +9119,7 @@ export const RalphFlowEditor = ({
                     <div className="grid gap-3 rounded-lg border border-dashed border-slate-800 bg-slate-950 px-3 py-4 text-sm text-slate-500">
                       <div>
                         {workspaceRoot
-                          ? "No Ralph flows found."
+                          ? `No ${RALPH_FLOW_LIBRARY_LABELS[flowLibraryMode].toLowerCase()} Ralph flows found.`
                           : "Choose a workspace before creating Ralph flows."}
                       </div>
                       <div className="grid grid-cols-2 gap-2">
@@ -8438,23 +9147,36 @@ export const RalphFlowEditor = ({
                       </div>
                     </div>
                   ) : (
-                    displayFlows.map((flow) => (
+                    displayFlowRows.map((row) =>
+                      row.type === "heading" ? (
+                        <div
+                          key={`heading-${row.scope}`}
+                          className="flex min-w-0 items-center justify-between gap-2 px-2 pb-1 pt-3 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-slate-500 first:pt-1"
+                        >
+                          <span>{RALPH_FLOW_SCOPE_LABELS[row.scope]}</span>
+                          <span>{row.count}</span>
+                        </div>
+                      ) : (
                       (() => {
-                        const isDraftSummary = draftFlow?.id === flow.id;
+                        const flow = row.flow;
+                        const flowScope = getFlowSummaryScope(flow);
+                        const flowKey = getFlowSummarySelectionKey(flow);
+                        const isSelectedFlow =
+                          selectedFlowKey === flowKey;
+                        const isDraftSummary =
+                          draftFlow?.id === flow.id &&
+                          selectedScope === flowScope;
                         const isGeneratedSummary =
                           generationJob?.status === "created" &&
+                          generationJob.scope === flowScope &&
                           generationJob.result?.flow?.id === flow.id;
-                        const activeFlowRuns = activeRunsByFlowId.get(flow.id) ?? [];
+                        const activeFlowRuns = activeRunsByFlowKey.get(flowKey) ?? [];
                         const runStatusLabel = getFlowRunStatusLabel(
                           activeFlowRuns,
                         );
                         const canLoadFlow =
-                          Boolean(flow.path) || draftFlow?.id === flow.id;
-                        const deleteDisabled =
-                          !workspaceRoot ||
-                          !flow.path ||
-                          activeFlowRuns.length > 0 ||
-                          (generationRunning && generationJob?.targetFlowId === flow.id);
+                          Boolean(flow.path) ||
+                          (draftFlow?.id === flow.id && selectedScope === flowScope);
                         const statusLabel =
                           runStatusLabel ??
                           (isGeneratedSummary
@@ -8468,13 +9190,19 @@ export const RalphFlowEditor = ({
                                     ? "Warnings"
                                     : "Ready"
                               : "Saved");
+                        const statusPresentation =
+                          getFlowStatusPresentation(statusLabel);
+                        const StatusIcon = statusPresentation.icon;
 
                         return (
                           <div
-                            key={flow.id}
+                            key={flowKey}
+                            onContextMenu={(event) =>
+                              openFlowListMenu(event, flow)
+                            }
                             className={cn(
                               "flex min-w-0 items-center gap-2 border-b border-slate-800/70 px-2 py-2 last:border-b-0",
-                              selectedId === flow.id
+                              isSelectedFlow
                                 ? "bg-emerald-500/10"
                                 : canLoadFlow
                                   ? "hover:bg-slate-900/70"
@@ -8485,52 +9213,33 @@ export const RalphFlowEditor = ({
                               type="button"
                               disabled={!canLoadFlow}
                               onClick={() => void selectFlow(flow)}
+                              title={flow.name}
                               className="grid min-w-0 flex-1 gap-1 text-left disabled:cursor-default"
                             >
-                              <span className="flex min-w-0 items-center justify-between gap-2 text-xs text-slate-500">
-                              <span className="truncate">
-                                <span className="text-sm font-medium text-slate-100">
+                              <span className="flex min-w-0 items-center justify-between gap-2">
+                                <span className="truncate text-sm font-medium text-slate-100">
                                   {flow.name}
                                 </span>
-                                <span className="ml-2">{formatFlowSubtitle(flow)}</span>
+                                <span
+                                  aria-label={`Flow status: ${statusLabel}`}
+                                  title={statusLabel}
+                                  className={cn(
+                                    "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-slate-800 bg-slate-950",
+                                    statusPresentation.className,
+                                  )}
+                                >
+                                  <StatusIcon
+                                    className={cn(
+                                      "h-3.5 w-3.5",
+                                      statusPresentation.spin && "animate-spin",
+                                    )}
+                                  />
+                                </span>
                               </span>
-                              <span
-                                className={cn(
-                                  "shrink-0 text-[0.68rem] font-medium",
-                                  runStatusLabel
-                                    ? "text-sky-200"
-                                    : statusLabel === "Generated"
-                                      ? "text-emerald-200"
-                                    : statusLabel === "Unsaved" ||
-                                        statusLabel === "Warnings"
-                                      ? "text-amber-200"
-                                      : statusLabel === "Errors"
-                                        ? "text-red-200"
-                                        : "text-slate-500",
-                                )}
-                              >
-                                {statusLabel}
-                              </span>
+                              <span className="truncate text-[0.68rem] leading-4 text-slate-500">
+                                {formatFlowSubtitle(flow)}
                               </span>
                             </button>
-                            {flow.path ? (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                disabled={deleteDisabled}
-                                aria-label={`Delete Ralph flow ${flow.name}`}
-                                title={
-                                  activeFlowRuns.length > 0
-                                    ? `Stop Ralph run ${flow.name} before deleting`
-                                    : `Delete ${flow.name}`
-                                }
-                                onClick={() => void deleteFlow(flow)}
-                                className="h-7 w-7 shrink-0 rounded-md text-slate-500 hover:bg-rose-500/10 hover:text-rose-100 disabled:text-slate-700"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            ) : null}
                           </div>
                         );
                       })()
@@ -8565,6 +9274,18 @@ export const RalphFlowEditor = ({
                   <span className="truncate text-sm font-semibold text-white">
                     {flowTitle}
                   </span>
+                  {draftFlow || selectedSummary ? (
+                    <span
+                      className={cn(
+                        "shrink-0 rounded border px-1.5 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.12em]",
+                        selectedScope === "user"
+                          ? "border-sky-400/30 bg-sky-500/10 text-sky-100"
+                          : "border-slate-700 bg-slate-900 text-slate-400",
+                      )}
+                    >
+                      {selectedScopeLabel}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   <Tooltip>
@@ -8715,16 +9436,19 @@ export const RalphFlowEditor = ({
                       setSelectedBlockId(node.id);
                       setSelectedEdgeId(null);
                       closeCanvasMenu();
+                      closeFlowListMenu();
                     }}
                     onEdgeClick={(_, edge) => {
                       setSelectedEdgeId(edge.id);
                       setSelectedBlockId(null);
                       closeCanvasMenu();
+                      closeFlowListMenu();
                     }}
                     onPaneClick={() => {
                       setSelectedBlockId(null);
                       setSelectedEdgeId(null);
                       closeCanvasMenu();
+                      closeFlowListMenu();
                     }}
                     onPaneContextMenu={openPaneMenu}
                     onNodeContextMenu={openNodeMenu}
@@ -8765,6 +9489,7 @@ export const RalphFlowEditor = ({
                   </ReactFlow>
                 </ReactFlowProvider>
                 {renderCanvasContextMenu()}
+                {renderFlowListContextMenu()}
                 {!draftFlow ? (
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8">
                     <div className="pointer-events-auto grid max-w-md gap-3 rounded-lg border border-dashed border-slate-800 bg-slate-950/70 px-5 py-4 text-center">
@@ -10396,11 +11121,13 @@ export const RalphFlowEditor = ({
                                 revisionsLoading ||
                                 loading ||
                                 !selectedId ||
-                                unsavedFlowId === selectedId
+                                selectedFlowUnsaved
                               }
                               aria-label="Refresh Ralph revisions"
                               title="Refresh Ralph revisions"
-                              onClick={() => void refreshRevisions(selectedId)}
+                              onClick={() =>
+                                void refreshRevisions(selectedId, selectedScope)
+                              }
                               className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
                             >
                               <RefreshCw
@@ -10411,7 +11138,7 @@ export const RalphFlowEditor = ({
                               />
                             </Button>
                           </div>
-                          {unsavedFlowId === selectedId ? (
+                          {selectedFlowUnsaved ? (
                             <div className="text-xs text-slate-500">
                               Save this draft to start history.
                             </div>
@@ -10701,6 +11428,43 @@ export const RalphFlowEditor = ({
                           <span className="min-w-0 truncate">{label}</span>
                         </button>
                       ))}
+                    </div>
+                    <div className="grid gap-1.5 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Save to
+                        </span>
+                        <span className="text-[0.68rem] text-slate-500">
+                          {aiTarget === "flow"
+                            ? creationScopeLabel
+                            : selectedScopeLabel}
+                        </span>
+                      </div>
+                      {aiTarget === "flow" ? (
+                        <div className="grid grid-cols-2 gap-1 rounded-md bg-slate-900/70 p-1">
+                          {RALPH_FLOW_SCOPES.map((scope) => (
+                            <button
+                              key={scope}
+                              type="button"
+                              onClick={() => setCreationScope(scope)}
+                              className={cn(
+                                "h-7 rounded px-2 text-xs font-semibold",
+                                creationScope === scope
+                                  ? scope === "user"
+                                    ? "bg-sky-500/20 text-sky-100"
+                                    : "bg-emerald-500/20 text-emerald-100"
+                                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                              )}
+                            >
+                              {RALPH_FLOW_SCOPE_LABELS[scope]}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-xs leading-4 text-slate-500">
+                          Changes save back to the selected {selectedScopeLabel.toLowerCase()} flow.
+                        </div>
+                      )}
                     </div>
                     <Textarea
                       value={aiPromptDraft}
@@ -11222,7 +11986,7 @@ export const RalphFlowEditor = ({
                             disabled={runHistoryLoading || !selectedId}
                             aria-label="Refresh Ralph run history"
                             title="Refresh Ralph run history"
-                            onClick={() => void refreshRunHistory(selectedId)}
+                            onClick={() => void refreshRunHistory(selectedId, selectedScope)}
                             className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
                           >
                             <RefreshCw
@@ -11264,7 +12028,9 @@ export const RalphFlowEditor = ({
                                       type="button"
                                       variant="ghost"
                                       disabled={runLogLoading}
-                                      onClick={() => void openRunLog(run.id, "simple")}
+                                      onClick={() =>
+                                        void openRunLog(run.id, "simple", selectedScope)
+                                      }
                                       className="h-7 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white"
                                     >
                                       Log
@@ -11273,7 +12039,9 @@ export const RalphFlowEditor = ({
                                       type="button"
                                       variant="ghost"
                                       disabled={runLogLoading}
-                                      onClick={() => void openRunLog(run.id, "trace")}
+                                      onClick={() =>
+                                        void openRunLog(run.id, "trace", selectedScope)
+                                      }
                                       className="h-7 rounded-lg px-2 text-xs text-slate-400 hover:bg-slate-900 hover:text-white"
                                     >
                                       Trace

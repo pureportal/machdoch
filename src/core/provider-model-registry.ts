@@ -1,4 +1,5 @@
-import type { AgentModelImageMediaType, ModelProvider } from "./types.js";
+import type { AgentModelImageMediaType } from "./types.js";
+import type { ModelProvider } from "./runtime-contract.generated.js";
 import { DEFAULT_MODEL_BY_PROVIDER as CONTRACT_DEFAULT_MODEL_BY_PROVIDER } from "./runtime-contract.generated.js";
 
 export type ConfiguredModelProvider = Exclude<ModelProvider, "unconfigured">;

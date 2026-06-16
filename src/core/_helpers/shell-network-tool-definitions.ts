@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import type { RuntimeConfig } from "../types.js";
+import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import {
   executeWebSearch,
   getConfiguredWebSearchProvider,

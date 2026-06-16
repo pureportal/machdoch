@@ -41,13 +41,13 @@ import type {
   UserReviewModelMode,
   VoiceAiProvider,
 } from "./runtime-contract.generated.js";
+import type { ConversationMemoryEntry } from "./types.js";
 import type {
-  ConversationMemoryEntry,
   ProviderAvailability,
   RuntimeAgentLimitOverrides,
   WebSearchProvider,
   WebSearchProviderAvailability,
-} from "./types.js";
+} from "./runtime-contract.generated.js";
 
 const PLACEHOLDER_TOKENS = ["YOUR_", "CHANGE_ME", "PLACEHOLDER"];
 const KNOWN_SAMPLE_SECRET_VALUES = new Set([
@@ -70,8 +70,6 @@ const TRUSTED_AGENT_CLI_ENV_KEYS = new Set<string>(
 export type UserAgentLimitsSettings = SharedUserAgentLimitsSettings;
 export type UserReviewModelSettings = SharedUserReviewModelSettings;
 type UserConfigFile = SharedUserConfigFile;
-
-export type { AgentCliProvider, UserApiProvider } from "./runtime-contract.generated.js";
 
 const stripWrappingQuotes = (value: string): string => {
   const trimmed = value.trim();

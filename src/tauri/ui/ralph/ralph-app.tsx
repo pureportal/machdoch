@@ -31,6 +31,7 @@ import {
   saveRalphSettings,
   saveShellState,
   subscribeToShellStateChanged,
+  type RalphFlowLibraryMode,
   type RalphSettings,
 } from "../lib/shell-store";
 import { cn } from "../lib/utils";
@@ -90,6 +91,18 @@ const getModelLabel = (models: CatalogModel[], model: string): string => {
 const loadSharedShellState = async (): Promise<ShellPersistedState> => {
   return normalizeShellState(await loadShellState(createInitialShellState()));
 };
+
+const RALPH_FLOW_LIBRARY_OPTIONS = [
+  "workspace",
+  "user",
+  "all",
+] as const satisfies readonly RalphFlowLibraryMode[];
+
+const RALPH_FLOW_LIBRARY_LABELS = {
+  workspace: "Workspace",
+  user: "Global",
+  all: "All",
+} as const satisfies Record<RalphFlowLibraryMode, string>;
 
 const RuntimeModelPicker = ({
   label,
@@ -654,6 +667,36 @@ export const RalphApp = ({
             />
           </div>
 
+          <div className="grid min-w-56 flex-[0_1_16rem] gap-1">
+            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Flow library
+            </span>
+            <div className="grid h-8 grid-cols-3 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
+              {RALPH_FLOW_LIBRARY_OPTIONS.map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={settings.flowLibraryMode === mode}
+                  onClick={() => updateSettings({ flowLibraryMode: mode })}
+                  className={cn(
+                    "min-w-0 rounded-md px-2 text-xs font-semibold",
+                    settings.flowLibraryMode === mode
+                      ? mode === "user"
+                        ? "bg-sky-500/20 text-sky-100"
+                        : mode === "workspace"
+                          ? "bg-emerald-500/20 text-emerald-100"
+                          : "bg-slate-700 text-white"
+                      : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                  )}
+                >
+                  <span className="block truncate">
+                    {RALPH_FLOW_LIBRARY_LABELS[mode]}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="flex min-w-0 flex-[0_0_auto] flex-wrap items-end justify-end gap-2 sm:flex-nowrap">
             <div className="w-[13.75rem] max-w-full min-w-0">
               <RuntimeModelPicker
@@ -813,6 +856,10 @@ export const RalphApp = ({
         <RalphFlowEditor
           workspaceRoot={settings.workspaceRoot}
           isActive={isActive}
+          flowLibraryMode={settings.flowLibraryMode}
+          onFlowLibraryModeChange={(flowLibraryMode) =>
+            updateSettings({ flowLibraryMode })
+          }
           runMode="machdoch"
           generationProvider={settings.generationProvider}
           generationModel={settings.generationModel}

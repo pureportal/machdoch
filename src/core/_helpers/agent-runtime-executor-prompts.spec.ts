@@ -2,8 +2,8 @@
 import type {
   AgentModelToolSpec,
   ResolvedTaskContext,
-  RuntimeConfig,
 } from "../types.js";
+import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import {
   createExecutorSystemPrompt,
   createExecutorUserPrompt,

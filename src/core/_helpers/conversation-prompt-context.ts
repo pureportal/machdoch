@@ -3,12 +3,12 @@ import { normalizeConversationMemoryEntries } from "../memory.js";
 import type {
   ConversationHistoryEntry,
   ConversationMemoryEntry,
-  RuntimeConfig,
   TaskConversationContext,
   TaskExecutionSection,
   UiControlRuntimeInfo,
 } from "../types.js";
-import type { ConversationMemoryRuntime } from "./agent-tools.js";
+import type { RuntimeConfig } from "../runtime-contract.generated.js";
+import type { ConversationMemoryRuntime } from "./agent-tools-shared.js";
 import { createProviderAdapter } from "./provider-adapters.js";
 import {
   compactTraceText,

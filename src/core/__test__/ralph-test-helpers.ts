@@ -1,9 +1,9 @@
 import type { RalphFlow } from "../ralph.js";
 import type {
   CustomizationDiscoveryResult,
-  RuntimeConfig,
   TaskExecutionResult,
 } from "../types.js";
+import type { RuntimeConfig } from "../runtime-contract.generated.js";
 
 export const createExecutionResult = (
   overrides: Partial<TaskExecutionResult> = {},

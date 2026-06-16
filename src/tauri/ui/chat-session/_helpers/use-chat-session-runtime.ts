@@ -67,7 +67,7 @@ import {
   type UserWebSearchSettings,
   type WebSearchProvider,
 } from "../../runtime";
-import type { SettingsStatusMessage } from "../components/settings-dialog";
+import type { SettingsStatusMessage } from "../components/settings-dialog-panels/types";
 import {
   createEmptyUserMemorySettings,
   createEmptyWebSearchSettings,

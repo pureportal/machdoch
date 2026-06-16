@@ -2,11 +2,11 @@ import type {
   AgentModelToolSpec,
   AgentModelTurn,
   ResolvedTaskContext,
-  RuntimeConfig,
   TaskAutopilotDecision,
   TaskAutopilotReport,
   TaskExecutionSection,
 } from "../types.js";
+import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import {
   createHostElevationRuntimeLine,
   inferTaskStrategyProfile,

@@ -9,9 +9,9 @@ import type {
   CustomizationDiscoveryResult,
   ResolvedPromptInvocation,
   ResolvedTaskContext,
-  RuntimeConfig,
   TaskExecutionSection,
 } from "../types.js";
+import type { RuntimeConfig } from "../runtime-contract.generated.js";
 
 const MAX_TOP_LEVEL_ENTRIES = 12;
 const MAX_FILE_PREVIEW_LINES = 80;

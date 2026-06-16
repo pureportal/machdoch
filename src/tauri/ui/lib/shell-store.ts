@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { REASONING_MODES } from "../../../core/runtime-contract.generated.js";
-import type { ReasoningMode } from "../../../core/types.js";
+import type { ReasoningMode } from "../../../core/runtime-contract.generated.js";
 import {
   getDefaultModelForProvider,
   SUPPORTED_PROVIDER_ORDER,
@@ -62,6 +62,7 @@ export interface McpMarketplaceState {
 export interface RalphSettings {
   version: 1;
   workspaceRoot: string | null;
+  flowLibraryMode: RalphFlowLibraryMode;
   generationProvider: RuntimeProvider;
   generationModel: string;
   generationProfile?: string;
@@ -73,6 +74,8 @@ export interface RalphSettings {
   runReasoning?: ReasoningMode;
   defaultMaxTransitions?: number;
 }
+
+export type RalphFlowLibraryMode = "workspace" | "user" | "all";
 
 export type AppearanceTheme = "dark" | "light";
 export type AppearanceDensity = "comfortable" | "compact";
@@ -115,6 +118,7 @@ export const DEFAULT_MCP_MARKETPLACE_STATE = {
 export const DEFAULT_RALPH_SETTINGS = {
   version: 1,
   workspaceRoot: null,
+  flowLibraryMode: "workspace",
   generationProvider: DEFAULT_RALPH_PROVIDER,
   generationModel: getDefaultModelForProvider(DEFAULT_RALPH_PROVIDER),
   runProvider: DEFAULT_RALPH_PROVIDER,
@@ -252,6 +256,14 @@ const normalizeRalphModel = (
     : getDefaultModelForProvider(provider);
 };
 
+const normalizeRalphFlowLibraryMode = (
+  value: unknown,
+): RalphFlowLibraryMode => {
+  return value === "user" || value === "all" || value === "workspace"
+    ? value
+    : DEFAULT_RALPH_SETTINGS.flowLibraryMode;
+};
+
 const normalizeRalphSettings = (value: unknown): RalphSettings => {
   if (!isRecord(value)) {
     return DEFAULT_RALPH_SETTINGS;
@@ -269,6 +281,7 @@ const normalizeRalphSettings = (value: unknown): RalphSettings => {
   return {
     version: 1,
     workspaceRoot: normalizeWorkspaceRoot(value.workspaceRoot),
+    flowLibraryMode: normalizeRalphFlowLibraryMode(value.flowLibraryMode),
     generationProvider,
     generationModel: normalizeRalphModel(
       value.generationModel,

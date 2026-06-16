@@ -16,7 +16,10 @@ import {
   type ScheduledRetryPolicy,
   type UpdateScheduledJobInput,
 } from "../scheduler.js";
-import type { ModelProvider, RunMode } from "../types.js";
+import type {
+  ModelProvider,
+  RunMode,
+} from "../runtime-contract.generated.js";
 import {
   coerceInteger,
   coerceString,

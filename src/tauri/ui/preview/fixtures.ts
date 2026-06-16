@@ -1,12 +1,14 @@
 import type {
   ResolvedPromptInvocation,
-  RunMode,
   TaskCustomizationMatch,
   TaskExecutionResult,
   TaskExecutionStatus,
   TaskRunPreview,
-  ToolName,
 } from "../../../core/types.js";
+import type {
+  RunMode,
+  ToolName,
+} from "../../../core/runtime-contract.generated.js";
 
 const WORKSPACE_INSPECTION_ACTIONS = [
   "describe",

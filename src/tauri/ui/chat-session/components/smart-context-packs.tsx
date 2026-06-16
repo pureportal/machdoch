@@ -18,11 +18,15 @@ import {
   type FormEvent,
   type JSX,
 } from "react";
-import type { ReasoningMode, RunMode } from "../../../../core/types.js";
+import type {
+  ReasoningMode,
+  RunMode,
+} from "../../../../core/runtime-contract.generated.js";
 import type {
   ChatSessionContextAttachment,
   SmartContextPack,
 } from "../../chat-session.model";
+import type { RalphFlow } from "../../../../core/ralph.js";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import {
@@ -33,7 +37,7 @@ import {
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
-import { listRalphFlows, showRalphFlow, type RalphFlow } from "../../runtime";
+import { listRalphFlows, showRalphFlow } from "../../runtime";
 import {
   createContextPackSummary,
   createSmartContextPackPreview,

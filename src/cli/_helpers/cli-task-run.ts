@@ -22,12 +22,14 @@ import type {
   ConversationHistoryEntry,
   AgentModelImageInput,
   ConversationMemoryEntry,
-  RuntimeConfig,
   TaskConversationContext,
   TaskExecutionResult,
   TaskRunPreview,
-  RunMode,
 } from "../../core/types.js";
+import type {
+  RuntimeConfig,
+  RunMode,
+} from "../../core/runtime-contract.generated.js";
 import type { ParsedCliArgs } from "./cli-args.js";
 import {
   createCliStartupSummaryLines,

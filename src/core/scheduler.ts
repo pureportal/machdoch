@@ -14,12 +14,14 @@ import { getUserConfigPath } from "./env.js";
 import { parseMarkdownDocument } from "./frontmatter.js";
 import type {
   FrontmatterValue,
-  ModelProvider,
-  ReasoningMode,
-  RunMode,
   TaskExecutionOptions,
   TaskExecutionResult,
 } from "./types.js";
+import type {
+  ModelProvider,
+  ReasoningMode,
+  RunMode,
+} from "./runtime-contract.generated.js";
 
 export const SMART_SCHEDULER_SCHEMA = "machdoch.smartScheduler" as const;
 export const SMART_SCHEDULER_SCHEMA_VERSION = 1 as const;

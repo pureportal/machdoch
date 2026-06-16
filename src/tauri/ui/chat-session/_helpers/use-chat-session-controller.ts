@@ -18,9 +18,11 @@ import type {
   AgentModelImageMediaType,
   CustomizationDiagnostic,
   DiscoveredInstruction,
+} from "../../../../core/types.js";
+import type {
   ReasoningMode,
   RunMode,
-} from "../../../../core/types.js";
+} from "../../../../core/runtime-contract.generated.js";
 import {
   canDeleteSession,
   canRenameSession,
@@ -110,7 +112,7 @@ import { useSessionSettingsActions } from "./use-session-settings";
 import { useSessionTaskSubmission } from "./use-session-task-submission";
 import { useSessionWindowControls } from "./use-session-window-controls";
 import { useSpeechInputDevices } from "./use-speech-input-devices";
-import type { SettingsStatusMessage } from "../components/settings-dialog";
+import type { SettingsStatusMessage } from "../components/settings-dialog-panels/types";
 
 export interface UseChatSessionControllerOptions {
   isolateActiveSession?: boolean;

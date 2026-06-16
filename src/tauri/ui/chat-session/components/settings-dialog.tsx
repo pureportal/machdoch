@@ -48,20 +48,6 @@ import { VoiceSettingsPanel } from "./settings-dialog-panels/voice-settings-pane
 import { WebSearchSettingsPanel } from "./settings-dialog-panels/web-search-settings-panel";
 import { WorkspaceSettingsPanel } from "./settings-dialog-panels/workspace-settings-panel";
 
-export type {
-  AgentLimitsSettingsControls,
-  AppearanceSettingsControls,
-  DesktopSettingsControls,
-  InstructionSettingsControls,
-  MemorySettingsControls,
-  McpSettingsControls,
-  ProviderSetupControls,
-  SettingsStatusMessage,
-  VoiceSettingsControls,
-  WebSearchSetupControls,
-  WorkspaceSettingsControls,
-} from "./settings-dialog-panels/types";
-
 const SETTINGS_SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   providers: KeyRound,
   workspace: Folder,

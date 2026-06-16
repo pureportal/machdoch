@@ -3,8 +3,8 @@ import type {
   AgentModelStreamEventHandler,
   AgentModelStreamUsage,
   AgentModelToolResult,
-  ModelProvider,
 } from "../../types.js";
+import type { ModelProvider } from "../../runtime-contract.generated.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);

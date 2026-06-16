@@ -37,7 +37,7 @@ import type {
   WebSearchProviderAvailability,
   WorkspaceConfigFile,
   WorkspaceProfileConfig,
-} from "./types.js";
+} from "./runtime-contract.generated.js";
 
 const WORKSPACE_CONFIG_DIRECTORY = ".machdoch";
 const WORKSPACE_CONFIG_FILE_NAME = "config.json";

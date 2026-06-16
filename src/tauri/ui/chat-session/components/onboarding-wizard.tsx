@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type JSX } from "react";
 import { DEFAULT_USER_DESKTOP_SETTINGS } from "../../../../core/runtime-contract.generated.js";
-import type { RunMode } from "../../../../core/types.js";
+import type { RunMode } from "../../../../core/runtime-contract.generated.js";
 import type { ChatSessionRecord } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";

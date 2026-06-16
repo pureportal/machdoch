@@ -2,7 +2,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RuntimeConfig } from "../types.js";
+import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import {
   createToolDefinitions,
   executeToolCall,

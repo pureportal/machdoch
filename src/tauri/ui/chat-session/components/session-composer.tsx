@@ -7,7 +7,10 @@ import {
   Square,
 } from "lucide-react";
 import type { JSX, KeyboardEvent } from "react";
-import type { ReasoningMode, RunMode } from "../../../../core/types.js";
+import type {
+  ReasoningMode,
+  RunMode,
+} from "../../../../core/runtime-contract.generated.js";
 import {
   isQuickVoiceSession,
   type ChatSessionContextAttachment,

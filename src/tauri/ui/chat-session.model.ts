@@ -6,16 +6,18 @@ import {
 } from "../../core/runtime-contract.generated.js";
 import type {
   ConversationMemoryEntry,
-  ReasoningMode,
-  RunMode,
   TaskExecutionTokenUsage,
   TaskExecutionNarrative,
   TaskExecutionResult,
   TaskExecutionSection,
   TaskExecutionStatus,
   TaskRunPreview,
-  ToolName,
 } from "../../core/types.js";
+import type {
+  ReasoningMode,
+  RunMode,
+  ToolName,
+} from "../../core/runtime-contract.generated.js";
 import {
   getDefaultModelForProvider,
   RUNNABLE_PROVIDER_ORDER,

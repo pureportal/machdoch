@@ -1,6 +1,6 @@
 import { Brain, Check, CircleDashed } from "lucide-react";
 import type { JSX } from "react";
-import type { ReasoningMode } from "../../../runtime";
+import type { ReasoningMode } from "../../runtime";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {

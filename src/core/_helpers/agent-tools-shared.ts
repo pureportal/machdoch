@@ -9,10 +9,10 @@ import type {
   TaskExecutionMemoryUpdate,
   TaskExecutionSection,
   ToolCallEffect,
-  ToolName,
   ToolRiskLevel,
   UiControlRuntimeInfo,
 } from "../types.js";
+import type { ToolName } from "../runtime-contract.generated.js";
 
 export const MAX_DIRECTORY_ENTRIES = 60;
 export const MAX_SEARCH_RESULTS = 25;

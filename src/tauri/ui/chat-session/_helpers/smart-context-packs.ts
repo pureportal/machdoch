@@ -1,4 +1,7 @@
-import type { ReasoningMode, RunMode } from "../../../../core/types.js";
+import type {
+  ReasoningMode,
+  RunMode,
+} from "../../../../core/runtime-contract.generated.js";
 import type {
   ChatSessionContextAttachment,
   ShellPersistedState,

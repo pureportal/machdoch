@@ -1,5 +1,8 @@
 import { hasConfiguredValue, loadWorkspaceEnv } from "./env.js";
-import type { RuntimeConfig, WebSearchProvider } from "./types.js";
+import type {
+  RuntimeConfig,
+  WebSearchProvider,
+} from "./runtime-contract.generated.js";
 
 type ActiveWebSearchProvider = Exclude<WebSearchProvider, "none">;
 

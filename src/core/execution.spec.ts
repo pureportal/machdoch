@@ -11,11 +11,13 @@ import type {
   AgentModelToolCall,
   AgentModelStartParams,
   CustomizationDiscoveryResult,
+  TaskExecutionProgress,
+} from "./types.ts";
+import type {
   ProviderAvailability,
   RunMode,
   RuntimeConfig,
-  TaskExecutionProgress,
-} from "./types.ts";
+} from "./runtime-contract.generated.ts";
 
 const workspacesToClean: string[] = [];
 const originalUserConfigDir = process.env.MACHDOCH_USER_CONFIG_DIR;

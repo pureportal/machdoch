@@ -1,12 +1,14 @@
 import type {
   AgentModelToolCall,
-  RuntimeConfig,
   TaskActionOutputHandler,
   ToolCallEffect,
-  ToolName,
   ToolRiskLevel,
   UiControlRuntimeInfo,
 } from "../types.js";
+import type {
+  RuntimeConfig,
+  ToolName,
+} from "../runtime-contract.generated.js";
 import {
   createToolErrorResult,
   type AgentToolDefinition,
@@ -31,12 +33,6 @@ import {
 } from "./runtime-text.js";
 import { createDesktopUiToolDefinitions } from "./desktop-ui-tool-definitions.js";
 import { createShellNetworkToolDefinitions } from "./shell-network-tool-definitions.js";
-
-export type {
-  AgentToolDefinition,
-  AgentToolExecutionResult,
-  ConversationMemoryRuntime,
-} from "./agent-tools-shared.js";
 
 const READ_ONLY_EFFECTS: ReadonlySet<ToolCallEffect> = new Set([
   "read",

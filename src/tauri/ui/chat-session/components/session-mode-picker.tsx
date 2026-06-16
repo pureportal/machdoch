@@ -1,6 +1,6 @@
 import { Check, CircleDashed } from "lucide-react";
 import type { JSX } from "react";
-import type { RunMode } from "../../../../core/types.js";
+import type { RunMode } from "../../../../core/runtime-contract.generated.js";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {

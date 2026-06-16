@@ -11,10 +11,10 @@ import {
   WandSparkles,
 } from "lucide-react";
 import type {
-  RunMode,
   TaskConversationContext,
   UiControlAvailability,
 } from "../../../../core/types.js";
+import type { RunMode } from "../../../../core/runtime-contract.generated.js";
 import {
   isQuickVoiceSession,
   type ChatSessionRecord,

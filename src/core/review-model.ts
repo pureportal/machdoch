@@ -1,4 +1,4 @@
-import type { RuntimeConfig } from "./types.js";
+import type { RuntimeConfig } from "./runtime-contract.generated.js";
 
 export const resolveReviewModelRuntimeConfig = (
   config: RuntimeConfig,

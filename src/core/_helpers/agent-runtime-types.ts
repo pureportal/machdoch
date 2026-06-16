@@ -1,9 +1,6 @@
 import type {
   AgentModelAdapter,
   ResolvedTaskContext,
-  RuntimeAgentLimitOverrides,
-  RuntimeAgentLimits,
-  RuntimeConfig,
   TaskConversationContext,
   AgentModelImageInput,
   TaskExecutionMemoryUpdate,
@@ -12,8 +9,13 @@ import type {
   TaskExecutionProgressHandler,
   TaskExecutionResult,
   TaskExecutionSection,
-  ToolName,
 } from "../types.js";
+import type {
+  RuntimeAgentLimitOverrides,
+  RuntimeAgentLimits,
+  RuntimeConfig,
+  ToolName,
+} from "../runtime-contract.generated.js";
 import {
   AGENT_LIMIT_BOUNDS,
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,

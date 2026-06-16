@@ -16,8 +16,8 @@ import type {
   AgentModelToolResult,
   AgentModelToolSpec,
   AgentModelTurn,
-  ReasoningMode,
 } from "../../types.js";
+import type { ReasoningMode } from "../../runtime-contract.generated.js";
 import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
 import { hasImageInputs } from "./image-inputs.js";

@@ -1,9 +1,9 @@
 /// <reference types="vitest/globals" />
 import type {
   ResolvedTaskContext,
-  RuntimeConfig,
   TaskExecutionResult,
 } from "../types.js";
+import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import {
   createAutopilotMonitorSystemPrompt,
   createAutopilotMonitorUserPrompt,

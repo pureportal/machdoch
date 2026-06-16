@@ -40,7 +40,7 @@ import type {
 import { getToolRegistry } from "../../core/tools.js";
 import { createToolDefinitions } from "../../core/_helpers/agent-tools.js";
 import { resolveRuntimeAgentLimits } from "../../core/_helpers/agent-runtime-types.js";
-import type { ToolName } from "../../core/types.js";
+import type { ToolName } from "../../core/runtime-contract.generated.js";
 import type { ParsedCliArgs } from "./cli-args.js";
 import { writeStdoutLine } from "./cli-io.js";
 import {

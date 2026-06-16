@@ -1,10 +1,10 @@
 import { previewTaskRun } from "./task-runner.ts";
 import { resolveTaskContext } from "./task-context.ts";
+import type { CustomizationDiscoveryResult } from "./types.ts";
 import type {
-  CustomizationDiscoveryResult,
   ProviderAvailability,
   RuntimeConfig,
-} from "./types.ts";
+} from "./runtime-contract.generated.ts";
 
 const providerAvailability: ProviderAvailability[] = [
   { provider: "openai", configured: false },

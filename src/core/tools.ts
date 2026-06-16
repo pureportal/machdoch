@@ -1,6 +1,7 @@
 import { resolveReadOnlyInspectionTarget } from "./task-inspection.js";
 import { createTokenSet, tokenSetIncludesKeyword } from "./text.js";
-import type { ToolDefinition, ToolName } from "./types.js";
+import type { ToolDefinition } from "./types.js";
+import type { ToolName } from "./runtime-contract.generated.js";
 
 const TOOL_REGISTRY: ToolDefinition[] = [
   {

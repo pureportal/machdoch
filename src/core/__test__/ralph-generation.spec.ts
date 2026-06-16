@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { vi } from "vitest";
 import { executeTask } from "../execution.js";
 import { createRalphFlowWithAgent, type RalphGenerationEvent } from "../ralph.js";
-import type { RuntimeConfig } from "../types.js";
+import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import {
   createExecutionResult,
   createFlow,
@@ -445,6 +445,12 @@ describe("createRalphFlowWithAgent", () => {
       expect(result.status).toBe("created");
       expect(generatorTask).toContain("Output contract:");
       expect(generatorTask).toContain("<ralph_flow_json>");
+      expect(generatorTask).toContain(
+        "Use graph blocks: START, PROMPT, VALIDATOR, DECISION, PACK, UTILITY, NOTE, GROUP, END.",
+      );
+      expect(generatorTask).toContain(
+        "NOTE and GROUP blocks are visual organization only",
+      );
       expect(generatorTask).toContain("Do not write files yourself");
       expect(generatorTask).toContain("Use tools only when they materially reduce uncertainty.");
       expect(generatorTask).toContain("inspect workspace files or run short read-only commands");

@@ -34,10 +34,7 @@ import type {
 } from "./mcp/types.js";
 import type {
   CustomizationDiscoveryResult,
-  ModelProvider,
   AgentModelImageInput,
-  ReasoningMode,
-  RuntimeConfig,
   TaskExecutionOptions,
   TaskConversationContext,
   TaskActionOutput,
@@ -45,6 +42,11 @@ import type {
   TaskExecutionProgressHandler,
   TaskExecutionResult,
 } from "./types.js";
+import type {
+  ModelProvider,
+  ReasoningMode,
+  RuntimeConfig,
+} from "./runtime-contract.generated.js";
 
 type PlaywrightBrowser = import("playwright-core").Browser;
 type PlaywrightPage = import("playwright-core").Page;
@@ -116,8 +118,6 @@ const SENSITIVE_LOG_KEY_PATTERN =
   /(?:api[-_]?key|authorization|bearer|credential|password|secret|token)/iu;
 const SENSITIVE_INLINE_PATTERN =
   /\b(?:sk-[A-Za-z0-9_-]{20,}|Bearer\s+[A-Za-z0-9._~+/=-]{12,}|(?:api[-_]?key|authorization|password|secret|token)\s*[:=]\s*["']?[^"'\s,;]+)/giu;
-
-export { normalizeRalphFlowLayout };
 
 export const RALPH_BLOCK_TYPES = [
   "START",
@@ -7711,8 +7711,9 @@ const createFlowGenerationTask = (
     "- Do not write files yourself; Ralph validates and writes the parsed JSON locally.",
     "",
     "Ralph flow requirements:",
-    "- Use graph blocks: START, PROMPT, VALIDATOR, DECISION, PACK, UTILITY, END.",
+    "- Use graph blocks: START, PROMPT, VALIDATOR, DECISION, PACK, UTILITY, NOTE, GROUP, END.",
     "- Use exactly one START block and one or more END blocks.",
+    "- NOTE and GROUP blocks are visual organization only; do not route execution through them. Use parentGroupId on executable blocks to place them inside GROUP blocks.",
     "- Normal PROMPT blocks route with SUCCESS and ERROR; they do not need RALPH_DECISION markers.",
     "- VALIDATOR blocks must end with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
     "- VALIDATOR.CONTINUE needs an explicit edge.",

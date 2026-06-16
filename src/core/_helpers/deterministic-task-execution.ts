@@ -8,10 +8,10 @@ import type {
 } from "../task-paths.js";
 import type {
   CustomizationDiscoveryResult,
-  RuntimeConfig,
   TaskExecutionResult,
   TaskExecutionSection,
 } from "../types.js";
+import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import {
   createCustomizationSummarySection,
   createDirectoryPreviewSection,

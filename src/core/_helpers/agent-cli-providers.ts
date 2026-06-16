@@ -10,8 +10,6 @@ import {
   type ModelProvider,
 } from "../runtime-contract.generated.js";
 
-export type { AgentCliProvider };
-
 export interface AgentCliProviderDefinition {
   provider: AgentCliProvider;
   label: string;

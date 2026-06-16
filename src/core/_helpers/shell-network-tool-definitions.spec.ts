@@ -14,7 +14,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 import { EventEmitter } from "node:events";
-import type { RuntimeConfig } from "../types.ts";
+import type { RuntimeConfig } from "../runtime-contract.generated.ts";
 import { SHELL_TIMEOUT_MS } from "./agent-tools-shared.ts";
 import {
   createShellNetworkToolDefinitions,

@@ -34,11 +34,11 @@ import {
 } from "./task-paths.js";
 import type {
   CustomizationDiscoveryResult,
-  RuntimeConfig,
   TaskExecutionOptions,
   TaskExecutionResult,
   TaskExecutionState,
 } from "./types.js";
+import type { RuntimeConfig } from "./runtime-contract.generated.js";
 
 const unrefTimer = (handle: ReturnType<typeof setTimeout>): void => {
   const candidate = handle as ReturnType<typeof setTimeout> & {

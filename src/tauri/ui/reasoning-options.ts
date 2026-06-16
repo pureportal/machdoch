@@ -2,7 +2,7 @@ import {
   getReasoningModesForProviderModel,
   normalizeReasoningModeForProviderModel,
 } from "../../core/reasoning-modes.js";
-import type { ReasoningMode } from "../../core/types.js";
+import type { ReasoningMode } from "../../core/runtime-contract.generated.js";
 import type { RuntimeProvider } from "./model-catalog";
 
 export const REASONING_LABELS: Record<ReasoningMode, string> = {

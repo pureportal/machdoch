@@ -1,6 +1,5 @@
 import { getHelpText, parseCliArgs } from "./_helpers/cli-args.js";
 import { writeStdoutLine } from "./_helpers/cli-io.js";
-import { formatExecutionProgressLines } from "./_helpers/cli-output.js";
 import {
   printConfigSummary,
   printCustomizationSummary,
@@ -19,9 +18,6 @@ import { printInstructionSummary } from "./_helpers/cli-instruction-commands.js"
 import { printMcpSummary } from "./_helpers/cli-mcp-commands.js";
 import { printRalphSummary } from "./_helpers/cli-ralph-commands.js";
 import { printSchedulerSummary } from "./_helpers/cli-scheduler-commands.js";
-
-export type { CommandName, ParsedCliArgs } from "./_helpers/cli-args.js";
-export { formatExecutionProgressLines, getHelpText, parseCliArgs };
 
 export const runCli = async (argv: string[]): Promise<void> => {
   const args = parseCliArgs(argv);

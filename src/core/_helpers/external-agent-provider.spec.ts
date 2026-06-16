@@ -10,9 +10,9 @@ import type { PreparedConversationPromptContext } from "./conversation-prompt-co
 import type { ModelDrivenExecutionParams } from "./agent-runtime-types.ts";
 import type {
   InstructionTargetAudience,
-  RuntimeConfig,
   TaskExecutionSection,
 } from "../types.ts";
+import type { RuntimeConfig } from "../runtime-contract.generated.ts";
 
 interface MockChildProcess extends EventEmitter {
   stdin: PassThrough;

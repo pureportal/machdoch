@@ -1,5 +1,4 @@
 import type {
-  RuntimeConfig,
   TaskExecutionFileReference,
   TaskExecutionMemoryUpdate,
   TaskExecutionProgress,
@@ -7,6 +6,7 @@ import type {
   TaskExecutionResult,
   TaskExecutionState,
 } from "../types.js";
+import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { AgentLoopState } from "./agent-runtime-types.js";
 import { isTerminalTaskExecutionState } from "./execution-progress.js";
 

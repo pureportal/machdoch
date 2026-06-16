@@ -14,12 +14,12 @@ import type {
   AgentModelToolCall,
   AgentModelToolSpec,
   ConversationMemoryScope,
-  RuntimeConfig,
   TaskConversationContext,
   TaskExecutionMemoryUpdate,
   TaskExecutionResult,
   TaskExecutionSection,
 } from "./types.js";
+import type { RuntimeConfig } from "./runtime-contract.generated.js";
 
 const MAX_MEMORY_SOURCE_TEXT_LENGTH = 1_200;
 const MAX_MEMORY_REVIEW_TEXT_LENGTH = 6_000;

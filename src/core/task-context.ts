@@ -13,8 +13,8 @@ import type {
   ResolvedPromptInvocation,
   ResolvedTaskContext,
   TaskCustomizationMatch,
-  ToolName,
 } from "./types.js";
+import type { ToolName } from "./runtime-contract.generated.js";
 
 const STOP_WORDS = new Set([
   "about",

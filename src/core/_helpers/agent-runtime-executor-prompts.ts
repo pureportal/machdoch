@@ -1,8 +1,8 @@
 import type {
   AgentModelToolSpec,
   ResolvedTaskContext,
-  RuntimeConfig,
 } from "../types.js";
+import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { ExecutorContinuationRequest } from "./agent-runtime-types.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
 

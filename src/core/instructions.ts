@@ -25,10 +25,10 @@ import type {
   InstructionAudience,
   InstructionMode,
   InstructionScope,
-  RuntimeConfig,
   TaskExecutionProgressHandler,
   TaskExecutionResult,
 } from "./types.js";
+import type { RuntimeConfig } from "./runtime-contract.generated.js";
 
 export type WritableInstructionScope = Extract<
   InstructionScope,

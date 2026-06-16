@@ -8,7 +8,8 @@ import {
   type ProviderModelMode,
   type ProviderModelVoiceCapability,
 } from "./provider-model-registry.js";
-import type { AgentModelImageMediaType, ModelProvider } from "./types.js";
+import type { AgentModelImageMediaType } from "./types.js";
+import type { ModelProvider } from "./runtime-contract.generated.js";
 
 export type ModelProviderMode = ProviderModelMode;
 

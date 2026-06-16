@@ -53,7 +53,6 @@ import type {
   AgentModelToolCall,
   AgentModelToolResult,
   ResolvedTaskContext,
-  RuntimeConfig,
   TaskActionOutputHandler,
   TaskAutopilotDecision,
   TaskAutopilotReport,
@@ -63,6 +62,7 @@ import type {
   TaskExecutionSection,
   TaskExecutionState,
 } from "./types.js";
+import type { RuntimeConfig } from "./runtime-contract.generated.js";
 
 const MODEL_STREAM_PROGRESS_INTERVAL_MS = 250;
 const MODEL_STREAM_CONTENT_LIMIT = 4_000;

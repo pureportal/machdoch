@@ -1,5 +1,6 @@
 import type { TaskExecutionProgress } from "../core/types.ts";
-import { formatExecutionProgressLines, parseCliArgs } from "./app.ts";
+import { parseCliArgs } from "./_helpers/cli-args.ts";
+import { formatExecutionProgressLines } from "./_helpers/cli-output.ts";
 import { createUserConfigSummaryLines } from "./_helpers/cli-output.ts";
 
 describe("parseCliArgs", () => {

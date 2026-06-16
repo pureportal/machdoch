@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RuntimeConfig } from "../../core/types.ts";
+import type { RuntimeConfig } from "../../core/runtime-contract.generated.ts";
 import {
   createCliStartupSummaryLines,
   loadDesktopShellSummary,

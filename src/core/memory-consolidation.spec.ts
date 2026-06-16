@@ -11,10 +11,12 @@ import {
 } from "./memory-consolidation.ts";
 import type {
   AgentModelAdapter,
-  ProviderAvailability,
-  RuntimeConfig,
   TaskExecutionResult,
 } from "./types.ts";
+import type {
+  ProviderAvailability,
+  RuntimeConfig,
+} from "./runtime-contract.generated.ts";
 
 const workspacesToClean: string[] = [];
 const originalUserConfigDir = process.env.MACHDOCH_USER_CONFIG_DIR;

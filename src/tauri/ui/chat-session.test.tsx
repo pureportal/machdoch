@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { DEFAULT_USER_DESKTOP_SETTINGS } from "../../core/runtime-contract.generated.js";
 import { AssistantPopupShell } from "./assistant-popup-shell";
-import { ChatSession } from "./chat-session";
+import { ChatSession } from "./chat-session-shell";
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
 import { ExecutionInsightRow } from "./chat-session/components/execution-insight-row";
 import {

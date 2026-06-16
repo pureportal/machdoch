@@ -1,5 +1,5 @@
 import type { ConfiguredModelProvider } from "./provider-model-registry.js";
-import type { ReasoningMode } from "./types.js";
+import type { ReasoningMode } from "./runtime-contract.generated.js";
 
 const ALL_REASONING_MODES = [
   "default",
