@@ -309,7 +309,7 @@ describe("SettingsDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Light" }));
     fireEvent.click(screen.getByRole("button", { name: "Compact" }));
-    fireEvent.click(screen.getByRole("button", { name: "Emerald" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sage" }));
     fireEvent.click(screen.getByRole("button", { name: "Orbit" }));
 
     expect(onSave).toHaveBeenCalledWith({
@@ -391,7 +391,7 @@ describe("SettingsDialog", () => {
 
     renderSettingsDialog(props);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit selected" }));
     fireEvent.change(
       screen.getByDisplayValue("Prefer strict TypeScript and targeted tests."),
       {
@@ -400,7 +400,7 @@ describe("SettingsDialog", () => {
         },
       },
     );
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save instruction" }));
 
     expect(onManualSave).toHaveBeenCalledWith(
       expect.objectContaining({

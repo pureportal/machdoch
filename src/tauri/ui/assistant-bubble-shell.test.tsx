@@ -6,7 +6,11 @@ import {
   type ShellPersistedState,
 } from "./chat-session.model";
 import { AssistantBubbleShell } from "./assistant-bubble-shell";
-import { isTauriMock } from "./test/tauri-test-mocks";
+import {
+  currentWindowMock,
+  isTauriMock,
+  monitorFromPoint,
+} from "./test/tauri-test-mocks";
 import type { AppearanceSettings } from "./lib/shell-store";
 
 const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
@@ -97,5 +101,26 @@ describe("AssistantBubbleShell", () => {
     });
 
     expect(screen.getByText("1")).toBeDefined();
+  });
+
+  it("syncs the transparent bubble window size for shadow padding", async () => {
+    isTauriMock.mockReturnValue(true);
+    monitorFromPoint.mockResolvedValue({
+      position: { x: 0, y: 0 },
+      size: { width: 1920, height: 1080 },
+      workArea: {
+        position: { x: 0, y: 0 },
+        size: { width: 1920, height: 1040 },
+      },
+      scaleFactor: 1,
+    });
+
+    render(<AssistantBubbleShell />);
+
+    await waitFor(() => {
+      expect(currentWindowMock.setSize).toHaveBeenCalledWith(
+        expect.objectContaining({ width: 128, height: 104 }),
+      );
+    });
   });
 });

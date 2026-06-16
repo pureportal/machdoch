@@ -134,7 +134,7 @@ export const SESSION_STATUS_META = {
     filterLabel: "Done",
     icon: Check,
     containerClassName:
-      "border-emerald-500/20 bg-emerald-500/10 shadow-[0_0_18px_rgba(16,185,129,0.18)]",
+      "border-emerald-500/20 bg-emerald-500/10 shadow-[0_0_18px_rgba(63,137,117,0.16)]",
     iconClassName: "animate-pulse text-emerald-300",
   },
   failed: {

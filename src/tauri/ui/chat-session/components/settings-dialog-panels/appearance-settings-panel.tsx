@@ -34,7 +34,7 @@ const ACCENT_OPTIONS = [
   },
   {
     value: "emerald",
-    label: "Emerald",
+    label: "Sage",
     swatchClassName: "bg-emerald-500",
   },
   {

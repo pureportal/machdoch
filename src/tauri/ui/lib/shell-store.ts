@@ -15,6 +15,7 @@ const APP_SHELL_STORAGE_KEY = "machdoch.desktop.app-shell-state";
 const RALPH_SETTINGS_STORAGE_KEY = "machdoch.desktop.ralph-settings";
 const ONBOARDING_STORAGE_KEY = "machdoch.desktop.onboarding-state";
 const APPEARANCE_STORAGE_KEY = "machdoch.desktop.appearance-state";
+const MCP_MARKETPLACE_STORAGE_KEY = "machdoch.desktop.mcp-marketplace-state";
 const STORE_FILE = "machdoch-shell-state.json";
 const SHELL_STATE_CHANGED_EVENT = "machdoch://shell-state-changed";
 const APPEARANCE_SETTINGS_CHANGED_EVENT =
@@ -38,12 +39,24 @@ export interface OnboardingState {
   skippedAt?: number;
 }
 
-export type MainAppId = "chat" | "ralph";
+export type MainAppId = "chat" | "ralph" | "marketplace";
 
 export interface AppShellState {
   version: 1;
   activeApp: MainAppId;
   lastViewedAt: Record<MainAppId, number>;
+}
+
+export interface McpMarketplaceRegistrySourceState {
+  id: string;
+  title: string;
+  baseUrl: string;
+  enabled: boolean;
+}
+
+export interface McpMarketplaceState {
+  version: 1;
+  registries: McpMarketplaceRegistrySourceState[];
 }
 
 export interface RalphSettings {
@@ -53,6 +66,7 @@ export interface RalphSettings {
   generationModel: string;
   generationProfile?: string;
   generationReasoning?: ReasoningMode;
+  generationPromptHistory?: string[];
   runProvider: RuntimeProvider;
   runModel: string;
   runProfile?: string;
@@ -89,8 +103,14 @@ export const DEFAULT_APP_SHELL_STATE = {
   lastViewedAt: {
     chat: 0,
     ralph: 0,
+    marketplace: 0,
   },
 } as const satisfies AppShellState;
+
+export const DEFAULT_MCP_MARKETPLACE_STATE = {
+  version: 1,
+  registries: [],
+} as const satisfies McpMarketplaceState;
 
 export const DEFAULT_RALPH_SETTINGS = {
   version: 1,
@@ -121,8 +141,30 @@ const normalizeWorkspaceRoot = (value: unknown): string | null => {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 };
 
+const normalizeStringHistory = (value: unknown, limit: number): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .flatMap((entry) => {
+      if (typeof entry !== "string") {
+        return [];
+      }
+
+      const normalizedEntry = entry.trim();
+
+      return normalizedEntry ? [normalizedEntry] : [];
+    })
+    .slice(-limit);
+};
+
 const normalizeMainAppId = (value: unknown): MainAppId => {
-  return value === "ralph" ? "ralph" : "chat";
+  if (value === "ralph" || value === "marketplace") {
+    return value;
+  }
+
+  return "chat";
 };
 
 const normalizeAppShellState = (value: unknown): AppShellState => {
@@ -146,7 +188,54 @@ const normalizeAppShellState = (value: unknown): AppShellState => {
         typeof lastViewedAt.ralph === "number"
           ? lastViewedAt.ralph
           : DEFAULT_APP_SHELL_STATE.lastViewedAt.ralph,
+      marketplace:
+        typeof lastViewedAt.marketplace === "number"
+          ? lastViewedAt.marketplace
+          : DEFAULT_APP_SHELL_STATE.lastViewedAt.marketplace,
     },
+  };
+};
+
+const normalizeMarketplaceRegistrySource = (
+  value: unknown,
+): McpMarketplaceRegistrySourceState | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const id = normalizeOptionalString(value.id);
+  const title = normalizeOptionalString(value.title);
+  const baseUrl = normalizeOptionalString(value.baseUrl);
+
+  if (!id || !title || !baseUrl) {
+    return undefined;
+  }
+
+  return {
+    id,
+    title,
+    baseUrl,
+    enabled: value.enabled !== false,
+  };
+};
+
+const normalizeMcpMarketplaceState = (
+  value: unknown,
+): McpMarketplaceState => {
+  if (!isRecord(value)) {
+    return DEFAULT_MCP_MARKETPLACE_STATE;
+  }
+
+  const registries = Array.isArray(value.registries)
+    ? value.registries.flatMap((entry) => {
+        const normalized = normalizeMarketplaceRegistrySource(entry);
+        return normalized ? [normalized] : [];
+      })
+    : [];
+
+  return {
+    version: 1,
+    registries,
   };
 };
 
@@ -191,6 +280,10 @@ const normalizeRalphSettings = (value: unknown): RalphSettings => {
     ...(isReasoningMode(value.generationReasoning)
       ? { generationReasoning: value.generationReasoning }
       : {}),
+    generationPromptHistory: normalizeStringHistory(
+      value.generationPromptHistory,
+      40,
+    ),
     runProvider,
     runModel: normalizeRalphModel(value.runModel, runProvider),
     ...(normalizeOptionalString(value.runProfile)
@@ -583,6 +676,83 @@ export const saveAppearanceSettings = async (
   } catch (error) {
     console.error(
       "Failed to persist appearance settings to localStorage",
+      error,
+    );
+  }
+};
+
+export const loadMcpMarketplaceState =
+  async (): Promise<McpMarketplaceState> => {
+    if (canUseTauriStore()) {
+      try {
+        const value = await getStore().get<McpMarketplaceState>(
+          MCP_MARKETPLACE_STORAGE_KEY,
+        );
+
+        if (value !== null && value !== undefined) {
+          return normalizeMcpMarketplaceState(value);
+        }
+      } catch (error) {
+        console.error(
+          "Failed to load MCP marketplace state from Tauri store",
+          error,
+        );
+      }
+    }
+
+    const localStorage = getLocalStorage();
+
+    if (!localStorage) {
+      return DEFAULT_MCP_MARKETPLACE_STATE;
+    }
+
+    try {
+      const raw = localStorage.getItem(MCP_MARKETPLACE_STORAGE_KEY);
+      return raw
+        ? normalizeMcpMarketplaceState(JSON.parse(raw))
+        : DEFAULT_MCP_MARKETPLACE_STATE;
+    } catch (error) {
+      console.error(
+        "Failed to load MCP marketplace state from localStorage",
+        error,
+      );
+      return DEFAULT_MCP_MARKETPLACE_STATE;
+    }
+  };
+
+export const saveMcpMarketplaceState = async (
+  state: McpMarketplaceState,
+): Promise<void> => {
+  const normalizedState = normalizeMcpMarketplaceState(state);
+
+  if (canUseTauriStore()) {
+    try {
+      const store = getStore();
+      await store.set(MCP_MARKETPLACE_STORAGE_KEY, normalizedState);
+      await store.save();
+      return;
+    } catch (error) {
+      console.error(
+        "Failed to persist MCP marketplace state to Tauri store",
+        error,
+      );
+    }
+  }
+
+  const localStorage = getLocalStorage();
+
+  if (!localStorage) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      MCP_MARKETPLACE_STORAGE_KEY,
+      JSON.stringify(normalizedState),
+    );
+  } catch (error) {
+    console.error(
+      "Failed to persist MCP marketplace state to localStorage",
       error,
     );
   }

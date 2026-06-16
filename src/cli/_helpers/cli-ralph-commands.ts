@@ -2,12 +2,16 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { loadRuntimeConfig } from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
+import { getUserSchedulerStatePath, DurableSmartScheduler } from "../../core/scheduler.js";
 import {
+  createRalphRunLogger,
   createRalphFlowWithAgent,
   deleteRalphFlow,
+  listRalphRunRecords,
   listRalphFlowRevisions,
   listRalphFlows,
   parseRalphFlowJson,
+  readRalphRunLog,
   readRalphFlow,
   resolveRalphFlowReference,
   restoreRalphFlowRevision,
@@ -16,10 +20,21 @@ import {
   writeRalphRunRecord,
   writeRalphFlow,
   type RalphFlow,
+  type RalphFlowScope,
+  type RalphGenerationEvent,
   type RalphRunEvent,
   type RalphRunResult,
 } from "../../core/ralph.js";
-import type { TaskExecutionProgress } from "../../core/types.js";
+import {
+  RalphWatchService,
+  deleteRalphWatch,
+  listRalphWatches,
+  syncRalphWatchSchedulerJobs,
+  upsertRalphWatch,
+  type RalphWatchInput,
+} from "../../core/ralph-watches.js";
+import type { TaskExecutionProgress, TaskExecutionResult } from "../../core/types.js";
+import { createSchedulerExecutor } from "./cli-scheduler-commands.js";
 import { createDiscoveryOptions } from "./cli-output.js";
 import {
   createVerboseProgressReporter,
@@ -128,6 +143,101 @@ const parseVariableValues = (
   return values;
 };
 
+const getRalphCommandScope = (options: RalphCliOptions): RalphFlowScope => {
+  return options.scope ?? "workspace";
+};
+
+const readRalphWatchInput = async (
+  args: ParsedCliArgs,
+  options: RalphCliOptions,
+): Promise<RalphWatchInput> => {
+  const raw = options.watchJson ??
+    (options.watchJsonFile
+      ? await readRalphWorkspaceFile(args.workspaceRoot, options.watchJsonFile)
+      : fail("Expected --watch-json or --watch-json-file."));
+  const parsed = JSON.parse(raw) as unknown;
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Expected watch JSON to be an object.");
+  }
+
+  return parsed as RalphWatchInput;
+};
+
+const createUserScheduler = (withExecutor = false): DurableSmartScheduler => {
+  return new DurableSmartScheduler({
+    statePath: getUserSchedulerStatePath(),
+    ...(withExecutor ? { executor: createSchedulerExecutor() } : {}),
+  });
+};
+
+const deleteWatchSchedulerJob = async (
+  scheduler: DurableSmartScheduler,
+  watchId: string,
+): Promise<void> => {
+  const jobs = await scheduler.listJobs();
+  const dedupeKey = `ralph-watch:${watchId}`;
+
+  for (const job of jobs) {
+    if (job.dedupeKey === dedupeKey && job.status !== "deleted") {
+      await scheduler.deleteJob(job.id);
+    }
+  }
+};
+
+const printWatchLines = (
+  watches: Awaited<ReturnType<typeof listRalphWatches>>,
+): void => {
+  writeStdoutLine(`ralph watches: ${watches.length}`);
+
+  for (const watch of watches) {
+    writeStdoutLine(
+      `- ${watch.id} [${watch.enabled ? "enabled" : "disabled"}] flow=${watch.flow.scope}:${watch.flow.id} roots=${watch.roots.length}`,
+    );
+    writeStdoutLine(`  workspace: ${watch.executionWorkspaceRoot}`);
+  }
+};
+
+const runRalphWatchService = async (args: ParsedCliArgs): Promise<void> => {
+  const scheduler = createUserScheduler(true);
+  const service = new RalphWatchService({
+    scheduler,
+    onError: (watch, error) => {
+      writeStderrLine(
+        `ralph watch ${watch.id} error: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    },
+    onEvent: (watch, event, result) => {
+      writeStdoutLine(
+        `ralph watch ${watch.id}: ${event.type} ${event.relativePath} enqueued=${result.enqueued.length}`,
+      );
+    },
+  });
+
+  await service.start();
+
+  if (args.json) {
+    printJson({
+      status: "running",
+      watches: await listRalphWatches(),
+      schedulerStatePath: getUserSchedulerStatePath(),
+    });
+  } else {
+    writeStdoutLine("ralph watch service: running");
+    writeStdoutLine("Press Ctrl+C to stop.");
+  }
+
+  await new Promise<void>((resolvePromise) => {
+    const stop = (): void => {
+      service.stop();
+      resolvePromise();
+    };
+
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+};
+
 const summarizeFlow = (flow: RalphFlow): Record<string, unknown> => {
   return {
     schemaVersion: flow.schemaVersion,
@@ -135,6 +245,7 @@ const summarizeFlow = (flow: RalphFlow): Record<string, unknown> => {
     alias: flow.alias ?? null,
     name: flow.name,
     description: flow.description ?? null,
+    settings: flow.settings ?? null,
     variables: flow.variables ?? [],
     blocks: flow.blocks,
     edges: flow.edges,
@@ -300,6 +411,202 @@ const createRalphEventProgressReporter = (
   };
 };
 
+const createRalphGenerationProgressMessage = (
+  event: RalphGenerationEvent,
+): string => {
+  if (event.message.trim()) {
+    return event.message;
+  }
+
+  switch (event.type) {
+    case "queued":
+      return "Ralph flow generation is queued.";
+    case "started":
+      return "Ralph flow generation started.";
+    case "round-start":
+      return `Starting Ralph generation round ${event.round ?? "?"}.`;
+    case "generator-start":
+      return "Starting Ralph generator.";
+    case "generator-output":
+      return "Ralph generator produced output.";
+    case "generator-file-written":
+      return "Ralph generated flow file was written.";
+    case "schema-validation-start":
+      return "Validating generated Ralph flow schema.";
+    case "schema-validation-result":
+      return "Generated Ralph flow schema validation finished.";
+    case "validator-start":
+      return "Starting Ralph generation validator.";
+    case "validator-result":
+      return "Ralph generation validator finished.";
+    case "fallback-provider":
+      return "Ralph generation is trying a fallback provider.";
+    case "retry-feedback":
+      return "Ralph generation is retrying with feedback.";
+    case "created":
+      return "Ralph flow generation completed.";
+    case "blocked":
+      return "Ralph flow generation is blocked.";
+    case "cancelled":
+      return "Ralph flow generation was cancelled.";
+    case "failed":
+      return "Ralph flow generation failed.";
+  }
+};
+
+const createRalphGenerationTimeline = (
+  event: RalphGenerationEvent,
+): NonNullable<TaskExecutionProgress["timelineEvent"]> => {
+  const metadata: NonNullable<
+    NonNullable<TaskExecutionProgress["timelineEvent"]>["metadata"]
+  > = {
+    ralphGenerationEventType: event.type,
+    ralphGenerationRunId: event.generationRunId,
+  };
+
+  if (event.round !== undefined) {
+    metadata.ralphGenerationRound = event.round;
+  }
+
+  if (event.maxRounds !== undefined) {
+    metadata.ralphGenerationMaxRounds = event.maxRounds;
+  }
+
+  if (event.actor) {
+    metadata.ralphGenerationActor = event.actor;
+  }
+
+  if (event.flowPath) {
+    metadata.ralphGenerationFlowPath = event.flowPath;
+  }
+
+  if (event.generationFlowPath) {
+    metadata.ralphGenerationTempFlowPath = event.generationFlowPath;
+  }
+
+  if (event.validationValid !== undefined) {
+    metadata.ralphGenerationValidationValid = event.validationValid;
+  }
+
+  if (event.validationErrorCount !== undefined) {
+    metadata.ralphGenerationValidationErrorCount = event.validationErrorCount;
+  }
+
+  if (event.validationWarningCount !== undefined) {
+    metadata.ralphGenerationValidationWarningCount = event.validationWarningCount;
+  }
+
+  if (event.validatorDecision) {
+    metadata.ralphGenerationValidatorDecision = event.validatorDecision;
+  }
+
+  if (event.status) {
+    metadata.ralphGenerationStatus = event.status;
+  }
+
+  if (event.blockCount !== undefined) {
+    metadata.ralphGenerationBlockCount = event.blockCount;
+  }
+
+  if (event.edgeCount !== undefined) {
+    metadata.ralphGenerationEdgeCount = event.edgeCount;
+  }
+
+  if (event.durationMs !== undefined) {
+    metadata.ralphGenerationDurationMs = event.durationMs;
+  }
+
+  const phase: NonNullable<TaskExecutionProgress["timelineEvent"]>["phase"] =
+    event.type === "created"
+      ? "completed"
+      : event.type === "blocked" || event.type === "failed"
+        ? "failed"
+        : event.type === "cancelled"
+          ? "rejected"
+          : event.type === "retry-feedback"
+            ? "requested-continuation"
+            : event.type.endsWith("-result") || event.type === "generator-file-written"
+              ? "completed"
+              : "started";
+  const kind: NonNullable<TaskExecutionProgress["timelineEvent"]>["kind"] =
+    event.type === "generator-start" || event.type === "generator-output"
+      ? "model-call"
+      : event.type === "validator-start" ||
+          event.type === "validator-result" ||
+          event.type === "schema-validation-start" ||
+          event.type === "schema-validation-result"
+        ? "validator"
+        : event.type === "retry-feedback" || event.type === "fallback-provider"
+          ? "retry"
+          : event.type === "generator-file-written"
+            ? "output"
+            : "state";
+  const tone: NonNullable<TaskExecutionProgress["timelineEvent"]>["tone"] =
+    event.type === "created"
+      ? "success"
+      : event.type === "blocked" || event.type === "failed" || event.type === "cancelled"
+        ? "danger"
+        : event.type === "retry-feedback" || event.type === "fallback-provider"
+          ? "warning"
+          : "info";
+
+  return {
+    kind,
+    phase,
+    label: createRalphGenerationProgressMessage(event),
+    tone,
+    ...(event.provider ? { provider: event.provider } : {}),
+    ...(event.model ? { model: event.model } : {}),
+    metadata,
+  };
+};
+
+const createRalphGenerationProgressReporter = (
+  mode: TaskExecutionProgress["mode"],
+): ((event: RalphGenerationEvent) => void) => {
+  const report = createVerboseProgressReporter(writeStderrLine, {
+    structured: true,
+  });
+
+  return (event): void => {
+    const progress: TaskExecutionProgress = {
+      task: "Ralph flow generation",
+      mode,
+      state:
+        event.type === "created"
+          ? "completed"
+          : event.type === "cancelled"
+            ? "cancelled"
+            : event.type === "blocked" || event.type === "failed"
+              ? "blocked"
+              : event.type === "schema-validation-start" ||
+                  event.type === "schema-validation-result" ||
+                  event.type === "validator-start" ||
+                  event.type === "validator-result"
+                ? "verifying"
+                : "executing",
+      message: createRalphGenerationProgressMessage(event),
+      executedTools: [],
+      outputSections: [],
+      cancellable: true,
+      timelineEvent: createRalphGenerationTimeline(event),
+    };
+
+    void report(progress);
+  };
+};
+
+const summarizeGenerationActorResult = (
+  result: TaskExecutionResult,
+): Record<string, unknown> => {
+  return {
+    status: result.status,
+    summary: result.summary,
+    reason: result.reason ?? null,
+    executedTools: result.executedTools,
+  };
+};
+
 const printJson = (value: unknown): void => {
   writeStdoutLine(JSON.stringify(value, null, 2));
 };
@@ -353,17 +660,90 @@ export const printRalphSummary = async (
   args: ParsedCliArgs,
 ): Promise<void> => {
   const options = args.ralph ?? fail("No Ralph action was provided.");
+  const scope = getRalphCommandScope(options);
 
   switch (options.action) {
+    case "watches": {
+      const watchAction = options.watchAction ?? "list";
+      const scheduler = createUserScheduler(false);
+
+      switch (watchAction) {
+        case "list": {
+          const watches = await listRalphWatches();
+
+          if (args.json) {
+            printJson({
+              watches,
+              schedulerStatePath: getUserSchedulerStatePath(),
+            });
+            return;
+          }
+
+          printWatchLines(watches);
+          return;
+        }
+        case "create": {
+          const input = await readRalphWatchInput(args, options);
+          const watch = await upsertRalphWatch(input);
+          await syncRalphWatchSchedulerJobs(scheduler);
+
+          if (args.json) {
+            printJson({
+              watch,
+              schedulerStatePath: getUserSchedulerStatePath(),
+            });
+            return;
+          }
+
+          writeStdoutLine(`ralph watch saved: ${watch.id}`);
+          writeStdoutLine(`flow: ${watch.flow.scope}:${watch.flow.id}`);
+          writeStdoutLine(`workspace: ${watch.executionWorkspaceRoot}`);
+          return;
+        }
+        case "delete": {
+          const subject = options.subject ??
+            fail("Expected a watch id after `machdoch ralph watches delete`.");
+          const watch = await deleteRalphWatch(subject);
+          await deleteWatchSchedulerJob(scheduler, watch.id);
+
+          if (args.json) {
+            printJson({ deleted: watch });
+            return;
+          }
+
+          writeStdoutLine(`ralph watch deleted: ${watch.id}`);
+          return;
+        }
+        case "sync": {
+          await syncRalphWatchSchedulerJobs(scheduler);
+
+          if (args.json) {
+            printJson({
+              synced: true,
+              watches: await listRalphWatches(),
+              schedulerStatePath: getUserSchedulerStatePath(),
+            });
+            return;
+          }
+
+          writeStdoutLine("ralph watches synced");
+          return;
+        }
+        case "run": {
+          await runRalphWatchService(args);
+          return;
+        }
+      }
+    }
     case "list": {
-      const flows = await listRalphFlows(args.workspaceRoot);
+      const flows = await listRalphFlows(args.workspaceRoot, { scope });
 
       if (args.json) {
-        printJson({ workspaceRoot: args.workspaceRoot, flows });
+        printJson({ workspaceRoot: args.workspaceRoot, scope, flows });
         return;
       }
 
-      writeStdoutLine(`ralph flows: ${flows.length}`);
+      writeStdoutLine(`ralph flows (${scope}): ${flows.length}`);
       for (const flow of flows) {
         writeStdoutLine(
           `- ${flow.id}${flow.alias ? ` alias=${flow.alias}` : ""} blocks=${flow.blockCount} edges=${flow.edgeCount} vars=${flow.variableCount}`,
@@ -376,13 +756,16 @@ export const printRalphSummary = async (
     }
     case "show": {
       const subject = options.subject ?? fail("Expected a flow id or alias after `machdoch ralph show`.");
-      const resolution = await resolveRalphFlowReference(args.workspaceRoot, subject);
+      const resolution = await resolveRalphFlowReference(args.workspaceRoot, subject, {
+        scope,
+      });
       const flow = await readRalphFlow(args.workspaceRoot, resolution.id, {
         allowInvalid: true,
+        scope,
       });
 
       if (args.json) {
-        printJson({ flow: summarizeFlow(flow), path: resolution.path });
+        printJson({ flow: summarizeFlow(flow), path: resolution.path, scope });
         return;
       }
 
@@ -392,13 +775,15 @@ export const printRalphSummary = async (
     case "validate": {
       const subject = options.subject ??
         fail("Expected a flow id or alias after `machdoch ralph validate`.");
-      const resolution = await resolveRalphFlowReference(args.workspaceRoot, subject);
+      const resolution = await resolveRalphFlowReference(args.workspaceRoot, subject, {
+        scope,
+      });
       const path = resolution.path;
       const flow = resolution.flow;
       const validation = validateRalphFlow(flow);
 
       if (args.json) {
-        printJson({ path, validation });
+        printJson({ path, scope, validation });
         return;
       }
 
@@ -414,10 +799,10 @@ export const printRalphSummary = async (
     case "delete": {
       const subject = options.subject ??
         fail("Expected a flow id or alias after `machdoch ralph delete`.");
-      const result = await deleteRalphFlow(args.workspaceRoot, subject);
+      const result = await deleteRalphFlow(args.workspaceRoot, subject, { scope });
 
       if (args.json) {
-        printJson(result);
+        printJson({ ...result, scope });
         return;
       }
 
@@ -431,10 +816,12 @@ export const printRalphSummary = async (
     case "revisions": {
       const subject = options.subject ??
         fail("Expected a flow id or alias after `machdoch ralph revisions`.");
-      const revisions = await listRalphFlowRevisions(args.workspaceRoot, subject);
+      const revisions = await listRalphFlowRevisions(args.workspaceRoot, subject, {
+        scope,
+      });
 
       if (args.json) {
-        printJson({ flow: subject, revisions });
+        printJson({ flow: subject, scope, revisions });
         return;
       }
 
@@ -446,6 +833,44 @@ export const printRalphSummary = async (
       }
       return;
     }
+    case "runs": {
+      const runs = await listRalphRunRecords(args.workspaceRoot, {
+        ...(options.subject ? { flowId: options.subject } : {}),
+        scope,
+      });
+
+      if (args.json) {
+        printJson({ scope, runs });
+        return;
+      }
+
+      writeStdoutLine(`ralph runs: ${runs.length}`);
+      for (const run of runs) {
+        writeStdoutLine(
+          `- ${run.id} ${run.status} ${run.createdAt} flow=${run.flowName} blocks=${run.blockCount} events=${run.eventCount}`,
+        );
+        writeStdoutLine(`  ${run.summary}`);
+      }
+      return;
+    }
+    case "log": {
+      const subject = options.subject ??
+        fail("Expected a run id after `machdoch ralph log`.");
+      const log = await readRalphRunLog(
+        args.workspaceRoot,
+        subject,
+        options.trace ? "trace" : "simple",
+        { scope },
+      );
+
+      if (args.json) {
+        printJson(log);
+        return;
+      }
+
+      writeStdoutLine(log.content);
+      return;
+    }
     case "restore": {
       const subject = options.subject ??
         fail("Expected a flow id or alias after `machdoch ralph restore`.");
@@ -455,11 +880,13 @@ export const printRalphSummary = async (
         args.workspaceRoot,
         subject,
         revision,
+        { scope },
       );
 
       if (args.json) {
         printJson({
           path: result.path,
+          scope,
           flow: summarizeFlow(result.flow),
           validation: result.validation,
           revision: result.revision,
@@ -502,14 +929,16 @@ export const printRalphSummary = async (
         createRevision: true,
         reason: "manual-save",
         allowInvalid: true,
+        scope,
       });
       const storedFlow = await readRalphFlow(args.workspaceRoot, flow.id, {
         allowInvalid: true,
+        scope,
       });
       const validation = validateRalphFlow(storedFlow);
 
       if (args.json) {
-        printJson({ path, flow: summarizeFlow(storedFlow), validation });
+        printJson({ path, scope, flow: summarizeFlow(storedFlow), validation });
         return;
       }
 
@@ -539,7 +968,7 @@ export const printRalphSummary = async (
         args.workspaceRoot,
         createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
       );
-      const flow = await readRalphFlow(args.workspaceRoot, subject);
+      const flow = await readRalphFlow(args.workspaceRoot, subject, { scope });
       const fileParams = options.paramsFile
         ? await readRalphParamsFile(args.workspaceRoot, options.paramsFile)
         : [];
@@ -547,8 +976,14 @@ export const printRalphSummary = async (
         ...(options.params ?? []),
         ...fileParams,
       ]);
+      const logger = await createRalphRunLogger(args.workspaceRoot, flow, {
+        variableValues,
+        scope: "workspace",
+      });
       const result = await runRalphFlow(flow, config, customizations, {
         variableValues,
+        runId: logger.runId,
+        logger,
         ...(options.maxTransitions !== undefined
           ? { maxTransitions: options.maxTransitions }
           : {}),
@@ -560,16 +995,26 @@ export const printRalphSummary = async (
       });
       const runRecord = await writeRalphRunRecord(args.workspaceRoot, flow, result, {
         variableValues,
+        runId: logger.runId,
+        ...(logger.paths ? { paths: logger.paths } : {}),
+        scope: "workspace",
       });
 
       if (args.json) {
-        printJson({ run: summarizeRun(result), runLogPath: runRecord.path });
+        printJson({
+          scope,
+          run: summarizeRun(result),
+          runLogPath: runRecord.paths.simpleMarkdownPath,
+          runRecordPath: runRecord.path,
+          traceLogPath: runRecord.paths.traceJsonlPath,
+        });
         return;
       }
 
       writeStdoutLine(`ralph run: ${result.status}`);
       writeStdoutLine(result.summary);
-      writeStdoutLine(`run log: ${runRecord.path}`);
+      writeStdoutLine(`run log: ${runRecord.paths.simpleMarkdownPath}`);
+      writeStdoutLine(`trace log: ${runRecord.paths.traceJsonlPath}`);
       for (const event of result.events) {
         if (event.type === "edge-route") {
           writeStdoutLine(`- ${event.from}.${event.output} -> ${event.to}`);
@@ -617,28 +1062,46 @@ export const printRalphSummary = async (
       const result = await createRalphFlowWithAgent(args.workspaceRoot, {
         name,
         prompt,
+        scope,
         config,
         customizations,
         ...(existingFlow ? { existingFlow } : {}),
         ...(options.target ? { target: options.target } : {}),
         ...(options.generationMode ? { mode: options.generationMode } : {}),
         ...(options.maxRounds ? { maxRounds: options.maxRounds } : {}),
+        ...(args.json
+          ? {
+              onGenerationEvent: createRalphGenerationProgressReporter(config.mode),
+            }
+          : {}),
       });
 
       if (args.json) {
         printJson({
+          generationRunId: result.generationRunId ?? null,
           status: result.status,
           flowPath: result.flowPath,
+          generationLogPath: result.generationLogPath ?? null,
+          traceLogPath: result.traceLogPath ?? null,
           rounds: result.rounds,
           validation: result.validation,
           summary: result.summary,
           flow: result.flow ? summarizeFlow(result.flow) : null,
+          events: result.events,
+          generatorResults: result.generatorResults.map(summarizeGenerationActorResult),
+          validatorResults: result.validatorResults.map(summarizeGenerationActorResult),
         });
         return;
       }
 
       writeStdoutLine(`ralph create: ${result.status}`);
       writeStdoutLine(`path: ${result.flowPath}`);
+      if (result.generationLogPath) {
+        writeStdoutLine(`generation log: ${result.generationLogPath}`);
+      }
+      if (result.traceLogPath) {
+        writeStdoutLine(`trace log: ${result.traceLogPath}`);
+      }
       writeStdoutLine(`rounds: ${result.rounds}`);
       writeStdoutLine(result.summary);
       for (const error of result.validation.errors) {

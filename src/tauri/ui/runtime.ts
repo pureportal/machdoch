@@ -20,17 +20,25 @@ import type {
 import type {
   RalphFlow,
   RalphFlowDeleteResult,
+  RalphFlowScope,
   RalphFlowRevisionSummary,
   RalphFlowSummary,
+  RalphGenerationEvent,
+  RalphRunLogReadResult,
   RalphRunResult,
+  RalphRunSummary,
   RalphValidationResult,
 } from "../../core/ralph.js";
 export type {
   RalphFlow,
   RalphFlowDeleteResult,
+  RalphFlowScope,
   RalphFlowRevisionSummary,
   RalphFlowSummary,
+  RalphGenerationEvent,
+  RalphRunLogReadResult,
   RalphRunResult,
+  RalphRunSummary,
   RalphValidationResult,
 } from "../../core/ralph.js";
 import {
@@ -903,26 +911,31 @@ export interface McpCommandOAuthResult {
 
 export interface RalphListFlowsResult {
   workspaceRoot: string;
+  scope?: RalphFlowScope;
   flows: RalphFlowSummary[];
 }
 
 export interface RalphFlowResult {
   path: string;
+  scope?: RalphFlowScope;
   flow: RalphFlow;
 }
 
 export interface RalphValidateFlowResult {
   path: string;
+  scope?: RalphFlowScope;
   validation: RalphValidationResult;
 }
 
 export interface RalphListFlowRevisionsResult {
   flow: string;
+  scope?: RalphFlowScope;
   revisions: RalphFlowRevisionSummary[];
 }
 
 export interface RalphCreateFlowInput {
   name?: string;
+  scope?: RalphFlowScope;
   prompt: string;
   maxRounds?: number;
   existingFlow?: RalphFlow;
@@ -938,16 +951,23 @@ export interface RalphCreateFlowInput {
 }
 
 export interface RalphCreateFlowResult {
+  generationRunId?: string | null;
   status: "created" | "blocked";
   flowPath: string;
+  generationLogPath?: string | null;
+  traceLogPath?: string | null;
   rounds: number;
   validation: RalphValidationResult;
   summary: string;
   flow: RalphFlow | null;
+  events?: RalphGenerationEvent[];
+  generatorResults?: Array<Pick<TaskExecutionResult, "status" | "summary" | "reason" | "executedTools">>;
+  validatorResults?: Array<Pick<TaskExecutionResult, "status" | "summary" | "reason" | "executedTools">>;
 }
 
 export interface RalphSaveFlowInput {
   flow: RalphFlow;
+  scope?: RalphFlowScope;
 }
 
 export interface RalphSaveFlowResult {
@@ -961,6 +981,7 @@ export type RalphDeleteFlowResult = RalphFlowDeleteResult;
 export interface RalphRestoreFlowRevisionInput {
   name: string;
   revision: string;
+  scope?: RalphFlowScope;
 }
 
 export interface RalphRestoreFlowRevisionResult {
@@ -972,6 +993,7 @@ export interface RalphRestoreFlowRevisionResult {
 
 export interface RalphRunFlowInput {
   name: string;
+  scope?: RalphFlowScope;
   params?: Record<string, string>;
   mode?: RunMode;
   profile?: string;
@@ -985,7 +1007,15 @@ export interface RalphRunFlowInput {
 export interface RalphRunFlowResult {
   run: RalphRunResult;
   runLogPath?: string;
+  runRecordPath?: string;
+  traceLogPath?: string;
 }
+
+export interface RalphListRunsResult {
+  runs: RalphRunSummary[];
+}
+
+export type RalphRunLogResult = RalphRunLogReadResult;
 
 export interface ActiveDesktopTaskSummary {
   id: string;
@@ -3749,6 +3779,7 @@ const createRalphRunArguments = (
 
   const argumentsList = ["run", normalizedName];
 
+  appendSchedulerOption(argumentsList, "--scope", input.scope);
   appendSchedulerOption(argumentsList, "--mode", input.mode);
   appendSchedulerOption(argumentsList, "--profile", normalizeSchedulerCliString(input.profile));
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
@@ -3781,6 +3812,7 @@ const createRalphCreateArguments = (
 
   const argumentsList = ["create"];
 
+  appendSchedulerOption(argumentsList, "--scope", input.scope);
   appendSchedulerOption(argumentsList, "--mode", input.mode);
   appendSchedulerOption(argumentsList, "--profile", normalizeSchedulerCliString(input.profile));
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
@@ -3807,17 +3839,26 @@ const createRalphSaveArguments = (
     throw new Error("Expected a Ralph flow id.");
   }
 
-  return ["save", flowId, "--flow-json", JSON.stringify(input.flow)];
+  return [
+    "save",
+    flowId,
+    ...(input.scope ? ["--scope", input.scope] : []),
+    "--flow-json",
+    JSON.stringify(input.flow),
+  ];
 };
 
-const createRalphDeleteArguments = (name: string): string[] => {
+const createRalphDeleteArguments = (
+  name: string,
+  scope?: RalphFlowScope,
+): string[] => {
   const normalizedName = name.trim();
 
   if (!normalizedName) {
     throw new Error("Expected a Ralph flow id or alias.");
   }
 
-  return ["delete", normalizedName];
+  return ["delete", normalizedName, ...(scope ? ["--scope", scope] : [])];
 };
 
 const createRalphRestoreArguments = (
@@ -3834,17 +3875,25 @@ const createRalphRestoreArguments = (
     throw new Error("Expected a Ralph revision id.");
   }
 
-  return ["restore", flowId, "--revision", revisionId];
+  return [
+    "restore",
+    flowId,
+    ...(input.scope ? ["--scope", input.scope] : []),
+    "--revision",
+    revisionId,
+  ];
 };
 
 export const listRalphFlows = async (
   workspaceRoot: string | null | undefined,
+  scope?: RalphFlowScope,
 ): Promise<RalphListFlowsResult> => {
   return runRalphCommand(
     workspaceRoot,
-    ["list"],
+    ["list", ...(scope ? ["--scope", scope] : [])],
     () => ({
       workspaceRoot: normalizeRalphCommandWorkspace(workspaceRoot),
+      ...(scope ? { scope } : {}),
       flows: [],
     }),
   );
@@ -3853,6 +3902,7 @@ export const listRalphFlows = async (
 export const showRalphFlow = async (
   workspaceRoot: string | null | undefined,
   name: string,
+  scope?: RalphFlowScope,
 ): Promise<RalphFlowResult> => {
   const normalizedName = name.trim();
 
@@ -3862,7 +3912,7 @@ export const showRalphFlow = async (
 
   return runRalphCommand(
     workspaceRoot,
-    ["show", normalizedName],
+    ["show", normalizedName, ...(scope ? ["--scope", scope] : [])],
     assertRalphDesktopAvailable,
   );
 };
@@ -3870,6 +3920,7 @@ export const showRalphFlow = async (
 export const validateRalphFlow = async (
   workspaceRoot: string | null | undefined,
   name: string,
+  scope?: RalphFlowScope,
 ): Promise<RalphValidateFlowResult> => {
   const normalizedName = name.trim();
 
@@ -3879,7 +3930,7 @@ export const validateRalphFlow = async (
 
   return runRalphCommand(
     workspaceRoot,
-    ["validate", normalizedName],
+    ["validate", normalizedName, ...(scope ? ["--scope", scope] : [])],
     assertRalphDesktopAvailable,
   );
 };
@@ -3887,6 +3938,7 @@ export const validateRalphFlow = async (
 export const listRalphFlowRevisions = async (
   workspaceRoot: string | null | undefined,
   name: string,
+  scope?: RalphFlowScope,
 ): Promise<RalphListFlowRevisionsResult> => {
   const normalizedName = name.trim();
 
@@ -3896,11 +3948,54 @@ export const listRalphFlowRevisions = async (
 
   return runRalphCommand(
     workspaceRoot,
-    ["revisions", normalizedName],
+    ["revisions", normalizedName, ...(scope ? ["--scope", scope] : [])],
     () => ({
       flow: normalizedName,
+      ...(scope ? { scope } : {}),
       revisions: [],
     }),
+  );
+};
+
+export const listRalphRuns = async (
+  workspaceRoot: string | null | undefined,
+  flowId?: string,
+  scope?: RalphFlowScope,
+): Promise<RalphListRunsResult> => {
+  const normalizedFlowId = flowId?.trim();
+
+  return runRalphCommand(
+    workspaceRoot,
+    [
+      "runs",
+      ...(normalizedFlowId ? [normalizedFlowId] : []),
+      ...(scope ? ["--scope", scope] : []),
+    ],
+    () => ({ runs: [] }),
+  );
+};
+
+export const showRalphRunLog = async (
+  workspaceRoot: string | null | undefined,
+  runId: string,
+  kind: "simple" | "trace" = "simple",
+  scope?: RalphFlowScope,
+): Promise<RalphRunLogResult> => {
+  const normalizedRunId = runId.trim();
+
+  if (!normalizedRunId) {
+    throw new Error("Expected a Ralph run id.");
+  }
+
+  return runRalphCommand(
+    workspaceRoot,
+    [
+      "log",
+      normalizedRunId,
+      ...(kind === "trace" ? ["--trace"] : []),
+      ...(scope ? ["--scope", scope] : []),
+    ],
+    assertRalphDesktopAvailable,
   );
 };
 
@@ -3930,10 +4025,11 @@ export const saveRalphFlow = async (
 export const deleteRalphFlow = async (
   workspaceRoot: string | null | undefined,
   name: string,
+  scope?: RalphFlowScope,
 ): Promise<RalphDeleteFlowResult> => {
   return runRalphCommand(
     workspaceRoot,
-    createRalphDeleteArguments(name),
+    createRalphDeleteArguments(name, scope),
     assertRalphDesktopAvailable,
   );
 };

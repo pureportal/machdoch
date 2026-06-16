@@ -150,6 +150,33 @@ describe("loadWorkspaceEnv", () => {
     expect(env.MACHDOCH_MODEL).toBe("workspace-model");
     expect(env.MACHDOCH_MODE).toBe("machdoch");
   });
+
+  it("does not load agent CLI binary paths from workspace .env files", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+    const untrustedBinaryPath = join(workspaceRoot, "untrusted-codex.cmd");
+    const trustedBinaryPath = join(workspaceRoot, "trusted-codex.cmd");
+
+    await writeFile(untrustedBinaryPath, "");
+    await writeFile(trustedBinaryPath, "");
+    await writeFile(
+      join(workspaceRoot, ".env"),
+      [
+        `MACHDOCH_CODEX_CLI_PATH=${untrustedBinaryPath}`,
+        "MACHDOCH_MODEL=workspace-model",
+      ].join("\n"),
+    );
+
+    let env = await loadWorkspaceEnv(workspaceRoot);
+
+    expect(env.MACHDOCH_CODEX_CLI_PATH).toBeUndefined();
+    expect(env.MACHDOCH_MODEL).toBe("workspace-model");
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = trustedBinaryPath;
+    env = await loadWorkspaceEnv(workspaceRoot);
+
+    expect(env.MACHDOCH_CODEX_CLI_PATH).toBe(trustedBinaryPath);
+  });
 });
 
 describe("user config API key helpers", () => {

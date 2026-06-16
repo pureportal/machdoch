@@ -645,6 +645,21 @@ describe("parseCliArgs", () => {
     });
 
     expect(
+      parseCliArgs(["--json", "ralph", "list", "--scope", "user"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "ralph",
+      ralph: {
+        action: "list",
+        scope: "user",
+      },
+      json: true,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
       parseCliArgs(
         [
           "--mode",
@@ -735,6 +750,48 @@ describe("parseCliArgs", () => {
         subject: "refactor-scope",
         flowJson:
           '{"schemaVersion":1,"id":"refactor-scope","name":"Refactor","blocks":[],"edges":[]}',
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "ralph",
+          "watches",
+          "create",
+          "--watch-json",
+          '{"id":"lint-on-change","roots":[{"path":"C:/repo","scope":"workspace"}],"flow":{"id":"lint","scope":"user"}}',
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "ralph",
+      ralph: {
+        action: "watches",
+        watchAction: "create",
+        watchJson:
+          '{"id":"lint-on-change","roots":[{"path":"C:/repo","scope":"workspace"}],"flow":{"id":"lint","scope":"user"}}',
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(["ralph", "watches", "delete", "lint-on-change"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "ralph",
+      ralph: {
+        action: "watches",
+        subject: "lint-on-change",
+        watchAction: "delete",
       },
       json: false,
       verbose: false,
@@ -1262,6 +1319,24 @@ describe("parseCliArgs", () => {
         },
       ),
     ).toThrow("Expected --generation-mode to be followed by do-it or interview.");
+
+    expect(() =>
+      parseCliArgs(["ralph", "list", "--scope", "compatibility"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("Expected Ralph --scope to be followed by user or workspace.");
+
+    expect(() =>
+      parseCliArgs(["ralph", "watches", "create"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("`machdoch ralph watches create` expects --watch-json or --watch-json-file.");
+
+    expect(() =>
+      parseCliArgs(["ralph", "watches", "delete"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("Expected a watch id after `machdoch ralph watches delete`.");
 
     expect(() =>
       parseCliArgs(

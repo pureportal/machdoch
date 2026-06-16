@@ -3,6 +3,7 @@ import {
   Cog,
   MessageSquareText,
   RadioTower,
+  Store,
   TerminalSquare,
   Workflow,
   type LucideIcon,
@@ -76,7 +77,7 @@ const AppActivityIndicator = ({
         "pointer-events-none absolute right-2 top-2 h-2.5 w-2.5 rounded-full",
         running
           ? "border border-cyan-200/80 bg-cyan-400/25 shadow-[0_0_10px_rgba(34,211,238,0.35)]"
-          : "bg-lime-400 shadow-[0_0_8px_rgba(163,230,53,0.35)]",
+          : "bg-lime-400 shadow-[0_0_8px_rgba(122,154,97,0.32)]",
         running && "animate-pulse",
       )}
     >
@@ -163,6 +164,12 @@ export const AppRail = ({
             active={activeApp === "ralph"}
             activity={ralphActivity}
             onClick={() => onSelectApp("ralph")}
+          />
+          <AppRailButton
+            label="Marketplace"
+            icon={Store}
+            active={activeApp === "marketplace"}
+            onClick={() => onSelectApp("marketplace")}
           />
         </div>
       </div>

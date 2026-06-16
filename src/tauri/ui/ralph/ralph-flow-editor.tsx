@@ -3,9 +3,9 @@ import {
   Background,
   BaseEdge,
   Controls,
-  EdgeLabelRenderer,
   Handle,
   MiniMap,
+  NodeResizer,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -17,6 +17,7 @@ import {
   type NodeChange,
   type NodeProps,
   type NodeTypes,
+  type ProOptions,
   type OnNodeDrag,
   type ReactFlowInstance,
   type XYPosition,
@@ -42,10 +43,12 @@ import {
   FileText,
   GitBranch,
   Globe2,
+  GripVertical,
   History,
   Hourglass,
   LayoutGrid,
   LoaderCircle,
+  Maximize2,
   MessageSquareText,
   Octagon,
   Package,
@@ -65,15 +68,20 @@ import {
   Variable,
   Wrench,
   Workflow,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
   type JSX,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import {
   createImageInputUnsupportedModelMessage,
@@ -84,6 +92,7 @@ import {
 import { normalizeRalphFlowLayout } from "../../../core/ralph-layout.js";
 import type {
   RalphAttachmentReference,
+  RalphAnnotationTone,
   RalphBlockSettings,
   RalphBlockType,
   RalphExecutionOutput,
@@ -120,17 +129,21 @@ import {
   deleteRalphFlow,
   listRalphFlowRevisions,
   listRalphFlows,
+  listRalphRuns,
   loadActiveDesktopTasks,
   loadProviderModelCatalog,
   resolveDroppedPaths,
   restoreRalphFlowRevision,
   runRalphFlow,
   saveRalphFlow,
+  showRalphRunLog,
   showRalphFlow,
   subscribeToDesktopTaskProgress,
   type ActiveDesktopTaskSummary,
   type DroppedPathEntry,
   type RalphCreateFlowResult,
+  type RalphGenerationEvent,
+  type RalphRunSummary,
 } from "../runtime";
 import type { ChatSessionContextAttachment } from "../chat-session.model";
 import { Button } from "../components/ui/button";
@@ -147,6 +160,14 @@ import {
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { Textarea } from "../components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -174,6 +195,8 @@ export interface RalphFlowEditorProps {
   runReasoning?: ReasoningMode;
   defaultMaxTransitions?: number;
   providerOptions?: readonly RuntimeProvider[];
+  generationPromptHistory?: readonly string[];
+  onGenerationPromptHistoryChange?: (history: string[]) => void;
 }
 
 type RalphNodeData = {
@@ -182,6 +205,8 @@ type RalphNodeData = {
   issueCount: number;
   active: boolean;
   selected: boolean;
+  derivedChildIds: string[];
+  hiddenByCollapsedGroup: boolean;
 };
 
 type RalphCanvasNode = Node<RalphNodeData, "ralphBlock">;
@@ -199,7 +224,16 @@ type LocalIssue = {
 type RalphEditorMode = "design" | "generate" | "run" | "review";
 type RalphAiTarget = "flow" | "prompt-block" | "refactor";
 type RalphAiGenerationMode = "do-it" | "interview";
+type RalphRunPanelTab = "setup" | "live" | "history" | "logs";
 type ActiveRalphRunStatus = "running" | "stopping";
+type ClipboardCopyState = "idle" | "copied" | "failed";
+type RalphInspectorSectionId =
+  | "content"
+  | "execution"
+  | "behavior"
+  | "routes"
+  | "advanced";
+type RalphExpandedEditorMode = "text" | "code" | "json";
 type RalphGenerationStatus =
   | "running"
   | "stopping"
@@ -248,8 +282,55 @@ interface RalphGenerationJob {
   startedAt: number;
   status: RalphGenerationStatus;
   summary: string;
+  activity: RalphGenerationActivityEvent[];
+  currentRound?: number;
+  maxRounds?: number;
+  currentActor?: string;
+  provider?: string;
+  model?: string;
+  flowPath?: string;
+  tempFlowPath?: string;
+  generationLogPath?: string;
+  traceLogPath?: string;
+  validationValid?: boolean;
+  validationErrorCount?: number;
+  validationWarningCount?: number;
+  validatorDecision?: string;
+  blockCount?: number;
+  edgeCount?: number;
   result?: RalphCreateFlowResult;
   error?: string;
+}
+
+interface RalphGenerationActivityEvent {
+  id: string;
+  type: string;
+  label: string;
+  timestamp: number;
+  detail?: string;
+  round?: number;
+  maxRounds?: number;
+  actor?: string;
+  provider?: string;
+  model?: string;
+  flowPath?: string;
+  tempFlowPath?: string;
+  validationValid?: boolean;
+  validationErrorCount?: number;
+  validationWarningCount?: number;
+  validatorDecision?: string;
+  blockCount?: number;
+  edgeCount?: number;
+}
+
+interface RalphExpandedEditorState {
+  title: string;
+  description: string;
+  ariaLabel: string;
+  mode: RalphExpandedEditorMode;
+  value: string;
+  supportsVariables?: boolean;
+  onApply: (value: string) => void;
 }
 
 const getFlowRunStatusLabel = (runs: ActiveRalphRun[]): string | null => {
@@ -284,6 +365,8 @@ const BLOCK_ACTIONS: Array<{
   { type: "DECISION", label: "Decision" },
   { type: "PACK", label: "Pack" },
   { type: "UTILITY", label: "Utility" },
+  { type: "NOTE", label: "Note" },
+  { type: "GROUP", label: "Group" },
   { type: "END", label: "End" },
 ];
 
@@ -305,6 +388,7 @@ const UTILITY_TYPE_OPTIONS: RalphUtilityType[] = [
   "WRITE_FILE",
   "SEARCH_FILES",
   "RUN_CHECK",
+  "UI_ANALYZE",
   "GIT_STATUS",
   "SET_VARIABLE",
   "TRANSFORM_JSON",
@@ -321,11 +405,141 @@ const UTILITY_TYPE_LABELS: Record<RalphUtilityType, string> = {
   WRITE_FILE: "Write File",
   SEARCH_FILES: "Search Files",
   RUN_CHECK: "Run Check",
+  UI_ANALYZE: "UI Analyze",
   GIT_STATUS: "Git Status",
   SET_VARIABLE: "Set Variable",
   TRANSFORM_JSON: "Transform JSON",
   VALIDATE_JSON: "Validate JSON",
   NOTIFY: "Notify",
+};
+
+const RALPH_INSPECTOR_STORAGE_KEY = "machdoch.ralph.inspector-width";
+const RALPH_INSPECTOR_MIN_WIDTH = 352;
+const RALPH_INSPECTOR_DEFAULT_WIDTH = 448;
+const RALPH_INSPECTOR_MAX_WIDTH = 704;
+const RALPH_INSPECTOR_SCROLL_EPSILON = 4;
+
+const RALPH_INSPECTOR_SECTIONS: Array<{
+  id: RalphInspectorSectionId;
+  label: string;
+}> = [
+  { id: "content", label: "Content" },
+  { id: "behavior", label: "Behavior" },
+  { id: "execution", label: "Execution" },
+  { id: "advanced", label: "Advanced" },
+  { id: "routes", label: "Routes" },
+];
+
+const RALPH_VARIABLE_SNIPPETS = [
+  "{{scope:path=ALL}}",
+  "{{lastResult}}",
+  "{{lastResultSummary}}",
+  "{{targetUrl:url=http://localhost:1420}}",
+  "{{verificationCommand:string=pnpm typecheck:ui}}",
+] as const;
+
+const clampRalphInspectorWidth = (
+  value: number,
+  viewportWidth = typeof window === "undefined" ? undefined : window.innerWidth,
+): number => {
+  const viewportMax =
+    typeof viewportWidth === "number" && Number.isFinite(viewportWidth)
+      ? Math.max(
+          RALPH_INSPECTOR_MIN_WIDTH,
+          Math.floor(viewportWidth * 0.48),
+        )
+      : RALPH_INSPECTOR_MAX_WIDTH;
+  const maxWidth = Math.min(RALPH_INSPECTOR_MAX_WIDTH, viewportMax);
+
+  return Math.min(
+    maxWidth,
+    Math.max(RALPH_INSPECTOR_MIN_WIDTH, Math.round(value)),
+  );
+};
+
+const loadRalphInspectorWidth = (): number => {
+  if (typeof window === "undefined") {
+    return RALPH_INSPECTOR_DEFAULT_WIDTH;
+  }
+
+  try {
+    const storedWidth = window.localStorage.getItem(RALPH_INSPECTOR_STORAGE_KEY);
+    const parsedWidth = storedWidth ? Number.parseInt(storedWidth, 10) : NaN;
+
+    return Number.isFinite(parsedWidth)
+      ? clampRalphInspectorWidth(parsedWidth)
+      : clampRalphInspectorWidth(RALPH_INSPECTOR_DEFAULT_WIDTH);
+  } catch {
+    return clampRalphInspectorWidth(RALPH_INSPECTOR_DEFAULT_WIDTH);
+  }
+};
+
+const saveRalphInspectorWidth = (width: number): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(RALPH_INSPECTOR_STORAGE_KEY, String(width));
+  } catch {
+    // Inspector width is a preference; ignore persistence failures.
+  }
+};
+
+interface RalphInspectorFieldProps {
+  label: string;
+  help?: string;
+  className?: string;
+  action?: ReactNode;
+  children: ReactNode;
+}
+
+const RalphInspectorField = ({
+  label,
+  help,
+  className,
+  action,
+  children,
+}: RalphInspectorFieldProps): JSX.Element => {
+  return (
+    <div className={cn("grid gap-1.5 text-sm text-slate-100", className)}>
+      <span className="flex min-w-0 items-center justify-between gap-2">
+        <span className="min-w-0 truncate font-semibold">{label}</span>
+        {action ? <span className="shrink-0">{action}</span> : null}
+      </span>
+      {children}
+      {help ? (
+        <span className="text-xs leading-4 text-slate-400">{help}</span>
+      ) : null}
+    </div>
+  );
+};
+
+interface RalphInspectorDetailsProps {
+  title: string;
+  help?: string;
+  children: ReactNode;
+}
+
+const RalphInspectorDetails = ({
+  title,
+  help,
+  children,
+}: RalphInspectorDetailsProps): JSX.Element => {
+  return (
+    <details className="group grid gap-2 rounded-lg bg-slate-900/35 px-3 py-2 ring-1 ring-slate-800/60">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200 [&::-webkit-details-marker]:hidden">
+        <span>{title}</span>
+        <ChevronDown className="h-3.5 w-3.5 transition group-open:rotate-180" />
+      </summary>
+      <div className="mt-2 grid gap-2">
+        {help ? (
+          <p className="text-xs leading-4 text-slate-400">{help}</p>
+        ) : null}
+        {children}
+      </div>
+    </details>
+  );
 };
 
 const PROVIDER_OPTIONS = [
@@ -390,6 +604,20 @@ const END_STATUS_OPTIONS = [
   "review",
 ] as const;
 
+const ANNOTATION_TONES: RalphAnnotationTone[] = [
+  "slate",
+  "amber",
+  "sky",
+  "lime",
+  "rose",
+  "violet",
+];
+
+const RALPH_NOTE_DEFAULT_SIZE = { width: 280, height: 180 };
+const RALPH_GROUP_DEFAULT_SIZE = { width: 720, height: 420 };
+const RALPH_NOTE_MIN_SIZE = { width: 180, height: 120 };
+const RALPH_GROUP_MIN_SIZE = { width: 280, height: 180 };
+const RALPH_GROUP_COLLAPSED_HEIGHT = 72;
 const RALPH_CANVAS_COLUMNS = 2;
 const RALPH_CANVAS_X_START = 80;
 const RALPH_CANVAS_Y_START = 120;
@@ -397,9 +625,17 @@ const RALPH_CANVAS_X_GAP = 420;
 const RALPH_CANVAS_Y_GAP = 160;
 const PLACEHOLDER_PATTERN = /\{\{\s*([^}]+?)\s*\}\}/gu;
 const MAX_RALPH_HISTORY_ENTRIES = 80;
+const MAX_RALPH_AI_PROMPT_HISTORY_ENTRIES = 40;
 const RALPH_CONTEXT_MENU_WIDTH = 224;
 const RALPH_CONTEXT_MENU_HEIGHT = 360;
 const RALPH_BLOCK_DUPLICATE_OFFSET = 36;
+const RALPH_STANDARD_BLOCK_WIDTH = 256;
+const RALPH_UTILITY_BLOCK_WIDTH = 288;
+const RALPH_BLOCK_FALLBACK_HEIGHT = 150;
+const RALPH_VALIDATION_JUMP_DURATION_MS = 220;
+const RALPH_REACT_FLOW_PRO_OPTIONS = {
+  hideAttribution: true,
+} satisfies ProOptions;
 
 const getDefaultCanvasPosition = (
   index: number,
@@ -443,6 +679,50 @@ const isEditableShortcutTarget = (target: EventTarget | null): boolean => {
   return tagName === "input" || tagName === "textarea" || tagName === "select";
 };
 
+const EMPTY_RALPH_AI_PROMPT_HISTORY: readonly string[] = [];
+
+const normalizeRalphAiPromptHistory = (
+  history: readonly string[] | undefined,
+): string[] => {
+  return (history ?? [])
+    .flatMap((entry) => {
+      const normalizedEntry = entry.trim();
+
+      return normalizedEntry ? [normalizedEntry] : [];
+    })
+    .slice(-MAX_RALPH_AI_PROMPT_HISTORY_ENTRIES);
+};
+
+const areRalphAiPromptHistoriesEqual = (
+  left: readonly string[],
+  right: readonly string[],
+): boolean => {
+  return (
+    left.length === right.length &&
+    left.every((entry, index) => entry === right[index])
+  );
+};
+
+const addRalphAiPromptHistoryEntry = (
+  history: readonly string[],
+  prompt: string,
+): string[] => {
+  const normalizedHistory = normalizeRalphAiPromptHistory(history);
+  const normalizedPrompt = prompt.trim();
+
+  if (!normalizedPrompt) {
+    return normalizedHistory;
+  }
+
+  if (normalizedHistory.at(-1) === normalizedPrompt) {
+    return normalizedHistory;
+  }
+
+  return [...normalizedHistory, normalizedPrompt].slice(
+    -MAX_RALPH_AI_PROMPT_HISTORY_ENTRIES,
+  );
+};
+
 const createFlowId = (value: string): string => {
   return value
     .trim()
@@ -484,6 +764,12 @@ const createBlockId = (
   return `${base}-${Date.now()}`;
 };
 
+const getBlockFallbackWidth = (block: RalphFlowBlock): number => {
+  return block.type === "UTILITY"
+    ? RALPH_UTILITY_BLOCK_WIDTH
+    : RALPH_STANDARD_BLOCK_WIDTH;
+};
+
 const createCopiedBlock = (
   flow: RalphFlow,
   block: RalphFlowBlock,
@@ -511,16 +797,82 @@ const createCopiedBlock = (
 };
 
 const forceRalphFlowLayout = (flow: RalphFlow): RalphFlow => {
-  const withoutPositions: RalphFlow = {
-    ...flow,
-    blocks: flow.blocks.map((block) => {
-      const copy = { ...block } as RalphFlowBlock;
-      delete copy.position;
-      return copy;
-    }),
+  const flowWithDerivedGroups = normalizeDerivedGroupMembership(flow);
+  const childIdsByGroupId = new Map<string, string[]>();
+
+  for (const block of flowWithDerivedGroups.blocks) {
+    if (block.type === "GROUP") {
+      childIdsByGroupId.set(block.id, block.childBlockIds);
+    }
+  }
+
+  const groupedBlockIds = new Set<string>();
+  const collectGroupedBlockIds = (blockId: string): void => {
+    if (groupedBlockIds.has(blockId)) {
+      return;
+    }
+
+    groupedBlockIds.add(blockId);
+
+    for (const childBlockId of childIdsByGroupId.get(blockId) ?? []) {
+      collectGroupedBlockIds(childBlockId);
+    }
   };
 
-  return normalizeRalphFlowLayout(withoutPositions);
+  for (const childBlockIds of childIdsByGroupId.values()) {
+    for (const childBlockId of childBlockIds) {
+      collectGroupedBlockIds(childBlockId);
+    }
+  }
+
+  const layoutBlockIds = new Set(
+    flowWithDerivedGroups.blocks
+      .filter(
+        (block) =>
+          block.type !== "NOTE" &&
+          block.type !== "GROUP" &&
+          !groupedBlockIds.has(block.id),
+      )
+      .map((block) => block.id),
+  );
+
+  if (layoutBlockIds.size === 0) {
+    return flowWithDerivedGroups;
+  }
+
+  const withoutPositions: RalphFlow = {
+    ...flowWithDerivedGroups,
+    blocks: flowWithDerivedGroups.blocks
+      .filter((block) => layoutBlockIds.has(block.id))
+      .map((block) => {
+        const copy = { ...block } as RalphFlowBlock;
+        delete copy.position;
+        return copy;
+      }),
+    edges: flowWithDerivedGroups.edges.filter(
+      (edge) => layoutBlockIds.has(edge.from) && layoutBlockIds.has(edge.to),
+    ),
+  };
+  const arrangedFlow = normalizeRalphFlowLayout(withoutPositions);
+  const arrangedPositionsByBlockId = new Map(
+    arrangedFlow.blocks.flatMap((block) =>
+      block.position ? [[block.id, block.position] as const] : [],
+    ),
+  );
+  const positionsByBlockId = avoidReservedCleanLayoutBounds(
+    flowWithDerivedGroups,
+    layoutBlockIds,
+    arrangedPositionsByBlockId,
+  );
+
+  return {
+    ...flowWithDerivedGroups,
+    blocks: flowWithDerivedGroups.blocks.map((block) => {
+      const position = positionsByBlockId.get(block.id);
+
+      return position ? { ...block, position } : block;
+    }),
+  };
 };
 
 const createEdgeId = (
@@ -623,6 +975,31 @@ const createDefaultUtilityConfig = (
       return { type, command: "npm test", timeoutSeconds: 120 };
     case "RUN_CHECK":
       return { type, command: "npm run typecheck", timeoutSeconds: 120 };
+    case "UI_ANALYZE":
+      return {
+        type,
+        adapter: "browser",
+        targetUrl: "{{targetUrl:url=http://localhost:1420}}",
+        server: {
+          mode: "existing",
+          healthUrl: "{{targetUrl:url=http://localhost:1420}}",
+          reuseExisting: true,
+        },
+        checks: {
+          screenshots: true,
+          accessibility: true,
+          console: true,
+          network: true,
+          responsive: true,
+        },
+        viewports: [
+          { name: "desktop", width: 1280, height: 900 },
+          { name: "mobile", width: 390, height: 844 },
+        ],
+        timeoutSeconds: 30,
+        fullPage: true,
+        waitUntil: "domcontentloaded",
+      };
     case "READ_FILE":
       return { type, path: "{{file:path}}" };
     case "WRITE_FILE":
@@ -671,6 +1048,8 @@ const getUtilityOutputs = (
       return ["SUCCESS", "EMPTY", "ERROR"];
     case "RUN_CHECK":
       return ["SUCCESS", "FAILED", "ERROR"];
+    case "UI_ANALYZE":
+      return ["SUCCESS", "UNAVAILABLE", "ERROR"];
     case "VALIDATE_JSON":
       return ["SUCCESS", "INVALID", "ERROR"];
   }
@@ -782,6 +1161,49 @@ const formatCreateFlowMessage = (result: RalphCreateFlowResult): string => {
     : result.summary;
 };
 
+const getGenerationJobStatusLabel = (status: RalphGenerationStatus): string => {
+  switch (status) {
+    case "running":
+      return "Generating";
+    case "stopping":
+      return "Stopping";
+    case "created":
+      return "Generated";
+    case "blocked":
+      return "Blocked";
+    case "failed":
+      return "Failed";
+  }
+};
+
+const canCopyGenerationError = (
+  job: RalphGenerationJob | null,
+): job is RalphGenerationJob => job?.status === "blocked" || job?.status === "failed";
+
+const formatGenerationErrorClipboardText = (
+  job: RalphGenerationJob,
+): string => `${getGenerationJobStatusLabel(job.status)}\n\n${job.summary}`;
+
+const formatGenerationActivityTime = (timestamp: number): string => {
+  const date = new Date(timestamp);
+
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+};
+
+const getGenerationPhaseLabel = (job: RalphGenerationJob): string => {
+  const actor = job.currentActor ? `${titleFromId(job.currentActor)} ` : "";
+  const round =
+    job.currentRound !== undefined
+      ? `Round ${job.currentRound}${job.maxRounds ? `/${job.maxRounds}` : ""}`
+      : null;
+
+  return [round, actor ? `${actor.trim()} phase` : null]
+    .filter((value): value is string => Boolean(value))
+    .join(" - ");
+};
+
 const formatRunMessage = (run: RalphRunResult): string => {
   return `${run.summary} Status: ${run.status}. ${run.blockResults.length} block result${run.blockResults.length === 1 ? "" : "s"}.`;
 };
@@ -869,6 +1291,8 @@ const RALPH_PROGRESS_EVENT_TYPES = new Set([
   "end",
 ]);
 
+const RALPH_GENERATION_ACTIVITY_LIMIT = 80;
+
 const getProgressMetadataString = (
   metadata: RalphProgressMetadata | undefined,
   key: string,
@@ -876,6 +1300,24 @@ const getProgressMetadataString = (
   const value = metadata?.[key];
 
   return typeof value === "string" && value.trim() ? value : undefined;
+};
+
+const getProgressMetadataNumber = (
+  metadata: RalphProgressMetadata | undefined,
+  key: string,
+): number | undefined => {
+  const value = metadata?.[key];
+
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+};
+
+const getProgressMetadataBoolean = (
+  metadata: RalphProgressMetadata | undefined,
+  key: string,
+): boolean | undefined => {
+  const value = metadata?.[key];
+
+  return typeof value === "boolean" ? value : undefined;
 };
 
 const getRalphProgressSnapshot = (
@@ -903,6 +1345,176 @@ const getRalphProgressSnapshot = (
     ...(getProgressMetadataString(metadata, "ralphOutput")
       ? { output: getProgressMetadataString(metadata, "ralphOutput") }
       : {}),
+  };
+};
+
+const createGenerationActivityFromProgress = (
+  progress: TaskExecutionProgress,
+  timestamp: number,
+): RalphGenerationActivityEvent | null => {
+  const metadata = progress.timelineEvent?.metadata;
+  const type = getProgressMetadataString(metadata, "ralphGenerationEventType");
+
+  if (!type) {
+    return null;
+  }
+
+  const label = progress.timelineEvent?.label || progress.message || type;
+  const round = getProgressMetadataNumber(metadata, "ralphGenerationRound");
+  const maxRounds = getProgressMetadataNumber(metadata, "ralphGenerationMaxRounds");
+  const actor = getProgressMetadataString(metadata, "ralphGenerationActor");
+  const provider = progress.timelineEvent?.provider ?? undefined;
+  const model = progress.timelineEvent?.model ?? undefined;
+
+  return {
+    id: `${timestamp}-${type}-${round ?? 0}-${label}`,
+    type,
+    label,
+    timestamp,
+    ...(progress.timelineEvent?.detail ? { detail: progress.timelineEvent.detail } : {}),
+    ...(round !== undefined ? { round } : {}),
+    ...(maxRounds !== undefined ? { maxRounds } : {}),
+    ...(actor ? { actor } : {}),
+    ...(provider ? { provider } : {}),
+    ...(model ? { model } : {}),
+    ...(getProgressMetadataString(metadata, "ralphGenerationFlowPath")
+      ? { flowPath: getProgressMetadataString(metadata, "ralphGenerationFlowPath") }
+      : {}),
+    ...(getProgressMetadataString(metadata, "ralphGenerationTempFlowPath")
+      ? { tempFlowPath: getProgressMetadataString(metadata, "ralphGenerationTempFlowPath") }
+      : {}),
+    ...(getProgressMetadataBoolean(metadata, "ralphGenerationValidationValid") !== undefined
+      ? {
+          validationValid: getProgressMetadataBoolean(
+            metadata,
+            "ralphGenerationValidationValid",
+          ),
+        }
+      : {}),
+    ...(getProgressMetadataNumber(metadata, "ralphGenerationValidationErrorCount") !== undefined
+      ? {
+          validationErrorCount: getProgressMetadataNumber(
+            metadata,
+            "ralphGenerationValidationErrorCount",
+          ),
+        }
+      : {}),
+    ...(getProgressMetadataNumber(metadata, "ralphGenerationValidationWarningCount") !== undefined
+      ? {
+          validationWarningCount: getProgressMetadataNumber(
+            metadata,
+            "ralphGenerationValidationWarningCount",
+          ),
+        }
+      : {}),
+    ...(getProgressMetadataString(metadata, "ralphGenerationValidatorDecision")
+      ? {
+          validatorDecision: getProgressMetadataString(
+            metadata,
+            "ralphGenerationValidatorDecision",
+          ),
+        }
+      : {}),
+    ...(getProgressMetadataNumber(metadata, "ralphGenerationBlockCount") !== undefined
+      ? {
+          blockCount: getProgressMetadataNumber(
+            metadata,
+            "ralphGenerationBlockCount",
+          ),
+        }
+      : {}),
+    ...(getProgressMetadataNumber(metadata, "ralphGenerationEdgeCount") !== undefined
+      ? {
+          edgeCount: getProgressMetadataNumber(metadata, "ralphGenerationEdgeCount"),
+        }
+      : {}),
+  };
+};
+
+const createGenerationActivityFromResultEvent = (
+  event: RalphGenerationEvent,
+): RalphGenerationActivityEvent => {
+  const timestamp = Date.parse(event.createdAt);
+
+  return {
+    id: `${event.createdAt}-${event.type}-${event.round ?? 0}-${event.message}`,
+    type: event.type,
+    label: event.message,
+    timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
+    ...(event.round !== undefined ? { round: event.round } : {}),
+    ...(event.maxRounds !== undefined ? { maxRounds: event.maxRounds } : {}),
+    ...(event.actor ? { actor: event.actor } : {}),
+    ...(event.provider ? { provider: event.provider } : {}),
+    ...(event.model ? { model: event.model } : {}),
+    ...(event.flowPath ? { flowPath: event.flowPath } : {}),
+    ...(event.generationFlowPath ? { tempFlowPath: event.generationFlowPath } : {}),
+    ...(event.validationValid !== undefined
+      ? { validationValid: event.validationValid }
+      : {}),
+    ...(event.validationErrorCount !== undefined
+      ? { validationErrorCount: event.validationErrorCount }
+      : {}),
+    ...(event.validationWarningCount !== undefined
+      ? { validationWarningCount: event.validationWarningCount }
+      : {}),
+    ...(event.validatorDecision ? { validatorDecision: event.validatorDecision } : {}),
+    ...(event.blockCount !== undefined ? { blockCount: event.blockCount } : {}),
+    ...(event.edgeCount !== undefined ? { edgeCount: event.edgeCount } : {}),
+  };
+};
+
+const appendGenerationActivity = (
+  current: RalphGenerationActivityEvent[],
+  nextEvents: RalphGenerationActivityEvent[],
+): RalphGenerationActivityEvent[] => {
+  if (nextEvents.length === 0) {
+    return current;
+  }
+
+  const seen = new Set(current.map((event) => event.id));
+  const merged = [...current];
+
+  for (const event of nextEvents) {
+    if (seen.has(event.id)) {
+      continue;
+    }
+
+    seen.add(event.id);
+    merged.push(event);
+  }
+
+  return merged
+    .sort((left, right) => left.timestamp - right.timestamp)
+    .slice(-RALPH_GENERATION_ACTIVITY_LIMIT);
+};
+
+const applyGenerationActivity = (
+  job: RalphGenerationJob,
+  event: RalphGenerationActivityEvent,
+): RalphGenerationJob => {
+  return {
+    ...job,
+    summary: event.label || job.summary,
+    activity: appendGenerationActivity(job.activity, [event]),
+    ...(event.round !== undefined ? { currentRound: event.round } : {}),
+    ...(event.maxRounds !== undefined ? { maxRounds: event.maxRounds } : {}),
+    ...(event.actor ? { currentActor: event.actor } : {}),
+    ...(event.provider ? { provider: event.provider } : {}),
+    ...(event.model ? { model: event.model } : {}),
+    ...(event.flowPath ? { flowPath: event.flowPath } : {}),
+    ...(event.tempFlowPath ? { tempFlowPath: event.tempFlowPath } : {}),
+    ...(event.validationValid !== undefined
+      ? { validationValid: event.validationValid }
+      : {}),
+    ...(event.validationErrorCount !== undefined
+      ? { validationErrorCount: event.validationErrorCount }
+      : {}),
+    ...(event.validationWarningCount !== undefined
+      ? { validationWarningCount: event.validationWarningCount }
+      : {}),
+    ...(event.validatorDecision ? { validatorDecision: event.validatorDecision } : {}),
+    ...(event.blockCount !== undefined ? { blockCount: event.blockCount } : {}),
+    ...(event.edgeCount !== undefined ? { edgeCount: event.edgeCount } : {}),
   };
 };
 
@@ -967,7 +1579,7 @@ const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
         icon: ShieldCheck,
         nodeClassName: "border-lime-400/55 bg-lime-950 text-lime-50",
         badgeClassName: "text-lime-300",
-        miniMapColor: "#a3e635",
+        miniMapColor: "#7a9a61",
         badgeLabel: "VALIDATE",
       };
     case "DECISION":
@@ -1003,6 +1615,22 @@ const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
         badgeClassName: "text-violet-300",
         miniMapColor: "#a78bfa",
         badgeLabel: "MCP",
+      };
+    case "NOTE":
+      return {
+        icon: FileText,
+        nodeClassName: "border-amber-400/45 bg-amber-950/70 text-amber-50",
+        badgeClassName: "text-amber-200",
+        miniMapColor: "#fbbf24",
+        badgeLabel: "NOTE",
+      };
+    case "GROUP":
+      return {
+        icon: LayoutGrid,
+        nodeClassName: "border-slate-600/70 bg-slate-900/30 text-slate-100",
+        badgeClassName: "text-slate-300",
+        miniMapColor: "#475569",
+        badgeLabel: "GROUP",
       };
     case "END":
       return {
@@ -1078,8 +1706,16 @@ const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
         icon: ClipboardCheck,
         nodeClassName: "border-lime-400/60 bg-lime-950 text-lime-50",
         badgeClassName: "text-lime-200",
-        miniMapColor: "#a3e635",
+        miniMapColor: "#7a9a61",
         badgeLabel: "CHECK",
+      };
+    case "UI_ANALYZE":
+      return {
+        icon: Globe2,
+        nodeClassName: "border-teal-400/60 bg-teal-950 text-teal-50",
+        badgeClassName: "text-teal-200",
+        miniMapColor: "#14b8a6",
+        badgeLabel: "UI",
       };
     case "GIT_STATUS":
       return {
@@ -1146,6 +1782,8 @@ const getBlockOutputs = (block: RalphFlowBlock): RalphExecutionOutput[] => {
       return ["DONE", "CONTINUE", "RETRY", "ERROR"];
     case "DECISION":
       return [...new Set([...block.labels, "ERROR"])];
+    case "NOTE":
+    case "GROUP":
     case "END":
       return [];
   }
@@ -1161,6 +1799,10 @@ const getPromptLikeText = (block: RalphFlowBlock): string => {
     case "PACK":
     case "END":
       return "";
+    case "NOTE":
+      return block.text;
+    case "GROUP":
+      return block.description ?? "";
     case "UTILITY":
       return formatUtilityTypeLabel(block.utility.type);
     case "MCP_TOOL":
@@ -1296,6 +1938,25 @@ const getUtilityNodePreview = (
         secondary: "Failed exit codes route to FAILED.",
         chips: [`${formatSeconds(utility.timeoutSeconds ?? 120)} timeout`],
       };
+    case "UI_ANALYZE":
+      return {
+        primary:
+          utility.adapter === "image"
+            ? `Screenshot ${compactPreviewText(utility.screenshotPath, "path not set")}`
+            : compactPreviewText(
+                utility.targetUrl ?? utility.url,
+                "Target URL not set",
+              ),
+        secondary:
+          utility.adapter === "tauri-mcp" || utility.adapter === "playwright-mcp"
+            ? `${utility.mcpServerId ?? "mcp"}.${utility.mcpToolName ?? "tool"}`
+            : `Server: ${utility.server?.mode ?? "existing"}`,
+        chips: [
+          utility.adapter ?? "auto",
+          `${utility.viewports?.length ?? 3} viewport(s)`,
+          `${formatSeconds(utility.timeoutSeconds ?? 30)} timeout`,
+        ],
+      };
     case "READ_FILE":
       return {
         primary: `Read ${compactPreviewText(utility.path, "file path not set")}`,
@@ -1418,6 +2079,28 @@ const getBlockNodePreview = (block: RalphFlowBlock): RalphNodePreview => {
     };
   }
 
+  if (block.type === "NOTE") {
+    return {
+      primary: compactPreviewText(block.text, "Empty note"),
+      secondary: block.pinnedBlockIds?.length
+        ? `Pinned to ${block.pinnedBlockIds.length} block(s)`
+        : "Canvas annotation",
+      chips: [block.tone ?? "slate", ...(block.tags ?? [])],
+    };
+  }
+
+  if (block.type === "GROUP") {
+    return {
+      primary: compactPreviewText(block.description, "Visual group"),
+      secondary: `${block.childBlockIds.length} child block(s)`,
+      chips: [
+        block.tone ?? "slate",
+        block.collapsed ? "collapsed" : "expanded",
+        block.layoutMode ?? "freeform",
+      ],
+    };
+  }
+
   const promptText = getPromptLikeText(block);
 
   if (block.type === "VALIDATOR") {
@@ -1475,6 +2158,10 @@ const updatePromptLikeText = (
     case "VALIDATOR":
     case "DECISION":
       return { ...block, prompt };
+    case "NOTE":
+      return { ...block, text: prompt };
+    case "GROUP":
+      return { ...block, description: prompt };
     case "START":
     case "PACK":
     case "UTILITY":
@@ -1582,6 +2269,34 @@ const createBlock = (
         promptName: "",
         arguments: {},
         settings,
+      };
+    case "NOTE":
+      return {
+        id,
+        type,
+        title: "Note",
+        position,
+        size: RALPH_NOTE_DEFAULT_SIZE,
+        text: "",
+        tone: "amber",
+        tags: [],
+        pinnedBlockIds: [],
+      };
+    case "GROUP":
+      return {
+        id,
+        type,
+        title: titleFromId(id),
+        position,
+        size: RALPH_GROUP_DEFAULT_SIZE,
+        tone: "slate",
+        description: "",
+        childBlockIds: [],
+        collapsed: false,
+        locked: false,
+        moveChildren: true,
+        layoutMode: "freeform",
+        executionBoundary: { mode: "none" },
       };
     case "END":
       return { id, type, title: "End", position, status: "success" };
@@ -1732,6 +2447,43 @@ const getReachableBlockIds = (flow: RalphFlow): Set<string> => {
   return reachable;
 };
 
+const hasLocalFlowCycle = (flow: RalphFlow): boolean => {
+  const edgesBySource = new Map<string, string[]>();
+
+  for (const edge of flow.edges) {
+    const targets = edgesBySource.get(edge.from) ?? [];
+    targets.push(edge.to);
+    edgesBySource.set(edge.from, targets);
+  }
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (blockId: string): boolean => {
+    if (visiting.has(blockId)) {
+      return true;
+    }
+
+    if (visited.has(blockId)) {
+      return false;
+    }
+
+    visiting.add(blockId);
+
+    for (const target of edgesBySource.get(blockId) ?? []) {
+      if (visit(target)) {
+        return true;
+      }
+    }
+
+    visiting.delete(blockId);
+    visited.add(blockId);
+
+    return false;
+  };
+
+  return flow.blocks.some((block) => visit(block.id));
+};
+
 const validateFlowLocally = (
   flow: RalphFlow,
   modelCatalog: ProviderModelCatalogSnapshot | null,
@@ -1769,6 +2521,25 @@ const validateFlowLocally = (
     });
   }
 
+  if (
+    flow.settings?.maxTransitions !== undefined &&
+    (!Number.isInteger(flow.settings.maxTransitions) ||
+      flow.settings.maxTransitions < 1)
+  ) {
+    issues.push({
+      level: "error",
+      message: "Flow settings.maxTransitions must be an integer >= 1.",
+    });
+  }
+
+  if (flow.settings?.maxTransitions === undefined && hasLocalFlowCycle(flow)) {
+    issues.push({
+      level: "warning",
+      message:
+        "Flow contains a cycle but does not define settings.maxTransitions; runs can continue until manually stopped.",
+    });
+  }
+
   for (const block of flow.blocks) {
     if (blockIds.has(block.id)) {
       issues.push({
@@ -1779,6 +2550,42 @@ const validateFlowLocally = (
     }
 
     blockIds.add(block.id);
+
+    if (block.type === "NOTE") {
+      if (!block.text.trim()) {
+        issues.push({
+          level: "warning",
+          message: `${block.title} is empty.`,
+          blockId: block.id,
+        });
+      }
+
+      if (
+        block.size &&
+        (block.size.width < RALPH_NOTE_MIN_SIZE.width ||
+          block.size.height < RALPH_NOTE_MIN_SIZE.height)
+      ) {
+        issues.push({
+          level: "error",
+          message: `${block.title} is smaller than the note minimum size.`,
+          blockId: block.id,
+        });
+      }
+    }
+
+    if (
+      block.type === "GROUP" &&
+      block.size &&
+      !block.collapsed &&
+      (block.size.width < RALPH_GROUP_MIN_SIZE.width ||
+        block.size.height < RALPH_GROUP_MIN_SIZE.height)
+    ) {
+      issues.push({
+        level: "error",
+        message: `${block.title} is smaller than the group minimum size.`,
+        blockId: block.id,
+      });
+    }
 
     if (
       (block.type === "PROMPT" ||
@@ -1805,6 +2612,22 @@ const validateFlowLocally = (
       issues.push({
         level: "warning",
         message: `${block.title} has no packs selected.`,
+        blockId: block.id,
+      });
+    }
+
+    if (block.type === "PACK" && block.packIds.length > 0) {
+      issues.push({
+        level: "warning",
+        message: `${block.title} references packs, but Ralph currently stores pack ids as metadata and does not inject pack contents at runtime.`,
+        blockId: block.id,
+      });
+    }
+
+    if (block.settings?.packs && block.settings.packs.length > 0) {
+      issues.push({
+        level: "warning",
+        message: `${block.title} references settings.packs, but Ralph currently stores pack ids as metadata and does not inject pack contents at runtime.`,
         blockId: block.id,
       });
     }
@@ -1923,6 +2746,8 @@ const validateFlowLocally = (
     }
   }
 
+  const blocksById = new Map(flow.blocks.map((block) => [block.id, block]));
+
   for (const edge of flow.edges) {
     if (!blockIds.has(edge.from)) {
       issues.push({
@@ -1939,11 +2764,34 @@ const validateFlowLocally = (
         blockId: edge.to,
       });
     }
+
+    const sourceBlock = blocksById.get(edge.from);
+    const targetBlock = blocksById.get(edge.to);
+
+    if (sourceBlock && isVisualRalphCanvasBlock(sourceBlock)) {
+      issues.push({
+        level: "error",
+        message: `Route ${edge.id} cannot start from visual block ${sourceBlock.title}.`,
+        blockId: sourceBlock.id,
+      });
+    }
+
+    if (targetBlock && isVisualRalphCanvasBlock(targetBlock)) {
+      issues.push({
+        level: "error",
+        message: `Route ${edge.id} cannot target visual block ${targetBlock.title}.`,
+        blockId: targetBlock.id,
+      });
+    }
   }
 
   const reachable = getReachableBlockIds(flow);
 
   for (const block of flow.blocks) {
+    if (isVisualRalphCanvasBlock(block)) {
+      continue;
+    }
+
     if (startBlocks.length === 1 && !reachable.has(block.id)) {
       issues.push({
         level: "warning",
@@ -1956,49 +2804,378 @@ const validateFlowLocally = (
   return issues;
 };
 
+interface RalphCanvasBlockBounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  centerX: number;
+  centerY: number;
+}
+
+const getCanvasBlockSize = (
+  block: RalphFlowBlock,
+): { width: number; height: number } => {
+  if (block.size) {
+    return block.size;
+  }
+
+  if (block.type === "NOTE") {
+    return RALPH_NOTE_DEFAULT_SIZE;
+  }
+
+  if (block.type === "GROUP") {
+    return RALPH_GROUP_DEFAULT_SIZE;
+  }
+
+  return {
+    width: getBlockFallbackWidth(block),
+    height: RALPH_BLOCK_FALLBACK_HEIGHT,
+  };
+};
+
+const getCanvasBlockPosition = (
+  block: RalphFlowBlock,
+  index: number,
+): RalphPosition => block.position ?? getDefaultCanvasPosition(index);
+
+const getCanvasBlockBounds = (
+  block: RalphFlowBlock,
+  index: number,
+): RalphCanvasBlockBounds => {
+  const position = getCanvasBlockPosition(block, index);
+  const size = getCanvasBlockSize(block);
+  const right = position.x + size.width;
+  const bottom = position.y + size.height;
+
+  return {
+    left: position.x,
+    top: position.y,
+    right,
+    bottom,
+    centerX: position.x + size.width / 2,
+    centerY: position.y + size.height / 2,
+  };
+};
+
+const isPointInsideBounds = (
+  x: number,
+  y: number,
+  bounds: RalphCanvasBlockBounds,
+): boolean => x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom;
+
+const doCanvasBoundsOverlap = (
+  left: RalphCanvasBlockBounds,
+  right: RalphCanvasBlockBounds,
+): boolean => {
+  return !(
+    left.right <= right.left ||
+    right.right <= left.left ||
+    left.bottom <= right.top ||
+    right.bottom <= left.top
+  );
+};
+
+const getCanvasBlockBoundsAtPosition = (
+  block: RalphFlowBlock,
+  position: RalphPosition,
+): RalphCanvasBlockBounds => {
+  const size = getCanvasBlockSize(block);
+  const right = position.x + size.width;
+  const bottom = position.y + size.height;
+
+  return {
+    left: position.x,
+    top: position.y,
+    right,
+    bottom,
+    centerX: position.x + size.width / 2,
+    centerY: position.y + size.height / 2,
+  };
+};
+
+const translateCanvasBounds = (
+  bounds: RalphCanvasBlockBounds,
+  deltaX: number,
+  deltaY: number,
+): RalphCanvasBlockBounds => ({
+  left: bounds.left + deltaX,
+  top: bounds.top + deltaY,
+  right: bounds.right + deltaX,
+  bottom: bounds.bottom + deltaY,
+  centerX: bounds.centerX + deltaX,
+  centerY: bounds.centerY + deltaY,
+});
+
+const RALPH_CLEAN_LAYOUT_RESERVED_GAP = 96;
+
+const avoidReservedCleanLayoutBounds = (
+  flow: RalphFlow,
+  layoutBlockIds: ReadonlySet<string>,
+  positionsByBlockId: ReadonlyMap<string, RalphPosition>,
+): Map<string, RalphPosition> => {
+  const blockIndex = new Map(
+    flow.blocks.map((block, index) => [block.id, index] as const),
+  );
+  const reservedBounds = flow.blocks
+    .filter((block) => !layoutBlockIds.has(block.id))
+    .map((block) => {
+      const index = blockIndex.get(block.id) ?? 0;
+
+      return getCanvasBlockBounds(block, index);
+    });
+  const layoutBounds = flow.blocks.flatMap((block) => {
+    if (!layoutBlockIds.has(block.id)) {
+      return [];
+    }
+
+    const position = positionsByBlockId.get(block.id);
+
+    return position
+      ? [{ bounds: getCanvasBlockBoundsAtPosition(block, position) }]
+      : [];
+  });
+
+  if (reservedBounds.length === 0 || layoutBounds.length === 0) {
+    return new Map(positionsByBlockId);
+  }
+
+  let deltaX = 0;
+
+  for (let attempt = 0; attempt < reservedBounds.length; attempt += 1) {
+    let nextDeltaX = deltaX;
+
+    for (const layoutBound of layoutBounds) {
+      const shiftedBounds = translateCanvasBounds(layoutBound.bounds, deltaX, 0);
+
+      for (const reservedBound of reservedBounds) {
+        if (!doCanvasBoundsOverlap(shiftedBounds, reservedBound)) {
+          continue;
+        }
+
+        nextDeltaX = Math.max(
+          nextDeltaX,
+          reservedBound.right + RALPH_CLEAN_LAYOUT_RESERVED_GAP - layoutBound.bounds.left,
+        );
+      }
+    }
+
+    if (nextDeltaX === deltaX) {
+      break;
+    }
+
+    deltaX = nextDeltaX;
+  }
+
+  if (deltaX === 0) {
+    return new Map(positionsByBlockId);
+  }
+
+  return new Map(
+    Array.from(positionsByBlockId, ([blockId, position]) => [
+      blockId,
+      {
+        x: Math.round(position.x + deltaX),
+        y: position.y,
+      },
+    ]),
+  );
+};
+
+const createDerivedGroupChildrenById = (
+  flow: RalphFlow,
+): Map<string, string[]> => {
+  const blockIndex = new Map(
+    flow.blocks.map((block, index) => [block.id, index] as const),
+  );
+  const childrenByGroupId = new Map<string, string[]>();
+
+  for (const group of flow.blocks) {
+    if (group.type !== "GROUP") {
+      continue;
+    }
+
+    const explicitlyListedChildIds = new Set(group.childBlockIds);
+    const groupIndex = blockIndex.get(group.id) ?? 0;
+    const groupBounds = getCanvasBlockBounds(group, groupIndex);
+    const childIds = new Set<string>();
+
+    for (const block of flow.blocks) {
+      if (block.id === group.id) {
+        continue;
+      }
+
+      if (block.parentGroupId === group.id) {
+        childIds.add(block.id);
+        continue;
+      }
+
+      const candidateIndex = blockIndex.get(block.id) ?? 0;
+      const candidateBounds = getCanvasBlockBounds(block, candidateIndex);
+      const hasPlacedGeometry = Boolean(group.position && block.position);
+      const isInsideGroup = isPointInsideBounds(
+        candidateBounds.centerX,
+        candidateBounds.centerY,
+        groupBounds,
+      );
+
+      if (
+        isInsideGroup ||
+        (!hasPlacedGeometry && explicitlyListedChildIds.has(block.id))
+      ) {
+        childIds.add(block.id);
+      }
+    }
+
+    childrenByGroupId.set(group.id, [...childIds]);
+  }
+
+  return childrenByGroupId;
+};
+
+const collectCollapsedGroupHiddenBlockIds = (
+  flow: RalphFlow,
+  childrenByGroupId: Map<string, string[]>,
+): Set<string> => {
+  const hiddenBlockIds = new Set<string>();
+  const blocksById = new Map(flow.blocks.map((block) => [block.id, block]));
+
+  const visitChild = (blockId: string): void => {
+    if (hiddenBlockIds.has(blockId)) {
+      return;
+    }
+
+    hiddenBlockIds.add(blockId);
+    const block = blocksById.get(blockId);
+
+    if (block?.type !== "GROUP") {
+      return;
+    }
+
+    for (const childId of childrenByGroupId.get(block.id) ?? []) {
+      visitChild(childId);
+    }
+  };
+
+  for (const block of flow.blocks) {
+    if (block.type !== "GROUP" || !block.collapsed) {
+      continue;
+    }
+
+    for (const childId of childrenByGroupId.get(block.id) ?? []) {
+      visitChild(childId);
+    }
+  }
+
+  return hiddenBlockIds;
+};
+
+const normalizeDerivedGroupMembership = (flow: RalphFlow): RalphFlow => {
+  const childrenByGroupId = createDerivedGroupChildrenById(flow);
+  let changed = false;
+  const blocks = flow.blocks.map((block) => {
+    if (block.type !== "GROUP") {
+      return block;
+    }
+
+    const childBlockIds = childrenByGroupId.get(block.id) ?? [];
+
+    if (childBlockIds.join("\n") === block.childBlockIds.join("\n")) {
+      return block;
+    }
+
+    changed = true;
+    return { ...block, childBlockIds };
+  });
+
+  return changed ? { ...flow, blocks } : flow;
+};
+
 const flowToNodes = (
   flow: RalphFlow,
   issues: LocalIssue[],
   selectedBlockId: string | null,
   activeBlockId: string | null,
 ): RalphCanvasNode[] => {
-  return flow.blocks.map((block, index) => ({
-    id: block.id,
-    type: "ralphBlock",
-    position: block.position ?? getDefaultCanvasPosition(index),
-    data: {
-      block,
-      outputs: getBlockOutputs(block),
-      issueCount: issues.filter((issue) => issue.blockId === block.id).length,
-      active: block.id === activeBlockId,
-      selected: block.id === selectedBlockId,
-    },
-  }));
+  const childrenByGroupId = createDerivedGroupChildrenById(flow);
+  const hiddenBlockIds = collectCollapsedGroupHiddenBlockIds(
+    flow,
+    childrenByGroupId,
+  );
+
+  return flow.blocks.map((block, index) => {
+    const size = block.size;
+    const isCollapsedGroup = block.type === "GROUP" && block.collapsed;
+    const renderSize =
+      size && isCollapsedGroup
+        ? { width: size.width, height: RALPH_GROUP_COLLAPSED_HEIGHT }
+        : size;
+
+    return {
+      id: block.id,
+      type: "ralphBlock",
+      position: getCanvasBlockPosition(block, index),
+      ...(renderSize
+        ? { style: { width: renderSize.width, height: renderSize.height } }
+        : {}),
+      ...(block.type === "GROUP" ? { zIndex: -1 } : {}),
+      ...(block.type === "GROUP" && block.locked ? { draggable: false } : {}),
+      ...(hiddenBlockIds.has(block.id) ? { hidden: true } : {}),
+      data: {
+        block,
+        outputs: getBlockOutputs(block),
+        issueCount: issues.filter((issue) => issue.blockId === block.id).length,
+        active: block.id === activeBlockId,
+        selected: block.id === selectedBlockId,
+        derivedChildIds: childrenByGroupId.get(block.id) ?? [],
+        hiddenByCollapsedGroup: hiddenBlockIds.has(block.id),
+      },
+    };
+  });
 };
 
 const flowToEdges = (
   flow: RalphFlow,
   selectedEdgeId: string | null,
+  selectedBlockId: string | null,
 ): RalphCanvasEdge[] => {
-  return flow.edges.map((edge) => ({
-    id: edge.id,
-    source: edge.from,
-    sourceHandle: edge.fromOutput,
-    target: edge.to,
-    type: "ralphRoute",
-    data: {
-      output: edge.fromOutput,
-    },
-    markerEnd: {
-      type: "arrowclosed",
-      color: "#94a3b8",
-    },
-    style: {
-      stroke: edge.fromOutput === "ERROR" ? "#f87171" : "#94a3b8",
-      strokeWidth: edge.id === selectedEdgeId ? 2.4 : 1.6,
-    },
-    selected: edge.id === selectedEdgeId,
-  }));
+  const childrenByGroupId = createDerivedGroupChildrenById(flow);
+  const hiddenBlockIds = collectCollapsedGroupHiddenBlockIds(
+    flow,
+    childrenByGroupId,
+  );
+
+  return flow.edges.map((edge) => {
+    const selected = edge.id === selectedEdgeId;
+    const connectedToSelectedBlock =
+      selectedBlockId !== null &&
+      (edge.from === selectedBlockId || edge.to === selectedBlockId);
+
+    return {
+      id: edge.id,
+      source: edge.from,
+      sourceHandle: edge.fromOutput,
+      target: edge.to,
+      type: "ralphRoute",
+      data: {
+        output: edge.fromOutput,
+      },
+      markerEnd: {
+        type: "arrowclosed",
+        color: "#94a3b8",
+      },
+      style: {
+        stroke: edge.fromOutput === "ERROR" ? "#f87171" : "#94a3b8",
+        strokeWidth: selected ? 2.8 : connectedToSelectedBlock ? 2.4 : 1.6,
+      },
+      className: cn(
+        connectedToSelectedBlock && "ralph-route-edge--connected",
+        selected && "ralph-route-edge--selected",
+      ),
+      selected,
+      hidden: hiddenBlockIds.has(edge.from) || hiddenBlockIds.has(edge.to),
+    };
+  });
 };
 
 const getPathName = (path: string): string => {
@@ -2111,8 +3288,18 @@ const mergeRalphAttachments = (
   return merged;
 };
 
+const isVisualRalphCanvasBlock = (block: RalphFlowBlock): boolean =>
+  block.type === "NOTE" || block.type === "GROUP";
+
+const isExecutableRalphCanvasBlock = (block: RalphFlowBlock): boolean =>
+  block.type !== "START" && block.type !== "END" && !isVisualRalphCanvasBlock(block);
+
 const getSelectableRouteTargets = (flow: RalphFlow): RalphFlowBlock[] => {
-  return flow.blocks;
+  return flow.blocks.filter((block) => !isVisualRalphCanvasBlock(block));
+};
+
+const isGroupChildMoveSuppressed = (event: MouseEvent | TouchEvent): boolean => {
+  return "ctrlKey" in event && event.ctrlKey;
 };
 
 const renderPromptHighlight = (value: string): JSX.Element[] => {
@@ -2153,10 +3340,172 @@ const renderPromptHighlight = (value: string): JSX.Element[] => {
   return parts;
 };
 
+const getAnnotationToneClassName = (
+  tone: RalphAnnotationTone | undefined,
+): string => {
+  switch (tone) {
+    case "amber":
+      return "border-amber-400/45 bg-amber-950/50 text-amber-50";
+    case "sky":
+      return "border-sky-400/45 bg-sky-950/50 text-sky-50";
+    case "lime":
+      return "border-lime-400/45 bg-lime-950/50 text-lime-50";
+    case "rose":
+      return "border-rose-400/45 bg-rose-950/50 text-rose-50";
+    case "violet":
+      return "border-violet-400/45 bg-violet-950/50 text-violet-50";
+    case "slate":
+    default:
+      return "border-slate-600/70 bg-slate-900/70 text-slate-100";
+  }
+};
+
+const getAnnotationAccentClassName = (
+  tone: RalphAnnotationTone | undefined,
+): string => {
+  switch (tone) {
+    case "amber":
+      return "bg-amber-300";
+    case "sky":
+      return "bg-sky-300";
+    case "lime":
+      return "bg-lime-300";
+    case "rose":
+      return "bg-rose-300";
+    case "violet":
+      return "bg-violet-300";
+    case "slate":
+    default:
+      return "bg-slate-400";
+  }
+};
+
+const RalphNoteNode = ({
+  data,
+  selected,
+}: {
+  data: RalphNodeData;
+  selected?: boolean;
+}): JSX.Element => {
+  const block = data.block;
+
+  if (block.type !== "NOTE") {
+    return <></>;
+  }
+
+  return (
+    <div
+      className={cn(
+        "relative flex h-full min-h-[120px] w-full min-w-[180px] flex-col overflow-hidden rounded-lg border shadow-lg shadow-black/20",
+        getAnnotationToneClassName(block.tone),
+        (selected || data.selected) && "ring-1 ring-emerald-200/60",
+      )}
+    >
+      <NodeResizer
+        isVisible={selected || data.selected}
+        minWidth={RALPH_NOTE_MIN_SIZE.width}
+        minHeight={RALPH_NOTE_MIN_SIZE.height}
+        lineClassName="!border-emerald-200/70"
+        handleClassName="!h-2 !w-2 !border-emerald-200 !bg-slate-950"
+      />
+      <div className={cn("h-1 shrink-0", getAnnotationAccentClassName(block.tone))} />
+      <div className="flex min-w-0 items-center justify-between gap-2 px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <FileText className="h-3.5 w-3.5 shrink-0 text-white/70" />
+          <span className="truncate text-xs font-semibold">{block.title}</span>
+        </div>
+        <span className="shrink-0 rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[0.58rem] font-bold uppercase tracking-wide text-white/55">
+          Note
+        </span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden px-3 pb-3 text-xs leading-5 text-white/72">
+        <div className="line-clamp-5 whitespace-pre-wrap">
+          {block.text.trim() || "Empty note"}
+        </div>
+      </div>
+      {block.tags && block.tags.length > 0 ? (
+        <div className="flex flex-wrap gap-1 px-3 pb-3">
+          {block.tags.slice(0, 4).map((tag) => (
+            <span
+              key={tag}
+              className="max-w-full truncate rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[0.58rem] font-medium leading-3 text-white/60"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {data.issueCount > 0 ? (
+        <div className="absolute right-2 bottom-2 flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[0.62rem] font-semibold text-amber-100">
+          <AlertTriangle className="h-3 w-3" />
+          {data.issueCount}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const RalphGroupNode = ({
+  data,
+  selected,
+}: {
+  data: RalphNodeData;
+  selected?: boolean;
+}): JSX.Element => {
+  const block = data.block;
+
+  if (block.type !== "GROUP") {
+    return <></>;
+  }
+
+  return (
+    <div
+      className={cn(
+        "relative flex h-full min-h-[180px] w-full min-w-[280px] flex-col rounded-lg border border-dashed shadow-inner shadow-black/25",
+        getAnnotationToneClassName(block.tone),
+        (selected || data.selected) && "ring-1 ring-emerald-200/60",
+      )}
+    >
+      <NodeResizer
+        isVisible={(selected || data.selected) && !block.locked}
+        minWidth={RALPH_GROUP_MIN_SIZE.width}
+        minHeight={block.collapsed ? RALPH_GROUP_COLLAPSED_HEIGHT : RALPH_GROUP_MIN_SIZE.height}
+        lineClassName="!border-emerald-200/60"
+        handleClassName="!h-2 !w-2 !border-emerald-200 !bg-slate-950"
+      />
+      <div className={cn("absolute inset-y-0 left-0 w-1 rounded-l-lg", getAnnotationAccentClassName(block.tone))} />
+      <div className="flex min-w-0 items-center justify-between gap-3 rounded-t-lg border-b border-white/10 bg-black/20 px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <LayoutGrid className="h-3.5 w-3.5 shrink-0 text-white/65" />
+          <span className="truncate text-xs font-semibold">{block.title}</span>
+        </div>
+        <span className="shrink-0 text-[0.62rem] font-medium text-white/45">
+          {data.derivedChildIds.length} child block(s)
+        </span>
+      </div>
+      <div className="pointer-events-none min-h-0 flex-1 p-3 text-xs text-white/45">
+        {block.collapsed ? (
+          <span>Collapsed group</span>
+        ) : block.description ? (
+          <span className="line-clamp-3 whitespace-pre-wrap">{block.description}</span>
+        ) : null}
+      </div>
+    </div>
+  );
+};
+
 const RalphBlockNode = ({
   data,
   selected,
 }: NodeProps<RalphCanvasNode>): JSX.Element => {
+  if (data.block.type === "NOTE") {
+    return <RalphNoteNode data={data} selected={selected} />;
+  }
+
+  if (data.block.type === "GROUP") {
+    return <RalphGroupNode data={data} selected={selected} />;
+  }
+
   const visual = getBlockVisual(data.block);
   const preview = getBlockNodePreview(data.block);
   const Icon = visual.icon;
@@ -2169,7 +3518,7 @@ const RalphBlockNode = ({
         visual.nodeClassName,
         (selected || data.selected) && "ring-1 ring-emerald-200/60",
         data.active &&
-          "ring-2 ring-lime-300/70 shadow-[0_0_20px_rgba(132,204,22,0.22)]",
+          "ring-2 ring-lime-300/70 shadow-[0_0_20px_rgba(122,154,97,0.2)]",
       )}
     >
       <Handle
@@ -2239,8 +3588,6 @@ const RALPH_NODE_TYPES = {
   ralphBlock: RalphBlockNode,
 } satisfies NodeTypes;
 
-const RALPH_EDGE_LABEL_X_OFFSET = 18;
-
 const RalphRouteEdge = ({
   id,
   sourceX,
@@ -2251,8 +3598,6 @@ const RalphRouteEdge = ({
   targetPosition,
   markerEnd,
   style,
-  selected,
-  data,
 }: EdgeProps<RalphCanvasEdge>): JSX.Element => {
   const [edgePath] = getSmoothStepPath({
     sourceX,
@@ -2264,44 +3609,15 @@ const RalphRouteEdge = ({
     borderRadius: 8,
     offset: 18,
   });
-  const output = data?.output ? String(data.output) : "";
-  const labelX =
-    sourcePosition === Position.Left
-      ? sourceX - RALPH_EDGE_LABEL_X_OFFSET
-      : sourceX + RALPH_EDGE_LABEL_X_OFFSET;
-  const labelAnchor =
-    sourcePosition === Position.Left
-      ? "translate(-100%, -50%)"
-      : "translate(0, -50%)";
 
   return (
-    <>
-      <BaseEdge
-        id={id}
-        path={edgePath}
-        markerEnd={markerEnd}
-        style={style}
-        interactionWidth={18}
-      />
-      {output ? (
-        <EdgeLabelRenderer>
-          <div
-            className={cn(
-              "nodrag nopan pointer-events-none absolute max-w-28 rounded border px-1.5 py-0.5 text-[0.625rem] font-bold leading-4 tracking-wide shadow-sm shadow-black/30",
-              output === "ERROR"
-                ? "border-rose-400/35 bg-rose-950/95 text-rose-100"
-                : "border-slate-700 bg-slate-950/95 text-slate-100",
-              selected && "ring-1 ring-emerald-300/50",
-            )}
-            style={{
-              transform: `${labelAnchor} translate(${labelX}px, ${sourceY}px)`,
-            }}
-          >
-            <span className="block truncate">{output}</span>
-          </div>
-        </EdgeLabelRenderer>
-      ) : null}
-    </>
+    <BaseEdge
+      id={id}
+      path={edgePath}
+      markerEnd={markerEnd}
+      style={style}
+      interactionWidth={18}
+    />
   );
 };
 
@@ -2341,6 +3657,32 @@ const arePositionsEqual = (
   return Boolean(current) && current.x === next.x && current.y === next.y;
 };
 
+const getNodeChangeDimensions = (
+  change: NodeChange<RalphCanvasNode>,
+): { width: number; height: number } | null => {
+  if (change.type !== "dimensions") {
+    return null;
+  }
+
+  const dimensions = (
+    change as NodeChange<RalphCanvasNode> & {
+      dimensions?: { width?: number; height?: number };
+    }
+  ).dimensions;
+
+  if (
+    typeof dimensions?.width !== "number" ||
+    typeof dimensions.height !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    width: Math.round(dimensions.width),
+    height: Math.round(dimensions.height),
+  };
+};
+
 export const RalphFlowEditor = ({
   workspaceRoot,
   initialPrompt = "",
@@ -2356,6 +3698,8 @@ export const RalphFlowEditor = ({
   runReasoning,
   defaultMaxTransitions,
   providerOptions = DEFAULT_RUNTIME_PROVIDER_OPTIONS,
+  generationPromptHistory = EMPTY_RALPH_AI_PROMPT_HISTORY,
+  onGenerationPromptHistoryChange,
 }: RalphFlowEditorProps): JSX.Element => {
   const [flows, setFlows] = useState<RalphFlowSummary[]>([]);
   const [revisions, setRevisions] = useState<RalphFlowRevisionSummary[]>([]);
@@ -2367,7 +3711,28 @@ export const RalphFlowEditor = ({
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [flowAliasDraft, setFlowAliasDraft] = useState("");
   const [aiPromptDraft, setAiPromptDraft] = useState("");
+  const [aiPromptHistory, setAiPromptHistory] = useState<string[]>(() =>
+    normalizeRalphAiPromptHistory(generationPromptHistory),
+  );
+  const [aiPromptHistoryIndex, setAiPromptHistoryIndex] = useState<
+    number | null
+  >(null);
+  const [aiPromptDraftBeforeHistory, setAiPromptDraftBeforeHistory] =
+    useState("");
   const [editorMode, setEditorMode] = useState<RalphEditorMode>("design");
+  const [flowListOpen, setFlowListOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [inspectorWidth, setInspectorWidth] = useState(loadRalphInspectorWidth);
+  const [activeInspectorSection, setActiveInspectorSection] =
+    useState<RalphInspectorSectionId>("content");
+  const [inspectorScrollState, setInspectorScrollState] = useState({
+    atBottom: true,
+    atTop: true,
+  });
+  const [expandedEditor, setExpandedEditor] =
+    useState<RalphExpandedEditorState | null>(null);
+  const [expandedEditorDraft, setExpandedEditorDraft] = useState("");
+  const [expandedEditorWrap, setExpandedEditorWrap] = useState(true);
   const [aiTarget, setAiTarget] = useState<RalphAiTarget>("flow");
   const [aiGenerationMode, setAiGenerationMode] =
     useState<RalphAiGenerationMode>("do-it");
@@ -2375,6 +3740,16 @@ export const RalphFlowEditor = ({
     useState<ProviderModelCatalogSnapshot | null>(null);
   const [variableValues, setVariableValues] = useState<Record<string, string>>({});
   const [lastRun, setLastRun] = useState<RalphRunResult | null>(null);
+  const [runHistory, setRunHistory] = useState<RalphRunSummary[]>([]);
+  const [runHistoryLoading, setRunHistoryLoading] = useState(false);
+  const [runPanelTab, setRunPanelTab] = useState<RalphRunPanelTab>("setup");
+  const [selectedRunLog, setSelectedRunLog] = useState<{
+    runId: string;
+    kind: "simple" | "trace";
+    content: string;
+    path: string;
+  } | null>(null);
+  const [runLogLoading, setRunLogLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [flowsLoading, setFlowsLoading] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
@@ -2384,6 +3759,8 @@ export const RalphFlowEditor = ({
   const [generationJob, setGenerationJob] = useState<RalphGenerationJob | null>(
     null,
   );
+  const [generationErrorCopyState, setGenerationErrorCopyState] =
+    useState<ClipboardCopyState>("idle");
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
   const [copiedBlock, setCopiedBlock] = useState<RalphFlowBlock | null>(null);
@@ -2393,6 +3770,8 @@ export const RalphFlowEditor = ({
   const [utilityJsonDraft, setUtilityJsonDraft] = useState("");
   const [utilityJsonError, setUtilityJsonError] = useState<string | null>(null);
   const previousFlowLayoutKeyRef = useRef("");
+  const inspectorScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const expandedEditorTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const reactFlowInstanceRef =
     useRef<ReactFlowInstance<RalphCanvasNode, RalphCanvasEdge> | null>(null);
   const selectedIdRef = useRef(selectedId);
@@ -2405,6 +3784,7 @@ export const RalphFlowEditor = ({
   const initialPromptAppliedRef = useRef(false);
   const activeProvider = runProvider;
   const activeModel = runModel;
+  const showInspectorPanel = editorMode === "design" && inspectorOpen;
   const hasDraftFlow = Boolean(draftFlow);
   const replaceSelectedId = (nextSelectedId: string): void => {
     selectedIdRef.current = nextSelectedId;
@@ -2443,6 +3823,18 @@ export const RalphFlowEditor = ({
   );
   const selectedUtility =
     selectedBlock?.type === "UTILITY" ? selectedBlock.utility : null;
+  const utilityJsonDraftInlineError = useMemo(() => {
+    if (!selectedUtility || !utilityJsonDraft.trim()) {
+      return null;
+    }
+
+    try {
+      JSON.parse(utilityJsonDraft);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : "Invalid JSON.";
+    }
+  }, [selectedUtility, utilityJsonDraft]);
   const selectedBlockUsesAgentSettings =
     selectedBlock?.type === "PROMPT" ||
     selectedBlock?.type === "VALIDATOR" ||
@@ -2459,6 +3851,289 @@ export const RalphFlowEditor = ({
   useEffect(() => {
     savedSnapshotRef.current = savedSnapshot;
   }, [savedSnapshot]);
+
+  useEffect(() => {
+    if (editorMode === "design" && (selectedBlockId || selectedEdgeId)) {
+      setInspectorOpen(true);
+    }
+  }, [editorMode, selectedBlockId, selectedEdgeId]);
+
+  useEffect(() => {
+    if (generationErrorCopyState === "idle") {
+      return;
+    }
+
+    const timeout = window.setTimeout(
+      () => setGenerationErrorCopyState("idle"),
+      1_800,
+    );
+
+    return () => window.clearTimeout(timeout);
+  }, [generationErrorCopyState]);
+
+  useEffect(() => {
+    setGenerationErrorCopyState("idle");
+  }, [generationJob?.id, generationJob?.summary]);
+
+  useEffect(() => {
+    const normalizedHistory =
+      normalizeRalphAiPromptHistory(generationPromptHistory);
+
+    setAiPromptHistory((current) =>
+      areRalphAiPromptHistoriesEqual(current, normalizedHistory)
+        ? current
+        : normalizedHistory,
+    );
+    setAiPromptHistoryIndex(null);
+    setAiPromptDraftBeforeHistory("");
+  }, [generationPromptHistory]);
+
+  const resetAiPromptHistoryNavigation = useCallback((): void => {
+    setAiPromptHistoryIndex(null);
+    setAiPromptDraftBeforeHistory("");
+  }, []);
+
+  const handleAiPromptDraftChange = useCallback(
+    (value: string): void => {
+      resetAiPromptHistoryNavigation();
+      setAiPromptDraft(value);
+    },
+    [resetAiPromptHistoryNavigation],
+  );
+
+  const rememberAiPromptHistoryEntry = useCallback(
+    (prompt: string): void => {
+      const nextHistory = addRalphAiPromptHistoryEntry(aiPromptHistory, prompt);
+
+      if (areRalphAiPromptHistoriesEqual(aiPromptHistory, nextHistory)) {
+        return;
+      }
+
+      setAiPromptHistory(nextHistory);
+      onGenerationPromptHistoryChange?.(nextHistory);
+    },
+    [aiPromptHistory, onGenerationPromptHistoryChange],
+  );
+
+  const handleAiPromptHistoryNavigation = useCallback(
+    (event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") {
+        return;
+      }
+
+      if (aiPromptHistory.length === 0) {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (event.key === "ArrowUp") {
+        if (aiPromptHistoryIndex === null) {
+          const nextIndex = aiPromptHistory.length - 1;
+
+          setAiPromptDraftBeforeHistory(aiPromptDraft);
+          setAiPromptHistoryIndex(nextIndex);
+          setAiPromptDraft(aiPromptHistory[nextIndex] ?? "");
+          return;
+        }
+
+        const nextIndex = Math.max(aiPromptHistoryIndex - 1, 0);
+
+        setAiPromptHistoryIndex(nextIndex);
+        setAiPromptDraft(aiPromptHistory[nextIndex] ?? "");
+        return;
+      }
+
+      if (aiPromptHistoryIndex === null) {
+        return;
+      }
+
+      const nextIndex = aiPromptHistoryIndex + 1;
+
+      if (nextIndex >= aiPromptHistory.length) {
+        setAiPromptHistoryIndex(null);
+        setAiPromptDraft(aiPromptDraftBeforeHistory);
+        setAiPromptDraftBeforeHistory("");
+        return;
+      }
+
+      setAiPromptHistoryIndex(nextIndex);
+      setAiPromptDraft(aiPromptHistory[nextIndex] ?? "");
+    },
+    [
+      aiPromptDraft,
+      aiPromptDraftBeforeHistory,
+      aiPromptHistory,
+      aiPromptHistoryIndex,
+    ],
+  );
+
+  const updateInspectorScrollState = useCallback((): void => {
+    const container = inspectorScrollContainerRef.current;
+
+    if (!container) {
+      setInspectorScrollState({ atBottom: true, atTop: true });
+      return;
+    }
+
+    const nextState = {
+      atTop: container.scrollTop <= RALPH_INSPECTOR_SCROLL_EPSILON,
+      atBottom:
+        container.scrollHeight -
+          container.scrollTop -
+          container.clientHeight <=
+        RALPH_INSPECTOR_SCROLL_EPSILON,
+    };
+
+    setInspectorScrollState((current) =>
+      current.atTop === nextState.atTop &&
+      current.atBottom === nextState.atBottom
+        ? current
+        : nextState,
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!showInspectorPanel) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(updateInspectorScrollState);
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    activeInspectorSection,
+    draftFlow,
+    expandedEditor,
+    selectedBlockId,
+    selectedEdgeId,
+    showAdvancedSettings,
+    showInspectorPanel,
+    updateInspectorScrollState,
+    utilityJsonDraft,
+  ]);
+
+  useEffect(() => {
+    inspectorScrollContainerRef.current?.scrollTo?.({ top: 0 });
+    if (inspectorScrollContainerRef.current) {
+      inspectorScrollContainerRef.current.scrollTop = 0;
+    }
+  }, [selectedBlockId, selectedEdgeId]);
+
+  const scrollInspectorSectionIntoView = (
+    sectionId: RalphInspectorSectionId,
+  ): void => {
+    setActiveInspectorSection(sectionId);
+
+    const container = inspectorScrollContainerRef.current;
+    const target = container?.querySelector<HTMLElement>(
+      `[data-ralph-inspector-section="${sectionId}"]`,
+    );
+
+    if (!container || !target) {
+      return;
+    }
+
+    container.scrollTo({
+      top: Math.max(0, target.offsetTop - 12),
+      behavior: "smooth",
+    });
+  };
+
+  const handleInspectorResizePointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ): void => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    const startX = event.clientX;
+    const startWidth = inspectorWidth;
+    const previousRootCursor = document.documentElement.style.cursor;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+
+    document.documentElement.style.cursor = "col-resize";
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (moveEvent: PointerEvent): void => {
+      const nextWidth = clampRalphInspectorWidth(
+        startWidth + startX - moveEvent.clientX,
+      );
+
+      setInspectorWidth(nextWidth);
+    };
+
+    const restorePointerState = (): void => {
+      document.documentElement.style.cursor = previousRootCursor;
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", restorePointerState);
+    };
+
+    const handlePointerUp = (upEvent: PointerEvent): void => {
+      const nextWidth = clampRalphInspectorWidth(
+        startWidth + startX - upEvent.clientX,
+      );
+
+      setInspectorWidth(nextWidth);
+      saveRalphInspectorWidth(nextWidth);
+      restorePointerState();
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", restorePointerState, { once: true });
+  };
+
+  const resetInspectorWidth = (): void => {
+    const nextWidth = clampRalphInspectorWidth(RALPH_INSPECTOR_DEFAULT_WIDTH);
+    setInspectorWidth(nextWidth);
+    saveRalphInspectorWidth(nextWidth);
+  };
+
+  const openExpandedEditor = (editor: RalphExpandedEditorState): void => {
+    setExpandedEditor(editor);
+    setExpandedEditorDraft(editor.value);
+    setExpandedEditorWrap(editor.mode !== "code");
+  };
+
+  const applyExpandedEditor = (): void => {
+    if (!expandedEditor) {
+      return;
+    }
+
+    expandedEditor.onApply(expandedEditorDraft);
+    setExpandedEditor(null);
+  };
+
+  const copyExpandedEditorDraft = async (): Promise<void> => {
+    if (!navigator.clipboard) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(expandedEditorDraft);
+  };
+
+  const insertExpandedEditorSnippet = (snippet: string): void => {
+    const textarea = expandedEditorTextareaRef.current;
+    const start = textarea?.selectionStart ?? expandedEditorDraft.length;
+    const end = textarea?.selectionEnd ?? expandedEditorDraft.length;
+    const nextDraft = `${expandedEditorDraft.slice(0, start)}${snippet}${expandedEditorDraft.slice(end)}`;
+
+    setExpandedEditorDraft(nextDraft);
+
+    window.requestAnimationFrame(() => {
+      expandedEditorTextareaRef.current?.focus();
+      expandedEditorTextareaRef.current?.setSelectionRange(
+        start + snippet.length,
+        start + snippet.length,
+      );
+    });
+  };
+
   const selectedBlockOutputs = useMemo(
     () => (selectedBlock ? getBlockOutputs(selectedBlock) : []),
     [selectedBlock],
@@ -2548,6 +4223,82 @@ export const RalphFlowEditor = ({
 
     return routes;
   }, [draftFlow, selectedBlock]);
+  const selectedBlockIssueCounts = useMemo(() => {
+    if (!selectedBlock) {
+      return { errors: 0, warnings: 0 };
+    }
+
+    let errors = 0;
+    let warnings = 0;
+
+    for (const issue of issues) {
+      if (issue.blockId !== selectedBlock.id) {
+        continue;
+      }
+
+      if (issue.level === "error") {
+        errors += 1;
+      } else {
+        warnings += 1;
+      }
+    }
+
+    return { errors, warnings };
+  }, [issues, selectedBlock]);
+  const missingSelectedRouteCount = useMemo(() => {
+    if (!selectedBlock) {
+      return 0;
+    }
+
+    return selectedBlockOutputs.filter((output) => !selectedRoutesByOutput.has(output))
+      .length;
+  }, [selectedBlock, selectedBlockOutputs, selectedRoutesByOutput]);
+  const connectedSelectedRouteCount =
+    selectedBlockOutputs.length - missingSelectedRouteCount;
+  const availableInspectorSections = useMemo(() => {
+    if (!selectedBlock) {
+      return [];
+    }
+
+    const sectionIds: RalphInspectorSectionId[] = ["content"];
+
+    if (selectedBlock.type === "UTILITY" || selectedBlockUsesAgentSettings) {
+      sectionIds.push("execution");
+    }
+
+    if (
+      isExecutableRalphCanvasBlock(selectedBlock) ||
+      selectedBlock.type === "NOTE" ||
+      selectedBlock.type === "GROUP"
+    ) {
+      sectionIds.push("behavior");
+    }
+
+    if (selectedBlockOutputs.length > 0) {
+      sectionIds.push("routes");
+    }
+
+    if (selectedBlock.type === "UTILITY" || selectedBlockUsesAgentSettings) {
+      sectionIds.push("advanced");
+    }
+
+    return RALPH_INSPECTOR_SECTIONS.filter((section) =>
+      sectionIds.includes(section.id),
+    );
+  }, [selectedBlock, selectedBlockOutputs.length, selectedBlockUsesAgentSettings]);
+
+  useEffect(() => {
+    if (
+      availableInspectorSections.length === 0 ||
+      availableInspectorSections.some(
+        (section) => section.id === activeInspectorSection,
+      )
+    ) {
+      return;
+    }
+
+    setActiveInspectorSection(availableInspectorSections[0]?.id ?? "content");
+  }, [activeInspectorSection, availableInspectorSections]);
   const selectedSummary = useMemo(
     () => flows.find((flow) => flow.id === selectedId) ?? null,
     [flows, selectedId],
@@ -2613,8 +4364,9 @@ export const RalphFlowEditor = ({
     [draftFlow],
   );
   const edges = useMemo(
-    () => (draftFlow ? flowToEdges(draftFlow, selectedEdgeId) : []),
-    [draftFlow, selectedEdgeId],
+    () =>
+      draftFlow ? flowToEdges(draftFlow, selectedEdgeId, selectedBlockId) : [],
+    [draftFlow, selectedBlockId, selectedEdgeId],
   );
   const requiredMissingVariables = useMemo(() => {
     if (!draftFlow) {
@@ -2629,13 +4381,16 @@ export const RalphFlowEditor = ({
   const hasBlockingIssues = issues.some((issue) => issue.level === "error");
   const errorCount = issues.filter((issue) => issue.level === "error").length;
   const warningCount = issues.length - errorCount;
-  const showMiniMap = canvasNodes.length >= 4;
+  const showMiniMap = editorMode === "design" && canvasNodes.length >= 4;
   const activeRunCount = activeRuns.length;
   const flowHasStart = Boolean(
     draftFlow?.blocks.some((block) => block.type === "START"),
   );
   const generationRunning =
     generationJob?.status === "running" || generationJob?.status === "stopping";
+  const generationJobStatusLabel = generationJob
+    ? getGenerationJobStatusLabel(generationJob.status)
+    : null;
   const selectedMatchesDraft = Boolean(draftFlow && selectedId === draftFlow.id);
   const canSaveFlow =
     Boolean(workspaceRoot && draftFlow && selectedMatchesDraft) &&
@@ -2713,6 +4468,39 @@ export const RalphFlowEditor = ({
     warningCount > 0
       ? `Ready to run with ${warningCount} warning${warningCount === 1 ? "" : "s"}.`
       : "Ready to run.";
+  const flowListColumnWidth = flowListOpen ? "15rem" : "2.75rem";
+  const editorGridTemplateColumns = showInspectorPanel
+    ? `${flowListColumnWidth} minmax(0,1fr) ${inspectorWidth}px`
+    : `${flowListColumnWidth} minmax(0,1fr)`;
+  const editorGridStyle = {
+    gridTemplateColumns: editorGridTemplateColumns,
+  };
+  const inspectorTwoColumnClass =
+    inspectorWidth >= 430 ? "grid-cols-2" : "grid-cols-1";
+  const inspectorThreeColumnClass =
+    inspectorWidth >= 620
+      ? "grid-cols-3"
+      : inspectorWidth >= 430
+        ? "grid-cols-2"
+        : "grid-cols-1";
+  const inspectorHttpGridClass =
+    inspectorWidth >= 500 ? "grid-cols-[0.55fr_1.45fr]" : "grid-cols-1";
+  const editorRowsClass =
+    editorMode === "design"
+      ? "grid-rows-[minmax(0,1fr)_4.25rem]"
+      : editorMode === "run"
+        ? "grid-rows-[minmax(12rem,1fr)_minmax(18rem,38vh)]"
+        : editorMode === "generate"
+          ? "grid-rows-[minmax(12rem,1fr)_minmax(17rem,34vh)]"
+          : issues.length > 0
+            ? "grid-rows-[minmax(12rem,1fr)_minmax(12rem,30vh)]"
+            : "grid-rows-[minmax(0,1fr)_6.5rem]";
+  const bottomPanelSpanClass = showInspectorPanel
+    ? "col-start-2 col-span-2"
+    : "col-start-2";
+  const staleRunMessage = Boolean(
+    message && /Ralph flow [`'"]?[^`'"]+[`'"]? was not found/u.test(message),
+  );
 
   useEffect(() => {
     if (!isActive || initialPromptAppliedRef.current) {
@@ -2730,6 +4518,36 @@ export const RalphFlowEditor = ({
     let unsubscribe: (() => void) | undefined;
 
     void subscribeToDesktopTaskProgress((event) => {
+      const generationActivity = createGenerationActivityFromProgress(
+        event.progress,
+        event.timestamp,
+      );
+
+      if (generationActivity) {
+        setGenerationJob((current) => {
+          const currentJob =
+            current?.id === event.taskId
+              ? current
+              : current === null
+                ? {
+                    id: event.taskId,
+                    target: "flow",
+                    mode: "do-it",
+                    targetFlowId: null,
+                    targetAlias: "ralph-flow",
+                    startedAt: event.timestamp,
+                    status: "running" as RalphGenerationStatus,
+                    summary: "Ralph flow generation is running.",
+                    activity: [],
+                  }
+                : current;
+
+          return currentJob.id === event.taskId
+            ? applyGenerationActivity(currentJob, generationActivity)
+            : currentJob;
+        });
+      }
+
       const snapshot = getRalphProgressSnapshot(event.progress);
 
       if (!snapshot) {
@@ -2880,6 +4698,53 @@ export const RalphFlowEditor = ({
     }
   };
 
+  const refreshRunHistory = async (flowId: string | null = selectedIdRef.current): Promise<void> => {
+    if (!workspaceRoot) {
+      setRunHistory([]);
+      setRunHistoryLoading(false);
+      return;
+    }
+
+    setRunHistoryLoading(true);
+
+    try {
+      const result = await listRalphRuns(workspaceRoot, flowId || undefined);
+      setRunHistory(result.runs);
+    } catch (error) {
+      setRunHistory([]);
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRunHistoryLoading(false);
+    }
+  };
+
+  const openRunLog = async (
+    runId: string,
+    kind: "simple" | "trace",
+  ): Promise<void> => {
+    if (!workspaceRoot) {
+      return;
+    }
+
+    setRunLogLoading(true);
+
+    try {
+      const result = await showRalphRunLog(workspaceRoot, runId, kind);
+      setSelectedRunLog({
+        runId: result.id,
+        kind: result.kind,
+        content: result.content,
+        path: result.path,
+      });
+      setEditorMode("run");
+      setRunPanelTab("logs");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRunLogLoading(false);
+    }
+  };
+
   const reconcileActiveRalphRuns = async (): Promise<void> => {
     const activeTasks = await loadActiveDesktopTasks();
 
@@ -3016,6 +4881,7 @@ export const RalphFlowEditor = ({
           startedAt: newestGenerationTask.startedAt,
           status: "running",
           summary: `AI flow generation \`${alias}\` is running in the background.`,
+          activity: [],
         };
       }
 
@@ -3069,6 +4935,17 @@ export const RalphFlowEditor = ({
     }
 
     void refreshRevisions(selectedId);
+  }, [isActive, selectedId, unsavedFlowId, workspaceRoot]);
+
+  useEffect(() => {
+    if (!isActive || !workspaceRoot || !selectedId || unsavedFlowId === selectedId) {
+      setRunHistory([]);
+      setRunHistoryLoading(false);
+      setSelectedRunLog(null);
+      return;
+    }
+
+    void refreshRunHistory(selectedId);
   }, [isActive, selectedId, unsavedFlowId, workspaceRoot]);
 
   useEffect(() => {
@@ -3626,7 +5503,9 @@ export const RalphFlowEditor = ({
   };
 
   const createFlowWithAgent = async (): Promise<void> => {
-    if (!workspaceRoot || !aiPromptDraft.trim()) {
+    const normalizedAiPrompt = aiPromptDraft.trim();
+
+    if (!workspaceRoot || !normalizedAiPrompt) {
       return;
     }
 
@@ -3643,6 +5522,9 @@ export const RalphFlowEditor = ({
       return;
     }
 
+    rememberAiPromptHistoryEntry(normalizedAiPrompt);
+    resetAiPromptHistoryNavigation();
+
     const jobId = `generation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const selectedIdAtStart = selectedIdRef.current;
     const targetFlowId = existingFlow?.id ?? null;
@@ -3655,6 +5537,7 @@ export const RalphFlowEditor = ({
     );
 
     generationRequestRef.current = jobId;
+    setGenerationErrorCopyState("idle");
     setGenerationJob({
       id: jobId,
       target: aiTarget,
@@ -3667,6 +5550,9 @@ export const RalphFlowEditor = ({
         aiTarget === "flow"
           ? `Generating new Ralph flow \`${targetFlowName}\`.`
           : `Applying AI flow changes to \`${targetFlowName}\`.`,
+      activity: [],
+      ...(generationProvider ? { provider: generationProvider } : {}),
+      ...(generationModel ? { model: generationModel } : {}),
     });
     setMessage(null);
 
@@ -3691,11 +5577,51 @@ export const RalphFlowEditor = ({
       const formattedMessage = formatCreateFlowMessage(result);
       setGenerationJob((current) =>
         current?.id === jobId
-          ? {
+          ? result.events?.reduce(
+              (job, event) =>
+                applyGenerationActivity(
+                  job,
+                  createGenerationActivityFromResultEvent(event),
+                ),
+              {
+                ...current,
+                status: result.status,
+                summary: formattedMessage,
+                result,
+                flowPath: result.flowPath,
+                ...(result.generationLogPath
+                  ? { generationLogPath: result.generationLogPath }
+                  : {}),
+                ...(result.traceLogPath ? { traceLogPath: result.traceLogPath } : {}),
+                validationValid: result.validation.valid,
+                validationErrorCount: result.validation.errors.length,
+                validationWarningCount: result.validation.warnings.length,
+                ...(result.flow
+                  ? {
+                      blockCount: result.flow.blocks.length,
+                      edgeCount: result.flow.edges.length,
+                    }
+                  : {}),
+              },
+            ) ?? {
               ...current,
               status: result.status,
               summary: formattedMessage,
               result,
+              flowPath: result.flowPath,
+              ...(result.generationLogPath
+                ? { generationLogPath: result.generationLogPath }
+                : {}),
+              ...(result.traceLogPath ? { traceLogPath: result.traceLogPath } : {}),
+              validationValid: result.validation.valid,
+              validationErrorCount: result.validation.errors.length,
+              validationWarningCount: result.validation.warnings.length,
+              ...(result.flow
+                ? {
+                    blockCount: result.flow.blocks.length,
+                    edgeCount: result.flow.edges.length,
+                  }
+                : {}),
             }
           : current,
       );
@@ -3759,6 +5685,22 @@ export const RalphFlowEditor = ({
     }
   };
 
+  const copyGenerationError = async (): Promise<void> => {
+    if (!canCopyGenerationError(generationJob) || !navigator.clipboard) {
+      setGenerationErrorCopyState("failed");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(
+        formatGenerationErrorClipboardText(generationJob),
+      );
+      setGenerationErrorCopyState("copied");
+    } catch {
+      setGenerationErrorCopyState("failed");
+    }
+  };
+
   const persistFlow = async (
     formatMessage: (result: RalphPersistedFlowResult) => string,
   ): Promise<boolean> => {
@@ -3775,7 +5717,7 @@ export const RalphFlowEditor = ({
 
     const requestId = saveRequestRef.current + 1;
     saveRequestRef.current = requestId;
-    const flowToSave = draftFlow;
+    const flowToSave = normalizeDerivedGroupMembership(draftFlow);
     setLoading(true);
     setMessage(null);
 
@@ -4117,6 +6059,7 @@ export const RalphFlowEditor = ({
     ]);
     setLastRun(null);
     setEditorMode("run");
+    setRunPanelTab("live");
     setMessage(`Ralph run \`${flowName}\` started in the background.`);
 
     void (async () => {
@@ -4156,10 +6099,12 @@ export const RalphFlowEditor = ({
               ? `${formatRunMessage(result.run)} Run log: ${result.runLogPath}`
               : formatRunMessage(result.run),
           );
+          void refreshRunHistory(flowToRun.id);
         } else if (selectedIdRef.current === flowToRun.id) {
           setMessage(
             `Ralph run \`${flowName}\` finished for an older flow version.`,
           );
+          void refreshRunHistory(flowToRun.id);
         }
       } catch (error) {
         const currentDraft = draftFlowRef.current;
@@ -4365,14 +6310,22 @@ export const RalphFlowEditor = ({
     }
 
     const removableBlockIdSet = new Set(removableBlockIds);
-    updateDraftFlow((flow) => ({
-      ...flow,
-      blocks: flow.blocks.filter((block) => !removableBlockIdSet.has(block.id)),
-      edges: flow.edges.filter(
-        (edge) =>
-          !removableBlockIdSet.has(edge.from) && !removableBlockIdSet.has(edge.to),
-      ),
-    }));
+    updateDraftFlow((flow) => {
+      const annotationLinks = flow.annotationLinks?.filter(
+        (link) =>
+          !removableBlockIdSet.has(link.from) && !removableBlockIdSet.has(link.to),
+      );
+
+      return {
+        ...flow,
+        blocks: flow.blocks.filter((block) => !removableBlockIdSet.has(block.id)),
+        edges: flow.edges.filter(
+          (edge) =>
+            !removableBlockIdSet.has(edge.from) && !removableBlockIdSet.has(edge.to),
+        ),
+        ...(annotationLinks ? { annotationLinks } : {}),
+      };
+    });
     setSelectedBlockId(
       draftFlow.blocks.find((block) => !removableBlockIdSet.has(block.id))?.id ??
         null,
@@ -4421,6 +6374,20 @@ export const RalphFlowEditor = ({
     const sourceBlock = draftFlow.blocks.find(
       (block) => block.id === connection.source,
     );
+    const targetBlock = draftFlow.blocks.find(
+      (block) => block.id === connection.target,
+    );
+
+    if (
+      !sourceBlock ||
+      !targetBlock ||
+      isVisualRalphCanvasBlock(sourceBlock) ||
+      isVisualRalphCanvasBlock(targetBlock)
+    ) {
+      setMessage("Notes and groups cannot be connected with runtime routes.");
+      return;
+    }
+
     const output = connection.sourceHandle
       ? (connection.sourceHandle as RalphExecutionOutput)
       : sourceBlock
@@ -4433,7 +6400,7 @@ export const RalphFlowEditor = ({
           ) ?? getBlockOutputs(sourceBlock)[0]
         : undefined;
 
-    if (!sourceBlock || !output) {
+    if (!output) {
       return;
     }
 
@@ -4479,6 +6446,20 @@ export const RalphFlowEditor = ({
     const sourceBlock = draftFlow.blocks.find(
       (block) => block.id === connection.source,
     );
+    const targetBlock = draftFlow.blocks.find(
+      (block) => block.id === connection.target,
+    );
+
+    if (
+      !sourceBlock ||
+      !targetBlock ||
+      isVisualRalphCanvasBlock(sourceBlock) ||
+      isVisualRalphCanvasBlock(targetBlock)
+    ) {
+      setMessage("Notes and groups cannot be connected with runtime routes.");
+      return;
+    }
+
     const output = connection.sourceHandle
       ? (connection.sourceHandle as RalphExecutionOutput)
       : oldEdge.sourceHandle
@@ -4487,7 +6468,7 @@ export const RalphFlowEditor = ({
           ? getBlockOutputs(sourceBlock)[0]
           : undefined;
 
-    if (!sourceBlock || !output) {
+    if (!output) {
       return;
     }
 
@@ -4528,6 +6509,7 @@ export const RalphFlowEditor = ({
     const selectedChange = changes.find(
       (change) => change.type === "select" && change.selected,
     );
+    const dimensionChanges = new Map<string, { width: number; height: number }>();
 
     if (selectedChange) {
       setSelectedBlockId(selectedChange.id);
@@ -4535,28 +6517,149 @@ export const RalphFlowEditor = ({
       closeCanvasMenu();
     }
 
+    for (const change of changes) {
+      const dimensions = getNodeChangeDimensions(change);
+
+      if (dimensions) {
+        dimensionChanges.set(change.id, dimensions);
+      }
+    }
+
     setCanvasNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
+
+    if (dimensionChanges.size > 0) {
+      updateDraftFlow((flow) => {
+        let changed = false;
+        const blocks = flow.blocks.map((block) => {
+          const size = dimensionChanges.get(block.id);
+
+          if (!size) {
+            return block;
+          }
+
+          if (block.type === "GROUP" && block.locked) {
+            return block;
+          }
+
+          if (block.size?.width === size.width && block.size.height === size.height) {
+            return block;
+          }
+
+          changed = true;
+          return { ...block, size };
+        });
+
+        return changed ? { ...flow, blocks } : flow;
+      });
+    }
   };
 
   const handleNodeDragStop: OnNodeDrag<RalphCanvasNode> = (
-    _event,
+    event,
     node,
     draggedNodes,
   ): void => {
     const movedNodes = draggedNodes.length > 0 ? draggedNodes : [node];
     const movedPositionsById = getCanvasNodePositions(movedNodes);
+    const suppressChildMove = isGroupChildMoveSuppressed(event);
 
     updateDraftFlow((flow) => {
-      let changed = false;
-      const blocks = flow.blocks.map((block) => {
+      const childrenByGroupId = createDerivedGroupChildrenById(flow);
+      const childMoveDeltas = new Map<string, RalphPosition>();
+      const suppressedChildBlockIds = new Set<string>();
+
+      if (suppressChildMove) {
+        const primaryDraggedGroupId =
+          flow.blocks.find(
+            (block) => block.id === node.id && block.type === "GROUP",
+          )?.id ?? null;
+        const suppressGroupChildren = (groupId: string): void => {
+          for (const childId of childrenByGroupId.get(groupId) ?? []) {
+            if (suppressedChildBlockIds.has(childId)) {
+              continue;
+            }
+
+            suppressedChildBlockIds.add(childId);
+            suppressGroupChildren(childId);
+          }
+        };
+
+        if (primaryDraggedGroupId) {
+          suppressGroupChildren(primaryDraggedGroupId);
+        }
+      }
+
+      for (const block of flow.blocks) {
         const nextPosition = movedPositionsById.get(block.id);
 
-        if (!nextPosition || arePositionsEqual(block.position, nextPosition)) {
+        if (block.type !== "GROUP" || !nextPosition || block.locked) {
+          continue;
+        }
+
+        const currentPosition = block.position ?? nextPosition;
+        const delta = {
+          x: nextPosition.x - currentPosition.x,
+          y: nextPosition.y - currentPosition.y,
+        };
+
+        if (
+          suppressChildMove ||
+          !block.moveChildren ||
+          (delta.x === 0 && delta.y === 0)
+        ) {
+          continue;
+        }
+
+        for (const childId of childrenByGroupId.get(block.id) ?? []) {
+          if (movedPositionsById.has(childId)) {
+            continue;
+          }
+
+          const currentDelta = childMoveDeltas.get(childId) ?? { x: 0, y: 0 };
+          childMoveDeltas.set(childId, {
+            x: currentDelta.x + delta.x,
+            y: currentDelta.y + delta.y,
+          });
+        }
+      }
+
+      let changed = false;
+      const blocks = flow.blocks.map((block, index) => {
+        const nextPosition = movedPositionsById.get(block.id);
+
+        if (nextPosition) {
+          if (suppressedChildBlockIds.has(block.id)) {
+            return block;
+          }
+
+          if (block.type === "GROUP" && block.locked) {
+            return block;
+          }
+
+          if (arePositionsEqual(block.position, nextPosition)) {
+            return block;
+          }
+
+          changed = true;
+          return { ...block, position: nextPosition };
+        }
+
+        const childDelta = childMoveDeltas.get(block.id);
+
+        if (!childDelta || (!block.position && childDelta.x === 0 && childDelta.y === 0)) {
           return block;
         }
 
+        const position = block.position ?? getDefaultCanvasPosition(index);
+
         changed = true;
-        return { ...block, position: nextPosition };
+        return {
+          ...block,
+          position: {
+            x: Math.round(position.x + childDelta.x),
+            y: Math.round(position.y + childDelta.y),
+          },
+        };
       });
 
       return changed ? { ...flow, blocks } : flow;
@@ -4574,6 +6677,39 @@ export const RalphFlowEditor = ({
       x: Math.round(position.x),
       y: Math.round(position.y),
     };
+  };
+
+  const focusValidationIssueBlock = (blockId: string): void => {
+    const flow = draftFlowRef.current;
+    const blockIndex = flow?.blocks.findIndex((block) => block.id === blockId) ?? -1;
+
+    if (!flow || blockIndex < 0) {
+      return;
+    }
+
+    const block = flow.blocks[blockIndex];
+    const instance = reactFlowInstanceRef.current;
+
+    setSelectedBlockId(blockId);
+    setSelectedEdgeId(null);
+    closeCanvasMenu();
+
+    if (!instance) {
+      return;
+    }
+
+    const node = instance.getNode(blockId);
+    const position =
+      node?.position ?? block.position ?? getDefaultCanvasPosition(blockIndex);
+    const width =
+      node?.measured?.width ?? node?.width ?? getBlockFallbackWidth(block);
+    const height =
+      node?.measured?.height ?? node?.height ?? RALPH_BLOCK_FALLBACK_HEIGHT;
+
+    void instance.setCenter(position.x + width / 2, position.y + height / 2, {
+      duration: RALPH_VALIDATION_JUMP_DURATION_MS,
+      zoom: instance.getZoom(),
+    });
   };
 
   const openPaneMenu = (event: ReactMouseEvent): void => {
@@ -4767,7 +6903,13 @@ export const RalphFlowEditor = ({
   const renderCanvasMenuButton = (
     label: string,
     onClick: () => void,
-    options: { disabled?: boolean; danger?: boolean; icon?: LucideIcon; key?: string } = {},
+    options: {
+      disabled?: boolean;
+      danger?: boolean;
+      icon?: LucideIcon;
+      iconClassName?: string;
+      key?: string;
+    } = {},
   ): JSX.Element => {
     const Icon = options.icon;
 
@@ -4787,10 +6929,27 @@ export const RalphFlowEditor = ({
               : "text-slate-200 hover:bg-slate-800",
         )}
       >
-        {Icon ? <Icon className="h-3.5 w-3.5 shrink-0" /> : null}
+        {Icon ? (
+          <Icon className={cn("h-3.5 w-3.5 shrink-0", options.iconClassName)} />
+        ) : null}
         <span className="min-w-0 truncate">{label}</span>
       </button>
     );
+  };
+
+  const renderAddBlockCanvasMenuButton = (
+    label: string,
+    type: RalphBlockType,
+    onClick: () => void,
+    options: { key?: string } = {},
+  ): JSX.Element => {
+    const tone = getBlockTone(type);
+
+    return renderCanvasMenuButton(label, onClick, {
+      ...options,
+      icon: tone.icon,
+      iconClassName: tone.badgeClassName,
+    });
   };
 
   const renderCanvasContextMenu = (): JSX.Element | null => {
@@ -4820,28 +6979,34 @@ export const RalphFlowEditor = ({
             <div className="px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
               Add Block
             </div>
-            {renderCanvasMenuButton("Prompt", () =>
+            {renderAddBlockCanvasMenuButton("Prompt", "PROMPT", () =>
               addBlock("PROMPT", canvasMenu.position),
             )}
-            {renderCanvasMenuButton("Validator", () =>
+            {renderAddBlockCanvasMenuButton("Validator", "VALIDATOR", () =>
               addBlock("VALIDATOR", canvasMenu.position),
             )}
-            {renderCanvasMenuButton("Decision", () =>
+            {renderAddBlockCanvasMenuButton("Decision", "DECISION", () =>
               addBlock("DECISION", canvasMenu.position),
             )}
-            {renderCanvasMenuButton("Pack", () =>
+            {renderAddBlockCanvasMenuButton("Pack", "PACK", () =>
               addBlock("PACK", canvasMenu.position),
             )}
-            {renderCanvasMenuButton("Utility", () =>
+            {renderAddBlockCanvasMenuButton("Utility", "UTILITY", () =>
               addBlock("UTILITY", canvasMenu.position),
             )}
+            {renderAddBlockCanvasMenuButton("Note", "NOTE", () =>
+              addBlock("NOTE", canvasMenu.position),
+            )}
+            {renderAddBlockCanvasMenuButton("Group", "GROUP", () =>
+              addBlock("GROUP", canvasMenu.position),
+            )}
             {MCP_BLOCK_ACTIONS.map((action) =>
-              renderCanvasMenuButton(`MCP ${action.label}`, () =>
+              renderAddBlockCanvasMenuButton(`MCP ${action.label}`, action.type, () =>
                 addBlock(action.type, canvasMenu.position),
                 { key: action.type },
               ),
             )}
-            {renderCanvasMenuButton("End", () =>
+            {renderAddBlockCanvasMenuButton("End", "END", () =>
               addBlock("END", canvasMenu.position),
             )}
             <div className="my-1 border-t border-slate-800" />
@@ -4861,28 +7026,42 @@ export const RalphFlowEditor = ({
             <div className="px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
               {menuBlock.title}
             </div>
-            {renderCanvasMenuButton("Add prompt after", () =>
+            {renderAddBlockCanvasMenuButton("Add prompt after", "PROMPT", () =>
               addBlockAfter(menuBlock.id, "PROMPT"),
             )}
-            {renderCanvasMenuButton("Add validator after", () =>
+            {renderAddBlockCanvasMenuButton("Add validator after", "VALIDATOR", () =>
               addBlockAfter(menuBlock.id, "VALIDATOR"),
             )}
-            {renderCanvasMenuButton("Add decision after", () =>
+            {renderAddBlockCanvasMenuButton("Add decision after", "DECISION", () =>
               addBlockAfter(menuBlock.id, "DECISION"),
             )}
-            {renderCanvasMenuButton("Add pack after", () =>
+            {renderAddBlockCanvasMenuButton("Add pack after", "PACK", () =>
               addBlockAfter(menuBlock.id, "PACK"),
             )}
-            {renderCanvasMenuButton("Add utility after", () =>
+            {renderAddBlockCanvasMenuButton("Add utility after", "UTILITY", () =>
               addBlockAfter(menuBlock.id, "UTILITY"),
             )}
+            {renderAddBlockCanvasMenuButton("Add note nearby", "NOTE", () =>
+              addBlock("NOTE", {
+                x: (menuBlock.position?.x ?? 0) + RALPH_CANVAS_X_GAP,
+                y: (menuBlock.position?.y ?? 0) + RALPH_CANVAS_Y_GAP,
+              }),
+            )}
+            {renderAddBlockCanvasMenuButton("Add group nearby", "GROUP", () =>
+              addBlock("GROUP", {
+                x: menuBlock.position?.x ?? 0,
+                y: (menuBlock.position?.y ?? 0) + RALPH_CANVAS_Y_GAP,
+              }),
+            )}
             {MCP_BLOCK_ACTIONS.map((action) =>
-              renderCanvasMenuButton(`Add MCP ${action.label.toLowerCase()} after`, () =>
-                addBlockAfter(menuBlock.id, action.type),
+              renderAddBlockCanvasMenuButton(
+                `Add MCP ${action.label.toLowerCase()} after`,
+                action.type,
+                () => addBlockAfter(menuBlock.id, action.type),
                 { key: action.type },
               ),
             )}
-            {renderCanvasMenuButton("Add end after", () =>
+            {renderAddBlockCanvasMenuButton("Add end after", "END", () =>
               addBlockAfter(menuBlock.id, "END"),
             )}
             <div className="my-1 border-t border-slate-800" />
@@ -4923,6 +7102,129 @@ export const RalphFlowEditor = ({
     );
   };
 
+  const renderInspectorSectionTabs = (): JSX.Element | null => {
+    if (!selectedBlock || availableInspectorSections.length <= 1) {
+      return null;
+    }
+
+    return (
+      <div className="border-b border-slate-800/70 bg-slate-950/95 px-3 py-2">
+        <div className="flex min-w-0 gap-1 overflow-x-auto rounded-lg bg-slate-900/45 p-1 [scrollbar-width:thin]">
+          {availableInspectorSections.map((section) => {
+            const isActive = activeInspectorSection === section.id;
+            const routeBadge =
+              section.id === "routes" && missingSelectedRouteCount > 0
+                ? missingSelectedRouteCount
+                : null;
+            const sectionLabel =
+              section.id === "routes" ? "Route map" : section.label;
+
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => scrollInspectorSectionIntoView(section.id)}
+                className={cn(
+                  "flex h-8 shrink-0 items-center gap-1 rounded-md px-2.5 text-xs font-semibold transition",
+                  isActive
+                    ? "bg-slate-800 text-white shadow-sm ring-1 ring-cyan-400/25"
+                    : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-100",
+                )}
+              >
+                {sectionLabel}
+                {routeBadge ? (
+                  <span className="rounded-full bg-amber-500/20 px-1.5 text-[0.65rem] text-amber-100">
+                    {routeBadge}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderSelectedRouteSummary = (): JSX.Element | null => {
+    if (!selectedBlock || selectedBlockOutputs.length === 0) {
+      return null;
+    }
+
+    return (
+      <button
+        type="button"
+        data-ralph-inspector-section="routes-summary"
+        onClick={() => scrollInspectorSectionIntoView("routes")}
+        className={cn(
+          "grid gap-2 rounded-lg px-3 py-2 text-left text-xs ring-1 transition",
+          missingSelectedRouteCount > 0
+            ? "bg-amber-500/10 ring-amber-400/30 hover:bg-amber-500/15"
+            : "bg-slate-950/70 ring-slate-800/70 hover:bg-slate-900/70",
+        )}
+      >
+        <div className="flex min-w-0 items-center justify-between gap-3">
+            <span className="flex min-w-0 items-center gap-2 font-semibold text-slate-200">
+            <Route className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+            <span className="truncate">Route summary</span>
+          </span>
+          <span
+            className={cn(
+              "shrink-0 font-medium",
+              missingSelectedRouteCount > 0 ? "text-amber-100" : "text-slate-500",
+            )}
+          >
+            {connectedSelectedRouteCount}/{selectedBlockOutputs.length} connected
+          </span>
+        </div>
+        <div className="flex min-w-0 flex-wrap gap-1.5">
+          {selectedBlockOutputs.map((output) => {
+            const edge = selectedRoutesByOutput.get(output);
+            const targetBlock = edge
+              ? draftFlow?.blocks.find((block) => block.id === edge.to) ?? null
+              : null;
+
+            return (
+              <span
+                key={output}
+                className={cn(
+                  "max-w-full truncate rounded border px-2 py-1 font-mono text-[0.68rem]",
+                  edge
+                    ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-100"
+                    : "border-amber-400/25 bg-amber-500/10 text-amber-100",
+                )}
+              >
+                {output}
+                {" -> "}
+                {targetBlock ? targetBlock.title : edge ? "missing" : "unconnected"}
+              </span>
+            );
+          })}
+        </div>
+      </button>
+    );
+  };
+
+  const renderExpandFieldButton = (
+    label: string,
+    onClick: () => void,
+  ): JSX.Element => {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onClick();
+        }}
+        className="h-6 rounded-md px-1.5 text-[0.68rem] text-slate-400 hover:bg-slate-800 hover:text-white"
+      >
+        <Maximize2 className="h-3 w-3" />
+        {label}
+      </Button>
+    );
+  };
+
   const renderUtilityConditionFields = (
     condition: RalphUtilityCondition | undefined,
   ): JSX.Element => {
@@ -4942,7 +7244,7 @@ export const RalphFlowEditor = ({
 
     return (
       <div className="grid gap-2 rounded-md border border-slate-800 bg-slate-950 p-2">
-        <div className="grid grid-cols-2 gap-2">
+        <div className={cn("grid gap-2", inspectorTwoColumnClass)}>
           <label className="grid gap-1.5 text-xs text-slate-300">
             <span className="font-medium">Condition</span>
             <select
@@ -4998,36 +7300,66 @@ export const RalphFlowEditor = ({
         </div>
 
         {currentCondition.style === "json-path" ? (
-          <div className="grid grid-cols-2 gap-2">
-            <Input
-              value={currentCondition.path ?? ""}
-              aria-label="Utility condition path"
-              placeholder="body.state"
-              onChange={(event) => updateCondition({ path: event.target.value })}
-              className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
-            />
-            <Input
-              value={currentCondition.value ?? ""}
-              aria-label="Utility condition value"
-              placeholder="done"
-              onChange={(event) => updateCondition({ value: event.target.value })}
-              className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
-            />
+          <div className={cn("grid gap-2", inspectorTwoColumnClass)}>
+            <RalphInspectorField
+              label="JSON path"
+              help="Result field to inspect."
+              className="text-xs text-slate-300"
+            >
+              <Input
+                value={currentCondition.path ?? ""}
+                aria-label="Utility condition path"
+                placeholder="body.state"
+                onChange={(event) =>
+                  updateCondition({ path: event.target.value })
+                }
+                className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+              />
+            </RalphInspectorField>
+            <RalphInspectorField
+              label="Expected value"
+              help="Used by equals, contains, matches, or range checks."
+              className="text-xs text-slate-300"
+            >
+              <Input
+                value={currentCondition.value ?? ""}
+                aria-label="Utility condition value"
+                placeholder="done"
+                onChange={(event) =>
+                  updateCondition({ value: event.target.value })
+                }
+                className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+              />
+            </RalphInspectorField>
           </div>
         ) : (
-          <Textarea
-            value={currentCondition.expression ?? ""}
-            aria-label="Utility condition expression"
-            placeholder={
+          <RalphInspectorField
+            label={
               currentCondition.style === "javascript"
-                ? "result.status === 200 && result.body.state === 'done'"
-                : "status == 200"
+                ? "JavaScript expression"
+                : "Condition expression"
             }
-            onChange={(event) =>
-              updateCondition({ expression: event.target.value })
+            help={
+              currentCondition.style === "javascript"
+                ? "Evaluated against the utility result object."
+                : "Simple status/body check expression."
             }
-            className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100 placeholder:text-slate-600"
-          />
+            className="text-xs text-slate-300"
+          >
+            <Textarea
+              value={currentCondition.expression ?? ""}
+              aria-label="Utility condition expression"
+              placeholder={
+                currentCondition.style === "javascript"
+                  ? "result.status === 200 && result.body.state === 'done'"
+                  : "status == 200"
+              }
+              onChange={(event) =>
+                updateCondition({ expression: event.target.value })
+              }
+              className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100 placeholder:text-slate-600"
+            />
+          </RalphInspectorField>
         )}
       </div>
     );
@@ -5042,7 +7374,10 @@ export const RalphFlowEditor = ({
     const SelectedUtilityIcon = selectedUtilityVisual.icon;
 
     return (
-      <div className="grid gap-3 border-t border-slate-800 pt-3">
+      <div
+        data-ralph-inspector-section="execution"
+        className="grid gap-3 rounded-lg bg-slate-900/25 p-3 ring-1 ring-slate-800/60"
+      >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
             <SelectedUtilityIcon
@@ -5052,26 +7387,29 @@ export const RalphFlowEditor = ({
               {formatUtilityTypeLabel(selectedUtility.type)} Utility
             </span>
           </div>
-          <select
-            value={selectedUtility.type}
-            aria-label="Utility type"
-            onChange={(event) => {
-              const type = event.target.value as RalphUtilityType;
-              replaceSelectedUtility(createDefaultUtilityConfig(type));
-            }}
-            className="h-8 max-w-44 rounded-md border border-cyan-500/30 bg-slate-950 px-2 text-xs font-semibold text-cyan-100"
-          >
-            {UTILITY_TYPE_OPTIONS.map((type) => (
-              <option key={type} value={type}>
-                {formatUtilityTypeLabel(type)}
-              </option>
-            ))}
-          </select>
+          <label className="grid gap-1 text-xs font-medium text-slate-300">
+            <span>Type</span>
+            <select
+              value={selectedUtility.type}
+              aria-label="Utility type"
+              onChange={(event) => {
+                const type = event.target.value as RalphUtilityType;
+                replaceSelectedUtility(createDefaultUtilityConfig(type));
+              }}
+              className="h-8 max-w-44 rounded-md border border-cyan-500/30 bg-slate-950 px-2 text-xs font-semibold text-cyan-100"
+            >
+              {UTILITY_TYPE_OPTIONS.map((type) => (
+                <option key={type} value={type}>
+                  {formatUtilityTypeLabel(type)}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         {selectedUtility.type === "WAIT" ? (
           <div className="grid gap-2">
-            <div className="grid grid-cols-2 gap-2">
+            <div className={cn("grid gap-2", inspectorTwoColumnClass)}>
               <label className="grid gap-1.5 text-sm text-slate-200">
                 <span className="font-medium">Mode</span>
                 <select
@@ -5129,36 +7467,40 @@ export const RalphFlowEditor = ({
             selectedUtility.mode === "poll" ? (
               <>
                 {renderUtilityConditionFields(selectedUtility.condition)}
-                <div className="grid grid-cols-2 gap-2">
-                  <Input
-                    type="number"
-                    min={0}
-                    value={selectedUtility.intervalSeconds ?? 30}
-                    aria-label="Wait poll interval seconds"
-                    onChange={(event) =>
-                      updateSelectedUtility({
-                        intervalSeconds:
-                          Number.parseFloat(event.target.value) || 0,
-                      })
-                    }
-                    className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
-                  />
-                  <Input
-                    type="number"
-                    min={1}
-                    step={0.1}
-                    value={selectedUtility.backoffMultiplier ?? ""}
-                    aria-label="Wait backoff multiplier"
-                    placeholder="Backoff"
-                    onChange={(event) =>
-                      updateSelectedUtility({
-                        backoffMultiplier: event.target.value
-                          ? Number.parseFloat(event.target.value)
-                          : undefined,
-                      })
-                    }
-                    className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
-                  />
+                <div className={cn("grid gap-2", inspectorTwoColumnClass)}>
+                  <RalphInspectorField label="Poll interval" help="Seconds between checks.">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={selectedUtility.intervalSeconds ?? 30}
+                      aria-label="Wait poll interval seconds"
+                      onChange={(event) =>
+                        updateSelectedUtility({
+                          intervalSeconds:
+                            Number.parseFloat(event.target.value) || 0,
+                        })
+                      }
+                      className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
+                    />
+                  </RalphInspectorField>
+                  <RalphInspectorField label="Backoff" help="Optional interval multiplier.">
+                    <Input
+                      type="number"
+                      min={1}
+                      step={0.1}
+                      value={selectedUtility.backoffMultiplier ?? ""}
+                      aria-label="Wait backoff multiplier"
+                      placeholder="Backoff"
+                      onChange={(event) =>
+                        updateSelectedUtility({
+                          backoffMultiplier: event.target.value
+                            ? Number.parseFloat(event.target.value)
+                            : undefined,
+                        })
+                      }
+                      className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
+                    />
+                  </RalphInspectorField>
                 </div>
               </>
             ) : null}
@@ -5168,104 +7510,120 @@ export const RalphFlowEditor = ({
         {selectedUtility.type === "HTTP_FETCH" ||
         selectedUtility.type === "POLL" ? (
           <div className="grid gap-2">
-            <div className="grid grid-cols-[0.55fr_1.45fr] gap-2">
-              <Input
-                value={selectedUtility.method ?? "GET"}
-                aria-label="HTTP method"
-                placeholder="GET"
-                onChange={(event) =>
-                  updateSelectedUtility({
-                    method: event.target.value.toUpperCase(),
-                  })
-                }
-                className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
-              />
-              <Input
-                value={selectedUtility.url ?? ""}
-                aria-label="HTTP URL"
-                placeholder="{{url:url}}"
-                onChange={(event) =>
-                  updateSelectedUtility({ url: event.target.value })
-                }
-                className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
-              />
+            <div className={cn("grid gap-2", inspectorHttpGridClass)}>
+              <RalphInspectorField label="Method">
+                <Input
+                  value={selectedUtility.method ?? "GET"}
+                  aria-label="HTTP method"
+                  placeholder="GET"
+                  onChange={(event) =>
+                    updateSelectedUtility({
+                      method: event.target.value.toUpperCase(),
+                    })
+                  }
+                  className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                />
+              </RalphInspectorField>
+              <RalphInspectorField label="URL" help="Endpoint to call. Supports {{variables}}.">
+                <Input
+                  value={selectedUtility.url ?? ""}
+                  aria-label="HTTP URL"
+                  placeholder="{{url:url}}"
+                  onChange={(event) =>
+                    updateSelectedUtility({ url: event.target.value })
+                  }
+                  className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                />
+              </RalphInspectorField>
             </div>
-            <Textarea
-              value={selectedUtility.body ?? ""}
-              aria-label="HTTP body"
-              placeholder="Optional request body"
-              onChange={(event) =>
-                updateSelectedUtility({ body: event.target.value })
-              }
-              className="min-h-16 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100 placeholder:text-slate-600"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                value={selectedUtility.outputPath ?? ""}
-                aria-label="HTTP output path"
-                placeholder="Save body to path"
+            <RalphInspectorField label="Request body" help="Optional body for POST, PUT, or PATCH requests.">
+              <Textarea
+                value={selectedUtility.body ?? ""}
+                aria-label="HTTP body"
+                placeholder="Optional request body"
                 onChange={(event) =>
-                  updateSelectedUtility({ outputPath: event.target.value })
+                  updateSelectedUtility({ body: event.target.value })
                 }
-                className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                className="min-h-16 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100 placeholder:text-slate-600"
               />
-              <Input
-                type="number"
-                min={1}
-                value={selectedUtility.timeoutSeconds ?? 30}
-                aria-label="HTTP timeout seconds"
-                onChange={(event) =>
-                  updateSelectedUtility({
-                    timeoutSeconds: Number.parseFloat(event.target.value) || 0,
-                  })
-                }
-                className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
-              />
+            </RalphInspectorField>
+            <div className={cn("grid gap-2", inspectorTwoColumnClass)}>
+              <RalphInspectorField label="Output path" help="Optional file path for the response body.">
+                <Input
+                  value={selectedUtility.outputPath ?? ""}
+                  aria-label="HTTP output path"
+                  placeholder="Save body to path"
+                  onChange={(event) =>
+                    updateSelectedUtility({ outputPath: event.target.value })
+                  }
+                  className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                />
+              </RalphInspectorField>
+              <RalphInspectorField label="Timeout" help="Seconds before the request fails.">
+                <Input
+                  type="number"
+                  min={1}
+                  value={selectedUtility.timeoutSeconds ?? 30}
+                  aria-label="HTTP timeout seconds"
+                  onChange={(event) =>
+                    updateSelectedUtility({
+                      timeoutSeconds: Number.parseFloat(event.target.value) || 0,
+                    })
+                  }
+                  className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
+                />
+              </RalphInspectorField>
             </div>
-            <Textarea
-              key={`${selectedBlockId}-headers-${selectedUtility.type}`}
-              defaultValue={formatJsonDraft(selectedUtility.headers ?? {})}
-              aria-label="HTTP headers JSON"
-              onBlur={(event) => {
-                const headers = parseStringRecordDraft(event.target.value);
-                if (headers) {
-                  updateSelectedUtility({ headers });
-                }
-              }}
-              className="min-h-16 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
-            />
+            <RalphInspectorField label="Headers (JSON)" help="Key-value headers sent with the request.">
+              <Textarea
+                key={`${selectedBlockId}-headers-${selectedUtility.type}`}
+                defaultValue={formatJsonDraft(selectedUtility.headers ?? {})}
+                aria-label="HTTP headers JSON"
+                onBlur={(event) => {
+                  const headers = parseStringRecordDraft(event.target.value);
+                  if (headers) {
+                    updateSelectedUtility({ headers });
+                  }
+                }}
+                className="min-h-16 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+              />
+            </RalphInspectorField>
             {selectedUtility.type === "POLL" ? (
               <>
                 {renderUtilityConditionFields(selectedUtility.condition)}
-                <div className="grid grid-cols-3 gap-2">
-                  <Input
-                    type="number"
-                    min={0}
-                    value={selectedUtility.intervalSeconds ?? 30}
-                    aria-label="Poll interval seconds"
-                    onChange={(event) =>
-                      updateSelectedUtility({
-                        intervalSeconds:
-                          Number.parseFloat(event.target.value) || 0,
-                      })
-                    }
-                    className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
-                  />
-                  <Input
-                    type="number"
-                    min={1}
-                    value={selectedUtility.maxAttempts ?? ""}
-                    aria-label="Poll max attempts"
-                    placeholder="Infinite"
-                    onChange={(event) =>
-                      updateSelectedUtility({
-                        maxAttempts: event.target.value
-                          ? Number.parseInt(event.target.value, 10)
-                          : null,
-                      })
-                    }
-                    className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
-                  />
+                <div className={cn("grid gap-2", inspectorThreeColumnClass)}>
+                  <RalphInspectorField label="Interval" help="Seconds between attempts.">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={selectedUtility.intervalSeconds ?? 30}
+                      aria-label="Poll interval seconds"
+                      onChange={(event) =>
+                        updateSelectedUtility({
+                          intervalSeconds:
+                            Number.parseFloat(event.target.value) || 0,
+                        })
+                      }
+                      className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
+                    />
+                  </RalphInspectorField>
+                  <RalphInspectorField label="Max attempts" help="Blank means keep polling.">
+                    <Input
+                      type="number"
+                      min={1}
+                      value={selectedUtility.maxAttempts ?? ""}
+                      aria-label="Poll max attempts"
+                      placeholder="Infinite"
+                      onChange={(event) =>
+                        updateSelectedUtility({
+                          maxAttempts: event.target.value
+                            ? Number.parseInt(event.target.value, 10)
+                            : null,
+                        })
+                      }
+                      className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
+                    />
+                  </RalphInspectorField>
                   <label className="flex items-center gap-2 rounded border border-slate-800 bg-slate-950 px-2 text-xs text-slate-200">
                     <input
                       type="checkbox"
@@ -5287,89 +7645,346 @@ export const RalphFlowEditor = ({
         {selectedUtility.type === "RUN_COMMAND" ||
         selectedUtility.type === "RUN_CHECK" ? (
           <div className="grid gap-2">
-            <Textarea
-              value={selectedUtility.command ?? ""}
-              aria-label="Utility command"
-              placeholder="npm test"
-              onChange={(event) =>
-                updateSelectedUtility({ command: event.target.value })
-              }
-              className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                value={selectedUtility.cwd ?? ""}
-                aria-label="Command working directory"
-                placeholder="Workspace"
+            <RalphInspectorField
+              label="Command"
+              help="Shell command to run. Supports {{variables}}."
+              action={renderExpandFieldButton("Expand", () =>
+                openExpandedEditor({
+                  title: "Command",
+                  description:
+                    "Edit the shell command in a larger workspace. Variables are inserted literally.",
+                  ariaLabel: "Expanded utility command",
+                  mode: "code",
+                  value: selectedUtility.command ?? "",
+                  supportsVariables: true,
+                  onApply: (command) => updateSelectedUtility({ command }),
+                }),
+              )}
+            >
+              <Textarea
+                value={selectedUtility.command ?? ""}
+                aria-label="Utility command"
+                placeholder="npm test"
                 onChange={(event) =>
-                  updateSelectedUtility({ cwd: event.target.value })
+                  updateSelectedUtility({ command: event.target.value })
                 }
-                className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
               />
-              <Input
-                type="number"
-                min={0}
-                value={selectedUtility.timeoutSeconds ?? 120}
-                aria-label="Command timeout seconds"
-                onChange={(event) =>
-                  updateSelectedUtility({
-                    timeoutSeconds: Number.parseFloat(event.target.value) || 0,
-                  })
-                }
-                className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
-              />
+            </RalphInspectorField>
+            <div className={cn("grid gap-2", inspectorTwoColumnClass)}>
+              <RalphInspectorField label="Working directory" help="Leave blank to use the workspace root.">
+                <Input
+                  value={selectedUtility.cwd ?? ""}
+                  aria-label="Command working directory"
+                  placeholder="Workspace"
+                  onChange={(event) =>
+                    updateSelectedUtility({ cwd: event.target.value })
+                  }
+                  className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                />
+              </RalphInspectorField>
+              <RalphInspectorField label="Timeout" help="Seconds before the process is stopped.">
+                <Input
+                  type="number"
+                  min={0}
+                  value={selectedUtility.timeoutSeconds ?? 120}
+                  aria-label="Command timeout seconds"
+                  onChange={(event) =>
+                    updateSelectedUtility({
+                      timeoutSeconds: Number.parseFloat(event.target.value) || 0,
+                    })
+                  }
+                  className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
+                />
+              </RalphInspectorField>
             </div>
             {selectedUtility.type === "RUN_COMMAND" ? (
+              <RalphInspectorField label="Accepted exit codes" help="Comma-separated exit codes treated as success.">
+                <Input
+                  value={(selectedUtility.acceptedExitCodes ?? [0]).join(", ")}
+                  aria-label="Accepted exit codes"
+                  placeholder="0"
+                  onChange={(event) =>
+                    updateSelectedUtility({
+                      acceptedExitCodes:
+                        parseNumberList(event.target.value) ?? [0],
+                    })
+                  }
+                  className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                />
+              </RalphInspectorField>
+            ) : null}
+            <RalphInspectorField label="Environment (JSON)" help="Extra environment variables for this command.">
+              <Textarea
+                key={`${selectedBlockId}-env-${selectedUtility.type}`}
+                defaultValue={formatJsonDraft(selectedUtility.env ?? {})}
+                aria-label="Command env JSON"
+                onBlur={(event) => {
+                  const env = parseStringRecordDraft(event.target.value);
+                  if (env) {
+                    updateSelectedUtility({ env });
+                  }
+                }}
+                className="min-h-16 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+              />
+            </RalphInspectorField>
+          </div>
+        ) : null}
+
+        {selectedUtility.type === "UI_ANALYZE" ? (
+          <div className="grid gap-2">
+            <div className={cn("grid gap-2", inspectorTwoColumnClass)}>
+              <label className="grid gap-1.5 text-sm text-slate-200">
+                <span className="font-medium">Adapter</span>
+                <select
+                  value={selectedUtility.adapter ?? "auto"}
+                  aria-label="UI analysis adapter"
+                  onChange={(event) =>
+                    updateSelectedUtility({
+                      adapter: event.target
+                        .value as RalphUtilityConfig["adapter"],
+                    })
+                  }
+                  className="h-9 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100"
+                >
+                  <option value="auto">Auto</option>
+                  <option value="browser">Browser</option>
+                  <option value="image">Image</option>
+                  <option value="playwright-mcp">Playwright MCP</option>
+                  <option value="tauri-mcp">Tauri MCP</option>
+                </select>
+              </label>
+              <label className="grid gap-1.5 text-sm text-slate-200">
+                <span className="font-medium">Server Mode</span>
+                <select
+                  value={selectedUtility.server?.mode ?? "existing"}
+                  aria-label="UI analysis server mode"
+                  onChange={(event) =>
+                    updateSelectedUtility({
+                      server: {
+                        ...(selectedUtility.server ?? {}),
+                        mode: event.target
+                          .value as NonNullable<
+                          RalphUtilityConfig["server"]
+                        >["mode"],
+                      },
+                    })
+                  }
+                  className="h-9 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100"
+                >
+                  <option value="existing">Existing</option>
+                  <option value="none">None</option>
+                  <option value="managed">Managed</option>
+                </select>
+              </label>
+            </div>
+            <RalphInspectorField label="Target URL" help="Page to inspect. Supports {{variables}}.">
               <Input
-                value={(selectedUtility.acceptedExitCodes ?? [0]).join(", ")}
-                aria-label="Accepted exit codes"
-                placeholder="0"
+                value={selectedUtility.targetUrl ?? selectedUtility.url ?? ""}
+                aria-label="UI analysis target URL"
+                placeholder="{{targetUrl:url=http://localhost:1420}}"
+                onChange={(event) =>
+                  updateSelectedUtility({ targetUrl: event.target.value })
+                }
+                className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+              />
+            </RalphInspectorField>
+            <RalphInspectorField label="Health URL" help="Optional readiness endpoint before capture.">
+              <Input
+                value={selectedUtility.server?.healthUrl ?? ""}
+                aria-label="UI analysis health URL"
+                placeholder="Health URL, defaults to target URL"
                 onChange={(event) =>
                   updateSelectedUtility({
-                    acceptedExitCodes: parseNumberList(event.target.value) ?? [0],
+                    server: {
+                      ...(selectedUtility.server ?? {}),
+                      healthUrl: event.target.value,
+                    },
                   })
                 }
                 className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
               />
-            ) : null}
-            <Textarea
-              key={`${selectedBlockId}-env-${selectedUtility.type}`}
-              defaultValue={formatJsonDraft(selectedUtility.env ?? {})}
-              aria-label="Command env JSON"
-              onBlur={(event) => {
-                const env = parseStringRecordDraft(event.target.value);
-                if (env) {
-                  updateSelectedUtility({ env });
+            </RalphInspectorField>
+            <RalphInspectorField label="Screenshot path" help="Optional existing screenshot instead of live capture.">
+              <Input
+                value={selectedUtility.screenshotPath ?? ""}
+                aria-label="UI analysis screenshot path"
+                placeholder="Manual screenshot path"
+                onChange={(event) =>
+                  updateSelectedUtility({ screenshotPath: event.target.value })
                 }
-              }}
-              className="min-h-16 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
-            />
+                className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+              />
+            </RalphInspectorField>
+            <div className={cn("grid gap-2", inspectorTwoColumnClass)}>
+              <RalphInspectorField label="MCP server" help="Server id for MCP capture adapters.">
+                <Input
+                  value={selectedUtility.mcpServerId ?? ""}
+                  aria-label="UI analysis MCP server"
+                  placeholder="MCP server id"
+                  onChange={(event) =>
+                    updateSelectedUtility({ mcpServerId: event.target.value })
+                  }
+                  className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                />
+              </RalphInspectorField>
+              <RalphInspectorField label="MCP tool" help="Tool name used by the MCP adapter.">
+                <Input
+                  value={selectedUtility.mcpToolName ?? ""}
+                  aria-label="UI analysis MCP tool"
+                  placeholder="MCP tool name"
+                  onChange={(event) =>
+                    updateSelectedUtility({ mcpToolName: event.target.value })
+                  }
+                  className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                />
+              </RalphInspectorField>
+            </div>
+            <div className={cn("grid gap-2", inspectorThreeColumnClass)}>
+              <RalphInspectorField label="Timeout" help="Seconds before capture fails.">
+                <Input
+                  type="number"
+                  min={0}
+                  value={selectedUtility.timeoutSeconds ?? 30}
+                  aria-label="UI analysis timeout seconds"
+                  onChange={(event) =>
+                    updateSelectedUtility({
+                      timeoutSeconds:
+                        Number.parseFloat(event.target.value) || 0,
+                    })
+                  }
+                  className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
+                />
+              </RalphInspectorField>
+              <RalphInspectorField label="Wait until" help="Browser lifecycle event for capture.">
+                <select
+                  value={selectedUtility.waitUntil ?? "domcontentloaded"}
+                  aria-label="UI analysis wait until"
+                  onChange={(event) =>
+                    updateSelectedUtility({
+                      waitUntil: event.target
+                        .value as RalphUtilityConfig["waitUntil"],
+                    })
+                  }
+                  className="h-9 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100"
+                >
+                  <option value="domcontentloaded">DOM Ready</option>
+                  <option value="load">Load</option>
+                  <option value="networkidle">Network Idle</option>
+                  <option value="commit">Commit</option>
+                </select>
+              </RalphInspectorField>
+              <label className="flex items-center gap-2 rounded border border-slate-800 bg-slate-950 px-2 text-xs text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={selectedUtility.fullPage ?? true}
+                  onChange={(event) =>
+                    updateSelectedUtility({ fullPage: event.target.checked })
+                  }
+                />
+                Full page
+              </label>
+            </div>
+            <RalphInspectorField label="Viewports (JSON)" help="Array of viewport names and dimensions.">
+              <Textarea
+                key={`${selectedBlockId}-ui-viewports`}
+                defaultValue={formatJsonDraft(
+                  selectedUtility.viewports ?? [
+                    { name: "desktop", width: 1280, height: 900 },
+                    { name: "mobile", width: 390, height: 844 },
+                  ],
+                )}
+                aria-label="UI analysis viewports JSON"
+                onBlur={(event) => {
+                  const viewports = parseJsonDraft(event.target.value);
+                  if (Array.isArray(viewports)) {
+                    updateSelectedUtility({
+                      viewports:
+                        viewports as NonNullable<RalphUtilityConfig["viewports"]>,
+                    });
+                  }
+                }}
+                className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+              />
+            </RalphInspectorField>
+            <RalphInspectorField label="Checks (JSON)" help="Enable screenshots, accessibility, console, network, and responsive checks.">
+              <Textarea
+                key={`${selectedBlockId}-ui-checks`}
+                defaultValue={formatJsonDraft(
+                  selectedUtility.checks ?? {
+                    screenshots: true,
+                    accessibility: true,
+                    console: true,
+                    network: true,
+                    responsive: true,
+                  },
+                )}
+                aria-label="UI analysis checks JSON"
+                onBlur={(event) => {
+                  const checks = parseJsonDraft(event.target.value);
+                  if (
+                    checks &&
+                    typeof checks === "object" &&
+                    !Array.isArray(checks)
+                  ) {
+                    updateSelectedUtility({
+                      checks: checks as RalphUtilityConfig["checks"],
+                    });
+                  }
+                }}
+                className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+              />
+            </RalphInspectorField>
+            <RalphInspectorField label="MCP arguments (JSON)" help="Arguments passed to the selected MCP tool.">
+              <Textarea
+                key={`${selectedBlockId}-ui-mcp-arguments`}
+                defaultValue={formatJsonDraft(selectedUtility.mcpArguments ?? {})}
+                aria-label="UI analysis MCP arguments JSON"
+                onBlur={(event) => {
+                  const mcpArguments = parseJsonDraft(event.target.value);
+                  if (
+                    mcpArguments &&
+                    typeof mcpArguments === "object" &&
+                    !Array.isArray(mcpArguments)
+                  ) {
+                    updateSelectedUtility({
+                      mcpArguments: mcpArguments as Record<string, unknown>,
+                    });
+                  }
+                }}
+                className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+              />
+            </RalphInspectorField>
           </div>
         ) : null}
 
         {selectedUtility.type === "READ_FILE" ||
         selectedUtility.type === "WRITE_FILE" ? (
           <div className="grid gap-2">
-            <Input
-              value={selectedUtility.path ?? ""}
-              aria-label="Utility file path"
-              placeholder="{{file:path}}"
-              onChange={(event) =>
-                updateSelectedUtility({ path: event.target.value })
-              }
-              className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
-            />
+            <RalphInspectorField label="File path" help="Workspace-relative path. Supports {{variables}}.">
+              <Input
+                value={selectedUtility.path ?? ""}
+                aria-label="Utility file path"
+                placeholder="{{file:path}}"
+                onChange={(event) =>
+                  updateSelectedUtility({ path: event.target.value })
+                }
+                className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+              />
+            </RalphInspectorField>
             {selectedUtility.type === "WRITE_FILE" ? (
               <>
-                <Textarea
-                  value={selectedUtility.content ?? ""}
-                  aria-label="Utility file content"
-                  placeholder="{{lastResult}}"
-                  onChange={(event) =>
-                    updateSelectedUtility({ content: event.target.value })
-                  }
-                  className="min-h-28 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
-                />
+                <RalphInspectorField label="Content" help="Text to write. Supports {{variables}}.">
+                  <Textarea
+                    value={selectedUtility.content ?? ""}
+                    aria-label="Utility file content"
+                    placeholder="{{lastResult}}"
+                    onChange={(event) =>
+                      updateSelectedUtility({ content: event.target.value })
+                    }
+                    className="min-h-28 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+                  />
+                </RalphInspectorField>
                 <label className="flex items-center gap-2 rounded border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200">
                   <input
                     type="checkbox"
@@ -5387,163 +8002,290 @@ export const RalphFlowEditor = ({
 
         {selectedUtility.type === "SEARCH_FILES" ? (
           <div className="grid gap-2">
-            <Input
-              value={selectedUtility.rootPath ?? "."}
-              aria-label="Search root path"
-              placeholder="."
-              onChange={(event) =>
-                updateSelectedUtility({ rootPath: event.target.value })
-              }
-              className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
-            />
-            <div className="grid grid-cols-2 gap-2">
+            <RalphInspectorField label="Root path" help="Directory to search from.">
               <Input
-                value={selectedUtility.pattern ?? ""}
-                aria-label="Search pattern"
-                placeholder="{{query:string}}"
+                value={selectedUtility.rootPath ?? "."}
+                aria-label="Search root path"
+                placeholder="."
                 onChange={(event) =>
-                  updateSelectedUtility({ pattern: event.target.value })
+                  updateSelectedUtility({ rootPath: event.target.value })
                 }
                 className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
               />
-              <Input
-                value={selectedUtility.glob ?? ""}
-                aria-label="Search glob"
-                placeholder="*.ts"
-                onChange={(event) =>
-                  updateSelectedUtility({ glob: event.target.value })
-                }
-                className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
-              />
+            </RalphInspectorField>
+            <div className={cn("grid gap-2", inspectorTwoColumnClass)}>
+              <RalphInspectorField label="Search pattern" help="Text or regex query. Supports {{variables}}.">
+                <Input
+                  value={selectedUtility.pattern ?? ""}
+                  aria-label="Search pattern"
+                  placeholder="{{query:string}}"
+                  onChange={(event) =>
+                    updateSelectedUtility({ pattern: event.target.value })
+                  }
+                  className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                />
+              </RalphInspectorField>
+              <RalphInspectorField label="File glob" help="Optional file filter.">
+                <Input
+                  value={selectedUtility.glob ?? ""}
+                  aria-label="Search glob"
+                  placeholder="*.ts"
+                  onChange={(event) =>
+                    updateSelectedUtility({ glob: event.target.value })
+                  }
+                  className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                />
+              </RalphInspectorField>
             </div>
           </div>
         ) : null}
 
         {selectedUtility.type === "GIT_STATUS" ? (
-          <Input
-            value={selectedUtility.cwd ?? "."}
-            aria-label="Git working directory"
-            placeholder="Workspace"
-            onChange={(event) =>
-              updateSelectedUtility({ cwd: event.target.value })
-            }
-            className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
-          />
+          <RalphInspectorField label="Working directory" help="Repository path to inspect.">
+            <Input
+              value={selectedUtility.cwd ?? "."}
+              aria-label="Git working directory"
+              placeholder="Workspace"
+              onChange={(event) =>
+                updateSelectedUtility({ cwd: event.target.value })
+              }
+              className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+            />
+          </RalphInspectorField>
         ) : null}
 
         {selectedUtility.type === "SET_VARIABLE" ? (
           <div className="grid gap-2">
-            <Input
-              value={selectedUtility.variableName ?? ""}
-              aria-label="Utility variable name"
-              placeholder="scope"
-              onChange={(event) =>
-                updateSelectedUtility({ variableName: event.target.value })
-              }
-              className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
-            />
-            <Textarea
-              value={selectedUtility.value ?? ""}
-              aria-label="Utility variable value"
-              placeholder="{{lastResultSummary}}"
-              onChange={(event) =>
-                updateSelectedUtility({ value: event.target.value })
-              }
-              className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
-            />
+            <RalphInspectorField label="Variable name" help="Name stored for later {{variable}} references.">
+              <Input
+                value={selectedUtility.variableName ?? ""}
+                aria-label="Utility variable name"
+                placeholder="scope"
+                onChange={(event) =>
+                  updateSelectedUtility({ variableName: event.target.value })
+                }
+                className="h-9 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+              />
+            </RalphInspectorField>
+            <RalphInspectorField label="Value" help="Value assigned to the variable. Supports {{variables}}.">
+              <Textarea
+                value={selectedUtility.value ?? ""}
+                aria-label="Utility variable value"
+                placeholder="{{lastResultSummary}}"
+                onChange={(event) =>
+                  updateSelectedUtility({ value: event.target.value })
+                }
+                className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+              />
+            </RalphInspectorField>
           </div>
         ) : null}
 
         {selectedUtility.type === "TRANSFORM_JSON" ||
         selectedUtility.type === "VALIDATE_JSON" ? (
           <div className="grid gap-2">
-            <Textarea
-              value={selectedUtility.input ?? ""}
-              aria-label="Utility JSON input"
-              placeholder="Leave empty to use last utility data"
-              onChange={(event) =>
-                updateSelectedUtility({ input: event.target.value })
-              }
-              className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
-            />
-            {selectedUtility.type === "TRANSFORM_JSON" ? (
+            <RalphInspectorField label="Input JSON" help="Blank uses the previous utility result.">
               <Textarea
-                value={selectedUtility.expression ?? "input"}
-                aria-label="JSON transform expression"
-                placeholder="input"
+                value={selectedUtility.input ?? ""}
+                aria-label="Utility JSON input"
+                placeholder="Leave empty to use last utility data"
                 onChange={(event) =>
-                  updateSelectedUtility({ expression: event.target.value })
+                  updateSelectedUtility({ input: event.target.value })
                 }
                 className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
               />
-            ) : (
-              <Textarea
-                key={`${selectedBlockId}-schema`}
-                defaultValue={formatJsonDraft(selectedUtility.schema)}
-                aria-label="JSON schema"
-                onBlur={(event) => {
-                  const schema = parseJsonDraft(event.target.value);
-                  if (schema !== undefined) {
-                    updateSelectedUtility({ schema });
+            </RalphInspectorField>
+            {selectedUtility.type === "TRANSFORM_JSON" ? (
+              <RalphInspectorField label="Transform expression" help="Expression that returns the transformed value.">
+                <Textarea
+                  value={selectedUtility.expression ?? "input"}
+                  aria-label="JSON transform expression"
+                  placeholder="input"
+                  onChange={(event) =>
+                    updateSelectedUtility({ expression: event.target.value })
                   }
-                }}
-                className="min-h-24 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
-              />
+                  className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+                />
+              </RalphInspectorField>
+            ) : (
+              <RalphInspectorField label="JSON schema" help="Schema used to validate the input JSON.">
+                <Textarea
+                  key={`${selectedBlockId}-schema`}
+                  defaultValue={formatJsonDraft(selectedUtility.schema)}
+                  aria-label="JSON schema"
+                  onBlur={(event) => {
+                    const schema = parseJsonDraft(event.target.value);
+                    if (schema !== undefined) {
+                      updateSelectedUtility({ schema });
+                    }
+                  }}
+                  className="min-h-24 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+                />
+              </RalphInspectorField>
             )}
           </div>
         ) : null}
 
         {selectedUtility.type === "NOTIFY" ? (
-          <Textarea
-            value={selectedUtility.message ?? ""}
-            aria-label="Notification message"
-            placeholder="{{lastResultSummary}}"
-            onChange={(event) =>
-              updateSelectedUtility({ message: event.target.value })
-            }
-            className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
-          />
+          <RalphInspectorField label="Message" help="Notification text. Supports {{variables}}.">
+            <Textarea
+              value={selectedUtility.message ?? ""}
+              aria-label="Notification message"
+              placeholder="{{lastResultSummary}}"
+              onChange={(event) =>
+                updateSelectedUtility({ message: event.target.value })
+              }
+              className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+            />
+          </RalphInspectorField>
         ) : null}
 
-        <div className="grid gap-2 border-t border-cyan-400/10 pt-2">
-          <div className="flex min-w-0 items-center justify-between gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300/70">
-              Advanced JSON
-            </span>
-            <Button
+        <div data-ralph-inspector-section="advanced">
+          <RalphInspectorDetails
+            title="Advanced JSON"
+            help="Raw utility config for fields not exposed above."
+          >
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              {renderExpandFieldButton("Expand", () =>
+                openExpandedEditor({
+                  title: "Utility JSON",
+                  description:
+                    "Edit the raw utility configuration. Apply here, then use the JSON apply action in the inspector.",
+                  ariaLabel: "Expanded utility advanced JSON",
+                  mode: "json",
+                  value: utilityJsonDraft,
+                  onApply: setUtilityJsonDraft,
+                }),
+              )}
+              <Button
               type="button"
               variant="outline"
+              disabled={Boolean(utilityJsonDraftInlineError)}
               onClick={applyUtilityJsonDraft}
               className="h-7 rounded-md border-cyan-500/30 bg-cyan-500/10 px-2 text-xs text-cyan-100 hover:bg-cyan-500/15"
             >
-              Apply
-            </Button>
-          </div>
-          <Textarea
-            value={utilityJsonDraft}
-            aria-label="Utility advanced JSON"
-            onChange={(event) => {
-              setUtilityJsonDraft(event.target.value);
-              setUtilityJsonError(null);
-            }}
-            className="min-h-32 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
-          />
-          {utilityJsonError ? (
-            <div className="rounded border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-xs text-rose-100">
-              {utilityJsonError}
+                Apply
+              </Button>
             </div>
-          ) : null}
+            <Textarea
+              value={utilityJsonDraft}
+              aria-label="Utility advanced JSON"
+              onChange={(event) => {
+                setUtilityJsonDraft(event.target.value);
+                setUtilityJsonError(null);
+              }}
+              className="min-h-32 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+            />
+            {utilityJsonError || utilityJsonDraftInlineError ? (
+              <div className="rounded border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-xs text-rose-100">
+                {utilityJsonError ?? utilityJsonDraftInlineError}
+              </div>
+            ) : null}
+          </RalphInspectorDetails>
         </div>
       </div>
     );
   };
 
+  const renderExpandedEditorDialog = (): JSX.Element => {
+    const isJsonMode = expandedEditor?.mode === "json";
+
+    return (
+      <Dialog
+        open={Boolean(expandedEditor)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setExpandedEditor(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[calc(100vh-3rem)] max-w-[min(72rem,calc(100vw-3rem))] grid-rows-[auto_minmax(0,1fr)_auto] border-slate-700 bg-slate-950 p-0 text-slate-100">
+          <DialogHeader className="border-b border-slate-800 px-5 py-4 pr-12">
+            <DialogTitle className="text-base text-white">
+              {expandedEditor?.title ?? "Expanded editor"}
+            </DialogTitle>
+            <DialogDescription className="text-slate-500">
+              {expandedEditor?.description ?? "Edit the field in a larger workspace."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid min-h-0 gap-3 overflow-hidden px-5 py-4">
+            {expandedEditor?.supportsVariables ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-xs font-medium text-slate-500">
+                  Insert
+                </span>
+                {RALPH_VARIABLE_SNIPPETS.map((snippet) => (
+                  <button
+                    key={snippet}
+                    type="button"
+                    onClick={() => insertExpandedEditorSnippet(snippet)}
+                    className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-[0.68rem] text-slate-300 hover:border-cyan-400/30 hover:bg-cyan-500/10 hover:text-cyan-100"
+                  >
+                    {snippet}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <textarea
+              ref={expandedEditorTextareaRef}
+              value={expandedEditorDraft}
+              aria-label={expandedEditor?.ariaLabel ?? "Expanded editor"}
+              wrap={expandedEditorWrap ? "soft" : "off"}
+              spellCheck={expandedEditor?.mode === "text"}
+              onChange={(event) => setExpandedEditorDraft(event.target.value)}
+              className={cn(
+                "min-h-[min(56vh,34rem)] resize-none overflow-auto rounded-md border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm leading-6 text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30",
+                isJsonMode && "font-mono",
+              )}
+            />
+          </div>
+          <DialogFooter className="items-center justify-between border-t border-slate-800 px-5 py-3 sm:flex-row">
+            <label className="flex items-center gap-2 text-xs text-slate-400">
+              <input
+                type="checkbox"
+                checked={expandedEditorWrap}
+                onChange={(event) => setExpandedEditorWrap(event.target.checked)}
+              />
+              Wrap lines
+            </label>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => void copyExpandedEditorDraft()}
+                className="h-8 rounded-lg px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-white"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copy
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setExpandedEditor(null)}
+                className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-200 hover:bg-slate-800"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={applyExpandedEditor}
+                className="h-8 rounded-lg bg-cyan-600 px-3 text-xs text-white hover:bg-cyan-500"
+              >
+                Apply
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  };
+
   return (
     <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 px-5 py-3 text-left">
+      <header className="border-b border-slate-800 px-4 py-2 text-left">
             <div className="flex min-w-0 items-center justify-between gap-4">
-              <h1 className="flex min-w-0 items-center gap-2 text-lg font-semibold text-white">
-                <Workflow className="h-5 w-5 shrink-0 text-emerald-300" />
+              <h1 className="flex min-w-0 items-center gap-2 text-base font-semibold text-white">
+                <Workflow className="h-4 w-4 shrink-0 text-emerald-300" />
                 <span className="truncate">Ralph Flow Editor</span>
                 {dirty ? (
                   <span className="shrink-0 text-xs font-medium text-amber-200">
@@ -5576,32 +8318,45 @@ export const RalphFlowEditor = ({
 
           <div
             className={cn(
-              "grid min-h-0 grid-cols-[16rem_minmax(0,1fr)_22rem] overflow-hidden 2xl:grid-cols-[18rem_minmax(0,1fr)_24rem]",
-              editorMode === "design"
-                ? "grid-rows-[minmax(0,1fr)_5rem]"
-                : "grid-rows-[minmax(0,1fr)_18rem]",
+              "grid min-h-0 overflow-hidden",
+              editorRowsClass,
             )}
+            style={editorGridStyle}
           >
-            <aside className="row-span-2 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-slate-800 bg-slate-950/80">
+            {flowListOpen ? (
+            <aside className="col-start-1 row-span-2 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-slate-800 bg-slate-950/80">
               <div className="grid gap-3 border-b border-slate-800 p-4">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
                     Flows
                   </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    disabled={flowsLoading}
-                    aria-label="Refresh Ralph flows"
-                    title="Refresh Ralph flows"
-                    onClick={() => void refreshFlows()}
-                    className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-                  >
-                    <RefreshCw
-                      className={cn("h-4 w-4", flowsLoading && "animate-spin")}
-                    />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      disabled={flowsLoading}
+                      aria-label="Refresh Ralph flows"
+                      title="Refresh Ralph flows"
+                      onClick={() => void refreshFlows()}
+                      className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+                    >
+                      <RefreshCw
+                        className={cn("h-4 w-4", flowsLoading && "animate-spin")}
+                      />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Collapse Ralph flows"
+                      title="Collapse Ralph flows"
+                      onClick={() => setFlowListOpen(false)}
+                      className="h-8 w-8 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
                 <Input
                   value={flowAliasDraft}
@@ -5784,8 +8539,26 @@ export const RalphFlowEditor = ({
                 </div>
               </ScrollArea>
             </aside>
+            ) : (
+              <aside className="col-start-1 row-span-2 flex min-h-0 flex-col items-center gap-3 border-r border-slate-800 bg-slate-950/80 px-1.5 py-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Open Ralph flows"
+                  title="Open Ralph flows"
+                  onClick={() => setFlowListOpen(true)}
+                  className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+                >
+                  <Workflow className="h-4 w-4" />
+                </Button>
+                <span className="origin-center rotate-90 whitespace-nowrap text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Flows
+                </span>
+              </aside>
+            )}
 
-            <main className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-slate-950">
+            <main className="col-start-2 row-start-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-slate-950">
               <div className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <Route className="h-4 w-4 shrink-0 text-sky-300" />
@@ -5842,6 +8615,23 @@ export const RalphFlowEditor = ({
                     </TooltipTrigger>
                     <TooltipContent side="bottom">Clean layout</TooltipContent>
                   </Tooltip>
+                  {editorMode === "design" && !showInspectorPanel ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          aria-label="Show block settings"
+                          title="Show block settings"
+                          onClick={() => setInspectorOpen(true)}
+                          className="h-8 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white"
+                        >
+                          <SlidersHorizontal className="h-4 w-4 text-slate-300" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">Show settings</TooltipContent>
+                    </Tooltip>
+                  ) : null}
                   <div className="mx-1 h-5 w-px bg-slate-800" />
                   {BLOCK_ACTIONS.map((action) => {
                       const tone = getBlockTone(action.type);
@@ -5857,13 +8647,14 @@ export const RalphFlowEditor = ({
                               title={`Add ${action.type} block`}
                               disabled={action.type === "START" && flowHasStart}
                               onClick={() => addBlock(action.type)}
-                              className="h-8 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white disabled:text-slate-700"
+                              className="h-8 w-8 rounded-lg p-0 text-slate-300 hover:bg-slate-900 hover:text-white disabled:text-slate-700"
                             >
                               <Icon className={cn("h-4 w-4", tone.badgeClassName)} />
-                              <span className="hidden 2xl:inline">{action.label}</span>
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent side="bottom">{action.type}</TooltipContent>
+                          <TooltipContent side="bottom">
+                            {action.label}
+                          </TooltipContent>
                         </Tooltip>
                       );
                     })}
@@ -5876,15 +8667,13 @@ export const RalphFlowEditor = ({
                             variant="ghost"
                             aria-label="Add MCP block"
                             title="Add MCP block"
-                            className="h-8 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white"
+                            className="h-8 w-8 rounded-lg p-0 text-slate-300 hover:bg-slate-900 hover:text-white"
                           >
                             <Globe2 className="h-4 w-4 text-violet-300" />
-                            <span className="hidden 2xl:inline">MCP</span>
-                            <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
                           </Button>
                         </DropdownMenuTrigger>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom">MCP block</TooltipContent>
+                      <TooltipContent side="bottom">MCP</TooltipContent>
                     </Tooltip>
                     <DropdownMenuContent
                       align="end"
@@ -5947,6 +8736,7 @@ export const RalphFlowEditor = ({
                     minZoom={0.25}
                     maxZoom={1.8}
                     colorMode="dark"
+                    proOptions={RALPH_REACT_FLOW_PRO_OPTIONS}
                     className="bg-slate-950"
                   >
                     <Background gap={22} size={1} color="#1e293b" />
@@ -5977,7 +8767,7 @@ export const RalphFlowEditor = ({
                 {renderCanvasContextMenu()}
                 {!draftFlow ? (
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8">
-                    <div className="pointer-events-auto grid max-w-md gap-3 rounded-lg border border-dashed border-slate-800 bg-slate-950/90 px-5 py-4 text-center shadow-xl shadow-black/25">
+                    <div className="pointer-events-auto grid max-w-md gap-3 rounded-lg border border-dashed border-slate-800 bg-slate-950/70 px-5 py-4 text-center">
                       <div className="text-sm font-semibold text-slate-100">
                         {workspaceRoot ? "Start a Ralph flow" : "Choose a workspace"}
                       </div>
@@ -6015,7 +8805,22 @@ export const RalphFlowEditor = ({
               </div>
             </main>
 
-            <aside className="col-start-3 row-start-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-l border-slate-800 bg-slate-950/80">
+            {showInspectorPanel ? (
+            <aside className="relative col-start-3 row-start-1 grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] border-l border-slate-800 bg-slate-950/90 shadow-[-18px_0_36px_rgba(2,6,23,0.18)]">
+              <button
+                type="button"
+                aria-label="Resize block settings"
+                title="Drag to resize, double-click to reset"
+                onPointerDown={handleInspectorResizePointerDown}
+                onDoubleClick={resetInspectorWidth}
+                className="group absolute inset-y-0 left-0 z-50 flex w-6 -translate-x-3 cursor-col-resize touch-none select-none items-center justify-center text-slate-500 hover:text-cyan-200 active:text-cyan-100"
+                style={{ cursor: "col-resize" }}
+              >
+                <span className="absolute inset-y-3 left-1/2 w-px -translate-x-1/2 rounded-full bg-slate-700/70 transition group-hover:bg-cyan-400/70" />
+                <span className="relative flex h-9 w-4 items-center justify-center rounded-full border border-slate-700/80 bg-slate-950/95 shadow-lg shadow-slate-950/40 transition group-hover:border-cyan-400/50 group-hover:bg-slate-900">
+                  <GripVertical className="h-5 w-5" />
+                </span>
+              </button>
               <div className="border-b border-slate-800 px-4 py-3">
                 <div className="flex min-w-0 items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2">
@@ -6034,8 +8839,28 @@ export const RalphFlowEditor = ({
                             ? "Flow Settings"
                             : "Flow Settings")}
                     </span>
+                    {selectedBlockIssueCounts.errors > 0 ? (
+                      <span className="rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[0.65rem] font-semibold text-rose-100">
+                        {selectedBlockIssueCounts.errors} error
+                      </span>
+                    ) : selectedBlockIssueCounts.warnings > 0 ? (
+                      <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[0.65rem] font-semibold text-amber-100">
+                        {selectedBlockIssueCounts.warnings} warning
+                      </span>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Hide block settings"
+                      title="Hide block settings"
+                      onClick={() => setInspectorOpen(false)}
+                      className="h-8 w-8 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                     {selectedBlock || selectedEdge ? (
                       <Button
                         type="button"
@@ -6078,9 +8903,25 @@ export const RalphFlowEditor = ({
                 </div>
               </div>
 
-              <ScrollArea className="min-h-0" type="always">
+              {renderInspectorSectionTabs()}
+
+              <div className="relative min-h-0">
+                <div
+                  className={cn(
+                    "pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-gradient-to-b from-slate-950 to-transparent transition-opacity",
+                    inspectorScrollState.atTop ? "opacity-0" : "opacity-100",
+                  )}
+                />
+                <div
+                  ref={inspectorScrollContainerRef}
+                  onScroll={updateInspectorScrollState}
+                  className="h-full overflow-y-scroll [scrollbar-gutter:stable] [scrollbar-width:thin]"
+                >
                 {selectedBlock ? (
-                  <div className="grid gap-4 p-4 pr-5">
+                  <div
+                    data-ralph-inspector-section="content"
+                    className="grid gap-4 p-4 pr-5 pb-8"
+                  >
                     <label className="grid gap-1.5 text-sm text-slate-200">
                       <span className="font-medium">Title</span>
                       <Input
@@ -6097,21 +8938,212 @@ export const RalphFlowEditor = ({
                       />
                     </label>
 
-                    {selectedBlock.type !== "START" && selectedBlock.type !== "END" ? (
-                      <label className="flex items-center gap-2 rounded border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200">
-                        <input
-                          type="checkbox"
-                          checked={selectedBlock.groupBoundary ?? false}
-                          onChange={(event) => {
-                            const groupBoundary = event.target.checked;
-                            updateBlock(selectedBlock.id, (block) => ({
-                              ...block,
-                              groupBoundary,
-                            }));
-                          }}
-                        />
-                        Group boundary
-                      </label>
+                    {selectedBlock.type === "NOTE" ? (
+                      <div className="grid gap-3 rounded-lg bg-slate-900/25 p-3 text-sm text-slate-100 ring-1 ring-slate-800/60">
+                        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                          <FileText className="h-4 w-4 shrink-0 text-amber-200" />
+                          <span className="truncate">Note</span>
+                        </div>
+                        <RalphInspectorField
+                          label="Text"
+                          action={renderExpandFieldButton("Expand", () =>
+                            openExpandedEditor({
+                              title: "Note text",
+                              description:
+                                "Edit the note content in a larger workspace.",
+                              ariaLabel: "Expanded note text",
+                              mode: "text",
+                              value: selectedBlock.text,
+                              supportsVariables: true,
+                              onApply: (text) =>
+                                updateBlock(selectedBlock.id, (block) =>
+                                  block.type === "NOTE" ? { ...block, text } : block,
+                                ),
+                            }),
+                          )}
+                        >
+                          <Textarea
+                            value={selectedBlock.text}
+                            aria-label="Note text"
+                            onChange={(event) => {
+                              const text = event.target.value;
+                              updateBlock(selectedBlock.id, (block) =>
+                                block.type === "NOTE" ? { ...block, text } : block,
+                              );
+                            }}
+                            className="min-h-36 border-slate-700 bg-slate-950 text-sm leading-5 text-slate-100 placeholder:text-slate-600"
+                            placeholder="Capture rationale, checklist items, risks, or review evidence."
+                          />
+                        </RalphInspectorField>
+                        <label className="grid gap-1.5">
+                          <span className="font-medium">Tone</span>
+                          <select
+                            value={selectedBlock.tone ?? "slate"}
+                            aria-label="Note tone"
+                            onChange={(event) => {
+                              const tone = event.target.value as RalphAnnotationTone;
+                              updateBlock(selectedBlock.id, (block) =>
+                                block.type === "NOTE" ? { ...block, tone } : block,
+                              );
+                            }}
+                            className="h-9 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100"
+                          >
+                            {ANNOTATION_TONES.map((tone) => (
+                              <option key={tone} value={tone}>
+                                {titleFromId(tone)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="grid gap-1.5">
+                          <span className="font-medium">Tags</span>
+                          <Input
+                            value={(selectedBlock.tags ?? []).join(", ")}
+                            aria-label="Note tags"
+                            placeholder="manual QA, risk"
+                            onChange={(event) => {
+                              const tags = event.target.value
+                                .split(",")
+                                .map((entry) => entry.trim())
+                                .filter(Boolean);
+                              updateBlock(selectedBlock.id, (block) =>
+                                block.type === "NOTE" ? { ...block, tags } : block,
+                              );
+                            }}
+                            className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
+                          />
+                        </label>
+                        <label
+                          data-ralph-inspector-section="behavior"
+                          className="flex items-center gap-2 rounded border border-slate-800 bg-slate-950 px-3 py-2"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedBlock.collapsed ?? false}
+                            onChange={(event) => {
+                              const collapsed = event.target.checked;
+                              updateBlock(selectedBlock.id, (block) =>
+                                block.type === "NOTE"
+                                  ? { ...block, collapsed }
+                                  : block,
+                              );
+                            }}
+                          />
+                          Collapsed
+                        </label>
+                      </div>
+                    ) : null}
+
+                    {selectedBlock.type === "GROUP" ? (
+                      <div className="grid gap-3 rounded-lg bg-slate-900/25 p-3 text-sm text-slate-100 ring-1 ring-slate-800/60">
+                        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                          <LayoutGrid className="h-4 w-4 shrink-0 text-slate-300" />
+                          <span className="truncate">Group</span>
+                        </div>
+                        <RalphInspectorField
+                          label="Description"
+                          action={renderExpandFieldButton("Expand", () =>
+                            openExpandedEditor({
+                              title: "Group description",
+                              description:
+                                "Edit the group description in a larger workspace.",
+                              ariaLabel: "Expanded group description",
+                              mode: "text",
+                              value: selectedBlock.description ?? "",
+                              supportsVariables: true,
+                              onApply: (description) =>
+                                updateBlock(selectedBlock.id, (block) =>
+                                  block.type === "GROUP"
+                                    ? { ...block, description }
+                                    : block,
+                                ),
+                            }),
+                          )}
+                        >
+                          <Textarea
+                            value={selectedBlock.description ?? ""}
+                            aria-label="Group description"
+                            onChange={(event) => {
+                              const description = event.target.value;
+                              updateBlock(selectedBlock.id, (block) =>
+                                block.type === "GROUP"
+                                  ? { ...block, description }
+                                  : block,
+                              );
+                            }}
+                            className="min-h-28 border-slate-700 bg-slate-950 text-sm leading-5 text-slate-100 placeholder:text-slate-600"
+                            placeholder="Describe the phase, boundary, or intent of this group."
+                          />
+                        </RalphInspectorField>
+                        <label className="grid gap-1.5">
+                          <span className="font-medium">Tone</span>
+                          <select
+                            value={selectedBlock.tone ?? "slate"}
+                            aria-label="Group tone"
+                            onChange={(event) => {
+                              const tone = event.target.value as RalphAnnotationTone;
+                              updateBlock(selectedBlock.id, (block) =>
+                                block.type === "GROUP" ? { ...block, tone } : block,
+                              );
+                            }}
+                            className="h-9 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100"
+                          >
+                            {ANNOTATION_TONES.map((tone) => (
+                              <option key={tone} value={tone}>
+                                {titleFromId(tone)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div
+                          data-ralph-inspector-section="behavior"
+                          className="grid gap-2 rounded border border-slate-800 bg-slate-950 px-3 py-2"
+                        >
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedBlock.collapsed ?? false}
+                              onChange={(event) => {
+                                const collapsed = event.target.checked;
+                                updateBlock(selectedBlock.id, (block) =>
+                                  block.type === "GROUP"
+                                    ? { ...block, collapsed }
+                                    : block,
+                                );
+                              }}
+                            />
+                            Collapsed
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedBlock.locked ?? false}
+                              onChange={(event) => {
+                                const locked = event.target.checked;
+                                updateBlock(selectedBlock.id, (block) =>
+                                  block.type === "GROUP" ? { ...block, locked } : block,
+                                );
+                              }}
+                            />
+                            Locked
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedBlock.moveChildren ?? true}
+                              onChange={(event) => {
+                                const moveChildren = event.target.checked;
+                                updateBlock(selectedBlock.id, (block) =>
+                                  block.type === "GROUP"
+                                    ? { ...block, moveChildren }
+                                    : block,
+                                );
+                              }}
+                            />
+                            Move children
+                          </label>
+                        </div>
+                      </div>
                     ) : null}
 
                     {selectedBlock.type === "END" ? (
@@ -6141,8 +9173,24 @@ export const RalphFlowEditor = ({
                     {selectedBlock.type === "PROMPT" ||
                     selectedBlock.type === "VALIDATOR" ||
                     selectedBlock.type === "DECISION" ? (
-                      <label className="grid gap-2 text-sm text-slate-200">
-                        <span className="font-medium">Prompt</span>
+                      <RalphInspectorField
+                        label="Prompt"
+                        action={renderExpandFieldButton("Expand", () =>
+                          openExpandedEditor({
+                            title: "Prompt",
+                            description:
+                              "Edit the prompt in a larger workspace. Variables are inserted literally.",
+                            ariaLabel: "Expanded block prompt",
+                            mode: "text",
+                            value: getPromptLikeText(selectedBlock),
+                            supportsVariables: true,
+                            onApply: (prompt) =>
+                              updateBlock(selectedBlock.id, (block) =>
+                                updatePromptLikeText(block, prompt),
+                              ),
+                          }),
+                        )}
+                      >
                         <Textarea
                           value={getPromptLikeText(selectedBlock)}
                           aria-label="Block prompt"
@@ -6160,7 +9208,7 @@ export const RalphFlowEditor = ({
                             {renderPromptHighlight(getPromptLikeText(selectedBlock))}
                           </div>
                         ) : null}
-                      </label>
+                      </RalphInspectorField>
                     ) : null}
 
                     {selectedBlock.type === "DECISION" ? (
@@ -6274,7 +9322,7 @@ export const RalphFlowEditor = ({
                     {selectedBlock.type === "MCP_TOOL" ||
                     selectedBlock.type === "MCP_RESOURCE" ||
                     selectedBlock.type === "MCP_PROMPT" ? (
-                      <div className="grid gap-3 border-t border-slate-800 pt-3 text-sm text-slate-200">
+                      <div className="grid gap-3 rounded-lg bg-slate-900/25 p-3 text-sm text-slate-100 ring-1 ring-slate-800/60">
                         <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
                           <Globe2 className="h-4 w-4 shrink-0 text-violet-300" />
                           <span className="truncate">
@@ -6458,10 +9506,38 @@ export const RalphFlowEditor = ({
                       </div>
                     ) : null}
 
+                    {isExecutableRalphCanvasBlock(selectedBlock) ? (
+                      <div
+                        data-ralph-inspector-section="behavior"
+                        className="grid gap-2 rounded-lg bg-slate-900/25 p-3 text-sm text-slate-100 ring-1 ring-slate-800/60"
+                      >
+                        <div className="text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
+                          Behavior
+                        </div>
+                        <label className="flex items-center gap-2 rounded border border-slate-800 bg-slate-950 px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedBlock.groupBoundary ?? false}
+                            onChange={(event) => {
+                              const groupBoundary = event.target.checked;
+                              updateBlock(selectedBlock.id, (block) => ({
+                                ...block,
+                                groupBoundary,
+                              }));
+                            }}
+                          />
+                          Group boundary
+                        </label>
+                      </div>
+                    ) : null}
+
                     {selectedBlock.type === "UTILITY" ? renderUtilitySettings() : null}
 
                     {selectedBlockUsesAgentSettings ? (
-                      <div className="grid gap-3 border-t border-slate-800 pt-3">
+                      <div
+                        data-ralph-inspector-section="execution"
+                        className="grid gap-3 rounded-lg bg-slate-900/25 p-3 ring-1 ring-slate-800/60"
+                      >
                         <div className="grid gap-3 md:grid-cols-3">
                           <label className="grid gap-1.5 text-sm text-slate-200">
                             <span className="font-medium">Provider</span>
@@ -6700,7 +9776,7 @@ export const RalphFlowEditor = ({
                           </label>
                         </div>
 
-                        <div className="grid gap-2 border-t border-slate-800 pt-3">
+                        <div className="grid gap-2 rounded-lg bg-slate-950/35 p-3 ring-1 ring-slate-800/55">
                           <div className="flex items-center justify-between gap-3">
                             <span className="text-sm font-medium text-slate-200">
                               Attachments
@@ -6740,9 +9816,9 @@ export const RalphFlowEditor = ({
                             </div>
                           )}
 
-                          <div className="grid gap-2 border-t border-slate-800 pt-2">
+                          <div className="grid gap-2 rounded-md bg-slate-950/50 p-2 ring-1 ring-slate-800/50">
                             <div className="flex items-center justify-between gap-3">
-                              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
                                 Variables
                               </span>
                               <Button
@@ -6799,15 +9875,19 @@ export const RalphFlowEditor = ({
                           </div>
                         </div>
 
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => setShowAdvancedSettings((current) => !current)}
-                          className="h-8 justify-start rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
-                        >
-                          <SlidersHorizontal className="h-3.5 w-3.5" />
-                          {showAdvancedSettings ? "Hide More" : "Show More"}
-                        </Button>
+                        <div data-ralph-inspector-section="advanced">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() =>
+                              setShowAdvancedSettings((current) => !current)
+                            }
+                            className="h-8 justify-start rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
+                          >
+                            <SlidersHorizontal className="h-3.5 w-3.5" />
+                            {showAdvancedSettings ? "Hide More" : "Show More"}
+                          </Button>
+                        </div>
 
                         {showAdvancedSettings ? (
                           <div className="grid gap-3">
@@ -6935,10 +10015,14 @@ export const RalphFlowEditor = ({
                       </div>
                     ) : null}
 
-                    <div className="grid gap-2 border-t border-slate-800 pt-3">
-                      <div className="text-xs font-semibold tracking-[0.16em] text-slate-500 uppercase">
+                    <div
+                      data-ralph-inspector-section="routes"
+                      className="grid gap-3 rounded-lg bg-slate-900/25 p-3 ring-1 ring-slate-800/60"
+                    >
+                      <div className="text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
                         Routes
                       </div>
+                      {renderSelectedRouteSummary()}
                       {selectedBlockOutputs.length === 0 ? (
                         <div className="text-xs text-slate-500">
                           END blocks do not route further.
@@ -6982,7 +10066,7 @@ export const RalphFlowEditor = ({
                           return (
                           <div
                             key={output}
-                            className="grid gap-1 border-b border-slate-800/70 py-1.5 text-xs text-slate-300 last:border-b-0"
+                            className="grid gap-1.5 rounded-md bg-slate-950/55 p-2 text-xs text-slate-300 ring-1 ring-slate-800/55"
                           >
                             <div className="flex min-w-0 items-center justify-between gap-2">
                               <span className="min-w-0 truncate font-semibold text-slate-200">
@@ -7067,7 +10151,7 @@ export const RalphFlowEditor = ({
                     </div>
                   </div>
                 ) : selectedEdge ? (
-                  <div className="grid gap-4 p-4 pr-5">
+                  <div className="grid gap-4 p-4 pr-5 pb-8">
                     {(() => {
                       const sourceBlock =
                         draftFlow?.blocks.find(
@@ -7084,10 +10168,10 @@ export const RalphFlowEditor = ({
                       return (
                         <>
                           <div className="grid gap-2 text-sm">
-                            <div className="text-xs font-semibold tracking-[0.16em] text-slate-500 uppercase">
+                            <div className="text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
                               Route
                             </div>
-                            <div className="grid gap-1.5 rounded border border-slate-800 bg-slate-950 px-3 py-2 text-xs">
+                            <div className="grid gap-1.5 rounded-lg bg-slate-950/60 px-3 py-2 text-xs ring-1 ring-slate-800/60">
                               <div className="flex min-w-0 justify-between gap-3">
                                 <span className="text-slate-500">From</span>
                                 <span className="min-w-0 truncate font-medium text-slate-200">
@@ -7180,11 +10264,11 @@ export const RalphFlowEditor = ({
                     })()}
                   </div>
                 ) : (
-                  <div className="grid gap-4 p-4 pr-5">
+                  <div className="grid gap-4 p-4 pr-5 pb-8">
                     {draftFlow ? (
                       <>
                         <div className="grid gap-3">
-                          <div className="text-xs font-semibold tracking-[0.16em] text-slate-500 uppercase">
+                          <div className="text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
                             Flow
                           </div>
                           <label className="grid gap-1.5 text-sm text-slate-200">
@@ -7233,10 +10317,45 @@ export const RalphFlowEditor = ({
                               className="min-h-20 border-slate-700 bg-slate-950 text-sm text-slate-100"
                             />
                           </label>
+                          <label className="grid gap-1.5 text-sm text-slate-200">
+                            <span className="font-medium">Max Transitions</span>
+                            <Input
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={draftFlow.settings?.maxTransitions ?? ""}
+                              aria-label="Flow max transitions"
+                              placeholder="Unlimited"
+                              onChange={(event) => {
+                                const rawValue = event.target.value.trim();
+                                updateDraftFlow((flow) => {
+                                  const settings = { ...(flow.settings ?? {}) };
+
+                                  if (rawValue) {
+                                    settings.maxTransitions = Number.parseInt(
+                                      rawValue,
+                                      10,
+                                    );
+                                  } else {
+                                    delete settings.maxTransitions;
+                                  }
+
+                                  if (Object.keys(settings).length > 0) {
+                                    return { ...flow, settings };
+                                  }
+
+                                  const flowWithoutSettings: RalphFlow = { ...flow };
+                                  delete flowWithoutSettings.settings;
+                                  return flowWithoutSettings;
+                                });
+                              }}
+                              className="h-9 border-slate-700 bg-slate-950 font-mono text-sm text-slate-100"
+                            />
+                          </label>
                         </div>
 
-                        <div className="grid gap-2 border-t border-slate-800 pt-3">
-                          <div className="text-xs font-semibold tracking-[0.16em] text-slate-500 uppercase">
+                        <div className="grid gap-2 rounded-lg bg-slate-900/25 p-3 ring-1 ring-slate-800/60">
+                          <div className="text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
                             Variables
                           </div>
                           {(draftFlow.variables ?? []).length > 0 ? (
@@ -7263,9 +10382,9 @@ export const RalphFlowEditor = ({
                           )}
                         </div>
 
-                        <div className="grid gap-2 border-t border-slate-800 pt-3">
+                        <div className="grid gap-2 rounded-lg bg-slate-900/25 p-3 ring-1 ring-slate-800/60">
                           <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 text-xs font-semibold tracking-[0.16em] text-slate-500 uppercase">
+                            <div className="flex items-center gap-2 text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
                               <History className="h-3.5 w-3.5 text-slate-400" />
                               History
                             </div>
@@ -7352,11 +10471,81 @@ export const RalphFlowEditor = ({
                     )}
                   </div>
                 )}
-              </ScrollArea>
+                </div>
+                <div
+                  className={cn(
+                    "pointer-events-none absolute inset-x-0 bottom-0 z-10 h-8 bg-gradient-to-t from-slate-950 to-transparent transition-opacity",
+                    inspectorScrollState.atBottom ? "opacity-0" : "opacity-100",
+                  )}
+                />
+              </div>
+              <div className="border-t border-slate-800 bg-slate-950/95 px-4 py-3">
+                <div className="flex min-w-0 items-center justify-between gap-3">
+                  <div className="min-w-0 text-xs">
+                    <div
+                      className={cn(
+                        "truncate font-medium",
+                        dirty
+                          ? "text-amber-100"
+                          : hasBlockingIssues
+                            ? "text-rose-100"
+                            : "text-slate-400",
+                      )}
+                    >
+                      {dirty
+                        ? "Unsaved changes"
+                        : hasBlockingIssues
+                          ? `${errorCount} validation error${errorCount === 1 ? "" : "s"}`
+                          : runBlockedReason
+                            ? "Run blocked"
+                            : "Ready"}
+                    </div>
+                    <div className="truncate text-slate-600">
+                      {selectedBlock && selectedBlockOutputs.length > 0
+                        ? `${connectedSelectedRouteCount}/${selectedBlockOutputs.length} routes connected`
+                        : selectedBlock
+                          ? selectedBlock.type
+                          : selectedEdge
+                            ? "Route selected"
+                            : draftFlow
+                              ? `${draftFlow.blocks.length} blocks`
+                              : "No flow selected"}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      type="button"
+                      disabled={!canSaveFlow}
+                      onClick={() => void saveFlow()}
+                      className="h-8 rounded-lg bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500 disabled:border disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-500"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                      Save
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!canRunFlow}
+                      aria-label="Run Ralph flow"
+                      onClick={() => void runFlow()}
+                      className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
+                    >
+                      <Play className="h-3.5 w-3.5" />
+                      Run
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </aside>
+            ) : null}
 
             {editorMode === "design" ? (
-              <section className="col-start-2 col-span-2 row-start-2 grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] border-t border-slate-800 bg-slate-950">
+              <section
+                className={cn(
+                  "row-start-2 grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] border-t border-slate-800 bg-slate-950 pr-24",
+                  bottomPanelSpanClass,
+                )}
+              >
                 <button
                   type="button"
                   onClick={() => setEditorMode("generate")}
@@ -7449,14 +10638,11 @@ export const RalphFlowEditor = ({
             ) : (
             <section
               className={cn(
-                "col-start-2 col-span-2 row-start-2 grid min-h-0 border-t border-slate-800 bg-slate-950",
-                editorMode === "generate"
-                  ? "grid-cols-[minmax(16rem,1.35fr)_minmax(12rem,0.85fr)_minmax(12rem,0.7fr)] 2xl:grid-cols-[minmax(28rem,1.35fr)_minmax(18rem,0.85fr)_22rem]"
-                  : editorMode === "run"
-                    ? "grid-cols-[minmax(12rem,0.75fr)_minmax(12rem,0.8fr)_minmax(16rem,1.35fr)] 2xl:grid-cols-[20rem_minmax(18rem,0.8fr)_minmax(28rem,1.35fr)]"
-                    : "grid-cols-[minmax(12rem,0.75fr)_minmax(16rem,1.35fr)_minmax(12rem,0.7fr)] 2xl:grid-cols-[20rem_minmax(28rem,1.35fr)_22rem]",
+                "row-start-2 grid min-h-0 grid-cols-1 border-t border-slate-800 bg-slate-950 pr-24",
+                bottomPanelSpanClass,
               )}
             >
+              {editorMode === "generate" ? (
               <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-slate-800">
                 <button
                   type="button"
@@ -7471,7 +10657,8 @@ export const RalphFlowEditor = ({
                 </button>
                 <ScrollArea className="min-h-0" type="always">
                   {editorMode === "generate" ? (
-                  <div className="grid gap-2 p-3">
+                  <div className="grid min-h-0 gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_20rem]">
+                    <div className="grid min-h-0 content-start gap-2">
                     <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
                       {[
                         ["flow", "Flow"],
@@ -7493,9 +10680,9 @@ export const RalphFlowEditor = ({
                         </button>
                       ))}
                     </div>
-                    <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
-                      {[
-                        ["do-it", "Do it"],
+                      <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
+                        {[
+                        ["do-it", "No questions"],
                         ["interview", "Interview"],
                       ].map(([mode, label]) => (
                         <button
@@ -7505,13 +10692,13 @@ export const RalphFlowEditor = ({
                             setAiGenerationMode(mode as RalphAiGenerationMode)
                           }
                           className={cn(
-                            "h-7 rounded-md px-2 text-xs font-semibold",
+                            "flex h-7 min-w-0 items-center justify-center rounded-md px-2 text-xs font-semibold",
                             aiGenerationMode === mode
                               ? "bg-sky-500/20 text-sky-100"
                               : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
                           )}
                         >
-                          {label}
+                          <span className="min-w-0 truncate">{label}</span>
                         </button>
                       ))}
                     </div>
@@ -7525,8 +10712,11 @@ export const RalphFlowEditor = ({
                             ? "Describe the prompt block to add."
                             : "Describe the changes to apply to this flow."
                       }
-                      onChange={(event) => setAiPromptDraft(event.target.value)}
-                      className="min-h-16 border-slate-700 bg-slate-950 text-sm text-slate-100 placeholder:text-slate-600"
+                      onChange={(event) =>
+                        handleAiPromptDraftChange(event.target.value)
+                      }
+                      onKeyDown={handleAiPromptHistoryNavigation}
+                      className="min-h-14 border-slate-700 bg-slate-950 text-sm text-slate-100 placeholder:text-slate-600"
                     />
                     {aiTarget !== "flow" && !draftFlow ? (
                       <div className="text-xs text-amber-100">
@@ -7550,10 +10740,15 @@ export const RalphFlowEditor = ({
                           ? "Generate"
                           : "Apply"}
                     </Button>
+                    </div>
+                    <div className="grid min-h-0 content-start gap-2 border-t border-slate-800 pt-3 xl:border-l xl:border-t-0 xl:pl-3 xl:pt-0">
+                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Result
+                      </div>
                     {generationJob ? (
                       <div
                         className={cn(
-                          "grid gap-2 border-t border-slate-800 pt-2 text-sm",
+                          "grid gap-2 text-sm",
                           generationJob.status === "failed"
                             ? "text-red-100"
                             : generationJob.status === "blocked"
@@ -7572,43 +10767,135 @@ export const RalphFlowEditor = ({
                               <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-300" />
                             )}
                             <span className="truncate">
-                              {generationJob.status === "running"
-                                ? "Generating"
-                                : generationJob.status === "stopping"
-                                  ? "Stopping"
-                                : generationJob.status === "created"
-                                  ? "Generated"
-                                  : generationJob.status === "blocked"
-                                    ? "Blocked"
-                                    : "Failed"}
+                              {generationJobStatusLabel}
                             </span>
                           </span>
-                          {generationJob.status === "running" ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => void stopGeneration()}
-                              className="h-7 shrink-0 rounded-lg border-rose-400/30 bg-rose-500/10 px-2 text-xs text-rose-100 hover:bg-rose-500/15 hover:text-white"
-                            >
-                              <Octagon className="h-3.5 w-3.5" />
-                              Stop
-                            </Button>
-                          ) : generationJob.result?.flow ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => void openGeneratedFlow()}
-                              className="h-7 shrink-0 rounded-lg border-slate-700 bg-slate-900 px-2 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
-                            >
-                              Open
-                            </Button>
-                          ) : null}
+                          <div className="flex shrink-0 items-center gap-2">
+                            {canCopyGenerationError(generationJob) ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                aria-label="Copy Ralph generation error"
+                                title="Copy Ralph generation error"
+                                onClick={() => void copyGenerationError()}
+                                className="h-7 rounded-lg border-amber-400/30 bg-amber-500/10 px-2 text-xs text-amber-100 hover:bg-amber-500/15 hover:text-white"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                                {generationErrorCopyState === "copied"
+                                  ? "Copied"
+                                  : generationErrorCopyState === "failed"
+                                    ? "Copy failed"
+                                    : "Copy error"}
+                              </Button>
+                            ) : null}
+                            {generationJob.status === "running" ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => void stopGeneration()}
+                                className="h-7 rounded-lg border-rose-400/30 bg-rose-500/10 px-2 text-xs text-rose-100 hover:bg-rose-500/15 hover:text-white"
+                              >
+                                <Octagon className="h-3.5 w-3.5" />
+                                Stop
+                              </Button>
+                            ) : generationJob.result?.flow ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => void openGeneratedFlow()}
+                                className="h-7 rounded-lg border-slate-700 bg-slate-900 px-2 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
+                              >
+                                Open
+                              </Button>
+                            ) : null}
+                          </div>
                         </div>
                         <div className="max-h-12 overflow-hidden text-xs text-slate-500">
                           {generationJob.summary}
                         </div>
+                        {getGenerationPhaseLabel(generationJob) ? (
+                          <div className="text-xs text-sky-200">
+                            {getGenerationPhaseLabel(generationJob)}
+                          </div>
+                        ) : null}
+                        <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/60 p-2 text-[11px] text-slate-400 sm:grid-cols-2">
+                          {generationJob.provider || generationJob.model ? (
+                            <div className="min-w-0 truncate">
+                              Model: {[generationJob.provider, generationJob.model]
+                                .filter(Boolean)
+                                .join(" / ")}
+                            </div>
+                          ) : null}
+                          {generationJob.blockCount !== undefined ||
+                          generationJob.edgeCount !== undefined ? (
+                            <div className="min-w-0 truncate">
+                              Artifact: {generationJob.blockCount ?? 0} blocks /{" "}
+                              {generationJob.edgeCount ?? 0} edges
+                            </div>
+                          ) : null}
+                          {generationJob.validationErrorCount !== undefined ||
+                          generationJob.validationWarningCount !== undefined ? (
+                            <div className="min-w-0 truncate">
+                              Validation: {generationJob.validationErrorCount ?? 0} errors /{" "}
+                              {generationJob.validationWarningCount ?? 0} warnings
+                            </div>
+                          ) : null}
+                          {generationJob.validatorDecision ? (
+                            <div className="min-w-0 truncate">
+                              Decision: {generationJob.validatorDecision}
+                            </div>
+                          ) : null}
+                          {generationJob.tempFlowPath ? (
+                            <div
+                              className="min-w-0 truncate sm:col-span-2"
+                              title={generationJob.tempFlowPath}
+                            >
+                              Temp: {generationJob.tempFlowPath}
+                            </div>
+                          ) : null}
+                          {generationJob.generationLogPath ? (
+                            <div
+                              className="min-w-0 truncate sm:col-span-2"
+                              title={generationJob.generationLogPath}
+                            >
+                              Log: {generationJob.generationLogPath}
+                            </div>
+                          ) : null}
+                        </div>
+                        {generationJob.activity.length > 0 ? (
+                          <div className="grid max-h-36 gap-1 overflow-auto border-t border-slate-800 pt-2 text-[11px] leading-4 text-slate-400">
+                            {generationJob.activity.slice(-8).map((event) => (
+                              <div
+                                key={event.id}
+                                className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2"
+                              >
+                                <span className="text-slate-600">
+                                  {formatGenerationActivityTime(event.timestamp)}
+                                </span>
+                                <span className="min-w-0">
+                                  <span className="text-slate-300">{event.label}</span>
+                                  {event.round ? (
+                                    <span className="ml-1 text-slate-600">
+                                      r{event.round}
+                                      {event.maxRounds ? `/${event.maxRounds}` : ""}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-500">
+                            Waiting for structured generation activity.
+                          </div>
+                        )}
                       </div>
-                    ) : null}
+                    ) : (
+                      <div className="text-xs leading-5 text-slate-500">
+                        Generated flows, blocked results, and stop controls appear here.
+                      </div>
+                    )}
+                    </div>
                   </div>
                   ) : (
                     <div className="grid gap-2 p-3">
@@ -7623,7 +10910,9 @@ export const RalphFlowEditor = ({
                   )}
                 </ScrollArea>
               </div>
+              ) : null}
 
+              {editorMode === "review" ? (
               <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-slate-800">
                 <button
                   type="button"
@@ -7648,13 +10937,16 @@ export const RalphFlowEditor = ({
                         <button
                           key={`${issue.message}-${index}`}
                           type="button"
+                          disabled={!issue.blockId}
                           onClick={() => {
                             if (issue.blockId) {
-                              setSelectedBlockId(issue.blockId);
+                              focusValidationIssueBlock(issue.blockId);
                             }
                           }}
                           className={cn(
-                            "flex min-w-0 items-center justify-between gap-3 border-b border-slate-800/70 py-2 text-left text-sm last:border-b-0",
+                            "flex min-w-0 items-center justify-between gap-3 border-b border-slate-800/70 py-2 text-left text-sm last:border-b-0 disabled:cursor-default",
+                            issue.blockId &&
+                              "cursor-pointer rounded-sm hover:bg-slate-900/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-300/70",
                             issue.level === "error"
                               ? "text-red-100"
                               : "text-amber-100",
@@ -7690,7 +10982,9 @@ export const RalphFlowEditor = ({
                   )}
                 </ScrollArea>
               </div>
+              ) : null}
 
+              {editorMode === "run" ? (
               <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
                 <div
                   role="button"
@@ -7731,191 +11025,365 @@ export const RalphFlowEditor = ({
                   </Button>
                 </div>
                 <ScrollArea className="min-h-0" type="always">
-                  {editorMode === "run" ? (
-                  <div className="grid gap-2 p-3">
-                    {runBlockedReason ? (
-                      <div className="grid gap-2 text-sm text-amber-100">
-                        <div className="flex min-w-0 items-center justify-between gap-3">
-                          <span className="min-w-0 break-words">
-                            {runBlockedReason}
-                          </span>
-                          {runBlockedReason === "Save flow before running." &&
-                          canSaveFlow ? (
-                            <Button
-                              type="button"
-                              onClick={() => void saveFlow()}
-                              className="h-8 shrink-0 rounded-lg bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500"
-                            >
-                              <Save className="h-3.5 w-3.5" />
-                              Save
-                            </Button>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="px-1 text-xs text-slate-500">
-                        {runReadyMessage}
-                      </div>
-                    )}
+                  <div className="grid gap-3 p-3">
+                    <div className="flex min-w-0 flex-wrap items-center gap-1 rounded-lg border border-slate-800 bg-slate-900/60 p-1">
+                      {([
+                        ["setup", "Setup"],
+                        ["live", activeRuns.length > 0 ? `Live (${activeRuns.length})` : "Live"],
+                        ["history", "History"],
+                        ["logs", selectedRunLog ? (selectedRunLog.kind === "trace" ? "Trace" : "Log") : "Logs"],
+                      ] as const).map(([tab, label]) => (
+                        <button
+                          key={tab}
+                          type="button"
+                          onClick={() => setRunPanelTab(tab)}
+                          className={cn(
+                            "h-7 rounded-md px-3 text-xs font-semibold",
+                            runPanelTab === tab
+                              ? "bg-lime-500/15 text-lime-100"
+                              : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
 
-                    {activeRuns.length > 0 ? (
-                      <div className="grid gap-1 border-t border-slate-800 pt-2">
-                        <div className="flex min-w-0 items-center justify-between gap-3 px-1">
-                          <div className="text-xs font-medium text-slate-400">
-                            Background Ralph runs
+                    {runPanelTab === "setup" ? (
+                      <div className="grid gap-3">
+                        <div
+                          className={cn(
+                            "text-sm",
+                            runBlockedReason ? "text-amber-100" : "text-lime-100",
+                          )}
+                        >
+                          <div className="flex min-w-0 items-center justify-between gap-3">
+                            <span className="min-w-0 break-words">
+                              {runBlockedReason ?? runReadyMessage}
+                            </span>
+                            {runBlockedReason === "Save flow before running." &&
+                            canSaveFlow ? (
+                              <Button
+                                type="button"
+                                onClick={() => void saveFlow()}
+                                className="h-8 shrink-0 rounded-lg bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500"
+                              >
+                                <Save className="h-3.5 w-3.5" />
+                                Save
+                              </Button>
+                            ) : null}
                           </div>
-                          <span className="shrink-0 text-xs text-slate-500">
-                            {activeRuns.length}
-                          </span>
                         </div>
-                        <div className="grid">
-                          {activeRuns.map((activeRun) => (
-                            <div
-                              key={activeRun.id}
-                              className="flex min-w-0 items-center justify-between gap-2 border-b border-slate-800/70 px-1 py-1.5 last:border-b-0"
-                            >
-                              <div className="min-w-0">
-                                <div className="truncate text-sm font-medium text-slate-200">
-                                  {activeRun.flowName}
+
+                        {draftFlow && (draftFlow.variables ?? []).length > 0 ? (
+                          <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
+                            {(draftFlow.variables ?? []).map((variable) => (
+                              <label
+                                key={variable.name}
+                                className="grid gap-1.5 text-sm text-slate-200"
+                              >
+                                <span className="flex min-w-0 items-center justify-between gap-3">
+                                  <span className="truncate font-medium">
+                                    {variable.name}
+                                  </span>
+                                  <select
+                                    value={variable.type}
+                                    aria-label={`Variable type ${variable.name}`}
+                                    disabled
+                                    className="h-7 rounded border border-slate-800 bg-slate-950 px-2 text-[0.7rem] text-slate-500"
+                                  >
+                                    {VARIABLE_TYPES.map((type) => (
+                                      <option key={type} value={type}>
+                                        {type}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </span>
+                                <Input
+                                  value={variableValues[variable.name] ?? ""}
+                                  aria-label={`Ralph variable ${variable.name}`}
+                                  placeholder={variable.default ?? variable.name}
+                                  onChange={(event) => {
+                                    const nextValue = event.target.value;
+                                    setVariableValues((current) => ({
+                                      ...current,
+                                      [variable.name]: nextValue,
+                                    }));
+                                  }}
+                                  className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100 placeholder:text-slate-600"
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-500">
+                            No variables required.
+                          </div>
+                        )}
+
+                        {requiredMissingVariables.length > 0 ? (
+                          <div className="break-words text-sm text-amber-100">
+                            Missing required variable(s):{" "}
+                            {requiredMissingVariables.join(", ")}.
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {runPanelTab === "live" ? (
+                      <div className="grid gap-3">
+                        {activeRuns.length > 0 ? (
+                          <div className="grid gap-1">
+                            <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-slate-500">
+                              <span className="font-medium text-slate-400">
+                                Background Ralph runs
+                              </span>
+                              <span>{activeRuns.length}</span>
+                            </div>
+                            <div className="grid">
+                              {activeRuns.map((activeRun) => (
+                                <div
+                                  key={activeRun.id}
+                                  className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-800/70 py-2 last:border-b-0"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm font-medium text-slate-200">
+                                      {activeRun.flowName}
+                                    </div>
+                                    <div className="truncate text-xs text-slate-500">
+                                      {activeRun.status === "stopping"
+                                        ? "Stopping"
+                                        : activeRun.currentBlockTitle
+                                          ? `Active: ${activeRun.currentBlockTitle}`
+                                          : `Running since ${formatRevisionDate(new Date(activeRun.startedAt).toISOString())}`}
+                                    </div>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={activeRun.status === "stopping"}
+                                    aria-label={`Stop Ralph run ${activeRun.flowName}`}
+                                    onClick={() => void stopRalphRun(activeRun.id)}
+                                    className="h-7 shrink-0 rounded-lg border-slate-700 bg-slate-900 px-2 text-xs text-rose-200 hover:border-rose-400/30 hover:bg-rose-500/10 hover:text-white disabled:opacity-60"
+                                  >
+                                    {activeRun.status === "stopping" ? (
+                                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Octagon className="h-3.5 w-3.5" />
+                                    )}
+                                    Stop
+                                  </Button>
                                 </div>
-                                <div className="truncate text-xs text-slate-500">
-                                  {activeRun.status === "stopping"
-                                    ? "Stopping"
-                                    : activeRun.currentBlockTitle
-                                      ? `Active: ${activeRun.currentBlockTitle}`
-                                      : `Running since ${formatRevisionDate(new Date(activeRun.startedAt).toISOString())}`}
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-slate-500">
+                            No active Ralph runs.
+                          </div>
+                        )}
+
+                        {lastRun ? (
+                          <div className="grid gap-2 border-t border-slate-800 pt-3">
+                            <div className="text-sm font-medium text-slate-100">
+                              Last result: {lastRun.status}
+                            </div>
+                            <p className="break-words text-sm text-slate-400">
+                              {lastRun.summary}
+                            </p>
+                            <div className="grid gap-1 md:grid-cols-2">
+                              {lastRun.events.slice(-10).map((event, index) => (
+                                <div
+                                  key={`${event.type}-${index}`}
+                                  className="truncate text-xs text-slate-500"
+                                >
+                                  {event.type}
+                                  {"blockId" in event ? ` ${event.blockId}` : ""}
+                                  {"output" in event ? ` ${event.output}` : ""}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {runPanelTab === "history" ? (
+                      <div className="grid gap-2">
+                        <div className="flex min-w-0 items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
+                            <History className="h-3.5 w-3.5" />
+                            Run history
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            disabled={runHistoryLoading || !selectedId}
+                            aria-label="Refresh Ralph run history"
+                            title="Refresh Ralph run history"
+                            onClick={() => void refreshRunHistory(selectedId)}
+                            className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
+                          >
+                            <RefreshCw
+                              className={cn(
+                                "h-3.5 w-3.5",
+                                runHistoryLoading && "animate-spin",
+                              )}
+                            />
+                          </Button>
+                        </div>
+
+                        {runHistoryLoading ? (
+                          <div className="flex items-center gap-2 text-xs text-slate-500">
+                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                            Loading runs.
+                          </div>
+                        ) : runHistory.length === 0 ? (
+                          <div className="text-xs text-slate-500">
+                            No runs recorded for this flow.
+                          </div>
+                        ) : (
+                          <div className="grid">
+                            {runHistory.slice(0, 12).map((run) => (
+                              <div
+                                key={run.id}
+                                className="grid gap-1 border-b border-slate-800/70 py-2 last:border-b-0"
+                              >
+                                <div className="flex min-w-0 items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="truncate text-xs font-semibold text-slate-200">
+                                      {run.status} / {formatRevisionDate(run.createdAt)}
+                                    </div>
+                                    <div className="truncate text-xs text-slate-500">
+                                      {run.summary}
+                                    </div>
+                                  </div>
+                                  <div className="flex shrink-0 items-center gap-1">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      disabled={runLogLoading}
+                                      onClick={() => void openRunLog(run.id, "simple")}
+                                      className="h-7 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white"
+                                    >
+                                      Log
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      disabled={runLogLoading}
+                                      onClick={() => void openRunLog(run.id, "trace")}
+                                      className="h-7 rounded-lg px-2 text-xs text-slate-400 hover:bg-slate-900 hover:text-white"
+                                    >
+                                      Trace
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+
+                    {runPanelTab === "logs" ? (
+                      <div className="grid gap-2">
+                        {runLogLoading ? (
+                          <div className="flex items-center gap-2 text-sm text-slate-500">
+                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                            Loading log.
+                          </div>
+                        ) : selectedRunLog ? (
+                          <>
+                            <div className="flex min-w-0 items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="truncate text-xs font-medium text-slate-300">
+                                  {selectedRunLog.kind === "trace" ? "Trace" : "Log"} /{" "}
+                                  {selectedRunLog.runId}
+                                </div>
+                                <div className="truncate text-[0.68rem] text-slate-600">
+                                  {selectedRunLog.path}
                                 </div>
                               </div>
                               <Button
                                 type="button"
-                                variant="outline"
-                                disabled={activeRun.status === "stopping"}
-                                aria-label={`Stop Ralph run ${activeRun.flowName}`}
-                                onClick={() => void stopRalphRun(activeRun.id)}
-                                className="h-7 shrink-0 rounded-lg border-slate-700 bg-slate-900 px-2 text-xs text-rose-200 hover:border-rose-400/30 hover:bg-rose-500/10 hover:text-white disabled:opacity-60"
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Close Ralph run log"
+                                title="Close Ralph run log"
+                                onClick={() => setSelectedRunLog(null)}
+                                className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
                               >
-                                {activeRun.status === "stopping" ? (
-                                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Octagon className="h-3.5 w-3.5" />
-                                )}
-                                Stop
+                                <X className="h-3.5 w-3.5" />
                               </Button>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {draftFlow && (draftFlow.variables ?? []).length > 0 ? (
-                      <div className="grid gap-2">
-                        {(draftFlow.variables ?? []).map((variable) => (
-                          <label
-                            key={variable.name}
-                            className="grid gap-1.5 text-sm text-slate-200"
-                          >
-                            <span className="flex min-w-0 items-center justify-between gap-3">
-                              <span className="truncate font-medium">
-                                {variable.name}
-                              </span>
-                              <select
-                                value={variable.type}
-                                aria-label={`Variable type ${variable.name}`}
-                                disabled
-                                className="h-7 rounded border border-slate-800 bg-slate-950 px-2 text-[0.7rem] text-slate-500"
-                              >
-                                {VARIABLE_TYPES.map((type) => (
-                                  <option key={type} value={type}>
-                                    {type}
-                                  </option>
-                                ))}
-                              </select>
-                            </span>
-                            <Input
-                              value={variableValues[variable.name] ?? ""}
-                              aria-label={`Ralph variable ${variable.name}`}
-                              placeholder={variable.default ?? variable.name}
-                              onChange={(event) => {
-                                const nextValue = event.target.value;
-                                setVariableValues((current) => ({
-                                  ...current,
-                                  [variable.name]: nextValue,
-                                }));
-                              }}
-                              className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100 placeholder:text-slate-600"
-                            />
-                          </label>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="px-1 text-xs text-slate-500">
-                        No variables required.
-                      </div>
-                    )}
-
-                    {requiredMissingVariables.length > 0 ? (
-                      <div className="break-words text-sm text-amber-100">
-                        Missing required variable(s):{" "}
-                        {requiredMissingVariables.join(", ")}.
-                      </div>
-                    ) : null}
-
-                    {lastRun ? (
-                      <div className="grid gap-2 border-t border-slate-800 pt-2">
-                        <div className="text-sm font-medium text-slate-100">
-                          {lastRun.status}
-                        </div>
-                        <p className="break-words text-sm text-slate-400">
-                          {lastRun.summary}
-                        </p>
-                        <div className="grid gap-1">
-                          {lastRun.events.slice(-8).map((event, index) => (
-                            <div
-                              key={`${event.type}-${index}`}
-                              className="truncate text-xs text-slate-500"
+                            <pre
+                              className={cn(
+                                "max-h-[min(52vh,34rem)] overflow-auto rounded border border-slate-800 bg-slate-950 p-3 font-mono text-[0.72rem] leading-5 text-slate-300",
+                                selectedRunLog.kind === "trace"
+                                  ? "whitespace-pre"
+                                  : "whitespace-pre-wrap",
+                              )}
                             >
-                              {event.type}
-                              {"blockId" in event ? ` ${event.blockId}` : ""}
-                              {"output" in event ? ` ${event.output}` : ""}
-                            </div>
-                          ))}
-                        </div>
+                              {selectedRunLog.content}
+                            </pre>
+                          </>
+                        ) : (
+                          <div className="text-sm text-slate-500">
+                            Open a run from History to inspect its readable log or detailed trace.
+                          </div>
+                        )}
                       </div>
                     ) : null}
 
                     {message ? (
-                      <div className="break-words text-sm text-slate-300">
-                        {message}
+                      <div
+                        className={cn(
+                          "break-words border-t border-slate-800 pt-2 text-sm",
+                          staleRunMessage ? "text-amber-100" : "text-slate-300",
+                        )}
+                      >
+                        {staleRunMessage ? (
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300" />
+                            <span className="min-w-0 flex-1">
+                              This run references a flow file that no longer exists. Refresh the flow list, then select or save the flow again.
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setMessage(null);
+                                void refreshFlows();
+                              }}
+                              className="h-7 rounded-lg border-amber-400/30 bg-amber-500/10 px-2 text-xs text-amber-100 hover:bg-amber-500/15 hover:text-white"
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                              Refresh
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => setMessage(null)}
+                              className="h-7 rounded-lg px-2 text-xs text-slate-400 hover:bg-slate-900 hover:text-white"
+                            >
+                              Dismiss
+                            </Button>
+                          </div>
+                        ) : (
+                          message
+                        )}
                       </div>
                     ) : null}
                   </div>
-                  ) : (
-                    <div className="grid gap-2 p-3">
-                      <div
-                        className={cn(
-                          "text-sm",
-                          runBlockedReason ? "text-amber-100" : "text-lime-100",
-                        )}
-                      >
-                        {runBlockedReason ?? runReadyMessage}
-                      </div>
-                      {runBlockedReason === "Save flow before running." && canSaveFlow ? (
-                        <Button
-                          type="button"
-                          onClick={() => void saveFlow()}
-                          className="h-8 justify-self-end rounded-lg bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500"
-                        >
-                          <Save className="h-3.5 w-3.5" />
-                          Save
-                        </Button>
-                      ) : null}
-                    </div>
-                  )}
                 </ScrollArea>
               </div>
+              ) : null}
             </section>
             )}
           </div>
+          {renderExpandedEditorDialog()}
     </section>
   );
 };

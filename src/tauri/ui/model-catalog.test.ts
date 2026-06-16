@@ -5,7 +5,7 @@ import {
 } from "./model-catalog";
 
 describe("provider model catalog", () => {
-  it("keeps Codex CLI static models separate from Copilot CLI auto selection", () => {
+  it("shows curated Codex CLI fallback models without Copilot CLI auto selection", () => {
     expect(
       getCatalogModelsForProvider("codex-cli").map((model) => model.id),
     ).toEqual([
@@ -13,6 +13,10 @@ describe("provider model catalog", () => {
       "gpt-5.4",
       "gpt-5.4-mini",
       "gpt-5.3-codex-spark",
+      "claude-opus-4-8",
+      "claude-sonnet-4-6",
+      "gemini-3.1-pro-preview",
+      "gemini-3.5-flash",
     ]);
 
     expect(
@@ -31,10 +35,45 @@ describe("provider model catalog", () => {
       getCatalogModelsForProvider("copilot-cli").map((model) => model.id),
     ).toEqual([
       "auto",
-      "gpt-5.3-codex",
-      "gpt-5.2",
-      "claude-sonnet-4.5",
+      "claude-sonnet-4.6",
+      "gpt-5.4",
       "claude-haiku-4.5",
+      "gpt-5.3-codex",
+      "gemini-3.1-pro-preview",
+      "gemini-3.5-flash",
+    ]);
+  });
+
+  it("keeps live Codex CLI models while appending curated custom-provider options", () => {
+    const snapshot = {
+      generatedAt: 1,
+      providers: [
+        {
+          provider: "codex-cli",
+          source: "provider-probe",
+          available: true,
+          models: [
+            { id: "gpt-5.5", label: "GPT-5.5" },
+            { id: "gpt-5.4", label: "GPT-5.4" },
+            { id: "gpt-5.4-mini", label: "GPT-5.4 mini" },
+          ],
+        },
+      ],
+    } satisfies ProviderModelCatalogSnapshot;
+
+    expect(
+      getCatalogModelsForProvider("codex-cli", snapshot).map(
+        (model) => model.id,
+      ),
+    ).toEqual([
+      "gpt-5.5",
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.3-codex-spark",
+      "claude-opus-4-8",
+      "claude-sonnet-4-6",
+      "gemini-3.1-pro-preview",
+      "gemini-3.5-flash",
     ]);
   });
 
@@ -62,7 +101,7 @@ describe("provider model catalog", () => {
     ).toEqual(["gpt-5.4-mini"]);
   });
 
-  it("caps Google live catalogs to the newest five mainline Gemini models", () => {
+  it("caps Google live catalogs to the newest mainline Gemini models", () => {
     const snapshot = {
       generatedAt: 1,
       providers: [
@@ -94,6 +133,8 @@ describe("provider model catalog", () => {
       "gemini-3.1-pro-preview",
       "gemini-3-flash-preview",
       "gemini-2.5-flash-lite",
+      "gemini-2.5-pro",
+      "gemini-2.5-flash",
     ]);
   });
 });

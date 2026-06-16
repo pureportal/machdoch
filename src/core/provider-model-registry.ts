@@ -203,7 +203,7 @@ export const PROVIDER_CATALOG_METADATA: readonly ProviderCatalogMetadata[] = [
     provider: "codex-cli",
     docsUrl: "https://developers.openai.com/codex/models",
     note:
-      "Codex CLI runs through `codex exec`; model selection is delegated with the CLI `--model` flag and can be discovered from `codex debug models` when the local CLI is available.",
+      "Codex CLI runs through `codex exec`; recommended GPT models can be discovered from `codex debug models`, and custom provider models can be selected with the CLI `--model` flag when configured locally.",
   },
   {
     provider: "claude-cli",
@@ -216,7 +216,7 @@ export const PROVIDER_CATALOG_METADATA: readonly ProviderCatalogMetadata[] = [
     docsUrl:
       "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-programmatic-reference",
     note:
-      "Copilot CLI runs through `copilot -p` in non-interactive mode; model selection is delegated with `--model` unless Auto is selected.",
+      "Copilot CLI runs through `copilot -p` in non-interactive mode; model selection is delegated with `--model`, including `--model=auto` when Auto is selected.",
   },
 ] as const;
 
@@ -538,6 +538,87 @@ export const PROVIDER_MODEL_METADATA = [
     source: "curated-fallback",
   },
   {
+    provider: "codex-cli",
+    id: "claude-opus-4-8",
+    label: "Claude Opus 4.8",
+    lifecycle: "stable",
+    releaseDate: "2026-05-28",
+    description:
+      "Claude Opus option for Codex CLI workflows backed by a compatible local model provider configuration.",
+    recommendedFor: ["coding", "vision"],
+    capabilities: createCodexCliCapabilities({
+      contextWindowTokens: 1_000_000,
+      maxOutputTokens: 128_000,
+      supportedImageMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
+      computerUse: false,
+    }),
+    warnings: [
+      "Requires the local Codex CLI to be configured with a compatible model_provider and credentials for this model.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "codex-cli",
+    id: "claude-sonnet-4-6",
+    label: "Claude Sonnet 4.6",
+    lifecycle: "stable",
+    releaseDate: "2026-02-17",
+    description:
+      "Balanced Claude option for Codex CLI workflows backed by a compatible local model provider configuration.",
+    recommendedFor: ["coding", "fast", "vision"],
+    capabilities: createCodexCliCapabilities({
+      contextWindowTokens: 1_000_000,
+      maxOutputTokens: 64_000,
+      supportedImageMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
+      computerUse: false,
+    }),
+    warnings: [
+      "Requires the local Codex CLI to be configured with a compatible model_provider and credentials for this model.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "codex-cli",
+    id: "gemini-3.1-pro-preview",
+    label: "Gemini 3.1 Pro",
+    lifecycle: "preview",
+    releaseDate: "2026-02-01",
+    description:
+      "Gemini Pro option for Codex CLI workflows backed by a compatible local model provider configuration.",
+    recommendedFor: ["coding", "vision"],
+    capabilities: createCodexCliCapabilities({
+      contextWindowTokens: 1_000_000,
+      maxOutputTokens: 65_536,
+      supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
+      computerUse: false,
+    }),
+    warnings: [
+      "Preview model: verify behavior and availability before production use.",
+      "Requires the local Codex CLI to be configured with a compatible model_provider and credentials for this model.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "codex-cli",
+    id: "gemini-3.5-flash",
+    label: "Gemini 3.5 Flash",
+    lifecycle: "stable",
+    releaseDate: "2026-05-19",
+    description:
+      "Fast Gemini option for Codex CLI workflows backed by a compatible local model provider configuration.",
+    recommendedFor: ["coding", "fast", "vision"],
+    capabilities: createCodexCliCapabilities({
+      contextWindowTokens: 1_000_000,
+      maxOutputTokens: 65_536,
+      supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
+      computerUse: false,
+    }),
+    warnings: [
+      "Requires the local Codex CLI to be configured with a compatible model_provider and credentials for this model.",
+    ],
+    source: "curated-fallback",
+  },
+  {
     provider: "claude-cli",
     id: "claude-opus-4-8",
     label: "Claude Opus 4.8",
@@ -611,49 +692,31 @@ export const PROVIDER_MODEL_METADATA = [
   },
   {
     provider: "copilot-cli",
-    id: "gpt-5.3-codex",
-    label: "GPT-5.3 Codex",
+    id: "claude-sonnet-4.6",
+    label: "Claude Sonnet 4.6",
     lifecycle: "stable",
-    releaseDate: "2026-01-01",
+    releaseDate: "2026-02-17",
     description:
-      "Copilot CLI coding model option for complex debugging and refactoring tasks.",
+      "Default general-purpose coding model exposed through GitHub Copilot CLI model selection.",
+    recommendedFor: ["coding", "fast"],
+    capabilities: createCopilotCliCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Runs through the locally installed Copilot CLI; model availability depends on GitHub Copilot plan and organization policy.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "copilot-cli",
+    id: "gpt-5.4",
+    label: "GPT-5.4",
+    lifecycle: "stable",
+    releaseDate: "2026-03-05",
+    description:
+      "Copilot CLI model for complex reasoning and implementation tasks.",
     recommendedFor: ["coding"],
-    capabilities: createCopilotCliCapabilities({
-      contextWindowTokens: null,
-      maxOutputTokens: null,
-    }),
-    warnings: [
-      "Runs through the locally installed Copilot CLI; model availability depends on GitHub Copilot plan and organization policy.",
-    ],
-    source: "curated-fallback",
-  },
-  {
-    provider: "copilot-cli",
-    id: "gpt-5.2",
-    label: "GPT-5.2",
-    lifecycle: "stable",
-    releaseDate: "2025-12-01",
-    description:
-      "Copilot CLI general-purpose model option documented for programmatic runs.",
-    recommendedFor: ["coding", "fast"],
-    capabilities: createCopilotCliCapabilities({
-      contextWindowTokens: null,
-      maxOutputTokens: null,
-    }),
-    warnings: [
-      "Runs through the locally installed Copilot CLI; model availability depends on GitHub Copilot plan and organization policy.",
-    ],
-    source: "curated-fallback",
-  },
-  {
-    provider: "copilot-cli",
-    id: "claude-sonnet-4.5",
-    label: "Claude Sonnet 4.5",
-    lifecycle: "stable",
-    releaseDate: "2025-09-29",
-    description:
-      "Claude Sonnet option exposed through GitHub Copilot CLI model selection.",
-    recommendedFor: ["coding", "fast"],
     capabilities: createCopilotCliCapabilities({
       contextWindowTokens: null,
       maxOutputTokens: null,
@@ -672,6 +735,60 @@ export const PROVIDER_MODEL_METADATA = [
     description:
       "Fast Claude Haiku option exposed through GitHub Copilot CLI model selection.",
     recommendedFor: ["fast", "cheap"],
+    capabilities: createCopilotCliCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Runs through the locally installed Copilot CLI; model availability depends on GitHub Copilot plan and organization policy.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "copilot-cli",
+    id: "gpt-5.3-codex",
+    label: "GPT-5.3 Codex",
+    lifecycle: "stable",
+    releaseDate: "2026-01-01",
+    description:
+      "Copilot CLI code-focused model option for complex debugging and refactoring tasks.",
+    recommendedFor: ["coding"],
+    capabilities: createCopilotCliCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Runs through the locally installed Copilot CLI; model availability depends on GitHub Copilot plan and organization policy.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "copilot-cli",
+    id: "gemini-3.1-pro-preview",
+    label: "Gemini 3.1 Pro",
+    lifecycle: "preview",
+    releaseDate: "2026-02-01",
+    description:
+      "Google Gemini reasoning model exposed through GitHub Copilot CLI model selection.",
+    recommendedFor: ["coding"],
+    capabilities: createCopilotCliCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Runs through the locally installed Copilot CLI; model availability depends on GitHub Copilot plan and organization policy.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "copilot-cli",
+    id: "gemini-3.5-flash",
+    label: "Gemini 3.5 Flash",
+    lifecycle: "stable",
+    releaseDate: "2026-05-19",
+    description:
+      "Fast Google Gemini model exposed through GitHub Copilot CLI model selection.",
+    recommendedFor: ["coding", "fast"],
     capabilities: createCopilotCliCapabilities({
       contextWindowTokens: null,
       maxOutputTokens: null,

@@ -1009,6 +1009,12 @@ fn execute_ralph_command(
     let normalized_workspace_root = workspace_path.display().to_string();
     let payload_workspace_root = normalized_workspace_root.clone();
     let task_id = normalize_task_id(request.task_id.as_deref());
+    let progress_task = request
+        .arguments
+        .first()
+        .map(String::as_str)
+        .unwrap_or("ralph")
+        .to_string();
     let mut cli_args = vec![
         "--json".to_string(),
         "--cwd".to_string(),
@@ -1081,10 +1087,14 @@ fn execute_ralph_command(
         }
     };
 
+    let progress_app_handle = app_handle.clone();
+    let progress_window_label = window_label.clone();
+    let progress_task_id = task_id.clone();
     let stdout_worker = thread::spawn(move || read_stdout(stdout));
     let stderr_worker =
         thread::spawn(move || read_stderr(stderr, app_handle, window_label, task_id));
 
+    let started_at = Instant::now();
     let status = loop {
         match child
             .try_wait()
@@ -1093,6 +1103,19 @@ fn execute_ralph_command(
             Some(status) => break status,
             None => {
                 if cancel_flag.load(Ordering::SeqCst) {
+                    emit_progress_event(
+                        &progress_app_handle,
+                        &progress_window_label,
+                        progress_task_id.as_deref(),
+                        create_bridge_progress(
+                            &progress_task,
+                            Some("machdoch"),
+                            "cancelled",
+                            "Cancelled by user; stopping the Ralph command.",
+                            true,
+                        ),
+                    );
+
                     terminate_child_process_tree(&mut child);
                     let _ = child.wait();
 
@@ -1113,6 +1136,41 @@ fn execute_ralph_command(
 
                     return Err(format!(
                         "The Ralph CLI command was cancelled. {}",
+                        failure_tail
+                    ));
+                }
+
+                if started_at.elapsed() >= Duration::from_millis(DESKTOP_TASK_TIMEOUT_MS) {
+                    emit_progress_event(
+                        &progress_app_handle,
+                        &progress_window_label,
+                        progress_task_id.as_deref(),
+                        create_bridge_progress(
+                            &progress_task,
+                            Some("machdoch"),
+                            "cancelled",
+                            "The Ralph command exceeded the desktop safety timeout; stopping it.",
+                            false,
+                        ),
+                    );
+
+                    terminate_child_process_tree(&mut child);
+                    let _ = child.wait();
+
+                    let (stdout_text, stderr_text) =
+                        match join_cli_output_and_cleanup(stdout_worker, stderr_worker, None) {
+                            Ok(output) => output,
+                            Err(error) => {
+                                cleanup_temporary_files(&payload_paths);
+                                return Err(error);
+                            }
+                        };
+                    let failure_tail = format_command_failure(&stderr_text, &stdout_text);
+                    cleanup_temporary_files(&payload_paths);
+
+                    return Err(format!(
+                        "The Ralph CLI exceeded the desktop safety timeout of {} minutes and was stopped. {}",
+                        DESKTOP_TASK_TIMEOUT_MS / 60_000,
                         failure_tail
                     ));
                 }

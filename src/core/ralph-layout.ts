@@ -11,7 +11,11 @@ const RALPH_LAYOUT_ROW_GAP = 190;
 const RALPH_LAYOUT_NODE_MARGIN = 36;
 const RALPH_LAYOUT_DEFAULT_NODE_WIDTH = 270;
 const RALPH_LAYOUT_UTILITY_NODE_WIDTH = 300;
+const RALPH_LAYOUT_NOTE_NODE_WIDTH = 280;
+const RALPH_LAYOUT_GROUP_NODE_WIDTH = 720;
 const RALPH_LAYOUT_NODE_HEIGHT = 140;
+const RALPH_LAYOUT_NOTE_NODE_HEIGHT = 180;
+const RALPH_LAYOUT_GROUP_NODE_HEIGHT = 420;
 
 interface RalphLayoutNodeBounds {
   left: number;
@@ -21,9 +25,52 @@ interface RalphLayoutNodeBounds {
 }
 
 const getRalphLayoutNodeWidth = (block: RalphFlowBlock): number => {
-  return block.type === "UTILITY"
-    ? RALPH_LAYOUT_UTILITY_NODE_WIDTH
-    : RALPH_LAYOUT_DEFAULT_NODE_WIDTH;
+  if (block.size) {
+    return block.size.width;
+  }
+
+  switch (block.type) {
+    case "UTILITY":
+      return RALPH_LAYOUT_UTILITY_NODE_WIDTH;
+    case "NOTE":
+      return RALPH_LAYOUT_NOTE_NODE_WIDTH;
+    case "GROUP":
+      return RALPH_LAYOUT_GROUP_NODE_WIDTH;
+    case "START":
+    case "PROMPT":
+    case "VALIDATOR":
+    case "DECISION":
+    case "PACK":
+    case "MCP_TOOL":
+    case "MCP_RESOURCE":
+    case "MCP_PROMPT":
+    case "END":
+      return RALPH_LAYOUT_DEFAULT_NODE_WIDTH;
+  }
+};
+
+const getRalphLayoutNodeHeight = (block: RalphFlowBlock): number => {
+  if (block.size) {
+    return block.size.height;
+  }
+
+  switch (block.type) {
+    case "NOTE":
+      return RALPH_LAYOUT_NOTE_NODE_HEIGHT;
+    case "GROUP":
+      return RALPH_LAYOUT_GROUP_NODE_HEIGHT;
+    case "START":
+    case "PROMPT":
+    case "VALIDATOR":
+    case "DECISION":
+    case "PACK":
+    case "UTILITY":
+    case "MCP_TOOL":
+    case "MCP_RESOURCE":
+    case "MCP_PROMPT":
+    case "END":
+      return RALPH_LAYOUT_NODE_HEIGHT;
+  }
 };
 
 const getRalphLayoutNodeBounds = (
@@ -34,7 +81,7 @@ const getRalphLayoutNodeBounds = (
   }
 
   const width = getRalphLayoutNodeWidth(block);
-  const height = RALPH_LAYOUT_NODE_HEIGHT;
+  const height = getRalphLayoutNodeHeight(block);
 
   return {
     left: block.position.x - RALPH_LAYOUT_NODE_MARGIN,

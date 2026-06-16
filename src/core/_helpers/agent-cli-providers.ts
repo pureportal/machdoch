@@ -152,6 +152,13 @@ const isExistingFile = (path: string): boolean => {
   }
 };
 
+const isWindowsPackagedAppPath = (path: string): boolean =>
+  process.platform === "win32" &&
+  path.toLowerCase().includes("\\program files\\windowsapps\\");
+
+const isResolvableCommandFile = (path: string): boolean =>
+  isExistingFile(path) && !isWindowsPackagedAppPath(path);
+
 const getWindowsPathExtensions = (
   env: NodeJS.ProcessEnv,
 ): readonly string[] => {
@@ -205,7 +212,7 @@ const resolveCommandOnPath = (
     for (const fileName of commandFileNames) {
       const candidate = join(directory, fileName);
 
-      if (isExistingFile(candidate)) {
+      if (isResolvableCommandFile(candidate)) {
         return candidate;
       }
     }

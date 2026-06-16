@@ -63,6 +63,9 @@ const WORKSPACE_ENV_FILE_NAME = ".env";
 export type UserWebSearchProvider = Exclude<WebSearchProvider, "none">;
 export type UserAgentCliPaths = SharedUserAgentCliPaths;
 const USER_API_PROVIDERS = SCHEMA_USER_API_PROVIDERS;
+const TRUSTED_AGENT_CLI_ENV_KEYS = new Set<string>(
+  Object.values(AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER),
+);
 
 export type UserAgentLimitsSettings = SharedUserAgentLimitsSettings;
 export type UserReviewModelSettings = SharedUserReviewModelSettings;
@@ -310,7 +313,13 @@ export const loadWorkspaceEnv = async (
   const workspaceEnvPath = join(workspaceRoot, WORKSPACE_ENV_FILE_NAME);
 
   if (existsSync(workspaceEnvPath)) {
-    Object.assign(env, await parseDotEnvFile(workspaceEnvPath));
+    const workspaceEnv = await parseDotEnvFile(workspaceEnvPath);
+
+    for (const [key, value] of Object.entries(workspaceEnv)) {
+      if (!TRUSTED_AGENT_CLI_ENV_KEYS.has(key)) {
+        env[key] = value;
+      }
+    }
   }
 
   for (const key of [

@@ -55,11 +55,16 @@ export type RalphCliAction =
   | "delete"
   | "save"
   | "run"
+  | "runs"
+  | "log"
   | "revisions"
   | "restore"
-  | "create";
+  | "create"
+  | "watches";
 export type RalphCliGenerationMode = "do-it" | "interview";
 export type RalphCliGenerationTarget = "flow" | "prompt-block" | "refactor";
+export type RalphCliScope = "user" | "workspace";
+export type RalphWatchCliAction = "list" | "create" | "delete" | "sync" | "run";
 
 export type McpCliAction =
   | "servers"
@@ -130,6 +135,7 @@ export interface SchedulerCliOptions {
 export interface RalphCliOptions {
   action: RalphCliAction;
   subject?: string;
+  scope?: RalphCliScope;
   name?: string;
   prompt?: string;
   promptFile?: string;
@@ -144,6 +150,10 @@ export interface RalphCliOptions {
   paramsFile?: string;
   maxRounds?: number;
   maxTransitions?: number;
+  trace?: boolean;
+  watchAction?: RalphWatchCliAction;
+  watchJson?: string;
+  watchJsonFile?: string;
 }
 
 export interface McpCliOptions {
@@ -311,9 +321,12 @@ const RALPH_ACTIONS: ReadonlySet<RalphCliAction> = new Set([
   "delete",
   "save",
   "run",
+  "runs",
+  "log",
   "revisions",
   "restore",
   "create",
+  "watches",
 ]);
 const RALPH_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<RalphCliAction> = new Set([
   "show",
@@ -321,6 +334,7 @@ const RALPH_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<RalphCliAction> = new Set([
   "delete",
   "save",
   "run",
+  "log",
   "revisions",
   "restore",
 ]);
@@ -332,6 +346,17 @@ const RALPH_GENERATION_TARGETS: ReadonlySet<RalphCliGenerationTarget> = new Set(
   "flow",
   "prompt-block",
   "refactor",
+]);
+const RALPH_SCOPES: ReadonlySet<RalphCliScope> = new Set([
+  "workspace",
+  "user",
+]);
+const RALPH_WATCH_ACTIONS: ReadonlySet<RalphWatchCliAction> = new Set([
+  "list",
+  "create",
+  "delete",
+  "sync",
+  "run",
 ]);
 
 const fail = (message: string): never => {
@@ -630,12 +655,18 @@ Usage:
   machdoch instructions create [name] --prompt <text> [--scope <user|workspace>] [--apply-to <glob>] [--json]
   machdoch instructions save [name] --prompt <text> [--path <file>] [--scope <user|workspace>] [--apply-to <glob>] [--json]
   machdoch instructions generate [name] --prompt <wish> [--path <file>] [--scope <user|workspace>] [--apply-to <glob>] [--max-rounds <n>] [--json]
-  machdoch ralph list|show|validate|delete <flow> [--json]
-  machdoch ralph revisions <flow> [--json]
-  machdoch ralph restore <flow> --revision <revision-id> [--json]
-  machdoch ralph save <flow> --flow-json <json> [--json]
-  machdoch ralph run <flow> [--param <name=value>] [--json]
-  machdoch ralph create [flow] --prompt <text> [--name <flow>] [--flow-target <flow|prompt-block|refactor>] [--generation-mode <do-it|interview>] [--max-rounds <n>] [--json]
+  machdoch ralph list [--scope <user|workspace>] [--json]
+  machdoch ralph show|validate|delete <flow> [--scope <user|workspace>] [--json]
+  machdoch ralph revisions <flow> [--scope <user|workspace>] [--json]
+  machdoch ralph restore <flow> --revision <revision-id> [--scope <user|workspace>] [--json]
+  machdoch ralph save <flow> --flow-json <json> [--scope <user|workspace>] [--json]
+  machdoch ralph run <flow> [--scope <user|workspace>] [--param <name=value>] [--json]
+  machdoch ralph runs [flow] [--scope <user|workspace>] [--json]
+  machdoch ralph log <run-id> [--scope <user|workspace>] [--trace] [--json]
+  machdoch ralph create [flow] --prompt <text> [--scope <user|workspace>] [--name <flow>] [--flow-target <flow|prompt-block|refactor>] [--generation-mode <do-it|interview>] [--max-rounds <n>] [--json]
+  machdoch ralph watches list|sync|run [--json]
+  machdoch ralph watches create (--watch-json <json>|--watch-json-file <path>) [--json]
+  machdoch ralph watches delete <watch-id> [--json]
   machdoch mcp servers [--include-disabled] [--json]
   machdoch mcp cache [--json]
   machdoch mcp discover|refresh <server-id> [--json]
@@ -711,7 +742,7 @@ Options:
   --prompt <text>         Scheduled task prompt text.
   --prompt-file <path>    Read scheduled task prompt text from a file.
   --scope <user|workspace|compatibility>
-                          Instruction scope filter for reads; writes support user or workspace.
+                          Instruction or Ralph scope. Compatibility only applies to instructions.
   --path <file>           Instruction file path for explicit save or generation updates.
   --apply-to <glob>       Workspace glob that auto-attaches an instruction. Repeat for multiple globs.
   --exclude <glob>        Workspace glob that prevents an instruction from attaching. Repeat for multiple globs.
@@ -721,6 +752,9 @@ Options:
   --audience <target>     Instruction audience: executor, validator, generator, or all.
   --priority <integer>    Instruction ordering priority.
   --flow-json <json>      Save a complete Ralph flow JSON document for \`ralph save\`.
+  --watch-json <json>     Save a Ralph watch definition for \`ralph watches create\`.
+  --watch-json-file <path>
+                          Read a Ralph watch definition from a JSON file.
   --existing-flow-json <json>
                           Provide the current Ralph flow JSON to \`ralph create\` for AI-assisted edits.
   --revision <id>         Ralph flow revision id for \`ralph restore\`.
@@ -729,6 +763,8 @@ Options:
                           Ralph generation style: do-it or interview.
   --param <name=value>    Set a Ralph flow variable for \`ralph run\`. Repeat for multiple variables.
   --max-rounds <n>        Maximum generator/validator rounds for \`ralph create\` or \`instructions generate\`.
+  --max-transitions <n>   Stop a Ralph run after this many graph transitions.
+  --trace                 Show the detailed JSONL trace for \`ralph log\`.
   --include-disabled      Include disabled preset and configured MCP servers in \`mcp servers\`.
   --arguments-json <json> JSON object arguments for \`mcp call-tool\` or \`mcp get-prompt\`.
   --context-pack <json>   Add a scheduled context-pack snapshot as JSON. Repeat for multiple packs.
@@ -829,6 +865,8 @@ export const parseCliArgs = (
         "prompt-file"?: string;
         "flow-json"?: string;
         "flow-json-file"?: string;
+        "watch-json"?: string;
+        "watch-json-file"?: string;
         "existing-flow-json"?: string;
         "existing-flow-json-file"?: string;
         revision?: string;
@@ -838,6 +876,7 @@ export const parseCliArgs = (
         "params-file"?: string;
         "max-rounds"?: string;
         "max-transitions"?: string;
+        trace?: boolean;
         "context-pack"?: string[];
         macro?: string[];
         "missed-run-policy"?: string;
@@ -922,6 +961,8 @@ export const parseCliArgs = (
         "prompt-file": { type: "string" },
         "flow-json": { type: "string" },
         "flow-json-file": { type: "string" },
+        "watch-json": { type: "string" },
+        "watch-json-file": { type: "string" },
         "existing-flow-json": { type: "string" },
         "existing-flow-json-file": { type: "string" },
         revision: { type: "string" },
@@ -931,6 +972,7 @@ export const parseCliArgs = (
         "params-file": { type: "string" },
         "max-rounds": { type: "string" },
         "max-transitions": { type: "string" },
+        trace: { type: "boolean" },
         "context-pack": { type: "string", multiple: true },
         macro: { type: "string", multiple: true },
         "missed-run-policy": { type: "string" },
@@ -1047,6 +1089,8 @@ export const parseCliArgs = (
   const rawSchedulerPromptFile = normalizeOptionalString(values?.["prompt-file"]);
   const rawRalphFlowJson = normalizeOptionalString(values?.["flow-json"]);
   const rawRalphFlowJsonFile = normalizeOptionalString(values?.["flow-json-file"]);
+  const rawRalphWatchJson = normalizeOptionalString(values?.["watch-json"]);
+  const rawRalphWatchJsonFile = normalizeOptionalString(values?.["watch-json-file"]);
   const rawRalphExistingFlowJson = normalizeOptionalString(
     values?.["existing-flow-json"],
   );
@@ -1064,6 +1108,7 @@ export const parseCliArgs = (
   const rawRalphParamsFile = normalizeOptionalString(values?.["params-file"]);
   const rawRalphMaxRounds = normalizeOptionalString(values?.["max-rounds"]);
   const rawRalphMaxTransitions = normalizeOptionalString(values?.["max-transitions"]);
+  const rawRalphTrace = values?.trace === true;
   const rawSchedulerContextPacks = values?.["context-pack"]
     ?.map((entry) => normalizeOptionalString(entry))
     .filter((entry): entry is string => Boolean(entry));
@@ -1587,10 +1632,20 @@ export const parseCliArgs = (
     }
 
     const action = actionText as RalphCliAction;
+    const isWatchCommand = action === "watches";
 
-    if (extraPositionals.length > 0) {
+    if (!isWatchCommand && extraPositionals.length > 0) {
       fail(
         `Command \`ralph ${action}\` does not accept positional arguments: ${extraPositionals.join(" ")}`,
+      );
+    }
+
+    if (isWatchCommand && extraPositionals.length > 1) {
+      fail(
+        `Command \`ralph watches\` accepts at most a watch action and watch id: ${[
+          rawSubject,
+          ...extraPositionals,
+        ].filter(Boolean).join(" ")}`,
       );
     }
 
@@ -1625,6 +1680,14 @@ export const parseCliArgs = (
 
     if (action !== "save" && rawRalphFlowJsonFile) {
       fail("--flow-json-file is only valid for `machdoch ralph save`.");
+    }
+
+    if (action !== "watches" && rawRalphWatchJson) {
+      fail("--watch-json is only valid for `machdoch ralph watches create`.");
+    }
+
+    if (action !== "watches" && rawRalphWatchJsonFile) {
+      fail("--watch-json-file is only valid for `machdoch ralph watches create`.");
     }
 
     if (action === "create" && rawRalphExistingFlowJson && rawRalphExistingFlowJsonFile) {
@@ -1690,7 +1753,49 @@ export const parseCliArgs = (
       fail("--max-transitions is only valid for `machdoch ralph run`.");
     }
 
+    if (action !== "log" && rawRalphTrace) {
+      fail("--trace is only valid for `machdoch ralph log`.");
+    }
+
+    if (rawInstructionScope && !RALPH_SCOPES.has(rawInstructionScope as RalphCliScope)) {
+      fail("Expected Ralph --scope to be followed by user or workspace.");
+    }
+
+    const watchActionText = isWatchCommand
+      ? normalizeOptionalString(rawSubject) ?? "list"
+      : undefined;
+
+    if (
+      watchActionText &&
+      !RALPH_WATCH_ACTIONS.has(watchActionText as RalphWatchCliAction)
+    ) {
+      fail("Expected `machdoch ralph watches` action to be one of list, create, delete, sync, or run.");
+    }
+
+    if (isWatchCommand && watchActionText === "create" && !rawRalphWatchJson && !rawRalphWatchJsonFile) {
+      fail("`machdoch ralph watches create` expects --watch-json or --watch-json-file.");
+    }
+
+    if (isWatchCommand && watchActionText !== "create" && (rawRalphWatchJson || rawRalphWatchJsonFile)) {
+      fail("--watch-json and --watch-json-file are only valid for `machdoch ralph watches create`.");
+    }
+
+    if (isWatchCommand && rawRalphWatchJson && rawRalphWatchJsonFile) {
+      fail("Use either --watch-json or --watch-json-file for `machdoch ralph watches create`, not both.");
+    }
+
+    if (
+      isWatchCommand &&
+      watchActionText === "delete" &&
+      !normalizeOptionalString(extraPositionals[0])
+    ) {
+      fail("Expected a watch id after `machdoch ralph watches delete`.");
+    }
+
     const ralphSubject = normalizeOptionalString(rawSubject);
+    const watchSubject = isWatchCommand
+      ? normalizeOptionalString(extraPositionals[0])
+      : undefined;
     const ralphMaxRounds = parseOptionalPositiveInteger(
       rawRalphMaxRounds,
       "--max-rounds",
@@ -1708,12 +1813,23 @@ export const parseCliArgs = (
       {
         ralph: {
           action,
-          ...(ralphSubject ? { subject: ralphSubject } : {}),
+          ...(isWatchCommand
+            ? watchSubject
+              ? { subject: watchSubject }
+              : {}
+            : ralphSubject
+              ? { subject: ralphSubject }
+              : {}),
+          ...(rawInstructionScope
+            ? { scope: rawInstructionScope as RalphCliScope }
+            : {}),
           ...(rawSchedulerName ? { name: rawSchedulerName } : {}),
           ...(rawSchedulerPrompt ? { prompt: rawSchedulerPrompt } : {}),
           ...(rawSchedulerPromptFile ? { promptFile: rawSchedulerPromptFile } : {}),
           ...(rawRalphFlowJson ? { flowJson: rawRalphFlowJson } : {}),
           ...(rawRalphFlowJsonFile ? { flowJsonFile: rawRalphFlowJsonFile } : {}),
+          ...(rawRalphWatchJson ? { watchJson: rawRalphWatchJson } : {}),
+          ...(rawRalphWatchJsonFile ? { watchJsonFile: rawRalphWatchJsonFile } : {}),
           ...(rawRalphExistingFlowJson
             ? { existingFlowJson: rawRalphExistingFlowJson }
             : {}),
@@ -1734,6 +1850,10 @@ export const parseCliArgs = (
           ...(ralphMaxRounds !== undefined ? { maxRounds: ralphMaxRounds } : {}),
           ...(ralphMaxTransitions !== undefined
             ? { maxTransitions: ralphMaxTransitions }
+            : {}),
+          ...(rawRalphTrace ? { trace: true } : {}),
+          ...(watchActionText
+            ? { watchAction: watchActionText as RalphWatchCliAction }
             : {}),
         },
       },

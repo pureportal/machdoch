@@ -45,7 +45,14 @@ class MockResizeObserver {
 
 const renderRalphFlowEditor = (
   initialPrompt = "Refactor {{scope:path=src}}",
-  props: Partial<Pick<RalphFlowEditorProps, "providerOptions">> = {},
+  props: Partial<
+    Pick<
+      RalphFlowEditorProps,
+      | "providerOptions"
+      | "generationPromptHistory"
+      | "onGenerationPromptHistoryChange"
+    >
+  > = {},
 ): ReturnType<typeof render> => {
   return render(
     <TooltipProvider>
@@ -351,6 +358,414 @@ describe("RalphFlowEditor", () => {
       utility: {
         type: "RUN_CHECK",
         command: "npm run typecheck:ui",
+      },
+    });
+  });
+
+  it("adds and saves note and group node configuration", async () => {
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    fireEvent.click(await screen.findByRole("button", { name: "New" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add NOTE block" }));
+
+    fireEvent.change(await screen.findByLabelText("Note text"), {
+      target: { value: "- [ ] Capture screenshot evidence" },
+    });
+    fireEvent.change(screen.getByLabelText("Note tone"), {
+      target: { value: "sky" },
+    });
+    fireEvent.change(screen.getByLabelText("Note tags"), {
+      target: { value: "manual QA, risk" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add GROUP block" }));
+    fireEvent.change(await screen.findByLabelText("Group description"), {
+      target: { value: "Verification phase and evidence collection." },
+    });
+    fireEvent.change(screen.getByLabelText("Group tone"), {
+      target: { value: "violet" },
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(saveRalphFlow).toHaveBeenCalled();
+    });
+
+    const savedFlow = vi.mocked(saveRalphFlow).mock.calls[0]?.[1].flow;
+    const noteBlock = savedFlow?.blocks.find((block) => block.type === "NOTE");
+    const groupBlock = savedFlow?.blocks.find((block) => block.type === "GROUP");
+
+    expect(noteBlock).toMatchObject({
+      type: "NOTE",
+      text: "- [ ] Capture screenshot evidence",
+      tone: "sky",
+      tags: ["manual QA", "risk"],
+      size: {
+        width: 280,
+        height: 180,
+      },
+    });
+    expect(groupBlock).toMatchObject({
+      type: "GROUP",
+      description: "Verification phase and evidence collection.",
+      tone: "violet",
+      size: {
+        width: 720,
+        height: 420,
+      },
+      moveChildren: true,
+      layoutMode: "freeform",
+    });
+  });
+
+  it("derives and saves group children from canvas geometry", async () => {
+    const groupedFlow: RalphFlow = {
+      schemaVersion: 1,
+      id: "grouped-flow",
+      name: "Grouped Flow",
+      blocks: [
+        {
+          id: "start",
+          type: "START",
+          title: "Start",
+          position: { x: 120, y: 120 },
+        },
+        {
+          id: "prompt",
+          type: "PROMPT",
+          title: "Prompt",
+          prompt: "Do work.",
+          position: { x: 380, y: 120 },
+        },
+        {
+          id: "phase",
+          type: "GROUP",
+          title: "Phase",
+          description: "",
+          childBlockIds: [],
+          position: { x: 80, y: 80 },
+          size: { width: 680, height: 280 },
+          tone: "sky",
+          moveChildren: true,
+          layoutMode: "freeform",
+        },
+      ],
+      edges: [
+        {
+          id: "start-to-prompt",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "prompt",
+        },
+      ],
+    };
+
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: groupedFlow.id,
+          name: groupedFlow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\grouped-flow.json",
+          blockCount: groupedFlow.blocks.length,
+          edgeCount: groupedFlow.edges.length,
+          variableCount: 0,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\grouped-flow.json",
+      flow: groupedFlow,
+    });
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    expect(await screen.findByText("2 child block(s)")).toBeTruthy();
+    fireEvent.click(await screen.findByText("Phase"));
+    fireEvent.change(await screen.findByLabelText("Group description"), {
+      target: { value: "Derived geometry group." },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(saveRalphFlow).toHaveBeenCalled();
+    });
+
+    const savedFlow = vi.mocked(saveRalphFlow).mock.calls[0]?.[1].flow;
+    const groupBlock = savedFlow?.blocks.find((block) => block.type === "GROUP");
+
+    expect(groupBlock).toMatchObject({
+      type: "GROUP",
+      childBlockIds: ["start", "prompt"],
+      description: "Derived geometry group.",
+    });
+  });
+
+  it("detaches saved group children when they are outside the group bounds", async () => {
+    const detachedFlow: RalphFlow = {
+      schemaVersion: 1,
+      id: "detached-group-flow",
+      name: "Detached Group Flow",
+      blocks: [
+        {
+          id: "start",
+          type: "START",
+          title: "Start",
+          position: { x: 120, y: 120 },
+        },
+        {
+          id: "prompt",
+          type: "PROMPT",
+          title: "Prompt",
+          prompt: "Do work.",
+          position: { x: 380, y: 120 },
+        },
+        {
+          id: "phase",
+          type: "GROUP",
+          title: "Phase",
+          description: "Moved away with Ctrl.",
+          childBlockIds: ["start", "prompt"],
+          position: { x: 900, y: 80 },
+          size: { width: 360, height: 240 },
+          tone: "sky",
+          moveChildren: true,
+          layoutMode: "freeform",
+        },
+      ],
+      edges: [
+        {
+          id: "start-to-prompt",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "prompt",
+        },
+      ],
+    };
+
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: detachedFlow.id,
+          name: detachedFlow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\detached-group-flow.json",
+          blockCount: detachedFlow.blocks.length,
+          edgeCount: detachedFlow.edges.length,
+          variableCount: 0,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\detached-group-flow.json",
+      flow: detachedFlow,
+    });
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    expect(await screen.findByText("0 child block(s)")).toBeTruthy();
+    fireEvent.click(await screen.findByText("Phase"));
+    fireEvent.change(await screen.findByLabelText("Group description"), {
+      target: { value: "Detached after Ctrl move." },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(saveRalphFlow).toHaveBeenCalled();
+    });
+
+    const savedFlow = vi.mocked(saveRalphFlow).mock.calls.at(-1)?.[1].flow;
+    const groupBlock = savedFlow?.blocks.find((block) => block.id === "phase");
+
+    expect(groupBlock).toMatchObject({
+      type: "GROUP",
+      childBlockIds: [],
+    });
+  });
+
+  it("cleans layout without moving notes, groups, or grouped children", async () => {
+    const groupedFlow: RalphFlow = {
+      schemaVersion: 1,
+      id: "grouped-clean-flow",
+      name: "Grouped Clean Flow",
+      blocks: [
+        {
+          id: "start",
+          type: "START",
+          title: "Start",
+          position: { x: 120, y: 120 },
+        },
+        {
+          id: "prompt",
+          type: "PROMPT",
+          title: "Prompt",
+          prompt: "Do work.",
+          position: { x: 380, y: 120 },
+        },
+        {
+          id: "phase",
+          type: "GROUP",
+          title: "Phase",
+          description: "Keep this frame anchored.",
+          childBlockIds: [],
+          position: { x: 80, y: 80 },
+          size: { width: 680, height: 280 },
+          tone: "sky",
+          moveChildren: true,
+          layoutMode: "freeform",
+        },
+        {
+          id: "note",
+          type: "NOTE",
+          title: "Evidence note",
+          text: "Manual checks stay next to the group.",
+          position: { x: 840, y: 90 },
+          size: { width: 280, height: 180 },
+          tone: "amber",
+          tags: ["qa"],
+        },
+        {
+          id: "review",
+          type: "VALIDATOR",
+          title: "Review",
+          prompt: "Review the output.",
+          position: { x: 1180, y: 120 },
+        },
+      ],
+      edges: [
+        {
+          id: "start-to-prompt",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "prompt",
+        },
+        {
+          id: "prompt-to-review",
+          from: "prompt",
+          fromOutput: "SUCCESS",
+          to: "review",
+        },
+      ],
+    };
+
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: groupedFlow.id,
+          name: groupedFlow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\grouped-clean-flow.json",
+          blockCount: groupedFlow.blocks.length,
+          edgeCount: groupedFlow.edges.length,
+          variableCount: 0,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\grouped-clean-flow.json",
+      flow: groupedFlow,
+    });
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    expect(await screen.findByText("2 child block(s)")).toBeTruthy();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Clean Ralph layout" }),
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(saveRalphFlow).toHaveBeenCalled();
+    });
+
+    const savedFlow = vi.mocked(saveRalphFlow).mock.calls.at(-1)?.[1].flow;
+    const startBlock = savedFlow?.blocks.find((block) => block.id === "start");
+    const promptBlock = savedFlow?.blocks.find((block) => block.id === "prompt");
+    const groupBlock = savedFlow?.blocks.find((block) => block.id === "phase");
+    const noteBlock = savedFlow?.blocks.find((block) => block.id === "note");
+    const reviewBlock = savedFlow?.blocks.find((block) => block.id === "review");
+
+    expect(startBlock?.position).toEqual({ x: 120, y: 120 });
+    expect(promptBlock?.position).toEqual({ x: 380, y: 120 });
+    expect(groupBlock).toMatchObject({
+      childBlockIds: ["start", "prompt"],
+      position: { x: 80, y: 80 },
+      size: { width: 680, height: 280 },
+    });
+    expect(noteBlock).toMatchObject({
+      position: { x: 840, y: 90 },
+      size: { width: 280, height: 180 },
+    });
+    expect(reviewBlock?.position?.x).toBeGreaterThan(1120);
+    expect(groupBlock?.childBlockIds).not.toContain("review");
+  });
+
+  it("edits and saves flow-level max transitions", async () => {
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    fireEvent.click(await screen.findByRole("button", { name: "New" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Show flow settings" }));
+    fireEvent.change(await screen.findByLabelText("Flow max transitions"), {
+      target: { value: "30" },
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(saveRalphFlow).toHaveBeenCalled();
+    });
+
+    const savedFlow = vi.mocked(saveRalphFlow).mock.calls[0]?.[1].flow;
+
+    expect(savedFlow?.settings).toEqual({
+      maxTransitions: 30,
+    });
+  });
+
+  it("adds and saves UI analysis utility configuration", async () => {
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    fireEvent.click(await screen.findByRole("button", { name: "New" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add UTILITY block" }));
+    fireEvent.change(await screen.findByLabelText("Utility type"), {
+      target: { value: "UI_ANALYZE" },
+    });
+    fireEvent.change(await screen.findByLabelText("UI analysis adapter"), {
+      target: { value: "tauri-mcp" },
+    });
+    fireEvent.change(await screen.findByLabelText("UI analysis MCP server"), {
+      target: { value: "tauri" },
+    });
+    fireEvent.change(await screen.findByLabelText("UI analysis MCP tool"), {
+      target: { value: "capture_screenshot" },
+    });
+    fireEvent.blur(await screen.findByLabelText("UI analysis MCP arguments JSON"), {
+      target: { value: '{ "window": "main" }' },
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(saveRalphFlow).toHaveBeenCalled();
+    });
+
+    const savedFlow = vi.mocked(saveRalphFlow).mock.calls[0]?.[1].flow;
+    const utilityBlock = savedFlow?.blocks.find(
+      (block) => block.type === "UTILITY",
+    );
+
+    expect(utilityBlock).toMatchObject({
+      type: "UTILITY",
+      title: "UI Analyze",
+      utility: {
+        type: "UI_ANALYZE",
+        adapter: "tauri-mcp",
+        mcpServerId: "tauri",
+        mcpToolName: "capture_screenshot",
+        mcpArguments: {
+          window: "main",
+        },
       },
     });
   });
@@ -735,6 +1150,134 @@ describe("RalphFlowEditor", () => {
     expect(vi.mocked(saveRalphFlow).mock.calls.at(-1)?.[1].flow.id).not.toBe(
       generatedFlow.id,
     );
+  });
+
+  it("copies blocked AI flow generation details to the clipboard", async () => {
+    const writeText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockResolvedValue(undefined);
+    const summary =
+      "The Ralph generator did not execute successfully (blocked): unexpected argument '--ask-for-approval'.";
+
+    Object.defineProperty(window.navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    vi.mocked(createRalphFlow).mockResolvedValue({
+      status: "blocked",
+      flowPath: "",
+      flow: null,
+      rounds: 0,
+      summary,
+      validation: {
+        valid: false,
+        errors: [],
+        warnings: [],
+        errorIssues: [],
+        warningIssues: [],
+        variables: [],
+      },
+    });
+
+    renderRalphFlowEditor("Create a generated flow");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open AI flow generator from canvas" }),
+    );
+    fireEvent.click(
+      screen
+        .getAllByRole("button", { name: "Generate" })
+        .find((button) => button.className.includes("emerald-600")) as HTMLElement,
+    );
+
+    expect(await screen.findByText("Blocked")).toBeTruthy();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Copy Ralph generation error",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(`Blocked\n\n${summary}`);
+    });
+    expect(
+      screen.getByRole("button", { name: "Copy Ralph generation error" }).textContent,
+    ).toContain("Copied");
+  });
+
+  it("navigates AI flow prompt history with arrow keys", async () => {
+    const onGenerationPromptHistoryChange = vi.fn();
+
+    vi.mocked(createRalphFlow).mockResolvedValue({
+      status: "blocked",
+      flowPath: "",
+      flow: null,
+      rounds: 0,
+      summary: "Generation blocked.",
+      validation: {
+        valid: false,
+        errors: [],
+        warnings: [],
+        errorIssues: [],
+        warningIssues: [],
+        variables: [],
+      },
+    });
+
+    renderRalphFlowEditor("Create a generated flow", {
+      onGenerationPromptHistoryChange,
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open AI flow generator from canvas" }),
+    );
+
+    const input = (await screen.findByLabelText(
+      "AI flow generation prompt",
+    )) as HTMLTextAreaElement;
+    const generateButton = (): HTMLButtonElement => {
+      const button = screen
+        .getAllByRole("button", { name: "Generate" })
+        .find((candidate) => candidate.className.includes("emerald-600"));
+
+      expect(button).toBeTruthy();
+      return button as HTMLButtonElement;
+    };
+
+    fireEvent.change(input, { target: { value: "Build release flow" } });
+    fireEvent.click(generateButton());
+
+    await waitFor(() => {
+      expect(createRalphFlow).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(generateButton().hasAttribute("disabled")).toBe(false);
+    });
+
+    fireEvent.change(input, { target: { value: "Review pull request flow" } });
+    fireEvent.click(generateButton());
+
+    await waitFor(() => {
+      expect(createRalphFlow).toHaveBeenCalledTimes(2);
+    });
+    expect(onGenerationPromptHistoryChange).toHaveBeenLastCalledWith([
+      "Build release flow",
+      "Review pull request flow",
+    ]);
+
+    fireEvent.change(input, { target: { value: "Scratch draft" } });
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    expect(input.value).toBe("Review pull request flow");
+
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    expect(input.value).toBe("Build release flow");
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(input.value).toBe("Review pull request flow");
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(input.value).toBe("Scratch draft");
   });
 
   it("saves dirty drafts from the standalone editor", async () => {

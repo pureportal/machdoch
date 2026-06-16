@@ -57,7 +57,8 @@ export const PROVIDER_LABELS: Record<RuntimeProvider, string> = {
   "copilot-cli": "Copilot CLI",
 };
 
-const MAX_MODELS_PER_PROVIDER = 5;
+const MAX_MODELS_PER_PROVIDER = 8;
+const MAX_CODEX_CLI_MODELS = 12;
 
 const OPENAI_RUNTIME_MODEL_PATTERN =
   /^gpt-\d+(?:\.\d+)?(?:-(?:mini|nano))?$/u;
@@ -231,6 +232,28 @@ const toCatalogModel = (model: RuntimeCatalogModel): CatalogModel => {
   };
 };
 
+const getModelLimitForProvider = (provider: RuntimeProvider): number => {
+  return provider === "codex-cli"
+    ? MAX_CODEX_CLI_MODELS
+    : MAX_MODELS_PER_PROVIDER;
+};
+
+const mergeCatalogModels = (
+  models: readonly CatalogModel[],
+  fallbackModels: readonly CatalogModel[],
+  limit: number,
+): CatalogModel[] => {
+  const byId = new Map<string, CatalogModel>();
+
+  for (const model of [...models, ...fallbackModels]) {
+    if (!byId.has(model.id)) {
+      byId.set(model.id, model);
+    }
+  }
+
+  return [...byId.values()].slice(0, limit);
+};
+
 const getStaticCatalogModelsForProvider = (
   provider: RuntimeProvider,
 ): CatalogModel[] => {
@@ -240,7 +263,7 @@ const getStaticCatalogModelsForProvider = (
       label: model.label,
       description: model.description,
     }))
-    .slice(0, MAX_MODELS_PER_PROVIDER);
+    .slice(0, getModelLimitForProvider(provider));
 };
 
 const getRuntimeCatalogModelsForProvider = (
@@ -292,7 +315,7 @@ const getRuntimeCatalogModelsForProvider = (
       return left.id.localeCompare(right.id);
     })
     .map(toCatalogModel)
-    .slice(0, MAX_MODELS_PER_PROVIDER);
+    .slice(0, getModelLimitForProvider(provider));
 };
 
 export const getProviderLabel = (provider: RuntimeProvider): string => {
@@ -306,6 +329,7 @@ export const getCatalogModelsForProvider = (
   const runtimeCatalog = snapshot?.providers.find(
     (entry) => entry.provider === provider,
   );
+  const staticModels = getStaticCatalogModelsForProvider(provider);
 
   if (runtimeCatalog?.available && runtimeCatalog.models.length > 0) {
     const liveModels = getRuntimeCatalogModelsForProvider(
@@ -314,11 +338,19 @@ export const getCatalogModelsForProvider = (
     );
 
     if (liveModels.length > 0) {
+      if (provider === "codex-cli") {
+        return mergeCatalogModels(
+          liveModels,
+          staticModels,
+          getModelLimitForProvider(provider),
+        );
+      }
+
       return liveModels;
     }
   }
 
-  return getStaticCatalogModelsForProvider(provider);
+  return staticModels;
 };
 
 export const getDefaultModelForProvider = (

@@ -4,6 +4,15 @@ import { loadRuntimeConfig } from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import { executeTask } from "../../core/execution.js";
 import {
+  createRalphRunLogger,
+  readRalphFlow,
+  runRalphFlow,
+  writeRalphRunRecord,
+  type RalphFlow,
+  type RalphFlowScope,
+  type RalphRunResult,
+} from "../../core/ralph.js";
+import {
   DurableSmartScheduler,
   getWorkspaceSchedulerStatePath,
   syncScheduledPromptJobs,
@@ -17,6 +26,7 @@ import {
   type ScheduledMissedRunPolicy,
   type ScheduledRunEnqueueResult,
   type ScheduledTaskExecutor,
+  type ScheduledTaskExecutionRequest,
   type ScheduledTriggerFiringMode,
   type ScheduledTriggerEvent,
   type ScheduledTriggerEventInput,
@@ -413,8 +423,354 @@ const createJobInput = async (
   };
 };
 
-const createSchedulerExecutor = (): ScheduledTaskExecutor => ({
+const readTemplatePath = (value: unknown, path: string): unknown => {
+  return path.split(".").reduce<unknown>((current, segment) => {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return undefined;
+    }
+
+    return (current as Record<string, unknown>)[segment];
+  }, value);
+};
+
+const renderScheduledTemplate = (
+  template: string,
+  request: ScheduledTaskExecutionRequest,
+): string => {
+  const record = {
+    job: request.job,
+    run: request.run,
+    event: request.event,
+    payload: request.event?.payload,
+    workspaceRoot: request.workspaceRoot,
+  };
+
+  return template.replace(/\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/gu, (_match, path: string) => {
+    const value = readTemplatePath(record, path);
+
+    return value === undefined || value === null ? "" : String(value);
+  });
+};
+
+const renderScheduledParams = (
+  params: Record<string, string>,
+  request: ScheduledTaskExecutionRequest,
+): Record<string, string> => {
+  return Object.fromEntries(
+    Object.entries(params).map(([name, value]) => [
+      name,
+      renderScheduledTemplate(value, request),
+    ]),
+  );
+};
+
+const renderRalphVariableTemplate = (
+  value: string | undefined,
+  variables: Record<string, string>,
+): string | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return value.replace(/\{\{\s*([A-Za-z0-9_-]+)\s*\}\}/gu, (_match, name: string) =>
+    variables[name] ?? "",
+  );
+};
+
+const isAllowedScheduledPath = (
+  candidatePath: string,
+  allowedRoots: string[],
+): boolean => {
+  return allowedRoots.some((root) => isPathInside(root, candidatePath));
+};
+
+const resolveScheduledFlowPath = (
+  workspaceRoot: string,
+  path: string | undefined,
+  variables: Record<string, string>,
+): string | undefined => {
+  const rendered = renderRalphVariableTemplate(path, variables)?.trim();
+
+  if (!rendered) {
+    return undefined;
+  }
+
+  return isAbsolute(rendered) ? resolve(rendered) : resolve(workspaceRoot, rendered);
+};
+
+const assertScheduledPathAllowed = (
+  label: string,
+  workspaceRoot: string,
+  path: string | undefined,
+  variables: Record<string, string>,
+  allowedRoots: string[],
+): void => {
+  const resolved = resolveScheduledFlowPath(workspaceRoot, path, variables);
+
+  if (!resolved) {
+    return;
+  }
+
+  if (!isAllowedScheduledPath(resolved, allowedRoots)) {
+    throw new Error(`${label} resolves outside the watch allowed roots: ${resolved}`);
+  }
+};
+
+const assertAgentBlockAllowed = (
+  blockId: string,
+  permissions: NonNullable<ScheduledTaskExecutionRequest["ralphFlow"]>["permissions"],
+): void => {
+  if (
+    permissions?.allowCommands &&
+    permissions.allowWrites &&
+    permissions.allowNetwork &&
+    permissions.allowMcpTools
+  ) {
+    return;
+  }
+
+  throw new Error(
+    `Scheduled Ralph block \`${blockId}\` uses agent execution. Automatic agent blocks require allowCommands, allowWrites, allowNetwork, and allowMcpTools.`,
+  );
+};
+
+const assertScheduledRalphPermissions = (
+  flow: RalphFlow,
+  request: ScheduledTaskExecutionRequest,
+  variableValues: Record<string, string>,
+): void => {
+  const permissions = request.ralphFlow?.permissions ?? {
+    allowedRoots: [request.workspaceRoot],
+    allowCommands: false,
+    allowWrites: false,
+    allowNetwork: false,
+    allowMcpTools: false,
+  };
+  const allowedRoots = permissions.allowedRoots.map((root) => resolve(root));
+  const executionWorkspaceRoot = resolve(request.workspaceRoot);
+
+  if (!isAllowedScheduledPath(executionWorkspaceRoot, allowedRoots)) {
+    throw new Error(
+      `Scheduled Ralph execution workspace resolves outside the watch allowed roots: ${executionWorkspaceRoot}`,
+    );
+  }
+
+  for (const block of flow.blocks) {
+    const blockWorkspace = block.settings?.workspace?.mode === "custom"
+      ? block.settings.workspace.path
+      : undefined;
+
+    assertScheduledPathAllowed(
+      `Block ${block.id} workspace`,
+      request.workspaceRoot,
+      blockWorkspace,
+      variableValues,
+      allowedRoots,
+    );
+
+    for (const attachment of block.settings?.attachments ?? []) {
+      if (attachment.source === "path") {
+        assertScheduledPathAllowed(
+          `Block ${block.id} attachment`,
+          request.workspaceRoot,
+          attachment.value,
+          variableValues,
+          allowedRoots,
+        );
+      }
+    }
+
+    if (block.type === "PROMPT" || block.type === "VALIDATOR" || block.type === "DECISION") {
+      assertAgentBlockAllowed(block.id, permissions);
+      continue;
+    }
+
+    if (
+      block.type === "MCP_TOOL" ||
+      block.type === "MCP_RESOURCE" ||
+      block.type === "MCP_PROMPT"
+    ) {
+      if (!permissions.allowMcpTools) {
+        throw new Error(`Scheduled Ralph block \`${block.id}\` requires MCP permission.`);
+      }
+      continue;
+    }
+
+    if (block.type !== "UTILITY") {
+      continue;
+    }
+
+    const utility = block.utility;
+
+    if (utility.type === "HTTP_FETCH" || utility.type === "POLL") {
+      if (!permissions.allowNetwork) {
+        throw new Error(`Scheduled Ralph utility \`${block.id}\` requires network permission.`);
+      }
+    }
+
+    if (
+      utility.type === "RUN_COMMAND" ||
+      utility.type === "RUN_CHECK" ||
+      utility.type === "GIT_STATUS"
+    ) {
+      if (!permissions.allowCommands) {
+        throw new Error(`Scheduled Ralph utility \`${block.id}\` requires command permission.`);
+      }
+      assertScheduledPathAllowed(
+        `Utility ${block.id} cwd`,
+        request.workspaceRoot,
+        utility.cwd,
+        variableValues,
+        allowedRoots,
+      );
+    }
+
+    if (utility.type === "READ_FILE") {
+      assertScheduledPathAllowed(
+        `Utility ${block.id} path`,
+        request.workspaceRoot,
+        utility.path,
+        variableValues,
+        allowedRoots,
+      );
+    }
+
+    if (utility.type === "WRITE_FILE") {
+      if (!permissions.allowWrites) {
+        throw new Error(`Scheduled Ralph utility \`${block.id}\` requires write permission.`);
+      }
+      assertScheduledPathAllowed(
+        `Utility ${block.id} path`,
+        request.workspaceRoot,
+        utility.path,
+        variableValues,
+        allowedRoots,
+      );
+    }
+
+    if (utility.type === "SEARCH_FILES") {
+      assertScheduledPathAllowed(
+        `Utility ${block.id} rootPath`,
+        request.workspaceRoot,
+        utility.rootPath,
+        variableValues,
+        allowedRoots,
+      );
+    }
+
+    if (utility.type === "UI_ANALYZE") {
+      if ((utility.targetUrl || utility.url || utility.server?.healthUrl) && !permissions.allowNetwork) {
+        throw new Error(`Scheduled Ralph utility \`${block.id}\` requires network permission.`);
+      }
+      if (utility.server?.command && !permissions.allowCommands) {
+        throw new Error(`Scheduled Ralph utility \`${block.id}\` requires command permission.`);
+      }
+      assertScheduledPathAllowed(
+        `Utility ${block.id} screenshotPath`,
+        request.workspaceRoot,
+        utility.screenshotPath,
+        variableValues,
+        allowedRoots,
+      );
+    }
+  }
+};
+
+const summarizeRalphAsTaskResult = (
+  task: string,
+  result: RalphRunResult,
+): TaskExecutionResult => {
+  const status: TaskExecutionResult["status"] =
+    result.status === "completed"
+      ? "executed"
+      : result.status === "stopped"
+        ? "cancelled"
+        : "blocked";
+
+  return {
+    task,
+    mode: "machdoch",
+    status,
+    summary: result.summary,
+    executedTools: [],
+    ...(status !== "executed" ? { reason: result.summary } : {}),
+    outputSections: [
+      {
+        title: "Ralph Run",
+        lines: [
+          `Flow: ${result.flow}`,
+          `Status: ${result.status}`,
+          ...(result.runId ? [`Run: ${result.runId}`] : []),
+        ],
+      },
+    ],
+  };
+};
+
+const executeScheduledRalphFlow = async (
+  request: ScheduledTaskExecutionRequest,
+  options: Parameters<ScheduledTaskExecutor["execute"]>[1],
+): Promise<TaskExecutionResult> => {
+  const target = request.ralphFlow;
+
+  if (!target) {
+    throw new Error("Scheduled Ralph target was missing from the execution request.");
+  }
+
+  const flowScope = target.scope as RalphFlowScope;
+  const runLogScope = (target.runLogScope ?? "workspace") as RalphFlowScope;
+  const config = await loadRuntimeConfig(
+    request.workspaceRoot,
+    "machdoch",
+    request.profile,
+    request.model,
+    request.provider,
+    undefined,
+    request.reasoning,
+  );
+  const customizations = await discoverCustomizations(
+    request.workspaceRoot,
+    createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
+  );
+  const flow = await readRalphFlow(request.workspaceRoot, target.id, {
+    scope: flowScope,
+  });
+  const variableValues = renderScheduledParams(target.params, request);
+  assertScheduledRalphPermissions(flow, request, variableValues);
+  const runId = `scheduled-${request.run.id}-${flow.id}`;
+  const logger = await createRalphRunLogger(request.workspaceRoot, flow, {
+    runId,
+    variableValues,
+    scope: runLogScope,
+  });
+  const result = await runRalphFlow(flow, config, customizations, {
+    variableValues,
+    runId: logger.runId,
+    logger,
+    ...(target.maxTransitions !== undefined
+      ? { maxTransitions: target.maxTransitions }
+      : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
+  await writeRalphRunRecord(request.workspaceRoot, flow, result, {
+    variableValues,
+    runId: logger.runId,
+    ...(logger.paths ? { paths: logger.paths } : {}),
+    scope: runLogScope,
+  });
+
+  return summarizeRalphAsTaskResult(
+    `Run Ralph flow ${flow.name} (${flowScope}:${flow.id}).`,
+    result,
+  );
+};
+
+export const createSchedulerExecutor = (): ScheduledTaskExecutor => ({
   execute: async (request, options): Promise<TaskExecutionResult> => {
+    if (request.targetType === "ralph-flow") {
+      return executeScheduledRalphFlow(request, options);
+    }
+
     const config = await loadRuntimeConfig(
       request.workspaceRoot,
       request.mode,

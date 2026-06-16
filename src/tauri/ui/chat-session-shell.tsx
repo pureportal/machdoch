@@ -29,6 +29,7 @@ import {
   type MainAppId,
 } from "./lib/shell-store";
 import { cn } from "./lib/utils";
+import { McpMarketplace } from "./marketplace/mcp-marketplace";
 import { RalphApp } from "./ralph/ralph-app";
 import { useRalphActivity } from "./ralph/use-ralph-activity";
 import {
@@ -351,6 +352,24 @@ export const ChatSession = (): JSX.Element => {
                 <RalphApp
                   isActive={activeApp === "ralph"}
                   providerStatuses={controller.titlebar.providerStatuses}
+                />
+              ) : null}
+            </div>
+
+            <div
+              hidden={activeApp !== "marketplace"}
+              className={cn(
+                "min-h-0 min-w-0 flex-1 overflow-hidden",
+                activeApp === "marketplace" ? "flex" : "hidden",
+              )}
+            >
+              {activeApp === "marketplace" ? (
+                <McpMarketplace
+                  workspaceRoot={controller.composer.activeSession.workspace}
+                  onOpenSettings={() => {
+                    controller.settingsDialog.onSettingsSectionChange("mcp");
+                    controller.setCatalogOpen(true);
+                  }}
                 />
               ) : null}
             </div>

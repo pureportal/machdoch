@@ -20,14 +20,20 @@ const ISOLATED_ENV_KEYS = [
   "MACHDOCH_CODEX_CLI_PATH",
   "MACHDOCH_CLAUDE_CLI_PATH",
   "MACHDOCH_COPILOT_CLI_PATH",
+  "APPDATA",
+  "LOCALAPPDATA",
   "PATH",
   "PATHEXT",
+  "USERPROFILE",
 ] as const;
 
 const createWorkspace = async (): Promise<string> => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-config-"));
   workspacesToClean.push(workspaceRoot);
   process.env.MACHDOCH_USER_CONFIG_DIR = join(workspaceRoot, ".user-config");
+  process.env.APPDATA = join(workspaceRoot, "appdata");
+  process.env.LOCALAPPDATA = join(workspaceRoot, "localappdata");
+  process.env.USERPROFILE = join(workspaceRoot, "home");
   return workspaceRoot;
 };
 

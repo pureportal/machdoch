@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { extname } from "node:path";
 import { loadWorkspaceEnv } from "../env.js";
 import {
@@ -141,6 +141,38 @@ const cleanCliText = (value: string): string => {
   return value.replace(ANSI_ESCAPE_PATTERN, "").trim();
 };
 
+const createExternalAgentFailureReason = (
+  providerLabel: string,
+  stdout: string,
+  stderr: string,
+  exitCode: number | null,
+): string => {
+  const combined = [stderr, stdout].filter(Boolean).join("\n");
+  const quotaLine = combined
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => /quota exceeded|billing details|insufficient_quota/iu.test(line));
+
+  if (quotaLine) {
+    return `${providerLabel} quota exceeded: ${quotaLine.replace(/^ERROR:\s*/iu, "")}`;
+  }
+
+  const errorLines = combined
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => /^ERROR:/iu.test(line));
+
+  if (errorLines.length > 0) {
+    return errorLines.slice(-3).join("\n");
+  }
+
+  return (
+    stderr ||
+    stdout ||
+    `${providerLabel} exited with code ${exitCode ?? "unknown"}.`
+  );
+};
+
 const createExternalAgentLoopState = (
   sections: TaskExecutionSection[],
 ): AgentLoopState => ({
@@ -165,17 +197,12 @@ const createExternalAgentPrompt = (
   providerLabel: string,
   attachmentPaths: readonly string[],
 ): string => {
-  const modeInstruction =
-    config.mode === "ask"
-      ? "Run in read-only mode: inspect, reason, and answer without modifying files."
-      : "Run in workspace-write mode: make the requested workspace changes when needed, then verify them.";
-
   return [
     `You are running as a delegated ${providerLabel} agent for Machdoch.`,
     `Workspace: ${config.workspaceRoot}`,
     `Machdoch mode: ${config.mode}`,
     `Reasoning mode: ${config.reasoning}`,
-    modeInstruction,
+    "Run with full local access: make requested changes, run commands, and use available tools without asking for permission.",
     "Run autonomously. Do not ask the user for permission or clarification; stop only when the task is complete or a concrete blocker prevents progress.",
     "Follow all repository instructions discovered in the workspace. Do not start dev servers unless the repository instructions explicitly allow it.",
     attachmentPaths.length > 0
@@ -209,17 +236,167 @@ const shouldUseShellForExecutable = (executable: string): boolean => {
   return extension === ".cmd" || extension === ".bat";
 };
 
-const createChildEnv = (
-  env: Record<string, string>,
-): NodeJS.ProcessEnv => {
+const terminateExternalAgentProcessTree = (child: ChildProcess): void => {
+  if (process.platform === "win32" && typeof child.pid === "number") {
+    const result = spawnSync(
+      "taskkill",
+      ["/PID", String(child.pid), "/T", "/F"],
+      {
+        stdio: "ignore",
+        windowsHide: true,
+      },
+    );
+
+    if (!result.error && result.status === 0) {
+      return;
+    }
+  }
+
+  child.kill();
+};
+
+const CORE_CHILD_ENV_KEYS = new Set([
+  "ALL_PROXY",
+  "APPDATA",
+  "COLORTERM",
+  "COMSPEC",
+  "HOME",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "HTTPS_PROXY",
+  "HTTP_PROXY",
+  "LANG",
+  "LOCALAPPDATA",
+  "NODE_EXTRA_CA_CERTS",
+  "NO_PROXY",
+  "NUMBER_OF_PROCESSORS",
+  "OS",
+  "PATH",
+  "PATHEXT",
+  "PROGRAMDATA",
+  "PROGRAMFILES",
+  "PROGRAMFILES(X86)",
+  "PROGRAMW6432",
+  "SSL_CERT_DIR",
+  "SSL_CERT_FILE",
+  "SSH_AUTH_SOCK",
+  "SYSTEMROOT",
+  "TEMP",
+  "TERM",
+  "TMP",
+  "USERDNSDOMAIN",
+  "USERDOMAIN",
+  "USERNAME",
+  "USERPROFILE",
+  "WINDIR",
+]);
+
+const PROVIDER_CHILD_ENV_KEYS = {
+  "codex-cli": [
+    "CODEX_ACCESS_TOKEN",
+    "CODEX_API_KEY",
+    "CODEX_CA_CERTIFICATE",
+    "CODEX_HOME",
+    "CODEX_SQLITE_HOME",
+    "RUST_LOG",
+  ],
+  "claude-cli": [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_WORKSPACE_ID",
+    "API_FORCE_IDLE_TIMEOUT",
+    "API_TIMEOUT_MS",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_BEARER_TOKEN_BEDROCK",
+    "AWS_DEFAULT_REGION",
+    "AWS_PROFILE",
+    "AWS_REGION",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "BASH_DEFAULT_TIMEOUT_MS",
+    "BASH_MAX_OUTPUT_LENGTH",
+    "BASH_MAX_TIMEOUT_MS",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CONFIG_DIR",
+    "DISABLE_TELEMETRY",
+    "DO_NOT_TRACK",
+    "ENABLE_TOOL_SEARCH",
+    "GCLOUD_PROJECT",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "GOOGLE_CLOUD_PROJECT",
+    "MAX_THINKING_TOKENS",
+  ],
+  "copilot-cli": [
+    "COPILOT_CACHE_HOME",
+    "COPILOT_GITHUB_TOKEN",
+    "COPILOT_HOME",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+  ],
+} as const satisfies Record<AgentCliProvider, readonly string[]>;
+
+const PROVIDER_CHILD_ENV_PREFIXES = {
+  "codex-cli": ["CODEX_"],
+  "claude-cli": ["ANTHROPIC_", "CLAUDE_CODE_"],
+  "copilot-cli": ["COPILOT_"],
+} as const satisfies Record<AgentCliProvider, readonly string[]>;
+
+const PROVIDER_CHILD_ENV_DENY_KEYS = {
+  "codex-cli": ["OPENAI_API_KEY"],
+  "claude-cli": ["ANTHROPIC_MODEL", "CLAUDE_CODE_EFFORT_LEVEL"],
+  "copilot-cli": ["COPILOT_ALLOW_ALL", "COPILOT_MODEL"],
+} as const satisfies Record<AgentCliProvider, readonly string[]>;
+
+const isCoreChildEnvKey = (key: string): boolean => {
+  const normalizedKey = key.toUpperCase();
+
+  return (
+    CORE_CHILD_ENV_KEYS.has(normalizedKey) ||
+    normalizedKey.startsWith("LC_") ||
+    normalizedKey.startsWith("PROCESSOR_") ||
+    normalizedKey.endsWith("_PROXY")
+  );
+};
+
+const isProviderChildEnvKey = (
+  key: string,
+  provider: AgentCliProvider,
+): boolean => {
+  const normalizedKey = key.toUpperCase();
+
+  if (
+    (PROVIDER_CHILD_ENV_DENY_KEYS[provider] as readonly string[]).includes(
+      normalizedKey,
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    (PROVIDER_CHILD_ENV_KEYS[provider] as readonly string[]).includes(
+      normalizedKey,
+    )
+  ) {
+    return true;
+  }
+
+  return PROVIDER_CHILD_ENV_PREFIXES[provider].some((prefix) =>
+    normalizedKey.startsWith(prefix),
+  );
+};
+
+const createChildEnv = (provider: AgentCliProvider): NodeJS.ProcessEnv => {
   const childEnv: NodeJS.ProcessEnv = {
-    ...process.env,
-    ...env,
     NO_COLOR: "1",
   };
 
-  if (!childEnv.CODEX_API_KEY && env.OPENAI_API_KEY) {
-    childEnv.CODEX_API_KEY = env.OPENAI_API_KEY;
+  for (const [key, value] of Object.entries(process.env)) {
+    if (
+      value !== undefined &&
+      (isCoreChildEnvKey(key) || isProviderChildEnvKey(key, provider))
+    ) {
+      childEnv[key] = value;
+    }
   }
 
   return childEnv;
@@ -262,7 +439,7 @@ const runExternalAgentCommand = async (
   args: string[],
   input: string | undefined,
   config: RuntimeConfig,
-  env: Record<string, string>,
+  provider: AgentCliProvider,
   signal: AbortSignal | undefined,
   onActionOutput: TaskActionOutputHandler | undefined,
 ): Promise<SpawnedAgentResult> => {
@@ -273,7 +450,7 @@ const runExternalAgentCommand = async (
   return await new Promise<SpawnedAgentResult>((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd: config.workspaceRoot,
-      env: createChildEnv(env),
+      env: createChildEnv(provider),
       shell: shouldUseShellForExecutable(executable),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
@@ -315,7 +492,7 @@ const runExternalAgentCommand = async (
     };
 
     function handleAbort(): void {
-      child.kill();
+      terminateExternalAgentProcessTree(child);
       rejectOnce(signal ? createAbortError(signal) : new Error("Execution cancelled."));
     }
 
@@ -374,25 +551,24 @@ const createCodexArgs = (
   config: RuntimeConfig,
   imageInputs: ModelDrivenExecutionParams["imageInputs"],
 ): ExternalAgentCommand => {
-  const sandbox = config.mode === "ask" ? "read-only" : "workspace-write";
   const reasoningEffort = mapReasoningToCodexCliEffort(
     config.model,
     config.reasoning,
   );
   const args = [
     "exec",
+    "--dangerously-bypass-approvals-and-sandbox",
+    "--skip-git-repo-check",
+    "--ignore-rules",
+    "--dangerously-bypass-hook-trust",
     "--cd",
     config.workspaceRoot,
     "--model",
     config.model,
-    "--sandbox",
-    sandbox,
-    "--ask-for-approval",
-    "never",
   ];
 
   if (reasoningEffort) {
-    args.push("--config", `model_reasoning_effort=${reasoningEffort}`);
+    args.push("--config", `model_reasoning_effort="${reasoningEffort}"`);
   }
 
   for (const imageInput of imageInputs ?? []) {
@@ -403,12 +579,21 @@ const createCodexArgs = (
 
   return {
     args,
-    runDetail: `Running codex exec with ${sandbox} sandbox.`,
-    startMessage: `Starting Codex CLI with ${sandbox} sandbox.`,
+    runDetail:
+      "Running codex exec with approvals, sandbox, git-repo guard, execpolicy rules, and hook trust bypassed.",
+    startMessage: "Starting Codex CLI with full local access.",
     successDetail: "codex exec exited successfully.",
-    commandLines: [`sandbox: ${sandbox}`],
+    commandLines: [
+      "access: full local access",
+      "git repo check: skipped",
+      "execpolicy rules: ignored",
+      "hook trust: bypassed",
+    ],
     metadata: {
-      sandbox,
+      access: "dangerously-bypass-approvals-and-sandbox",
+      gitRepoCheck: "skipped",
+      execpolicyRules: "ignored",
+      hookTrust: "bypassed",
       reasoning: config.reasoning,
     },
   };
@@ -427,8 +612,6 @@ const createClaudeCommand = ({
   config,
   prompt,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
-  const permissionMode =
-    config.mode === "ask" ? "plan" : "bypassPermissions";
   const effort = mapReasoningToClaudeCliEffort(config.model, config.reasoning);
   const args = [
     "-p",
@@ -437,8 +620,7 @@ const createClaudeCommand = ({
     "text",
     "--model",
     config.model,
-    "--permission-mode",
-    permissionMode,
+    "--dangerously-skip-permissions",
     "--no-session-persistence",
   ];
   const maxTurns = getExecutorTurnLimit(config);
@@ -454,16 +636,16 @@ const createClaudeCommand = ({
   return {
     args,
     input: prompt,
-    runDetail: `Running claude -p with ${permissionMode} permission mode.`,
-    startMessage: `Starting Claude CLI with ${permissionMode} permission mode.`,
+    runDetail: "Running claude -p with permissions skipped.",
+    startMessage: "Starting Claude CLI with full local access.",
     successDetail: "claude -p exited successfully.",
     commandLines: [
-      `permission mode: ${permissionMode}`,
+      "access: dangerously skip permissions",
       ...(effort ? [`effort: ${effort}`] : []),
       ...(maxTurns !== undefined ? [`max turns: ${maxTurns}`] : []),
     ],
     metadata: {
-      permissionMode,
+      access: "dangerously-skip-permissions",
       reasoning: config.reasoning,
       ...(effort ? { effort } : {}),
       ...(maxTurns !== undefined ? { maxTurns } : {}),
@@ -471,55 +653,57 @@ const createClaudeCommand = ({
   };
 };
 
-const isCopilotAutoModel = (model: string): boolean =>
-  model.trim().toLowerCase() === "auto";
-
 const createCopilotCommand = ({
   config,
   prompt,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
-  const writeMode = config.mode !== "ask";
   const effort = mapReasoningToCopilotCliEffort(
     config.model,
     config.reasoning,
   );
-  const args = ["-s", "-p", prompt, "--no-ask-user"];
+  const maxTurns = getExecutorTurnLimit(config);
+  const args = [
+    "-s",
+    "--autopilot",
+    "--no-ask-user",
+    "--secret-env-vars=GH_TOKEN",
+  ];
 
-  if (!isCopilotAutoModel(config.model)) {
-    args.push(`--model=${config.model}`);
-  }
+  args.push(`--model=${config.model}`);
 
   if (effort) {
     args.push(`--effort=${effort}`);
   }
 
-  if (writeMode) {
-    args.push("--allow-all");
-  } else {
-    args.push(`--add-dir=${config.workspaceRoot}`);
-    args.push("--allow-tool=read,url");
-    args.push("--deny-tool=write,shell,memory");
+  if (maxTurns !== undefined) {
+    args.push(`--max-autopilot-continues=${maxTurns}`);
   }
+
+  args.push("--allow-all");
 
   return {
     args,
-    runDetail: writeMode
-      ? "Running copilot -p with all tools, paths, and URLs allowed."
-      : "Running copilot -p in read-oriented mode.",
-    startMessage: writeMode
-      ? "Starting Copilot CLI with full non-interactive permissions."
-      : "Starting Copilot CLI in read-oriented mode.",
-    successDetail: "copilot -p exited successfully.",
+    input: prompt,
+    runDetail:
+      "Running copilot with a piped prompt in autopilot mode with all tools, paths, and URLs allowed.",
+    startMessage: "Starting Copilot CLI with full non-interactive permissions.",
+    successDetail: "copilot exited successfully.",
     commandLines: [
-      `permission mode: ${writeMode ? "allow-all" : "read-only"}`,
-      `model argument: ${isCopilotAutoModel(config.model) ? "default" : config.model}`,
+      "access: allow-all",
+      "autopilot: enabled",
+      "secret env redaction: GH_TOKEN",
+      `model argument: ${config.model}`,
       ...(effort ? [`effort: ${effort}`] : []),
+      ...(maxTurns !== undefined ? [`max autopilot continues: ${maxTurns}`] : []),
     ],
     metadata: {
-      permissionMode: writeMode ? "allow-all" : "read-only",
+      access: "allow-all",
+      autopilot: true,
+      secretEnvRedaction: "GH_TOKEN",
       reasoning: config.reasoning,
-      modelArgument: isCopilotAutoModel(config.model) ? "default" : config.model,
+      modelArgument: config.model,
       ...(effort ? { effort } : {}),
+      ...(maxTurns !== undefined ? { maxTurns } : {}),
     },
   };
 };
@@ -621,7 +805,7 @@ const executeExternalAgentCliTask = async (
     command.args,
     command.input,
     params.config,
-    env,
+    provider,
     params.signal,
     params.onActionOutput,
   );
@@ -642,10 +826,12 @@ const executeExternalAgentCliTask = async (
   };
 
   if (result.exitCode !== 0) {
-    const reason =
-      stderr ||
-      stdout ||
-      `${providerLabel} exited with code ${result.exitCode ?? "unknown"}.`;
+    const reason = createExternalAgentFailureReason(
+      providerLabel,
+      stdout,
+      stderr,
+      result.exitCode,
+    );
 
     await emitAgentProgress(
       params.task,

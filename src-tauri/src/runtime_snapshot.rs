@@ -1391,6 +1391,18 @@ fn is_existing_file(path: &Path) -> bool {
     path.is_file()
 }
 
+fn is_windows_packaged_app_path(path: &Path) -> bool {
+    cfg!(target_os = "windows")
+        && path
+            .to_string_lossy()
+            .to_ascii_lowercase()
+            .contains("\\program files\\windowsapps\\")
+}
+
+fn is_resolvable_command_file(path: &Path) -> bool {
+    is_existing_file(path) && !is_windows_packaged_app_path(path)
+}
+
 fn executable_extensions(env: &HashMap<String, String>) -> Vec<String> {
     if cfg!(target_os = "windows") {
         env.get("PATHEXT")
@@ -1448,7 +1460,7 @@ fn resolve_command_on_path(command: &str, env: &HashMap<String, String>) -> Opti
         for file_name in &command_file_names {
             let candidate = directory.join(file_name);
 
-            if is_existing_file(&candidate) {
+            if is_resolvable_command_file(&candidate) {
                 return Some(candidate);
             }
         }
@@ -1711,11 +1723,82 @@ mod agent_cli_resolver_tests {
     }
 
     #[test]
+    fn codex_cli_resolution_skips_packaged_app_path_aliases() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+
+        let home_directory = temp_test_directory("codex-windows-packaged-app");
+        let local_app_data = home_directory.join("AppData").join("Local");
+        let packaged_directory = home_directory
+            .join("Program Files")
+            .join("WindowsApps")
+            .join("OpenAI.Codex_1.0.0.0_x64__test")
+            .join("app")
+            .join("resources");
+        let packaged_binary_path = packaged_directory.join("codex.exe");
+        let app_binary_path = local_app_data
+            .join("OpenAI")
+            .join("Codex")
+            .join("bin")
+            .join("current")
+            .join("codex.exe");
+
+        create_file(&packaged_binary_path);
+        create_file(&app_binary_path);
+
+        let mut env = HashMap::new();
+        env.insert("PATH".to_string(), packaged_directory.display().to_string());
+        env.insert("PATHEXT".to_string(), ".EXE".to_string());
+        env.insert(
+            "USERPROFILE".to_string(),
+            home_directory.display().to_string(),
+        );
+        env.insert(
+            "LOCALAPPDATA".to_string(),
+            local_app_data.display().to_string(),
+        );
+
+        assert_eq!(
+            resolve_agent_cli_binary("codex-cli", &env),
+            Some(app_binary_path)
+        );
+
+        let _ = fs::remove_dir_all(home_directory);
+    }
+
+    #[test]
+    fn codex_cli_model_catalog_parser_extracts_slugs_and_cross_provider_models() {
+        let raw = r#"
+        {
+            "models": [
+                { "slug": "gpt-5.5", "display_name": "GPT-5.5" },
+                { "slug": "claude-opus-4-8", "display_name": "Claude Opus 4.8" },
+                { "slug": "gemini-3.1-pro-preview", "display_name": "Gemini 3.1 Pro" },
+                { "slug": "codex-auto-review", "display_name": "Codex Auto Review" },
+                { "slug": "gemini-embedding-001", "display_name": "Gemini Embedding" }
+            ]
+        }
+        "#;
+        let model_ids = parse_codex_cli_model_catalog(raw)
+            .expect("Codex CLI catalog should include supported model IDs")
+            .into_iter()
+            .map(|model| model.id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            model_ids,
+            vec!["claude-opus-4-8", "gemini-3.1-pro-preview", "gpt-5.5"]
+        );
+    }
+
+    #[test]
     fn copilot_cli_help_parser_extracts_models_without_telemetry_keys() {
         let help_output = r#"
             --model=MODEL Set the AI model you want to use. Pass auto to let Copilot pick.
             Examples: copilot -p "Explain" -s --model claude-haiku-4.5
             copilot -p "Fix" --model gpt-5.3-codex --allow-tool write
+            copilot -p "Check" --model gemini-3.1-pro-preview --allow-all
             COPILOT_MODEL can be set to gpt-5.2 or claude-sonnet-4.5.
             Telemetry fields include github.copilot.token_limit and github.copilot.aiu.
         "#;
@@ -1731,6 +1814,7 @@ mod agent_cli_resolver_tests {
                 "auto",
                 "claude-haiku-4.5",
                 "claude-sonnet-4.5",
+                "gemini-3.1-pro-preview",
                 "gpt-5.2",
                 "gpt-5.3-codex"
             ]
@@ -2335,26 +2419,43 @@ fn is_codex_cli_runtime_model(model_id: &str) -> bool {
         return false;
     }
 
-    let Some(suffix) = normalized.strip_prefix("gpt-") else {
-        return false;
-    };
-    let mut parts = suffix.split('-');
-    let Some(version) = parts.next() else {
-        return false;
-    };
+    if let Some(suffix) = normalized.strip_prefix("gpt-") {
+        let mut parts = suffix.split('-');
+        let Some(version) = parts.next() else {
+            return false;
+        };
 
-    if !is_numeric_model_version(version) {
-        return false;
+        if !is_numeric_model_version(version) {
+            return false;
+        }
+
+        let suffix_parts = parts.collect::<Vec<_>>();
+
+        return match suffix_parts.as_slice() {
+            [] => true,
+            ["mini"] | ["nano"] => true,
+            ["codex", ..] => true,
+            _ => false,
+        };
     }
 
-    let suffix_parts = parts.collect::<Vec<_>>();
-
-    match suffix_parts.as_slice() {
-        [] => true,
-        ["mini"] | ["nano"] => true,
-        ["codex", ..] => true,
-        _ => false,
+    if normalized.starts_with("claude-") {
+        return true;
     }
+
+    normalized.starts_with("gemini-")
+        && ![
+            "aqa",
+            "audio",
+            "embedding",
+            "imagen",
+            "image",
+            "live",
+            "tts",
+            "veo",
+        ]
+        .iter()
+        .any(|part| normalized.contains(part))
 }
 
 fn create_codex_cli_runtime_model(
@@ -2364,8 +2465,13 @@ fn create_codex_cli_runtime_model(
     let normalized = model_id.to_ascii_lowercase();
     let is_fast_model = normalized.contains("mini")
         || normalized.contains("nano")
-        || normalized.contains("codex-spark");
+        || normalized.contains("codex-spark")
+        || normalized.contains("haiku")
+        || normalized.contains("flash");
     let is_text_only_preview = normalized.contains("codex-spark");
+    let is_cross_provider_model =
+        normalized.starts_with("claude-") || normalized.starts_with("gemini-");
+    let computer_use = normalized.starts_with("gpt-5.5") || normalized.starts_with("gpt-5.4");
     let mut recommended_for = vec!["coding".to_string()];
 
     if !is_text_only_preview {
@@ -2380,7 +2486,7 @@ fn create_codex_cli_runtime_model(
         recommended_for.push("cheap".to_string());
     }
 
-    if normalized.starts_with("gpt-5.5") || normalized.starts_with("gpt-5.4") {
+    if computer_use {
         recommended_for.push("computer-use".to_string());
     }
 
@@ -2436,11 +2542,16 @@ fn create_codex_cli_runtime_model(
                 ],
             ),
             voice: Some(false),
-            computer_use: Some(!is_text_only_preview),
+            computer_use: Some(computer_use),
         },
         warnings: if is_text_only_preview {
             vec![
                 "Research preview model; verify local Codex CLI availability before production use."
+                    .to_string(),
+            ]
+        } else if is_cross_provider_model {
+            vec![
+                "Non-OpenAI Codex CLI models require matching Codex model_provider configuration and credentials."
                     .to_string(),
             ]
         } else {
@@ -2484,9 +2595,10 @@ fn collect_codex_cli_catalog_models(
             }
         }
         serde_json::Value::Object(object) => {
-            if let Some(model_id) =
-                json_string_from_keys(value, &["id", "model", "modelId", "model_id", "name"])
-            {
+            if let Some(model_id) = json_string_from_keys(
+                value,
+                &["id", "slug", "model", "modelId", "model_id", "name"],
+            ) {
                 add_codex_cli_catalog_model(by_id, &model_id, Some(value));
             }
 
@@ -2557,7 +2669,7 @@ fn parse_codex_cli_model_catalog(raw: &str) -> Result<Vec<ProviderRuntimeModel>,
     models.sort_by(|left, right| left.id.cmp(&right.id));
 
     if models.is_empty() {
-        return Err("Codex CLI did not return any supported GPT model IDs.".to_string());
+        return Err("Codex CLI did not return any supported model IDs.".to_string());
     }
 
     Ok(models)
@@ -2621,7 +2733,9 @@ fn is_copilot_cli_runtime_model(model_id: &str) -> bool {
         return true;
     }
 
-    normalized.starts_with("gpt-") || normalized.starts_with("claude-")
+    normalized.starts_with("gpt-")
+        || normalized.starts_with("claude-")
+        || normalized.starts_with("gemini-")
 }
 
 fn create_copilot_cli_runtime_model(model_id: &str) -> ProviderRuntimeModel {

@@ -7,6 +7,7 @@ import {
   hideAssistantPopup,
   isAssistantPopupVisible,
   resolveAssistantSurfaceLayout,
+  setWindowSize,
   setWindowPosition,
   showQuickVoiceWindow,
   syncAssistantPopupPosition,
@@ -27,6 +28,7 @@ export const AssistantBubbleShell = () => {
   const temporarilyHiddenUntilRef = useRef<number>(0);
   const suppressPrimaryActionUntilRef = useRef<number>(0);
   const lastVisibilityRef = useRef<boolean | null>(null);
+  const lastBubbleSizeRef = useRef<string | null>(null);
   const lastBubblePositionRef = useRef<string | null>(null);
   const lastPopupPositionRef = useRef<{ x: number; y: number } | null>(null);
   const syncInFlightRef = useRef(false);
@@ -108,9 +110,15 @@ export const AssistantBubbleShell = () => {
           desktopSettings.assistantBubbleHideWhenFullscreen &&
           (await detectFullscreenWindowOnMonitor(layout.monitorBounds));
         const shouldShow = !shouldHideTemporarily && !shouldHideForFullscreen;
+        const nextSizeKey = `${layout.bubbleSize.width}:${layout.bubbleSize.height}`;
         const nextPositionKey = `${layout.bubblePosition.x}:${layout.bubblePosition.y}`;
 
         lastPopupPositionRef.current = layout.popupPosition;
+
+        if (nextSizeKey !== lastBubbleSizeRef.current) {
+          lastBubbleSizeRef.current = nextSizeKey;
+          await setWindowSize(currentWindow, layout.bubbleSize);
+        }
 
         if (nextPositionKey !== lastBubblePositionRef.current) {
           lastBubblePositionRef.current = nextPositionKey;
@@ -204,7 +212,7 @@ export const AssistantBubbleShell = () => {
         : "idle";
 
   return (
-    <div className="quick-chat-bubble-shell fixed inset-0 flex items-center justify-center overflow-hidden bg-transparent select-none">
+    <div className="quick-chat-bubble-shell fixed inset-0 flex items-center justify-center overflow-visible bg-transparent select-none">
       <div className="quick-chat-bubble-wrap relative">
         <button
           type="button"
@@ -260,7 +268,7 @@ export const AssistantBubbleShell = () => {
             event.preventDefault();
             event.stopPropagation();
           }}
-          className="quick-chat-voice-button absolute bottom-1 left-5 z-20 flex h-8 w-8 items-center justify-center rounded-xl border border-violet-300/45 bg-violet-500 text-white shadow-none transition-colors duration-150 hover:bg-violet-400 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:hover:bg-slate-800"
+          className="quick-chat-voice-button absolute bottom-4 left-8 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-violet-300/45 bg-violet-500 text-white shadow-none transition-colors duration-150 hover:bg-violet-400 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:hover:bg-slate-800"
         >
           <Mic className="h-3.5 w-3.5" />
         </button>

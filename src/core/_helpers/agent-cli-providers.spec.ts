@@ -87,4 +87,47 @@ describe("resolveAgentCliProviderBinary", () => {
       source: "path",
     });
   });
+
+  it("skips inaccessible Windows packaged app executables and falls back to Codex app bin", async () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+
+    const homeDirectory = await createTemporaryDirectory("codex-packaged-app");
+    const localAppData = join(homeDirectory, "AppData", "Local");
+    const packagedDirectory = join(
+      homeDirectory,
+      "Program Files",
+      "WindowsApps",
+      "OpenAI.Codex_1.0.0.0_x64__test",
+      "app",
+      "resources",
+    );
+    const packagedBinaryPath = join(packagedDirectory, "codex.exe");
+    const appBinaryPath = join(
+      localAppData,
+      "OpenAI",
+      "Codex",
+      "bin",
+      "current",
+      "codex.exe",
+    );
+
+    await createFile(packagedBinaryPath);
+    await createFile(appBinaryPath);
+
+    const resolution = resolveAgentCliProviderBinary("codex-cli", {
+      PATH: packagedDirectory,
+      PATHEXT: ".EXE",
+      USERPROFILE: homeDirectory,
+      LOCALAPPDATA: localAppData,
+    });
+
+    expect(resolution).toMatchObject({
+      available: true,
+      executable: appBinaryPath,
+      provider: "codex-cli",
+      source: "path",
+    });
+  });
 });

@@ -17,8 +17,8 @@ import {
 } from "./runtime";
 
 export const ASSISTANT_BUBBLE_DIMENSIONS = {
-  width: 112,
-  height: 84,
+  width: 128,
+  height: 104,
 } as const;
 
 export const ASSISTANT_POPUP_DIMENSIONS = {
@@ -39,6 +39,7 @@ type MonitorSnapshot = Awaited<ReturnType<typeof monitorFromPoint>>;
 
 export interface AssistantSurfaceLayout {
   monitorBounds: MonitorBoundsInput;
+  bubbleSize: { width: number; height: number };
   bubblePosition: { x: number; y: number };
   popupSize: { width: number; height: number };
   popupPosition: { x: number; y: number };
@@ -162,6 +163,7 @@ export const resolveAssistantSurfaceLayout = async (): Promise<AssistantSurfaceL
 
   return {
     monitorBounds: toMonitorBounds(monitor),
+    bubbleSize: { width: bubbleWidth, height: bubbleHeight },
     bubblePosition: { x: bubbleX, y: bubbleY },
     popupSize: { width: popupWidth, height: popupHeight },
     popupPosition: { x: popupX, y: popupY },

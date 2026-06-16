@@ -10,6 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
+import { getUserConfigPath } from "./env.js";
 import { parseMarkdownDocument } from "./frontmatter.js";
 import type {
   FrontmatterValue,
@@ -216,13 +217,33 @@ export interface ScheduledMacroReference {
   inputValues?: Record<string, string>;
 }
 
+export type ScheduledJobTargetType = "prompt" | "ralph-flow";
+export type ScheduledRalphFlowScope = "workspace" | "user";
+
+export interface ScheduledRalphFlowTarget {
+  scope: ScheduledRalphFlowScope;
+  id: string;
+  params: Record<string, string>;
+  maxTransitions?: number;
+  runLogScope?: ScheduledRalphFlowScope;
+  permissions?: {
+    allowedRoots: string[];
+    allowCommands: boolean;
+    allowWrites: boolean;
+    allowNetwork: boolean;
+    allowMcpTools: boolean;
+  };
+}
+
 export interface ScheduledJobTarget {
+  type: ScheduledJobTargetType;
   workspaceRoot: string;
   prompt: string;
   contextPaths: string[];
   imagePaths: string[];
   contextPacks: ScheduledContextPackSnapshot[];
   macros: ScheduledMacroReference[];
+  ralphFlow?: ScheduledRalphFlowTarget;
   mode?: RunMode;
   profile?: string;
   provider?: Exclude<ModelProvider, "unconfigured">;
@@ -231,12 +252,14 @@ export interface ScheduledJobTarget {
 }
 
 export interface ScheduledJobTargetInput {
+  type?: ScheduledJobTargetType;
   workspaceRoot: string;
   prompt?: string;
   contextPaths?: string[];
   imagePaths?: string[];
   contextPacks?: ScheduledContextPackSnapshot[];
   macros?: ScheduledMacroReference[];
+  ralphFlow?: Partial<ScheduledRalphFlowTarget> & { id: string };
   mode?: RunMode;
   profile?: string;
   provider?: Exclude<ModelProvider, "unconfigured">;
@@ -412,10 +435,13 @@ export interface ScheduledRunEnqueueResult {
 export interface ScheduledTaskExecutionRequest {
   job: ScheduledJob;
   run: ScheduledJobRun;
+  event?: ScheduledTriggerEvent;
+  targetType: ScheduledJobTargetType;
   task: string;
   workspaceRoot: string;
   contextPaths: string[];
   imagePaths: string[];
+  ralphFlow?: ScheduledRalphFlowTarget;
   mode?: RunMode;
   profile?: string;
   provider?: Exclude<ModelProvider, "unconfigured">;
@@ -526,6 +552,10 @@ const createEmptySchedulerState = (timestamp: number): SmartSchedulerState => ({
 
 export const getWorkspaceSchedulerStatePath = (workspaceRoot: string): string => {
   return join(workspaceRoot, ".machdoch", SMART_SCHEDULER_FILE_NAME);
+};
+
+export const getUserSchedulerStatePath = (): string => {
+  return join(dirname(getUserConfigPath()), SMART_SCHEDULER_FILE_NAME);
 };
 
 const sleep = async (durationMs: number): Promise<void> => {
@@ -737,8 +767,13 @@ const migrateScheduledJobRecord = (job: ScheduledJob): ScheduledJob => {
   const primaryTimeTrigger = getPrimaryTimeTrigger(triggers);
   const nextRunAt =
     getEarliestTriggerRunAt(triggers) ?? candidate.nextRunAt ?? undefined;
+  const target = {
+    ...candidate.target,
+    type: candidate.target?.type === "ralph-flow" ? "ralph-flow" : "prompt",
+  } as ScheduledJobTarget;
   const migrated: ScheduledJob = {
     ...candidate,
+    target,
     triggers,
     ...(primaryTimeTrigger ? { schedule: primaryTimeTrigger.schedule } : {}),
     ...(nextRunAt !== undefined ? { nextRunAt } : {}),
@@ -1232,6 +1267,57 @@ const normalizeMacroReference = (
   };
 };
 
+const normalizeRalphFlowScope = (
+  value: string | undefined,
+  fallback: ScheduledRalphFlowScope,
+): ScheduledRalphFlowScope => {
+  return value === "user" || value === "workspace" ? value : fallback;
+};
+
+const normalizeRalphFlowTarget = (
+  target: ScheduledJobTargetInput,
+): ScheduledRalphFlowTarget | undefined => {
+  if (target.type !== "ralph-flow" && !target.ralphFlow) {
+    return undefined;
+  }
+
+  const flowId = normalizeTrimmedText(target.ralphFlow?.id);
+
+  if (!flowId) {
+    throw new Error("Expected scheduled Ralph target to include a flow id.");
+  }
+
+  const maxTransitions = target.ralphFlow?.maxTransitions;
+
+  if (
+    maxTransitions !== undefined &&
+    (!Number.isInteger(maxTransitions) || maxTransitions < 1)
+  ) {
+    throw new Error("Expected scheduled Ralph maxTransitions to be an integer >= 1.");
+  }
+
+  return {
+    scope: normalizeRalphFlowScope(target.ralphFlow?.scope, "workspace"),
+    id: flowId,
+    params: { ...(target.ralphFlow?.params ?? {}) },
+    ...(maxTransitions !== undefined ? { maxTransitions } : {}),
+    ...(target.ralphFlow?.runLogScope
+      ? { runLogScope: normalizeRalphFlowScope(target.ralphFlow.runLogScope, "workspace") }
+      : {}),
+    ...(target.ralphFlow?.permissions
+      ? {
+          permissions: {
+            allowedRoots: normalizeStringList(target.ralphFlow.permissions.allowedRoots),
+            allowCommands: target.ralphFlow.permissions.allowCommands === true,
+            allowWrites: target.ralphFlow.permissions.allowWrites === true,
+            allowNetwork: target.ralphFlow.permissions.allowNetwork === true,
+            allowMcpTools: target.ralphFlow.permissions.allowMcpTools === true,
+          },
+        }
+      : {}),
+  };
+};
+
 const normalizeTarget = (target: ScheduledJobTargetInput): ScheduledJobTarget => {
   const workspaceRoot = normalizeTrimmedText(target.workspaceRoot);
 
@@ -1239,6 +1325,8 @@ const normalizeTarget = (target: ScheduledJobTargetInput): ScheduledJobTarget =>
     throw new Error("Expected scheduled job target to include a workspace root.");
   }
 
+  const ralphFlow = normalizeRalphFlowTarget(target);
+  const targetType: ScheduledJobTargetType = ralphFlow ? "ralph-flow" : "prompt";
   const prompt = normalizeMultilineText(target.prompt);
   const contextPacks = (target.contextPacks ?? []).flatMap((pack) => {
     const normalized = normalizeContextPack(pack);
@@ -1251,19 +1339,26 @@ const normalizeTarget = (target: ScheduledJobTargetInput): ScheduledJobTarget =>
     return normalized ? [normalized] : [];
   });
 
-  if (!prompt && contextPacks.length === 0 && macros.length === 0) {
+  if (
+    targetType === "prompt" &&
+    !prompt &&
+    contextPacks.length === 0 &&
+    macros.length === 0
+  ) {
     throw new Error(
       "Expected scheduled job target to include a prompt, context pack, or macro.",
     );
   }
 
   return {
+    type: targetType,
     workspaceRoot,
     prompt,
     contextPaths: normalizeStringList(target.contextPaths),
     imagePaths: normalizeStringList(target.imagePaths),
     contextPacks,
     macros,
+    ...(ralphFlow ? { ralphFlow } : {}),
     ...(target.mode ? { mode: target.mode } : {}),
     ...(target.profile ? { profile: target.profile } : {}),
     ...(target.provider ? { provider: target.provider } : {}),
@@ -1495,6 +1590,10 @@ export const getScheduledJobContextPaths = (job: ScheduledJob): string[] => {
 };
 
 export const createScheduledJobTaskText = (job: ScheduledJob): string => {
+  if (job.target.type === "ralph-flow") {
+    return job.target.prompt.trim();
+  }
+
   const sections = [
     ...job.target.contextPacks.map(formatContextPackSection),
     ...job.target.macros.map(formatMacroSection),
@@ -3557,8 +3656,8 @@ export class DurableSmartScheduler {
     let cleanupMaxDurationTimer = (): void => undefined;
 
     try {
-      const { job, run } = await this.getRunnableSnapshot(runId);
-      const request = this.createExecutionRequest(job, run);
+      const { job, run, event } = await this.getRunnableSnapshot(runId);
+      const request = this.createExecutionRequest(job, run, event);
       cleanupMaxDurationTimer = attachMaxDurationTimer(
         controller,
         job.maxDurationMs,
@@ -3579,7 +3678,7 @@ export class DurableSmartScheduler {
 
   private async getRunnableSnapshot(
     runId: string,
-  ): Promise<{ job: ScheduledJob; run: ScheduledJobRun }> {
+  ): Promise<{ job: ScheduledJob; run: ScheduledJobRun; event?: ScheduledTriggerEvent }> {
     const state = await this.getState();
     const run = state.runs.find((candidate) => candidate.id === runId);
 
@@ -3593,20 +3692,28 @@ export class DurableSmartScheduler {
       throw new Error(`Scheduled job not found for run: ${runId}`);
     }
 
-    return { job, run };
+    const event = run.eventId
+      ? state.events.find((candidate) => candidate.id === run.eventId)
+      : undefined;
+
+    return { job, run, ...(event ? { event } : {}) };
   }
 
   private createExecutionRequest(
     job: ScheduledJob,
     run: ScheduledJobRun,
+    event: ScheduledTriggerEvent | undefined,
   ): ScheduledTaskExecutionRequest {
     return {
       job,
       run,
+      ...(event ? { event } : {}),
+      targetType: job.target.type ?? "prompt",
       task: createScheduledJobTaskText(job),
       workspaceRoot: job.target.workspaceRoot,
       contextPaths: getScheduledJobContextPaths(job),
       imagePaths: job.target.imagePaths,
+      ...(job.target.ralphFlow ? { ralphFlow: job.target.ralphFlow } : {}),
       ...(job.target.mode ? { mode: job.target.mode } : {}),
       ...(job.target.profile ? { profile: job.target.profile } : {}),
       ...(job.target.provider ? { provider: job.target.provider } : {}),

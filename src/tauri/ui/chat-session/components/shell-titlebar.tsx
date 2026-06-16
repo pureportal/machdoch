@@ -63,7 +63,7 @@ export const ShellTitlebar = ({
                   className={cn(
                     "mx-1 h-2 w-2 rounded-full",
                     configured
-                      ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
+                      ? "bg-emerald-500 shadow-[0_0_8px_rgba(63,137,117,0.32)]"
                       : "bg-slate-700",
                   )}
                   data-tauri-no-drag

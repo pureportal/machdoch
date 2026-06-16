@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -56,6 +56,23 @@ const ENV_KEYS = [
   "MACHDOCH_CLAUDE_CLI_PATH",
   "MACHDOCH_COPILOT_CLI_PATH",
   "MACHDOCH_USER_CONFIG_DIR",
+  "CODEX_HOME",
+  "CODEX_API_KEY",
+  "CODEX_ACCESS_TOKEN",
+  "OPENAI_API_KEY",
+  "GOOGLE_API_KEY",
+  "PERPLEXITY_API_KEY",
+  "CLAUDE_CONFIG_DIR",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_MODEL",
+  "CLAUDE_CODE_EFFORT_LEVEL",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "COPILOT_HOME",
+  "COPILOT_MODEL",
+  "COPILOT_GITHUB_TOKEN",
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
 ] as const;
 const workspacesToClean: string[] = [];
 
@@ -213,15 +230,20 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.executable).toBe(process.execPath);
     expect(call?.args.slice(0, 9)).toEqual([
       "exec",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--skip-git-repo-check",
+      "--ignore-rules",
+      "--dangerously-bypass-hook-trust",
       "--cd",
       workspaceRoot,
       "--model",
       "gpt-5.5",
-      "--sandbox",
-      "workspace-write",
-      "--ask-for-approval",
-      "never",
     ]);
+    expect(call?.args).not.toContain("--ask-for-approval");
+    expect(call?.args).not.toContain("--sandbox");
+    expect(call?.args).toContain("--skip-git-repo-check");
+    expect(call?.args).toContain("--ignore-rules");
+    expect(call?.args).toContain("--dangerously-bypass-hook-trust");
     expect(call?.args.at(-1)).toBe("-");
     expect(call?.child.stdinText).toContain("User task:");
     expect(call?.options.cwd).toBe(workspaceRoot);
@@ -257,6 +279,124 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.reason).toContain("authentication failed");
   });
 
+  it("summarizes codex quota failures without echoing the delegated prompt", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+
+    call?.child.stdout.write(
+      [
+        "OpenAI Codex v0.140.0-alpha.2",
+        "user",
+        "You are running as a delegated Codex CLI agent for Machdoch.",
+        "ERROR: Quota exceeded. Check your plan and billing details.",
+      ].join("\n"),
+    );
+    call?.child.emit("close", 1, null);
+
+    const result = await resultPromise;
+
+    expect(result?.status).toBe("blocked");
+    expect(result?.reason).toBe(
+      "Codex CLI quota exceeded: Quota exceeded. Check your plan and billing details.",
+    );
+    expect(result?.reason).not.toContain("delegated Codex CLI agent");
+  });
+
+  it("does not leak OpenAI API keys into Codex CLI authentication", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    await writeFile(
+      join(workspaceRoot, ".env"),
+      "OPENAI_API_KEY=sk-test-openai-key-1234567890\n",
+      "utf8",
+    );
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+    const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
+
+    expect(childEnv?.OPENAI_API_KEY).toBeUndefined();
+    expect(childEnv?.CODEX_API_KEY).toBeUndefined();
+
+    call?.child.stdout.write("Codex delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
+  it("passes explicitly configured Codex process auth variables", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    process.env.CODEX_HOME = join(workspaceRoot, ".codex-home");
+    process.env.CODEX_API_KEY = "codex-explicit-key";
+    process.env.OPENAI_API_KEY = "openai-process-key";
+    process.env.GOOGLE_API_KEY = "google-process-key";
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+    const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
+
+    expect(childEnv?.CODEX_API_KEY).toBe("codex-explicit-key");
+    expect(childEnv?.CODEX_HOME).toBe(join(workspaceRoot, ".codex-home"));
+    expect(childEnv?.OPENAI_API_KEY).toBeUndefined();
+    expect(childEnv?.GOOGLE_API_KEY).toBeUndefined();
+
+    call?.child.stdout.write("Codex delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
+  it("does not pass workspace environment values into delegated CLI processes", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    await writeFile(
+      join(workspaceRoot, ".env"),
+      [
+        "CODEX_API_KEY=codex-workspace-key",
+        "GOOGLE_API_KEY=google-workspace-key",
+        "PERPLEXITY_API_KEY=perplexity-workspace-key",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+    const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
+
+    expect(childEnv?.CODEX_API_KEY).toBeUndefined();
+    expect(childEnv?.GOOGLE_API_KEY).toBeUndefined();
+    expect(childEnv?.PERPLEXITY_API_KEY).toBeUndefined();
+
+    call?.child.stdout.write("Codex delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
   it("runs claude in non-interactive print mode with the delegated prompt on stdin", async () => {
     const workspaceRoot = await createWorkspace();
 
@@ -285,8 +425,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       "text",
       "--model",
       "claude-sonnet-4-6",
-      "--permission-mode",
-      "bypassPermissions",
+      "--dangerously-skip-permissions",
       "--no-session-persistence",
       "--effort",
       "high",
@@ -307,7 +446,97 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.response?.markdown).toBe("Claude delegated answer.");
   });
 
-  it("runs copilot in silent non-interactive mode and lets auto model use the CLI default", async () => {
+  it("does not leak Anthropic API keys into Claude CLI authentication", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    await writeFile(
+      join(workspaceRoot, ".env"),
+      "ANTHROPIC_API_KEY=sk-ant-test-key-1234567890\n",
+      "utf8",
+    );
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        provider: "claude-cli",
+        model: "claude-sonnet-4-6",
+      }),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+    const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
+
+    expect(childEnv?.ANTHROPIC_API_KEY).toBeUndefined();
+
+    call?.child.stdout.write("Claude delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
+  it("passes explicit Claude process auth and config variables", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    process.env.CLAUDE_CONFIG_DIR = join(workspaceRoot, ".claude-config");
+    process.env.ANTHROPIC_API_KEY = "anthropic-process-key";
+    process.env.ANTHROPIC_MODEL = "claude-haiku-4-5";
+    process.env.CLAUDE_CODE_EFFORT_LEVEL = "low";
+    process.env.PERPLEXITY_API_KEY = "perplexity-process-key";
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        provider: "claude-cli",
+        model: "claude-sonnet-4-6",
+      }),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+    const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
+
+    expect(childEnv?.ANTHROPIC_API_KEY).toBe("anthropic-process-key");
+    expect(childEnv?.CLAUDE_CONFIG_DIR).toBe(join(workspaceRoot, ".claude-config"));
+    expect(childEnv?.ANTHROPIC_MODEL).toBeUndefined();
+    expect(childEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBeUndefined();
+    expect(childEnv?.PERPLEXITY_API_KEY).toBeUndefined();
+
+    call?.child.stdout.write("Claude delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
+  it("keeps claude full-access even when the surrounding mode is ask", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        mode: "ask",
+        provider: "claude-cli",
+        model: "claude-sonnet-4-6",
+      }),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+
+    expect(call?.args).toContain("--dangerously-skip-permissions");
+    expect(call?.args).not.toContain("--permission-mode");
+    expect(call?.args).not.toContain("plan");
+    expect(call?.child.stdinText).toContain("Run with full local access");
+    expect(call?.child.stdinText).not.toContain("Run in read-only mode");
+
+    call?.child.stdout.write("Claude delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
+  it("runs copilot in silent non-interactive mode with the delegated prompt on stdin", async () => {
     const workspaceRoot = await createWorkspace();
 
     process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
@@ -323,14 +552,20 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const call = spawnCalls[0];
 
     expect(call?.executable).toBe(process.execPath);
-    expect(call?.args.slice(0, 3)).toEqual(["-s", "-p", expect.any(String)]);
+    expect(call?.args).toContain("-s");
+    expect(call?.args).not.toContain("-p");
+    expect(call?.args).not.toContain("--prompt");
+    expect(call?.args).toContain("--autopilot");
     expect(call?.args).toContain("--no-ask-user");
     expect(call?.args).toContain("--allow-all");
-    expect(call?.args.some((arg) => arg.startsWith("--model="))).toBe(false);
-    expect(call?.args[2]).toContain(
+    expect(call?.args).toContain("--secret-env-vars=GH_TOKEN");
+    expect(call?.args).not.toContain("--add-dir");
+    expect(call?.args).not.toContain("--deny-tool=write,shell,memory");
+    expect(call?.args).toContain("--model=auto");
+    expect(call?.child.stdinText).toContain(
       "You are running as a delegated Copilot CLI agent for Machdoch.",
     );
-    expect(call?.child.stdinText).toBe("");
+    expect(call?.child.stdinText).toContain("User task:");
 
     call?.child.stdout.write("Copilot delegated answer.");
     call?.child.emit("close", 0, null);
@@ -339,6 +574,102 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(result?.status).toBe("executed");
     expect(result?.response?.markdown).toBe("Copilot delegated answer.");
+  });
+
+  it("keeps copilot full-access even when the surrounding mode is ask", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        mode: "ask",
+        provider: "copilot-cli",
+        model: "auto",
+      }),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+
+    expect(call?.args).toContain("--no-ask-user");
+    expect(call?.args).toContain("--autopilot");
+    expect(call?.args).toContain("--allow-all");
+    expect(call?.args).toContain("--secret-env-vars=GH_TOKEN");
+    expect(call?.args.some((arg) => arg.startsWith("--add-dir="))).toBe(false);
+    expect(call?.args).not.toContain("--allow-tool=read,url");
+    expect(call?.args).not.toContain("--deny-tool=write,shell,memory");
+    expect(call?.args).not.toContain("-p");
+    expect(call?.child.stdinText).toContain("Run with full local access");
+    expect(call?.child.stdinText).not.toContain("Run in read-only mode");
+
+    call?.child.stdout.write("Copilot delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
+  it("does not leak GitHub token environment from workspace files into Copilot CLI", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
+    await writeFile(
+      join(workspaceRoot, ".env"),
+      "GITHUB_TOKEN=github-token-from-workspace\n",
+      "utf8",
+    );
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        provider: "copilot-cli",
+        model: "auto",
+      }),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+    const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
+
+    expect(childEnv?.GITHUB_TOKEN).toBeUndefined();
+
+    call?.child.stdout.write("Copilot delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
+  it("passes explicit Copilot process auth and config variables with GH_TOKEN redaction enabled", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
+    process.env.COPILOT_HOME = join(workspaceRoot, ".copilot-home");
+    process.env.COPILOT_GITHUB_TOKEN = "copilot-process-token";
+    process.env.GH_TOKEN = "gh-process-token";
+    process.env.COPILOT_MODEL = "claude-haiku-4.5";
+    process.env.OPENAI_API_KEY = "openai-process-key";
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        provider: "copilot-cli",
+        model: "auto",
+      }),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+    const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
+
+    expect(childEnv?.COPILOT_GITHUB_TOKEN).toBe("copilot-process-token");
+    expect(childEnv?.GH_TOKEN).toBe("gh-process-token");
+    expect(childEnv?.COPILOT_HOME).toBe(join(workspaceRoot, ".copilot-home"));
+    expect(childEnv?.COPILOT_MODEL).toBeUndefined();
+    expect(childEnv?.OPENAI_API_KEY).toBeUndefined();
+    expect(call?.args).toContain("--secret-env-vars=GH_TOKEN");
+
+    call?.child.stdout.write("Copilot delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
   });
 
   it("passes explicit copilot models and reports nonzero exits as blocked", async () => {
@@ -386,6 +717,36 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(call?.args).toContain("--model=gpt-5.3-codex");
     expect(call?.args).toContain("--effort=xhigh");
+
+    call?.child.stdout.write("Copilot delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    const result = await resultPromise;
+
+    expect(result?.status).toBe("executed");
+  });
+
+  it("passes the executor turn limit as the Copilot autopilot continuation cap", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        provider: "copilot-cli",
+        model: "gpt-5.3-codex",
+        agentLimits: {
+          executorTurns: 9,
+          autopilotExecutorIterations: 3,
+        },
+      }),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+
+    expect(call?.args).toContain("--autopilot");
+    expect(call?.args).toContain("--max-autopilot-continues=9");
 
     call?.child.stdout.write("Copilot delegated answer.");
     call?.child.emit("close", 0, null);
