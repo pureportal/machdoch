@@ -19,6 +19,31 @@ export const normalizeProcessOutput = (value: string | Buffer): string => {
   return value.toString().replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
 };
 
+export const normalizeLocalCommandCwd = (
+  cwd: string,
+  platform: NodeJS.Platform = process.platform,
+): string => {
+  if (platform !== "win32") {
+    return cwd;
+  }
+
+  const uncMatch = /^\\\\[?.]\\UNC\\/iu.exec(cwd);
+
+  if (uncMatch) {
+    return `\\\\${cwd.slice(uncMatch[0].length)}`;
+  }
+
+  const namespaceMatch = /^\\\\[?.]\\/u.exec(cwd);
+
+  if (!namespaceMatch) {
+    return cwd;
+  }
+
+  const withoutPrefix = cwd.slice(namespaceMatch[0].length);
+
+  return /^[a-z]:[\\/]/i.test(withoutPrefix) ? withoutPrefix : cwd;
+};
+
 export const executeLocalCommand = async (
   executable: string,
   args: string[],
@@ -26,7 +51,7 @@ export const executeLocalCommand = async (
 ): Promise<LocalCommandResult> => {
   return new Promise((resolve, reject) => {
     execFile(executable, args, {
-      cwd: options.cwd,
+      cwd: normalizeLocalCommandCwd(options.cwd),
       ...(options.env ? { env: options.env } : {}),
       timeout: options.timeoutMs,
       maxBuffer: options.maxBufferBytes,

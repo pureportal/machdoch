@@ -1,4 +1,4 @@
-import { normalizeOptionalString } from "../common/_helpers/normalize-optional-string.js";
+import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import type {
   CustomizationDiscoveryResult,
   DiscoveredPrompt,

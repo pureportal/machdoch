@@ -1,6 +1,6 @@
 /// <reference types="vitest/globals" />
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentToolExecutionContext } from "./agent-tools-shared.js";
@@ -45,6 +45,12 @@ const createWorkspace = async (): Promise<string> => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-packages-"));
   workspacesToClean.push(workspaceRoot);
   return workspaceRoot;
+};
+
+const resolveExpectedPackageRoot = async (
+  workspaceRoot: string,
+): Promise<string> => {
+  return await realpath(workspaceRoot);
 };
 
 const createExecutionContext = (
@@ -218,6 +224,7 @@ describe("createPackageToolDefinitions", () => {
 
   it("runs declared package scripts through the detected manager", async () => {
     const workspaceRoot = await createWorkspace();
+    const packageRoot = await resolveExpectedPackageRoot(workspaceRoot);
 
     await createPackageJson(workspaceRoot);
     queueCommandResponses({ stdout: "tests passed" });
@@ -237,7 +244,7 @@ describe("createPackageToolDefinitions", () => {
       "npm",
       ["run", "test", "--", "--runInBand"],
       expect.objectContaining({
-        cwd: workspaceRoot,
+        cwd: packageRoot,
         timeout: 10_000,
         maxBuffer: 1_500_000,
         windowsHide: true,
@@ -263,6 +270,7 @@ describe("createPackageToolDefinitions", () => {
 
   it("parses npm outdated JSON even when npm exits with code 1 for outdated dependencies", async () => {
     const workspaceRoot = await createWorkspace();
+    const packageRoot = await resolveExpectedPackageRoot(workspaceRoot);
 
     await createPackageJson(workspaceRoot);
     queueCommandResponses({
@@ -291,7 +299,7 @@ describe("createPackageToolDefinitions", () => {
       "npm",
       ["outdated", "--json"],
       expect.objectContaining({
-        cwd: workspaceRoot,
+        cwd: packageRoot,
       }),
       expect.any(Function),
     );
@@ -299,6 +307,7 @@ describe("createPackageToolDefinitions", () => {
 
   it("checks pnpm outdated metadata using pnpm JSON output", async () => {
     const workspaceRoot = await createWorkspace();
+    const packageRoot = await resolveExpectedPackageRoot(workspaceRoot);
 
     await createPackageJson(workspaceRoot, {
       packageManager: "pnpm@10.0.0",
@@ -327,7 +336,7 @@ describe("createPackageToolDefinitions", () => {
       "pnpm",
       ["outdated", "--format", "json"],
       expect.objectContaining({
-        cwd: workspaceRoot,
+        cwd: packageRoot,
       }),
       expect.any(Function),
     );
@@ -335,6 +344,7 @@ describe("createPackageToolDefinitions", () => {
 
   it("summarizes npm audit JSON without treating vulnerabilities as command failures", async () => {
     const workspaceRoot = await createWorkspace();
+    const packageRoot = await resolveExpectedPackageRoot(workspaceRoot);
 
     await createPackageJson(workspaceRoot);
     queueCommandResponses({
@@ -382,7 +392,7 @@ describe("createPackageToolDefinitions", () => {
       "npm",
       ["audit", "--json", "--audit-level=moderate", "--production"],
       expect.objectContaining({
-        cwd: workspaceRoot,
+        cwd: packageRoot,
       }),
       expect.any(Function),
     );
@@ -390,6 +400,7 @@ describe("createPackageToolDefinitions", () => {
 
   it("installs registry package specs with safe direct argv construction", async () => {
     const workspaceRoot = await createWorkspace();
+    const packageRoot = await resolveExpectedPackageRoot(workspaceRoot);
 
     await createPackageJson(workspaceRoot);
     queueCommandResponses({ stdout: "added 1 package" });
@@ -416,7 +427,7 @@ describe("createPackageToolDefinitions", () => {
         "@types/node@latest",
       ],
       expect.objectContaining({
-        cwd: workspaceRoot,
+        cwd: packageRoot,
       }),
       expect.any(Function),
     );
@@ -462,6 +473,7 @@ describe("createPackageToolDefinitions", () => {
 
   it("uses bun lockfile-only installs when bun is the detected manager", async () => {
     const workspaceRoot = await createWorkspace();
+    const packageRoot = await resolveExpectedPackageRoot(workspaceRoot);
 
     await createPackageJson(workspaceRoot, {
       packageManager: "bun@1.2.0",
@@ -481,7 +493,7 @@ describe("createPackageToolDefinitions", () => {
       "bun",
       ["add", "--lockfile-only", "vite@latest"],
       expect.objectContaining({
-        cwd: workspaceRoot,
+        cwd: packageRoot,
       }),
       expect.any(Function),
     );

@@ -1,4 +1,4 @@
-import { normalizeOptionalString } from "../common/_helpers/normalize-optional-string.js";
+import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import type { FrontmatterValue, ParsedMarkdownDocument } from "./types.js";
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;

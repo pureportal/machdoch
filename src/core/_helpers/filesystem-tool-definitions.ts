@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, relative } from "node:path";
-import { sortEntryNames } from "../../common/_helpers/sort-entry-names.js";
+import { sortEntryNames } from "../../helpers/sort-entry-names.helper.js";
 import {
   coerceBoolean,
   coerceInteger,

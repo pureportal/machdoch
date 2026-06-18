@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { normalizeOptionalString } from "../../common/_helpers/normalize-optional-string.js";
+import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
 import { getUserConfigPath } from "../env.js";
 import type { ToolCallEffect, ToolRiskLevel } from "../types.js";
 import { enrichMcpDiscoveryMetadata } from "./discovery-metadata.js";

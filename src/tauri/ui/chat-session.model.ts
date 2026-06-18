@@ -32,6 +32,7 @@ import type {
   TaskThinkingTimelineEvent,
   TaskThinkingTrace,
 } from "./task-thinking.model";
+import { normalizeChatSessionOptionalString } from "./chat-session/_helpers/normalize-chat-session-optional-string.helper";
 
 export type ChatSessionMessageSource = TaskPanelSource | TaskThinkingSource;
 
@@ -357,10 +358,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 const normalizeString = (value: unknown, fallback = ""): string => {
   return typeof value === "string" ? value : fallback;
-};
-
-const normalizeOptionalString = (value: unknown): string | undefined => {
-  return typeof value === "string" ? value : undefined;
 };
 
 const normalizeFiniteNumber = (value: unknown, fallback = 0): number => {
@@ -948,17 +945,17 @@ const normalizeResolvedPromptInvocation = (
     expectedInputs: normalizeStringArray(value.expectedInputs),
     inputValues: normalizeStringRecord(value.inputValues),
     resolvedBody: normalizeString(value.resolvedBody, normalizeString(value.body)),
-    ...(normalizeOptionalString(value.description)
-      ? { description: normalizeOptionalString(value.description) }
+    ...(normalizeChatSessionOptionalString(value.description)
+      ? { description: normalizeChatSessionOptionalString(value.description) }
       : {}),
-    ...(normalizeOptionalString(value.agent)
-      ? { agent: normalizeOptionalString(value.agent) }
+    ...(normalizeChatSessionOptionalString(value.agent)
+      ? { agent: normalizeChatSessionOptionalString(value.agent) }
       : {}),
-    ...(normalizeOptionalString(value.model)
-      ? { model: normalizeOptionalString(value.model) }
+    ...(normalizeChatSessionOptionalString(value.model)
+      ? { model: normalizeChatSessionOptionalString(value.model) }
       : {}),
-    ...(normalizeOptionalString(value.argumentHint)
-      ? { argumentHint: normalizeOptionalString(value.argumentHint) }
+    ...(normalizeChatSessionOptionalString(value.argumentHint)
+      ? { argumentHint: normalizeChatSessionOptionalString(value.argumentHint) }
       : {}),
   };
 };
@@ -1112,8 +1109,8 @@ const normalizeTaskExecutionResult = (
       "Task result restored from persisted session.",
     ),
     executedTools: normalizeToolNames(value.executedTools),
-    ...(normalizeOptionalString(value.reason)
-      ? { reason: normalizeOptionalString(value.reason) }
+    ...(normalizeChatSessionOptionalString(value.reason)
+      ? { reason: normalizeChatSessionOptionalString(value.reason) }
       : {}),
     outputSections: normalizeTaskExecutionSections(value.outputSections),
     ...(response ? { response } : {}),
@@ -1277,14 +1274,14 @@ const normalizeThinkingTimelineEvents = (
         timestamp: normalizeFiniteNumber(entry.timestamp, index),
         elapsedMs: normalizeFiniteNumber(entry.elapsedMs, 0),
         ...(provider ? { provider } : {}),
-        ...(normalizeOptionalString(entry.model)
-          ? { model: normalizeOptionalString(entry.model) }
+        ...(normalizeChatSessionOptionalString(entry.model)
+          ? { model: normalizeChatSessionOptionalString(entry.model) }
           : {}),
-        ...(normalizeOptionalString(entry.toolName)
-          ? { toolName: normalizeOptionalString(entry.toolName) }
+        ...(normalizeChatSessionOptionalString(entry.toolName)
+          ? { toolName: normalizeChatSessionOptionalString(entry.toolName) }
           : {}),
-        ...(normalizeOptionalString(entry.callId)
-          ? { callId: normalizeOptionalString(entry.callId) }
+        ...(normalizeChatSessionOptionalString(entry.callId)
+          ? { callId: normalizeChatSessionOptionalString(entry.callId) }
           : {}),
         ...(entry.stream === "stdout" || entry.stream === "stderr"
           ? { stream: entry.stream }
@@ -1329,12 +1326,12 @@ const normalizeThinkingTrace = (
     mode: normalizeStoredRunMode(value.mode),
     startedAt,
     entries,
-    ...(normalizeOptionalString(value.task)
-      ? { task: normalizeOptionalString(value.task) }
+    ...(normalizeChatSessionOptionalString(value.task)
+      ? { task: normalizeChatSessionOptionalString(value.task) }
       : {}),
     ...(completedAt > 0 ? { completedAt } : {}),
-    ...(normalizeOptionalString(value.assistantText)
-      ? { assistantText: normalizeOptionalString(value.assistantText) }
+    ...(normalizeChatSessionOptionalString(value.assistantText)
+      ? { assistantText: normalizeChatSessionOptionalString(value.assistantText) }
       : {}),
     ...(modelStream ? { modelStream } : {}),
     ...(actionOutputLines.length > 0 ? { actionOutputLines } : {}),
@@ -1401,7 +1398,7 @@ const normalizeSessionMessages = (
     const source = normalizeMessageSource(entry.source, content);
     const createdAt = normalizeOptionalFiniteNumber(entry.createdAt);
     const intent = normalizeMessageIntent(entry.intent);
-    const taskId = normalizeOptionalString(entry.taskId);
+    const taskId = normalizeChatSessionOptionalString(entry.taskId);
     const contextAttachments = normalizeContextAttachments(
       entry.contextAttachments,
       `message-context-${sessionId}-${index}`,

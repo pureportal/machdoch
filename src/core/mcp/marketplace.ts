@@ -3,6 +3,7 @@ import {
   type McpServerConfig,
   type McpTransportConfig,
 } from "./types.js";
+import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
 
 export const MCP_OFFICIAL_REGISTRY_BASE_URL =
   "https://registry.modelcontextprotocol.io/v0.1";
@@ -304,10 +305,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 const isStringArray = (value: unknown): value is string[] => {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
-};
-
-const normalizeOptionalString = (value: unknown): string | undefined => {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 };
 
 const normalizeServerId = (value: string): string => {
@@ -1237,7 +1234,7 @@ const createHeadersRecord = (
   const entries = (transport.headers ?? []).flatMap((header) => {
     if (header.value) {
       const resolvedValue = resolveTemplate(header.value, fields, credentials);
-      return /(^|[^\$])\{[^{}]+\}/u.test(resolvedValue)
+      return /(^|[^$])\{[^{}]+\}/u.test(resolvedValue)
         ? []
         : [[header.name, resolvedValue] as const];
     }

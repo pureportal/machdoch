@@ -121,6 +121,76 @@ describe("runRalphFlow", () => {
     expect(executeTask).not.toHaveBeenCalled();
   });
 
+  it("blocks repeated identical non-success utility loops before another agent pass", async () => {
+    vi.mocked(executeTask).mockResolvedValue(
+      createExecutionResult({
+        summary: "No current-change failure found.",
+        response: {
+          markdown: "No current-change failure found.",
+          highlights: [],
+          relatedFiles: [],
+          verification: [],
+          followUps: [],
+        },
+      }),
+    );
+
+    const result = await runRalphFlow(
+      createFlow({
+        settings: { maxTransitions: 20 },
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "check",
+            type: "UTILITY",
+            title: "Check",
+            utility: {
+              type: "VALIDATE_JSON",
+              input: "{}",
+              schema: {
+                type: "object",
+                required: ["ok"],
+              },
+            },
+          },
+          {
+            id: "fix",
+            type: "PROMPT",
+            title: "Fix",
+            prompt: "Fix the check failure.",
+          },
+          { id: "success", type: "END", title: "Success" },
+        ],
+        edges: [
+          { id: "start-to-check", from: "start", fromOutput: "SUCCESS", to: "check" },
+          { id: "check-invalid-to-fix", from: "check", fromOutput: "INVALID", to: "fix" },
+          { id: "check-success-to-success", from: "check", fromOutput: "SUCCESS", to: "success" },
+          { id: "fix-to-check", from: "fix", fromOutput: "SUCCESS", to: "check" },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.summary).toContain(
+      "after 3 identical non-success result(s)",
+    );
+    expect(
+      result.blockResults.filter((entry) => entry.blockId === "check"),
+    ).toHaveLength(3);
+    expect(executeTask).toHaveBeenCalledTimes(2);
+    expect(result.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "crash",
+          blockId: "check",
+          output: "INVALID",
+        }),
+      ]),
+    );
+  });
+
   it("blocks before execution when callers supply unknown variables", async () => {
     const result = await runRalphFlow(
       createFlow({
@@ -701,7 +771,7 @@ describe("runRalphFlow", () => {
               title: "Check",
               utility: {
                 type: "RUN_CHECK",
-                command: "node -e 'process.exit(7)'",
+                command: "exit 7",
               },
             },
             {

@@ -2526,7 +2526,7 @@ describe("ChatSession component", () => {
       return;
     }
 
-    expect(layout.popupSize.height).toBe(572);
+    expect(layout.popupSize.height).toBe(552);
     expect(layout.popupPosition.y + layout.popupSize.height + 16).toBeLessThanOrEqual(
       layout.bubblePosition.y,
     );

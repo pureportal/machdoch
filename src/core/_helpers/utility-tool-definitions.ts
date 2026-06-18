@@ -7,6 +7,7 @@ import {
   type AgentToolDefinition,
 } from "./agent-tools-shared.js";
 import { compactTraceText } from "./runtime-text.js";
+import { sortUniqueLines } from "./sort-unique-lines.helper.js";
 
 const MAX_UUID_COUNT = 100;
 const DEFAULT_RANDOM_STRING_LENGTH = 32;
@@ -30,7 +31,6 @@ const DEFAULT_DIFF_CONTEXT_LINES = 2;
 const MAX_DIFF_CONTEXT_LINES = 8;
 const DEFAULT_DIFF_OUTPUT_LINES = 200;
 const MAX_DIFF_OUTPUT_LINES = 400;
-const MAX_SORT_INPUT_LINES = 2_000;
 const ULID_TIMESTAMP_LENGTH = 10;
 const ULID_RANDOM_LENGTH = 16;
 const ULID_RANDOM_BITS = 80n;
@@ -847,48 +847,6 @@ const createCompactDiffLines = (
   }
 
   return lines;
-};
-
-const normalizeSortableLine = (line: string, caseSensitive: boolean): string => {
-  return caseSensitive ? line : line.toLowerCase();
-};
-
-const sortUniqueLines = (
-  text: string,
-  caseSensitive: boolean,
-  trimLines: boolean,
-  removeEmpty: boolean,
-  descending: boolean,
-): string[] | string => {
-  const rawLines = splitTextLines(text);
-
-  if (rawLines.length > MAX_SORT_INPUT_LINES) {
-    return `Expected \`text\` to contain no more than ${MAX_SORT_INPUT_LINES} lines.`;
-  }
-
-  const uniqueLines = new Map<string, string>();
-
-  for (const rawLine of rawLines) {
-    const line = trimLines ? rawLine.trim() : rawLine;
-
-    if (removeEmpty && line.length === 0) {
-      continue;
-    }
-
-    const key = normalizeSortableLine(line, caseSensitive);
-
-    if (!uniqueLines.has(key)) {
-      uniqueLines.set(key, line);
-    }
-  }
-
-  return [...uniqueLines.values()].sort((left, right) => {
-    const comparison = normalizeSortableLine(left, caseSensitive).localeCompare(
-      normalizeSortableLine(right, caseSensitive),
-    );
-
-    return descending ? -comparison : comparison;
-  });
 };
 
 export const createUtilityToolDefinitions = (): AgentToolDefinition[] => {
@@ -2227,13 +2185,12 @@ export const createUtilityToolDefinitions = (): AgentToolDefinition[] => {
         const trimLines = coerceBoolean(args, "trimLines") ?? true;
         const removeEmpty = coerceBoolean(args, "removeEmpty") ?? true;
         const descending = coerceBoolean(args, "descending") ?? false;
-        const lines = sortUniqueLines(
-          text,
+        const lines = sortUniqueLines(text, {
           caseSensitive,
           trimLines,
           removeEmpty,
           descending,
-        );
+        });
 
         if (typeof lines === "string") {
           return createToolErrorResult(

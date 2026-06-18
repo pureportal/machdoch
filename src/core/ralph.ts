@@ -1,15 +1,82 @@
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
-import { normalizeOptionalString } from "../common/_helpers/normalize-optional-string.js";
+import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
+import {
+  FLOW_FILE_EXTENSION,
+  normalizeFlowAlias,
+  normalizeFlowFileName,
+  normalizeFlowId,
+  normalizeRevisionId,
+  normalizeRunId,
+} from "./_helpers/ralph-flow-ids.helper.js";
+import {
+  coerceRalphUtilityConfig,
+  RALPH_UTILITY_TYPES,
+} from "./_helpers/coerce-ralph-utility-config.helper.js";
+import { parseRalphFlowRecord } from "./_helpers/parse-ralph-flow-record.helper.js";
+import {
+  createRalphRunRecord,
+  createRalphRunSummaryFromRecord,
+  isRalphRunRecord,
+} from "./_helpers/create-ralph-run-record.helper.js";
+import {
+  createRalphBlockExecutionErrorResult,
+  createRalphDecisionExecutionResult,
+  createRalphPromptExecutionResult,
+  createRalphValidatorExecutionResult,
+} from "./_helpers/create-ralph-block-execution-result.helper.js";
+import { createRalphFailureSignature } from "./_helpers/create-ralph-failure-signature.helper.js";
+import {
+  RALPH_FLOW_SCHEMA_VERSION,
+  validateRalphFlow,
+} from "./_helpers/validate-ralph-flow.helper.js";
+import { isExecutableRalphBlock } from "./_helpers/get-ralph-block-outputs.helper.js";
+import {
+  findOutgoingRalphEdge,
+  getRalphBlockById,
+} from "./_helpers/validate-ralph-flow-graph.helper.js";
+export {
+  createValidationResult,
+  getRalphUtilityOutputs,
+  hasGraphCycle,
+  isExecutableRalphBlock,
+  isVisualRalphBlock,
+  RALPH_FLOW_SCHEMA_VERSION,
+  validateRalphFlow,
+} from "./_helpers/validate-ralph-flow.helper.js";
+import {
+  evaluateRalphUtilityCondition,
+  parseRalphUtilityJsonValue,
+  readRalphUtilityValuePath,
+} from "./_helpers/evaluate-ralph-utility-condition.helper.js";
+import { resolveRalphRetryDecision } from "./_helpers/resolve-ralph-retry-decision.helper.js";
+import {
+  discoverRalphFlowVariables,
+  isPlainRalphVariableReference,
+  parseRalphPlaceholderContent,
+  RALPH_PLACEHOLDER_PATTERN,
+  type ParsedRalphPlaceholder,
+} from "./_helpers/ralph-placeholders.helper.js";
+import {
+  getRalphResultMarkdown as getResultMarkdown,
+  truncateRalphResultText as truncateResultText,
+} from "./_helpers/parse-ralph-decision.helper.js";
+import {
+  capLogText,
+  createRalphLogLine,
+  formatRalphSimpleMarkdownEntry,
+  sanitizeTraceValue,
+} from "./_helpers/format-ralph-run-log-entry.helper.js";
 import {
   executeLocalCommand,
   formatLocalCommandError,
+  normalizeLocalCommandCwd,
 } from "./_helpers/process-execution.js";
 import { getUserConfigPath } from "./env.js";
 import { executeTask } from "./execution.js";
-import { isReasoningMode } from "./runtime-contract.generated.js";
 import { mcpClientManager } from "./mcp/client.js";
 import {
   createImageInputUnsupportedModelMessage,
@@ -19,7 +86,6 @@ import {
   providerSupportsImageInputMediaType,
 } from "./model-capabilities.js";
 import {
-  coerceMcpConfigOverride,
   getEnabledMcpServer,
   loadMcpDiscoveryCacheSync,
   loadMcpConfigSync,
@@ -44,18 +110,15 @@ import type {
   RuntimeConfig,
 } from "./runtime-contract.generated.js";
 
+export { discoverRalphFlowVariables } from "./_helpers/ralph-placeholders.helper.js";
+
 type PlaywrightBrowser = import("playwright-core").Browser;
 type PlaywrightPage = import("playwright-core").Page;
 type PlaywrightRequest = import("playwright-core").Request;
 type PlaywrightConsoleMessage = import("playwright-core").ConsoleMessage;
 type PlaywrightBrowserChannel = (typeof RALPH_UI_BROWSER_CHANNELS)[number];
 
-export const RALPH_FLOW_SCHEMA_VERSION = 1;
-export const MAX_RALPH_RESULT_CHARS = 16_000;
 export const MAX_RALPH_SIMPLE_LOG_CHARS = 4_000;
-const MAX_RALPH_TRACE_TEXT_CHARS = 32_000;
-const MAX_RALPH_TRACE_VALUE_DEPTH = 6;
-const MAX_RALPH_TRACE_COLLECTION_ENTRIES = 200;
 
 const RALPH_WORKSPACE_DIRECTORY = ".machdoch/ralph";
 const RALPH_USER_DIRECTORY = "ralph";
@@ -63,20 +126,11 @@ const RALPH_FLOW_SUBDIRECTORY = "flows";
 const RALPH_RUN_SUBDIRECTORY = "runs";
 const RALPH_REVISION_SUBDIRECTORY = "revisions";
 const RALPH_ARTIFACT_SUBDIRECTORY = "artifacts";
-export const FLOW_FILE_EXTENSION = ".json";
-const FLOW_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,79}$/u;
-const BLOCK_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,79}$/u;
-const EDGE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,119}$/u;
-const REVISION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/u;
-const PLACEHOLDER_PATTERN = /\{\{\s*([^}]+?)\s*\}\}/gu;
-const DECISION_LINE_PATTERN = /^\s*RALPH_DECISION\s*:\s*([A-Z0-9_-]+)\s*$/iu;
-const MAX_FLOW_BLOCKS = 250;
-const MAX_FLOW_EDGES = 500;
-const DEFAULT_RALPH_GROUP_MAX_DEPTH = 3;
 const DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES = 1_000_000;
 const DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS = 120_000;
 const DEFAULT_RALPH_UTILITY_POLL_INTERVAL_SECONDS = 30;
 const DEFAULT_RALPH_UTILITY_MAX_SEARCH_RESULTS = 100;
+const DEFAULT_RALPH_REPEATED_FAILURE_LIMIT = 3;
 const DEFAULT_RALPH_SEARCH_EXCLUDED_DIRECTORIES = new Set([
   ".git",
   ".machdoch",
@@ -96,8 +150,6 @@ const DEFAULT_RALPH_UI_ANALYZE_VIEWPORTS: readonly RalphUiAnalyzeViewport[] = [
   { name: "mobile", width: 390, height: 844 },
 ];
 const DEFAULT_RALPH_UI_ANALYZE_TIMEOUT_MS = 30_000;
-const MIN_RALPH_UI_VIEWPORT_SIZE = 320;
-const MAX_RALPH_UI_VIEWPORT_SIZE = 3840;
 const MAX_RALPH_UI_ANALYZE_TEXT_CHARS = 20_000;
 const MAX_RALPH_UI_ANALYZE_ISSUES = 80;
 const RALPH_UI_BROWSER_CHANNELS =
@@ -106,10 +158,6 @@ const RALPH_UI_BROWSER_CHANNELS =
     : process.platform === "darwin"
       ? (["chrome", "msedge", "chromium"] as const)
       : (["chrome", "msedge", "chromium"] as const);
-const SENSITIVE_LOG_KEY_PATTERN =
-  /(?:api[-_]?key|authorization|bearer|credential|password|secret|token)/iu;
-const SENSITIVE_INLINE_PATTERN =
-  /\b(?:sk-[A-Za-z0-9_-]{20,}|Bearer\s+[A-Za-z0-9._~+/=-]{12,}|(?:api[-_]?key|authorization|password|secret|token)\s*[:=]\s*["']?[^"'\s,;]+)/giu;
 
 export const RALPH_BLOCK_TYPES = [
   "START",
@@ -126,22 +174,7 @@ export const RALPH_BLOCK_TYPES = [
   "END",
 ] as const;
 
-export const RALPH_UTILITY_TYPES = [
-  "WAIT",
-  "HTTP_FETCH",
-  "POLL",
-  "RUN_COMMAND",
-  "READ_FILE",
-  "WRITE_FILE",
-  "SEARCH_FILES",
-  "RUN_CHECK",
-  "UI_ANALYZE",
-  "GIT_STATUS",
-  "SET_VARIABLE",
-  "TRANSFORM_JSON",
-  "VALIDATE_JSON",
-  "NOTIFY",
-] as const;
+export { RALPH_UTILITY_TYPES };
 
 export const RALPH_VARIABLE_TYPES = [
   "string",
@@ -165,6 +198,21 @@ export type RalphVariableType = (typeof RALPH_VARIABLE_TYPES)[number];
 export type RalphFlowScope = "workspace" | "user";
 export type RalphValidatorDecision = "DONE" | "CONTINUE" | "RETRY" | "ERROR";
 export type RalphExecutionOutput = "SUCCESS" | "ERROR" | RalphValidatorDecision | string;
+
+export {
+  MAX_RALPH_RESULT_CHARS,
+  parseRalphDecision,
+} from "./_helpers/parse-ralph-decision.helper.js";
+export {
+  FLOW_FILE_EXTENSION,
+  normalizeFlowAlias,
+  normalizeRunId,
+} from "./_helpers/ralph-flow-ids.helper.js";
+export {
+  capLogText,
+  createRalphLogLine,
+  sanitizeTraceValue,
+} from "./_helpers/format-ralph-run-log-entry.helper.js";
 export type RalphRunStatus = "completed" | "crashed" | "blocked" | "stopped";
 export type RalphUtilityWaitMode = "delay" | "until-time" | "condition" | "poll";
 export type RalphUtilityConditionStyle = "simple" | "json-path" | "javascript";
@@ -669,6 +717,7 @@ export interface RalphRunOptions {
   logger?: RalphRunLogger;
   signal?: AbortSignal;
   maxTransitions?: number | null;
+  repeatedFailureLimit?: number | null;
 }
 
 export interface RalphExecutionOptionsSource {
@@ -775,70 +824,13 @@ interface RalphResultContext {
   variables: Record<string, string>;
 }
 
+interface RalphRepeatedFailureState {
+  signature: string;
+  count: number;
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-};
-
-const isRalphBlockType = (value: unknown): value is RalphBlockType => {
-  return (
-    typeof value === "string" &&
-    RALPH_BLOCK_TYPES.includes(value as RalphBlockType)
-  );
-};
-
-const isRalphVariableType = (value: string): value is RalphVariableType => {
-  return RALPH_VARIABLE_TYPES.includes(value as RalphVariableType);
-};
-
-const normalizeFlowId = (value: string): string => {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, "-")
-    .replace(/^-+|-+$/gu, "")
-    .slice(0, 80);
-};
-
-export const normalizeFlowAlias = normalizeFlowId;
-
-const normalizeFlowFileName = (id: string): string => {
-  const normalizedId = normalizeFlowId(id);
-
-  if (!normalizedId || !FLOW_ID_PATTERN.test(normalizedId)) {
-    throw new Error(
-      "Expected Ralph flow id to contain lowercase letters, numbers, and dashes.",
-    );
-  }
-
-  return `${normalizedId}${FLOW_FILE_EXTENSION}`;
-};
-
-const normalizeRevisionId = (value: string): string => {
-  const revisionId = value.trim().replace(/\.json$/iu, "");
-
-  if (!revisionId || !REVISION_ID_PATTERN.test(revisionId)) {
-    throw new Error(
-      "Expected Ralph revision id to contain letters, numbers, dashes, underscores, colons, or periods.",
-    );
-  }
-
-  return revisionId;
-};
-
-export const normalizeRunId = (value: string): string => {
-  const runId = value
-    .trim()
-    .replace(/\.json$/iu, "")
-    .replace(/[\\/]+/gu, "-")
-    .replace(/[^A-Za-z0-9_.:-]+/gu, "-")
-    .replace(/^-+|-+$/gu, "")
-    .slice(0, 180);
-
-  if (!runId) {
-    throw new Error("Expected a Ralph run id.");
-  }
-
-  return runId;
 };
 
 export const getRalphFlowDirectory = (workspaceRoot: string): string => {
@@ -1038,2270 +1030,9 @@ const createRalphRunArtifactPaths = (
   };
 };
 
-export const createValidationResult = (
-  errorIssues: RalphValidationIssue[],
-  warningIssues: RalphValidationIssue[] = [],
-  variables: RalphFlowVariable[] = [],
-): RalphValidationResult => {
-  return {
-    valid: errorIssues.length === 0,
-    errors: errorIssues.map((issue) => issue.message),
-    warnings: warningIssues.map((issue) => issue.message),
-    errorIssues,
-    warningIssues,
-    variables,
-  };
-};
-
-const coerceStringArray = (value: unknown): string[] => {
-  return Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === "string")
-    : [];
-};
-
-const coerceStringAlias = (
-  record: Record<string, unknown>,
-  keys: readonly string[],
-): string | undefined => {
-  for (const key of keys) {
-    const value = record[key];
-
-    if (typeof value === "string" && value.trim()) {
-      return value;
-    }
-  }
-
-  for (const key of keys) {
-    const value = record[key];
-
-    if (typeof value === "string") {
-      return value;
-    }
-  }
-
-  return undefined;
-};
-
-const coercePosition = (value: unknown): RalphPosition | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const x = typeof value.x === "number" ? value.x : undefined;
-  const y = typeof value.y === "number" ? value.y : undefined;
-
-  return x !== undefined && y !== undefined ? { x, y } : undefined;
-};
-
-const coerceSize = (value: unknown): RalphSize | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const width = typeof value.width === "number" ? value.width : undefined;
-  const height = typeof value.height === "number" ? value.height : undefined;
-
-  return width !== undefined && height !== undefined ? { width, height } : undefined;
-};
-
-const coerceAnnotationTone = (
-  value: unknown,
-): RalphAnnotationTone | undefined => {
-  return value === "slate" ||
-    value === "amber" ||
-    value === "sky" ||
-    value === "lime" ||
-    value === "rose" ||
-    value === "violet"
-    ? value
-    : undefined;
-};
-
-const coerceGroupExecutionBoundary = (
-  value: unknown,
-): RalphGroupExecutionBoundary | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const mode =
-    value.mode === "firstExecutableChild" || value.mode === "selectedChild"
-      ? value.mode
-      : "none";
-
-  return {
-    mode,
-    ...(typeof value.blockId === "string" ? { blockId: value.blockId } : {}),
-  };
-};
-
-const coerceAnnotationLinkKind = (
-  value: unknown,
-): RalphAnnotationLinkKind => {
-  return value === "evidence" ||
-    value === "todo" ||
-    value === "related" ||
-    value === "risk"
-    ? value
-    : "explains";
-};
-
-const coerceAnnotationLinks = (value: unknown): RalphAnnotationLink[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.flatMap((entry): RalphAnnotationLink[] => {
-    if (!isRecord(entry)) {
-      return [];
-    }
-
-    return [
-      {
-        id: typeof entry.id === "string" ? entry.id : "",
-        from: typeof entry.from === "string" ? entry.from : "",
-        to: typeof entry.to === "string" ? entry.to : "",
-        kind: coerceAnnotationLinkKind(entry.kind),
-      },
-    ];
-  });
-};
-
-const coerceRetryPolicy = (value: unknown): RalphRetryPolicy | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const mode = value.mode === "finite" ? "finite" : "infinite";
-  const maxRetries =
-    typeof value.maxRetries === "number" ? value.maxRetries : null;
-  const delaySeconds =
-    typeof value.delaySeconds === "number" ? value.delaySeconds : undefined;
-
-  return {
-    mode,
-    maxRetries,
-    ...(delaySeconds !== undefined ? { delaySeconds } : {}),
-  };
-};
-
-const coerceWorkspaceSetting = (
-  value: unknown,
-): RalphWorkspaceSetting | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  if (value.mode === "custom") {
-    return {
-      mode: "custom",
-      ...(typeof value.path === "string" ? { path: value.path } : {}),
-    };
-  }
-
-  return value.mode === "default" ? { mode: "default" } : undefined;
-};
-
-const coerceAttachmentKind = (
-  value: unknown,
-): RalphAttachmentReference["kind"] | undefined => {
-  return value === "file" ||
-    value === "directory" ||
-    value === "image" ||
-    value === "other"
-    ? value
-    : undefined;
-};
-
-const coerceAttachments = (value: unknown): RalphAttachmentReference[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.flatMap((entry): RalphAttachmentReference[] => {
-    if (!isRecord(entry)) {
-      return [];
-    }
-
-    const source = entry.source === "variable" ? "variable" : "path";
-    const rawValue = typeof entry.value === "string" ? entry.value : "";
-    const kind = coerceAttachmentKind(entry.kind);
-
-    if (!rawValue.trim()) {
-      return [];
-    }
-
-    return [
-      {
-        source,
-        value: rawValue,
-        ...(typeof entry.id === "string" ? { id: entry.id } : {}),
-        ...(kind ? { kind } : {}),
-        ...(typeof entry.mediaType === "string"
-          ? { mediaType: entry.mediaType }
-          : {}),
-      },
-    ];
-  });
-};
-
-const coerceMcpArguments = (
-  value: unknown,
-): Record<string, unknown> | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  return { ...value };
-};
-
-const isRalphUtilityType = (value: unknown): value is RalphUtilityType => {
-  return (
-    typeof value === "string" &&
-    RALPH_UTILITY_TYPES.includes(value as RalphUtilityType)
-  );
-};
-
-const coerceStringRecord = (
-  value: unknown,
-): Record<string, string> | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const entries = Object.entries(value).flatMap(([key, entry]) =>
-    typeof entry === "string" ? ([[key, entry]] as const) : [],
-  );
-
-  return Object.fromEntries(entries);
-};
-
-const coerceNumberArray = (value: unknown): number[] | undefined => {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-
-  const numbers = value.filter(
-    (entry): entry is number => Number.isInteger(entry),
-  );
-
-  return numbers.length > 0 ? numbers : undefined;
-};
-
-const coerceUtilityWaitMode = (
-  value: unknown,
-): RalphUtilityWaitMode | undefined => {
-  return value === "delay" ||
-    value === "until-time" ||
-    value === "condition" ||
-    value === "poll"
-    ? value
-    : undefined;
-};
-
-const coerceUtilityConditionStyle = (
-  value: unknown,
-): RalphUtilityConditionStyle | undefined => {
-  return value === "simple" || value === "json-path" || value === "javascript"
-    ? value
-    : undefined;
-};
-
-const coerceUtilityConditionOperator = (
-  value: unknown,
-): RalphUtilityConditionOperator | undefined => {
-  return value === "exists" ||
-    value === "not-exists" ||
-    value === "truthy" ||
-    value === "falsy" ||
-    value === "equals" ||
-    value === "not-equals" ||
-    value === "contains" ||
-    value === "matches" ||
-    value === "gt" ||
-    value === "gte" ||
-    value === "lt" ||
-    value === "lte"
-    ? value
-    : undefined;
-};
-
-const coerceUtilityCondition = (
-  value: unknown,
-): RalphUtilityCondition | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const style = coerceUtilityConditionStyle(value.style) ?? "simple";
-  const operator = coerceUtilityConditionOperator(value.operator);
-
-  return {
-    style,
-    ...(typeof value.expression === "string"
-      ? { expression: value.expression }
-      : {}),
-    ...(typeof value.path === "string" ? { path: value.path } : {}),
-    ...(operator ? { operator } : {}),
-    ...(typeof value.value === "string" ? { value: value.value } : {}),
-  };
-};
-
-const coerceUiAnalyzeAdapter = (
-  value: unknown,
-): RalphUiAnalyzeAdapter | undefined => {
-  return value === "auto" ||
-    value === "browser" ||
-    value === "image" ||
-    value === "playwright-mcp" ||
-    value === "tauri-mcp"
-    ? value
-    : undefined;
-};
-
-const coerceUiAnalyzeServerMode = (
-  value: unknown,
-): RalphUiAnalyzeServerMode | undefined => {
-  return value === "existing" || value === "managed" || value === "none"
-    ? value
-    : undefined;
-};
-
-const coerceUiAnalyzeWaitUntil = (
-  value: unknown,
-): RalphUiAnalyzeWaitUntil | undefined => {
-  return value === "load" ||
-    value === "domcontentloaded" ||
-    value === "networkidle" ||
-    value === "commit"
-    ? value
-    : undefined;
-};
-
-const coerceUiAnalyzeServer = (
-  value: unknown,
-): RalphUiAnalyzeServer | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const mode = coerceUiAnalyzeServerMode(value.mode);
-
-  return {
-    ...(mode ? { mode } : {}),
-    ...(typeof value.healthUrl === "string" ? { healthUrl: value.healthUrl } : {}),
-    ...(typeof value.command === "string" ? { command: value.command } : {}),
-    ...(typeof value.cwd === "string" ? { cwd: value.cwd } : {}),
-    ...(typeof value.reuseExisting === "boolean"
-      ? { reuseExisting: value.reuseExisting }
-      : {}),
-  };
-};
-
-const coerceUiAnalyzeViewports = (
-  value: unknown,
-): RalphUiAnalyzeViewport[] | undefined => {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-
-  const viewports = value.flatMap((entry): RalphUiAnalyzeViewport[] => {
-    if (!isRecord(entry)) {
-      return [];
-    }
-
-    const width = typeof entry.width === "number" ? Math.trunc(entry.width) : NaN;
-    const height = typeof entry.height === "number" ? Math.trunc(entry.height) : NaN;
-
-    if (!Number.isFinite(width) || !Number.isFinite(height)) {
-      return [];
-    }
-
-    return [
-      {
-        ...(typeof entry.name === "string" ? { name: entry.name } : {}),
-        width,
-        height,
-      },
-    ];
-  });
-
-  return viewports.length > 0 ? viewports : undefined;
-};
-
-const coerceUiAnalyzeChecks = (
-  value: unknown,
-): RalphUiAnalyzeChecks | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const checks: RalphUiAnalyzeChecks = {};
-
-  for (const key of [
-    "screenshots",
-    "accessibility",
-    "console",
-    "network",
-    "responsive",
-    "trace",
-  ] as const) {
-    if (typeof value[key] === "boolean") {
-      checks[key] = value[key];
-    }
-  }
-
-  return Object.keys(checks).length > 0 ? checks : undefined;
-};
-
-const coerceUtilityEncoding = (
-  value: unknown,
-): BufferEncoding | undefined => {
-  return value === "utf8" ||
-    value === "utf-8" ||
-    value === "base64" ||
-    value === "hex" ||
-    value === "latin1" ||
-    value === "ascii"
-    ? (value === "utf-8" ? "utf8" : value)
-    : undefined;
-};
-
-const coerceFirstString = (...values: unknown[]): string | undefined => {
-  for (const value of values) {
-    if (typeof value === "string") {
-      return value;
-    }
-
-    if (Array.isArray(value)) {
-      const firstString = value.find(
-        (entry): entry is string =>
-          typeof entry === "string" && entry.trim().length > 0,
-      );
-
-      if (firstString) {
-        return firstString;
-      }
-    }
-  }
-
-  return undefined;
-};
-
-const coerceUtilityConfig = (value: unknown): RalphUtilityConfig => {
-  const record = isRecord(value) ? value : {};
-  const type = isRalphUtilityType(record.type) ? record.type : "WAIT";
-  const mode = coerceUtilityWaitMode(record.mode);
-  const condition = coerceUtilityCondition(record.condition);
-  const headers = coerceStringRecord(record.headers);
-  const env = coerceStringRecord(record.env);
-  const acceptedExitCodes = coerceNumberArray(record.acceptedExitCodes);
-  const encoding = coerceUtilityEncoding(record.encoding);
-  const adapter = coerceUiAnalyzeAdapter(record.adapter);
-  const server = coerceUiAnalyzeServer(record.server);
-  const viewports = coerceUiAnalyzeViewports(record.viewports);
-  const checks = coerceUiAnalyzeChecks(record.checks);
-  const waitUntil = coerceUiAnalyzeWaitUntil(record.waitUntil);
-  const mcpArguments = coerceMcpArguments(record.mcpArguments);
-  const rootPath = coerceFirstString(
-    record.rootPath,
-    record.root,
-    record.sourceRoot,
-    record.directory,
-  );
-  const pattern = coerceFirstString(record.pattern);
-  const glob = coerceFirstString(record.glob, record.patterns, record.globs);
-
-  return {
-    type,
-    ...(mode ? { mode } : {}),
-    ...(typeof record.delaySeconds === "number"
-      ? { delaySeconds: record.delaySeconds }
-      : {}),
-    ...(typeof record.runAt === "string" ? { runAt: record.runAt } : {}),
-    ...(typeof record.intervalSeconds === "number"
-      ? { intervalSeconds: record.intervalSeconds }
-      : {}),
-    ...(typeof record.backoffMultiplier === "number"
-      ? { backoffMultiplier: record.backoffMultiplier }
-      : {}),
-    ...(typeof record.maxAttempts === "number" || record.maxAttempts === null
-      ? { maxAttempts: record.maxAttempts }
-      : {}),
-    ...(condition ? { condition } : {}),
-    ...(typeof record.url === "string" ? { url: record.url } : {}),
-    ...(typeof record.method === "string" ? { method: record.method } : {}),
-    ...(headers ? { headers } : {}),
-    ...(typeof record.body === "string" ? { body: record.body } : {}),
-    ...(typeof record.outputPath === "string"
-      ? { outputPath: record.outputPath }
-      : {}),
-    ...(typeof record.path === "string" ? { path: record.path } : {}),
-    ...(rootPath ? { rootPath } : {}),
-    ...(typeof record.content === "string" ? { content: record.content } : {}),
-    ...(typeof record.append === "boolean" ? { append: record.append } : {}),
-    ...(encoding ? { encoding } : {}),
-    ...(pattern ? { pattern } : {}),
-    ...(glob ? { glob } : {}),
-    ...(typeof record.maxResults === "number"
-      ? { maxResults: record.maxResults }
-      : {}),
-    ...(typeof record.command === "string" ? { command: record.command } : {}),
-    ...(typeof record.cwd === "string" ? { cwd: record.cwd } : {}),
-    ...(env ? { env } : {}),
-    ...(adapter ? { adapter } : {}),
-    ...(typeof record.targetUrl === "string"
-      ? { targetUrl: record.targetUrl }
-      : {}),
-    ...(typeof record.screenshotPath === "string"
-      ? { screenshotPath: record.screenshotPath }
-      : {}),
-    ...(server ? { server } : {}),
-    ...(viewports ? { viewports } : {}),
-    ...(checks ? { checks } : {}),
-    ...(typeof record.fullPage === "boolean" ? { fullPage: record.fullPage } : {}),
-    ...(waitUntil ? { waitUntil } : {}),
-    ...(typeof record.mcpServerId === "string"
-      ? { mcpServerId: record.mcpServerId }
-      : {}),
-    ...(typeof record.mcpToolName === "string"
-      ? { mcpToolName: record.mcpToolName }
-      : {}),
-    ...(mcpArguments ? { mcpArguments } : {}),
-    ...(acceptedExitCodes ? { acceptedExitCodes } : {}),
-    ...(typeof record.timeoutSeconds === "number"
-      ? { timeoutSeconds: record.timeoutSeconds }
-      : {}),
-    ...(typeof record.maxOutputBytes === "number"
-      ? { maxOutputBytes: record.maxOutputBytes }
-      : {}),
-    ...(typeof record.variableName === "string"
-      ? { variableName: record.variableName }
-      : {}),
-    ...(typeof record.value === "string" ? { value: record.value } : {}),
-    ...(typeof record.input === "string" ? { input: record.input } : {}),
-    ...(typeof record.expression === "string"
-      ? { expression: record.expression }
-      : {}),
-    ...(Object.hasOwn(record, "schema") ? { schema: record.schema } : {}),
-    ...(typeof record.message === "string" ? { message: record.message } : {}),
-    ...(typeof record.ignoreErrors === "boolean"
-      ? { ignoreErrors: record.ignoreErrors }
-      : {}),
-  };
-};
-
-const coerceSettings = (value: unknown): RalphBlockSettings | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const workspace = coerceWorkspaceSetting(value.workspace);
-  const retry = coerceRetryPolicy(value.retry);
-  const mcp = coerceMcpConfigOverride(value.mcp);
-  const provider =
-    typeof value.provider === "string"
-      ? (value.provider as ModelProvider | "default")
-      : undefined;
-  const model = typeof value.model === "string" ? value.model : undefined;
-  const reasoning =
-    typeof value.reasoning === "string" && isReasoningMode(value.reasoning)
-      ? value.reasoning
-      : undefined;
-  const timeoutSeconds =
-    typeof value.timeoutSeconds === "number" ? value.timeoutSeconds : undefined;
-  const temperature =
-    typeof value.temperature === "number" ? value.temperature : undefined;
-  const maxIterations =
-    typeof value.maxIterations === "number" ? value.maxIterations : undefined;
-
-  return {
-    ...(workspace ? { workspace } : {}),
-    ...(provider ? { provider } : {}),
-    ...(model ? { model } : {}),
-    ...(reasoning ? { reasoning } : {}),
-    ...(typeof value.webAccess === "boolean"
-      ? { webAccess: value.webAccess }
-      : {}),
-    ...(typeof value.fileAccess === "boolean"
-      ? { fileAccess: value.fileAccess }
-      : {}),
-    attachments: coerceAttachments(value.attachments),
-    packs: coerceStringArray(value.packs),
-    ...(maxIterations !== undefined ? { maxIterations } : {}),
-    ...(timeoutSeconds !== undefined ? { timeoutSeconds } : {}),
-    ...(temperature !== undefined ? { temperature } : {}),
-    ...(typeof value.internalValidatorEnabled === "boolean"
-      ? { internalValidatorEnabled: value.internalValidatorEnabled }
-      : {}),
-    ...(retry ? { retry } : {}),
-    ...(mcp ? { mcp } : {}),
-  };
-};
-
-const coerceValidationScope = (
-  value: unknown,
-): RalphValidationScope | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const allowedModes: RalphValidationScope["mode"][] = [
-    "sinceLastValidator",
-    "previousBlock",
-    "selectedBlocks",
-    "wholeFlow",
-  ];
-  const mode = allowedModes.includes(value.mode as RalphValidationScope["mode"])
-    ? (value.mode as RalphValidationScope["mode"])
-    : "sinceLastValidator";
-
-  return {
-    mode,
-    blockIds: coerceStringArray(value.blockIds),
-  };
-};
-
-const coerceFlowSettings = (value: unknown): RalphFlowSettings | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const settings: RalphFlowSettings = {};
-
-  if (
-    typeof value.maxTransitions === "number" &&
-    Number.isFinite(value.maxTransitions)
-  ) {
-    settings.maxTransitions = Math.trunc(value.maxTransitions);
-  }
-
-  return Object.keys(settings).length > 0 ? settings : undefined;
-};
-
-const parseFlowBlockRecord = (record: Record<string, unknown>): RalphFlowBlock => {
-  const type = isRalphBlockType(record.type) ? record.type : "PROMPT";
-  const base: Omit<RalphBaseBlock, "type"> = {
-    id: typeof record.id === "string" ? record.id : "",
-    title: typeof record.title === "string" ? record.title : "",
-  };
-  const position = coercePosition(record.position);
-  const size = coerceSize(record.size);
-  const settings = coerceSettings(record.settings);
-  const parentGroupId =
-    typeof record.parentGroupId === "string" ? record.parentGroupId : undefined;
-
-  if (position) {
-    base.position = position;
-  }
-
-  if (size) {
-    base.size = size;
-  }
-
-  if (parentGroupId) {
-    base.parentGroupId = parentGroupId;
-  }
-
-  if (settings) {
-    base.settings = settings;
-  }
-
-  if (typeof record.groupBoundary === "boolean") {
-    base.groupBoundary = record.groupBoundary;
-  }
-
-  switch (type) {
-    case "START":
-      return { ...base, type };
-    case "PROMPT":
-      return {
-        ...base,
-        type,
-        prompt: typeof record.prompt === "string" ? record.prompt : "",
-      };
-    case "VALIDATOR": {
-      const validationScope = coerceValidationScope(record.validationScope);
-      return {
-        ...base,
-        type,
-        prompt: typeof record.prompt === "string" ? record.prompt : "",
-        ...(validationScope ? { validationScope } : {}),
-      };
-    }
-    case "DECISION":
-      return {
-        ...base,
-        type,
-        prompt: typeof record.prompt === "string" ? record.prompt : "",
-        labels: coerceStringArray(record.labels),
-      };
-    case "PACK":
-      return {
-        ...base,
-        type,
-        packIds: coerceStringArray(record.packIds),
-        propagationMode:
-          record.propagationMode === "untilOverridden"
-            ? "untilOverridden"
-            : "nextBlockOnly",
-      };
-    case "UTILITY":
-      return {
-        ...base,
-        type,
-        utility: coerceUtilityConfig(record.utility),
-      };
-    case "MCP_TOOL": {
-      const mcpArguments = coerceMcpArguments(record.arguments);
-      return {
-        ...base,
-        type,
-        serverId: typeof record.serverId === "string" ? record.serverId : "",
-        toolName: typeof record.toolName === "string" ? record.toolName : "",
-        ...(mcpArguments ? { arguments: mcpArguments } : {}),
-      };
-    }
-    case "MCP_RESOURCE":
-      return {
-        ...base,
-        type,
-        serverId: typeof record.serverId === "string" ? record.serverId : "",
-        uri: typeof record.uri === "string" ? record.uri : "",
-      };
-    case "MCP_PROMPT": {
-      const mcpArguments = coerceMcpArguments(record.arguments);
-      return {
-        ...base,
-        type,
-        serverId: typeof record.serverId === "string" ? record.serverId : "",
-        promptName:
-          typeof record.promptName === "string" ? record.promptName : "",
-        ...(mcpArguments ? { arguments: mcpArguments } : {}),
-      };
-    }
-    case "NOTE": {
-      const tone = coerceAnnotationTone(record.tone);
-      return {
-        ...base,
-        type,
-        text:
-          coerceStringAlias(record, ["text", "note", "content", "body"]) ?? "",
-        ...(tone ? { tone } : {}),
-        tags: coerceStringArray(record.tags),
-        ...(typeof record.collapsed === "boolean"
-          ? { collapsed: record.collapsed }
-          : {}),
-        pinnedBlockIds: coerceStringArray(record.pinnedBlockIds),
-      };
-    }
-    case "GROUP": {
-      const tone = coerceAnnotationTone(record.tone);
-      const executionBoundary = coerceGroupExecutionBoundary(
-        record.executionBoundary,
-      );
-      const layoutMode =
-        record.layoutMode === "stack" || record.layoutMode === "swimlane"
-          ? record.layoutMode
-          : "freeform";
-
-      return {
-        ...base,
-        type,
-        ...(tone ? { tone } : {}),
-        ...(typeof record.description === "string"
-          ? { description: record.description }
-          : {}),
-        childBlockIds: coerceStringArray(record.childBlockIds),
-        ...(typeof record.collapsed === "boolean"
-          ? { collapsed: record.collapsed }
-          : {}),
-        ...(typeof record.locked === "boolean" ? { locked: record.locked } : {}),
-        ...(typeof record.moveChildren === "boolean"
-          ? { moveChildren: record.moveChildren }
-          : {}),
-        ...(typeof record.maxDepth === "number"
-          ? { maxDepth: Math.trunc(record.maxDepth) }
-          : {}),
-        layoutMode,
-        ...(executionBoundary ? { executionBoundary } : {}),
-      };
-    }
-    case "END":
-      return {
-        ...base,
-        type,
-        status:
-          record.status === "failed" ||
-          record.status === "cancelled" ||
-          record.status === "review"
-            ? record.status
-            : "success",
-      };
-  }
-};
-
-const parseFlowRecord = (record: Record<string, unknown>): RalphFlow => {
-  const schemaVersion =
-    typeof record.schemaVersion === "number"
-      ? record.schemaVersion
-      : record.schemaVersion === undefined || record.schemaVersion === null
-        ? RALPH_FLOW_SCHEMA_VERSION
-        : Number.NaN;
-  const blocks = Array.isArray(record.blocks)
-    ? record.blocks.flatMap((block): RalphFlowBlock[] =>
-        isRecord(block) ? [parseFlowBlockRecord(block)] : [],
-      )
-    : [];
-  const edges = Array.isArray(record.edges)
-    ? record.edges.flatMap((edge): RalphFlowEdge[] => {
-        if (!isRecord(edge)) {
-          return [];
-        }
-
-        return [
-          {
-            id: typeof edge.id === "string" ? edge.id : "",
-            from: typeof edge.from === "string" ? edge.from : "",
-            fromOutput:
-              typeof edge.fromOutput === "string" ? edge.fromOutput : "",
-            to: typeof edge.to === "string" ? edge.to : "",
-          },
-        ];
-      })
-    : [];
-  const settings = coerceFlowSettings(record.settings);
-  const annotationLinks = coerceAnnotationLinks(record.annotationLinks);
-
-  return {
-    schemaVersion: schemaVersion as typeof RALPH_FLOW_SCHEMA_VERSION,
-    id: typeof record.id === "string" ? record.id : "",
-    ...(typeof record.alias === "string" ? { alias: record.alias } : {}),
-    name: typeof record.name === "string" ? record.name : "",
-    ...(typeof record.description === "string"
-      ? { description: record.description }
-      : {}),
-    ...(typeof record.createdAt === "string" ? { createdAt: record.createdAt } : {}),
-    ...(typeof record.updatedAt === "string" ? { updatedAt: record.updatedAt } : {}),
-    ...(settings ? { settings } : {}),
-    variables: Array.isArray(record.variables)
-      ? record.variables.flatMap((variable): RalphFlowVariable[] => {
-          if (!isRecord(variable)) {
-            return [];
-          }
-
-          const type =
-            typeof variable.type === "string" && isRalphVariableType(variable.type)
-              ? variable.type
-              : "string";
-          const name = typeof variable.name === "string" ? variable.name : "";
-          const defaultValue =
-            typeof variable.default === "string" ? variable.default : undefined;
-
-          return [
-            {
-              name,
-              type,
-              ...(defaultValue !== undefined ? { default: defaultValue } : {}),
-              required:
-                typeof variable.required === "boolean"
-                  ? variable.required
-                  : defaultValue === undefined,
-            },
-          ];
-        })
-      : [],
-    blocks,
-    edges,
-    ...(annotationLinks.length > 0 ? { annotationLinks } : {}),
-  };
-};
-
 export const parseRalphFlowJson = (raw: string): RalphFlow => {
   const parsed: unknown = JSON.parse(raw);
-
-  if (!isRecord(parsed)) {
-    throw new Error("Expected Ralph flow JSON to be an object.");
-  }
-
-  return parseFlowRecord(parsed);
-};
-
-interface ParsedPlaceholder {
-  raw: string;
-  content: string;
-  variable?: RalphFlowVariable;
-  builtin?: string;
-  blockReference?: {
-    kind: "result" | "summary" | "error" | "data";
-    blockId: string;
-    path?: string;
-  };
-  invalid?: string;
-}
-
-const parsePlaceholderContent = (raw: string, content: string): ParsedPlaceholder => {
-  const builtinNames = new Set([
-    "lastResult",
-    "lastResultSummary",
-    "lastError",
-    "lastData",
-    "runLog",
-  ]);
-
-  if (builtinNames.has(content)) {
-    return { raw, content, builtin: content };
-  }
-
-  const blockReference = content.match(
-    /^(result|summary|error|data):([a-z0-9][a-z0-9-]{0,79})(?::([\s\S]+))?$/u,
-  );
-  if (blockReference) {
-    return {
-      raw,
-      content,
-      blockReference: {
-        kind: blockReference[1] as "result" | "summary" | "error" | "data",
-        blockId: blockReference[2] ?? "",
-        ...(blockReference[3] ? { path: blockReference[3] } : {}),
-      },
-    };
-  }
-
-  const variableMatch = content.match(
-    /^([A-Za-z_][A-Za-z0-9_]*)(?::([a-z][a-z0-9-]*))?(?:=([\s\S]*))?$/u,
-  );
-  if (!variableMatch) {
-    return {
-      raw,
-      content,
-      invalid: `placeholder \`${raw}\` has invalid Ralph variable syntax.`,
-    };
-  }
-
-  const type = variableMatch[2] ?? "string";
-  if (!isRalphVariableType(type)) {
-    return {
-      raw,
-      content,
-      invalid: `placeholder \`${raw}\` uses unsupported variable type \`${type}\`.`,
-    };
-  }
-
-  const defaultValue = variableMatch[3];
-
-  return {
-    raw,
-    content,
-    variable: {
-      name: variableMatch[1] ?? "",
-      type,
-      ...(defaultValue !== undefined ? { default: defaultValue } : {}),
-      required: defaultValue === undefined,
-    },
-  };
-};
-
-const extractPlaceholders = (text: string): ParsedPlaceholder[] => {
-  return [...text.matchAll(PLACEHOLDER_PATTERN)].map((match) =>
-    parsePlaceholderContent(match[0] ?? "", (match[1] ?? "").trim()),
-  );
-};
-
-const hasPlaceholders = (text: string): boolean => {
-  return /\{\{\s*([^}]+?)\s*\}\}/u.test(text);
-};
-
-const collectTemplateTexts = (value: unknown): string[] => {
-  if (typeof value === "string") {
-    return [value];
-  }
-
-  if (Array.isArray(value)) {
-    return value.flatMap(collectTemplateTexts);
-  }
-
-  if (isRecord(value)) {
-    return Object.values(value).flatMap(collectTemplateTexts);
-  }
-
-  return [];
-};
-
-const getPromptLikeText = (block: RalphFlowBlock): string[] => {
-  switch (block.type) {
-    case "PROMPT":
-    case "VALIDATOR":
-    case "DECISION":
-      return [block.prompt];
-    case "MCP_TOOL":
-      return [
-        block.serverId,
-        block.toolName,
-        ...collectTemplateTexts(block.arguments),
-      ];
-    case "MCP_RESOURCE":
-      return [block.serverId, block.uri];
-    case "MCP_PROMPT":
-      return [
-        block.serverId,
-        block.promptName,
-        ...collectTemplateTexts(block.arguments),
-      ];
-    case "UTILITY":
-      return collectTemplateTexts(block.utility);
-    case "START":
-    case "PACK":
-    case "NOTE":
-    case "GROUP":
-    case "END":
-      return [];
-  }
-};
-
-const isPlainRalphVariableReference = (value: string): boolean => {
-  return /^[A-Za-z_][A-Za-z0-9_-]*$/u.test(value.trim());
-};
-
-const getAttachmentTexts = (block: RalphFlowBlock): string[] => {
-  return (
-    block.settings?.attachments?.map((attachment) => {
-      if (
-        attachment.source === "variable" &&
-        isPlainRalphVariableReference(attachment.value)
-      ) {
-        return `{{${attachment.value.trim()}:file}}`;
-      }
-
-      return attachment.value;
-    }) ?? []
-  );
-};
-
-export const discoverRalphFlowVariables = (flow: RalphFlow): RalphFlowVariable[] => {
-  const variables = new Map<string, RalphFlowVariable>();
-
-  for (const declared of flow.variables ?? []) {
-    if (!declared.name.trim()) {
-      continue;
-    }
-
-    variables.set(declared.name, declared);
-  }
-
-  for (const block of flow.blocks) {
-    for (const text of [...getPromptLikeText(block), ...getAttachmentTexts(block)]) {
-      for (const placeholder of extractPlaceholders(text)) {
-        if (!placeholder.variable) {
-          continue;
-        }
-
-        const current = variables.get(placeholder.variable.name);
-        variables.set(placeholder.variable.name, {
-          ...placeholder.variable,
-          ...(current?.default !== undefined
-            ? { default: current.default, required: current.required }
-            : {}),
-          type: current?.type ?? placeholder.variable.type,
-        });
-      }
-    }
-  }
-
-  for (const block of flow.blocks) {
-    if (
-      block.type === "UTILITY" &&
-      block.utility.type === "SET_VARIABLE" &&
-      block.utility.variableName?.trim()
-    ) {
-      const name = block.utility.variableName.trim();
-      const current = variables.get(name);
-
-      variables.set(name, {
-        name,
-        type: current?.type ?? "string",
-        ...(current?.default !== undefined ? { default: current.default } : {}),
-        required: false,
-      });
-    }
-  }
-
-  return [...variables.values()].sort((left, right) =>
-    left.name.localeCompare(right.name),
-  );
-};
-
-export const getRalphUtilityOutputs = (
-  utility: RalphUtilityConfig,
-): RalphExecutionOutput[] => {
-  switch (utility.type) {
-    case "WAIT":
-    case "SET_VARIABLE":
-    case "NOTIFY":
-      return ["SUCCESS"];
-    case "HTTP_FETCH":
-      return ["SUCCESS", "HTTP_ERROR", "TIMEOUT", "ERROR"];
-    case "POLL":
-      return utility.maxAttempts === null || utility.maxAttempts === undefined
-        ? ["SUCCESS", "ERROR"]
-        : ["SUCCESS", "TIMEOUT", "ERROR"];
-    case "RUN_COMMAND":
-    case "READ_FILE":
-    case "WRITE_FILE":
-    case "GIT_STATUS":
-    case "TRANSFORM_JSON":
-      return ["SUCCESS", "ERROR"];
-    case "SEARCH_FILES":
-      return ["SUCCESS", "EMPTY", "ERROR"];
-    case "RUN_CHECK":
-      return ["SUCCESS", "FAILED", "ERROR"];
-    case "UI_ANALYZE":
-      return ["SUCCESS", "UNAVAILABLE", "ERROR"];
-    case "VALIDATE_JSON":
-      return ["SUCCESS", "INVALID", "ERROR"];
-  }
-};
-
-const getBlockOutputs = (block: RalphFlowBlock): RalphExecutionOutput[] => {
-  switch (block.type) {
-    case "START":
-      return ["SUCCESS"];
-    case "PROMPT":
-    case "PACK":
-    case "MCP_TOOL":
-    case "MCP_RESOURCE":
-    case "MCP_PROMPT":
-      return ["SUCCESS", "ERROR"];
-    case "UTILITY":
-      return getRalphUtilityOutputs(block.utility);
-    case "VALIDATOR":
-      return ["DONE", "CONTINUE", "RETRY", "ERROR"];
-    case "DECISION":
-      return [...new Set([...block.labels, "ERROR"])];
-    case "NOTE":
-    case "GROUP":
-    case "END":
-      return [];
-  }
-};
-
-export const isVisualRalphBlock = (block: RalphFlowBlock): boolean => {
-  return block.type === "NOTE" || block.type === "GROUP";
-};
-
-export const isExecutableRalphBlock = (block: RalphFlowBlock): boolean => {
-  return block.type !== "START" && block.type !== "END" && !isVisualRalphBlock(block);
-};
-
-const getBlockById = (flow: RalphFlow): Map<string, RalphFlowBlock> => {
-  return new Map(flow.blocks.map((block) => [block.id, block]));
-};
-
-const hasOutgoingEdge = (
-  flow: RalphFlow,
-  blockId: string,
-  output: RalphExecutionOutput,
-): boolean => {
-  return flow.edges.some(
-    (edge) => edge.from === blockId && edge.fromOutput === output,
-  );
-};
-
-const findOutgoingEdge = (
-  flow: RalphFlow,
-  blockId: string,
-  output: RalphExecutionOutput,
-): RalphFlowEdge | undefined => {
-  return flow.edges.find(
-    (edge) => edge.from === blockId && edge.fromOutput === output,
-  );
-};
-
-const addIssue = (
-  issues: RalphValidationIssue[],
-  code: string,
-  message: string,
-  context: Pick<RalphValidationIssue, "blockId" | "edgeId"> = {},
-): void => {
-  issues.push({ code, message, ...context });
-};
-
-const validateBlockReferencePlaceholders = (
-  flow: RalphFlow,
-  block: RalphFlowBlock,
-  errors: RalphValidationIssue[],
-  warnings: RalphValidationIssue[],
-): void => {
-  const blockIds = new Set(flow.blocks.map((candidate) => candidate.id));
-
-  for (const text of [...getPromptLikeText(block), ...getAttachmentTexts(block)]) {
-    for (const placeholder of extractPlaceholders(text)) {
-      if (placeholder.invalid) {
-        addIssue(errors, "invalid-placeholder", placeholder.invalid, {
-          blockId: block.id,
-        });
-        continue;
-      }
-
-      const reference = placeholder.blockReference;
-      if (reference && !blockIds.has(reference.blockId)) {
-        addIssue(
-          warnings,
-          "missing-result-reference",
-          `${block.id} references result placeholder for unknown block \`${reference.blockId}\`.`,
-          { blockId: block.id },
-        );
-      }
-    }
-  }
-};
-
-const blockCanExecute = (block: RalphFlowBlock): boolean => {
-  return isExecutableRalphBlock(block);
-};
-
-const getReachableBlockIds = (flow: RalphFlow): Set<string> => {
-  const starts = flow.blocks.filter((block) => block.type === "START");
-  const reachable = new Set<string>();
-  const pending = starts.map((block) => block.id);
-
-  while (pending.length > 0) {
-    const current = pending.shift();
-
-    if (!current || reachable.has(current)) {
-      continue;
-    }
-
-    reachable.add(current);
-    for (const edge of flow.edges.filter((candidate) => candidate.from === current)) {
-      pending.push(edge.to);
-    }
-  }
-
-  return reachable;
-};
-
-const hasPathToEnd = (flow: RalphFlow, startBlockId: string): boolean => {
-  const blockMap = getBlockById(flow);
-  const visited = new Set<string>();
-  const pending = [startBlockId];
-
-  while (pending.length > 0) {
-    const current = pending.shift();
-
-    if (!current || visited.has(current)) {
-      continue;
-    }
-
-    visited.add(current);
-    const block = blockMap.get(current);
-    if (block?.type === "END") {
-      return true;
-    }
-
-    for (const edge of flow.edges.filter((candidate) => candidate.from === current)) {
-      pending.push(edge.to);
-    }
-  }
-
-  return false;
-};
-
-const getRalphGroupDepthIssue = (
-  block: RalphFlowBlock,
-  blocksById: Map<string, RalphFlowBlock>,
-): "cycle" | "too-deep" | undefined => {
-  const seen = new Set<string>([block.id]);
-  let depth = 0;
-  let parentGroupId = block.parentGroupId;
-
-  while (parentGroupId) {
-    if (seen.has(parentGroupId)) {
-      return "cycle";
-    }
-
-    seen.add(parentGroupId);
-    depth += 1;
-
-    if (depth > DEFAULT_RALPH_GROUP_MAX_DEPTH) {
-      return "too-deep";
-    }
-
-    const parent = blocksById.get(parentGroupId);
-    parentGroupId = parent?.parentGroupId;
-  }
-
-  return undefined;
-};
-
-const validateUtilityCondition = (
-  blockLabel: string,
-  block: RalphUtilityBlock,
-  errors: RalphValidationIssue[],
-): void => {
-  const condition = block.utility.condition;
-
-  if (!condition) {
-    return;
-  }
-
-  if (condition.style === "javascript" || condition.style === "simple") {
-    if (!condition.expression?.trim()) {
-      addIssue(
-        errors,
-        "utility-condition-expression-required",
-        `${blockLabel} ${condition.style} condition requires expression.`,
-        { blockId: block.id },
-      );
-    }
-    return;
-  }
-
-  if (!condition.path?.trim()) {
-    addIssue(
-      errors,
-      "utility-condition-path-required",
-      `${blockLabel} json-path condition requires path.`,
-      { blockId: block.id },
-    );
-  }
-};
-
-const isHttpLikeUrl = (value: string | undefined): boolean => {
-  if (!value?.trim() || hasPlaceholders(value)) {
-    return true;
-  }
-
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-};
-
-const validateUiAnalyzeUtilityBlock = (
-  blockLabel: string,
-  block: RalphUtilityBlock,
-  errors: RalphValidationIssue[],
-): void => {
-  const utility = block.utility;
-  const adapter = utility.adapter ?? "auto";
-  const hasTargetUrl = Boolean(utility.targetUrl?.trim() || utility.url?.trim());
-  const hasScreenshotPath = Boolean(utility.screenshotPath?.trim());
-  const isMcpAdapter = adapter === "playwright-mcp" || adapter === "tauri-mcp";
-
-  if (!hasTargetUrl && !hasScreenshotPath && !isMcpAdapter) {
-    addIssue(
-      errors,
-      "utility-ui-target-required",
-      `${blockLabel} requires targetUrl or screenshotPath.`,
-      { blockId: block.id },
-    );
-  }
-
-  if (adapter === "browser" && !hasTargetUrl) {
-    addIssue(
-      errors,
-      "utility-ui-target-url-required",
-      `${blockLabel} browser analysis requires targetUrl.`,
-      { blockId: block.id },
-    );
-  }
-
-  if (adapter === "image" && !hasScreenshotPath) {
-    addIssue(
-      errors,
-      "utility-ui-screenshot-required",
-      `${blockLabel} image analysis requires screenshotPath.`,
-      { blockId: block.id },
-    );
-  }
-
-  if (isMcpAdapter && (!utility.mcpServerId?.trim() || !utility.mcpToolName?.trim())) {
-    addIssue(
-      errors,
-      "utility-ui-mcp-required",
-      `${blockLabel} ${adapter} analysis requires mcpServerId and mcpToolName.`,
-      { blockId: block.id },
-    );
-  }
-
-  if (!isHttpLikeUrl(utility.targetUrl ?? utility.url)) {
-    addIssue(
-      errors,
-      "utility-ui-target-url-invalid",
-      `${blockLabel} targetUrl must be an HTTP or HTTPS URL.`,
-      { blockId: block.id },
-    );
-  }
-
-  if (!isHttpLikeUrl(utility.server?.healthUrl)) {
-    addIssue(
-      errors,
-      "utility-ui-health-url-invalid",
-      `${blockLabel} server.healthUrl must be an HTTP or HTTPS URL.`,
-      { blockId: block.id },
-    );
-  }
-
-  for (const viewport of utility.viewports ?? []) {
-    if (
-      !Number.isInteger(viewport.width) ||
-      !Number.isInteger(viewport.height) ||
-      viewport.width < MIN_RALPH_UI_VIEWPORT_SIZE ||
-      viewport.height < MIN_RALPH_UI_VIEWPORT_SIZE ||
-      viewport.width > MAX_RALPH_UI_VIEWPORT_SIZE ||
-      viewport.height > MAX_RALPH_UI_VIEWPORT_SIZE
-    ) {
-      addIssue(
-        errors,
-        "utility-ui-viewport-invalid",
-        `${blockLabel} viewport dimensions must be integers from ${MIN_RALPH_UI_VIEWPORT_SIZE} to ${MAX_RALPH_UI_VIEWPORT_SIZE}.`,
-        { blockId: block.id },
-      );
-      break;
-    }
-  }
-};
-
-const validateRalphUtilityBlock = (
-  block: RalphUtilityBlock,
-  errors: RalphValidationIssue[],
-): void => {
-  const blockLabel = block.id || block.title || "utility block";
-  const utility = block.utility;
-
-  if (utility.delaySeconds !== undefined && utility.delaySeconds < 0) {
-    addIssue(
-      errors,
-      "utility-delay-invalid",
-      `${blockLabel} delaySeconds must be >= 0.`,
-      { blockId: block.id },
-    );
-  }
-
-  if (utility.intervalSeconds !== undefined && utility.intervalSeconds < 0) {
-    addIssue(
-      errors,
-      "utility-interval-invalid",
-      `${blockLabel} intervalSeconds must be >= 0.`,
-      { blockId: block.id },
-    );
-  }
-
-  if (
-    utility.maxAttempts !== undefined &&
-    utility.maxAttempts !== null &&
-    (!Number.isInteger(utility.maxAttempts) || utility.maxAttempts < 1)
-  ) {
-    addIssue(
-      errors,
-      "utility-max-attempts-invalid",
-      `${blockLabel} maxAttempts must be null or an integer >= 1.`,
-      { blockId: block.id },
-    );
-  }
-
-  if (
-    utility.timeoutSeconds !== undefined &&
-    (!Number.isFinite(utility.timeoutSeconds) || utility.timeoutSeconds < 0)
-  ) {
-    addIssue(
-      errors,
-      "utility-timeout-invalid",
-      `${blockLabel} timeoutSeconds must be >= 0.`,
-      { blockId: block.id },
-    );
-  }
-
-  if (
-    utility.maxOutputBytes !== undefined &&
-    (!Number.isInteger(utility.maxOutputBytes) || utility.maxOutputBytes < 1)
-  ) {
-    addIssue(
-      errors,
-      "utility-output-limit-invalid",
-      `${blockLabel} maxOutputBytes must be an integer >= 1.`,
-      { blockId: block.id },
-    );
-  }
-
-  validateUtilityCondition(blockLabel, block, errors);
-
-  switch (utility.type) {
-    case "WAIT":
-      if (utility.mode === "until-time" && !utility.runAt?.trim()) {
-        addIssue(errors, "utility-run-at-required", `${blockLabel} requires runAt.`, {
-          blockId: block.id,
-        });
-      }
-
-      if (
-        (utility.mode === "condition" || utility.mode === "poll") &&
-        !utility.condition
-      ) {
-        addIssue(
-          errors,
-          "utility-condition-required",
-          `${blockLabel} requires a condition.`,
-          { blockId: block.id },
-        );
-      }
-      break;
-    case "HTTP_FETCH":
-    case "POLL":
-      if (!utility.url?.trim()) {
-        addIssue(errors, "utility-url-required", `${blockLabel} requires url.`, {
-          blockId: block.id,
-        });
-      }
-
-      if (utility.type === "POLL" && !utility.condition) {
-        addIssue(
-          errors,
-          "utility-condition-required",
-          `${blockLabel} requires a poll condition.`,
-          { blockId: block.id },
-        );
-      }
-      break;
-    case "RUN_COMMAND":
-    case "RUN_CHECK":
-      if (!utility.command?.trim()) {
-        addIssue(
-          errors,
-          "utility-command-required",
-          `${blockLabel} requires command.`,
-          { blockId: block.id },
-        );
-      }
-      break;
-    case "READ_FILE":
-    case "WRITE_FILE":
-      if (!utility.path?.trim()) {
-        addIssue(errors, "utility-path-required", `${blockLabel} requires path.`, {
-          blockId: block.id,
-        });
-      }
-
-      if (utility.type === "WRITE_FILE" && utility.content === undefined) {
-        addIssue(
-          errors,
-          "utility-content-required",
-          `${blockLabel} requires content.`,
-          { blockId: block.id },
-        );
-      }
-      break;
-    case "SEARCH_FILES":
-      if (!utility.pattern?.trim() && !utility.glob?.trim()) {
-        addIssue(
-          errors,
-          "utility-search-pattern-required",
-          `${blockLabel} requires pattern or glob.`,
-          { blockId: block.id },
-        );
-      }
-      break;
-    case "UI_ANALYZE":
-      validateUiAnalyzeUtilityBlock(blockLabel, block, errors);
-      break;
-    case "SET_VARIABLE":
-      if (!utility.variableName?.trim()) {
-        addIssue(
-          errors,
-          "utility-variable-name-required",
-          `${blockLabel} requires variableName.`,
-          { blockId: block.id },
-        );
-      }
-      break;
-    case "TRANSFORM_JSON":
-      if (!utility.expression?.trim()) {
-        addIssue(
-          errors,
-          "utility-expression-required",
-          `${blockLabel} requires expression.`,
-          { blockId: block.id },
-        );
-      }
-      break;
-    case "VALIDATE_JSON":
-      if (utility.schema === undefined) {
-        addIssue(
-          errors,
-          "utility-schema-required",
-          `${blockLabel} requires schema.`,
-          { blockId: block.id },
-        );
-      }
-      break;
-    case "GIT_STATUS":
-    case "NOTIFY":
-      break;
-  }
-};
-
-export const hasGraphCycle = (flow: RalphFlow): boolean => {
-  const edgesBySource = new Map<string, string[]>();
-
-  for (const edge of flow.edges) {
-    const targets = edgesBySource.get(edge.from) ?? [];
-    targets.push(edge.to);
-    edgesBySource.set(edge.from, targets);
-  }
-
-  const visiting = new Set<string>();
-  const visited = new Set<string>();
-
-  const visit = (blockId: string): boolean => {
-    if (visiting.has(blockId)) {
-      return true;
-    }
-
-    if (visited.has(blockId)) {
-      return false;
-    }
-
-    visiting.add(blockId);
-
-    for (const target of edgesBySource.get(blockId) ?? []) {
-      if (visit(target)) {
-        return true;
-      }
-    }
-
-    visiting.delete(blockId);
-    visited.add(blockId);
-
-    return false;
-  };
-
-  return flow.blocks.some((block) => visit(block.id));
-};
-
-export const validateRalphFlow = (
-  flow: RalphFlow,
-  options: {
-    config?: RuntimeConfig;
-    variableValues?: Record<string, string>;
-  } = {},
-): RalphValidationResult => {
-  const errors: RalphValidationIssue[] = [];
-  const warnings: RalphValidationIssue[] = [];
-  const variables = discoverRalphFlowVariables(flow);
-
-  if (flow.schemaVersion !== RALPH_FLOW_SCHEMA_VERSION) {
-    addIssue(
-      errors,
-      "schema-version",
-      `schemaVersion must be ${RALPH_FLOW_SCHEMA_VERSION}.`,
-    );
-  }
-
-  if (!flow.id.trim()) {
-    addIssue(errors, "flow-id-required", "flow id is required.");
-  } else if (!FLOW_ID_PATTERN.test(flow.id)) {
-    addIssue(errors, "flow-id-invalid", `flow id \`${flow.id}\` must match ${FLOW_ID_PATTERN.source}.`);
-  }
-
-  if (flow.alias !== undefined) {
-    const alias = flow.alias.trim();
-
-    if (!alias) {
-      addIssue(errors, "flow-alias-empty", "flow alias cannot be empty.");
-    } else if (!FLOW_ID_PATTERN.test(alias)) {
-      addIssue(
-        errors,
-        "flow-alias-invalid",
-        `flow alias \`${flow.alias}\` must match ${FLOW_ID_PATTERN.source}.`,
-      );
-    }
-  }
-
-  if (!flow.name.trim()) {
-    addIssue(errors, "flow-name-required", "flow name is required.");
-  }
-
-  if (
-    flow.settings?.maxTransitions !== undefined &&
-    (!Number.isInteger(flow.settings.maxTransitions) ||
-      flow.settings.maxTransitions < 1)
-  ) {
-    addIssue(
-      errors,
-      "flow-max-transitions-invalid",
-      "flow settings.maxTransitions must be an integer >= 1.",
-    );
-  }
-
-  if (flow.settings?.maxTransitions === undefined && hasGraphCycle(flow)) {
-    addIssue(
-      warnings,
-      "flow-cycle-without-cap",
-      "Flow contains a cycle but does not define settings.maxTransitions; runs can continue until manually stopped.",
-    );
-  }
-
-  if (flow.blocks.length > MAX_FLOW_BLOCKS) {
-    addIssue(
-      errors,
-      "too-many-blocks",
-      `blocks cannot contain more than ${MAX_FLOW_BLOCKS} entries.`,
-    );
-  }
-
-  if (flow.edges.length > MAX_FLOW_EDGES) {
-    addIssue(
-      errors,
-      "too-many-edges",
-      `edges cannot contain more than ${MAX_FLOW_EDGES} entries.`,
-    );
-  }
-
-  const blockIds = new Set<string>();
-  const startBlocks = flow.blocks.filter((block) => block.type === "START");
-
-  if (startBlocks.length === 0) {
-    addIssue(errors, "missing-start", "Ralph flow must contain exactly one START block.");
-  } else if (startBlocks.length > 1) {
-    addIssue(errors, "multiple-start", "Ralph flow cannot contain more than one START block.");
-  }
-
-  for (const block of flow.blocks) {
-    const blockLabel = block.id || block.title || "block";
-
-    if (!block.id.trim()) {
-      addIssue(errors, "block-id-required", "block id is required.", {
-        blockId: block.id,
-      });
-    } else if (!BLOCK_ID_PATTERN.test(block.id)) {
-      addIssue(
-        errors,
-        "block-id-invalid",
-        `block id \`${block.id}\` must match ${BLOCK_ID_PATTERN.source}.`,
-        { blockId: block.id },
-      );
-    } else if (blockIds.has(block.id)) {
-      addIssue(errors, "block-id-duplicate", `block id \`${block.id}\` is duplicated.`, {
-        blockId: block.id,
-      });
-    }
-
-    blockIds.add(block.id);
-
-    if (!block.title.trim()) {
-      addIssue(errors, "block-title-required", `${blockLabel} title is required.`, {
-        blockId: block.id,
-      });
-    }
-
-    if (block.size) {
-      if (
-        !Number.isFinite(block.size.width) ||
-        !Number.isFinite(block.size.height) ||
-        block.size.width <= 0 ||
-        block.size.height <= 0
-      ) {
-        addIssue(errors, "block-size-invalid", `${blockLabel} size must be positive.`, {
-          blockId: block.id,
-        });
-      }
-    }
-
-    if (block.type === "NOTE") {
-      if (!block.text.trim()) {
-        addIssue(warnings, "note-empty", `${blockLabel} note is empty.`, {
-          blockId: block.id,
-        });
-      }
-
-      if (
-        block.size &&
-        (block.size.width < 180 || block.size.height < 120)
-      ) {
-        addIssue(errors, "note-size-invalid", `${blockLabel} note size is too small.`, {
-          blockId: block.id,
-        });
-      }
-    }
-
-    if (block.type === "GROUP") {
-      if (
-        block.size &&
-        !block.collapsed &&
-        (block.size.width < 280 || block.size.height < 180)
-      ) {
-        addIssue(errors, "group-size-invalid", `${blockLabel} group size is too small.`, {
-          blockId: block.id,
-        });
-      }
-    }
-
-    if (
-      (block.type === "PROMPT" ||
-        block.type === "VALIDATOR" ||
-        block.type === "DECISION") &&
-      !block.prompt.trim()
-    ) {
-      addIssue(errors, "block-prompt-required", `${blockLabel} prompt is required.`, {
-        blockId: block.id,
-      });
-    }
-
-    if (block.type === "DECISION" && block.labels.length === 0) {
-      addIssue(
-        errors,
-        "decision-labels-required",
-        `${blockLabel} decision block requires at least one label.`,
-        { blockId: block.id },
-      );
-    }
-
-    if (block.type === "PACK" && block.packIds.length === 0) {
-      addIssue(warnings, "pack-empty", `${blockLabel} pack block does not reference any packs.`, {
-        blockId: block.id,
-      });
-    }
-
-    if (block.type === "PACK" && block.packIds.length > 0) {
-      addIssue(
-        warnings,
-        "pack-runtime-not-implemented",
-        `${blockLabel} references context packs, but Ralph currently stores pack ids as metadata and does not inject pack contents at runtime.`,
-        { blockId: block.id },
-      );
-    }
-
-    if (block.settings?.packs && block.settings.packs.length > 0) {
-      addIssue(
-        warnings,
-        "settings-packs-runtime-not-implemented",
-        `${blockLabel} references settings.packs, but Ralph currently stores pack ids as metadata and does not inject pack contents at runtime.`,
-        { blockId: block.id },
-      );
-    }
-
-    if (block.type === "UTILITY") {
-      validateRalphUtilityBlock(block, errors);
-    }
-
-    if (block.type === "MCP_TOOL") {
-      if (!block.serverId.trim()) {
-        addIssue(errors, "mcp-server-required", `${blockLabel} requires serverId.`, {
-          blockId: block.id,
-        });
-      }
-
-      if (!block.toolName.trim()) {
-        addIssue(errors, "mcp-tool-required", `${blockLabel} requires toolName.`, {
-          blockId: block.id,
-        });
-      }
-    }
-
-    if (block.type === "MCP_RESOURCE") {
-      if (!block.serverId.trim()) {
-        addIssue(errors, "mcp-server-required", `${blockLabel} requires serverId.`, {
-          blockId: block.id,
-        });
-      }
-
-      if (!block.uri.trim()) {
-        addIssue(errors, "mcp-resource-uri-required", `${blockLabel} requires uri.`, {
-          blockId: block.id,
-        });
-      }
-    }
-
-    if (block.type === "MCP_PROMPT") {
-      if (!block.serverId.trim()) {
-        addIssue(errors, "mcp-server-required", `${blockLabel} requires serverId.`, {
-          blockId: block.id,
-        });
-      }
-
-      if (!block.promptName.trim()) {
-        addIssue(errors, "mcp-prompt-required", `${blockLabel} requires promptName.`, {
-          blockId: block.id,
-        });
-      }
-    }
-
-    if (
-      options.config &&
-      (block.type === "MCP_TOOL" ||
-        block.type === "MCP_RESOURCE" ||
-        block.type === "MCP_PROMPT") &&
-      block.serverId.trim() &&
-      !hasPlaceholders(block.serverId)
-    ) {
-      try {
-        const mcpConfig = loadMcpConfigSync(
-          options.config.workspaceRoot,
-          block.settings?.mcp,
-        );
-
-        const server = getEnabledMcpServer(mcpConfig, block.serverId);
-
-        if (!server) {
-          addIssue(
-            errors,
-            "mcp-server-unavailable",
-            `${blockLabel} references MCP server \`${block.serverId}\`, but it is not configured or not enabled.`,
-            { blockId: block.id },
-          );
-        } else {
-          const discovery = loadMcpDiscoveryCacheSync(options.config.workspaceRoot)
-            .servers[server.id];
-
-          if (!discovery) {
-            addIssue(
-              warnings,
-              "mcp-discovery-missing",
-              `${blockLabel} references MCP server \`${block.serverId}\`, but no cached discovery is available to verify its capabilities.`,
-              { blockId: block.id },
-            );
-          } else if (
-            block.type === "MCP_TOOL" &&
-            !hasPlaceholders(block.toolName) &&
-            !discovery.tools.some((tool) => tool.name === block.toolName)
-          ) {
-            addIssue(
-              warnings,
-              "mcp-tool-undiscovered",
-              `${blockLabel} references MCP tool \`${block.toolName}\`, but cached discovery for \`${block.serverId}\` does not include that tool.`,
-              { blockId: block.id },
-            );
-          } else if (
-            block.type === "MCP_RESOURCE" &&
-            !hasPlaceholders(block.uri) &&
-            !discovery.resources.some((resource) => resource.uri === block.uri) &&
-            !discovery.resourceTemplates.some((template) =>
-              template.uriTemplate.includes(block.uri),
-            )
-          ) {
-            addIssue(
-              warnings,
-              "mcp-resource-undiscovered",
-              `${blockLabel} references MCP resource \`${block.uri}\`, but cached discovery for \`${block.serverId}\` does not include it.`,
-              { blockId: block.id },
-            );
-          } else if (
-            block.type === "MCP_PROMPT" &&
-            !hasPlaceholders(block.promptName) &&
-            !discovery.prompts.some((prompt) => prompt.name === block.promptName)
-          ) {
-            addIssue(
-              warnings,
-              "mcp-prompt-undiscovered",
-              `${blockLabel} references MCP prompt \`${block.promptName}\`, but cached discovery for \`${block.serverId}\` does not include it.`,
-              { blockId: block.id },
-            );
-          }
-        }
-      } catch (error) {
-        addIssue(
-          errors,
-          "mcp-config-invalid",
-          `${blockLabel} could not load MCP config: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-          { blockId: block.id },
-        );
-      }
-    }
-
-    const maxIterations = block.settings?.maxIterations;
-    if (
-      maxIterations !== undefined &&
-      (!Number.isInteger(maxIterations) || maxIterations < 1 || maxIterations > 100)
-    ) {
-      addIssue(
-        errors,
-        "max-iterations-invalid",
-        `${blockLabel} maxIterations must be an integer from 1 to 100.`,
-        { blockId: block.id },
-      );
-    }
-
-    const retry = block.settings?.retry;
-    if (
-      retry?.mode === "finite" &&
-      (retry.maxRetries === null ||
-        retry.maxRetries === undefined ||
-        !Number.isInteger(retry.maxRetries) ||
-        retry.maxRetries < 0)
-    ) {
-      addIssue(
-        errors,
-        "retry-invalid",
-        `${blockLabel} finite retry policy requires maxRetries >= 0.`,
-        { blockId: block.id },
-      );
-    }
-
-    if (
-      block.settings?.provider &&
-      block.settings.provider !== "default" &&
-      options.config &&
-      !options.config.providerAvailability.some(
-        (entry) => entry.provider === block.settings?.provider && entry.configured,
-      )
-    ) {
-      addIssue(
-        errors,
-        "provider-unavailable",
-        `${blockLabel} uses unavailable provider \`${block.settings.provider}\`.`,
-        { blockId: block.id },
-      );
-    }
-
-    validateBlockReferencePlaceholders(flow, block, errors, warnings);
-  }
-
-  const blocksById = getBlockById(flow);
-
-  for (const block of flow.blocks) {
-    if (block.parentGroupId) {
-      const parent = blocksById.get(block.parentGroupId);
-
-      if (!parent) {
-        addIssue(
-          errors,
-          "parent-group-missing",
-          `${block.id} references missing parent group \`${block.parentGroupId}\`.`,
-          { blockId: block.id },
-        );
-      } else if (parent.type !== "GROUP") {
-        addIssue(
-          errors,
-          "parent-group-invalid",
-          `${block.id} parentGroupId must reference a GROUP block.`,
-          { blockId: block.id },
-        );
-      }
-    }
-
-    const groupDepthIssue = getRalphGroupDepthIssue(block, blocksById);
-    if (groupDepthIssue === "cycle") {
-      addIssue(errors, "group-parent-cycle", `${block.id} has a cyclic group parent chain.`, {
-        blockId: block.id,
-      });
-    } else if (groupDepthIssue === "too-deep") {
-      addIssue(
-        errors,
-        "group-parent-depth",
-        `${block.id} group nesting exceeds ${DEFAULT_RALPH_GROUP_MAX_DEPTH} levels.`,
-        { blockId: block.id },
-      );
-    }
-
-    if (block.type !== "GROUP") {
-      continue;
-    }
-
-    for (const childBlockId of block.childBlockIds) {
-      const child = blocksById.get(childBlockId);
-
-      if (!child) {
-        addIssue(
-          warnings,
-          "group-child-missing",
-          `${block.id} references missing child block \`${childBlockId}\`.`,
-          { blockId: block.id },
-        );
-      } else if (child.parentGroupId && child.parentGroupId !== block.id) {
-        addIssue(
-          warnings,
-          "group-child-parent-mismatch",
-          `${block.id} lists \`${childBlockId}\`, but that block belongs to \`${child.parentGroupId}\`.`,
-          { blockId: block.id },
-        );
-      }
-    }
-
-    if (
-      block.executionBoundary?.mode === "selectedChild" &&
-      (!block.executionBoundary.blockId ||
-        !block.childBlockIds.includes(block.executionBoundary.blockId))
-    ) {
-      addIssue(
-        errors,
-        "group-execution-boundary-missing",
-        `${block.id} selected execution boundary must reference a child block.`,
-        { blockId: block.id },
-      );
-    } else if (
-      block.executionBoundary?.mode === "selectedChild" &&
-      block.executionBoundary.blockId
-    ) {
-      const boundaryBlock = blocksById.get(block.executionBoundary.blockId);
-
-      if (!boundaryBlock || !isExecutableRalphBlock(boundaryBlock)) {
-        addIssue(
-          errors,
-          "group-execution-boundary-invalid",
-          `${block.id} selected execution boundary must reference an executable child block.`,
-          { blockId: block.id },
-        );
-      }
-    }
-  }
-
-  const annotationLinkIds = new Set<string>();
-  for (const annotationLink of flow.annotationLinks ?? []) {
-    if (!annotationLink.id.trim()) {
-      addIssue(errors, "annotation-link-id-required", "annotation link id is required.");
-    } else if (annotationLinkIds.has(annotationLink.id)) {
-      addIssue(
-        errors,
-        "annotation-link-id-duplicate",
-        `annotation link id \`${annotationLink.id}\` is duplicated.`,
-      );
-    }
-
-    annotationLinkIds.add(annotationLink.id);
-
-    if (!blocksById.has(annotationLink.from)) {
-      addIssue(
-        warnings,
-        "annotation-link-from-missing",
-        `annotation link \`${annotationLink.id}\` references missing source \`${annotationLink.from}\`.`,
-      );
-    }
-
-    if (!blocksById.has(annotationLink.to)) {
-      addIssue(
-        warnings,
-        "annotation-link-to-missing",
-        `annotation link \`${annotationLink.id}\` references missing target \`${annotationLink.to}\`.`,
-      );
-    }
-  }
-
-  const edgeIds = new Set<string>();
-  for (const edge of flow.edges) {
-    if (!edge.id.trim()) {
-      addIssue(errors, "edge-id-required", "edge id is required.", {
-        edgeId: edge.id,
-      });
-    } else if (!EDGE_ID_PATTERN.test(edge.id)) {
-      addIssue(errors, "edge-id-invalid", `edge id \`${edge.id}\` must match ${EDGE_ID_PATTERN.source}.`, {
-        edgeId: edge.id,
-      });
-    } else if (edgeIds.has(edge.id)) {
-      addIssue(errors, "edge-id-duplicate", `edge id \`${edge.id}\` is duplicated.`, {
-        edgeId: edge.id,
-      });
-    }
-
-    edgeIds.add(edge.id);
-
-    if (!blockIds.has(edge.from)) {
-      addIssue(
-        errors,
-        "edge-from-missing",
-        `edge \`${edge.id}\` references missing source block \`${edge.from}\`.`,
-        { edgeId: edge.id },
-      );
-    }
-
-    if (!blockIds.has(edge.to)) {
-      addIssue(
-        errors,
-        "edge-to-missing",
-        `edge \`${edge.id}\` references missing target block \`${edge.to}\`.`,
-        { edgeId: edge.id },
-      );
-    }
-
-    const sourceBlock = blocksById.get(edge.from);
-    const targetBlock = blocksById.get(edge.to);
-
-    if (sourceBlock && isVisualRalphBlock(sourceBlock)) {
-      addIssue(
-        errors,
-        "edge-from-visual-block",
-        `edge \`${edge.id}\` cannot use visual block \`${edge.from}\` as a source.`,
-        { edgeId: edge.id, blockId: edge.from },
-      );
-    }
-
-    if (targetBlock && isVisualRalphBlock(targetBlock)) {
-      addIssue(
-        errors,
-        "edge-to-visual-block",
-        `edge \`${edge.id}\` cannot use visual block \`${edge.to}\` as a target.`,
-        { edgeId: edge.id, blockId: edge.to },
-      );
-    }
-  }
-
-  for (const block of flow.blocks) {
-    for (const output of getBlockOutputs(block)) {
-      if (block.type === "VALIDATOR" && output === "RETRY") {
-        continue;
-      }
-
-      if (!hasOutgoingEdge(flow, block.id, output)) {
-        const code =
-          block.type === "VALIDATOR" && output === "CONTINUE"
-            ? "validator-continue-missing"
-            : "output-edge-missing";
-        addIssue(
-          warnings,
-          code,
-          `${block.id} has no edge for output ${output}.`,
-          { blockId: block.id },
-        );
-      }
-    }
-  }
-
-  const reachable = getReachableBlockIds(flow);
-  for (const block of flow.blocks) {
-    if (isVisualRalphBlock(block)) {
-      continue;
-    }
-
-    if (startBlocks.length === 1 && !reachable.has(block.id)) {
-      addIssue(warnings, "unreachable-block", `${block.id} is unreachable from START.`, {
-        blockId: block.id,
-      });
-    }
-
-    if (blockCanExecute(block) && !hasPathToEnd(flow, block.id)) {
-      addIssue(
-        warnings,
-        "no-terminal-path",
-        `${block.id} has no routed path to an END block.`,
-        { blockId: block.id },
-      );
-    }
-  }
-
-  for (const variable of variables) {
-    if (!variable.name.trim()) {
-      addIssue(errors, "variable-name-required", "variable name is required.");
-    }
-
-    if (
-      variable.required &&
-      variable.default === undefined &&
-      options.variableValues &&
-      !Object.hasOwn(options.variableValues, variable.name)
-    ) {
-      addIssue(
-        errors,
-        "variable-missing",
-        `missing required Ralph variable \`${variable.name}\`.`,
-      );
-    }
-  }
-
-  return createValidationResult(errors, warnings, variables);
+  return parseRalphFlowRecord(parsed);
 };
 
 export const readRalphFlow = async (
@@ -3309,12 +1040,9 @@ export const readRalphFlow = async (
   id: string,
   options: RalphFlowReadOptions = {},
 ): Promise<RalphFlow> => {
-  const resolution = await resolveRalphFlowReference(
-    workspaceRoot,
-    id,
-    options.scope ? { scope: options.scope } : {},
+  const flow = await readRalphFlowFile(
+    getRalphFlowPath(workspaceRoot, id, options.scope ?? "workspace"),
   );
-  const flow = resolution.flow;
   const validation = validateRalphFlow(flow);
 
   if (!options.allowInvalid && !validation.valid) {
@@ -3658,116 +1386,7 @@ export const restoreRalphFlowRevision = async (
   };
 };
 
-const redactLogText = (value: string): string => {
-  return value.replace(SENSITIVE_INLINE_PATTERN, (match) => {
-    const separatorIndex = Math.max(match.indexOf(":"), match.indexOf("="));
-
-    if (separatorIndex > 0) {
-      return `${match.slice(0, separatorIndex + 1)} [redacted]`;
-    }
-
-    if (/^Bearer\s+/iu.test(match)) {
-      return "Bearer [redacted]";
-    }
-
-    return "[redacted]";
-  });
-};
-
-export const capLogText = (value: string, limit: number): string => {
-  const redacted = redactLogText(value);
-
-  if (redacted.length <= limit) {
-    return redacted;
-  }
-
-  return `${redacted.slice(0, limit)}\n[Ralph log text truncated at ${limit} characters.]`;
-};
-
-export const sanitizeTraceValue = (value: unknown, depth = 0): unknown => {
-  if (typeof value === "string") {
-    return capLogText(value, MAX_RALPH_TRACE_TEXT_CHARS);
-  }
-
-  if (
-    value === null ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-
-  if (value instanceof Error) {
-    return {
-      name: value.name,
-      message: capLogText(value.message, MAX_RALPH_TRACE_TEXT_CHARS),
-      ...(value.stack
-        ? { stack: capLogText(value.stack, MAX_RALPH_TRACE_TEXT_CHARS) }
-        : {}),
-    };
-  }
-
-  if (depth >= MAX_RALPH_TRACE_VALUE_DEPTH) {
-    return "[Ralph trace value truncated]";
-  }
-
-  if (Array.isArray(value)) {
-    return value
-      .slice(0, MAX_RALPH_TRACE_COLLECTION_ENTRIES)
-      .map((entry) => sanitizeTraceValue(entry, depth + 1));
-  }
-
-  if (isRecord(value)) {
-    return Object.fromEntries(
-      Object.entries(value)
-        .slice(0, MAX_RALPH_TRACE_COLLECTION_ENTRIES)
-        .map(([key, entry]) => [
-          key,
-          SENSITIVE_LOG_KEY_PATTERN.test(key)
-            ? "[redacted]"
-            : sanitizeTraceValue(entry, depth + 1),
-        ]),
-    );
-  }
-
-  return String(value);
-};
-
 export const createLogTimestamp = (): string => new Date().toISOString();
-
-const formatDuration = (durationMs: number | undefined): string => {
-  if (durationMs === undefined) {
-    return "";
-  }
-
-  if (durationMs < 1_000) {
-    return ` (${durationMs} ms)`;
-  }
-
-  return ` (${(durationMs / 1_000).toFixed(1)} s)`;
-};
-
-const formatSimpleMarkdownEntry = (entry: RalphSimpleLogEntry): string => {
-  const prefix = entry.createdAt;
-  const block = entry.blockTitle
-    ? ` [${entry.blockTitle}]`
-    : entry.blockId
-      ? ` [${entry.blockId}]`
-      : "";
-  const output = entry.output ? ` -> ${entry.output}` : "";
-  const duration = formatDuration(entry.durationMs);
-  const detail = entry.inputPreview
-    ? `\n  input: ${entry.inputPreview.replace(/\r?\n/gu, " ").trim()}`
-    : entry.outputPreview
-      ? `\n  output: ${entry.outputPreview.replace(/\r?\n/gu, " ").trim()}`
-      : "";
-
-  return `- ${prefix}${block} ${entry.message}${output}${duration}${detail}`;
-};
-
-export const createRalphLogLine = (entry: unknown): string => {
-  return `${JSON.stringify(sanitizeTraceValue(entry))}\n`;
-};
 
 class RalphFileRunLogger implements RalphRunLogger {
   public readonly runId: string;
@@ -3812,7 +1431,7 @@ class RalphFileRunLogger implements RalphRunLogger {
       await appendFile(this.paths.simpleJsonlPath, createRalphLogLine(completedEntry), "utf8");
       await appendFile(
         this.paths.simpleMarkdownPath,
-        `${formatSimpleMarkdownEntry(completedEntry)}\n`,
+        `${formatRalphSimpleMarkdownEntry(completedEntry)}\n`,
         "utf8",
       );
     });
@@ -3903,114 +1522,6 @@ export const createRalphRunLogger = async (
   return logger;
 };
 
-const capRunRecordText = (value: string | undefined): string | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return truncateResultText(value);
-};
-
-const capRunRecordValue = (value: unknown, depth = 0): unknown => {
-  if (typeof value === "string") {
-    return truncateResultText(value);
-  }
-
-  if (
-    value === null ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-
-  if (depth >= 4) {
-    return "[Ralph data truncated]";
-  }
-
-  if (Array.isArray(value)) {
-    return value.slice(0, 100).map((entry) => capRunRecordValue(entry, depth + 1));
-  }
-
-  if (isRecord(value)) {
-    return Object.fromEntries(
-      Object.entries(value)
-        .slice(0, 100)
-        .map(([key, entry]) => [key, capRunRecordValue(entry, depth + 1)]),
-    );
-  }
-
-  return undefined;
-};
-
-const createRalphRunRecordBlock = (
-  blockResult: RalphBlockExecutionResult,
-): RalphRunRecordBlock => {
-  const task = capRunRecordText(blockResult.result?.task);
-  const markdown = capRunRecordText(blockResult.markdown);
-  const error = capRunRecordText(blockResult.error);
-
-  return {
-    blockId: blockResult.blockId,
-    output: blockResult.output,
-    status: blockResult.status,
-    attempt: blockResult.attempt,
-    ...(task ? { task } : {}),
-    ...(blockResult.result?.status
-      ? { executionStatus: blockResult.result.status }
-      : {}),
-    summary: truncateResultText(blockResult.summary),
-    ...(blockResult.data !== undefined
-      ? { data: capRunRecordValue(blockResult.data) }
-      : {}),
-    ...(markdown ? { markdown } : {}),
-    ...(error ? { error } : {}),
-  };
-};
-
-const createRalphRunRecord = (
-  id: string,
-  createdAt: string,
-  flow: RalphFlow,
-  result: RalphRunResult,
-  variableValues: Record<string, string>,
-  logPaths?: RalphRunLogPaths,
-): RalphRunRecord => {
-  return {
-    schemaVersion: RALPH_FLOW_SCHEMA_VERSION,
-    id,
-    createdAt,
-    ...(result.finishedAt ? { finishedAt: result.finishedAt } : {}),
-    flowId: flow.id,
-    flowName: flow.name,
-    flowRevisionId: flow.updatedAt ?? flow.createdAt ?? null,
-    status: result.status,
-    summary: truncateResultText(result.summary),
-    variableValues: Object.fromEntries(
-      Object.entries(variableValues).map(([name, value]) => [
-      name,
-      truncateResultText(value),
-    ]),
-    ),
-    ...(logPaths
-      ? {
-          logPaths: {
-            simpleJsonlPath: logPaths.simpleJsonlPath,
-            simpleMarkdownPath: logPaths.simpleMarkdownPath,
-            traceJsonlPath: logPaths.traceJsonlPath,
-          },
-        }
-      : {}),
-    events: result.events,
-    blockResults: result.blockResults.map(createRalphRunRecordBlock),
-    validation: {
-      valid: result.validation.valid,
-      errors: result.validation.errors,
-      warnings: result.validation.warnings,
-    },
-  };
-};
-
 export const writeRalphRunRecord = async (
   workspaceRoot: string,
   flow: RalphFlow,
@@ -4035,6 +1546,7 @@ export const writeRalphRunRecord = async (
     );
   await mkdir(paths.directory, { recursive: true });
   const record = createRalphRunRecord(
+    RALPH_FLOW_SCHEMA_VERSION,
     paths.id,
     result.startedAt ?? createdAt,
     flow,
@@ -4048,51 +1560,12 @@ export const writeRalphRunRecord = async (
   return { id: paths.id, path: paths.recordPath, paths, record };
 };
 
-const isRalphRunRecord = (value: unknown): value is RalphRunRecord => {
-  return (
-    isRecord(value) &&
-    value.schemaVersion === RALPH_FLOW_SCHEMA_VERSION &&
-    typeof value.id === "string" &&
-    typeof value.createdAt === "string" &&
-    typeof value.flowId === "string" &&
-    typeof value.flowName === "string" &&
-    typeof value.status === "string" &&
-    typeof value.summary === "string" &&
-    Array.isArray(value.events) &&
-    Array.isArray(value.blockResults)
-  );
-};
-
-const createRunSummaryFromRecord = (
-  record: RalphRunRecord,
-  path: string,
-): RalphRunSummary => {
-  return {
-    id: record.id,
-    path,
-    createdAt: record.createdAt,
-    ...(record.finishedAt ? { finishedAt: record.finishedAt } : {}),
-    flowId: record.flowId,
-    flowName: record.flowName,
-    status: record.status,
-    summary: record.summary,
-    ...(record.logPaths?.simpleMarkdownPath
-      ? { simpleLogPath: record.logPaths.simpleMarkdownPath }
-      : {}),
-    ...(record.logPaths?.traceJsonlPath
-      ? { traceLogPath: record.logPaths.traceJsonlPath }
-      : {}),
-    blockCount: record.blockResults.length,
-    eventCount: record.events.length,
-  };
-};
-
 const readRalphRunRecordFile = async (
   path: string,
 ): Promise<RalphRunRecord | null> => {
   try {
     const value = JSON.parse(await readFile(path, "utf8")) as unknown;
-    return isRalphRunRecord(value) ? value : null;
+    return isRalphRunRecord(value, RALPH_FLOW_SCHEMA_VERSION) ? value : null;
   } catch {
     return null;
   }
@@ -4179,7 +1652,7 @@ export const listRalphRunRecords = async (
       continue;
     }
 
-    summaries.push(createRunSummaryFromRecord(record, path));
+    summaries.push(createRalphRunSummaryFromRecord(record, path));
   }
 
   return summaries
@@ -4218,78 +1691,6 @@ export const readRalphRunLog = async (
   };
 };
 
-const truncateResultText = (value: string): string => {
-  if (value.length <= MAX_RALPH_RESULT_CHARS) {
-    return value;
-  }
-
-  return `${value.slice(0, MAX_RALPH_RESULT_CHARS)}\n[Ralph result truncated at ${MAX_RALPH_RESULT_CHARS} characters.]`;
-};
-
-const getResultMarkdown = (result: TaskExecutionResult | undefined): string => {
-  return truncateResultText(
-    result?.response?.markdown ?? result?.summary ?? result?.reason ?? "",
-  );
-};
-
-const parseDecision = (
-  result: TaskExecutionResult | undefined,
-): string | undefined => {
-  const markdown = getResultMarkdown(result);
-  const lines = markdown
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const match = lines.at(-1)?.match(DECISION_LINE_PATTERN);
-
-  return match?.[1]?.toUpperCase();
-};
-
-const parseLastDecisionMarker = (
-  result: TaskExecutionResult | undefined,
-): string | undefined => {
-  const markdown = getResultMarkdown(result);
-  const decisions = markdown
-    .split(/\r?\n/u)
-    .map((line) => line.trim().match(DECISION_LINE_PATTERN)?.[1]?.toUpperCase())
-    .filter((decision): decision is string => Boolean(decision));
-
-  return decisions.at(-1);
-};
-
-const createDecisionOutputError = (
-  block: RalphDecisionBlock,
-  result: TaskExecutionResult,
-  parsed: string | undefined,
-): string => {
-  const expectedLabels = block.labels.join(", ");
-  const markdown = getResultMarkdown(result);
-  const outputExcerpt = markdown
-    ? ` Output: ${markdown}`
-    : result.reason
-      ? ` Reason: ${result.reason}`
-      : "";
-
-  if (parsed) {
-    return `${block.title} returned unsupported decision label \`${parsed}\`. Expected one of: ${expectedLabels}.${outputExcerpt}`;
-  }
-
-  return `${block.title} did not return a supported RALPH_DECISION marker. Expected one of: ${expectedLabels}.${outputExcerpt}`;
-};
-
-export const parseRalphDecision = (
-  result: TaskExecutionResult,
-): RalphValidatorDecision | undefined => {
-  const decision = parseDecision(result);
-
-  return decision === "DONE" ||
-    decision === "CONTINUE" ||
-    decision === "RETRY" ||
-    decision === "ERROR"
-    ? decision
-    : undefined;
-};
-
 const resolveVariableValues = (
   variables: RalphFlowVariable[],
   supplied: Record<string, string> = {},
@@ -4323,7 +1724,7 @@ const resolveVariableValues = (
 };
 
 const resolvePlaceholder = (
-  placeholder: ParsedPlaceholder,
+  placeholder: ParsedRalphPlaceholder,
   context: RalphResultContext,
 ): string => {
   if (placeholder.variable) {
@@ -4373,7 +1774,7 @@ const resolvePlaceholder = (
   }
 
   if (reference.kind === "data") {
-    const value = readValuePath(result.data, reference.path);
+    const value = readRalphUtilityValuePath(result.data, reference.path);
 
     if (value === undefined) {
       return "";
@@ -4386,8 +1787,8 @@ const resolvePlaceholder = (
 };
 
 const resolveTemplateText = (text: string, context: RalphResultContext): string => {
-  return text.replace(PLACEHOLDER_PATTERN, (raw: string, content: string) =>
-    resolvePlaceholder(parsePlaceholderContent(raw, content.trim()), context),
+  return text.replace(RALPH_PLACEHOLDER_PATTERN, (raw: string, content: string) =>
+    resolvePlaceholder(parseRalphPlaceholderContent(raw, content.trim()), context),
   );
 };
 
@@ -4552,21 +1953,6 @@ const createImageInputsFromAttachments = async (
       };
     }),
   );
-};
-
-const getRetryPolicy = (block: RalphFlowBlock): RalphRetryPolicy => {
-  return block.settings?.retry ?? { mode: "infinite", maxRetries: null, delaySeconds: 0 };
-};
-
-const retryAllowsAnotherAttempt = (
-  policy: RalphRetryPolicy,
-  currentErrorCount: number,
-): boolean => {
-  if (policy.mode === "infinite") {
-    return true;
-  }
-
-  return currentErrorCount <= (policy.maxRetries ?? 0);
 };
 
 const delay = async (seconds: number, signal: AbortSignal | undefined): Promise<void> => {
@@ -4859,23 +2245,6 @@ const logBlockInput = (
   });
 };
 
-const createBlockExecutionErrorResult = (
-  block: RalphFlowBlock,
-  error: unknown,
-  attempt = 1,
-): RalphBlockExecutionResult => {
-  const message = error instanceof Error ? error.message : String(error);
-
-  return {
-    blockId: block.id,
-    output: "ERROR",
-    status: "error",
-    attempt,
-    summary: message,
-    error: message,
-  };
-};
-
 const executePromptBlock = async (
   flow: RalphFlow,
   block: RalphPromptBlock,
@@ -4909,7 +2278,7 @@ const executePromptBlock = async (
         conversationContext,
       });
     } catch (error) {
-      return createBlockExecutionErrorResult(block, error, iteration);
+      return createRalphBlockExecutionErrorResult(block, error, iteration);
     }
 
     conversationContext.history.push({ role: "user", content: task });
@@ -4919,39 +2288,11 @@ const executePromptBlock = async (
     });
 
     if (result.status !== "executed") {
-      return {
-        blockId: block.id,
-        output: "ERROR",
-        status: "error",
-        attempt: iteration,
-        result,
-        summary: result.summary,
-        markdown: getResultMarkdown(result),
-        error: result.reason ?? result.summary,
-      };
+      return createRalphPromptExecutionResult(block, result, iteration);
     }
   }
 
-  if (!result) {
-    return {
-      blockId: block.id,
-      output: "ERROR",
-      status: "error",
-      attempt: maxIterations,
-      summary: `${block.title} did not produce a result.`,
-      error: `${block.title} did not produce a result.`,
-    };
-  }
-
-  return {
-    blockId: block.id,
-    output: "SUCCESS",
-    status: "completed",
-    attempt: maxIterations,
-    result,
-    summary: result?.summary ?? `${block.title} completed.`,
-    markdown: getResultMarkdown(result),
-  };
+  return createRalphPromptExecutionResult(block, result, maxIterations);
 };
 
 const executeValidatorBlock = async (
@@ -4981,23 +2322,10 @@ const executeValidatorBlock = async (
       ),
     );
   } catch (error) {
-    return createBlockExecutionErrorResult(block, error);
+    return createRalphBlockExecutionErrorResult(block, error);
   }
 
-  const decision = parseRalphDecision(result) ?? "ERROR";
-
-  return {
-    blockId: block.id,
-    output: result.status === "executed" ? decision : "ERROR",
-    status: result.status === "executed" && decision !== "ERROR" ? "completed" : "error",
-    attempt: 1,
-    result,
-    summary: result.summary,
-    markdown: getResultMarkdown(result),
-    ...(decision === "ERROR" || result.status !== "executed"
-      ? { error: result.reason ?? result.summary }
-      : {}),
-  };
+  return createRalphValidatorExecutionResult(block, result);
 };
 
 const executeDecisionBlock = async (
@@ -5027,35 +2355,10 @@ const executeDecisionBlock = async (
       ),
     );
   } catch (error) {
-    return createBlockExecutionErrorResult(block, error);
+    return createRalphBlockExecutionErrorResult(block, error);
   }
 
-  const parsed = parseLastDecisionMarker(result);
-  const labelByNormalizedValue = new Map(
-    block.labels.map((label) => [label.toUpperCase(), label] as const),
-  );
-  const parsedOutput = parsed
-    ? labelByNormalizedValue.get(parsed)
-    : undefined;
-  const output =
-    result.status === "executed" && parsedOutput ? parsedOutput : "ERROR";
-  const error =
-    output === "ERROR"
-      ? result.status === "executed"
-        ? createDecisionOutputError(block, result, parsed)
-        : result.reason ?? result.summary
-      : undefined;
-
-  return {
-    blockId: block.id,
-    output,
-    status: output === "ERROR" ? "error" : "completed",
-    attempt: 1,
-    result,
-    summary: error ?? result.summary,
-    markdown: getResultMarkdown(result),
-    ...(error ? { error } : {}),
-  };
+  return createRalphDecisionExecutionResult(block, result);
 };
 
 const resolveTemplateValue = (
@@ -5131,7 +2434,7 @@ const resolveUtilityConfig = (
   utility: RalphUtilityConfig,
   context: RalphResultContext,
 ): RalphUtilityConfig => {
-  return coerceUtilityConfig(resolveTemplateValue(utility, context));
+  return coerceRalphUtilityConfig(resolveTemplateValue(utility, context));
 };
 
 const formatUtilityData = (value: unknown): string => {
@@ -5174,182 +2477,6 @@ const resolveUtilityPath = (
   const candidate = path?.trim() || workspaceRoot;
 
   return isAbsolute(candidate) ? candidate : resolve(workspaceRoot, candidate);
-};
-
-const parseJsonValue = (value: string): unknown => {
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return "";
-  }
-
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    return value;
-  }
-};
-
-const normalizePathSegments = (path: string): string[] => {
-  return path
-    .trim()
-    .replace(/^\$\.?/u, "")
-    .replace(/\[(\d+)\]/gu, ".$1")
-    .split(".")
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-};
-
-const readValuePath = (value: unknown, path: string | undefined): unknown => {
-  if (!path?.trim()) {
-    return value;
-  }
-
-  let current = value;
-  for (const segment of normalizePathSegments(path)) {
-    if (Array.isArray(current)) {
-      const index = Number.parseInt(segment, 10);
-      current = Number.isInteger(index) ? current[index] : undefined;
-      continue;
-    }
-
-    if (isRecord(current)) {
-      current = current[segment];
-      continue;
-    }
-
-    return undefined;
-  }
-
-  return current;
-};
-
-const toComparableString = (value: unknown): string => {
-  return typeof value === "string" ? value : JSON.stringify(value);
-};
-
-const compareConditionValues = (
-  actual: unknown,
-  operator: RalphUtilityConditionOperator | undefined,
-  expectedText: string | undefined,
-): boolean => {
-  const expected = expectedText !== undefined ? parseJsonValue(expectedText) : true;
-
-  switch (operator ?? "truthy") {
-    case "exists":
-      return actual !== undefined && actual !== null;
-    case "not-exists":
-      return actual === undefined || actual === null;
-    case "truthy":
-      return Boolean(actual);
-    case "falsy":
-      return !actual;
-    case "equals":
-      return actual === expected;
-    case "not-equals":
-      return actual !== expected;
-    case "contains":
-      return toComparableString(actual).includes(String(expected));
-    case "matches":
-      return new RegExp(String(expected), "u").test(toComparableString(actual));
-    case "gt":
-      return Number(actual) > Number(expected);
-    case "gte":
-      return Number(actual) >= Number(expected);
-    case "lt":
-      return Number(actual) < Number(expected);
-    case "lte":
-      return Number(actual) <= Number(expected);
-  }
-};
-
-const evaluateSimpleCondition = (
-  expression: string,
-  scope: unknown,
-): boolean => {
-  const match = expression.match(
-    /^\s*([A-Za-z0-9_$.[\]-]+)\s*(==|!=|>=|<=|>|<|includes|matches)\s*([\s\S]+?)\s*$/u,
-  );
-
-  if (!match) {
-    return Boolean(readValuePath(scope, expression));
-  }
-
-  const path = match[1] ?? "";
-  const operatorToken = match[2] ?? "";
-  const value = match[3] ?? "";
-  const operatorMap: Record<string, RalphUtilityConditionOperator> = {
-    "==": "equals",
-    "!=": "not-equals",
-    ">": "gt",
-    ">=": "gte",
-    "<": "lt",
-    "<=": "lte",
-    includes: "contains",
-    matches: "matches",
-  };
-
-  return compareConditionValues(
-    readValuePath(scope, path),
-    operatorMap[operatorToken],
-    value.replace(/^(['"])([\s\S]*)\1$/u, "$2"),
-  );
-};
-
-const createConditionScope = (
-  context: RalphResultContext,
-  result?: unknown,
-): Record<string, unknown> => {
-  return {
-    variables: context.variables,
-    lastResult: context.lastResult,
-    lastData: context.lastResult?.data,
-    runLog: context.runLog,
-    ...(isRecord(result) ? result : { result }),
-  };
-};
-
-const evaluateUtilityCondition = (
-  condition: RalphUtilityCondition,
-  context: RalphResultContext,
-  result?: unknown,
-): boolean => {
-  const scope = createConditionScope(context, result);
-
-  switch (condition.style) {
-    case "simple":
-      return evaluateSimpleCondition(condition.expression ?? "", scope);
-    case "json-path":
-      return compareConditionValues(
-        readValuePath(scope, condition.path),
-        condition.operator,
-        condition.value,
-      );
-    case "javascript": {
-      const evaluator = new Function(
-        "context",
-        "result",
-        "variables",
-        "lastResult",
-        "lastData",
-        `"use strict"; return Boolean(${condition.expression ?? "false"});`,
-      ) as (
-        context: Record<string, unknown>,
-        result: unknown,
-        variables: Record<string, string>,
-        lastResult: RalphBlockExecutionResult | undefined,
-        lastData: unknown,
-      ) => boolean;
-
-      return evaluator(
-        scope,
-        result,
-        context.variables,
-        context.lastResult,
-        context.lastResult?.data,
-      );
-    }
-  }
 };
 
 const delayWithBackoff = async (
@@ -5477,7 +2604,7 @@ const executeUtilityHttpRequest = async (
       status: response.status,
       ok: response.ok,
       headers: Object.fromEntries(response.headers.entries()),
-      body: parseJsonValue(bodyText),
+      body: parseRalphUtilityJsonValue(bodyText),
       bodyText,
       ...(outputPath ? { outputPath } : {}),
     };
@@ -5529,7 +2656,7 @@ const executeWaitUtilityBlock = async (
 
   let attempt = 1;
   while (true) {
-    if (evaluateUtilityCondition(condition, context)) {
+    if (evaluateRalphUtilityCondition(condition, context)) {
       return createUtilityResult(block, "SUCCESS", `${block.title} condition matched.`, {
         mode,
         attempts: attempt,
@@ -5608,7 +2735,7 @@ const executePollUtilityBlock = async (
       );
       lastData = data;
 
-      if (evaluateUtilityCondition(condition, context, data)) {
+      if (evaluateRalphUtilityCondition(condition, context, data)) {
         return createUtilityResult(
           block,
           "SUCCESS",
@@ -5640,12 +2767,35 @@ const executePollUtilityBlock = async (
   );
 };
 
+let cachedWindowsShellExecutable: string | undefined;
+
+const resolveWindowsShellExecutable = (): string => {
+  if (cachedWindowsShellExecutable !== undefined) {
+    return cachedWindowsShellExecutable;
+  }
+
+  const result = spawnSync(
+    "pwsh.exe",
+    ["-NoProfile", "-NonInteractive", "-Command", "$PSVersionTable.PSVersion.Major"],
+    {
+      encoding: "utf8",
+      windowsHide: true,
+    },
+  );
+
+  cachedWindowsShellExecutable = result.error || result.status !== 0
+    ? "powershell.exe"
+    : "pwsh.exe";
+
+  return cachedWindowsShellExecutable;
+};
+
 const getShellInvocation = (
   command: string,
 ): { executable: string; args: string[] } => {
   return process.platform === "win32"
     ? {
-        executable: "powershell.exe",
+        executable: resolveWindowsShellExecutable(),
         args: ["-NoProfile", "-NonInteractive", "-Command", command],
       }
     : { executable: "/bin/sh", args: ["-lc", command] };
@@ -5665,13 +2815,16 @@ const executeCommandUtilityBlock = async (
   }
 
   const invocation = getShellInvocation(command);
+  const cwd = normalizeLocalCommandCwd(
+    resolveUtilityPath(utility.cwd, config.workspaceRoot),
+  );
   const acceptedExitCodes = checkMode
     ? Array.from({ length: 256 }, (_, index) => index)
     : utility.acceptedExitCodes ?? [0];
 
   try {
     const result = await executeLocalCommand(invocation.executable, invocation.args, {
-      cwd: resolveUtilityPath(utility.cwd, config.workspaceRoot),
+      cwd,
       timeoutMs: getUtilityTimeoutMs(
         utility,
         DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
@@ -5684,7 +2837,7 @@ const executeCommandUtilityBlock = async (
     });
     const data = {
       command,
-      cwd: resolveUtilityPath(utility.cwd, config.workspaceRoot),
+      cwd,
       stdout: result.stdout,
       stderr: result.stderr,
       exitCode: result.exitCode,
@@ -5723,7 +2876,7 @@ const executeReadFileUtilityBlock = async (
       content,
     });
   } catch (error) {
-    return createBlockExecutionErrorResult(block, error);
+    return createRalphBlockExecutionErrorResult(block, error);
   }
 };
 
@@ -5748,7 +2901,7 @@ const executeWriteFileUtilityBlock = async (
       append: utility.append === true,
     });
   } catch (error) {
-    return createBlockExecutionErrorResult(block, error);
+    return createRalphBlockExecutionErrorResult(block, error);
   }
 };
 
@@ -5855,7 +3008,7 @@ const executeSearchFilesUtilityBlock = async (
       results.length > 0 ? "completed" : "error",
     );
   } catch (error) {
-    return createBlockExecutionErrorResult(block, error);
+    return createRalphBlockExecutionErrorResult(block, error);
   }
 };
 
@@ -6502,7 +3655,7 @@ const executeUiAnalyzeBrowserUtilityBlock = async (
 
     return createUtilityResult(block, "SUCCESS", summary, data);
   } catch (error) {
-    return createBlockExecutionErrorResult(block, error);
+    return createRalphBlockExecutionErrorResult(block, error);
   } finally {
     if (browser) {
       await browser.close().catch(() => undefined);
@@ -6605,7 +3758,7 @@ const executeTransformJsonUtilityBlock = (
       output,
     });
   } catch (error) {
-    return createBlockExecutionErrorResult(block, error);
+    return createRalphBlockExecutionErrorResult(block, error);
   }
 };
 
@@ -6687,7 +3840,7 @@ const executeValidateJsonUtilityBlock = (
       validation.valid ? "completed" : "error",
     );
   } catch (error) {
-    return createBlockExecutionErrorResult(block, error);
+    return createRalphBlockExecutionErrorResult(block, error);
   }
 };
 
@@ -7077,7 +4230,7 @@ const getValidatorGroupStart = (
   for (let index = boundaryIndex + 1; index < validatorIndex; index += 1) {
     const block = flow.blocks[index];
 
-    if (block && blockCanExecute(block)) {
+    if (block && isExecutableRalphBlock(block)) {
       return block.id;
     }
   }
@@ -7211,7 +4364,7 @@ export const runRalphFlow = async (
     ));
   }
 
-  const blockMap = getBlockById(flow);
+  const blockMap = getRalphBlockById(flow);
   const start = flow.blocks.find((block): block is RalphStartBlock => block.type === "START");
   if (!start) {
     return finishRun(
@@ -7228,12 +4381,17 @@ export const runRalphFlow = async (
     variables: resolvedVariables.values,
   };
   const errorCounts = new Map<string, number>();
+  const repeatedFailures = new Map<string, RalphRepeatedFailureState>();
   let currentBlockId: string | undefined = start.id;
   let transitions = 0;
   const maxTransitions =
     options.maxTransitions === null
       ? null
       : options.maxTransitions ?? flow.settings?.maxTransitions;
+  const repeatedFailureLimit =
+    options.repeatedFailureLimit === null
+      ? null
+      : options.repeatedFailureLimit ?? DEFAULT_RALPH_REPEATED_FAILURE_LIMIT;
 
   while (currentBlockId) {
     if (options.signal?.aborted) {
@@ -7379,6 +4537,53 @@ export const runRalphFlow = async (
       options.onEvent,
     );
 
+    const failureSignature = createRalphFailureSignature(result);
+    if (failureSignature) {
+      const priorFailure = repeatedFailures.get(block.id);
+      const nextFailureState: RalphRepeatedFailureState =
+        priorFailure?.signature === failureSignature
+          ? { signature: failureSignature, count: priorFailure.count + 1 }
+          : { signature: failureSignature, count: 1 };
+      repeatedFailures.set(block.id, nextFailureState);
+
+      if (
+        repeatedFailureLimit !== null &&
+        nextFailureState.count >= repeatedFailureLimit
+      ) {
+        const summary =
+          `Ralph flow stopped at \`${block.id}\` after ${nextFailureState.count} identical non-success result(s): ${result.summary}`;
+        await emitRunEvent(
+          events,
+          {
+            type: "crash",
+            blockId: block.id,
+            output: result.output,
+            reason: summary,
+          },
+          options.onEvent,
+        );
+        logger?.simple({
+          kind: "crash",
+          message: summary,
+          ...getBlockLogFields(flow, block, config),
+          output: result.output,
+        });
+
+        return finishRun({
+          flow: flow.id,
+          status: "blocked",
+          summary,
+          events,
+          blockResults,
+          missingVariables: [],
+          unknownVariables: [],
+          validation,
+        });
+      }
+    } else {
+      repeatedFailures.delete(block.id);
+    }
+
     if (block.type === "END") {
       const summary = `Ralph flow \`${flow.name}\` ended at \`${block.id}\`.`;
       await emitRunEvent(
@@ -7401,23 +4606,22 @@ export const runRalphFlow = async (
     if (result.output === "ERROR") {
       const nextErrorCount = (errorCounts.get(block.id) ?? 0) + 1;
       errorCounts.set(block.id, nextErrorCount);
-      const retryPolicy = getRetryPolicy(block);
       const hasExplicitErrorRoute = Boolean(
-        findOutgoingEdge(flow, block.id, "ERROR"),
+        findOutgoingRalphEdge(flow, block.id, "ERROR"),
       );
-      const shouldUseDefaultErrorRoute =
-        hasExplicitErrorRoute && block.settings?.retry === undefined;
+      const retryDecision = resolveRalphRetryDecision({
+        block,
+        currentErrorCount: nextErrorCount,
+        hasExplicitErrorRoute,
+      });
 
-      if (
-        !shouldUseDefaultErrorRoute &&
-        retryAllowsAnotherAttempt(retryPolicy, nextErrorCount)
-      ) {
+      if (retryDecision.shouldRetry) {
         await emitRunEvent(
           events,
           {
             type: "retry",
             blockId: block.id,
-            attempt: nextErrorCount + 1,
+            attempt: retryDecision.nextAttempt ?? nextErrorCount + 1,
             reason: result.error ?? result.summary,
           },
           options.onEvent,
@@ -7426,16 +4630,16 @@ export const runRalphFlow = async (
           kind: "retry",
           message: result.error ?? result.summary,
           ...getBlockLogFields(flow, block, config),
-          attempt: nextErrorCount + 1,
+          attempt: retryDecision.nextAttempt ?? nextErrorCount + 1,
           output: result.output,
         });
-        await delay(retryPolicy.delaySeconds ?? 0, options.signal);
+        await delay(retryDecision.delaySeconds, options.signal);
         transitions += 1;
         continue;
       }
     }
 
-    const edge = findOutgoingEdge(flow, block.id, result.output);
+    const edge = findOutgoingRalphEdge(flow, block.id, result.output);
     let nextBlockId = edge?.to;
 
     if (block.type === "VALIDATOR" && result.output === "RETRY" && !nextBlockId) {

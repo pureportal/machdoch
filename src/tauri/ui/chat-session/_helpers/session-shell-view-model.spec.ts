@@ -242,7 +242,7 @@ describe("session shell view model helpers", () => {
     expect(providerState.hasAnyProvider).toBe(false);
   });
 
-  it("keeps unsupported external CLIs out of Chat model choices", () => {
+  it("includes configured external CLIs in Chat model choices", () => {
     const providerState = createProviderChooserState({
       isDesktop: true,
       runtimeSnapshot: createRuntimeSnapshot({
@@ -265,12 +265,20 @@ describe("session shell view model helpers", () => {
       ],
     });
 
-    expect(providerState.configuredProviders).toEqual(["codex-cli"]);
-    expect(providerState.chooserProviders).toEqual(["codex-cli"]);
+    expect(providerState.configuredProviders).toEqual([
+      "codex-cli",
+      "claude-cli",
+      "copilot-cli",
+    ]);
+    expect(providerState.chooserProviders).toEqual([
+      "codex-cli",
+      "claude-cli",
+      "copilot-cli",
+    ]);
     expect(providerState.hasAnyProvider).toBe(true);
   });
 
-  it("does not treat only unsupported external CLIs as configured Chat providers", () => {
+  it("treats configured runnable external CLIs as available Chat providers", () => {
     const providerAvailability = [
       { provider: "openai", configured: false },
       { provider: "anthropic", configured: false },
@@ -285,9 +293,15 @@ describe("session shell view model helpers", () => {
       globalProviders: providerAvailability,
     });
 
-    expect(providerState.configuredProviders).toEqual([]);
-    expect(providerState.chooserProviders).toEqual(RUNNABLE_PROVIDER_ORDER);
-    expect(providerState.hasAnyProvider).toBe(false);
+    expect(providerState.configuredProviders).toEqual([
+      "claude-cli",
+      "copilot-cli",
+    ]);
+    expect(providerState.chooserProviders).toEqual([
+      "claude-cli",
+      "copilot-cli",
+    ]);
+    expect(providerState.hasAnyProvider).toBe(true);
   });
 
   it("derives composer memory summaries from session and global memory state", () => {

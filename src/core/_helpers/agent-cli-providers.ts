@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, join } from "node:path";
-import { normalizeOptionalString } from "../../common/_helpers/normalize-optional-string.js";
+import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
 import {
   AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER,
   AGENT_CLI_PROVIDERS,

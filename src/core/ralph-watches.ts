@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, watch, type FSWatcher } from "node:fs";
+import { existsSync, watch } from "node:fs";
 import {
   mkdir,
   readdir,
@@ -30,6 +30,7 @@ import {
   getUserRalphDirectory,
   type RalphFlowScope,
 } from "./ralph.js";
+import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 
 export const RALPH_WATCH_SCHEMA = "machdoch.ralphWatches" as const;
 export const RALPH_WATCH_SCHEMA_VERSION = 1 as const;
@@ -188,12 +189,6 @@ const createEmptyState = (): RalphWatchState => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-};
-
-const normalizeOptionalString = (value: string | undefined): string | undefined => {
-  const normalized = value?.trim();
-
-  return normalized ? normalized : undefined;
 };
 
 const normalizeId = (value: string | undefined): string => {

@@ -49,8 +49,9 @@ const createRuntimeConfig = (): RuntimeConfig => ({
 
 const createToolContext = (
   chunks: { stream: "stdout" | "stderr"; chunk: string }[] = [],
+  workspaceRoot = "c:/Development/machdoch",
 ) => ({
-  workspaceRoot: "c:/Development/machdoch",
+  workspaceRoot,
   memory: {
     sessionEnabled: false,
     sessionEntries: [],
@@ -137,6 +138,34 @@ describe("resolveShellCommandInvocation", () => {
     expect(child.unref).toHaveBeenCalledTimes(1);
   });
 
+  it("normalizes Windows extended-length cwd values for detached commands", async () => {
+    const child = new EventEmitter() as EventEmitter & {
+      pid: number;
+      unref: ReturnType<typeof vi.fn>;
+    };
+
+    child.pid = 4243;
+    child.unref = vi.fn();
+    spawnMock.mockReturnValue(child);
+
+    const launchPromise = startDetachedShellCommand(
+      "pnpm --version",
+      "\\\\?\\C:\\Development\\machdoch",
+      "win32",
+    );
+
+    child.emit("spawn");
+
+    await expect(launchPromise).resolves.toBe(4243);
+    expect(spawnMock).toHaveBeenCalledWith(
+      "powershell.exe",
+      expect.arrayContaining(["-NoProfile", "-NonInteractive", "-Command"]),
+      expect.objectContaining({
+        cwd: "C:\\Development\\machdoch",
+      }),
+    );
+  });
+
   it("surfaces detached launch failures", async () => {
     const child = new EventEmitter() as EventEmitter & {
       pid?: number;
@@ -217,6 +246,54 @@ describe("run_shell_command", () => {
     expect(result.toolResult.output).toContain("STDOUT:\nfirst line");
     expect(result.toolResult.output).toContain("STDERR:\nwarning line");
     expect(result.toolResult.isError).toBeUndefined();
+  });
+
+  it("normalizes Windows extended-length cwd values in shell execution and reporting", async () => {
+    const stdout = new EventEmitter();
+    const stderr = new EventEmitter();
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: EventEmitter;
+      stderr: EventEmitter;
+      kill: ReturnType<typeof vi.fn>;
+    };
+    const workspaceRoot = "\\\\?\\C:\\Development\\machdoch";
+    const expectedCwd =
+      process.platform === "win32"
+        ? "C:\\Development\\machdoch"
+        : workspaceRoot;
+    const tool = createShellNetworkToolDefinitions(createRuntimeConfig()).find(
+      (definition) => definition.spec.name === "run_shell_command",
+    );
+
+    child.stdout = stdout;
+    child.stderr = stderr;
+    child.kill = vi.fn();
+    spawnMock.mockReturnValue(child);
+
+    if (!tool) {
+      throw new Error("Expected run_shell_command to be registered.");
+    }
+
+    const resultPromise = tool.execute(
+      { command: "pnpm --version" },
+      createToolContext([], workspaceRoot),
+    );
+
+    child.emit("close", 0);
+
+    const result = await resultPromise;
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({
+        cwd: expectedCwd,
+      }),
+    );
+    expect(result.sections?.find((section) => section.title === "Shell command"))
+      .toMatchObject({
+        lines: expect.arrayContaining([`cwd: ${expectedCwd}`]),
+      });
   });
 
   it("terminates the process tree when a streaming shell command times out", async () => {

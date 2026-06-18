@@ -13,7 +13,10 @@ vi.mock("node:child_process", async (importOriginal) => {
   };
 });
 
-import { executeLocalCommand } from "./process-execution.ts";
+import {
+  executeLocalCommand,
+  normalizeLocalCommandCwd,
+} from "./process-execution.ts";
 
 type ExecFileCallback = (
   error: NodeJS.ErrnoException | null,
@@ -46,6 +49,28 @@ beforeEach(() => {
 });
 
 describe("executeLocalCommand", () => {
+  it("normalizes Windows extended-length cwd values before spawning", async () => {
+    const commandPromise = executeLocalCommand("pnpm", ["--version"], {
+      ...commandOptions,
+      cwd: "\\\\?\\C:\\Development\\_others\\machdoch",
+    });
+
+    expect(execFileMock.mock.calls[0]?.[2]).toMatchObject({
+      cwd:
+        process.platform === "win32"
+          ? "C:\\Development\\_others\\machdoch"
+          : "\\\\?\\C:\\Development\\_others\\machdoch",
+    });
+
+    invokeExecFileCallback(null, "11.6.0\r\n", "");
+
+    await expect(commandPromise).resolves.toEqual({
+      stdout: "11.6.0",
+      stderr: "",
+      exitCode: 0,
+    });
+  });
+
   it("resolves numeric accepted exit codes", async () => {
     const commandPromise = executeLocalCommand("npm", ["outdated"], {
       ...commandOptions,
@@ -80,5 +105,73 @@ describe("executeLocalCommand", () => {
       stdout: "partial stdout",
       stderr: "partial stderr",
     });
+  });
+});
+
+describe("normalizeLocalCommandCwd", () => {
+  it("converts Windows drive extended-length paths for Windows process cwd values", () => {
+    expect(
+      normalizeLocalCommandCwd(
+        "\\\\?\\C:\\Development\\_others\\machdoch",
+        "win32",
+      ),
+    ).toBe("C:\\Development\\_others\\machdoch");
+  });
+
+  it("converts Windows UNC extended-length paths for Windows process cwd values", () => {
+    expect(
+      normalizeLocalCommandCwd(
+        "\\\\?\\UNC\\server\\share\\machdoch",
+        "win32",
+      ),
+    ).toBe("\\\\server\\share\\machdoch");
+  });
+
+  it("converts Windows UNC prefixes case-insensitively", () => {
+    expect(
+      normalizeLocalCommandCwd(
+        "\\\\?\\unc\\server\\share\\machdoch",
+        "win32",
+      ),
+    ).toBe("\\\\server\\share\\machdoch");
+  });
+
+  it("converts Windows DOS device drive paths for process cwd values", () => {
+    expect(
+      normalizeLocalCommandCwd(
+        "\\\\.\\C:\\Development\\_others\\machdoch",
+        "win32",
+      ),
+    ).toBe("C:\\Development\\_others\\machdoch");
+  });
+
+  it("converts Windows DOS device UNC paths for process cwd values", () => {
+    expect(
+      normalizeLocalCommandCwd(
+        "\\\\.\\UNC\\server\\share\\machdoch",
+        "win32",
+      ),
+    ).toBe("\\\\server\\share\\machdoch");
+  });
+
+  it("leaves unsupported namespaced paths unchanged", () => {
+    expect(
+      normalizeLocalCommandCwd("\\\\?\\Volume{abc}\\machdoch", "win32"),
+    ).toBe("\\\\?\\Volume{abc}\\machdoch");
+  });
+
+  it("leaves Windows device paths that are not directory cwd values unchanged", () => {
+    expect(
+      normalizeLocalCommandCwd("\\\\.\\pipe\\machdoch-agent", "win32"),
+    ).toBe("\\\\.\\pipe\\machdoch-agent");
+  });
+
+  it("leaves paths unchanged outside Windows", () => {
+    expect(
+      normalizeLocalCommandCwd(
+        "\\\\?\\C:\\Development\\_others\\machdoch",
+        "linux",
+      ),
+    ).toBe("\\\\?\\C:\\Development\\_others\\machdoch");
   });
 });

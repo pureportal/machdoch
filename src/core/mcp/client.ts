@@ -49,7 +49,7 @@ import type {
 import { randomUUID } from "node:crypto";
 import { basename, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { normalizeOptionalString } from "../../common/_helpers/normalize-optional-string.js";
+import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
 import { createProviderAdapter } from "../_helpers/provider-adapters.js";
 import { loadRuntimeConfig } from "../config.js";
 import { loadWorkspaceEnv } from "../env.js";

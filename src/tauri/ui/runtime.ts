@@ -84,6 +84,7 @@ import {
   createMockExecutionFixture,
   createPreviewFixture,
 } from "./preview/fixtures";
+import { normalizeRemoteControlStatus } from "./_helpers/normalize-remote-control-status.helper";
 
 export type UserApiKeyProvider = SharedUserApiProvider;
 
@@ -1353,79 +1354,6 @@ const isDesktopTaskProgressEvent = (
   );
 };
 
-const isRemoteControlLogEntry = (
-  value: unknown,
-): value is RemoteControlLogEntry => {
-  return (
-    isRecord(value) &&
-    typeof value.createdAt === "number" &&
-    Number.isFinite(value.createdAt) &&
-    typeof value.stream === "string" &&
-    (value.toolName === undefined || typeof value.toolName === "string") &&
-    typeof value.chunk === "string"
-  );
-};
-
-const isRemoteControlTimelineEntry = (
-  value: unknown,
-): value is RemoteControlTimelineEntry => {
-  return (
-    isRecord(value) &&
-    typeof value.createdAt === "number" &&
-    Number.isFinite(value.createdAt) &&
-    typeof value.kind === "string" &&
-    typeof value.phase === "string" &&
-    typeof value.label === "string" &&
-    (value.detail === undefined || typeof value.detail === "string") &&
-    (value.tone === undefined || typeof value.tone === "string") &&
-    (value.toolName === undefined || typeof value.toolName === "string")
-  );
-};
-
-const isRemoteControlTaskSession = (
-  value: unknown,
-): value is RemoteControlTaskSession => {
-  return (
-    isRecord(value) &&
-    typeof value.taskId === "string" &&
-    typeof value.task === "string" &&
-    typeof value.mode === "string" &&
-    typeof value.state === "string" &&
-    typeof value.message === "string" &&
-    typeof value.cancellable === "boolean" &&
-    typeof value.startedAt === "number" &&
-    Number.isFinite(value.startedAt) &&
-    typeof value.updatedAt === "number" &&
-    Number.isFinite(value.updatedAt) &&
-    typeof value.progressCount === "number" &&
-    Number.isFinite(value.progressCount) &&
-    Array.isArray(value.logs) &&
-    value.logs.every(isRemoteControlLogEntry) &&
-    Array.isArray(value.timeline) &&
-    value.timeline.every(isRemoteControlTimelineEntry)
-  );
-};
-
-const normalizeOptionalStringField = (
-  value: unknown,
-): string | undefined | null => {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-
-  return typeof value === "string" ? value : null;
-};
-
-const normalizeOptionalNumberField = (
-  value: unknown,
-): number | undefined | null => {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-};
-
 const normalizeNullableStringField = (value: unknown): string | null => {
   if (value === null || value === undefined) {
     return null;
@@ -1452,83 +1380,6 @@ const isNullableNumberPayloadField = (value: unknown): boolean => {
     value === undefined ||
     (typeof value === "number" && Number.isFinite(value))
   );
-};
-
-const assignOptionalStringField = <Key extends keyof RemoteControlStatus>(
-  status: RemoteControlStatus,
-  key: Key,
-  value: string | undefined,
-): void => {
-  if (value !== undefined) {
-    Object.assign(status, { [key]: value });
-  }
-};
-
-const assignOptionalNumberField = <Key extends keyof RemoteControlStatus>(
-  status: RemoteControlStatus,
-  key: Key,
-  value: number | undefined,
-): void => {
-  if (value !== undefined) {
-    Object.assign(status, { [key]: value });
-  }
-};
-
-const normalizeRemoteControlStatus = (
-  value: unknown,
-): RemoteControlStatus | null => {
-  if (
-    !isRecord(value) ||
-    typeof value.enabled !== "boolean" ||
-    typeof value.eventId !== "number" ||
-    !Number.isFinite(value.eventId) ||
-    !Array.isArray(value.sessions) ||
-    !value.sessions.every(isRemoteControlTaskSession)
-  ) {
-    return null;
-  }
-
-  const localUrl = normalizeOptionalStringField(value.localUrl);
-  const lanUrl = normalizeOptionalStringField(value.lanUrl);
-  const displayUrl = normalizeOptionalStringField(value.displayUrl);
-  const qrSvg = normalizeOptionalStringField(value.qrSvg);
-  const tokenHint = normalizeOptionalStringField(value.tokenHint);
-  const startedAt = normalizeOptionalNumberField(value.startedAt);
-  const bindAddress = normalizeOptionalStringField(value.bindAddress);
-  const port = normalizeOptionalNumberField(value.port);
-  const pairedDeviceCount = normalizeOptionalNumberField(value.pairedDeviceCount);
-
-  if (
-    localUrl === null ||
-    lanUrl === null ||
-    displayUrl === null ||
-    qrSvg === null ||
-    tokenHint === null ||
-    startedAt === null ||
-    bindAddress === null ||
-    port === null ||
-    pairedDeviceCount === null
-  ) {
-    return null;
-  }
-
-  const status: RemoteControlStatus = {
-    enabled: value.enabled,
-    eventId: value.eventId,
-    sessions: value.sessions,
-  };
-
-  assignOptionalStringField(status, "localUrl", localUrl);
-  assignOptionalStringField(status, "lanUrl", lanUrl);
-  assignOptionalStringField(status, "displayUrl", displayUrl);
-  assignOptionalStringField(status, "qrSvg", qrSvg);
-  assignOptionalStringField(status, "tokenHint", tokenHint);
-  assignOptionalNumberField(status, "startedAt", startedAt);
-  assignOptionalStringField(status, "bindAddress", bindAddress);
-  assignOptionalNumberField(status, "port", port);
-  assignOptionalNumberField(status, "pairedDeviceCount", pairedDeviceCount);
-
-  return status;
 };
 
 const isRemoteControlCommandEvent = (

@@ -28,6 +28,7 @@ import type {
   RuntimeConfig,
 } from "../runtime-contract.generated.js";
 import { normalizeReasoningModeForProviderModel } from "../reasoning-modes.js";
+import { normalizeLocalCommandCwd } from "./process-execution.js";
 
 interface SpawnedAgentResult {
   exitCode: number | null;
@@ -521,8 +522,9 @@ const runExternalAgentCommand = async (
   }
 
   return await new Promise<SpawnedAgentResult>((resolve, reject) => {
+    const cwd = normalizeLocalCommandCwd(config.workspaceRoot);
     const child = spawn(executable, args, {
-      cwd: config.workspaceRoot,
+      cwd,
       env: createChildEnv(provider),
       shell: shouldUseShellForExecutable(executable),
       stdio: ["pipe", "pipe", "pipe"],
@@ -853,6 +855,10 @@ const executeExternalAgentCliTask = async (
   const binary = resolveAgentCliProviderBinary(provider, env);
   const providerLabel = getAgentCliProviderLabel(provider);
   const loopState = createExternalAgentLoopState(params.contextSections);
+  const executionConfig = {
+    ...params.config,
+    workspaceRoot: normalizeLocalCommandCwd(params.config.workspaceRoot),
+  };
 
   if (!binary.available || !binary.executable) {
     return createExecutionResult(
@@ -883,7 +889,7 @@ const executeExternalAgentCliTask = async (
   const delegationMode = getExternalAgentDelegationMode(params);
   const prompt = createExternalAgentPrompt(
     params.task,
-    params.config,
+    executionConfig,
     params.contextSections,
     params.preparedConversationContext,
     params.systemPromptSections ?? [],
@@ -894,7 +900,7 @@ const executeExternalAgentCliTask = async (
   const command = createExternalAgentCommand(
     provider,
     {
-      config: params.config,
+      config: executionConfig,
       prompt,
       imageInputs: params.imageInputs,
       delegationMode,
@@ -931,7 +937,7 @@ const executeExternalAgentCliTask = async (
     binary.executable,
     command.args,
     command.input,
-    params.config,
+    executionConfig,
     provider,
     params.signal,
     params.onActionOutput,

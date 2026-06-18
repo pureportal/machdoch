@@ -10,6 +10,7 @@ import {
   type McpMarketplaceRegistrySource,
   type McpRegistryServerEntry,
 } from "../../../core/mcp/marketplace.js";
+import { normalizeOptionalString } from "../../../helpers/normalize-optional-string.helper.js";
 
 export type MarketplaceView =
   | "discover"
@@ -106,8 +107,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
-const normalizeOptionalString = (value: unknown): string => {
-  return typeof value === "string" ? value.trim() : "";
+const normalizeString = (value: unknown): string => {
+  return normalizeOptionalString(value) ?? "";
 };
 
 const parseDateMs = (value: string | undefined): number => {
@@ -257,7 +258,7 @@ const collectRegistryMetrics = (
     value: unknown,
   ): void => {
     const normalized = key === "updatedAtMs"
-      ? parseDateMs(normalizeOptionalString(value) || undefined)
+      ? parseDateMs(normalizeString(value) || undefined)
       : normalizeOptionalNumber(value);
 
     if (normalized && normalized > 0) {
@@ -354,7 +355,7 @@ export const parseMarketplaceRegistryResponse = (
   const metadata = isRecord(value) && isRecord(value.metadata)
     ? value.metadata
     : {};
-  const nextCursor = normalizeOptionalString(metadata.nextCursor) || null;
+  const nextCursor = normalizeString(metadata.nextCursor) || null;
   const count = typeof metadata.count === "number" ? metadata.count : 0;
 
   if (!isRecord(value) || !Array.isArray(value.servers)) {
@@ -695,7 +696,7 @@ export const parseInstalledServersRaw = (
       : [];
 
   return servers.flatMap((server) => {
-    const id = normalizeOptionalString(server.id);
+    const id = normalizeString(server.id);
 
     if (!id) {
       return [];
@@ -706,11 +707,11 @@ export const parseInstalledServersRaw = (
     return [
       {
         id,
-        title: normalizeOptionalString(server.title) || id,
-        description: normalizeOptionalString(server.description),
+        title: normalizeString(server.title) || id,
+        description: normalizeString(server.description),
         enabled: server.enabled !== false,
-        transportType: normalizeOptionalString(transport.type) || "stdio",
-        preset: normalizeOptionalString(server.preset),
+        transportType: normalizeString(transport.type) || "stdio",
+        preset: normalizeString(server.preset),
       },
     ];
   });

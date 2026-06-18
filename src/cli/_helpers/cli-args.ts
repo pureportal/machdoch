@@ -1,6 +1,6 @@
 import process from "node:process";
 import { parseArgs as parseNodeArgs } from "node:util";
-import { normalizeOptionalString } from "../../common/_helpers/normalize-optional-string.js";
+import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
 import {
   REASONING_MODES,
   VALID_MODEL_PROVIDERS,

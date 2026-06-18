@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -14,6 +15,17 @@ const createWorkspace = async (): Promise<string> => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-paths-"));
   workspacesToClean.push(workspaceRoot);
   return workspaceRoot;
+};
+
+const resolveExistingPath = (...segments: string[]): string => {
+  return realpathSync.native(join(...segments));
+};
+
+const resolveMissingPath = (
+  existingRoot: string,
+  ...missingSegments: string[]
+): string => {
+  return resolve(realpathSync.native(existingRoot), ...missingSegments);
 };
 
 const createDirectoryLink = async (
@@ -56,13 +68,18 @@ describe("extractTaskPathReferences", () => {
     expect(references).toEqual([
       {
         requestedPath: "src/core/config.ts",
-        resolvedPath: join(workspaceRoot, "src", "core", "config.ts"),
+        resolvedPath: resolveExistingPath(
+          workspaceRoot,
+          "src",
+          "core",
+          "config.ts",
+        ),
         insideWorkspace: true,
         workspacePath: "src/core/config.ts",
       },
       {
         requestedPath: "README.md",
-        resolvedPath: join(workspaceRoot, "README.md"),
+        resolvedPath: resolveExistingPath(workspaceRoot, "README.md"),
         insideWorkspace: true,
         workspacePath: "README.md",
       },
@@ -93,12 +110,12 @@ describe("extractTaskPathReferences", () => {
     expect(references).toEqual([
       {
         requestedPath: "../secret.txt",
-        resolvedPath: resolve(workspaceRoot, "..", "secret.txt"),
+        resolvedPath: resolveMissingPath(resolve(workspaceRoot, ".."), "secret.txt"),
         insideWorkspace: false,
       },
       {
         requestedPath: "docs",
-        resolvedPath: join(workspaceRoot, "docs"),
+        resolvedPath: resolveExistingPath(workspaceRoot, "docs"),
         insideWorkspace: true,
         workspacePath: "docs",
       },
@@ -124,7 +141,11 @@ describe("extractTaskPathReferences", () => {
     expect(references).toEqual([
       {
         requestedPath: "linked-shared/secret.txt",
-        resolvedPath: join(externalRoot, "shared", "secret.txt"),
+        resolvedPath: resolveExistingPath(
+          externalRoot,
+          "shared",
+          "secret.txt",
+        ),
         insideWorkspace: false,
       },
     ]);
@@ -148,7 +169,7 @@ describe("extractExplicitInspectionPathReference", () => {
       ),
     ).toEqual({
       requestedPath: "README.md",
-      resolvedPath: join(workspaceRoot, "README.md"),
+      resolvedPath: resolveExistingPath(workspaceRoot, "README.md"),
       insideWorkspace: true,
       workspacePath: "README.md",
     });
@@ -189,7 +210,10 @@ describe("resolveDeterministicCreateFileTarget", () => {
       ),
     ).toEqual({
       requestedPath: "linked-shared/new.txt",
-      resolvedPath: join(externalRoot, "shared", "new.txt"),
+      resolvedPath: resolveMissingPath(
+        join(externalRoot, "shared"),
+        "new.txt",
+      ),
       insideWorkspace: false,
       inferredPath: false,
     });

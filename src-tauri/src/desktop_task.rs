@@ -27,6 +27,7 @@ use crate::runtime_snapshot::{normalize_optional_string, resolve_workspace_root_
 const DESKTOP_TASK_PROGRESS_EVENT: &str = "desktop-task-progress";
 const CLI_STRUCTURED_PROGRESS_PREFIX: &str = "machdoch-progress: ";
 const DESKTOP_TASK_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
+const RALPH_COMMAND_TIMEOUT_MS: u64 = 12 * 60 * 60 * 1_000;
 const DESKTOP_TASK_WAIT_POLL_MS: u64 = 250;
 const MAX_PENDING_CANCEL_IDS: usize = 256;
 const MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES: usize = 20 * 1024 * 1024;
@@ -189,6 +190,21 @@ fn format_command_failure(stderr: &str, stdout: &str) -> String {
     }
 
     "The shared CLI exited without additional diagnostics.".to_string()
+}
+
+fn format_timeout_duration(timeout_ms: u64) -> String {
+    if timeout_ms % (60 * 60 * 1_000) == 0 {
+        let hours = timeout_ms / (60 * 60 * 1_000);
+        return format!("{hours} hour{}", if hours == 1 { "" } else { "s" });
+    }
+
+    if timeout_ms % (60 * 1_000) == 0 {
+        let minutes = timeout_ms / (60 * 1_000);
+        return format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" });
+    }
+
+    let seconds = timeout_ms / 1_000;
+    format!("{seconds} second{}", if seconds == 1 { "" } else { "s" })
 }
 
 fn sanitize_command_diagnostics(value: &str) -> String {
@@ -1140,7 +1156,7 @@ fn execute_ralph_command(
                     ));
                 }
 
-                if started_at.elapsed() >= Duration::from_millis(DESKTOP_TASK_TIMEOUT_MS) {
+                if started_at.elapsed() >= Duration::from_millis(RALPH_COMMAND_TIMEOUT_MS) {
                     emit_progress_event(
                         &progress_app_handle,
                         &progress_window_label,
@@ -1149,7 +1165,7 @@ fn execute_ralph_command(
                             &progress_task,
                             Some("machdoch"),
                             "cancelled",
-                            "The Ralph command exceeded the desktop safety timeout; stopping it.",
+                            "The Ralph command exceeded the desktop Ralph timeout; stopping it.",
                             false,
                         ),
                     );
@@ -1169,8 +1185,8 @@ fn execute_ralph_command(
                     cleanup_temporary_files(&payload_paths);
 
                     return Err(format!(
-                        "The Ralph CLI exceeded the desktop safety timeout of {} minutes and was stopped. {}",
-                        DESKTOP_TASK_TIMEOUT_MS / 60_000,
+                        "The Ralph CLI exceeded the desktop Ralph timeout of {} and was stopped. {}",
+                        format_timeout_duration(RALPH_COMMAND_TIMEOUT_MS),
                         failure_tail
                     ));
                 }
@@ -1454,8 +1470,8 @@ fn execute_desktop_task(
 
                     let failure_tail = format_command_failure(&stderr_text, &stdout_text);
                     return Err(format!(
-                        "The shared CLI exceeded the desktop safety timeout of {} minutes and was stopped. {}",
-                        DESKTOP_TASK_TIMEOUT_MS / 60_000,
+                        "The shared CLI exceeded the desktop safety timeout of {} and was stopped. {}",
+                        format_timeout_duration(DESKTOP_TASK_TIMEOUT_MS),
                         failure_tail
                     ));
                 }
@@ -1881,11 +1897,12 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        build_cli_args, cleanup_temporary_file, format_command_failure,
+        build_cli_args, cleanup_temporary_file, format_command_failure, format_timeout_duration,
         join_cli_output_and_cleanup, remember_attachment_path_grant, remember_pending_cancel,
         resolve_attached_path, save_clipboard_image_attachment_sync,
         write_conversation_context_file, AttachmentPathGrantMap, CliCommandOptions,
-        ClipboardImageAttachmentRequest, DesktopTaskCancelState, MAX_PENDING_CANCEL_IDS,
+        ClipboardImageAttachmentRequest, DesktopTaskCancelState, DESKTOP_TASK_TIMEOUT_MS,
+        MAX_PENDING_CANCEL_IDS, RALPH_COMMAND_TIMEOUT_MS,
     };
 
     fn create_test_directory(label: &str) -> PathBuf {
@@ -1960,6 +1977,19 @@ mod tests {
         );
 
         assert_eq!(message, "machdoch: Ralph flow `ralph-flow` is invalid.");
+    }
+
+    #[test]
+    fn ralph_command_timeout_allows_long_autonomous_runs() {
+        assert!(RALPH_COMMAND_TIMEOUT_MS > DESKTOP_TASK_TIMEOUT_MS);
+        assert_eq!(
+            format_timeout_duration(RALPH_COMMAND_TIMEOUT_MS),
+            "12 hours"
+        );
+        assert_eq!(
+            format_timeout_duration(DESKTOP_TASK_TIMEOUT_MS),
+            "20 minutes"
+        );
     }
 
     #[test]

@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { REASONING_MODES } from "../../../core/runtime-contract.generated.js";
 import type { ReasoningMode } from "../../../core/runtime-contract.generated.js";
+import { normalizeOptionalString } from "../../../helpers/normalize-optional-string.helper.js";
 import {
   getDefaultModelForProvider,
   SUPPORTED_PROVIDER_ORDER,
@@ -135,10 +136,6 @@ const isRuntimeProvider = (value: unknown): value is RuntimeProvider => {
 
 const isReasoningMode = (value: unknown): value is ReasoningMode => {
   return REASONING_MODES.includes(value as ReasoningMode);
-};
-
-const normalizeOptionalString = (value: unknown): string | undefined => {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 };
 
 const normalizeWorkspaceRoot = (value: unknown): string | null => {

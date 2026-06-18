@@ -362,4 +362,20 @@ describe("createUtilityToolDefinitions", () => {
     expect(result.toolResult.isError).toBeUndefined();
     expect(result.toolResult.output).toBe("Apple\nbanana");
   });
+
+  it("rejects missing or non-string sort input", async () => {
+    const missing = await getTool("sort_unique_lines").execute(
+      {},
+      createContext(),
+    );
+    const nullValue = await getTool("sort_unique_lines").execute(
+      { text: null },
+      createContext(),
+    );
+
+    expect(missing.toolResult.isError).toBe(true);
+    expect(missing.toolResult.output).toContain("string `text`");
+    expect(nullValue.toolResult.isError).toBe(true);
+    expect(nullValue.toolResult.output).toContain("string `text`");
+  });
 });

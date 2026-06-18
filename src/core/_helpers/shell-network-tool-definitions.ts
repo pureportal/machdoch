@@ -12,6 +12,7 @@ import {
   stripHtmlToText,
   type AgentToolDefinition,
 } from "./agent-tools-shared.js";
+import { normalizeLocalCommandCwd } from "./process-execution.js";
 import {
   compactTraceText,
   createTextSection,
@@ -171,8 +172,9 @@ export const startDetachedShellCommand = async (
     command,
     platform,
   );
+  const cwd = normalizeLocalCommandCwd(workspaceRoot, platform);
   const child = spawn(shellExecutable, shellArgs, {
-    cwd: workspaceRoot,
+    cwd,
     detached: true,
     stdio: "ignore",
     windowsHide: true,
@@ -294,8 +296,9 @@ const runStreamingShellCommand = async (
   },
 ): Promise<ShellCommandResult> => {
   return new Promise((resolve, reject) => {
+    const cwd = normalizeLocalCommandCwd(options.cwd);
     const child = spawn(shellExecutable, shellArgs, {
-      cwd: options.cwd,
+      cwd,
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
@@ -474,13 +477,14 @@ export const createShellNetworkToolDefinitions = (
 
         const { shellExecutable, shellArgs } =
           resolveShellCommandInvocation(command);
+        const cwd = normalizeLocalCommandCwd(context.workspaceRoot);
 
         try {
           const { stdout, stderr } = await runStreamingShellCommand(
             shellExecutable,
             shellArgs,
             {
-              cwd: context.workspaceRoot,
+              cwd,
               timeoutMs: SHELL_TIMEOUT_MS,
               maxBufferBytes: 1_000_000,
               ...(context.onOutput ? { onOutput: context.onOutput } : {}),
@@ -513,7 +517,7 @@ export const createShellNetworkToolDefinitions = (
             sections: [
               {
                 title: "Shell command",
-                lines: [`command: ${command}`, `cwd: ${context.workspaceRoot}`],
+                lines: [`command: ${command}`, `cwd: ${cwd}`],
               },
               createTextSection(
                 "Command output",
@@ -570,7 +574,7 @@ export const createShellNetworkToolDefinitions = (
             sections: [
               {
                 title: "Shell command",
-                lines: [`command: ${command}`, `cwd: ${context.workspaceRoot}`],
+                lines: [`command: ${command}`, `cwd: ${cwd}`],
               },
               createTextSection(
                 "Command output",
@@ -617,14 +621,15 @@ export const createShellNetworkToolDefinitions = (
         }
 
         try {
+          const cwd = normalizeLocalCommandCwd(context.workspaceRoot);
           const pid = await startDetachedShellCommand(
             command,
-            context.workspaceRoot,
+            cwd,
           );
           const output = [
             `Command: ${command}`,
             `Launch mode: detached`,
-            `Workspace: ${context.workspaceRoot}`,
+            `Workspace: ${cwd}`,
             pid !== undefined ? `PID: ${pid}` : undefined,
           ]
             .filter(
@@ -644,7 +649,7 @@ export const createShellNetworkToolDefinitions = (
                 title: "Detached command",
                 lines: [
                   `command: ${command}`,
-                  `cwd: ${context.workspaceRoot}`,
+                  `cwd: ${cwd}`,
                   `launch mode: detached from machdoch`,
                   ...(pid !== undefined ? [`pid: ${pid}`] : []),
                 ],
@@ -657,6 +662,7 @@ export const createShellNetworkToolDefinitions = (
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
+          const cwd = normalizeLocalCommandCwd(context.workspaceRoot);
 
           return {
             toolResult: {
@@ -676,7 +682,7 @@ export const createShellNetworkToolDefinitions = (
                 title: "Detached command",
                 lines: [
                   `command: ${command}`,
-                  `cwd: ${context.workspaceRoot}`,
+                  `cwd: ${cwd}`,
                   `launch mode: detached from machdoch`,
                   `error: ${message}`,
                 ],

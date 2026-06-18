@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
-import { sortEntryNames } from "../../common/_helpers/sort-entry-names.js";
+import { sortEntryNames } from "../../helpers/sort-entry-names.helper.js";
 import { resolveRuntimeAgentLimits } from "./agent-runtime-types.js";
 import type { CreateFilePathReference } from "../task-paths.js";
 import { getToolRegistry } from "../tools.js";

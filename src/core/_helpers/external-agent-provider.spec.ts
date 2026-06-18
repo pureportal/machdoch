@@ -270,6 +270,37 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.response?.markdown).toBe("Codex delegated answer.");
   });
 
+  it("normalizes Windows extended-length workspace roots for Codex execution", async () => {
+    const workspaceRoot = await createWorkspace();
+    const configuredWorkspaceRoot =
+      process.platform === "win32" ? `\\\\?\\${workspaceRoot}` : workspaceRoot;
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(configuredWorkspaceRoot),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+    const cdIndex = call?.args.indexOf("--cd") ?? -1;
+
+    expect(call?.options.cwd).toBe(workspaceRoot);
+    expect(cdIndex).toBeGreaterThanOrEqual(0);
+    expect(call?.args[cdIndex + 1]).toBe(workspaceRoot);
+    expect(call?.child.stdinText).toContain(`Workspace: ${workspaceRoot}`);
+
+    call?.child.stdout.write("Codex delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "executed",
+      response: {
+        markdown: "Codex delegated answer.",
+      },
+    });
+  });
+
   it("runs ask-mode generator tasks as constrained read-only Codex artifact jobs", async () => {
     const workspaceRoot = await createWorkspace();
 
