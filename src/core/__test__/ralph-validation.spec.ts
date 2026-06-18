@@ -114,6 +114,110 @@ describe("validateRalphFlow", () => {
     });
   });
 
+  it("coerces generated note body aliases into NOTE.text", () => {
+    const baseFlow = createFlow();
+    const parsed = parseRalphFlowJson(
+      JSON.stringify(
+        {
+          ...baseFlow,
+          blocks: [
+            ...baseFlow.blocks,
+            {
+              id: "note-alias",
+              type: "NOTE",
+              title: "Note alias",
+              note: "Generated note body.",
+            },
+            {
+              id: "content-alias",
+              type: "NOTE",
+              title: "Content alias",
+              text: "",
+              content: "Generated content body.",
+            },
+            {
+              id: "body-alias",
+              type: "NOTE",
+              title: "Body alias",
+              body: "Generated body text.",
+            },
+          ],
+        },
+      ),
+    );
+    const noteTextById = new Map(
+      parsed.blocks.flatMap((block) =>
+        block.type === "NOTE" ? [[block.id, block.text] as const] : [],
+      ),
+    );
+    const validation = validateRalphFlow(parsed);
+
+    expect(noteTextById.get("note-alias")).toBe("Generated note body.");
+    expect(noteTextById.get("content-alias")).toBe("Generated content body.");
+    expect(noteTextById.get("body-alias")).toBe("Generated body text.");
+    expect(validation.warningIssues.map((issue) => issue.code)).not.toContain(
+      "note-empty",
+    );
+  });
+
+  it("coerces generated SEARCH_FILES aliases into the supported utility shape", () => {
+    const baseFlow = createFlow();
+    const parsed = parseRalphFlowJson(
+      JSON.stringify({
+        ...baseFlow,
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "scan-source-files",
+            type: "UTILITY",
+            title: "Scan source files",
+            utility: {
+              type: "SEARCH_FILES",
+              sourceRoot: "src",
+              patterns: ["**/*.ts", "**/*.tsx"],
+            },
+          },
+          {
+            id: "success",
+            type: "END",
+            title: "Success",
+            status: "success",
+          },
+        ],
+        edges: [
+          {
+            id: "start-to-scan",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "scan-source-files",
+          },
+          {
+            id: "scan-to-success",
+            from: "scan-source-files",
+            fromOutput: "SUCCESS",
+            to: "success",
+          },
+        ],
+      }),
+    );
+    const scanBlock = parsed.blocks.find(
+      (block) => block.id === "scan-source-files",
+    );
+    const validation = validateRalphFlow(parsed);
+
+    expect(scanBlock).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "SEARCH_FILES",
+        rootPath: "src",
+        glob: "**/*.ts",
+      },
+    });
+    expect(validation.errorIssues.map((issue) => issue.code)).not.toContain(
+      "utility-search-pattern-required",
+    );
+  });
+
   it("coerces malformed flow JSON into a stable editable shape", () => {
     const parsed = parseRalphFlowJson(
       JSON.stringify({

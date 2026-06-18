@@ -10,6 +10,7 @@ import type {
   TaskExecutionResult,
   TaskExecutionSection,
 } from "../types.js";
+import type { AgentToolDefinition } from "./agent-tools-shared.js";
 import type {
   RuntimeAgentLimitOverrides,
   RuntimeAgentLimits,
@@ -116,6 +117,8 @@ export interface ModelDrivenExecutionParams {
   imageInputs?: AgentModelImageInput[];
   modelAdapter?: AgentModelAdapter;
   monitorModelAdapter?: AgentModelAdapter;
+  additionalToolDefinitions?: AgentToolDefinition[];
+  systemPromptSections?: string[];
   onStateChange?: TaskExecutionProgressHandler;
   onActionOutput?: TaskActionOutputHandler;
   runId?: string;

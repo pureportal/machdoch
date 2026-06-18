@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vi } from "vitest";
 import { executeTask } from "../execution.js";
-import { createRalphFlowWithAgent, type RalphGenerationEvent } from "../ralph.js";
+import {
+  createRalphFlowWithAgent,
+  type RalphGenerationEvent,
+} from "../ralph-generation.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import {
   createExecutionResult,
@@ -31,6 +34,49 @@ const createGeneratedFlowResult = (
       followUps: [],
     },
   });
+
+const createSubmittedFlowResult = (
+  flow = createFlow({
+    settings: { maxTransitions: 10 },
+  }),
+) =>
+  createExecutionResult({
+    summary: "Submitted Ralph flow candidate.",
+    response: {
+      markdown: "Submitted a valid Ralph flow candidate.",
+      highlights: [],
+      relatedFiles: [],
+      verification: [],
+      followUps: [],
+    },
+    outputSections: [
+      {
+        title: "Submitted Ralph flow candidate",
+        audience: "internal",
+        lines: [
+          "<ralph_flow_json>",
+          ...JSON.stringify(flow, null, 2).split("\n"),
+          "</ralph_flow_json>",
+        ],
+      },
+    ],
+  });
+
+const writeStoredFlow = async (
+  workspace: string,
+  flow = createFlow({
+    settings: { maxTransitions: 10 },
+  }),
+): Promise<void> => {
+  const flowDirectory = join(workspace, ".machdoch", "ralph", "flows");
+
+  await mkdir(flowDirectory, { recursive: true });
+  await writeFile(
+    join(flowDirectory, `${flow.id}.json`),
+    `${JSON.stringify(flow, null, 2)}\n`,
+    "utf8",
+  );
+};
 
 describe("createRalphFlowWithAgent", () => {
   beforeEach(() => {
@@ -95,7 +141,7 @@ describe("createRalphFlowWithAgent", () => {
     expect(executeTask).not.toHaveBeenCalled();
   });
 
-  it("does not persist a generated flow when local semantic validation requests retry", async () => {
+  it("does not persist a generated flow when local structure validation requests retry", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
 
     try {
@@ -111,7 +157,7 @@ describe("createRalphFlowWithAgent", () => {
 
       const result = await createRalphFlowWithAgent(workspace, {
         name: "blocked-flow",
-        prompt: "Create a flow that runs lint before finishing.",
+        prompt: "Create a flow.",
         maxRounds: 1,
         config: runtimeConfig,
         customizations,
@@ -126,6 +172,129 @@ describe("createRalphFlowWithAgent", () => {
       await expect(readFile(result.flowPath, "utf8")).rejects.toThrow();
       await expect(readdir(join(workspace, ".machdoch", "ralph", "flows")))
         .resolves.toEqual([]);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("uses a structured Ralph tool submission from output sections", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
+
+    try {
+      vi.mocked(executeTask).mockResolvedValue(
+        createSubmittedFlowResult(
+          createFlow({
+            id: "structured-submit-flow",
+            alias: "structured-submit-flow",
+            name: "Structured submit flow",
+            settings: { maxTransitions: 10 },
+          }),
+        ),
+      );
+
+      const result = await createRalphFlowWithAgent(workspace, {
+        name: "structured-submit-flow",
+        prompt: "Create a flow using structured submission.",
+        maxRounds: 1,
+        config: runtimeConfig,
+        customizations,
+      });
+      const saved = JSON.parse(await readFile(result.flowPath, "utf8")) as {
+        id: string;
+        name: string;
+      };
+
+      expect(result.status).toBe("created");
+      expect(saved.id).toBe(result.flow?.id);
+      expect(saved.name).toBe("Structured submit flow");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the generated flow identity when the model submits a conflicting alias", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
+
+    try {
+      await writeStoredFlow(
+        workspace,
+        createFlow({
+          id: "existing-flow",
+          alias: "shared-alias",
+          name: "Existing flow",
+          settings: { maxTransitions: 10 },
+        }),
+      );
+      vi.mocked(executeTask).mockResolvedValue(
+        createGeneratedFlowResult(
+          createFlow({
+            id: "model-flow-id",
+            alias: "shared-alias",
+            name: "Fresh flow",
+            settings: { maxTransitions: 10 },
+          }),
+        ),
+      );
+
+      const result = await createRalphFlowWithAgent(workspace, {
+        name: "fresh-flow",
+        prompt: "Create a new flow but the model reuses another alias.",
+        maxRounds: 1,
+        config: runtimeConfig,
+        customizations,
+      });
+      const saved = JSON.parse(await readFile(result.flowPath, "utf8")) as {
+        alias?: string;
+      };
+
+      expect(result.status).toBe("created");
+      expect(result.flow?.alias).toBe("fresh-flow");
+      expect(saved.alias).toBe("fresh-flow");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("allocates a fallback alias when the requested generated alias already exists", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
+
+    try {
+      await writeStoredFlow(
+        workspace,
+        createFlow({
+          id: "existing-flow",
+          alias: "duplicate-flow",
+          name: "Existing flow",
+          settings: { maxTransitions: 10 },
+        }),
+      );
+      vi.mocked(executeTask).mockResolvedValue(
+        createGeneratedFlowResult(
+          createFlow({
+            id: "duplicate-flow",
+            alias: "duplicate-flow",
+            name: "Duplicate flow",
+            settings: { maxTransitions: 10 },
+          }),
+        ),
+      );
+
+      const result = await createRalphFlowWithAgent(workspace, {
+        name: "duplicate-flow",
+        prompt: "Create a flow whose requested alias already exists.",
+        maxRounds: 1,
+        config: runtimeConfig,
+        customizations,
+      });
+      const generatorTask = vi.mocked(executeTask).mock.calls[0]?.[0] ?? "";
+      const saved = JSON.parse(await readFile(result.flowPath, "utf8")) as {
+        alias?: string;
+      };
+
+      expect(result.status).toBe("created");
+      expect(result.flow?.alias).toBe("duplicate-flow-1");
+      expect(saved.alias).toBe("duplicate-flow-1");
+      expect(generatorTask).toContain('"alias": "duplicate-flow-1"');
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -180,6 +349,137 @@ describe("createRalphFlowWithAgent", () => {
     }
   });
 
+  it("uses the current round output after a stale validated retry artifact exists", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
+
+    try {
+      const staleFlow = createFlow({
+        id: "ui-improvement-loop",
+        alias: "ui-improvement-loop",
+        name: "Refactor loop",
+      });
+      const correctedFlow = createFlow({
+        id: "ui-improvement-loop",
+        alias: "ui-improvement-loop",
+        name: "UI improvement loop",
+        settings: { maxTransitions: 10 },
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "collect-ui-evidence",
+            type: "UTILITY",
+            title: "Collect UI Evidence",
+            utility: {
+              type: "UI_ANALYZE",
+              adapter: "image",
+              screenshotPath: "{{screenshotPath:path=}}",
+            },
+          },
+          {
+            id: "fix-ui",
+            type: "PROMPT",
+            title: "Fix UI",
+            prompt: "Improve the UI for {{scope:path=ALL}}.",
+          },
+          {
+            id: "validate-ui",
+            type: "VALIDATOR",
+            title: "Validate UI",
+            prompt:
+              "Validate the UI improvement loop and end with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
+            validationScope: { mode: "sinceLastValidator" },
+          },
+          {
+            id: "success",
+            type: "END",
+            title: "Success",
+            status: "success",
+          },
+        ],
+        edges: [
+          {
+            id: "start-to-ui-evidence",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "collect-ui-evidence",
+          },
+          {
+            id: "ui-evidence-to-fix",
+            from: "collect-ui-evidence",
+            fromOutput: "SUCCESS",
+            to: "fix-ui",
+          },
+          {
+            id: "ui-evidence-unavailable-to-fix",
+            from: "collect-ui-evidence",
+            fromOutput: "UNAVAILABLE",
+            to: "fix-ui",
+          },
+          {
+            id: "fix-to-validate",
+            from: "fix-ui",
+            fromOutput: "SUCCESS",
+            to: "validate-ui",
+          },
+          {
+            id: "validate-done",
+            from: "validate-ui",
+            fromOutput: "DONE",
+            to: "success",
+          },
+          {
+            id: "validate-continue",
+            from: "validate-ui",
+            fromOutput: "CONTINUE",
+            to: "fix-ui",
+          },
+        ],
+      });
+
+      vi.mocked(executeTask)
+        .mockResolvedValueOnce(createGeneratedFlowResult(staleFlow))
+        .mockResolvedValueOnce(createGeneratedFlowResult(correctedFlow));
+
+      const result = await createRalphFlowWithAgent(workspace, {
+        name: "ui-improvement-loop",
+        prompt: "Create a UI improvement loop.",
+        maxRounds: 2,
+        config: runtimeConfig,
+        customizations,
+      });
+      const firstTask = vi.mocked(executeTask).mock.calls[0]?.[0] ?? "";
+      const secondTask = vi.mocked(executeTask).mock.calls[1]?.[0] ?? "";
+      const flowDirectoryEntries = await readdir(
+        join(workspace, ".machdoch", "ralph", "flows"),
+      );
+
+      expect(result.status).toBe("created");
+      expect(result.rounds).toBe(2);
+      expect(result.flow?.blocks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "collect-ui-evidence",
+            type: "UTILITY",
+            utility: expect.objectContaining({ type: "UI_ANALYZE" }),
+          }),
+        ]),
+      );
+      expect(result.validatorResults.map((validatorResult) => validatorResult.summary))
+        .toEqual([
+          "Local Ralph generation validator returned RETRY.",
+          "Local Ralph generation validator returned DONE.",
+        ]);
+      expect(firstTask).toContain("-round-1.json");
+      expect(secondTask).toContain("-round-2.json");
+      expect(flowDirectoryEntries).toHaveLength(1);
+      expect(
+        flowDirectoryEntries.every((entry) => !entry.includes("-generation")),
+      ).toBe(true);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("accepts locally validated generated flows without a delegated validator call", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
 
@@ -215,6 +515,40 @@ describe("createRalphFlowWithAgent", () => {
       );
       await expect(readFile(result.flowPath, "utf8")).resolves.toContain(
         '"schemaVersion": 1',
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("does not use prompt keyword matching for generated flow validation", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
+
+    try {
+      vi.mocked(executeTask).mockResolvedValue(
+        createGeneratedFlowResult(
+          createFlow({
+            id: "required-refactoring-loop",
+            alias: "required-refactoring-loop",
+            name: "Required refactoring loop",
+            description: "Required refactoring loop.",
+            settings: { maxTransitions: 10 },
+          }),
+        ),
+      );
+
+      const result = await createRalphFlowWithAgent(workspace, {
+        name: "required-refactoring-loop",
+        prompt: "Create a required refactoring loop.",
+        maxRounds: 1,
+        config: runtimeConfig,
+        customizations,
+      });
+
+      expect(result.status).toBe("created");
+      expect(result.validatorResults).toHaveLength(1);
+      expect(result.validatorResults[0]?.summary).toContain(
+        "Local Ralph generation validator returned DONE.",
       );
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -342,7 +676,7 @@ describe("createRalphFlowWithAgent", () => {
     }
   });
 
-  it("adds package-manager and visual MCP capability hints to generator tasks", async () => {
+  it("adds package-manager and MCP capability hints to generator tasks", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
 
     try {
@@ -441,9 +775,11 @@ describe("createRalphFlowWithAgent", () => {
         customizations,
       });
       const generatorTask = vi.mocked(executeTask).mock.calls[0]?.[0] ?? "";
+      const generatorOptions = vi.mocked(executeTask).mock.calls[0]?.[3];
 
       expect(result.status).toBe("created");
       expect(generatorTask).toContain("Output contract:");
+      expect(generatorTask).toContain("Preferred: call ralph_submit_flow_candidate");
       expect(generatorTask).toContain("<ralph_flow_json>");
       expect(generatorTask).toContain(
         "Use graph blocks: START, PROMPT, VALIDATOR, DECISION, PACK, UTILITY, NOTE, GROUP, END.",
@@ -451,28 +787,51 @@ describe("createRalphFlowWithAgent", () => {
       expect(generatorTask).toContain(
         "NOTE and GROUP blocks are visual organization only",
       );
+      expect(generatorTask).toContain("NOTE.text");
+      expect(generatorTask).toContain("GROUP.childBlockIds");
       expect(generatorTask).toContain("Do not write files yourself");
       expect(generatorTask).toContain("Use tools only when they materially reduce uncertainty.");
       expect(generatorTask).toContain("inspect workspace files or run short read-only commands");
       expect(generatorTask).toContain("Do not write files, modify code");
       expect(generatorTask).toContain("Detected package manager: pnpm.");
       expect(generatorTask).toContain(
-        "Prefer UI verification commands in this order: pnpm typecheck:ui && pnpm build:ui && pnpm build.",
+        "Prefer verification commands in this order: pnpm typecheck:ui && pnpm build:ui && pnpm build.",
       );
+      expect(generatorTask).toContain("Available MCP capabilities:");
       expect(generatorTask).toContain(
         "MCP_TOOL candidate: serverId=tauri-live, toolName=capture_screenshot",
       );
-      expect(generatorTask).toContain("Keep UI-improvement loops compact");
+      expect(generatorTask).toContain("Keep generated flows compact");
       expect(generatorTask).toContain(
-        "prefer a UI_ANALYZE utility before deciding DONE",
+        "Use UI_ANALYZE only when it materially helps satisfy that request",
       );
       expect(generatorTask).toContain("settings.maxTransitions");
+      expect(generatorTask).toContain("Generation scope: workspace.");
+      expect(generatorOptions?.systemPromptSections?.join("\n")).toContain(
+        "You are Ralph Flow Generator",
+      );
+      expect(
+        generatorOptions?.additionalToolDefinitions?.map(
+          (tool) => tool.spec.name,
+        ),
+      ).toEqual(
+        expect.arrayContaining([
+          "ralph_submit_generation_plan",
+          "ralph_list_node_types",
+          "ralph_get_node_contract",
+          "ralph_list_utility_types",
+          "ralph_get_utility_contract",
+          "ralph_validate_candidate_flow",
+          "ralph_normalize_layout",
+          "ralph_submit_flow_candidate",
+        ]),
+      );
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
   });
 
-  it("omits visual MCP guidance for non-visual generator tasks", async () => {
+  it("includes MCP capability hints without prompt keyword gating", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
 
     try {
@@ -563,13 +922,13 @@ describe("createRalphFlowWithAgent", () => {
 
       expect(result.status).toBe("created");
       expect(generatorTask).toContain("Detected package manager: pnpm.");
-      expect(generatorTask).not.toContain(
-        "Live UI / screenshot / browser evidence options",
+      expect(generatorTask).toContain("Available MCP capabilities:");
+      expect(generatorTask).toContain(
+        "MCP_TOOL candidate: serverId=tauri-live, toolName=capture_screenshot",
       );
-      expect(generatorTask).not.toContain("MCP_TOOL candidate");
       expect(generatorTask).not.toContain("Keep UI-improvement loops compact");
-      expect(generatorTask).not.toContain(
-        "prefer a UI_ANALYZE utility before deciding DONE",
+      expect(generatorTask).toContain(
+        "Use UI_ANALYZE only when it materially helps satisfy that request",
       );
     } finally {
       await rm(workspace, { recursive: true, force: true });

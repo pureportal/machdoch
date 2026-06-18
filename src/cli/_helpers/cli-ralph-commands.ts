@@ -2,10 +2,13 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { loadRuntimeConfig } from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
+import {
+  createRalphFlowWithAgent,
+  type RalphGenerationEvent,
+} from "../../core/ralph-generation.js";
 import { getUserSchedulerStatePath, DurableSmartScheduler } from "../../core/scheduler.js";
 import {
   createRalphRunLogger,
-  createRalphFlowWithAgent,
   deleteRalphFlow,
   listRalphRunRecords,
   listRalphFlowRevisions,
@@ -21,7 +24,6 @@ import {
   writeRalphFlow,
   type RalphFlow,
   type RalphFlowScope,
-  type RalphGenerationEvent,
   type RalphRunEvent,
   type RalphRunResult,
 } from "../../core/ralph.js";

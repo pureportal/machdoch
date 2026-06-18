@@ -4,6 +4,7 @@ import type {
   RunMode,
   ToolName,
 } from "./runtime-contract.generated.js";
+import type { AgentToolDefinition } from "./_helpers/agent-tools-shared.js";
 
 export type ToolRiskLevel = "low" | "medium" | "high";
 
@@ -503,6 +504,8 @@ export interface TaskExecutionOptions {
   onActionOutput?: TaskActionOutputHandler;
   modelAdapter?: AgentModelAdapter;
   monitorModelAdapter?: AgentModelAdapter;
+  additionalToolDefinitions?: AgentToolDefinition[];
+  systemPromptSections?: string[];
   instructionAudience?: InstructionTargetAudience;
   conversationContext?: TaskConversationContext;
   imageInputs?: AgentModelImageInput[];

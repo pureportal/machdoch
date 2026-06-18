@@ -17,13 +17,13 @@ import type {
   TaskRunPreview,
 } from "../../core/types.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
+import type { RalphGenerationEvent } from "../../core/ralph-generation.js";
 import type {
   RalphFlow,
   RalphFlowDeleteResult,
   RalphFlowScope,
   RalphFlowRevisionSummary,
   RalphFlowSummary,
-  RalphGenerationEvent,
   RalphRunLogReadResult,
   RalphRunResult,
   RalphRunSummary,

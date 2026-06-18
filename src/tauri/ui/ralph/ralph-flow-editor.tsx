@@ -89,6 +89,7 @@ import {
   getSupportedImageInputExtensions,
   modelSupportsImageInput,
 } from "../../../core/model-capabilities.js";
+import type { RalphGenerationEvent } from "../../../core/ralph-generation.js";
 import { normalizeRalphFlowLayout } from "../../../core/ralph-layout.js";
 import type {
   RalphAttachmentReference,
@@ -102,7 +103,6 @@ import type {
   RalphFlowScope,
   RalphFlowRevisionSummary,
   RalphFlowSummary,
-  RalphGenerationEvent,
   RalphPosition,
   RalphRunResult,
   RalphRunSummary,

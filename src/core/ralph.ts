@@ -7,11 +7,8 @@ import {
   executeLocalCommand,
   formatLocalCommandError,
 } from "./_helpers/process-execution.js";
-import { loadRuntimeConfig } from "./config.js";
-import { discoverCustomizations } from "./customizations.js";
 import { getUserConfigPath } from "./env.js";
 import { executeTask } from "./execution.js";
-import { normalizeRalphFlowLayout } from "./ralph-layout.js";
 import { isReasoningMode } from "./runtime-contract.generated.js";
 import { mcpClientManager } from "./mcp/client.js";
 import {
@@ -38,7 +35,6 @@ import type {
   TaskExecutionOptions,
   TaskConversationContext,
   TaskActionOutput,
-  TaskExecutionProgress,
   TaskExecutionProgressHandler,
   TaskExecutionResult,
 } from "./types.js";
@@ -55,11 +51,8 @@ type PlaywrightConsoleMessage = import("playwright-core").ConsoleMessage;
 type PlaywrightBrowserChannel = (typeof RALPH_UI_BROWSER_CHANNELS)[number];
 
 export const RALPH_FLOW_SCHEMA_VERSION = 1;
-export const DEFAULT_RALPH_GENERATION_MAX_ROUNDS = 3;
-export const MAX_RALPH_GENERATION_MAX_ROUNDS = 25;
-const DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS = 3 * 60 * 1_000;
 export const MAX_RALPH_RESULT_CHARS = 16_000;
-const MAX_RALPH_SIMPLE_LOG_CHARS = 4_000;
+export const MAX_RALPH_SIMPLE_LOG_CHARS = 4_000;
 const MAX_RALPH_TRACE_TEXT_CHARS = 32_000;
 const MAX_RALPH_TRACE_VALUE_DEPTH = 6;
 const MAX_RALPH_TRACE_COLLECTION_ENTRIES = 200;
@@ -68,10 +61,9 @@ const RALPH_WORKSPACE_DIRECTORY = ".machdoch/ralph";
 const RALPH_USER_DIRECTORY = "ralph";
 const RALPH_FLOW_SUBDIRECTORY = "flows";
 const RALPH_RUN_SUBDIRECTORY = "runs";
-const RALPH_GENERATION_SUBDIRECTORY = "generations";
 const RALPH_REVISION_SUBDIRECTORY = "revisions";
 const RALPH_ARTIFACT_SUBDIRECTORY = "artifacts";
-const FLOW_FILE_EXTENSION = ".json";
+export const FLOW_FILE_EXTENSION = ".json";
 const FLOW_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,79}$/u;
 const BLOCK_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,79}$/u;
 const EDGE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,119}$/u;
@@ -598,53 +590,6 @@ export type RalphRunEvent =
       summary: string;
     };
 
-export type RalphGenerationActor = "generator" | "validator";
-
-export type RalphGenerationEventType =
-  | "queued"
-  | "started"
-  | "round-start"
-  | "generator-start"
-  | "generator-output"
-  | "actor-progress"
-  | "actor-output"
-  | "generator-file-written"
-  | "schema-validation-start"
-  | "schema-validation-result"
-  | "validator-start"
-  | "validator-result"
-  | "retry-feedback"
-  | "created"
-  | "blocked"
-  | "cancelled"
-  | "failed";
-
-export interface RalphGenerationEvent {
-  type: RalphGenerationEventType;
-  generationRunId: string;
-  message: string;
-  createdAt: string;
-  round?: number;
-  maxRounds?: number;
-  actor?: RalphGenerationActor;
-  provider?: ModelProvider;
-  model?: string;
-  flowPath?: string;
-  generationFlowPath?: string;
-  validationValid?: boolean;
-  validationErrorCount?: number;
-  validationWarningCount?: number;
-  validatorDecision?: string;
-  status?: "created" | "blocked";
-  blockCount?: number;
-  edgeCount?: number;
-  durationMs?: number;
-  actorState?: TaskExecutionProgress["state"];
-  actionToolName?: string;
-  actionStream?: TaskActionOutput["stream"];
-  detail?: string;
-}
-
 export type RalphLogEntryKind =
   | "run-start"
   | "run-end"
@@ -707,14 +652,6 @@ export interface RalphRunLogPaths {
   traceJsonlPath: string;
 }
 
-export interface RalphGenerationLogPaths {
-  id: string;
-  directory: string;
-  recordPath: string;
-  simpleMarkdownPath: string;
-  traceJsonlPath: string;
-}
-
 export interface RalphRunLogger {
   runId: string;
   paths?: RalphRunLogPaths;
@@ -732,6 +669,13 @@ export interface RalphRunOptions {
   logger?: RalphRunLogger;
   signal?: AbortSignal;
   maxTransitions?: number | null;
+}
+
+export interface RalphExecutionOptionsSource {
+  runId?: string;
+  logger?: RalphRunLogger;
+  signal?: AbortSignal;
+  onStateChange?: TaskExecutionProgressHandler;
 }
 
 export interface RalphRunResult {
@@ -810,37 +754,6 @@ export interface RalphRunLogReadResult {
   content: string;
 }
 
-export interface RalphFlowGenerationOptions {
-  name: string;
-  prompt: string;
-  existingFlow?: RalphFlow;
-  mode?: "do-it" | "interview";
-  target?: "flow" | "prompt-block" | "refactor";
-  scope?: RalphFlowScope;
-  config?: RuntimeConfig;
-  customizations?: CustomizationDiscoveryResult;
-  maxRounds?: number;
-  onStateChange?: TaskExecutionProgressHandler;
-  onGenerationEvent?: (event: RalphGenerationEvent) => void | Promise<void>;
-  runId?: string;
-  signal?: AbortSignal;
-}
-
-export interface RalphFlowGenerationResult {
-  generationRunId?: string;
-  status: "created" | "blocked";
-  flowPath: string;
-  generationLogPath?: string;
-  traceLogPath?: string;
-  flow?: RalphFlow;
-  rounds: number;
-  validation: RalphValidationResult;
-  events: RalphGenerationEvent[];
-  generatorResults: TaskExecutionResult[];
-  validatorResults: TaskExecutionResult[];
-  summary: string;
-}
-
 export interface RalphFlowDeleteResult {
   id: string;
   path: string;
@@ -886,7 +799,7 @@ const normalizeFlowId = (value: string): string => {
     .slice(0, 80);
 };
 
-const normalizeFlowAlias = normalizeFlowId;
+export const normalizeFlowAlias = normalizeFlowId;
 
 const normalizeFlowFileName = (id: string): string => {
   const normalizedId = normalizeFlowId(id);
@@ -912,7 +825,7 @@ const normalizeRevisionId = (value: string): string => {
   return revisionId;
 };
 
-const normalizeRunId = (value: string): string => {
+export const normalizeRunId = (value: string): string => {
   const runId = value
     .trim()
     .replace(/\.json$/iu, "")
@@ -957,16 +870,6 @@ export const getRalphRunDirectory = (
   scope: RalphFlowScope = "workspace",
 ): string => {
   return join(getRalphStorageDirectory(workspaceRoot, scope), RALPH_RUN_SUBDIRECTORY);
-};
-
-export const getRalphGenerationDirectory = (
-  workspaceRoot: string,
-  scope: RalphFlowScope = "workspace",
-): string => {
-  return join(
-    getRalphStorageDirectory(workspaceRoot, scope),
-    RALPH_GENERATION_SUBDIRECTORY,
-  );
 };
 
 export const getRalphArtifactDirectory = (workspaceRoot: string): string => {
@@ -1135,34 +1038,7 @@ const createRalphRunArtifactPaths = (
   };
 };
 
-const createRalphGenerationArtifactPaths = (
-  generationDirectory: string,
-  timestamp: string,
-  preferredId?: string,
-): RalphGenerationLogPaths => {
-  const baseName = preferredId
-    ? normalizeRunId(preferredId)
-    : timestamp.replace(/[:.]/gu, "-");
-  let id = baseName;
-  let candidateDirectory = join(generationDirectory, id);
-  let suffix = 1;
-
-  while (existsSync(candidateDirectory)) {
-    id = `${baseName}-${suffix}`;
-    candidateDirectory = join(generationDirectory, id);
-    suffix += 1;
-  }
-
-  return {
-    id,
-    directory: candidateDirectory,
-    recordPath: join(candidateDirectory, "generation.json"),
-    simpleMarkdownPath: join(candidateDirectory, "simple.md"),
-    traceJsonlPath: join(candidateDirectory, "trace.jsonl"),
-  };
-};
-
-const createValidationResult = (
+export const createValidationResult = (
   errorIssues: RalphValidationIssue[],
   warningIssues: RalphValidationIssue[] = [],
   variables: RalphFlowVariable[] = [],
@@ -1181,6 +1057,29 @@ const coerceStringArray = (value: unknown): string[] => {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string")
     : [];
+};
+
+const coerceStringAlias = (
+  record: Record<string, unknown>,
+  keys: readonly string[],
+): string | undefined => {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === "string") {
+      return value;
+    }
+  }
+
+  return undefined;
 };
 
 const coercePosition = (value: unknown): RalphPosition | undefined => {
@@ -1568,6 +1467,27 @@ const coerceUtilityEncoding = (
     : undefined;
 };
 
+const coerceFirstString = (...values: unknown[]): string | undefined => {
+  for (const value of values) {
+    if (typeof value === "string") {
+      return value;
+    }
+
+    if (Array.isArray(value)) {
+      const firstString = value.find(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.trim().length > 0,
+      );
+
+      if (firstString) {
+        return firstString;
+      }
+    }
+  }
+
+  return undefined;
+};
+
 const coerceUtilityConfig = (value: unknown): RalphUtilityConfig => {
   const record = isRecord(value) ? value : {};
   const type = isRalphUtilityType(record.type) ? record.type : "WAIT";
@@ -1583,6 +1503,14 @@ const coerceUtilityConfig = (value: unknown): RalphUtilityConfig => {
   const checks = coerceUiAnalyzeChecks(record.checks);
   const waitUntil = coerceUiAnalyzeWaitUntil(record.waitUntil);
   const mcpArguments = coerceMcpArguments(record.mcpArguments);
+  const rootPath = coerceFirstString(
+    record.rootPath,
+    record.root,
+    record.sourceRoot,
+    record.directory,
+  );
+  const pattern = coerceFirstString(record.pattern);
+  const glob = coerceFirstString(record.glob, record.patterns, record.globs);
 
   return {
     type,
@@ -1609,12 +1537,12 @@ const coerceUtilityConfig = (value: unknown): RalphUtilityConfig => {
       ? { outputPath: record.outputPath }
       : {}),
     ...(typeof record.path === "string" ? { path: record.path } : {}),
-    ...(typeof record.rootPath === "string" ? { rootPath: record.rootPath } : {}),
+    ...(rootPath ? { rootPath } : {}),
     ...(typeof record.content === "string" ? { content: record.content } : {}),
     ...(typeof record.append === "boolean" ? { append: record.append } : {}),
     ...(encoding ? { encoding } : {}),
-    ...(typeof record.pattern === "string" ? { pattern: record.pattern } : {}),
-    ...(typeof record.glob === "string" ? { glob: record.glob } : {}),
+    ...(pattern ? { pattern } : {}),
+    ...(glob ? { glob } : {}),
     ...(typeof record.maxResults === "number"
       ? { maxResults: record.maxResults }
       : {}),
@@ -1857,7 +1785,8 @@ const parseFlowBlockRecord = (record: Record<string, unknown>): RalphFlowBlock =
       return {
         ...base,
         type,
-        text: typeof record.text === "string" ? record.text : "",
+        text:
+          coerceStringAlias(record, ["text", "note", "content", "body"]) ?? "",
         ...(tone ? { tone } : {}),
         tags: coerceStringArray(record.tags),
         ...(typeof record.collapsed === "boolean"
@@ -2714,7 +2643,7 @@ const validateRalphUtilityBlock = (
   }
 };
 
-const hasGraphCycle = (flow: RalphFlow): boolean => {
+export const hasGraphCycle = (flow: RalphFlow): boolean => {
   const edgesBySource = new Map<string, string[]>();
 
   for (const edge of flow.edges) {
@@ -3745,7 +3674,7 @@ const redactLogText = (value: string): string => {
   });
 };
 
-const capLogText = (value: string, limit: number): string => {
+export const capLogText = (value: string, limit: number): string => {
   const redacted = redactLogText(value);
 
   if (redacted.length <= limit) {
@@ -3755,7 +3684,7 @@ const capLogText = (value: string, limit: number): string => {
   return `${redacted.slice(0, limit)}\n[Ralph log text truncated at ${limit} characters.]`;
 };
 
-const sanitizeTraceValue = (value: unknown, depth = 0): unknown => {
+export const sanitizeTraceValue = (value: unknown, depth = 0): unknown => {
   if (typeof value === "string") {
     return capLogText(value, MAX_RALPH_TRACE_TEXT_CHARS);
   }
@@ -3804,7 +3733,7 @@ const sanitizeTraceValue = (value: unknown, depth = 0): unknown => {
   return String(value);
 };
 
-const createLogTimestamp = (): string => new Date().toISOString();
+export const createLogTimestamp = (): string => new Date().toISOString();
 
 const formatDuration = (durationMs: number | undefined): string => {
   if (durationMs === undefined) {
@@ -3836,7 +3765,7 @@ const formatSimpleMarkdownEntry = (entry: RalphSimpleLogEntry): string => {
   return `- ${prefix}${block} ${entry.message}${output}${duration}${detail}`;
 };
 
-const createRalphLogLine = (entry: unknown): string => {
+export const createRalphLogLine = (entry: unknown): string => {
   return `${JSON.stringify(sanitizeTraceValue(entry))}\n`;
 };
 
@@ -3929,107 +3858,6 @@ class RalphFileRunLogger implements RalphRunLogger {
       });
   }
 }
-
-const formatGenerationMarkdownEntry = (event: RalphGenerationEvent): string => {
-  const round = event.round ? ` round ${event.round}` : "";
-  const actor = event.actor ? ` ${event.actor}` : "";
-  const counts =
-    event.blockCount !== undefined || event.edgeCount !== undefined
-      ? ` (${event.blockCount ?? 0} blocks, ${event.edgeCount ?? 0} edges)`
-      : "";
-
-  return `- ${event.createdAt}${round}${actor} ${event.message}${counts}`;
-};
-
-class RalphFileGenerationLogger {
-  private pending: Promise<void> = Promise.resolve();
-  private failed = false;
-
-  public constructor(public readonly paths: RalphGenerationLogPaths) {}
-
-  public event(event: RalphGenerationEvent): void {
-    const safeEvent: RalphGenerationEvent = {
-      ...event,
-      message: capLogText(event.message, MAX_RALPH_SIMPLE_LOG_CHARS),
-    };
-
-    this.enqueue(async () => {
-      await appendFile(this.paths.traceJsonlPath, createRalphLogLine(safeEvent), "utf8");
-      await appendFile(
-        this.paths.simpleMarkdownPath,
-        `${formatGenerationMarkdownEntry(safeEvent)}\n`,
-        "utf8",
-      );
-    });
-  }
-
-  public async record(result: RalphFlowGenerationResult): Promise<void> {
-    await this.flush();
-    await writeFile(
-      this.paths.recordPath,
-      `${JSON.stringify(sanitizeTraceValue(result), null, 2)}\n`,
-      "utf8",
-    );
-  }
-
-  public async flush(): Promise<void> {
-    await this.pending.catch(() => undefined);
-  }
-
-  private enqueue(write: () => Promise<void>): void {
-    if (this.failed) {
-      return;
-    }
-
-    this.pending = this.pending
-      .then(write)
-      .catch(() => {
-        this.failed = true;
-      });
-  }
-}
-
-const createRalphGenerationLogger = async (
-  workspaceRoot: string,
-  options: {
-    runId: string;
-    flowPath: string;
-    generationFlowPath: string;
-    prompt: string;
-    scope?: RalphFlowScope;
-  },
-): Promise<RalphFileGenerationLogger> => {
-  const createdAt = createLogTimestamp();
-  const paths = createRalphGenerationArtifactPaths(
-    getRalphGenerationDirectory(workspaceRoot, options.scope ?? "workspace"),
-    createdAt,
-    options.runId,
-  );
-  const logger = new RalphFileGenerationLogger(paths);
-
-  await mkdir(paths.directory, { recursive: true });
-  await writeFile(
-    paths.simpleMarkdownPath,
-    [
-      `# Ralph Generation ${paths.id}`,
-      "",
-      `Started: ${createdAt}`,
-      `Flow path: ${options.flowPath}`,
-      `Temporary flow path: ${options.generationFlowPath}`,
-      "",
-      "## Prompt",
-      "",
-      capLogText(options.prompt, MAX_RALPH_SIMPLE_LOG_CHARS),
-      "",
-      "## Activity",
-      "",
-    ].join("\n"),
-    "utf8",
-  );
-  await writeFile(paths.traceJsonlPath, "", "utf8");
-
-  return logger;
-};
 
 export const createRalphRunLogger = async (
   workspaceRoot: string,
@@ -4861,7 +4689,7 @@ const createDecisionTask = (
 };
 
 const createExecutionOptions = async (
-  options: RalphRunOptions | RalphFlowGenerationOptions,
+  options: RalphExecutionOptionsSource,
   config: RuntimeConfig,
   context?: RalphResultContext,
   block?: RalphFlowBlock,
@@ -4881,7 +4709,7 @@ const createExecutionOptions = async (
     attachments.length > 0
       ? await createImageInputsFromAttachments(attachments, config)
       : [];
-  const logger = "logger" in options ? options.logger : undefined;
+  const logger = options.logger;
   const baseOnStateChange = options.onStateChange;
   const onStateChange: TaskExecutionProgressHandler | undefined =
     baseOnStateChange || logger
@@ -4959,6 +4787,13 @@ const createExecutionOptions = async (
       : {}),
     ...(imageInputs.length > 0 ? { imageInputs } : {}),
   };
+};
+
+export const createRalphTaskExecutionOptions = async (
+  options: RalphExecutionOptionsSource,
+  config: RuntimeConfig,
+): Promise<TaskExecutionOptions> => {
+  return createExecutionOptions(options, config);
 };
 
 const emitRunEvent = async (
@@ -7682,1404 +7517,4 @@ export const runRalphFlow = async (
     unknownVariables: [],
     validation,
   });
-};
-
-const createFlowGenerationTask = (
-  flowPath: string,
-  id: string,
-  alias: string | undefined,
-  name: string,
-  prompt: string,
-  target: RalphFlowGenerationOptions["target"],
-  mode: RalphFlowGenerationOptions["mode"],
-  existingFlow: RalphFlow | undefined,
-  validatorFeedback: string | undefined,
-  includeVisualGuidance: boolean,
-  workspaceHints: string,
-): string => {
-  return [
-    "Create or update a Ralph flow graph.",
-    "",
-    "Ralph will persist the finished flow locally after parsing your response.",
-    "Target workspace path:",
-    flowPath,
-    "",
-    "Output contract:",
-    "- Return one complete Ralph flow JSON object in your final answer.",
-    "- Wrap the JSON in <ralph_flow_json>...</ralph_flow_json> tags.",
-    "- Do not include comments, trailing commas, or explanatory prose inside the tags.",
-    "- Do not write files yourself; Ralph validates and writes the parsed JSON locally.",
-    "",
-    "Ralph flow requirements:",
-    "- Use graph blocks: START, PROMPT, VALIDATOR, DECISION, PACK, UTILITY, NOTE, GROUP, END.",
-    "- Use exactly one START block and one or more END blocks.",
-    "- NOTE and GROUP blocks are visual organization only; do not route execution through them. Use parentGroupId on executable blocks to place them inside GROUP blocks.",
-    "- Normal PROMPT blocks route with SUCCESS and ERROR; they do not need RALPH_DECISION markers.",
-    "- VALIDATOR blocks must end with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
-    "- VALIDATOR.CONTINUE needs an explicit edge.",
-    "- VALIDATOR.RETRY may omit an edge; Ralph falls back to the validator group start.",
-    "- DECISION blocks must define labels and end with RALPH_DECISION: <LABEL>.",
-    "- UTILITY blocks run deterministic operations without an LLM. Available utility.type values: WAIT, HTTP_FETCH, POLL, RUN_COMMAND, READ_FILE, WRITE_FILE, SEARCH_FILES, RUN_CHECK, UI_ANALYZE, GIT_STATUS, SET_VARIABLE, TRANSFORM_JSON, VALIDATE_JSON, NOTIFY.",
-    "- Use utility outputs exactly as produced: WAIT/SET_VARIABLE/NOTIFY use SUCCESS only; HTTP_FETCH uses SUCCESS, HTTP_ERROR, TIMEOUT, ERROR; POLL uses SUCCESS, ERROR, and TIMEOUT when maxAttempts is finite; RUN_CHECK uses SUCCESS, FAILED, ERROR; UI_ANALYZE uses SUCCESS, UNAVAILABLE, ERROR; SEARCH_FILES uses SUCCESS, EMPTY, ERROR; VALIDATE_JSON uses SUCCESS, INVALID, ERROR.",
-    "- Add variables directly in prompts using {{name:type=default}}, for example {{scope:path=ALL}}.",
-    "- Use block result placeholders such as {{lastResult}}, {{summary:block-id}}, and {{result:block-id}} where useful.",
-    "- Use structured utility data placeholders such as {{data:block-id:path.to.value}} where useful.",
-    "- Set settings.maxTransitions on flows with cycles. UI improvement loops should usually use 25-40 transitions unless the user asks otherwise.",
-    ...(includeVisualGuidance
-      ? [
-          "- Keep UI-improvement loops compact: prefer one loop with 7-10 meaningful nodes, and combine suggestion plus implementation when that keeps the graph readable.",
-          "- For UI quality requests, prefer a UI_ANALYZE utility before deciding DONE. Use adapter=browser with targetUrl for web UI, adapter=image with screenshotPath for manual screenshots, or adapter=tauri-mcp/playwright-mcp with mcpServerId and mcpToolName when workspace hints list a matching live tool.",
-          "- UI_ANALYZE must not start or restart servers. Use server.mode=existing with a healthUrl/targetUrl for already-running apps, or server.mode=none for screenshots/static evidence.",
-          "- If no live visual target is available, use variables such as {{targetUrl:url=}}, {{screenshotPath:path=}}, or {{visualEvidence:text=}} and fall back to deterministic code-level checks.",
-        ]
-      : []),
-    "- Do not use PACK blocks or block settings.packs unless the workspace hints list available packs; pack ids are metadata-only without backing context injection.",
-    "- Use package-manager-aware commands from the workspace hints. Do not default to npm when another package manager is detected.",
-    "- For SEARCH_FILES, use the narrowest source root that fits the request; avoid scanning the workspace root when possible.",
-    "- Keep block ids stable kebab-case.",
-    "- Store graph positions so the canvas is readable.",
-    "- Use tools only when they materially reduce uncertainty. For simple self-contained requests, produce the flow directly from this prompt.",
-    "- If needed, inspect workspace files or run short read-only commands to understand local conventions.",
-    "- Do not write files, modify code, start or restart servers, install packages, run long-running commands, or perform broad verification yourself. Ralph performs parsing, validation, and persistence after your response.",
-    "",
-    `Generation target: ${target ?? "flow"}.`,
-    `Generation mode: ${mode ?? "do-it"}.`,
-    "",
-    workspaceHints,
-    "",
-    target === "prompt-block"
-      ? "- Add or improve one focused PROMPT block in the existing graph, including routes needed to make it reachable and useful."
-      : undefined,
-    target === "refactor"
-      ? "- Refactor or improve the existing graph while preserving its intent, ids, variables, and useful routes unless the user asks to change them."
-      : undefined,
-    mode === "interview"
-      ? "- If the request is underspecified, prefer variables with defaults and validator/decision blocks that make assumptions explicit in the graph."
-      : undefined,
-    "",
-    "Schema example:",
-    JSON.stringify(
-      {
-        schemaVersion: RALPH_FLOW_SCHEMA_VERSION,
-        id,
-        ...(alias ? { alias } : {}),
-        name,
-        description: "Short description",
-        settings: { maxTransitions: 30 },
-        blocks: [
-          { id: "start", type: "START", title: "Start", position: { x: 0, y: 0 } },
-          {
-            id: "wait-before-work",
-            type: "UTILITY",
-            title: "Wait before work",
-            utility: { type: "WAIT", mode: "delay", delaySeconds: 0 },
-            position: { x: 260, y: 0 },
-          },
-          {
-            id: "do-work",
-            type: "PROMPT",
-            title: "Do work",
-            prompt: "Do the requested work for {{scope:path=ALL}}.",
-            settings: {
-              workspace: { mode: "default" },
-              reasoning: "default",
-              maxIterations: 1,
-            },
-            position: { x: 520, y: 0 },
-          },
-          {
-            id: "validate-work",
-            type: "VALIDATOR",
-            title: "Validate work",
-            prompt:
-              "Validate the completed work for {{scope:path=ALL}}. End with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
-            validationScope: { mode: "sinceLastValidator" },
-            position: { x: 780, y: 0 },
-          },
-          {
-            id: "success",
-            type: "END",
-            title: "Success",
-            status: "success",
-            position: { x: 1040, y: 0 },
-          },
-        ],
-        edges: [
-          { id: "start-to-wait", from: "start", fromOutput: "SUCCESS", to: "wait-before-work" },
-          { id: "wait-to-work", from: "wait-before-work", fromOutput: "SUCCESS", to: "do-work" },
-          { id: "work-to-validate", from: "do-work", fromOutput: "SUCCESS", to: "validate-work" },
-          { id: "validate-done", from: "validate-work", fromOutput: "DONE", to: "success" },
-          { id: "validate-continue", from: "validate-work", fromOutput: "CONTINUE", to: "do-work" },
-        ],
-      },
-      null,
-      2,
-    ),
-    "",
-    existingFlow
-      ? `<existing_flow>\n${JSON.stringify(existingFlow, null, 2)}\n</existing_flow>`
-      : undefined,
-    validatorFeedback
-      ? `<validator_feedback>\n${validatorFeedback}\n</validator_feedback>`
-      : undefined,
-    "<user_request>",
-    prompt,
-    "</user_request>",
-    "",
-    "Before submitting the final response, validate the graph against the rules above.",
-  ]
-    .filter((line): line is string => line !== undefined)
-    .join("\n");
-};
-
-type GeneratedRalphFlowSource =
-  | "file"
-  | "tagged-response"
-  | "fenced-response"
-  | "raw-response";
-
-interface GeneratedRalphFlowReadResult {
-  flow?: RalphFlow;
-  source?: GeneratedRalphFlowSource;
-  error?: string;
-}
-
-interface GeneratedRalphFlowJsonCandidate {
-  source: Exclude<GeneratedRalphFlowSource, "file">;
-  raw: string;
-}
-
-const RALPH_FLOW_JSON_TAG_PATTERN =
-  /<ralph_flow_json>\s*([\s\S]*?)\s*<\/ralph_flow_json>/giu;
-const FENCED_JSON_PATTERN = /```(?:json)?\s*([\s\S]*?)```/giu;
-
-const looksLikeRalphFlowJsonText = (value: string): boolean => {
-  const text = value.trim();
-
-  return (
-    text.includes('"schemaVersion"') &&
-    text.includes('"blocks"') &&
-    text.includes('"edges"')
-  );
-};
-
-const getGenerationResultTextCandidates = (
-  result: TaskExecutionResult,
-): string[] => {
-  const candidates = [
-    result.response?.markdown,
-    ...result.outputSections.map((section) => section.lines.join("\n")),
-    result.summary,
-  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-  const seen = new Set<string>();
-  const uniqueCandidates: string[] = [];
-
-  for (const candidate of candidates) {
-    if (seen.has(candidate)) {
-      continue;
-    }
-
-    seen.add(candidate);
-    uniqueCandidates.push(candidate);
-  }
-
-  return uniqueCandidates;
-};
-
-const extractGeneratedRalphFlowJsonCandidates = (
-  text: string,
-): GeneratedRalphFlowJsonCandidate[] => {
-  const candidates: GeneratedRalphFlowJsonCandidate[] = [];
-
-  for (const match of text.matchAll(RALPH_FLOW_JSON_TAG_PATTERN)) {
-    const raw = match[1]?.trim();
-
-    if (raw) {
-      candidates.push({ source: "tagged-response", raw });
-    }
-  }
-
-  for (const match of text.matchAll(FENCED_JSON_PATTERN)) {
-    const raw = match[1]?.trim();
-
-    if (raw && looksLikeRalphFlowJsonText(raw)) {
-      candidates.push({ source: "fenced-response", raw });
-    }
-  }
-
-  const trimmed = text.trim();
-  if (trimmed.startsWith("{") && looksLikeRalphFlowJsonText(trimmed)) {
-    candidates.push({ source: "raw-response", raw: trimmed });
-  }
-
-  return candidates;
-};
-
-const tryParseGeneratedRalphFlowJson = (
-  raw: string,
-): { flow?: RalphFlow; error?: string } => {
-  try {
-    return { flow: parseRalphFlowJson(raw) };
-  } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-};
-
-const readGeneratedRalphFlow = async (
-  generationFlowPath: string,
-  result: TaskExecutionResult,
-): Promise<GeneratedRalphFlowReadResult> => {
-  const errors: string[] = [];
-
-  if (existsSync(generationFlowPath)) {
-    const parsed = tryParseGeneratedRalphFlowJson(
-      await readFile(generationFlowPath, "utf8"),
-    );
-
-    if (parsed.flow) {
-      return { flow: parsed.flow, source: "file" };
-    }
-
-    errors.push(
-      `Generated file was not valid Ralph JSON: ${parsed.error ?? "unknown error"}`,
-    );
-  }
-
-  for (const text of getGenerationResultTextCandidates(result)) {
-    for (const candidate of extractGeneratedRalphFlowJsonCandidates(text)) {
-      const parsed = tryParseGeneratedRalphFlowJson(candidate.raw);
-
-      if (parsed.flow) {
-        return { flow: parsed.flow, source: candidate.source };
-      }
-
-      errors.push(
-        `Generator ${candidate.source} JSON was invalid: ${parsed.error ?? "unknown error"}`,
-      );
-    }
-  }
-
-  return {
-    error:
-      errors.length > 0
-        ? errors.join(" ")
-        : "The generator did not create a parseable Ralph flow JSON object in its file output or final response.",
-  };
-};
-
-const RALPH_GENERATION_SEMANTIC_STOP_WORDS = new Set([
-  "about",
-  "after",
-  "again",
-  "also",
-  "and",
-  "any",
-  "are",
-  "but",
-  "can",
-  "create",
-  "does",
-  "flow",
-  "for",
-  "from",
-  "generate",
-  "graph",
-  "have",
-  "into",
-  "like",
-  "machdoch",
-  "make",
-  "modules",
-  "our",
-  "project",
-  "ralph",
-  "should",
-  "simple",
-  "small",
-  "that",
-  "test",
-  "the",
-  "then",
-  "this",
-  "those",
-  "until",
-  "use",
-  "using",
-  "want",
-  "with",
-  "work",
-  "workspace",
-]);
-
-const RALPH_GENERATION_KEYWORD_ALIASES: readonly (readonly string[])[] = [
-  ["lint", "linter", "eslint"],
-  ["typecheck", "tsc", "typescript"],
-  ["test", "tests", "vitest"],
-  ["build", "compile"],
-  ["reexport", "reexports", "barrel", "index"],
-  ["ui", "visual", "screenshot", "browser"],
-];
-
-interface RalphGenerationSemanticValidation {
-  decision: "DONE" | "RETRY";
-  issues: string[];
-}
-
-const normalizeGenerationSemanticText = (value: string): string =>
-  value.toLowerCase().replace(/[^a-z0-9_./:-]+/gu, " ");
-
-const createGenerationFlowSearchText = (flow: RalphFlow): string => {
-  return normalizeGenerationSemanticText(JSON.stringify(flow));
-};
-
-const extractGenerationPromptKeywords = (prompt: string): string[] => {
-  const words = normalizeGenerationSemanticText(prompt)
-    .split(/\s+/u)
-    .map((word) => word.trim().replace(/^[^a-z0-9_]+|[^a-z0-9_]+$/gu, ""))
-    .filter((word) => {
-      if (word.length < 3 || RALPH_GENERATION_SEMANTIC_STOP_WORDS.has(word)) {
-        return false;
-      }
-
-      return /[a-z]/u.test(word) || /[0-9]/u.test(word);
-    });
-
-  return [...new Set(words)].slice(0, 40);
-};
-
-const textContainsAny = (text: string, keywords: readonly string[]): boolean =>
-  keywords.some((keyword) => text.includes(keyword));
-
-const promptContainsAny = (
-  promptText: string,
-  keywords: readonly string[],
-): boolean => textContainsAny(promptText, keywords);
-
-const flowContainsAny = (
-  flowText: string,
-  keywords: readonly string[],
-): boolean => textContainsAny(flowText, keywords);
-
-const countGenerationKeywordMatches = (
-  promptKeywords: readonly string[],
-  flowText: string,
-): number => {
-  const matchedKeywords = new Set<string>();
-
-  for (const keyword of promptKeywords) {
-    if (flowText.includes(keyword)) {
-      matchedKeywords.add(keyword);
-      continue;
-    }
-
-    const aliasGroup = RALPH_GENERATION_KEYWORD_ALIASES.find((aliases) =>
-      aliases.includes(keyword),
-    );
-    if (aliasGroup && flowContainsAny(flowText, aliasGroup)) {
-      matchedKeywords.add(keyword);
-    }
-  }
-
-  return matchedKeywords.size;
-};
-
-const validateGeneratedRalphFlowSemantics = (
-  flow: RalphFlow,
-  prompt: string,
-): RalphGenerationSemanticValidation => {
-  const issues: string[] = [];
-  const promptText = normalizeGenerationSemanticText(prompt);
-  const flowText = createGenerationFlowSearchText(flow);
-  const promptKeywords = extractGenerationPromptKeywords(prompt);
-  const matchedKeywordCount = countGenerationKeywordMatches(promptKeywords, flowText);
-  const requiredKeywordMatches = Math.min(3, promptKeywords.length);
-
-  if (
-    requiredKeywordMatches > 0 &&
-    matchedKeywordCount < requiredKeywordMatches
-  ) {
-    issues.push(
-      `Generated flow only mentions ${matchedKeywordCount} of ${requiredKeywordMatches} key request term(s): ${promptKeywords.slice(0, 8).join(", ")}.`,
-    );
-  }
-
-  if (
-    promptContainsAny(promptText, ["loop", "repeat", "continue", "until"]) &&
-    !hasGraphCycle(flow)
-  ) {
-    issues.push(
-      "The request asks for repeated or until-style work, but the graph has no cycle.",
-    );
-  }
-
-  if (
-    hasGraphCycle(flow) &&
-    flow.settings?.maxTransitions === undefined
-  ) {
-    issues.push(
-      "The generated graph has a cycle but no settings.maxTransitions cap.",
-    );
-  }
-
-  if (
-    promptContainsAny(promptText, ["lint", "linter", "eslint"]) &&
-    !flowContainsAny(flowText, ["lint", "linter", "eslint"])
-  ) {
-    issues.push("The request asks for lint verification, but the flow does not mention lint.");
-  }
-
-  if (
-    promptContainsAny(promptText, ["tsc", "typecheck", "typescript"]) &&
-    !flowContainsAny(flowText, ["tsc", "typecheck", "typescript"])
-  ) {
-    issues.push(
-      "The request asks for TypeScript verification, but the flow does not mention tsc or typecheck.",
-    );
-  }
-
-  if (
-    promptContainsAny(promptText, ["run tests", "run test", "tests", "vitest"]) &&
-    !flowContainsAny(flowText, ["test", "tests", "vitest"])
-  ) {
-    issues.push("The request asks for tests, but the flow does not mention test execution.");
-  }
-
-  if (
-    promptContainsAny(promptText, ["build", "compile"]) &&
-    !flowContainsAny(flowText, ["build", "compile"])
-  ) {
-    issues.push("The request asks for a build check, but the flow does not mention build.");
-  }
-
-  if (
-    promptContainsAny(promptText, ["node_modules", "exclude", "excluded"]) &&
-    promptText.includes("node_modules") &&
-    !flowText.includes("node_modules")
-  ) {
-    issues.push(
-      "The request asks to exclude node_modules, but the flow does not mention node_modules.",
-    );
-  }
-
-  if (
-    promptContainsAny(promptText, ["ui", "visual", "screenshot", "browser"]) &&
-    !flowContainsAny(flowText, [
-      "ui_analyze",
-      "targeturl",
-      "screenshotpath",
-      "visualevidence",
-      "browser",
-      "screenshot",
-    ])
-  ) {
-    issues.push(
-      "The request appears to need UI or visual evidence, but the flow has no UI_ANALYZE block or visual input variable.",
-    );
-  }
-
-  return {
-    decision: issues.length === 0 ? "DONE" : "RETRY",
-    issues,
-  };
-};
-
-const createLocalGenerationValidatorResult = (
-  task: string,
-  config: RuntimeConfig,
-  validation: RalphGenerationSemanticValidation,
-  durationMs: number,
-): TaskExecutionResult => {
-  const decisionLine = `RALPH_DECISION: ${validation.decision}`;
-  const issueLines =
-    validation.issues.length > 0
-      ? validation.issues.map((issue) => `- ${issue}`)
-      : ["No local semantic issues found."];
-
-  return {
-    task,
-    mode: config.mode,
-    status: "executed",
-    summary: `Local Ralph generation validator returned ${validation.decision}.`,
-    executedTools: [],
-    outputSections: [
-      {
-        title: "Local Ralph generation validator",
-        lines: [
-          `decision: ${validation.decision}`,
-          `durationMs: ${durationMs}`,
-          ...issueLines,
-        ],
-      },
-    ],
-    response: {
-      markdown: [...issueLines, decisionLine].join("\n"),
-      highlights: [],
-      relatedFiles: [],
-      verification: [],
-      followUps: [],
-    },
-  };
-};
-
-const UI_VERIFICATION_SCRIPT_PRIORITY = [
-  "typecheck:ui",
-  "build:ui",
-  "test:ui",
-  "lint",
-  "typecheck",
-  "build",
-] as const;
-
-const VISUAL_MCP_CAPABILITY_PATTERN =
-  /(?:accessibility|a11y|browser|capture|dom|image|page|playwright|screen|screenshot|snapshot|tauri|visual|webdriver|window)/iu;
-
-const parsePackageManagerName = (value: string | undefined): string => {
-  const normalized = value?.trim();
-
-  if (!normalized) {
-    return "npm";
-  }
-
-  const atIndex = normalized.indexOf("@");
-
-  return atIndex > 0 ? normalized.slice(0, atIndex) : normalized;
-};
-
-const createPackageScriptCommand = (
-  packageManager: string,
-  scriptName: string,
-): string => {
-  if (packageManager === "npm") {
-    return `npm run ${scriptName}`;
-  }
-
-  if (packageManager === "bun") {
-    return `bun run ${scriptName}`;
-  }
-
-  return `${packageManager} ${scriptName}`;
-};
-
-const createPackageVerificationHints = async (
-  workspaceRoot: string,
-): Promise<string[]> => {
-  const packageJsonPath = join(workspaceRoot, "package.json");
-
-  if (!existsSync(packageJsonPath)) {
-    return [
-      "- No package.json was found; generated UI flows should keep verification commands configurable.",
-    ];
-  }
-
-  try {
-    const parsed = JSON.parse(await readFile(packageJsonPath, "utf8")) as unknown;
-
-    if (!isRecord(parsed)) {
-      return ["- package.json is not an object; keep verification commands configurable."];
-    }
-
-    const scripts = isRecord(parsed.scripts) ? parsed.scripts : {};
-    const scriptNames = Object.keys(scripts).filter(
-      (scriptName) => typeof scripts[scriptName] === "string",
-    );
-    const packageManager = parsePackageManagerName(
-      typeof parsed.packageManager === "string" ? parsed.packageManager : undefined,
-    );
-    const recommendedScripts = UI_VERIFICATION_SCRIPT_PRIORITY.filter((scriptName) =>
-      scriptNames.includes(scriptName),
-    );
-    const recommendedCommands = recommendedScripts.map((scriptName) =>
-      createPackageScriptCommand(packageManager, scriptName),
-    );
-
-    return [
-      `- Detected package manager: ${packageManager}.`,
-      scriptNames.length > 0
-        ? `- Detected package scripts: ${scriptNames.sort().join(", ")}.`
-        : "- package.json has no scripts.",
-      recommendedCommands.length > 0
-        ? `- Prefer UI verification commands in this order: ${recommendedCommands.join(" && ")}.`
-        : "- No obvious UI verification scripts were found; use configurable RUN_CHECK commands.",
-    ];
-  } catch (error) {
-    return [
-      `- package.json could not be inspected: ${error instanceof Error ? error.message : String(error)}.`,
-    ];
-  }
-};
-
-const createMcpVisualCapabilityHints = (workspaceRoot: string): string[] => {
-  try {
-    const config = loadMcpConfigSync(workspaceRoot);
-    const discoveryCache = loadMcpDiscoveryCacheSync(workspaceRoot);
-    const lines: string[] = [];
-
-    for (const server of config.servers.filter((candidate) => candidate.enabled)) {
-      const discovery = discoveryCache.servers[server.id];
-
-      if (!discovery) {
-        lines.push(
-          `- MCP server ${server.id} is enabled, but no cached discovery is available.`,
-        );
-        continue;
-      }
-
-      for (const tool of discovery.tools) {
-        const searchable = [
-          server.id,
-          tool.name,
-          tool.title ?? "",
-          tool.description ?? "",
-        ].join(" ");
-
-        if (VISUAL_MCP_CAPABILITY_PATTERN.test(searchable)) {
-          lines.push(
-            `- MCP_TOOL candidate: serverId=${server.id}, toolName=${tool.name}${
-              tool.description ? ` (${tool.description})` : ""
-            }`,
-          );
-        }
-      }
-
-      for (const resource of discovery.resources) {
-        const searchable = [
-          server.id,
-          resource.uri,
-          resource.name ?? "",
-          resource.description ?? "",
-        ].join(" ");
-
-        if (VISUAL_MCP_CAPABILITY_PATTERN.test(searchable)) {
-          lines.push(
-            `- MCP_RESOURCE candidate: serverId=${server.id}, uri=${resource.uri}${
-              resource.description ? ` (${resource.description})` : ""
-            }`,
-          );
-        }
-      }
-    }
-
-    return lines.length > 0
-      ? lines.slice(0, 16)
-      : ["- No discovered MCP visual/browser/screenshot capabilities were found."];
-  } catch (error) {
-    return [
-      `- MCP capability hints unavailable: ${error instanceof Error ? error.message : String(error)}.`,
-    ];
-  }
-};
-
-const RALPH_VISUAL_GENERATION_REQUEST_PATTERN =
-  /\b(?:a11y|accessibility|browser|canvas|css|dom|frontend|front-end|html|image|layout|page|pixel|playwright|responsive|screen|screenshot|style|tauri|targetUrl|ui|ux|visual|viewport)\b/iu;
-
-const flowUsesUiAnalyze = (flow: RalphFlow | undefined): boolean =>
-  Boolean(
-    flow?.blocks.some(
-      (block) => block.type === "UTILITY" && block.utility.type === "UI_ANALYZE",
-    ),
-  );
-
-const shouldIncludeVisualGenerationGuidance = (
-  prompt: string,
-  existingFlow: RalphFlow | undefined,
-): boolean =>
-  RALPH_VISUAL_GENERATION_REQUEST_PATTERN.test(prompt) ||
-  flowUsesUiAnalyze(existingFlow);
-
-const createFlowGenerationWorkspaceHints = async (
-  workspaceRoot: string,
-  includeVisualHints: boolean,
-): Promise<string> => {
-  const packageHints = await createPackageVerificationHints(workspaceRoot);
-
-  const lines = [
-    "Workspace-specific generation hints:",
-    "",
-    "Verification commands:",
-    ...packageHints,
-  ];
-
-  if (!includeVisualHints) {
-    return lines.join("\n");
-  }
-
-  const mcpHints = createMcpVisualCapabilityHints(workspaceRoot);
-
-  return [
-    ...lines,
-    "",
-    "Live UI / screenshot / browser evidence options:",
-    ...mcpHints,
-    "",
-    "When no live visual tool is discovered, generated UI-improvement flows should still accept screenshotPath, visualEvidence, or targetUrl variables and fall back to code-level UI checks.",
-  ].join("\n");
-};
-
-const createBlockedGenerationResult = (
-  flowPath: string,
-  validation: RalphValidationResult,
-  summary?: string,
-): RalphFlowGenerationResult => {
-  return {
-    status: "blocked",
-    flowPath,
-    rounds: 0,
-    validation,
-    events: [],
-    generatorResults: [],
-    validatorResults: [],
-    summary: summary ?? validation.errors[0] ?? "Invalid Ralph flow generation options.",
-  };
-};
-
-const createTaskDidNotExecuteFeedback = (
-  actor: "generator" | "validator",
-  result: TaskExecutionResult,
-): string => {
-  return `The Ralph ${actor} did not execute successfully (${result.status}): ${
-    result.reason ?? result.summary
-  }`;
-};
-
-type EmitRalphGenerationEvent = (
-  event: Omit<RalphGenerationEvent, "generationRunId" | "createdAt">,
-) => Promise<void>;
-
-const createGenerationActorResultMessage = (
-  actor: RalphGenerationActor,
-  result: TaskExecutionResult,
-): string => {
-  const summary = createGenerationFeedbackExcerpt(result.reason ?? result.summary);
-
-  return result.status === "executed"
-    ? `Ralph ${actor} completed.`
-    : `Ralph ${actor} returned ${result.status}${summary ? `: ${summary}` : "."}`;
-};
-
-const createGenerationActorRuntimeConfig = (
-  config: RuntimeConfig,
-  actor: RalphGenerationActor,
-): RuntimeConfig => {
-  if (actor !== "generator") {
-    return config;
-  }
-
-  return {
-    ...config,
-    mode: "ask",
-    reasoning: config.reasoning === "default" ? "medium" : config.reasoning,
-  };
-};
-
-const createGenerationAttemptConfigs = (
-  config: RuntimeConfig,
-): RuntimeConfig[] => [config];
-
-const createGenerationFeedbackExcerpt = (value: string | undefined): string => {
-  const normalized = value?.replace(/\s+/gu, " ").trim() ?? "";
-
-  return normalized.length > 1_200
-    ? `${normalized.slice(0, 1_200)}...`
-    : normalized;
-};
-
-const createGenerationDidNotConvergeSummary = (
-  maxRounds: number,
-  validation: RalphValidationResult,
-  validatorFeedback: string | undefined,
-): string => {
-  const details: string[] = [];
-
-  if (!validation.valid && validation.errors.length > 0) {
-    details.push(`Last schema error: ${validation.errors[0]}`);
-  }
-
-  const feedback = createGenerationFeedbackExcerpt(validatorFeedback);
-
-  if (feedback) {
-    details.push(`Last feedback: ${feedback}`);
-  }
-
-  return [
-    `Ralph flow generation did not converge after ${maxRounds} round(s).`,
-    ...details,
-  ].join(" ");
-};
-
-interface RalphGenerationActorTracePaths {
-  flowPath: string;
-  generationFlowPath: string;
-}
-
-const executeGenerationActorWithFallback = async (
-  actor: "generator" | "validator",
-  task: string,
-  customizations: CustomizationDiscoveryResult,
-  options: RalphFlowGenerationOptions,
-  attemptConfigs: readonly RuntimeConfig[],
-  results: TaskExecutionResult[],
-  round: number,
-  maxRounds: number,
-  emitGenerationEvent: EmitRalphGenerationEvent,
-  paths: RalphGenerationActorTracePaths,
-): Promise<TaskExecutionResult> => {
-  for (let attemptIndex = 0; attemptIndex < attemptConfigs.length; attemptIndex += 1) {
-    const attemptConfig = attemptConfigs[attemptIndex];
-
-    if (!attemptConfig) {
-      continue;
-    }
-
-    const actorConfig = createGenerationActorRuntimeConfig(attemptConfig, actor);
-    const startedAt = Date.now();
-
-    await emitGenerationEvent({
-      type: actor === "generator" ? "generator-start" : "validator-start",
-      actor,
-      round,
-      maxRounds,
-      provider: actorConfig.provider,
-      model: actorConfig.model,
-      message: `Starting Ralph ${actor} with ${actorConfig.provider}/${actorConfig.model}.`,
-    });
-
-    const executionOptions = await createExecutionOptions(options, actorConfig);
-    const baseOnStateChange = executionOptions.onStateChange;
-    const baseOnActionOutput = executionOptions.onActionOutput;
-    let lastProgressSignature = "";
-
-    const result = await executeTask(task, actorConfig, customizations, {
-      ...executionOptions,
-      onStateChange: async (progress) => {
-        await baseOnStateChange?.(progress);
-
-        const message =
-          progress.message.trim() ||
-          progress.timelineEvent?.label ||
-          `Ralph ${actor} reported ${progress.state}.`;
-        const detail =
-          progress.reason ??
-          progress.timelineEvent?.detail ??
-          progress.assistantText ??
-          progress.modelStream?.content;
-        const signature = [
-          progress.state,
-          message,
-          detail ? detail.slice(0, 240) : "",
-        ].join("\n");
-
-        if (signature === lastProgressSignature) {
-          return;
-        }
-
-        lastProgressSignature = signature;
-        await emitGenerationEvent({
-          type: "actor-progress",
-          actor,
-          round,
-          maxRounds,
-          provider: actorConfig.provider,
-          model: actorConfig.model,
-          flowPath: paths.flowPath,
-          generationFlowPath: paths.generationFlowPath,
-          durationMs: Date.now() - startedAt,
-          actorState: progress.state,
-          ...(detail ? { detail: capLogText(detail, MAX_RALPH_SIMPLE_LOG_CHARS) } : {}),
-          message: `Ralph ${actor} ${progress.state}: ${createGenerationFeedbackExcerpt(message)}`,
-        });
-      },
-      onActionOutput: async (output) => {
-        await baseOnActionOutput?.(output);
-
-        const safeOutput: TaskActionOutput = {
-          ...output,
-          chunk: capLogText(output.chunk, MAX_RALPH_SIMPLE_LOG_CHARS),
-        };
-        const excerpt = createGenerationFeedbackExcerpt(safeOutput.chunk);
-
-        await emitGenerationEvent({
-          type: "actor-output",
-          actor,
-          round,
-          maxRounds,
-          provider: actorConfig.provider,
-          model: actorConfig.model,
-          flowPath: paths.flowPath,
-          generationFlowPath: paths.generationFlowPath,
-          durationMs: Date.now() - startedAt,
-          actionToolName: safeOutput.toolName,
-          actionStream: safeOutput.stream,
-          detail: safeOutput.chunk,
-          message: `Ralph ${actor} ${safeOutput.toolName} ${safeOutput.stream}${excerpt ? `: ${excerpt}` : "."}`,
-        });
-      },
-      maxDurationMs:
-        executionOptions.maxDurationMs ?? DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS,
-      instructionAudience: actor,
-    });
-    results.push(result);
-
-    await emitGenerationEvent({
-      type: actor === "generator" ? "generator-output" : "validator-result",
-      actor,
-      round,
-      maxRounds,
-      provider: actorConfig.provider,
-      model: actorConfig.model,
-      durationMs: Date.now() - startedAt,
-      message: createGenerationActorResultMessage(actor, result),
-    });
-
-    if (result.status === "executed") {
-      return result;
-    }
-
-    return result;
-  }
-
-  return {
-    task,
-    mode: attemptConfigs[0]?.mode ?? "ask",
-    status: "blocked",
-    summary: `Ralph ${actor} could not start because no configured provider was selected.`,
-    executedTools: [],
-    reason:
-      "Select and configure a model provider before starting Ralph generation.",
-    outputSections: [],
-  };
-};
-
-export const createRalphFlowWithAgent = async (
-  workspaceRoot: string,
-  options: RalphFlowGenerationOptions,
-): Promise<RalphFlowGenerationResult> => {
-  const scope = options.scope ?? "workspace";
-  const alias = normalizeFlowAlias(options.name);
-  const id = options.existingFlow?.id ?? randomUUID();
-  const displayName = options.existingFlow?.name ?? options.name.trim();
-  const flowPath = id
-    ? getRalphFlowPath(workspaceRoot, id, scope)
-    : join(getRalphFlowStorageDirectory(workspaceRoot, scope), "flow.json");
-  const generationFlowPath = join(
-    getRalphFlowStorageDirectory(workspaceRoot, scope),
-    `.${id}-generation-${randomUUID()}${FLOW_FILE_EXTENSION}`,
-  );
-  const maxRounds = options.maxRounds ?? DEFAULT_RALPH_GENERATION_MAX_ROUNDS;
-  const generationRunId = options.runId ?? `ralph-generation-${id}-${randomUUID()}`;
-  const generationEvents: RalphGenerationEvent[] = [];
-  const generationLoggerRef: { current?: RalphFileGenerationLogger } = {};
-  const emitGenerationEvent: EmitRalphGenerationEvent = async (event) => {
-    const completedEvent: RalphGenerationEvent = {
-      ...event,
-      generationRunId,
-      createdAt: createLogTimestamp(),
-    };
-
-    generationEvents.push(completedEvent);
-    generationLoggerRef.current?.event(completedEvent);
-    try {
-      await options.onGenerationEvent?.(completedEvent);
-    } catch {
-      // Generation events are observability side effects. Generation must continue.
-    }
-  };
-  const finalizeGenerationResult = async (
-    result: Omit<
-      RalphFlowGenerationResult,
-      "generationRunId" | "generationLogPath" | "traceLogPath" | "events"
-    >,
-  ): Promise<RalphFlowGenerationResult> => {
-    const completedResult: RalphFlowGenerationResult = {
-      generationRunId,
-      ...(generationLoggerRef.current?.paths.simpleMarkdownPath
-        ? { generationLogPath: generationLoggerRef.current.paths.simpleMarkdownPath }
-        : {}),
-      ...(generationLoggerRef.current?.paths.traceJsonlPath
-        ? { traceLogPath: generationLoggerRef.current.paths.traceJsonlPath }
-        : {}),
-      ...result,
-      events: generationEvents,
-    };
-
-    await generationLoggerRef.current?.record(completedResult).catch(() => undefined);
-
-    return completedResult;
-  };
-
-  if (!alias) {
-    return createBlockedGenerationResult(
-      flowPath,
-      createValidationResult([
-        {
-          code: "flow-id-required",
-          message: "Expected a Ralph flow name before generation.",
-        },
-      ]),
-    );
-  }
-
-  if (!options.prompt.trim()) {
-    return createBlockedGenerationResult(
-      flowPath,
-      createValidationResult([
-        {
-          code: "prompt-required",
-          message: "Expected a prompt before generating a Ralph flow.",
-        },
-      ]),
-    );
-  }
-
-  if (
-    !Number.isInteger(maxRounds) ||
-    maxRounds < 1 ||
-    maxRounds > MAX_RALPH_GENERATION_MAX_ROUNDS
-  ) {
-    return createBlockedGenerationResult(
-      flowPath,
-      createValidationResult([
-        {
-          code: "max-rounds-invalid",
-          message: `maxRounds must be an integer from 1 to ${MAX_RALPH_GENERATION_MAX_ROUNDS}.`,
-        },
-      ]),
-    );
-  }
-
-  const config =
-    options.config ??
-    (await loadRuntimeConfig(workspaceRoot, "machdoch", undefined, undefined, undefined));
-  const customizations =
-    options.customizations ??
-    (await discoverCustomizations(workspaceRoot, {
-      discoverUserCustomizations: true,
-      discoverGithubCustomizations:
-        Boolean(config.compatibility.discoverGithubCustomizations),
-      includeDiagnostics: true,
-    }));
-  const generatorResults: TaskExecutionResult[] = [];
-  const validatorResults: TaskExecutionResult[] = [];
-  const attemptConfigs = createGenerationAttemptConfigs(config);
-  const includeVisualGuidance = shouldIncludeVisualGenerationGuidance(
-    options.prompt,
-    options.existingFlow,
-  );
-  let validatorFeedback: string | undefined;
-  let latestValidation = createValidationResult([]);
-  let workspaceHints: string | undefined;
-
-  await mkdir(getRalphFlowStorageDirectory(workspaceRoot, scope), { recursive: true });
-  const generationLogger = await createRalphGenerationLogger(workspaceRoot, {
-    runId: generationRunId,
-    flowPath,
-    generationFlowPath,
-    prompt: options.prompt,
-    scope,
-  }).catch(() => undefined);
-
-  if (generationLogger) {
-    generationLoggerRef.current = generationLogger;
-  }
-
-  await emitGenerationEvent({
-    type: "started",
-    maxRounds,
-    provider: config.provider,
-    model: config.model,
-    flowPath,
-    generationFlowPath,
-    message: `Started Ralph flow generation for \`${displayName}\`.`,
-  });
-
-  try {
-    for (let round = 1; round <= maxRounds; round += 1) {
-      await emitGenerationEvent({
-        type: "round-start",
-        round,
-        maxRounds,
-        provider: config.provider,
-        model: config.model,
-        flowPath,
-        generationFlowPath,
-        message: `Starting generation round ${round} of ${maxRounds}.`,
-      });
-
-      const generatorResult = await executeGenerationActorWithFallback(
-        "generator",
-        createFlowGenerationTask(
-          generationFlowPath,
-          id,
-          options.existingFlow?.alias ?? alias,
-          displayName,
-          options.prompt,
-          options.target,
-          options.mode,
-          options.existingFlow,
-          validatorFeedback,
-          includeVisualGuidance,
-          workspaceHints ??
-            (workspaceHints = await createFlowGenerationWorkspaceHints(
-              workspaceRoot,
-              includeVisualGuidance,
-            )),
-        ),
-        customizations,
-        { ...options, runId: generationRunId },
-        attemptConfigs,
-        generatorResults,
-        round,
-        maxRounds,
-        emitGenerationEvent,
-        { flowPath, generationFlowPath },
-      );
-
-      if (generatorResult.status !== "executed") {
-        await emitGenerationEvent({
-          type: "blocked",
-          round,
-          maxRounds,
-          status: "blocked",
-          flowPath,
-          generationFlowPath,
-          message: createTaskDidNotExecuteFeedback("generator", generatorResult),
-        });
-
-        return await finalizeGenerationResult({
-          status: "blocked",
-          flowPath,
-          rounds: round,
-          validation: latestValidation,
-          generatorResults,
-          validatorResults,
-          summary: createTaskDidNotExecuteFeedback("generator", generatorResult),
-        });
-      }
-
-      let flow: RalphFlow;
-      try {
-        await emitGenerationEvent({
-          type: "schema-validation-start",
-          round,
-          maxRounds,
-          flowPath,
-          generationFlowPath,
-          message: "Reading generated Ralph flow JSON from file output or generator response.",
-        });
-        const generatedFlow = await readGeneratedRalphFlow(
-          generationFlowPath,
-          generatorResult,
-        );
-
-        if (!generatedFlow.flow) {
-          throw new Error(generatedFlow.error ?? "Generated Ralph flow JSON was missing.");
-        }
-
-        flow = generatedFlow.flow;
-        flow = {
-          ...flow,
-          id,
-          alias: flow.alias ?? options.existingFlow?.alias ?? alias,
-          name: flow.name || displayName,
-        };
-        flow = normalizeRalphFlowLayout(flow);
-      } catch (error) {
-        validatorFeedback = `The generator did not produce valid Ralph JSON: ${error instanceof Error ? error.message : String(error)}`;
-        await emitGenerationEvent({
-          type: "schema-validation-result",
-          round,
-          maxRounds,
-          flowPath,
-          generationFlowPath,
-          validationValid: false,
-          validationErrorCount: 1,
-          validationWarningCount: 0,
-          message: validatorFeedback,
-        });
-        await emitGenerationEvent({
-          type: "retry-feedback",
-          round,
-          maxRounds,
-          flowPath,
-          generationFlowPath,
-          message: "Retrying with feedback about invalid generated JSON.",
-        });
-        continue;
-      }
-
-      latestValidation = validateRalphFlow(flow, { config });
-      await emitGenerationEvent({
-        type: "schema-validation-result",
-        round,
-        maxRounds,
-        flowPath,
-        generationFlowPath,
-        validationValid: latestValidation.valid,
-        validationErrorCount: latestValidation.errors.length,
-        validationWarningCount: latestValidation.warnings.length,
-        blockCount: flow.blocks.length,
-        edgeCount: flow.edges.length,
-        message: latestValidation.valid
-          ? `Generated flow passed schema validation with ${flow.blocks.length} block(s) and ${flow.edges.length} edge(s).`
-          : `Generated flow failed schema validation: ${latestValidation.errors[0] ?? "unknown error"}`,
-      });
-      if (!latestValidation.valid) {
-        validatorFeedback = `The generated flow is invalid: ${latestValidation.errors.join(" ")}`;
-        await emitGenerationEvent({
-          type: "retry-feedback",
-          round,
-          maxRounds,
-          flowPath,
-          generationFlowPath,
-          validationValid: false,
-          validationErrorCount: latestValidation.errors.length,
-          validationWarningCount: latestValidation.warnings.length,
-          message: createGenerationFeedbackExcerpt(validatorFeedback),
-        });
-        continue;
-      }
-
-      await writeFile(generationFlowPath, `${JSON.stringify(flow, null, 2)}\n`, "utf8");
-      await emitGenerationEvent({
-        type: "generator-file-written",
-        round,
-        maxRounds,
-        flowPath,
-        generationFlowPath,
-        validationValid: true,
-        validationErrorCount: 0,
-        validationWarningCount: latestValidation.warnings.length,
-        blockCount: flow.blocks.length,
-        edgeCount: flow.edges.length,
-        message: `Wrote validated generated flow to ${generationFlowPath}.`,
-      });
-
-      await emitGenerationEvent({
-        type: "validator-start",
-        actor: "validator",
-        round,
-        maxRounds,
-        flowPath,
-        generationFlowPath,
-        message: "Running bounded local Ralph generation validator.",
-      });
-      const localValidatorStartedAt = Date.now();
-      const semanticValidation = validateGeneratedRalphFlowSemantics(
-        flow,
-        options.prompt,
-      );
-      const localValidatorDurationMs = Date.now() - localValidatorStartedAt;
-      const validatorResult = createLocalGenerationValidatorResult(
-        `Validate generated Ralph flow ${generationFlowPath}.`,
-        config,
-        semanticValidation,
-        localValidatorDurationMs,
-      );
-      validatorResults.push(validatorResult);
-      const validatorDecision = semanticValidation.decision;
-
-      await emitGenerationEvent({
-        type: "validator-result",
-        round,
-        maxRounds,
-        actor: "validator",
-        flowPath,
-        generationFlowPath,
-        validatorDecision,
-        blockCount: flow.blocks.length,
-        edgeCount: flow.edges.length,
-        durationMs: localValidatorDurationMs,
-        message: `Local Ralph generation validator returned ${validatorDecision}.`,
-      });
-
-      if (validatorDecision === "DONE") {
-        await writeRalphFlow(workspaceRoot, flow, {
-          createRevision: true,
-          scope,
-        });
-        await emitGenerationEvent({
-          type: "created",
-          round,
-          maxRounds,
-          status: "created",
-          flowPath,
-          generationFlowPath,
-          validationValid: latestValidation.valid,
-          validationErrorCount: latestValidation.errors.length,
-          validationWarningCount: latestValidation.warnings.length,
-          blockCount: flow.blocks.length,
-          edgeCount: flow.edges.length,
-          message: `Created Ralph flow \`${flow.name}\` at ${flowPath}.`,
-        });
-
-        return await finalizeGenerationResult({
-          status: "created",
-          flowPath,
-          flow,
-          rounds: round,
-          validation: latestValidation,
-          generatorResults,
-          validatorResults,
-          summary: `Created Ralph flow \`${flow.name}\` at ${flowPath}.`,
-        });
-      }
-
-      const validatorMarkdown =
-        validatorResult.response?.markdown ??
-        validatorResult.reason ??
-        validatorResult.summary;
-      validatorFeedback = `The local Ralph generation validator returned ${validatorDecision}. ${validatorMarkdown}`;
-      await emitGenerationEvent({
-        type: "retry-feedback",
-        round,
-        maxRounds,
-        flowPath,
-        generationFlowPath,
-        validatorDecision,
-        message: createGenerationFeedbackExcerpt(validatorFeedback),
-      });
-    }
-
-    const summary = createGenerationDidNotConvergeSummary(
-      maxRounds,
-      latestValidation,
-      validatorFeedback,
-    );
-
-    await emitGenerationEvent({
-      type: "blocked",
-      maxRounds,
-      status: "blocked",
-      flowPath,
-      generationFlowPath,
-      validationValid: latestValidation.valid,
-      validationErrorCount: latestValidation.errors.length,
-      validationWarningCount: latestValidation.warnings.length,
-      message: summary,
-    });
-
-    return await finalizeGenerationResult({
-      status: "blocked",
-      flowPath,
-      rounds: maxRounds,
-      validation: latestValidation,
-      generatorResults,
-      validatorResults,
-      summary,
-    });
-  } catch (error) {
-    await emitGenerationEvent({
-      type: options.signal?.aborted ? "cancelled" : "failed",
-      maxRounds,
-      status: "blocked",
-      flowPath,
-      generationFlowPath,
-      message: error instanceof Error ? error.message : String(error),
-    });
-
-    throw error;
-  } finally {
-    await unlink(generationFlowPath).catch(() => undefined);
-  }
 };

@@ -717,6 +717,8 @@ const runExecutorCycle = async (
   conversationContext: PreparedConversationPromptContext,
   imageInputs: ModelDrivenExecutionParams["imageInputs"],
   overrideAdapter: AgentModelAdapter | undefined,
+  additionalToolDefinitions: ModelDrivenExecutionParams["additionalToolDefinitions"],
+  systemPromptSections: ModelDrivenExecutionParams["systemPromptSections"],
   continuationRequest: ExecutorContinuationRequest | undefined,
   signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
@@ -725,13 +727,16 @@ const runExecutorCycle = async (
 ): Promise<ExecutorCycleOutcome> => {
   throwIfExecutionAborted(signal);
 
-  const toolDefinitions = createToolDefinitions(
-    config,
-    conversationContext.memory,
-    conversationContext.uiControlEnabled
-      ? conversationContext.uiControl
-      : undefined,
-  );
+  const toolDefinitions = [
+    ...createToolDefinitions(
+      config,
+      conversationContext.memory,
+      conversationContext.uiControlEnabled
+        ? conversationContext.uiControl
+        : undefined,
+    ),
+    ...(additionalToolDefinitions ?? []),
+  ];
   const finalResponseTool = createFinalResponseTool();
   const toolSpecs = [
     ...toolDefinitions.map((toolDefinition) => toolDefinition.spec),
@@ -827,6 +832,7 @@ const runExecutorCycle = async (
         toolSpecs,
         conversationContext,
         continuationRequest,
+        systemPromptSections ?? [],
       ),
       userPrompt: createExecutorUserPrompt(
         config,
@@ -1607,6 +1613,8 @@ const runModelDrivenLoop = async (
   imageInputs: ModelDrivenExecutionParams["imageInputs"],
   executorAdapter: AgentModelAdapter | undefined,
   monitorAdapter: AgentModelAdapter | undefined,
+  additionalToolDefinitions: ModelDrivenExecutionParams["additionalToolDefinitions"],
+  systemPromptSections: ModelDrivenExecutionParams["systemPromptSections"],
   signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
   onActionOutput: TaskActionOutputHandler | undefined,
@@ -1620,6 +1628,8 @@ const runModelDrivenLoop = async (
     conversationContext,
     imageInputs,
     executorAdapter,
+    additionalToolDefinitions,
+    systemPromptSections,
     undefined,
     signal,
     onStateChange,
@@ -1705,6 +1715,8 @@ const runModelDrivenLoop = async (
       conversationContext,
       imageInputs,
       executorAdapter,
+      additionalToolDefinitions,
+      systemPromptSections,
       {
         continuationIndex: autopilotReport.continuationCount,
         rationale: decision.rationale,
@@ -1772,6 +1784,8 @@ export const maybeExecuteModelDrivenTask = async (
       params.imageInputs,
       params.modelAdapter,
       params.monitorModelAdapter,
+      params.additionalToolDefinitions,
+      params.systemPromptSections,
       params.signal,
       params.onStateChange,
       params.onActionOutput,

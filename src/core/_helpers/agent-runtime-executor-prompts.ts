@@ -205,6 +205,7 @@ export const createExecutorSystemPrompt = (
   tools: AgentModelToolSpec[],
   conversationContext: PreparedConversationPromptContext,
   continuationRequest?: ExecutorContinuationRequest,
+  additionalSystemPromptSections: readonly string[] = [],
 ): string => {
   const strategyProfile = inferTaskStrategyProfile(
     taskContext.task,
@@ -272,6 +273,7 @@ export const createExecutorSystemPrompt = (
       .filter((line): line is string => line !== undefined)
       .join("\n"),
     ["<instructions>", ...instructionLines, "</instructions>"].join("\n"),
+    ...additionalSystemPromptSections,
     createMemoryContract(tools, conversationContext),
     conversationContext.uiControlEnabled
       ? [

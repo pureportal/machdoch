@@ -260,6 +260,7 @@ const createExternalAgentPrompt = (
   config: RuntimeConfig,
   contextSections: TaskExecutionSection[],
   conversationContext: PreparedConversationPromptContext,
+  systemPromptSections: readonly string[],
   providerLabel: string,
   attachmentPaths: readonly string[],
   delegationMode: ExternalAgentDelegationMode,
@@ -275,6 +276,12 @@ const createExternalAgentPrompt = (
           "Attached files/images available to the delegated agent:",
           ...attachmentPaths.map((path) => `- ${path}`),
         ].join("\n")
+      : undefined,
+    systemPromptSections.length > 0
+      ? [
+          "Additional Machdoch system instructions:",
+          ...systemPromptSections,
+        ].join("\n\n")
       : undefined,
     "User task:",
     task,
@@ -879,6 +886,7 @@ const executeExternalAgentCliTask = async (
     params.config,
     params.contextSections,
     params.preparedConversationContext,
+    params.systemPromptSections ?? [],
     providerLabel,
     imagePaths,
     delegationMode,

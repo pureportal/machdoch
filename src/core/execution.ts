@@ -323,6 +323,12 @@ const runTaskExecutionStateMachine = async (
             ...(options.monitorModelAdapter
               ? { monitorModelAdapter: options.monitorModelAdapter }
               : {}),
+            ...(options.additionalToolDefinitions
+              ? { additionalToolDefinitions: options.additionalToolDefinitions }
+              : {}),
+            ...(options.systemPromptSections
+              ? { systemPromptSections: options.systemPromptSections }
+              : {}),
             ...(options.onStateChange
               ? { onStateChange: options.onStateChange }
               : {}),
