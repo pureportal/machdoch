@@ -37,6 +37,7 @@ import {
   loadUserReviewModelSettings,
   resolveDroppedPaths,
   refreshMcpDiscoveryCache,
+  resumeRalphRun,
   runRalphFlow,
   runDesktopTask,
   saveClipboardImageAttachment,
@@ -44,6 +45,7 @@ import {
   saveMcpConfigDocument,
   saveUserReviewModelSettings,
   saveUserSpeechToTextInputDevice,
+  showRalphRunDetail,
   subscribeToRemoteControlCommands,
 } from "./runtime";
 import {
@@ -727,6 +729,103 @@ describe("desktop runtime fullscreen detection", () => {
           "--param",
           "scope=src/core",
         ],
+      },
+    });
+  });
+
+  it("passes input responses to Ralph resume runs", async () => {
+    invokeMock.mockResolvedValueOnce({
+      run: {
+        flow: "refactor",
+        status: "completed",
+        summary: "Done.",
+        missingVariables: [],
+        unknownVariables: [],
+        events: [],
+        blockResults: [],
+      },
+    });
+
+    await resumeRalphRun("C:\\Project", {
+      runId: "run-1",
+      taskId: "ralph-resume-1",
+      scope: "workspace",
+      profile: "review",
+      inputResponse: {
+        requestId: "request-1",
+        action: "submit",
+        values: {
+          title: "Add export button",
+          priority: 2,
+        },
+      },
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("run_ralph_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        taskId: "ralph-resume-1",
+        arguments: [
+          "resume",
+          "run-1",
+          "--input-json",
+          JSON.stringify({
+            requestId: "request-1",
+            action: "submit",
+            values: {
+              title: "Add export button",
+              priority: 2,
+            },
+          }),
+          "--scope",
+          "workspace",
+          "--profile",
+          "review",
+        ],
+      },
+    });
+  });
+
+  it("loads structured Ralph run details through the desktop command bridge", async () => {
+    invokeMock.mockResolvedValueOnce({
+      scope: "workspace",
+      path: "C:\\Project\\.machdoch\\ralph\\runs\\run-1\\run.json",
+      record: {
+        schemaVersion: 1,
+        id: "run-1",
+        createdAt: "2026-06-19T07:00:00.000Z",
+        flowId: "refactor",
+        flowName: "Refactor",
+        status: "completed",
+        summary: "Done.",
+        variableValues: {
+          scope: "src/core",
+        },
+        events: [],
+        blockResults: [],
+        validation: {
+          valid: true,
+          errors: [],
+          warnings: [],
+        },
+      },
+    });
+
+    await expect(
+      showRalphRunDetail("C:\\Project", "run-1", "workspace"),
+    ).resolves.toMatchObject({
+      record: {
+        id: "run-1",
+        variableValues: {
+          scope: "src/core",
+        },
+      },
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("run_ralph_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: ["run-detail", "run-1", "--scope", "workspace"],
       },
     });
   });

@@ -36,6 +36,10 @@ import {
   type RalphBlockType,
   type RalphFlow,
   type RalphFlowScope,
+  type RalphInputField,
+  type RalphInputFieldType,
+  type RalphInputOption,
+  type RalphInputValue,
   type RalphUtilityType,
   type RalphValidationResult,
 } from "./ralph.js";
@@ -54,6 +58,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 export const DEFAULT_RALPH_GENERATION_MAX_ROUNDS = 3;
 export const MAX_RALPH_GENERATION_MAX_ROUNDS = 25;
+export const DEFAULT_RALPH_GENERATION_INTERVIEW_MAX_TURNS = 5;
+export const MAX_RALPH_GENERATION_INTERVIEW_MAX_TURNS = 5;
 const DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS = 3 * 60 * 1_000;
 
 const RALPH_GENERATION_SUBDIRECTORY = "generations";
@@ -142,6 +148,75 @@ export interface RalphFlowGenerationResult {
   generatorResults: TaskExecutionResult[];
   validatorResults: TaskExecutionResult[];
   summary: string;
+}
+
+export type RalphGenerationInterviewTarget =
+  | "flow"
+  | "prompt-block"
+  | "refactor";
+
+export type RalphGenerationInterviewStatus =
+  | "questions"
+  | "complete"
+  | "blocked";
+
+export interface RalphGenerationInterviewAnswer {
+  fieldId: string;
+  label: string;
+  type: RalphInputFieldType;
+  value: RalphInputValue;
+}
+
+export interface RalphGenerationInterviewTranscriptTurn {
+  turn: number;
+  questionScope?: string;
+  questions: RalphInputField[];
+  answers: RalphGenerationInterviewAnswer[];
+  summary?: string;
+  createdAt: string;
+  answeredAt?: string;
+}
+
+export interface RalphGenerationInterviewSession {
+  id: string;
+  prompt: string;
+  scope: RalphFlowScope;
+  target: RalphGenerationInterviewTarget;
+  turn: number;
+  maxTurns: number;
+  contextSummary?: string;
+  findings: string[];
+  assumptions: string[];
+  relevantFiles: string[];
+  transcript: RalphGenerationInterviewTranscriptTurn[];
+  finalSummary?: string;
+}
+
+export interface RalphGenerationInterviewOptions {
+  name?: string;
+  prompt: string;
+  existingFlow?: RalphFlow;
+  target?: RalphGenerationInterviewTarget;
+  scope?: RalphFlowScope;
+  config?: RuntimeConfig;
+  customizations?: CustomizationDiscoveryResult;
+  maxTurns?: number;
+  session?: RalphGenerationInterviewSession;
+  answers?: Record<string, RalphInputValue>;
+  onStateChange?: TaskExecutionProgressHandler;
+  runId?: string;
+  signal?: AbortSignal;
+}
+
+export interface RalphGenerationInterviewResult {
+  status: RalphGenerationInterviewStatus;
+  session: RalphGenerationInterviewSession;
+  fields: RalphInputField[];
+  summary: string;
+  finalPrompt?: string;
+  provider?: ModelProvider;
+  model?: string;
+  result?: TaskExecutionResult;
 }
 
 export const getRalphGenerationDirectory = (
@@ -509,6 +584,50 @@ const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
       "Do not use PACK blocks unless workspace context lists available pack ids.",
     ],
   },
+  INPUT: {
+    type: "INPUT",
+    role: "Human input form that pauses the run until the user submits typed answers.",
+    requiredFields: ["id", "type", "title", "fields"],
+    optionalFields: [
+      "prompt",
+      "submitLabel",
+      "cancelLabel",
+      "timeoutSeconds",
+      "position",
+      "size",
+      "settings",
+      "parentGroupId",
+    ],
+    outputs: ["SUCCESS", "CANCELLED", "TIMEOUT", "ERROR"],
+    generationNotes: [
+      "Use INPUT blocks for known human-provided values such as text, numbers, booleans, choices, paths, files, and images.",
+      "Each field needs id, label, type, and should set skippable when the answer is optional.",
+      "Use variableName when downstream prompts need a stable placeholder name for a field value.",
+    ],
+  },
+  INTERVIEW: {
+    type: "INTERVIEW",
+    role: "AI-led clarification loop that asks the user generated typed questions until enough detail is collected.",
+    requiredFields: ["id", "type", "title", "prompt"],
+    optionalFields: [
+      "completionCriteria",
+      "maxTurns",
+      "questionsPerTurn",
+      "outputVariableName",
+      "submitLabel",
+      "cancelLabel",
+      "position",
+      "size",
+      "settings",
+      "parentGroupId",
+    ],
+    outputs: ["DONE", "INCOMPLETE", "CANCELLED", "ERROR"],
+    generationNotes: [
+      "Use INTERVIEW before implementation when requirements are ambiguous and the AI should create follow-up questions.",
+      "Set completionCriteria for what makes the interview ready to continue.",
+      "Route DONE to implementation and test loops; route INCOMPLETE or CANCELLED to review or END.",
+    ],
+  },
   UTILITY: {
     type: "UTILITY",
     role: "Deterministic local operation without an LLM.",
@@ -751,6 +870,388 @@ const normalizeGeneratedRalphFlowCandidate = (
     name: flow.name || identity.name,
     ...(alias ? { alias } : {}),
   });
+};
+
+type RalphGenerationJsonSchema = Record<string, unknown>;
+
+const RALPH_GENERATION_STRING_ARRAY_SCHEMA: RalphGenerationJsonSchema = {
+  type: "array",
+  items: { type: "string" },
+};
+
+const RALPH_GENERATION_STRING_RECORD_SCHEMA: RalphGenerationJsonSchema = {
+  type: "object",
+  additionalProperties: { type: "string" },
+};
+
+const RALPH_GENERATION_FREEFORM_RECORD_SCHEMA: RalphGenerationJsonSchema = {
+  type: "object",
+  additionalProperties: true,
+};
+
+const RALPH_GENERATION_POSITION_SCHEMA: RalphGenerationJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    x: { type: "number" },
+    y: { type: "number" },
+  },
+  required: ["x", "y"],
+};
+
+const RALPH_GENERATION_SIZE_SCHEMA: RalphGenerationJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    width: { type: "number" },
+    height: { type: "number" },
+  },
+  required: ["width", "height"],
+};
+
+const RALPH_GENERATION_FLOW_CANDIDATE_SCHEMA: RalphGenerationJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    schemaVersion: { type: "number", enum: [RALPH_FLOW_SCHEMA_VERSION] },
+    id: { type: "string" },
+    alias: { type: "string" },
+    name: { type: "string" },
+    description: { type: "string" },
+    createdAt: { type: "string" },
+    updatedAt: { type: "string" },
+    settings: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        maxTransitions: { type: "integer" },
+      },
+      required: [],
+    },
+    variables: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          name: { type: "string" },
+          type: {
+            type: "string",
+            enum: [
+              "string",
+              "text",
+              "path",
+              "file",
+              "files",
+              "url",
+              "number",
+              "boolean",
+              "image",
+              "images",
+              "model",
+              "provider",
+              "pack",
+            ],
+          },
+          default: { type: "string" },
+          required: { type: "boolean" },
+        },
+        required: ["name", "type", "required"],
+      },
+    },
+    blocks: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string" },
+          type: { type: "string", enum: RALPH_BLOCK_TYPES },
+          title: { type: "string" },
+          position: RALPH_GENERATION_POSITION_SCHEMA,
+          size: RALPH_GENERATION_SIZE_SCHEMA,
+          parentGroupId: { type: "string" },
+          groupBoundary: { type: "boolean" },
+          settings: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              workspace: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  mode: { type: "string", enum: ["default", "custom"] },
+                  path: { type: "string" },
+                },
+                required: ["mode"],
+              },
+              provider: { type: "string" },
+              model: { type: "string" },
+              reasoning: { type: "string" },
+              webAccess: { type: "boolean" },
+              fileAccess: { type: "boolean" },
+              packs: RALPH_GENERATION_STRING_ARRAY_SCHEMA,
+              maxIterations: { type: "integer" },
+              timeoutSeconds: { type: "number" },
+              temperature: { type: "number" },
+              internalValidatorEnabled: { type: "boolean" },
+              retry: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  mode: { type: "string", enum: ["infinite", "finite"] },
+                  maxRetries: { type: "integer" },
+                  delaySeconds: { type: "number" },
+                },
+                required: ["mode"],
+              },
+            },
+            required: [],
+          },
+          prompt: { type: "string" },
+          validationScope: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              mode: {
+                type: "string",
+                enum: [
+                  "sinceLastValidator",
+                  "previousBlock",
+                  "selectedBlocks",
+                  "wholeFlow",
+                ],
+              },
+              blockIds: RALPH_GENERATION_STRING_ARRAY_SCHEMA,
+            },
+            required: ["mode"],
+          },
+          labels: RALPH_GENERATION_STRING_ARRAY_SCHEMA,
+          packIds: RALPH_GENERATION_STRING_ARRAY_SCHEMA,
+          propagationMode: {
+            type: "string",
+            enum: ["nextBlockOnly", "untilOverridden"],
+          },
+          fields: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                id: { type: "string" },
+                label: { type: "string" },
+                type: {
+                  type: "string",
+                  enum: [
+                    "text",
+                    "textarea",
+                    "number",
+                    "boolean",
+                    "select",
+                    "multiselect",
+                    "url",
+                    "path",
+                    "file",
+                    "files",
+                    "image",
+                    "images",
+                  ],
+                },
+                required: { type: "boolean" },
+                skippable: { type: "boolean" },
+                placeholder: { type: "string" },
+                help: { type: "string" },
+                defaultValue: {
+                  anyOf: [
+                    { type: "string" },
+                    { type: "number" },
+                    { type: "boolean" },
+                    RALPH_GENERATION_STRING_ARRAY_SCHEMA,
+                    { type: "null" },
+                  ],
+                },
+                options: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      value: { type: "string" },
+                      label: { type: "string" },
+                    },
+                    required: ["value", "label"],
+                  },
+                },
+                validation: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    min: { type: "number" },
+                    max: { type: "number" },
+                    step: { type: "number" },
+                    pattern: { type: "string" },
+                    minLength: { type: "integer" },
+                    maxLength: { type: "integer" },
+                  },
+                  required: [],
+                },
+                variableName: { type: "string" },
+              },
+              required: ["id", "label", "type"],
+            },
+          },
+          submitLabel: { type: "string" },
+          cancelLabel: { type: "string" },
+          timeoutSeconds: { anyOf: [{ type: "number" }, { type: "null" }] },
+          completionCriteria: { type: "string" },
+          maxTurns: { type: "integer" },
+          questionsPerTurn: { type: "integer" },
+          outputVariableName: { type: "string" },
+          utility: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              type: { type: "string", enum: RALPH_UTILITY_TYPES },
+              mode: {
+                type: "string",
+                enum: ["delay", "until-time", "condition", "poll"],
+              },
+              delaySeconds: { type: "number" },
+              runAt: { type: "string" },
+              intervalSeconds: { type: "number" },
+              backoffMultiplier: { type: "number" },
+              maxAttempts: { anyOf: [{ type: "integer" }, { type: "null" }] },
+              condition: RALPH_GENERATION_FREEFORM_RECORD_SCHEMA,
+              url: { type: "string" },
+              method: { type: "string" },
+              headers: RALPH_GENERATION_STRING_RECORD_SCHEMA,
+              body: { type: "string" },
+              outputPath: { type: "string" },
+              path: { type: "string" },
+              rootPath: { type: "string" },
+              content: { type: "string" },
+              append: { type: "boolean" },
+              encoding: { type: "string" },
+              pattern: { type: "string" },
+              glob: { type: "string" },
+              maxResults: { type: "integer" },
+              command: { type: "string" },
+              cwd: { type: "string" },
+              env: RALPH_GENERATION_STRING_RECORD_SCHEMA,
+              adapter: {
+                type: "string",
+                enum: ["auto", "browser", "image", "playwright-mcp", "tauri-mcp"],
+              },
+              targetUrl: { type: "string" },
+              screenshotPath: { type: "string" },
+              server: RALPH_GENERATION_FREEFORM_RECORD_SCHEMA,
+              viewports: {
+                type: "array",
+                items: RALPH_GENERATION_FREEFORM_RECORD_SCHEMA,
+              },
+              checks: RALPH_GENERATION_FREEFORM_RECORD_SCHEMA,
+              fullPage: { type: "boolean" },
+              waitUntil: {
+                type: "string",
+                enum: ["load", "domcontentloaded", "networkidle", "commit"],
+              },
+              mcpServerId: { type: "string" },
+              mcpToolName: { type: "string" },
+              mcpArguments: RALPH_GENERATION_FREEFORM_RECORD_SCHEMA,
+              acceptedExitCodes: {
+                type: "array",
+                items: { type: "integer" },
+              },
+              maxOutputBytes: { type: "integer" },
+              variableName: { type: "string" },
+              value: { type: "string" },
+              input: { type: "string" },
+              expression: { type: "string" },
+              schema: RALPH_GENERATION_FREEFORM_RECORD_SCHEMA,
+              message: { type: "string" },
+              ignoreErrors: { type: "boolean" },
+            },
+            required: ["type"],
+          },
+          serverId: { type: "string" },
+          toolName: { type: "string" },
+          uri: { type: "string" },
+          promptName: { type: "string" },
+          arguments: RALPH_GENERATION_FREEFORM_RECORD_SCHEMA,
+          text: { type: "string" },
+          tone: {
+            type: "string",
+            enum: ["slate", "amber", "sky", "lime", "rose", "violet"],
+          },
+          tags: RALPH_GENERATION_STRING_ARRAY_SCHEMA,
+          collapsed: { type: "boolean" },
+          pinnedBlockIds: RALPH_GENERATION_STRING_ARRAY_SCHEMA,
+          description: { type: "string" },
+          childBlockIds: RALPH_GENERATION_STRING_ARRAY_SCHEMA,
+          locked: { type: "boolean" },
+          moveChildren: { type: "boolean" },
+          maxDepth: { type: "integer" },
+          layoutMode: { type: "string", enum: ["freeform", "stack", "swimlane"] },
+          executionBoundary: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              mode: {
+                type: "string",
+                enum: ["none", "firstExecutableChild", "selectedChild"],
+              },
+              blockId: { type: "string" },
+            },
+            required: ["mode"],
+          },
+          status: { type: "string", enum: ["success", "failed", "cancelled", "review"] },
+        },
+        required: ["id", "type", "title"],
+      },
+    },
+    edges: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string" },
+          from: { type: "string" },
+          fromOutput: { type: "string" },
+          to: { type: "string" },
+        },
+        required: ["id", "from", "fromOutput", "to"],
+      },
+    },
+    annotationLinks: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string" },
+          from: { type: "string" },
+          to: { type: "string" },
+          kind: {
+            type: "string",
+            enum: ["explains", "evidence", "todo", "related", "risk"],
+          },
+        },
+        required: ["id", "from", "to", "kind"],
+      },
+    },
+  },
+  required: ["schemaVersion", "id", "name", "blocks", "edges"],
+};
+
+const RALPH_GENERATION_FLOW_INPUT_SCHEMA: RalphGenerationJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    flow: RALPH_GENERATION_FLOW_CANDIDATE_SCHEMA,
+    flowJson: { type: "string" },
+  },
+  required: [],
 };
 
 const createRalphGenerationToolDefinitions = (
@@ -998,21 +1499,8 @@ const createRalphGenerationToolDefinitions = (
       spec: {
         name: "ralph_validate_candidate_flow",
         description:
-          "Validate a complete Ralph flow candidate without persisting it. Use this before submitting the final candidate.",
-        inputSchema: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            flow: {
-              type: "object",
-              additionalProperties: true,
-            },
-            flowJson: {
-              type: "string",
-            },
-          },
-          required: [],
-        },
+          "Validate a complete Ralph flow candidate without persisting it. Use this after drafting the graph and before final submission when you want schema errors, structural issues, visual-block warnings, block count, and edge count. Provide either `flow` as structured JSON or `flowJson` as a string when the candidate needs free-form nested JSON that is awkward for tool arguments.",
+        inputSchema: RALPH_GENERATION_FLOW_INPUT_SCHEMA,
       },
       backingTool: "utilities",
       riskLevel: "low",
@@ -1027,6 +1515,7 @@ const createRalphGenerationToolDefinitions = (
             schemaErrors: validation.errors,
             schemaWarnings: validation.warnings,
             structuralIssues: structureValidation.issues,
+            qualityWarnings: structureValidation.warnings,
             blockCount: flow.blocks.length,
             edgeCount: flow.edges.length,
           };
@@ -1057,21 +1546,8 @@ const createRalphGenerationToolDefinitions = (
       spec: {
         name: "ralph_normalize_layout",
         description:
-          "Normalize a complete Ralph flow candidate layout and identity without persisting it.",
-        inputSchema: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            flow: {
-              type: "object",
-              additionalProperties: true,
-            },
-            flowJson: {
-              type: "string",
-            },
-          },
-          required: [],
-        },
+          "Normalize a complete Ralph flow candidate layout and identity without persisting it. Use this when graph positions, group bounds, or generated flow identity may be inconsistent; it returns the normalized flow JSON for the next validation or submission call.",
+        inputSchema: RALPH_GENERATION_FLOW_INPUT_SCHEMA,
       },
       backingTool: "utilities",
       riskLevel: "low",
@@ -1105,18 +1581,14 @@ const createRalphGenerationToolDefinitions = (
       spec: {
         name: "ralph_submit_flow_candidate",
         description:
-          "Submit the complete final Ralph flow candidate as structured data. This does not persist the flow; Ralph will validate and persist it after the model run.",
+          "Submit the complete final Ralph flow candidate. This does not persist the flow directly; Ralph validates and persists it after the model run. Use this once the graph is complete and candidate validation has no blocking errors. Prefer `flow` for ordinary candidates; use `flowJson` only when complex nested utility or MCP arguments are easier to represent as a JSON string.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
           properties: {
-            flow: {
-              type: "object",
-              additionalProperties: true,
-            },
-            rationale: {
-              type: "string",
-            },
+            flow: RALPH_GENERATION_FLOW_CANDIDATE_SCHEMA,
+            flowJson: { type: "string" },
+            rationale: { type: "string" },
             evidence: {
               type: "array",
               items: { type: "string" },
@@ -1126,7 +1598,7 @@ const createRalphGenerationToolDefinitions = (
               items: { type: "string" },
             },
           },
-          required: ["flow", "rationale", "evidence", "assumptions"],
+          required: ["rationale", "evidence", "assumptions"],
         },
       },
       backingTool: "utilities",
@@ -1209,6 +1681,677 @@ const createRalphGenerationToolDefinitions = (
   ];
 };
 
+const RALPH_GENERATION_INTERVIEW_SECTION_TITLE =
+  "Ralph generation interview round";
+const RALPH_GENERATION_INTERVIEW_INPUT_TYPES = [
+  "text",
+  "textarea",
+  "number",
+  "boolean",
+  "select",
+  "multiselect",
+  "url",
+  "path",
+  "file",
+  "files",
+  "image",
+  "images",
+] as const satisfies readonly RalphInputFieldType[];
+
+const isRalphGenerationInterviewInputType = (
+  value: string,
+): value is RalphInputFieldType => {
+  return RALPH_GENERATION_INTERVIEW_INPUT_TYPES.includes(
+    value as RalphInputFieldType,
+  );
+};
+
+const createRalphGenerationInterviewToolDefinitions =
+  (): AgentToolDefinition[] => [
+    {
+      spec: {
+        name: "ralph_submit_generation_interview_round",
+        description:
+          "Submit the current Ralph generation interview decision. Ask typed questions only when more information would materially improve the generated flow or prompt block; otherwise mark complete.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            complete: { type: "boolean" },
+            summary: { type: "string" },
+            questionScope: { type: "string" },
+            contextSummary: { type: "string" },
+            findings: RALPH_GENERATION_STRING_ARRAY_SCHEMA,
+            assumptions: RALPH_GENERATION_STRING_ARRAY_SCHEMA,
+            relevantFiles: RALPH_GENERATION_STRING_ARRAY_SCHEMA,
+            questions: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  id: { type: "string" },
+                  label: { type: "string" },
+                  question: { type: "string" },
+                  type: {
+                    type: "string",
+                    enum: RALPH_GENERATION_INTERVIEW_INPUT_TYPES,
+                  },
+                  required: { type: "boolean" },
+                  skippable: { type: "boolean" },
+                  placeholder: { type: "string" },
+                  help: { type: "string" },
+                  variableName: { type: "string" },
+                  defaultValue: {},
+                  options: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: {
+                        value: { type: "string" },
+                        label: { type: "string" },
+                      },
+                      required: ["value", "label"],
+                    },
+                  },
+                  validation: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      min: { type: "number" },
+                      max: { type: "number" },
+                      step: { type: "number" },
+                      pattern: { type: "string" },
+                      minLength: { type: "number" },
+                      maxLength: { type: "number" },
+                    },
+                    required: [],
+                  },
+                },
+                required: ["label", "type"],
+              },
+            },
+          },
+          required: [
+            "complete",
+            "summary",
+            "contextSummary",
+            "findings",
+            "assumptions",
+            "relevantFiles",
+            "questions",
+          ],
+        },
+      },
+      backingTool: "utilities",
+      riskLevel: "low",
+      effect: "read",
+      execute: async (args) => {
+        const json = JSON.stringify(args, null, 2);
+
+        return {
+          toolResult: {
+            callId: randomUUID(),
+            name: "ralph_submit_generation_interview_round",
+            output: json,
+          },
+          sections: [
+            {
+              title: RALPH_GENERATION_INTERVIEW_SECTION_TITLE,
+              audience: "internal",
+              lines: json.split("\n"),
+            },
+          ],
+          traceLines: [
+            "ralph_submit_generation_interview_round -> returned interview contract",
+          ],
+        };
+      },
+    },
+  ];
+
+const clampRalphGenerationInterviewMaxTurns = (
+  value: number | undefined,
+): number => {
+  if (value === undefined || !Number.isInteger(value)) {
+    return DEFAULT_RALPH_GENERATION_INTERVIEW_MAX_TURNS;
+  }
+
+  return Math.min(
+    Math.max(value, 1),
+    MAX_RALPH_GENERATION_INTERVIEW_MAX_TURNS,
+  );
+};
+
+const normalizeRalphGenerationInterviewFieldId = (
+  value: unknown,
+  fallback: string,
+): string => {
+  const normalized =
+    typeof value === "string"
+      ? value
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/gu, "-")
+          .replace(/^-+|-+$/gu, "")
+      : "";
+
+  return normalized || fallback;
+};
+
+const normalizeRalphGenerationInterviewFieldType = (
+  value: unknown,
+): RalphInputFieldType => {
+  if (typeof value !== "string") {
+    return "textarea";
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/-/gu, "_");
+  const aliases: Record<string, RalphInputFieldType> = {
+    checkbox: "boolean",
+    checkboxes: "multiselect",
+    choice: "select",
+    choices: "select",
+    input: "text",
+    integer: "number",
+    multi_select: "multiselect",
+    multiple_choice: "select",
+    regex: "text",
+    single_choice: "select",
+    string: "text",
+    text_area: "textarea",
+  };
+  const aliased = aliases[normalized];
+
+  if (aliased) {
+    return aliased;
+  }
+
+  return isRalphGenerationInterviewInputType(normalized)
+    ? normalized
+    : "textarea";
+};
+
+const normalizeRalphGenerationInterviewOptions = (
+  value: unknown,
+): RalphInputOption[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const options = value
+    .flatMap((entry): RalphInputOption[] => {
+      if (typeof entry === "string") {
+        const optionValue = entry.trim();
+
+        return optionValue ? [{ value: optionValue, label: optionValue }] : [];
+      }
+
+      if (!isRecord(entry)) {
+        return [];
+      }
+
+      const optionValue =
+        typeof entry.value === "string" ? entry.value.trim() : "";
+      const optionLabel =
+        typeof entry.label === "string" && entry.label.trim()
+          ? entry.label.trim()
+          : optionValue;
+
+      return optionValue ? [{ value: optionValue, label: optionLabel }] : [];
+    })
+    .slice(0, 20);
+
+  return options.length > 0 ? options : undefined;
+};
+
+const normalizeRalphGenerationInterviewValidation = (
+  value: unknown,
+): RalphInputField["validation"] | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const validation: NonNullable<RalphInputField["validation"]> = {};
+  for (const key of ["min", "max", "step", "minLength", "maxLength"] as const) {
+    if (typeof value[key] === "number" && Number.isFinite(value[key])) {
+      validation[key] = value[key];
+    }
+  }
+
+  if (typeof value.pattern === "string" && value.pattern.trim()) {
+    validation.pattern = value.pattern.trim();
+  }
+
+  return Object.keys(validation).length > 0 ? validation : undefined;
+};
+
+const normalizeRalphGenerationInterviewHelp = (
+  value: unknown,
+): string | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.replace(/\s+/gu, " ").trim();
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.length > 140
+    ? `${normalized.slice(0, 137).trimEnd()}...`
+    : normalized;
+};
+
+const normalizeRalphGenerationInterviewInputValue = (
+  value: unknown,
+): RalphInputValue | undefined => {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    value === null
+  ) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is string => typeof entry === "string");
+  }
+
+  return undefined;
+};
+
+interface RalphGenerationInterviewSubmission {
+  complete: boolean;
+  summary?: string;
+  questionScope?: string;
+  contextSummary?: string;
+  findings: string[];
+  assumptions: string[];
+  relevantFiles: string[];
+  fields: RalphInputField[];
+}
+
+const normalizeRalphGenerationInterviewStringArray = (
+  value: unknown,
+): string[] => {
+  return Array.isArray(value)
+    ? value.flatMap((entry) =>
+        typeof entry === "string" && entry.trim() ? [entry.trim()] : [],
+      )
+    : [];
+};
+
+const normalizeRalphGenerationInterviewSubmission = (
+  value: unknown,
+): RalphGenerationInterviewSubmission => {
+  if (!isRecord(value)) {
+    throw new Error("Interview response must be a JSON object.");
+  }
+
+  const questions = Array.isArray(value.questions) ? value.questions : [];
+  const fields = questions
+    .flatMap((entry, index): RalphInputField[] => {
+      if (!isRecord(entry)) {
+        return [];
+      }
+
+      const label =
+        typeof entry.label === "string" && entry.label.trim()
+          ? entry.label.trim()
+          : typeof entry.question === "string" && entry.question.trim()
+            ? entry.question.trim()
+            : "";
+
+      if (!label) {
+        return [];
+      }
+
+      const type = normalizeRalphGenerationInterviewFieldType(entry.type);
+      const options = normalizeRalphGenerationInterviewOptions(entry.options);
+
+      if ((type === "select" || type === "multiselect") && !options) {
+        return [];
+      }
+
+      const defaultValue = normalizeRalphGenerationInterviewInputValue(
+        entry.defaultValue ?? entry.default,
+      );
+      const validation = normalizeRalphGenerationInterviewValidation(
+        entry.validation,
+      );
+      const help = normalizeRalphGenerationInterviewHelp(entry.help);
+
+      return [
+        {
+          id: normalizeRalphGenerationInterviewFieldId(
+            entry.id,
+            `question_${index + 1}`,
+          ),
+          label,
+          type,
+          required: entry.required === true,
+          skippable: entry.skippable !== false,
+          ...(typeof entry.placeholder === "string" && entry.placeholder.trim()
+            ? { placeholder: entry.placeholder.trim() }
+            : {}),
+          ...(help ? { help } : {}),
+          ...(defaultValue !== undefined ? { defaultValue } : {}),
+          ...(options ? { options } : {}),
+          ...(validation ? { validation } : {}),
+          ...(typeof entry.variableName === "string" && entry.variableName.trim()
+            ? { variableName: entry.variableName.trim() }
+            : {}),
+        },
+      ];
+    })
+    .slice(0, 6);
+
+  return {
+    complete: value.complete === true,
+    ...(typeof value.summary === "string" && value.summary.trim()
+      ? { summary: value.summary.trim() }
+      : {}),
+    ...(typeof value.questionScope === "string" && value.questionScope.trim()
+      ? { questionScope: value.questionScope.trim() }
+      : {}),
+    ...(typeof value.contextSummary === "string" && value.contextSummary.trim()
+      ? { contextSummary: value.contextSummary.trim() }
+      : {}),
+    findings: normalizeRalphGenerationInterviewStringArray(value.findings),
+    assumptions: normalizeRalphGenerationInterviewStringArray(value.assumptions),
+    relevantFiles: normalizeRalphGenerationInterviewStringArray(
+      value.relevantFiles,
+    ),
+    fields,
+  };
+};
+
+const parseRalphGenerationInterviewJsonCandidate = (text: string): unknown => {
+  const trimmed = text.trim();
+  const taggedMatch = trimmed.match(
+    /<ralph_generation_interview>\s*([\s\S]*?)\s*<\/ralph_generation_interview>/iu,
+  );
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/iu);
+  const candidate = taggedMatch?.[1]?.trim() ?? fencedMatch?.[1]?.trim() ?? trimmed;
+
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    const start = candidate.indexOf("{");
+    const end = candidate.lastIndexOf("}");
+
+    if (start >= 0 && end > start) {
+      return JSON.parse(candidate.slice(start, end + 1));
+    }
+
+    throw new Error("Interview response did not contain valid JSON.");
+  }
+};
+
+const readRalphGenerationInterviewSubmission = (
+  result: TaskExecutionResult,
+): RalphGenerationInterviewSubmission => {
+  const candidates = [
+    ...result.outputSections
+      .filter((section) => section.title === RALPH_GENERATION_INTERVIEW_SECTION_TITLE)
+      .map((section) => section.lines.join("\n")),
+    result.response?.markdown,
+    ...result.outputSections.map((section) => section.lines.join("\n")),
+    result.summary,
+  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+  for (const candidate of candidates) {
+    try {
+      return normalizeRalphGenerationInterviewSubmission(
+        parseRalphGenerationInterviewJsonCandidate(candidate),
+      );
+    } catch {
+      // Try the next candidate; agents may include narrative around the contract.
+    }
+  }
+
+  throw new Error("The interviewer did not return a valid interview contract.");
+};
+
+const mergeRalphGenerationInterviewLines = (
+  current: readonly string[],
+  incoming: readonly string[],
+): string[] => {
+  const result = [...current];
+  const seen = new Set(result.map((entry) => entry.toLowerCase()));
+
+  for (const entry of incoming) {
+    const key = entry.toLowerCase();
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(entry);
+  }
+
+  return result.slice(-20);
+};
+
+const createRalphGenerationInterviewSession = (
+  options: RalphGenerationInterviewOptions,
+  scope: RalphFlowScope,
+  maxTurns: number,
+): RalphGenerationInterviewSession => {
+  if (options.session) {
+    return {
+      ...options.session,
+      prompt: options.session.prompt || options.prompt,
+      scope,
+      target: options.target ?? options.session.target ?? "flow",
+      maxTurns,
+      turn: Math.min(Math.max(options.session.turn, 0), maxTurns),
+      findings: options.session.findings ?? [],
+      assumptions: options.session.assumptions ?? [],
+      relevantFiles: options.session.relevantFiles ?? [],
+      transcript: options.session.transcript ?? [],
+    };
+  }
+
+  return {
+    id: options.runId ?? `ralph-generation-interview-${randomUUID()}`,
+    prompt: options.prompt,
+    scope,
+    target: options.target ?? "flow",
+    turn: 0,
+    maxTurns,
+    findings: [],
+    assumptions: [],
+    relevantFiles: [],
+    transcript: [],
+  };
+};
+
+const applyRalphGenerationInterviewAnswers = (
+  session: RalphGenerationInterviewSession,
+  answers: Record<string, RalphInputValue> | undefined,
+): RalphGenerationInterviewSession => {
+  if (!answers || session.transcript.length === 0) {
+    return session;
+  }
+
+  const latestTurn = session.transcript[session.transcript.length - 1];
+
+  if (!latestTurn || latestTurn.answers.length > 0) {
+    return session;
+  }
+
+  const answerList: RalphGenerationInterviewAnswer[] = latestTurn.questions.map(
+    (field) => ({
+      fieldId: field.id,
+      label: field.label,
+      type: field.type,
+      value: answers[field.id] ?? null,
+    }),
+  );
+
+  return {
+    ...session,
+    transcript: [
+      ...session.transcript.slice(0, -1),
+      {
+        ...latestTurn,
+        answers: answerList,
+        answeredAt: createLogTimestamp(),
+      },
+    ],
+  };
+};
+
+const formatRalphGenerationInterviewValue = (
+  value: RalphInputValue,
+): string => {
+  if (value === null) {
+    return "Skipped";
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.join(", ") : "Skipped";
+  }
+
+  return String(value);
+};
+
+const formatRalphGenerationInterviewTranscript = (
+  session: RalphGenerationInterviewSession,
+): string[] => {
+  if (session.transcript.length === 0) {
+    return ["No previous interview turns."];
+  }
+
+  return session.transcript.flatMap((turn) => [
+    `Turn ${turn.turn}:`,
+    ...(turn.questionScope ? [`Question scope: ${turn.questionScope}`] : []),
+    ...(turn.summary ? [`Summary: ${turn.summary}`] : []),
+    ...turn.questions.map((field) => `Question: ${field.label} (${field.type})`),
+    ...(turn.answers.length > 0
+      ? turn.answers.map(
+          (answer) =>
+            `Answer: ${answer.label} = ${formatRalphGenerationInterviewValue(answer.value)}`,
+        )
+      : ["Answers: pending"]
+    ),
+    "",
+  ]);
+};
+
+const createRalphGenerationInterviewSystemPrompt = (): string => {
+  return [
+    "<ralph_generation_interviewer_contract>",
+    "You are Ralph Generation Interviewer. Your job is to improve context before Ralph flow generation.",
+    "Inspect requirements and, when useful, read relevant workspace files, package metadata, configuration, existing Ralph flows, or MCP/tool capability data using only read-only tools.",
+    "Do not edit files, start servers, run destructive commands, mutate external systems, or perform broad scans unrelated to the request.",
+    "Ask questions only when the answer would materially change the generated flow, improve an existing flow, or improve the selected prompt block.",
+    "Ask multiple concise questions in one round when useful. Use rich field types: select, multiselect, number, boolean, text, textarea, url, path, file, files, image, or images.",
+    "When asking questions, optionally set questionScope to a short group name such as \"UI Questions\", \"Data Inputs\", or \"Deployment\".",
+    "For every question, set help to one short reason phrase explaining why the answer matters. Keep help under 140 characters; do not write paragraphs.",
+    "For string answers that need a format, include validation.pattern. For numbers, include min, max, or step when helpful.",
+    "Keep questions skippable unless missing information would block correctness.",
+    `Never exceed ${MAX_RALPH_GENERATION_INTERVIEW_MAX_TURNS} question rounds. If enough context is available, mark complete and summarize the generation-ready requirements.`,
+    "Return the contract by calling ralph_submit_generation_interview_round. If tool calling is unavailable, return only JSON inside <ralph_generation_interview> tags with the same fields.",
+    "</ralph_generation_interviewer_contract>",
+  ].join("\n");
+};
+
+const createRalphGenerationInterviewTask = (
+  workspaceRoot: string,
+  options: RalphGenerationInterviewOptions,
+  session: RalphGenerationInterviewSession,
+  nextTurn: number,
+): string => {
+  const existingFlowJson = options.existingFlow
+    ? JSON.stringify(sanitizeTraceValue(options.existingFlow), null, 2)
+    : "";
+  const cappedExistingFlowJson =
+    existingFlowJson.length > 30_000
+      ? `${existingFlowJson.slice(0, 30_000)}\n...truncated...`
+      : existingFlowJson;
+
+  return [
+    "Prepare the next Ralph generation interview step.",
+    "",
+    `Workspace root: ${workspaceRoot}`,
+    `Scope: ${session.scope}`,
+    `Target: ${session.target}`,
+    ...(options.name ? [`Flow name/alias: ${options.name}`] : []),
+    `Interview turn to prepare: ${nextTurn} of ${session.maxTurns}`,
+    "",
+    "Original generation request:",
+    session.prompt,
+    "",
+    "Accumulated context summary:",
+    session.contextSummary ?? "None yet.",
+    "",
+    "Findings:",
+    ...(session.findings.length > 0 ? session.findings : ["None yet."]),
+    "",
+    "Assumptions:",
+    ...(session.assumptions.length > 0 ? session.assumptions : ["None yet."]),
+    "",
+    "Relevant files:",
+    ...(session.relevantFiles.length > 0 ? session.relevantFiles : ["None yet."]),
+    "",
+    "Interview transcript so far:",
+    ...formatRalphGenerationInterviewTranscript(session),
+    ...(cappedExistingFlowJson
+      ? [
+          "",
+          "Current Ralph flow JSON:",
+          "```json",
+          cappedExistingFlowJson,
+          "```",
+        ]
+      : []),
+    "",
+    "Decide whether to complete the interview or ask the next round.",
+    "If asking questions, return no more than 6 fields and make each field useful for the final generation.",
+    "If complete, include a summary that can be used directly by the generator.",
+  ].join("\n");
+};
+
+const createRalphGenerationPromptFromInterview = (
+  session: RalphGenerationInterviewSession,
+  finalSummary?: string,
+): string => [
+  session.prompt,
+  "",
+  "Interview context for generation:",
+  finalSummary ?? session.finalSummary ?? session.contextSummary ?? "No final summary.",
+  "",
+  "Findings:",
+  ...(session.findings.length > 0 ? session.findings.map((entry) => `- ${entry}`) : ["- None"]),
+  "",
+  "Assumptions:",
+  ...(session.assumptions.length > 0
+    ? session.assumptions.map((entry) => `- ${entry}`)
+    : ["- None"]),
+  "",
+  "Relevant files/config:",
+  ...(session.relevantFiles.length > 0
+    ? session.relevantFiles.map((entry) => `- ${entry}`)
+    : ["- None"]),
+  "",
+  "Interview answers:",
+  ...session.transcript.flatMap((turn) => [
+    turn.questionScope ? `${turn.questionScope}:` : `Turn ${turn.turn}:`,
+    ...turn.answers.map(
+      (answer) =>
+        `- ${answer.label}: ${formatRalphGenerationInterviewValue(answer.value)}`,
+    ),
+    ...(turn.answers.length === 0 ? ["- No answers collected."] : []),
+  ]),
+].join("\n");
+
 const createRalphGeneratorSystemPrompt = (): string => {
   return [
     "<ralph_generator_contract>",
@@ -1217,7 +2360,7 @@ const createRalphGeneratorSystemPrompt = (): string => {
     "Think through the requested workflow, inspect workspace context with read-only tools when it materially affects a workspace flow, and use Ralph-specific tools to check node and utility contracts when uncertain.",
     "Use the flow id and alias supplied by Ralph; do not invent or reuse identity values from other flows.",
     "Prefer a compact graph with meaningful block titles, stable kebab-case ids, explicit routes, and readable positions.",
-    "Use NOTE and GROUP only for visual organization; never route execution through them.",
+    "Omit NOTE and GROUP blocks by default. Add zero, one, or multiple visual blocks only when they materially improve readability for a complex graph; never route execution through them.",
     "Set settings.maxTransitions on any cyclic graph.",
     "Use UI_ANALYZE, MCP blocks, package checks, and command utilities only when they materially help satisfy the requested workflow.",
     "For non-trivial requests, call ralph_submit_generation_plan before submitting the final flow candidate.",
@@ -1248,7 +2391,7 @@ const createFlowGenerationTask = (
     flowPath,
     "",
     "Output contract:",
-    "- Preferred: call ralph_submit_flow_candidate with one complete Ralph flow object, rationale, evidence, and assumptions.",
+    "- Preferred: call ralph_submit_flow_candidate with one complete Ralph flow candidate plus rationale, evidence, and assumptions. Use either the structured flow argument or flowJson.",
     "- If tool calls are unavailable, return one complete Ralph flow JSON object wrapped in <ralph_flow_json>...</ralph_flow_json> tags.",
     "- Do not include comments, trailing commas, or explanatory prose inside fallback JSON tags.",
     "- Do not write files yourself; Ralph validates and writes the parsed JSON locally.",
@@ -1256,9 +2399,9 @@ const createFlowGenerationTask = (
     "",
     "Ralph flow requirements:",
     "- Use graph blocks: START, PROMPT, VALIDATOR, DECISION, PACK, UTILITY, NOTE, GROUP, END.",
-    "- Use the exact top-level id and alias from the schema example. Ralph owns generated flow identity and may repair aliases for uniqueness.",
+    "- Use the exact top-level id and alias shown in the minimal schema example. Ralph owns generated flow identity and may repair aliases for uniqueness.",
     "- Use exactly one START block and one or more END blocks.",
-    "- NOTE and GROUP blocks are visual organization only; do not route execution through them. Put visible note body text in NOTE.text. Use parentGroupId on executable blocks or GROUP.childBlockIds to describe group membership; Ralph normalizes group bounds around those children.",
+    "- Visual organization policy: omit NOTE and GROUP blocks by default. Add them only when the graph is complex enough that annotations or containers materially improve readability. A generated flow may have zero, one, or multiple NOTE/GROUP blocks depending on the request. Put visible note body text in NOTE.text. Use parentGroupId on executable blocks or GROUP.childBlockIds to describe group membership; Ralph normalizes group bounds around those children.",
     "- Normal PROMPT blocks route with SUCCESS and ERROR; they do not need RALPH_DECISION markers.",
     "- VALIDATOR blocks must end with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
     "- VALIDATOR.CONTINUE needs an explicit edge.",
@@ -1300,7 +2443,8 @@ const createFlowGenerationTask = (
       ? "- If the request is underspecified, prefer variables with defaults and validator/decision blocks that make assumptions explicit in the graph."
       : undefined,
     "",
-    "Schema example:",
+    "Minimal schema example:",
+    "This example is intentionally small and has no NOTE or GROUP blocks. Do not copy its block ids or shape unless they fit the request; choose request-specific ids and nodes.",
     JSON.stringify(
       {
         schemaVersion: RALPH_FLOW_SCHEMA_VERSION,
@@ -1312,64 +2456,39 @@ const createFlowGenerationTask = (
         blocks: [
           { id: "start", type: "START", title: "Start", position: { x: 0, y: 0 } },
           {
-            id: "wait-before-work",
-            type: "UTILITY",
-            title: "Wait before work",
-            utility: { type: "WAIT", mode: "delay", delaySeconds: 0 },
-            position: { x: 260, y: 0 },
-          },
-          {
-            id: "do-work",
+            id: "main-task",
             type: "PROMPT",
-            title: "Do work",
+            title: "Main Task",
             prompt: "Do the requested work for {{scope:path=ALL}}.",
             settings: {
               workspace: { mode: "default" },
               reasoning: "default",
               maxIterations: 1,
             },
-            position: { x: 520, y: 0 },
+            position: { x: 260, y: 0 },
           },
           {
-            id: "validate-work",
+            id: "review-result",
             type: "VALIDATOR",
-            title: "Validate work",
+            title: "Review Result",
             prompt:
               "Validate the completed work for {{scope:path=ALL}}. End with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
             validationScope: { mode: "sinceLastValidator" },
-            position: { x: 780, y: 0 },
+            position: { x: 520, y: 0 },
           },
           {
             id: "success",
             type: "END",
             title: "Success",
             status: "success",
-            position: { x: 1040, y: 0 },
-          },
-          {
-            id: "work-note",
-            type: "NOTE",
-            title: "Operator note",
-            text: "Keep the loop scoped and verify before finishing.",
-            pinnedBlockIds: ["do-work", "validate-work"],
-            position: { x: 780, y: 190 },
-          },
-          {
-            id: "work-group",
-            type: "GROUP",
-            title: "Work loop",
-            description: "Main implementation and validation loop.",
-            childBlockIds: ["do-work", "validate-work"],
-            position: { x: 450, y: -80 },
-            size: { width: 680, height: 360 },
+            position: { x: 780, y: 0 },
           },
         ],
         edges: [
-          { id: "start-to-wait", from: "start", fromOutput: "SUCCESS", to: "wait-before-work" },
-          { id: "wait-to-work", from: "wait-before-work", fromOutput: "SUCCESS", to: "do-work" },
-          { id: "work-to-validate", from: "do-work", fromOutput: "SUCCESS", to: "validate-work" },
-          { id: "validate-done", from: "validate-work", fromOutput: "DONE", to: "success" },
-          { id: "validate-continue", from: "validate-work", fromOutput: "CONTINUE", to: "do-work" },
+          { id: "start-to-main-task", from: "start", fromOutput: "SUCCESS", to: "main-task" },
+          { id: "main-task-to-review", from: "main-task", fromOutput: "SUCCESS", to: "review-result" },
+          { id: "review-done", from: "review-result", fromOutput: "DONE", to: "success" },
+          { id: "review-continue", from: "review-result", fromOutput: "CONTINUE", to: "main-task" },
         ],
       },
       null,
@@ -1544,7 +2663,44 @@ const readGeneratedRalphFlow = async (
 interface RalphGenerationStructureValidation {
   decision: "DONE" | "RETRY";
   issues: string[];
+  warnings: string[];
 }
+
+const RALPH_GENERATION_EXAMPLE_BLOCK_IDS = new Set([
+  "wait-before-work",
+  "do-work",
+  "validate-work",
+  "work-note",
+  "work-group",
+  "main-task",
+  "review-result",
+]);
+
+const createGeneratedRalphFlowQualityWarnings = (
+  flow: RalphFlow,
+): string[] => {
+  const warnings: string[] = [];
+  const visualBlocks = flow.blocks.filter(
+    (block) => block.type === "NOTE" || block.type === "GROUP",
+  );
+  const copiedExampleBlockIds = flow.blocks
+    .map((block) => block.id)
+    .filter((blockId) => RALPH_GENERATION_EXAMPLE_BLOCK_IDS.has(blockId));
+
+  if (visualBlocks.length > 0 && flow.blocks.length <= 7) {
+    warnings.push(
+      "Small generated flows should usually omit NOTE and GROUP blocks unless visual organization materially improves readability.",
+    );
+  }
+
+  if (copiedExampleBlockIds.length > 0) {
+    warnings.push(
+      `Generated flow appears to reuse schema-example block id(s): ${copiedExampleBlockIds.join(", ")}. Use request-specific kebab-case ids instead.`,
+    );
+  }
+
+  return warnings;
+};
 
 const validateGeneratedRalphFlowStructure = (
   flow: RalphFlow,
@@ -1563,6 +2719,7 @@ const validateGeneratedRalphFlowStructure = (
   return {
     decision: issues.length === 0 ? "DONE" : "RETRY",
     issues,
+    warnings: createGeneratedRalphFlowQualityWarnings(flow),
   };
 };
 
@@ -1577,6 +2734,10 @@ const createLocalGenerationValidatorResult = (
     validation.issues.length > 0
       ? validation.issues.map((issue) => `- ${issue}`)
       : ["No local structural issues found."];
+  const warningLines =
+    validation.warnings.length > 0
+      ? ["Warnings:", ...validation.warnings.map((warning) => `- ${warning}`)]
+      : [];
 
   return {
     task,
@@ -1591,11 +2752,12 @@ const createLocalGenerationValidatorResult = (
           `decision: ${validation.decision}`,
           `durationMs: ${durationMs}`,
           ...issueLines,
+          ...warningLines,
         ],
       },
     ],
     response: {
-      markdown: [...issueLines, decisionLine].join("\n"),
+      markdown: [...issueLines, ...warningLines, decisionLine].join("\n"),
       highlights: [],
       relatedFiles: [],
       verification: [],
@@ -2012,6 +3174,207 @@ const executeGenerationActorWithFallback = async (
     reason:
       "Select and configure a model provider before starting Ralph generation.",
     outputSections: [],
+  };
+};
+
+export const createRalphGenerationInterviewWithAgent = async (
+  workspaceRoot: string,
+  options: RalphGenerationInterviewOptions,
+): Promise<RalphGenerationInterviewResult> => {
+  const prompt = options.prompt.trim();
+  const scope = options.scope ?? "workspace";
+  const maxTurns = clampRalphGenerationInterviewMaxTurns(options.maxTurns);
+  const baseSession = createRalphGenerationInterviewSession(
+    { ...options, prompt },
+    scope,
+    maxTurns,
+  );
+  const session = applyRalphGenerationInterviewAnswers(
+    baseSession,
+    options.answers,
+  );
+  const config =
+    options.config ??
+    (await loadRuntimeConfig(workspaceRoot, "machdoch", undefined, undefined, undefined));
+  const interviewerConfig: RuntimeConfig = {
+    ...config,
+    mode: "ask",
+    reasoning: config.reasoning === "default" ? "medium" : config.reasoning,
+  };
+
+  if (!prompt) {
+    return {
+      status: "blocked",
+      session,
+      fields: [],
+      summary: "Expected a prompt before starting a Ralph generation interview.",
+      provider: interviewerConfig.provider,
+      model: interviewerConfig.model,
+    };
+  }
+
+  if (session.turn >= session.maxTurns) {
+    const finalSummary =
+      session.finalSummary ??
+      "The interview reached the maximum number of question rounds.";
+    const completedSession: RalphGenerationInterviewSession = {
+      ...session,
+      finalSummary,
+    };
+
+    return {
+      status: "complete",
+      session: completedSession,
+      fields: [],
+      summary: finalSummary,
+      finalPrompt: createRalphGenerationPromptFromInterview(
+        completedSession,
+        finalSummary,
+      ),
+      provider: interviewerConfig.provider,
+      model: interviewerConfig.model,
+    };
+  }
+
+  const customizations =
+    options.customizations ??
+    (await discoverCustomizations(workspaceRoot, {
+      discoverUserCustomizations: true,
+      discoverGithubCustomizations:
+        Boolean(config.compatibility.discoverGithubCustomizations),
+      includeDiagnostics: true,
+    }));
+  const nextTurn = session.turn + 1;
+  const executionOptions = await createRalphTaskExecutionOptions(
+    options,
+    interviewerConfig,
+  );
+  const result = await executeTask(
+    createRalphGenerationInterviewTask(
+      workspaceRoot,
+      options,
+      session,
+      nextTurn,
+    ),
+    interviewerConfig,
+    customizations,
+    {
+      ...executionOptions,
+      additionalToolDefinitions: createRalphGenerationInterviewToolDefinitions(),
+      systemPromptSections: [createRalphGenerationInterviewSystemPrompt()],
+      instructionAudience: "generator",
+      maxDurationMs:
+        executionOptions.maxDurationMs ?? DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS,
+    },
+  );
+
+  if (result.status !== "executed") {
+    return {
+      status: "blocked",
+      session,
+      fields: [],
+      summary:
+        result.reason ??
+        result.summary ??
+        "The Ralph generation interviewer could not complete.",
+      provider: interviewerConfig.provider,
+      model: interviewerConfig.model,
+      result,
+    };
+  }
+
+  let submission: RalphGenerationInterviewSubmission;
+  try {
+    submission = readRalphGenerationInterviewSubmission(result);
+  } catch (error) {
+    return {
+      status: "blocked",
+      session,
+      fields: [],
+      summary: error instanceof Error ? error.message : String(error),
+      provider: interviewerConfig.provider,
+      model: interviewerConfig.model,
+      result,
+    };
+  }
+
+  const contextSummary =
+    submission.contextSummary ?? session.contextSummary ?? submission.summary;
+  const updatedSessionBase: RalphGenerationInterviewSession = {
+    ...session,
+    ...(contextSummary ? { contextSummary } : {}),
+    findings: mergeRalphGenerationInterviewLines(
+      session.findings,
+      submission.findings,
+    ),
+    assumptions: mergeRalphGenerationInterviewLines(
+      session.assumptions,
+      submission.assumptions,
+    ),
+    relevantFiles: mergeRalphGenerationInterviewLines(
+      session.relevantFiles,
+      submission.relevantFiles,
+    ),
+  };
+
+  const shouldComplete =
+    submission.complete ||
+    submission.fields.length === 0 ||
+    nextTurn > updatedSessionBase.maxTurns;
+
+  if (shouldComplete) {
+    const finalSummary =
+      submission.summary ??
+      updatedSessionBase.contextSummary ??
+      "The interview collected enough context for generation.";
+    const completedSession: RalphGenerationInterviewSession = {
+      ...updatedSessionBase,
+      finalSummary,
+    };
+
+    return {
+      status: "complete",
+      session: completedSession,
+      fields: [],
+      summary: finalSummary,
+      finalPrompt: createRalphGenerationPromptFromInterview(
+        completedSession,
+        finalSummary,
+      ),
+      provider: interviewerConfig.provider,
+      model: interviewerConfig.model,
+      result,
+    };
+  }
+
+  const nextSession: RalphGenerationInterviewSession = {
+    ...updatedSessionBase,
+    turn: nextTurn,
+    transcript: [
+      ...updatedSessionBase.transcript,
+      {
+        turn: nextTurn,
+        questions: submission.fields,
+        answers: [],
+        ...(submission.questionScope
+          ? { questionScope: submission.questionScope }
+          : {}),
+        ...(submission.summary ? { summary: submission.summary } : {}),
+        createdAt: createLogTimestamp(),
+      },
+    ],
+  };
+
+  return {
+    status: "questions",
+    session: nextSession,
+    fields: submission.fields,
+    summary:
+      submission.summary ??
+      `Prepared interview round ${nextTurn} of ${nextSession.maxTurns}.`,
+    provider: interviewerConfig.provider,
+    model: interviewerConfig.model,
+    result,
   };
 };
 

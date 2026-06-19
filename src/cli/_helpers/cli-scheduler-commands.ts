@@ -580,7 +580,12 @@ const assertScheduledRalphPermissions = (
       }
     }
 
-    if (block.type === "PROMPT" || block.type === "VALIDATOR" || block.type === "DECISION") {
+    if (
+      block.type === "PROMPT" ||
+      block.type === "VALIDATOR" ||
+      block.type === "DECISION" ||
+      block.type === "INTERVIEW"
+    ) {
       assertAgentBlockAllowed(block.id, permissions);
       continue;
     }

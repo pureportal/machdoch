@@ -2,9 +2,9 @@ import type {
   RalphExecutionOutput,
   RalphFlowBlock,
   RalphUtilityConfig,
-} from "../ralph.js";
+} from "../../../../core/ralph.js";
 
-export const getRalphUtilityOutputs = (
+export const getUtilityOutputs = (
   utility: RalphUtilityConfig,
 ): RalphExecutionOutput[] => {
   switch (utility.type) {
@@ -35,7 +35,7 @@ export const getRalphUtilityOutputs = (
   }
 };
 
-export const getRalphBlockOutputs = (block: RalphFlowBlock): RalphExecutionOutput[] => {
+export const getBlockOutputs = (block: RalphFlowBlock): RalphExecutionOutput[] => {
   switch (block.type) {
     case "START":
       return ["SUCCESS"];
@@ -50,7 +50,7 @@ export const getRalphBlockOutputs = (block: RalphFlowBlock): RalphExecutionOutpu
     case "INTERVIEW":
       return ["DONE", "INCOMPLETE", "CANCELLED", "ERROR"];
     case "UTILITY":
-      return getRalphUtilityOutputs(block.utility);
+      return getUtilityOutputs(block.utility);
     case "VALIDATOR":
       return ["DONE", "CONTINUE", "RETRY", "ERROR"];
     case "DECISION":
@@ -62,10 +62,8 @@ export const getRalphBlockOutputs = (block: RalphFlowBlock): RalphExecutionOutpu
   }
 };
 
-export const isVisualRalphBlock = (block: RalphFlowBlock): boolean => {
-  return block.type === "NOTE" || block.type === "GROUP";
-};
+export const isVisualRalphCanvasBlock = (block: RalphFlowBlock): boolean =>
+  block.type === "NOTE" || block.type === "GROUP";
 
-export const isExecutableRalphBlock = (block: RalphFlowBlock): boolean => {
-  return block.type !== "START" && block.type !== "END" && !isVisualRalphBlock(block);
-};
+export const isExecutableRalphCanvasBlock = (block: RalphFlowBlock): boolean =>
+  block.type !== "START" && block.type !== "END" && !isVisualRalphCanvasBlock(block);

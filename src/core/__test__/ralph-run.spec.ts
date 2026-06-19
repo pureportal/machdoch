@@ -84,6 +84,70 @@ describe("runRalphFlow", () => {
     );
   });
 
+  it("pauses for input blocks and resumes with submitted values", async () => {
+    const flow = createFlow({
+      variables: [{ name: "details", type: "text", required: false, default: "" }],
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "collect",
+          type: "INPUT",
+          title: "Collect Details",
+          prompt: "Define the request.",
+          fields: [
+            {
+              id: "details",
+              label: "Details",
+              type: "textarea",
+              required: true,
+              skippable: false,
+              variableName: "details",
+            },
+          ],
+        },
+        { id: "success", type: "END", title: "Done" },
+      ],
+      edges: [
+        { id: "start-to-collect", from: "start", fromOutput: "SUCCESS", to: "collect" },
+        { id: "collect-to-success", from: "collect", fromOutput: "SUCCESS", to: "success" },
+      ],
+    });
+    const paused = await runRalphFlow(flow, runtimeConfig, customizations, {
+      runId: "ralph-input-run",
+    });
+
+    expect(paused.status).toBe("waiting-for-input");
+    expect(paused.pendingInput).toMatchObject({
+      blockId: "collect",
+      fields: [expect.objectContaining({ id: "details", type: "textarea" })],
+    });
+    expect(paused.checkpoint).toBeDefined();
+
+    const resumed = await runRalphFlow(flow, runtimeConfig, customizations, {
+      runId: "ralph-input-run",
+      checkpoint: paused.checkpoint,
+      inputResponse: {
+        requestId: paused.pendingInput?.id ?? "",
+        action: "submit",
+        values: { details: "Export button with CSV output." },
+      },
+    });
+
+    expect(resumed.status).toBe("completed");
+    expect(resumed.events.map((event) => event.type)).toContain("input-submitted");
+    expect(resumed.blockResults).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          blockId: "collect",
+          output: "SUCCESS",
+          data: expect.objectContaining({
+            values: { details: "Export button with CSV output." },
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("uses flow settings.maxTransitions as the default execution cap", async () => {
     const result = await runRalphFlow(
       createFlow({

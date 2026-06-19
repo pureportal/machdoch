@@ -17,14 +17,22 @@ import type {
   TaskRunPreview,
 } from "../../core/types.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
-import type { RalphGenerationEvent } from "../../core/ralph-generation.js";
+import type {
+  RalphGenerationEvent,
+  RalphGenerationInterviewSession,
+  RalphGenerationInterviewStatus,
+} from "../../core/ralph-generation.js";
 import type {
   RalphFlow,
   RalphFlowDeleteResult,
   RalphFlowScope,
+  RalphInputField,
+  RalphInputValue,
   RalphFlowRevisionSummary,
   RalphFlowSummary,
+  RalphInputResponse,
   RalphRunLogReadResult,
+  RalphRunRecord,
   RalphRunResult,
   RalphRunSummary,
   RalphValidationResult,
@@ -954,6 +962,34 @@ export interface RalphCreateFlowResult {
   validatorResults?: Array<Pick<TaskExecutionResult, "status" | "summary" | "reason" | "executedTools">>;
 }
 
+export interface RalphGenerationInterviewInput {
+  name?: string;
+  scope?: RalphFlowScope;
+  prompt: string;
+  maxTurns?: number;
+  existingFlow?: RalphFlow;
+  target?: "flow" | "prompt-block" | "refactor";
+  session?: RalphGenerationInterviewSession;
+  answers?: Record<string, RalphInputValue>;
+  mode?: RunMode;
+  profile?: string;
+  provider?: RuntimeProvider;
+  model?: string;
+  reasoning?: RuntimeSnapshot["reasoning"];
+  taskId?: string;
+}
+
+export interface RalphGenerationInterviewResult {
+  status: RalphGenerationInterviewStatus;
+  session: RalphGenerationInterviewSession;
+  fields: RalphInputField[];
+  summary: string;
+  finalPrompt?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  result?: Pick<TaskExecutionResult, "status" | "summary" | "reason" | "executedTools"> | null;
+}
+
 export interface RalphSaveFlowInput {
   flow: RalphFlow;
   scope?: RalphFlowScope;
@@ -1000,8 +1036,27 @@ export interface RalphRunFlowResult {
   traceLogPath?: string;
 }
 
+export interface RalphResumeRunInput {
+  runId: string;
+  inputResponse: RalphInputResponse;
+  scope?: RalphFlowScope;
+  mode?: RunMode;
+  profile?: string;
+  provider?: RuntimeProvider;
+  model?: string;
+  reasoning?: RuntimeSnapshot["reasoning"];
+  taskId?: string;
+  maxTransitions?: number;
+}
+
 export interface RalphListRunsResult {
   runs: RalphRunSummary[];
+}
+
+export interface RalphRunDetailResult {
+  scope?: RalphFlowScope;
+  path: string;
+  record: RalphRunRecord;
 }
 
 export type RalphRunLogResult = RalphRunLogReadResult;
@@ -3640,6 +3695,33 @@ const createRalphRunArguments = (
   return argumentsList;
 };
 
+const createRalphResumeArguments = (
+  input: RalphResumeRunInput,
+): string[] => {
+  const normalizedRunId = input.runId.trim();
+
+  if (!normalizedRunId) {
+    throw new Error("Expected a Ralph run id.");
+  }
+
+  const argumentsList = [
+    "resume",
+    normalizedRunId,
+    "--input-json",
+    JSON.stringify(input.inputResponse),
+  ];
+
+  appendSchedulerOption(argumentsList, "--scope", input.scope);
+  appendSchedulerOption(argumentsList, "--mode", input.mode);
+  appendSchedulerOption(argumentsList, "--profile", normalizeSchedulerCliString(input.profile));
+  appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
+  appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
+  appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
+  appendSchedulerOption(argumentsList, "--max-transitions", input.maxTransitions);
+
+  return argumentsList;
+};
+
 const createRalphCreateArguments = (
   input: RalphCreateFlowInput,
 ): string[] => {
@@ -3665,6 +3747,40 @@ const createRalphCreateArguments = (
   appendSchedulerOption(argumentsList, "--flow-target", input.target);
   appendSchedulerOption(argumentsList, "--generation-mode", input.generationMode);
   appendSchedulerOption(argumentsList, "--max-rounds", input.maxRounds);
+
+  return argumentsList;
+};
+
+const createRalphGenerationInterviewArguments = (
+  input: RalphGenerationInterviewInput,
+): string[] => {
+  const prompt = input.prompt.trim();
+
+  if (!prompt) {
+    throw new Error("Expected a prompt before starting a Ralph generation interview.");
+  }
+
+  const argumentsList = ["interview"];
+
+  appendSchedulerOption(argumentsList, "--scope", input.scope);
+  appendSchedulerOption(argumentsList, "--mode", input.mode);
+  appendSchedulerOption(argumentsList, "--profile", normalizeSchedulerCliString(input.profile));
+  appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
+  appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
+  appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
+  appendSchedulerOption(argumentsList, "--name", normalizeSchedulerCliString(input.name));
+  appendSchedulerOption(argumentsList, "--prompt", prompt);
+  appendSchedulerOption(argumentsList, "--existing-flow-json", input.existingFlow
+    ? JSON.stringify(input.existingFlow)
+    : undefined);
+  appendSchedulerOption(argumentsList, "--flow-target", input.target);
+  appendSchedulerOption(argumentsList, "--max-rounds", input.maxTurns);
+  if (input.session || input.answers) {
+    appendSchedulerOption(argumentsList, "--input-json", JSON.stringify({
+      ...(input.session ? { session: input.session } : {}),
+      ...(input.answers ? { answers: input.answers } : {}),
+    }));
+  }
 
   return argumentsList;
 };
@@ -3838,6 +3954,28 @@ export const showRalphRunLog = async (
   );
 };
 
+export const showRalphRunDetail = async (
+  workspaceRoot: string | null | undefined,
+  runId: string,
+  scope?: RalphFlowScope,
+): Promise<RalphRunDetailResult> => {
+  const normalizedRunId = runId.trim();
+
+  if (!normalizedRunId) {
+    throw new Error("Expected a Ralph run id.");
+  }
+
+  return runRalphCommand(
+    workspaceRoot,
+    [
+      "run-detail",
+      normalizedRunId,
+      ...(scope ? ["--scope", scope] : []),
+    ],
+    assertRalphDesktopAvailable,
+  );
+};
+
 export const createRalphFlow = async (
   workspaceRoot: string | null | undefined,
   input: RalphCreateFlowInput,
@@ -3845,6 +3983,18 @@ export const createRalphFlow = async (
   return runRalphCommand(
     workspaceRoot,
     createRalphCreateArguments(input),
+    assertRalphDesktopAvailable,
+    input.taskId ? { taskId: input.taskId } : undefined,
+  );
+};
+
+export const runRalphGenerationInterview = async (
+  workspaceRoot: string | null | undefined,
+  input: RalphGenerationInterviewInput,
+): Promise<RalphGenerationInterviewResult> => {
+  return runRalphCommand(
+    workspaceRoot,
+    createRalphGenerationInterviewArguments(input),
     assertRalphDesktopAvailable,
     input.taskId ? { taskId: input.taskId } : undefined,
   );
@@ -3891,6 +4041,18 @@ export const runRalphFlow = async (
   return runRalphCommand(
     workspaceRoot,
     createRalphRunArguments(input),
+    assertRalphDesktopAvailable,
+    input.taskId ? { taskId: input.taskId } : undefined,
+  );
+};
+
+export const resumeRalphRun = async (
+  workspaceRoot: string | null | undefined,
+  input: RalphResumeRunInput,
+): Promise<RalphRunFlowResult> => {
+  return runRalphCommand(
+    workspaceRoot,
+    createRalphResumeArguments(input),
     assertRalphDesktopAvailable,
     input.taskId ? { taskId: input.taskId } : undefined,
   );

@@ -15,10 +15,13 @@ import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type {
   RalphFlow,
   RalphFlowBlock,
+  RalphInputField,
   RalphValidationIssue,
 } from "../ralph.js";
 
 const BLOCK_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,79}$/u;
+const INPUT_FIELD_ID_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]{0,79}$/u;
+const INPUT_FIELD_TYPES_REQUIRING_OPTIONS = new Set(["select", "multiselect"]);
 
 interface ValidateRalphFlowBlocksOptions {
   flow: RalphFlow;
@@ -61,6 +64,120 @@ const validateBlockReferencePlaceholders = (
           { blockId: block.id },
         );
       }
+    }
+  }
+};
+
+const validateInputField = (
+  block: RalphFlowBlock,
+  field: RalphInputField,
+  fieldIds: Set<string>,
+  errors: RalphValidationIssue[],
+): void => {
+  const fieldLabel = `${block.id}.${field.id || field.label || "field"}`;
+
+  if (!field.id.trim()) {
+    addRalphValidationIssue(
+      errors,
+      "input-field-id-required",
+      `${block.id} input field id is required.`,
+      { blockId: block.id },
+    );
+  } else if (!INPUT_FIELD_ID_PATTERN.test(field.id)) {
+    addRalphValidationIssue(
+      errors,
+      "input-field-id-invalid",
+      `${fieldLabel} id must match ${INPUT_FIELD_ID_PATTERN.source}.`,
+      { blockId: block.id },
+    );
+  } else if (fieldIds.has(field.id)) {
+    addRalphValidationIssue(
+      errors,
+      "input-field-id-duplicate",
+      `${block.id} input field id \`${field.id}\` is duplicated.`,
+      { blockId: block.id },
+    );
+  }
+
+  fieldIds.add(field.id);
+
+  if (!field.label.trim()) {
+    addRalphValidationIssue(
+      errors,
+      "input-field-label-required",
+      `${fieldLabel} label is required.`,
+      { blockId: block.id },
+    );
+  }
+
+  if (
+    INPUT_FIELD_TYPES_REQUIRING_OPTIONS.has(field.type) &&
+    (!field.options || field.options.length === 0)
+  ) {
+    addRalphValidationIssue(
+      errors,
+      "input-field-options-required",
+      `${fieldLabel} requires at least one option.`,
+      { blockId: block.id },
+    );
+  }
+
+  if (field.options) {
+    const optionValues = new Set<string>();
+    for (const option of field.options) {
+      if (!option.value.trim()) {
+        addRalphValidationIssue(
+          errors,
+          "input-option-value-required",
+          `${fieldLabel} has an option with an empty value.`,
+          { blockId: block.id },
+        );
+      } else if (optionValues.has(option.value)) {
+        addRalphValidationIssue(
+          errors,
+          "input-option-value-duplicate",
+          `${fieldLabel} option value \`${option.value}\` is duplicated.`,
+          { blockId: block.id },
+        );
+      }
+
+      optionValues.add(option.value);
+    }
+  }
+
+  const validation = field.validation;
+  if (validation?.min !== undefined && validation?.max !== undefined && validation.min > validation.max) {
+    addRalphValidationIssue(
+      errors,
+      "input-field-range-invalid",
+      `${fieldLabel} min cannot be greater than max.`,
+      { blockId: block.id },
+    );
+  }
+
+  if (
+    validation?.minLength !== undefined &&
+    validation?.maxLength !== undefined &&
+    validation.minLength > validation.maxLength
+  ) {
+    addRalphValidationIssue(
+      errors,
+      "input-field-length-range-invalid",
+      `${fieldLabel} minLength cannot be greater than maxLength.`,
+      { blockId: block.id },
+    );
+  }
+
+  if (validation?.pattern) {
+    try {
+      new RegExp(validation.pattern, "u");
+    } catch {
+      addRalphValidationIssue(
+        errors,
+        "input-field-pattern-invalid",
+        `${fieldLabel} pattern must be a valid regular expression.`,
+        { blockId: block.id },
+      );
     }
   }
 };
@@ -153,12 +270,65 @@ export const validateRalphFlowBlocks = ({
     if (
       (block.type === "PROMPT" ||
         block.type === "VALIDATOR" ||
-        block.type === "DECISION") &&
+        block.type === "DECISION" ||
+        block.type === "INTERVIEW") &&
       !block.prompt.trim()
     ) {
       addRalphValidationIssue(errors, "block-prompt-required", `${blockLabel} prompt is required.`, {
         blockId: block.id,
       });
+    }
+
+    if (block.type === "INPUT") {
+      if (block.fields.length === 0) {
+        addRalphValidationIssue(
+          errors,
+          "input-fields-required",
+          `${blockLabel} input block requires at least one field.`,
+          { blockId: block.id },
+        );
+      }
+
+      const fieldIds = new Set<string>();
+      for (const field of block.fields) {
+        validateInputField(block, field, fieldIds, errors);
+      }
+
+      if (
+        block.timeoutSeconds !== undefined &&
+        block.timeoutSeconds !== null &&
+        (!Number.isFinite(block.timeoutSeconds) || block.timeoutSeconds < 0)
+      ) {
+        addRalphValidationIssue(
+          errors,
+          "input-timeout-invalid",
+          `${blockLabel} timeoutSeconds must be null or >= 0.`,
+          { blockId: block.id },
+        );
+      }
+    }
+
+    if (block.type === "INTERVIEW") {
+      const maxTurns = block.maxTurns ?? 8;
+      const questionsPerTurn = block.questionsPerTurn ?? 3;
+
+      if (!Number.isInteger(maxTurns) || maxTurns < 1 || maxTurns > 50) {
+        addRalphValidationIssue(
+          errors,
+          "interview-max-turns-invalid",
+          `${blockLabel} maxTurns must be an integer from 1 to 50.`,
+          { blockId: block.id },
+        );
+      }
+
+      if (!Number.isInteger(questionsPerTurn) || questionsPerTurn < 1 || questionsPerTurn > 10) {
+        addRalphValidationIssue(
+          errors,
+          "interview-questions-per-turn-invalid",
+          `${blockLabel} questionsPerTurn must be an integer from 1 to 10.`,
+          { blockId: block.id },
+        );
+      }
     }
 
     if (block.type === "DECISION" && block.labels.length === 0) {

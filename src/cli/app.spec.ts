@@ -735,6 +735,44 @@ describe("parseCliArgs", () => {
       parseCliArgs(
         [
           "ralph",
+          "interview",
+          "refactor-scope",
+          "--prompt",
+          "Improve the flow safely.",
+          "--existing-flow-json",
+          '{"schemaVersion":1,"id":"refactor-scope","name":"Refactor","blocks":[],"edges":[]}',
+          "--flow-target",
+          "refactor",
+          "--input-json",
+          '{"answers":{"scope":"src/core"}}',
+          "--max-rounds",
+          "5",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "ralph",
+      ralph: {
+        action: "interview",
+        subject: "refactor-scope",
+        prompt: "Improve the flow safely.",
+        existingFlowJson:
+          '{"schemaVersion":1,"id":"refactor-scope","name":"Refactor","blocks":[],"edges":[]}',
+        target: "refactor",
+        inputJson: '{"answers":{"scope":"src/core"}}',
+        maxRounds: 5,
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "ralph",
           "save",
           "refactor-scope",
           "--flow-json",
@@ -1291,7 +1329,7 @@ describe("parseCliArgs", () => {
       parseCliArgs(["ralph", "run", "template", "--flow-target", "refactor"], {
         currentWorkingDirectory: "C:/workspace",
       }),
-    ).toThrow("--flow-target is only valid for `machdoch ralph create`.");
+    ).toThrow("--flow-target is only valid for `machdoch ralph create` or `machdoch ralph interview`.");
 
     expect(() =>
       parseCliArgs(

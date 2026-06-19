@@ -1,10 +1,12 @@
 import { readFile, realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { dirname, join, isAbsolute, relative, resolve } from "node:path";
 import { loadRuntimeConfig } from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import {
+  createRalphGenerationInterviewWithAgent,
   createRalphFlowWithAgent,
   type RalphGenerationEvent,
+  type RalphGenerationInterviewSession,
 } from "../../core/ralph-generation.js";
 import { getUserSchedulerStatePath, DurableSmartScheduler } from "../../core/scheduler.js";
 import {
@@ -15,6 +17,7 @@ import {
   listRalphFlows,
   parseRalphFlowJson,
   readRalphRunLog,
+  readRalphRunRecord,
   readRalphFlow,
   resolveRalphFlowReference,
   restoreRalphFlowRevision,
@@ -24,7 +27,12 @@ import {
   writeRalphFlow,
   type RalphFlow,
   type RalphFlowScope,
+  type RalphInputRequest,
+  type RalphInputResponse,
+  type RalphInputValue,
   type RalphRunEvent,
+  type RalphRunLogPaths,
+  type RalphRunRecord,
   type RalphRunResult,
 } from "../../core/ralph.js";
 import {
@@ -48,6 +56,10 @@ import type { ParsedCliArgs, RalphCliOptions } from "./cli-args.js";
 
 const fail = (message: string): never => {
   throw new Error(message);
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
 const isPathInside = (root: string, candidate: string): boolean => {
@@ -143,6 +155,124 @@ const parseVariableValues = (
   }
 
   return values;
+};
+
+const isRalphInputValue = (value: unknown): value is RalphInputValue => {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    (Array.isArray(value) && value.every((entry) => typeof entry === "string"))
+  );
+};
+
+const parseRalphInputValues = (
+  value: unknown,
+): Record<string, RalphInputValue> => {
+  if (!isRecord(value)) {
+    throw new Error("Expected Ralph input values to be a JSON object.");
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => {
+      if (!isRalphInputValue(entry)) {
+        throw new Error(`Expected Ralph input value \`${key}\` to be a string, number, boolean, null, or string array.`);
+      }
+
+      return [key, entry];
+    }),
+  );
+};
+
+const parseRalphInputResponse = (
+  raw: string,
+  pendingInput: RalphInputRequest,
+): RalphInputResponse => {
+  const parsed = JSON.parse(raw) as unknown;
+
+  if (
+    isRecord(parsed) &&
+    typeof parsed.requestId === "string" &&
+    (parsed.action === "submit" || parsed.action === "cancel")
+  ) {
+    return {
+      requestId: parsed.requestId,
+      action: parsed.action,
+      ...(parsed.action === "submit"
+        ? { values: parseRalphInputValues(parsed.values ?? {}) }
+        : {}),
+    };
+  }
+
+  return {
+    requestId: pendingInput.id,
+    action: "submit",
+    values: parseRalphInputValues(parsed),
+  };
+};
+
+const readRalphInputResponse = async (
+  args: ParsedCliArgs,
+  options: RalphCliOptions,
+  pendingInput: RalphInputRequest,
+): Promise<RalphInputResponse> => {
+  const raw = options.inputJson ??
+    (options.inputJsonFile
+      ? await readRalphWorkspaceFile(args.workspaceRoot, options.inputJsonFile)
+      : fail("Expected --input-json or --input-json-file for `machdoch ralph resume`."));
+
+  return parseRalphInputResponse(raw, pendingInput);
+};
+
+interface RalphGenerationInterviewCliInput {
+  session?: RalphGenerationInterviewSession;
+  answers?: Record<string, RalphInputValue>;
+}
+
+const readRalphGenerationInterviewInput = async (
+  args: ParsedCliArgs,
+  options: RalphCliOptions,
+): Promise<RalphGenerationInterviewCliInput> => {
+  const raw = options.inputJson ??
+    (options.inputJsonFile
+      ? await readRalphWorkspaceFile(args.workspaceRoot, options.inputJsonFile)
+      : undefined);
+
+  if (!raw) {
+    return {};
+  }
+
+  const parsed = JSON.parse(raw) as unknown;
+
+  if (!isRecord(parsed)) {
+    throw new Error("Expected Ralph interview input to be a JSON object.");
+  }
+
+  return {
+    ...(isRecord(parsed.session)
+      ? { session: parsed.session as unknown as RalphGenerationInterviewSession }
+      : {}),
+    ...(isRecord(parsed.answers)
+      ? { answers: parseRalphInputValues(parsed.answers) }
+      : {}),
+  };
+};
+
+const createResumeRunLogPaths = (
+  recordPath: string,
+  record: RalphRunRecord,
+): RalphRunLogPaths => {
+  const directory = dirname(recordPath);
+
+  return {
+    id: record.id,
+    directory,
+    recordPath,
+    simpleJsonlPath: record.logPaths?.simpleJsonlPath ?? join(directory, "simple.jsonl"),
+    simpleMarkdownPath: record.logPaths?.simpleMarkdownPath ?? join(directory, "simple.md"),
+    traceJsonlPath: record.logPaths?.traceJsonlPath ?? join(directory, "trace.jsonl"),
+  };
 };
 
 const getRalphCommandScope = (options: RalphCliOptions): RalphFlowScope => {
@@ -263,6 +393,7 @@ const summarizeRun = (result: RalphRunResult): Record<string, unknown> => {
     summary: result.summary,
     missingVariables: result.missingVariables,
     unknownVariables: result.unknownVariables,
+    pendingInput: result.pendingInput ?? null,
     events: result.events,
     blockResults: result.blockResults.map((blockResult) => ({
       blockId: blockResult.blockId,
@@ -287,6 +418,9 @@ const getRalphEventBlockId = (event: RalphRunEvent): string | undefined => {
     case "block-start":
     case "block-output":
     case "retry":
+    case "input-required":
+    case "input-submitted":
+    case "input-cancelled":
     case "crash":
     case "end":
       return event.blockId;
@@ -315,6 +449,12 @@ const createRalphEventProgressMessage = (
       return `Routing ${event.output} from \`${title}\` to \`${blockTitleById.get(event.to) ?? event.to}\`.`;
     case "retry":
       return `Retrying Ralph block \`${title}\`: ${event.reason}`;
+    case "input-required":
+      return `Ralph block \`${title}\` is waiting for input.`;
+    case "input-submitted":
+      return `Input submitted for Ralph block \`${title}\`.`;
+    case "input-cancelled":
+      return `Input cancelled for Ralph block \`${title}\`.`;
     case "crash":
       return `Ralph flow crashed at \`${title}\`: ${event.reason}`;
     case "end":
@@ -364,12 +504,24 @@ const createRalphEventTimeline = (
     metadata.ralphNextBlockTitle = blockTitleById.get(event.to) ?? event.to;
   }
 
+  if (
+    event.type === "input-required" ||
+    event.type === "input-submitted" ||
+    event.type === "input-cancelled"
+  ) {
+    metadata.ralphInputRequestId =
+      event.type === "input-required" ? event.request.id : event.requestId;
+  }
+
   return {
     kind: event.type === "block-output" ? "output" : "state",
     phase:
       event.type === "crash"
         ? "failed"
-        : event.type === "end" || event.type === "block-output"
+        : event.type === "end" ||
+            event.type === "block-output" ||
+            event.type === "input-submitted" ||
+            event.type === "input-cancelled"
           ? "completed"
           : "started",
     label: createRalphEventProgressMessage(event, blockTitleById),
@@ -381,6 +533,8 @@ const createRalphEventTimeline = (
         ? "danger"
         : event.type === "retry"
           ? "warning"
+          : event.type === "input-cancelled"
+            ? "warning"
           : "info",
     metadata,
   };
@@ -885,6 +1039,31 @@ export const printRalphSummary = async (
       }
       return;
     }
+    case "run-detail": {
+      const subject = options.subject ??
+        fail("Expected a run id after `machdoch ralph run-detail`.");
+      const detail = await readRalphRunRecord(args.workspaceRoot, subject, {
+        scope,
+      });
+
+      if (args.json) {
+        printJson({ scope, ...detail });
+        return;
+      }
+
+      writeStdoutLine(`ralph run: ${detail.record.id}`);
+      writeStdoutLine(`flow: ${detail.record.flowName} (${detail.record.flowId})`);
+      writeStdoutLine(`status: ${detail.record.status}`);
+      writeStdoutLine(`created: ${detail.record.createdAt}`);
+      if (detail.record.finishedAt) {
+        writeStdoutLine(`finished: ${detail.record.finishedAt}`);
+      }
+      writeStdoutLine(`summary: ${detail.record.summary}`);
+      writeStdoutLine(`variables: ${Object.keys(detail.record.variableValues).length}`);
+      writeStdoutLine(`blocks: ${detail.record.blockResults.length}`);
+      writeStdoutLine(`events: ${detail.record.events.length}`);
+      return;
+    }
     case "log": {
       const subject = options.subject ??
         fail("Expected a run id after `machdoch ralph log`.");
@@ -1062,6 +1241,100 @@ export const printRalphSummary = async (
       }
       return;
     }
+    case "resume": {
+      const subject = options.subject ??
+        fail("Expected a run id after `machdoch ralph resume`.");
+      const { path: recordPath, record } = await readRalphRunRecord(
+        args.workspaceRoot,
+        subject,
+        { scope },
+      );
+      if (record.status !== "waiting-for-input") {
+        fail(`Ralph run \`${subject}\` is not waiting for input.`);
+      }
+
+      const checkpoint = record.checkpoint ??
+        fail(`Ralph run \`${subject}\` is not waiting for input.`);
+      const pendingInput = checkpoint.pendingInput ??
+        fail(`Ralph run \`${subject}\` is not waiting for input.`);
+
+      const inputResponse = await readRalphInputResponse(args, options, pendingInput);
+      const config = await loadRuntimeConfig(
+        args.workspaceRoot,
+        "machdoch",
+        args.profile,
+        args.model,
+        args.runtimeProvider,
+        args.agentLimits,
+        args.reasoning,
+      );
+      const customizations = await discoverCustomizations(
+        args.workspaceRoot,
+        createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
+      );
+      const flow = await readRalphFlow(args.workspaceRoot, record.flowId, { scope });
+      const paths = createResumeRunLogPaths(recordPath, record);
+      const logger = await createRalphRunLogger(args.workspaceRoot, flow, {
+        runId: record.id,
+        variableValues: record.variableValues,
+        paths,
+        append: true,
+        scope,
+      });
+      const result = await runRalphFlow(flow, config, customizations, {
+        variableValues: record.variableValues,
+        inputResponse,
+        runId: logger.runId,
+        logger,
+        ...(checkpoint ? { checkpoint } : {}),
+        ...(options.maxTransitions !== undefined
+          ? { maxTransitions: options.maxTransitions }
+          : {}),
+        ...(args.json
+          ? {
+              onEvent: createRalphEventProgressReporter(flow, config.mode),
+            }
+          : {}),
+      });
+      const runRecord = await writeRalphRunRecord(args.workspaceRoot, flow, result, {
+        variableValues: record.variableValues,
+        runId: record.id,
+        paths,
+        scope,
+      });
+
+      if (args.json) {
+        printJson({
+          scope,
+          run: summarizeRun(result),
+          runLogPath: runRecord.paths.simpleMarkdownPath,
+          runRecordPath: runRecord.path,
+          traceLogPath: runRecord.paths.traceJsonlPath,
+        });
+        return;
+      }
+
+      writeStdoutLine(`ralph resume: ${result.status}`);
+      writeStdoutLine(result.summary);
+      writeStdoutLine(`run log: ${runRecord.paths.simpleMarkdownPath}`);
+      writeStdoutLine(`trace log: ${runRecord.paths.traceJsonlPath}`);
+      for (const event of result.events.slice(record.events.length)) {
+        if (event.type === "edge-route") {
+          writeStdoutLine(`- ${event.from}.${event.output} -> ${event.to}`);
+        } else if (event.type === "crash") {
+          writeStdoutLine(`- crash ${event.blockId}.${event.output}: ${event.reason}`);
+        } else if (event.type === "input-required") {
+          writeStdoutLine(`- waiting for input ${event.request.id}`);
+        }
+      }
+
+      for (const blockResult of result.blockResults.slice(record.blockResults.length)) {
+        if (blockResult.result?.response || blockResult.result?.outputSections.length) {
+          printExecutionSummary(blockResult.result);
+        }
+      }
+      return;
+    }
     case "create": {
       const name = options.name ?? options.subject ??
         fail("Expected --name or a flow alias for `machdoch ralph create`.");
@@ -1141,6 +1414,75 @@ export const printRalphSummary = async (
       }
       for (const warning of result.validation.warnings) {
         writeStdoutLine(`warning: ${warning}`);
+      }
+      return;
+    }
+    case "interview": {
+      const name = options.name ?? options.subject;
+      const prompt = await getPromptText(args, options);
+
+      if (!prompt.trim()) {
+        fail("Expected --prompt or --prompt-file for `machdoch ralph interview`.");
+      }
+
+      const existingFlowJson = options.existingFlowJson ??
+        (options.existingFlowJsonFile
+          ? await readRalphWorkspaceFile(args.workspaceRoot, options.existingFlowJsonFile)
+          : undefined);
+      const existingFlow = existingFlowJson
+        ? parseRalphFlowJson(existingFlowJson)
+        : undefined;
+      const input = await readRalphGenerationInterviewInput(args, options);
+      const config = await loadRuntimeConfig(
+        args.workspaceRoot,
+        "machdoch",
+        args.profile,
+        args.model,
+        args.runtimeProvider,
+        args.agentLimits,
+        args.reasoning,
+      );
+      const customizations = await discoverCustomizations(
+        args.workspaceRoot,
+        createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
+      );
+      const result = await createRalphGenerationInterviewWithAgent(
+        args.workspaceRoot,
+        {
+          prompt,
+          scope,
+          config,
+          customizations,
+          ...(name ? { name } : {}),
+          ...(existingFlow ? { existingFlow } : {}),
+          ...(options.target ? { target: options.target } : {}),
+          ...(options.maxRounds ? { maxTurns: options.maxRounds } : {}),
+          ...(input.session ? { session: input.session } : {}),
+          ...(input.answers ? { answers: input.answers } : {}),
+        },
+      );
+
+      if (args.json) {
+        printJson({
+          status: result.status,
+          session: result.session,
+          fields: result.fields,
+          summary: result.summary,
+          finalPrompt: result.finalPrompt ?? null,
+          provider: result.provider ?? null,
+          model: result.model ?? null,
+          result: result.result
+            ? summarizeGenerationActorResult(result.result)
+            : null,
+        });
+        return;
+      }
+
+      writeStdoutLine(`ralph interview: ${result.status}`);
+      writeStdoutLine(result.summary);
+      writeStdoutLine(`turn: ${result.session.turn}/${result.session.maxTurns}`);
+      for (const field of result.fields) {
+        writeStdoutLine(`- ${field.id} [${field.type}] ${field.label}`);
       }
       return;
     }

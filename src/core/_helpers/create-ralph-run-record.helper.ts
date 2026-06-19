@@ -127,6 +127,7 @@ export const createRalphRunRecord = (
       : {}),
     events: result.events,
     blockResults: result.blockResults.map(createRalphRunRecordBlock),
+    ...(result.checkpoint ? { checkpoint: result.checkpoint } : {}),
     validation: {
       valid: result.validation.valid,
       errors: result.validation.errors,

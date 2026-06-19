@@ -165,6 +165,8 @@ export const RALPH_BLOCK_TYPES = [
   "VALIDATOR",
   "DECISION",
   "PACK",
+  "INPUT",
+  "INTERVIEW",
   "UTILITY",
   "MCP_TOOL",
   "MCP_RESOURCE",
@@ -198,6 +200,20 @@ export type RalphVariableType = (typeof RALPH_VARIABLE_TYPES)[number];
 export type RalphFlowScope = "workspace" | "user";
 export type RalphValidatorDecision = "DONE" | "CONTINUE" | "RETRY" | "ERROR";
 export type RalphExecutionOutput = "SUCCESS" | "ERROR" | RalphValidatorDecision | string;
+export type RalphInputFieldType =
+  | "text"
+  | "textarea"
+  | "number"
+  | "boolean"
+  | "select"
+  | "multiselect"
+  | "url"
+  | "path"
+  | "file"
+  | "files"
+  | "image"
+  | "images";
+export type RalphInputValue = string | number | boolean | string[] | null;
 
 export {
   MAX_RALPH_RESULT_CHARS,
@@ -213,7 +229,12 @@ export {
   createRalphLogLine,
   sanitizeTraceValue,
 } from "./_helpers/format-ralph-run-log-entry.helper.js";
-export type RalphRunStatus = "completed" | "crashed" | "blocked" | "stopped";
+export type RalphRunStatus =
+  | "completed"
+  | "crashed"
+  | "blocked"
+  | "stopped"
+  | "waiting-for-input";
 export type RalphUtilityWaitMode = "delay" | "until-time" | "condition" | "poll";
 export type RalphUtilityConditionStyle = "simple" | "json-path" | "javascript";
 export type RalphUiAnalyzeAdapter =
@@ -270,6 +291,58 @@ export interface RalphFlowVariable {
   type: RalphVariableType;
   default?: string;
   required: boolean;
+}
+
+export interface RalphInputOption {
+  value: string;
+  label: string;
+}
+
+export interface RalphInputFieldValidation {
+  min?: number;
+  max?: number;
+  step?: number;
+  pattern?: string;
+  minLength?: number;
+  maxLength?: number;
+}
+
+export interface RalphInputField {
+  id: string;
+  label: string;
+  type: RalphInputFieldType;
+  required?: boolean;
+  skippable?: boolean;
+  placeholder?: string;
+  help?: string;
+  defaultValue?: RalphInputValue;
+  options?: RalphInputOption[];
+  validation?: RalphInputFieldValidation;
+  variableName?: string;
+}
+
+export interface RalphInputRequest {
+  id: string;
+  runId: string;
+  blockId: string;
+  blockType: RalphBlockType;
+  title: string;
+  prompt?: string;
+  fields: RalphInputField[];
+  submitLabel?: string;
+  cancelLabel?: string;
+  createdAt: string;
+  expiresAt?: string;
+  interview?: {
+    turn: number;
+    maxTurns: number;
+  };
+}
+
+export interface RalphInputResponse {
+  requestId: string;
+  action: "submit" | "cancel";
+  values?: Record<string, RalphInputValue>;
 }
 
 export interface RalphWorkspaceSetting {
@@ -425,6 +498,26 @@ export interface RalphPackBlock extends RalphBaseBlock {
   propagationMode?: "nextBlockOnly" | "untilOverridden";
 }
 
+export interface RalphInputBlock extends RalphBaseBlock {
+  type: "INPUT";
+  prompt?: string;
+  fields: RalphInputField[];
+  submitLabel?: string;
+  cancelLabel?: string;
+  timeoutSeconds?: number | null;
+}
+
+export interface RalphInterviewBlock extends RalphBaseBlock {
+  type: "INTERVIEW";
+  prompt: string;
+  completionCriteria?: string;
+  maxTurns?: number;
+  questionsPerTurn?: number;
+  outputVariableName?: string;
+  submitLabel?: string;
+  cancelLabel?: string;
+}
+
 export interface RalphUtilityBlock extends RalphBaseBlock {
   type: "UTILITY";
   utility: RalphUtilityConfig;
@@ -488,6 +581,8 @@ export type RalphFlowBlock =
   | RalphValidatorBlock
   | RalphDecisionBlock
   | RalphPackBlock
+  | RalphInputBlock
+  | RalphInterviewBlock
   | RalphUtilityBlock
   | RalphMcpToolBlock
   | RalphMcpResourceBlock
@@ -626,6 +721,21 @@ export type RalphRunEvent =
       reason: string;
     }
   | {
+      type: "input-required";
+      blockId: string;
+      request: RalphInputRequest;
+    }
+  | {
+      type: "input-submitted";
+      blockId: string;
+      requestId: string;
+    }
+  | {
+      type: "input-cancelled";
+      blockId: string;
+      requestId: string;
+    }
+  | {
       type: "crash";
       blockId: string;
       output: RalphExecutionOutput;
@@ -646,6 +756,8 @@ export type RalphLogEntryKind =
   | "block-output"
   | "edge-route"
   | "retry"
+  | "input-required"
+  | "input-submitted"
   | "crash"
   | "progress"
   | "action-output"
@@ -713,6 +825,8 @@ export interface RalphRunOptions {
   conversationContext?: TaskConversationContext;
   onStateChange?: TaskExecutionProgressHandler;
   onEvent?: (event: RalphRunEvent) => void | Promise<void>;
+  checkpoint?: RalphRunCheckpoint;
+  inputResponse?: RalphInputResponse;
   runId?: string;
   logger?: RalphRunLogger;
   signal?: AbortSignal;
@@ -739,6 +853,8 @@ export interface RalphRunResult {
   missingVariables: string[];
   unknownVariables: string[];
   validation: RalphValidationResult;
+  pendingInput?: RalphInputRequest;
+  checkpoint?: RalphRunCheckpoint;
 }
 
 export interface RalphRunRecordBlock {
@@ -752,6 +868,29 @@ export interface RalphRunRecordBlock {
   summary: string;
   markdown?: string;
   error?: string;
+}
+
+export interface RalphInterviewState {
+  turn: number;
+  transcript: Array<{
+    question: string;
+    answer?: RalphInputValue;
+    fieldId?: string;
+  }>;
+}
+
+export interface RalphRunCheckpoint {
+  currentBlockId: string;
+  transitions: number;
+  variables: Record<string, string>;
+  resultsByBlock: Record<string, RalphBlockExecutionResult>;
+  runLog: string[];
+  blockResults: RalphBlockExecutionResult[];
+  events: RalphRunEvent[];
+  errorCounts: Record<string, number>;
+  repeatedFailures: Record<string, RalphRepeatedFailureState>;
+  pendingInput?: RalphInputRequest;
+  interviewStates?: Record<string, RalphInterviewState>;
 }
 
 export interface RalphRunRecord {
@@ -771,6 +910,7 @@ export interface RalphRunRecord {
   >;
   events: RalphRunEvent[];
   blockResults: RalphRunRecordBlock[];
+  checkpoint?: RalphRunCheckpoint;
   validation: Pick<RalphValidationResult, "valid" | "errors" | "warnings">;
 }
 
@@ -822,9 +962,10 @@ interface RalphResultContext {
   resultsByBlock: Map<string, RalphBlockExecutionResult>;
   runLog: string[];
   variables: Record<string, string>;
+  interviewStates: Map<string, RalphInterviewState>;
 }
 
-interface RalphRepeatedFailureState {
+export interface RalphRepeatedFailureState {
   signature: string;
   count: number;
 }
@@ -1484,34 +1625,48 @@ export const createRalphRunLogger = async (
   options: {
     runId?: string;
     variableValues?: Record<string, string>;
+    paths?: RalphRunLogPaths;
+    append?: boolean;
     scope?: RalphFlowScope;
   } = {},
 ): Promise<RalphRunLogger> => {
   const createdAt = createLogTimestamp();
-  const paths = createRalphRunArtifactPaths(
-    getRalphRunDirectory(workspaceRoot, options.scope ?? "workspace"),
-    createdAt,
-    options.runId,
-  );
+  const paths =
+    options.paths ??
+    createRalphRunArtifactPaths(
+      getRalphRunDirectory(workspaceRoot, options.scope ?? "workspace"),
+      createdAt,
+      options.runId,
+    );
   const logger = new RalphFileRunLogger(paths);
 
   await mkdir(paths.directory, { recursive: true });
-  await writeFile(
-    paths.simpleMarkdownPath,
-    [
-      `# Ralph Run ${paths.id}`,
-      "",
-      `Flow: ${flow.name} (${flow.id})`,
-      `Started: ${createdAt}`,
-      "",
-    ].join("\n"),
-    "utf8",
-  );
-  await writeFile(paths.simpleJsonlPath, "", "utf8");
-  await writeFile(paths.traceJsonlPath, "", "utf8");
+  if (options.append) {
+    await appendFile(
+      paths.simpleMarkdownPath,
+      [``, `## Resumed ${createdAt}`, ``].join("\n"),
+      "utf8",
+    );
+  } else {
+    await writeFile(
+      paths.simpleMarkdownPath,
+      [
+        `# Ralph Run ${paths.id}`,
+        "",
+        `Flow: ${flow.name} (${flow.id})`,
+        `Started: ${createdAt}`,
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(paths.simpleJsonlPath, "", "utf8");
+    await writeFile(paths.traceJsonlPath, "", "utf8");
+  }
   logger.trace({
     kind: "run-start",
-    message: `Ralph run ${paths.id} created.`,
+    message: options.append
+      ? `Ralph run ${paths.id} resumed.`
+      : `Ralph run ${paths.id} created.`,
     flowId: flow.id,
     details: {
       flow,
@@ -2087,6 +2242,7 @@ const createExecutionOptions = async (
     resultsByBlock: new Map(),
     runLog: [],
     variables: {},
+    interviewStates: new Map(),
   };
   const attachments = block
     ? getResolvedBlockAttachments(block, context ?? fallbackContext)
@@ -2193,6 +2349,425 @@ const emitRunEvent = async (
   } catch {
     // Ralph events are progress/reporting side effects. Execution must continue.
   }
+};
+
+interface RalphInputWaitStepResult {
+  kind: "input-wait";
+  request: RalphInputRequest;
+  summary: string;
+}
+
+type RalphExecutionStepResult = RalphBlockExecutionResult | RalphInputWaitStepResult;
+
+const isRalphInputWaitStepResult = (
+  result: RalphExecutionStepResult,
+): result is RalphInputWaitStepResult => {
+  return "kind" in result && result.kind === "input-wait";
+};
+
+const RALPH_INPUT_FIELD_TYPES: readonly RalphInputFieldType[] = [
+  "text",
+  "textarea",
+  "number",
+  "boolean",
+  "select",
+  "multiselect",
+  "url",
+  "path",
+  "file",
+  "files",
+  "image",
+  "images",
+];
+
+const RALPH_VARIABLE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+const RALPH_INPUT_FIELD_ID_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]{0,79}$/u;
+
+const isRalphInputFieldType = (value: string): value is RalphInputFieldType => {
+  return RALPH_INPUT_FIELD_TYPES.includes(value as RalphInputFieldType);
+};
+
+const normalizeGeneratedInputFieldId = (
+  value: string | undefined,
+  fallback: string,
+): string => {
+  const normalized = (value ?? "")
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/gu, "_")
+    .replace(/^[^A-Za-z_]+/u, "")
+    .slice(0, 80);
+
+  if (normalized && RALPH_INPUT_FIELD_ID_PATTERN.test(normalized)) {
+    return normalized;
+  }
+
+  return fallback;
+};
+
+const stringifyRalphInputValue = (value: RalphInputValue): string => {
+  if (value === null) {
+    return "";
+  }
+
+  if (Array.isArray(value)) {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+};
+
+const hasRalphInputValue = (value: RalphInputValue | undefined): boolean => {
+  if (value === undefined || value === null) {
+    return false;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  return true;
+};
+
+const getRalphInputFieldVariableNames = (field: RalphInputField): string[] => {
+  const names = new Set<string>();
+  const variableName = field.variableName?.trim();
+
+  if (variableName && RALPH_VARIABLE_NAME_PATTERN.test(variableName)) {
+    names.add(variableName);
+  }
+
+  if (RALPH_VARIABLE_NAME_PATTERN.test(field.id)) {
+    names.add(field.id);
+  }
+
+  return [...names];
+};
+
+const applyInputValuesToContext = (
+  context: RalphResultContext,
+  fields: RalphInputField[],
+  values: Record<string, RalphInputValue>,
+): void => {
+  for (const field of fields) {
+    const value = values[field.id] ?? null;
+
+    for (const variableName of getRalphInputFieldVariableNames(field)) {
+      context.variables[variableName] = stringifyRalphInputValue(value);
+    }
+  }
+};
+
+const validateStringInputValue = (
+  field: RalphInputField,
+  value: string,
+  errors: string[],
+): void => {
+  const validation = field.validation;
+
+  if (validation?.minLength !== undefined && value.length < validation.minLength) {
+    errors.push(`${field.label} must be at least ${validation.minLength} characters.`);
+  }
+
+  if (validation?.maxLength !== undefined && value.length > validation.maxLength) {
+    errors.push(`${field.label} must be at most ${validation.maxLength} characters.`);
+  }
+
+  if (validation?.pattern) {
+    try {
+      if (!new RegExp(validation.pattern, "u").test(value)) {
+        errors.push(`${field.label} does not match the required pattern.`);
+      }
+    } catch {
+      errors.push(`${field.label} has an invalid validation pattern.`);
+    }
+  }
+};
+
+const normalizeInputResponseValue = (
+  field: RalphInputField,
+  rawValue: RalphInputValue | undefined,
+  errors: string[],
+): RalphInputValue => {
+  const value = rawValue ?? field.defaultValue ?? null;
+
+  if (!hasRalphInputValue(value)) {
+    if (field.required && !field.skippable) {
+      errors.push(`${field.label} is required.`);
+    }
+
+    return null;
+  }
+
+  const optionValues = new Set(field.options?.map((option) => option.value) ?? []);
+
+  if (field.type === "number") {
+    const numericValue =
+      typeof value === "number"
+        ? value
+        : typeof value === "string"
+          ? Number(value.trim())
+          : Number.NaN;
+
+    if (!Number.isFinite(numericValue)) {
+      errors.push(`${field.label} must be a number.`);
+      return null;
+    }
+
+    if (field.validation?.min !== undefined && numericValue < field.validation.min) {
+      errors.push(`${field.label} must be at least ${field.validation.min}.`);
+    }
+
+    if (field.validation?.max !== undefined && numericValue > field.validation.max) {
+      errors.push(`${field.label} must be at most ${field.validation.max}.`);
+    }
+
+    return numericValue;
+  }
+
+  if (field.type === "boolean") {
+    if (typeof value === "boolean") {
+      return value;
+    }
+
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+
+      if (normalized === "true" || normalized === "yes" || normalized === "1") {
+        return true;
+      }
+
+      if (normalized === "false" || normalized === "no" || normalized === "0") {
+        return false;
+      }
+    }
+
+    errors.push(`${field.label} must be true or false.`);
+    return null;
+  }
+
+  if (
+    field.type === "multiselect" ||
+    field.type === "files" ||
+    field.type === "images"
+  ) {
+    const values = Array.isArray(value)
+      ? value.map((entry) => entry.trim()).filter(Boolean)
+      : typeof value === "string"
+        ? [value.trim()].filter(Boolean)
+        : [];
+
+    if (field.type === "multiselect" && optionValues.size > 0) {
+      for (const entry of values) {
+        if (!optionValues.has(entry)) {
+          errors.push(`${field.label} has an unknown option: ${entry}.`);
+        }
+      }
+    }
+
+    return values;
+  }
+
+  const stringValue =
+    typeof value === "string"
+      ? value
+      : typeof value === "number" || typeof value === "boolean"
+        ? String(value)
+        : "";
+  const trimmedValue = stringValue.trim();
+
+  if (field.type === "select" && optionValues.size > 0 && !optionValues.has(trimmedValue)) {
+    errors.push(`${field.label} has an unknown option: ${trimmedValue}.`);
+  }
+
+  if (field.type === "url") {
+    try {
+      new URL(trimmedValue);
+    } catch {
+      errors.push(`${field.label} must be a valid URL.`);
+    }
+  }
+
+  validateStringInputValue(field, stringValue, errors);
+
+  return stringValue;
+};
+
+const normalizeInputResponseValues = (
+  fields: RalphInputField[],
+  values: Record<string, RalphInputValue> | undefined,
+): {
+  values: Record<string, RalphInputValue>;
+  skipped: string[];
+  errors: string[];
+} => {
+  const normalizedValues: Record<string, RalphInputValue> = {};
+  const skipped: string[] = [];
+  const errors: string[] = [];
+
+  for (const field of fields) {
+    const value = normalizeInputResponseValue(field, values?.[field.id], errors);
+    normalizedValues[field.id] = value;
+
+    if (!hasRalphInputValue(value)) {
+      skipped.push(field.id);
+    }
+  }
+
+  return { values: normalizedValues, skipped, errors };
+};
+
+const resolveInputFieldForRequest = (
+  field: RalphInputField,
+  context: RalphResultContext,
+): RalphInputField => {
+  return {
+    ...field,
+    label: resolveTemplateText(field.label, context),
+    ...(field.placeholder
+      ? { placeholder: resolveTemplateText(field.placeholder, context) }
+      : {}),
+    ...(field.help ? { help: resolveTemplateText(field.help, context) } : {}),
+    ...(typeof field.defaultValue === "string"
+      ? { defaultValue: resolveTemplateText(field.defaultValue, context) }
+      : field.defaultValue !== undefined
+        ? { defaultValue: field.defaultValue }
+        : {}),
+    ...(field.options
+      ? {
+          options: field.options.map((option) => ({
+            value: option.value,
+            label: resolveTemplateText(option.label, context),
+          })),
+        }
+      : {}),
+  };
+};
+
+const createInputRequest = (
+  block: RalphInputBlock | RalphInterviewBlock,
+  context: RalphResultContext,
+  fields: RalphInputField[],
+  options: {
+    prompt?: string;
+    submitLabel?: string;
+    cancelLabel?: string;
+    timeoutSeconds?: number | null;
+    interview?: RalphInputRequest["interview"];
+  } = {},
+): RalphInputRequest => {
+  const createdAt = new Date();
+  const timeoutSeconds = options.timeoutSeconds ?? null;
+
+  return {
+    id: `ralph-input-${block.id}-${randomUUID()}`,
+    runId: context.runId,
+    blockId: block.id,
+    blockType: block.type,
+    title: block.title,
+    ...(options.prompt
+      ? { prompt: resolveTemplateText(options.prompt, context) }
+      : {}),
+    fields: fields.map((field) => resolveInputFieldForRequest(field, context)),
+    ...(options.submitLabel ? { submitLabel: options.submitLabel } : {}),
+    ...(options.cancelLabel ? { cancelLabel: options.cancelLabel } : {}),
+    createdAt: createdAt.toISOString(),
+    ...(timeoutSeconds !== null && timeoutSeconds > 0
+      ? {
+          expiresAt: new Date(
+            createdAt.getTime() + timeoutSeconds * 1000,
+          ).toISOString(),
+        }
+      : {}),
+    ...(options.interview ? { interview: options.interview } : {}),
+  };
+};
+
+const getPendingInputForBlock = (
+  block: RalphFlowBlock,
+  options: RalphRunOptions,
+): RalphInputRequest | undefined => {
+  const pendingInput = options.checkpoint?.pendingInput;
+
+  return pendingInput?.blockId === block.id ? pendingInput : undefined;
+};
+
+const getMatchingInputResponse = (
+  block: RalphFlowBlock,
+  options: RalphRunOptions,
+): RalphInputResponse | undefined => {
+  const pendingInput = getPendingInputForBlock(block, options);
+  const response = options.inputResponse;
+
+  if (!pendingInput || !response || response.requestId !== pendingInput.id) {
+    return undefined;
+  }
+
+  return response;
+};
+
+const isExpiredInputRequest = (request: RalphInputRequest): boolean => {
+  return Boolean(request.expiresAt && Date.parse(request.expiresAt) <= Date.now());
+};
+
+const createRunCheckpoint = (
+  currentBlockId: string,
+  transitions: number,
+  context: RalphResultContext,
+  blockResults: RalphBlockExecutionResult[],
+  events: RalphRunEvent[],
+  errorCounts: Map<string, number>,
+  repeatedFailures: Map<string, RalphRepeatedFailureState>,
+  pendingInput: RalphInputRequest,
+): RalphRunCheckpoint => {
+  return {
+    currentBlockId,
+    transitions,
+    variables: { ...context.variables },
+    resultsByBlock: Object.fromEntries(context.resultsByBlock.entries()),
+    runLog: [...context.runLog],
+    blockResults: [...blockResults],
+    events: [...events],
+    errorCounts: Object.fromEntries(errorCounts.entries()),
+    repeatedFailures: Object.fromEntries(repeatedFailures.entries()),
+    pendingInput,
+    interviewStates: Object.fromEntries(context.interviewStates.entries()),
+  };
+};
+
+const restoreRalphResultMap = (
+  checkpoint: RalphRunCheckpoint | undefined,
+): Map<string, RalphBlockExecutionResult> => {
+  return new Map(Object.entries(checkpoint?.resultsByBlock ?? {}));
+};
+
+const restoreRalphNumberMap = (
+  values: Record<string, number> | undefined,
+): Map<string, number> => {
+  return new Map(
+    Object.entries(values ?? {}).filter((entry): entry is [string, number] =>
+      Number.isFinite(entry[1]),
+    ),
+  );
+};
+
+const restoreRalphRepeatedFailureMap = (
+  values: Record<string, RalphRepeatedFailureState> | undefined,
+): Map<string, RalphRepeatedFailureState> => {
+  return new Map(
+    Object.entries(values ?? {}).filter((entry): entry is [string, RalphRepeatedFailureState] => {
+      const state = entry[1];
+
+      return (
+        isRecord(state) &&
+        typeof state.signature === "string" &&
+        typeof state.count === "number"
+      );
+    }),
+  );
 };
 
 const getBlockLogFields = (
@@ -2359,6 +2934,577 @@ const executeDecisionBlock = async (
   }
 
   return createRalphDecisionExecutionResult(block, result);
+};
+
+const executeInputBlock = (
+  block: RalphInputBlock,
+  context: RalphResultContext,
+  options: RalphRunOptions,
+): RalphExecutionStepResult => {
+  const pendingInput = getPendingInputForBlock(block, options);
+  const response = getMatchingInputResponse(block, options);
+
+  if (pendingInput && !response) {
+    return {
+      kind: "input-wait",
+      request: pendingInput,
+      summary: `${block.title} is waiting for input.`,
+    };
+  }
+
+  if (!response) {
+    const request = createInputRequest(block, context, block.fields, {
+      ...(block.prompt ? { prompt: block.prompt } : {}),
+      ...(block.submitLabel ? { submitLabel: block.submitLabel } : {}),
+      ...(block.cancelLabel ? { cancelLabel: block.cancelLabel } : {}),
+      ...(block.timeoutSeconds !== undefined
+        ? { timeoutSeconds: block.timeoutSeconds }
+        : {}),
+    });
+
+    return {
+      kind: "input-wait",
+      request,
+      summary: `${block.title} is waiting for input.`,
+    };
+  }
+
+  if (!pendingInput) {
+    return {
+      blockId: block.id,
+      output: "ERROR",
+      status: "error",
+      attempt: 1,
+      summary: `${block.title} received an input response but no input request is pending.`,
+      error: "No pending input request matched the response.",
+    };
+  }
+
+  if (isExpiredInputRequest(pendingInput)) {
+    return {
+      blockId: block.id,
+      output: "TIMEOUT",
+      status: "completed",
+      attempt: 1,
+      summary: `${block.title} input timed out.`,
+      data: { requestId: pendingInput.id },
+    };
+  }
+
+  if (response.action === "cancel") {
+    return {
+      blockId: block.id,
+      output: "CANCELLED",
+      status: "completed",
+      attempt: 1,
+      summary: `${block.title} input was cancelled.`,
+      data: { requestId: pendingInput.id },
+    };
+  }
+
+  const normalized = normalizeInputResponseValues(
+    pendingInput.fields,
+    response.values,
+  );
+
+  if (normalized.errors.length > 0) {
+    return {
+      blockId: block.id,
+      output: "ERROR",
+      status: "error",
+      attempt: 1,
+      summary: `${block.title} input was invalid: ${normalized.errors.join(" ")}`,
+      error: normalized.errors.join("\n"),
+      data: {
+        requestId: pendingInput.id,
+        errors: normalized.errors,
+      },
+    };
+  }
+
+  applyInputValuesToContext(context, pendingInput.fields, normalized.values);
+
+  return {
+    blockId: block.id,
+    output: "SUCCESS",
+    status: "completed",
+    attempt: 1,
+    summary: `${block.title} input captured.`,
+    data: {
+      requestId: pendingInput.id,
+      values: normalized.values,
+      skipped: normalized.skipped,
+    },
+    markdown: `\`\`\`json\n${JSON.stringify(normalized.values, null, 2)}\n\`\`\``,
+  };
+};
+
+interface RalphInterviewGeneration {
+  complete: boolean;
+  summary?: string;
+  fields: RalphInputField[];
+}
+
+const getDefaultInterviewOutputVariableName = (block: RalphInterviewBlock): string => {
+  return `${block.id.replace(/[^A-Za-z0-9_]+/gu, "_")}_interview`;
+};
+
+const getInterviewOutputVariableName = (block: RalphInterviewBlock): string => {
+  const configured = block.outputVariableName?.trim();
+
+  return configured && RALPH_VARIABLE_NAME_PATTERN.test(configured)
+    ? configured
+    : getDefaultInterviewOutputVariableName(block);
+};
+
+const createInterviewTranscriptMarkdown = (
+  state: RalphInterviewState,
+): string => {
+  if (state.transcript.length === 0) {
+    return "No interview answers were collected.";
+  }
+
+  return state.transcript
+    .map((entry, index) => {
+      const answer =
+        entry.answer === undefined || entry.answer === null
+          ? "_Skipped_"
+          : stringifyRalphInputValue(entry.answer);
+
+      return `${index + 1}. ${entry.question}\n\n   ${answer}`;
+    })
+    .join("\n\n");
+};
+
+const createInterviewQuestionTask = (
+  flow: RalphFlow,
+  block: RalphInterviewBlock,
+  context: RalphResultContext,
+  state: RalphInterviewState,
+): string => {
+  const maxTurns = block.maxTurns ?? 5;
+  const questionsPerTurn = block.questionsPerTurn ?? 3;
+  const transcript = state.transcript.length > 0
+    ? state.transcript
+        .map((entry, index) => {
+          const answer =
+            entry.answer === undefined || entry.answer === null
+              ? "[skipped]"
+              : stringifyRalphInputValue(entry.answer);
+
+          return `${index + 1}. Q: ${entry.question}\n   A: ${answer}`;
+        })
+        .join("\n")
+    : "No answers have been collected yet.";
+
+  return [
+    `Ralph flow: ${flow.name}`,
+    `Interview block: ${block.title} (${block.id})`,
+    "",
+    "You are conducting an interactive clarification interview for this flow.",
+    "Decide whether enough information has been collected. If not, ask concise, actionable questions.",
+    "Every generated question must be skippable by the user.",
+    "",
+    `Interview goal:\n${resolveTemplateText(block.prompt, context)}`,
+    ...(block.completionCriteria
+      ? ["", `Completion criteria:\n${resolveTemplateText(block.completionCriteria, context)}`]
+      : []),
+    "",
+    `Current turn: ${state.turn} of ${maxTurns}`,
+    `Ask at most ${questionsPerTurn} question${questionsPerTurn === 1 ? "" : "s"} this turn.`,
+    "",
+    "Prior answers:",
+    transcript,
+    "",
+    "Return only JSON in this exact shape:",
+    "{",
+    '  "complete": false,',
+    '  "summary": "Short summary when complete or why more information is needed.",',
+    '  "questions": [',
+    "    {",
+    '      "id": "short_snake_case_id",',
+    '      "label": "Question text shown to the user",',
+    '      "type": "text | textarea | number | boolean | select | multiselect | url | path | file | files | image | images",',
+    '      "placeholder": "Optional placeholder",',
+    '      "help": "Optional help text",',
+    '      "options": [{"value": "option_value", "label": "Option label"}]',
+    "    }",
+    "  ]",
+    "}",
+    "",
+    "Use select or multiselect only when you provide options. Use textarea for open-ended answers.",
+    "When complete is true, return an empty questions array and a useful implementation-ready summary.",
+  ].join("\n");
+};
+
+const extractJsonObject = (text: string): unknown => {
+  const trimmed = text.trim();
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/iu);
+  const candidate = fencedMatch?.[1]?.trim() ?? trimmed;
+
+  try {
+    return JSON.parse(candidate) as unknown;
+  } catch {
+    const start = candidate.indexOf("{");
+    const end = candidate.lastIndexOf("}");
+
+    if (start >= 0 && end > start) {
+      return JSON.parse(candidate.slice(start, end + 1)) as unknown;
+    }
+
+    throw new Error("Interview AI response did not contain valid JSON.");
+  }
+};
+
+const normalizeGeneratedInterviewFieldType = (
+  value: unknown,
+): RalphInputFieldType => {
+  if (typeof value !== "string") {
+    return "textarea";
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/-/gu, "_");
+  const aliases: Record<string, RalphInputFieldType> = {
+    input: "text",
+    string: "text",
+    text_area: "textarea",
+    multiple_choice: "select",
+    single_choice: "select",
+    choice: "select",
+    choices: "select",
+    multi_select: "multiselect",
+    checkbox: "boolean",
+    checkboxes: "multiselect",
+  };
+  const aliased = aliases[normalized];
+
+  if (aliased) {
+    return aliased;
+  }
+
+  return isRalphInputFieldType(normalized) ? normalized : "textarea";
+};
+
+const normalizeGeneratedInterviewOptions = (
+  value: unknown,
+): RalphInputOption[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const options = value
+    .flatMap((entry): RalphInputOption[] => {
+      if (typeof entry === "string") {
+        const value = entry.trim();
+
+        return value ? [{ value, label: value }] : [];
+      }
+
+      if (!isRecord(entry)) {
+        return [];
+      }
+
+      const optionValue =
+        typeof entry.value === "string" ? entry.value.trim() : "";
+      const label =
+        typeof entry.label === "string" && entry.label.trim()
+          ? entry.label.trim()
+          : optionValue;
+
+      return optionValue ? [{ value: optionValue, label }] : [];
+    })
+    .slice(0, 20);
+
+  return options.length > 0 ? options : undefined;
+};
+
+const normalizeInterviewGeneration = (
+  value: unknown,
+  block: RalphInterviewBlock,
+): RalphInterviewGeneration => {
+  if (!isRecord(value)) {
+    throw new Error("Interview AI response must be a JSON object.");
+  }
+
+  const complete = value.complete === true;
+  const summary =
+    typeof value.summary === "string" && value.summary.trim()
+      ? value.summary.trim()
+      : undefined;
+  const questions = Array.isArray(value.questions) ? value.questions : [];
+  const fields = questions
+    .flatMap((entry, index): RalphInputField[] => {
+      if (!isRecord(entry)) {
+        return [];
+      }
+
+      const label =
+        typeof entry.label === "string" && entry.label.trim()
+          ? entry.label.trim()
+          : typeof entry.question === "string" && entry.question.trim()
+            ? entry.question.trim()
+            : "";
+
+      if (!label) {
+        return [];
+      }
+
+      const type = normalizeGeneratedInterviewFieldType(entry.type);
+      const options = normalizeGeneratedInterviewOptions(entry.options);
+
+      if ((type === "select" || type === "multiselect") && !options) {
+        return [];
+      }
+
+      const id = normalizeGeneratedInputFieldId(
+        typeof entry.id === "string" ? entry.id : undefined,
+        `q_${index + 1}`,
+      );
+
+      return [
+        {
+          id,
+          label,
+          type,
+          required: false,
+          skippable: true,
+          ...(typeof entry.placeholder === "string" && entry.placeholder.trim()
+            ? { placeholder: entry.placeholder.trim() }
+            : {}),
+          ...(typeof entry.help === "string" && entry.help.trim()
+            ? { help: entry.help.trim() }
+            : {}),
+          ...(options ? { options } : {}),
+        },
+      ];
+    })
+    .slice(0, block.questionsPerTurn ?? 3);
+
+  return { complete, ...(summary ? { summary } : {}), fields };
+};
+
+const appendInterviewAnswers = (
+  state: RalphInterviewState,
+  request: RalphInputRequest,
+  values: Record<string, RalphInputValue>,
+): RalphInterviewState => {
+  return {
+    turn: state.turn,
+    transcript: [
+      ...state.transcript,
+      ...request.fields.map((field) => ({
+        question: field.label,
+        answer: values[field.id] ?? null,
+        fieldId: field.id,
+      })),
+    ],
+  };
+};
+
+const executeInterviewBlock = async (
+  flow: RalphFlow,
+  block: RalphInterviewBlock,
+  config: RuntimeConfig,
+  customizations: CustomizationDiscoveryResult,
+  context: RalphResultContext,
+  options: RalphRunOptions,
+): Promise<RalphExecutionStepResult> => {
+  const maxTurns = block.maxTurns ?? 5;
+  const pendingInput = getPendingInputForBlock(block, options);
+  const response = getMatchingInputResponse(block, options);
+  let state = context.interviewStates.get(block.id) ?? {
+    turn: 0,
+    transcript: [],
+  };
+
+  if (pendingInput && !response) {
+    return {
+      kind: "input-wait",
+      request: pendingInput,
+      summary: `${block.title} is waiting for interview answers.`,
+    };
+  }
+
+  if (response && !pendingInput) {
+    return {
+      blockId: block.id,
+      output: "ERROR",
+      status: "error",
+      attempt: 1,
+      summary: `${block.title} received interview answers but no interview request is pending.`,
+      error: "No pending interview request matched the response.",
+    };
+  }
+
+  if (response && pendingInput) {
+    if (isExpiredInputRequest(pendingInput)) {
+      const markdown = createInterviewTranscriptMarkdown(state);
+
+      return {
+        blockId: block.id,
+        output: "INCOMPLETE",
+        status: "completed",
+        attempt: 1,
+        summary: `${block.title} interview timed out before completion.`,
+        data: { requestId: pendingInput.id, transcript: state.transcript },
+        markdown,
+      };
+    }
+
+    if (response.action === "cancel") {
+      const markdown = createInterviewTranscriptMarkdown(state);
+
+      return {
+        blockId: block.id,
+        output: "CANCELLED",
+        status: "completed",
+        attempt: 1,
+        summary: `${block.title} interview was cancelled.`,
+        data: { requestId: pendingInput.id, transcript: state.transcript },
+        markdown,
+      };
+    }
+
+    const normalized = normalizeInputResponseValues(
+      pendingInput.fields,
+      response.values,
+    );
+
+    if (normalized.errors.length > 0) {
+      return {
+        blockId: block.id,
+        output: "ERROR",
+        status: "error",
+        attempt: 1,
+        summary: `${block.title} interview answers were invalid: ${normalized.errors.join(" ")}`,
+        error: normalized.errors.join("\n"),
+        data: {
+          requestId: pendingInput.id,
+          errors: normalized.errors,
+        },
+      };
+    }
+
+    state = appendInterviewAnswers(state, pendingInput, normalized.values);
+    context.interviewStates.set(block.id, state);
+  }
+
+  if (state.turn >= maxTurns) {
+    const markdown = createInterviewTranscriptMarkdown(state);
+    context.variables[getInterviewOutputVariableName(block)] = markdown;
+
+    return {
+      blockId: block.id,
+      output: "INCOMPLETE",
+      status: "completed",
+      attempt: 1,
+      summary: `${block.title} reached ${maxTurns} interview turn${maxTurns === 1 ? "" : "s"} without completion.`,
+      data: {
+        transcript: state.transcript,
+        maxTurns,
+      },
+      markdown,
+    };
+  }
+
+  const blockConfig = createBlockConfig(config, block);
+  const task = createInterviewQuestionTask(flow, block, context, state);
+  logBlockInput(options.logger, flow, block, blockConfig, task, state.turn + 1);
+
+  let result: TaskExecutionResult;
+  try {
+    result = await executeTask(
+      task,
+      blockConfig,
+      customizations,
+      await createExecutionOptions(
+        options,
+        blockConfig,
+        context,
+        block,
+        options.conversationContext,
+      ),
+    );
+  } catch (error) {
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+
+  if (result.status !== "executed") {
+    return createRalphBlockExecutionErrorResult(
+      block,
+      new Error(getResultMarkdown(result) || "Interview AI question generation failed."),
+    );
+  }
+
+  let generation: RalphInterviewGeneration;
+  try {
+    generation = normalizeInterviewGeneration(
+      extractJsonObject(getResultMarkdown(result)),
+      block,
+    );
+  } catch (error) {
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+
+  if (generation.complete) {
+    const summary =
+      generation.summary ??
+      (state.transcript.length > 0
+        ? createInterviewTranscriptMarkdown(state)
+        : `${block.title} completed without additional questions.`);
+    context.variables[getInterviewOutputVariableName(block)] = summary;
+
+    return {
+      blockId: block.id,
+      output: "DONE",
+      status: "completed",
+      attempt: 1,
+      result,
+      summary: `${block.title} interview complete.`,
+      data: {
+        summary,
+        transcript: state.transcript,
+      },
+      markdown: summary,
+    };
+  }
+
+  if (generation.fields.length === 0) {
+    generation = {
+      complete: false,
+      ...(generation.summary ? { summary: generation.summary } : {}),
+      fields: [
+        {
+          id: "clarification",
+          label: generation.summary ?? "What else should be clarified before continuing?",
+          type: "textarea",
+          required: false,
+          skippable: true,
+        },
+      ],
+    };
+  }
+
+  const nextTurn = state.turn + 1;
+  const request = createInputRequest(block, context, generation.fields, {
+    prompt:
+      generation.summary ??
+      `Answer the interview questions for ${block.title}.`,
+    submitLabel: block.submitLabel ?? "Continue",
+    cancelLabel: block.cancelLabel ?? "Cancel interview",
+    interview: {
+      turn: nextTurn,
+      maxTurns,
+    },
+  });
+  state = { ...state, turn: nextTurn };
+  context.interviewStates.set(block.id, state);
+
+  return {
+    kind: "input-wait",
+    request,
+    summary: `${block.title} generated ${generation.fields.length} interview question${generation.fields.length === 1 ? "" : "s"}.`,
+  };
 };
 
 const resolveTemplateValue = (
@@ -4148,7 +5294,7 @@ const executeBlock = async (
   customizations: CustomizationDiscoveryResult,
   context: RalphResultContext,
   options: RalphRunOptions,
-): Promise<RalphBlockExecutionResult> => {
+): Promise<RalphExecutionStepResult> => {
   switch (block.type) {
     case "START":
       return {
@@ -4172,6 +5318,10 @@ const executeBlock = async (
         attempt: 1,
         summary: `Applied pack block ${block.title}.`,
       };
+    case "INPUT":
+      return executeInputBlock(block, context, options);
+    case "INTERVIEW":
+      return executeInterviewBlock(flow, block, config, customizations, context, options);
     case "UTILITY":
       return executeUtilityBlock(block, config, context, options);
     case "MCP_TOOL":
@@ -4302,18 +5452,29 @@ export const runRalphFlow = async (
     },
   });
   const variables = discoverRalphFlowVariables(flow);
-  const resolvedVariables = resolveVariableValues(variables, options.variableValues);
+  const checkpoint = options.checkpoint;
+  const variableNames = new Set(variables.map((variable) => variable.name));
+  const suppliedVariableValues = checkpoint
+    ? Object.fromEntries(
+        Object.entries({
+          ...(options.variableValues ?? {}),
+          ...checkpoint.variables,
+        }).filter(([name]) => variableNames.has(name)),
+      )
+    : options.variableValues;
+  const resolvedVariables = resolveVariableValues(variables, suppliedVariableValues);
   const validation = validateRalphFlow(flow, {
     config,
     variableValues: resolvedVariables.values,
   });
   const finishRun = async (result: RalphRunResult): Promise<RalphRunResult> => {
-    const finishedAt = createLogTimestamp();
+    const finishedAt =
+      result.status === "waiting-for-input" ? undefined : createLogTimestamp();
     const runResult: RalphRunResult = {
       ...result,
       runId,
       startedAt,
-      finishedAt,
+      ...(finishedAt ? { finishedAt } : {}),
     };
     logger?.simple({
       kind: "run-end",
@@ -4372,18 +5533,24 @@ export const runRalphFlow = async (
     );
   }
 
-  const events: RalphRunEvent[] = [];
-  const blockResults: RalphBlockExecutionResult[] = [];
+  const events: RalphRunEvent[] = checkpoint ? [...checkpoint.events] : [];
+  const blockResults: RalphBlockExecutionResult[] = checkpoint
+    ? [...checkpoint.blockResults]
+    : [];
   const resultContext: RalphResultContext = {
     runId,
-    resultsByBlock: new Map(),
-    runLog: [],
-    variables: resolvedVariables.values,
+    resultsByBlock: restoreRalphResultMap(checkpoint),
+    runLog: checkpoint ? [...checkpoint.runLog] : [],
+    variables: {
+      ...resolvedVariables.values,
+      ...(checkpoint?.variables ?? {}),
+    },
+    interviewStates: new Map(Object.entries(checkpoint?.interviewStates ?? {})),
   };
-  const errorCounts = new Map<string, number>();
-  const repeatedFailures = new Map<string, RalphRepeatedFailureState>();
-  let currentBlockId: string | undefined = start.id;
-  let transitions = 0;
+  const errorCounts = restoreRalphNumberMap(checkpoint?.errorCounts);
+  const repeatedFailures = restoreRalphRepeatedFailureMap(checkpoint?.repeatedFailures);
+  let currentBlockId: string | undefined = checkpoint?.currentBlockId ?? start.id;
+  let transitions = checkpoint?.transitions ?? 0;
   const maxTransitions =
     options.maxTransitions === null
       ? null
@@ -4477,7 +5644,7 @@ export const runRalphFlow = async (
       details: {
         block,
         context: {
-          variables: resolvedVariables.values,
+          variables: resultContext.variables,
           lastResult: resultContext.lastResult,
           runLog: resultContext.runLog,
         },
@@ -4493,7 +5660,7 @@ export const runRalphFlow = async (
       options.onEvent,
     );
 
-    const result = await executeBlock(
+    const stepResult = await executeBlock(
       flow,
       block,
       config,
@@ -4501,6 +5668,87 @@ export const runRalphFlow = async (
       resultContext,
       options,
     );
+
+    if (isRalphInputWaitStepResult(stepResult)) {
+      await emitRunEvent(
+        events,
+        {
+          type: "input-required",
+          blockId: block.id,
+          request: stepResult.request,
+        },
+        options.onEvent,
+      );
+      logger?.simple({
+        kind: "input-required",
+        message: stepResult.summary,
+        ...getBlockLogFields(flow, block, config),
+        attempt,
+      });
+      logger?.trace({
+        kind: "input-required",
+        message: stepResult.summary,
+        ...getBlockLogFields(flow, block, config),
+        attempt,
+        details: stepResult.request,
+      });
+
+      const runCheckpoint = createRunCheckpoint(
+        block.id,
+        transitions,
+        resultContext,
+        blockResults,
+        events,
+        errorCounts,
+        repeatedFailures,
+        stepResult.request,
+      );
+
+      return finishRun({
+        flow: flow.id,
+        status: "waiting-for-input",
+        summary: stepResult.summary,
+        events,
+        blockResults,
+        missingVariables: [],
+        unknownVariables: [],
+        validation,
+        pendingInput: stepResult.request,
+        checkpoint: runCheckpoint,
+      });
+    }
+
+    const result = stepResult;
+    const consumedInput = getPendingInputForBlock(block, options);
+
+    if (
+      consumedInput &&
+      options.inputResponse?.requestId === consumedInput.id
+    ) {
+      const eventType =
+        options.inputResponse.action === "cancel"
+          ? "input-cancelled"
+          : "input-submitted";
+      await emitRunEvent(
+        events,
+        {
+          type: eventType,
+          blockId: block.id,
+          requestId: consumedInput.id,
+        },
+        options.onEvent,
+      );
+      logger?.simple({
+        kind: "input-submitted",
+        message:
+          eventType === "input-cancelled"
+            ? `${block.title} input was cancelled.`
+            : `${block.title} input was submitted.`,
+        ...getBlockLogFields(flow, block, config),
+        attempt,
+      });
+    }
+
     blockResults.push(result);
     updateResultContext(resultContext, result);
     const blockDurationMs = Date.now() - blockStartedAt;

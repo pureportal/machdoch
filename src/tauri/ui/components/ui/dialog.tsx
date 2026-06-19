@@ -5,6 +5,39 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 import { cn } from "../../lib/utils"
 import { Button } from "./button"
 
+interface DialogInteractOutsideConfirmationOptions {
+  title?: string
+  description?: string
+  cancelLabel?: string
+  confirmLabel?: string
+}
+
+type DialogInteractOutsideConfirmation =
+  | boolean
+  | DialogInteractOutsideConfirmationOptions
+
+type DialogContentProps =
+  React.ComponentProps<typeof DialogPrimitive.Content> & {
+    showCloseButton?: boolean
+    confirmOnInteractOutside?: DialogInteractOutsideConfirmation
+  }
+
+const getDialogInteractOutsideConfirmationOptions = (
+  value: DialogInteractOutsideConfirmation | undefined,
+): DialogInteractOutsideConfirmationOptions | null => {
+  if (!value) {
+    return null
+  }
+
+  return {
+    title: "Close dialog?",
+    description: "This dialog has unsaved state.",
+    cancelLabel: "Stay",
+    confirmLabel: "Close",
+    ...(typeof value === "object" ? value : {}),
+  }
+}
+
 function Dialog({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -49,26 +82,113 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  confirmOnInteractOutside,
+  onInteractOutside,
+  onPointerDownOutside,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content> & {
-  showCloseButton?: boolean
-}) {
+}: DialogContentProps) {
+  const [showInteractOutsideConfirmation, setShowInteractOutsideConfirmation] =
+    React.useState(false)
+  const interactOutsideConfirmation =
+    getDialogInteractOutsideConfirmationOptions(confirmOnInteractOutside)
+  const confirmationTitleId = React.useId()
+  const confirmationDescriptionId = React.useId()
+
+  const requestInteractOutsideConfirmation = (
+    event: Event,
+  ): void => {
+    if (!interactOutsideConfirmation || event.defaultPrevented) {
+      return
+    }
+
+    event.preventDefault()
+    setShowInteractOutsideConfirmation(true)
+  }
+
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border border-oklch(0.92 0.004 286.32) bg-oklch(1 0 0) p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg dark:border-oklch(1 0 0 / 10%) dark:bg-oklch(0.141 0.005 285.823)",
+          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border border-slate-200 bg-white p-6 text-slate-950 shadow-2xl duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100",
           className
         )}
+        onOpenAutoFocus={(event) => {
+          setShowInteractOutsideConfirmation(false)
+          onOpenAutoFocus?.(event)
+        }}
+        onCloseAutoFocus={(event) => {
+          setShowInteractOutsideConfirmation(false)
+          onCloseAutoFocus?.(event)
+        }}
+        onInteractOutside={(event) => {
+          onInteractOutside?.(event)
+          requestInteractOutsideConfirmation(event)
+        }}
+        onPointerDownOutside={(event) => {
+          onPointerDownOutside?.(event)
+          requestInteractOutsideConfirmation(event)
+        }}
         {...props}
       >
         {children}
+        {showInteractOutsideConfirmation && interactOutsideConfirmation ? (
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby={confirmationTitleId}
+            aria-describedby={
+              interactOutsideConfirmation.description
+                ? confirmationDescriptionId
+                : undefined
+            }
+            className="absolute inset-0 z-20 grid place-items-center bg-slate-950/70 px-4 backdrop-blur-sm"
+          >
+            <div className="grid w-full max-w-sm gap-4 rounded-lg border border-slate-200 bg-white p-4 text-slate-950 shadow-2xl shadow-black/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:shadow-black/45">
+              <div className="grid gap-1.5">
+                <div id={confirmationTitleId} className="text-sm font-semibold">
+                  {interactOutsideConfirmation.title}
+                </div>
+                {interactOutsideConfirmation.description ? (
+                  <div
+                    id={confirmationDescriptionId}
+                    className="text-sm leading-5 text-slate-600 dark:text-slate-300"
+                  >
+                    {interactOutsideConfirmation.description}
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowInteractOutsideConfirmation(false)}
+                  className="text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+                >
+                  {interactOutsideConfirmation.cancelLabel}
+                </Button>
+                <DialogPrimitive.Close asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-slate-300 bg-white text-slate-950 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
+                  >
+                    {interactOutsideConfirmation.confirmLabel}
+                  </Button>
+                </DialogPrimitive.Close>
+              </div>
+            </div>
+          </div>
+        ) : null}
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="absolute top-4 right-4 rounded-xs cursor-pointer opacity-70 ring-offset-oklch(1 0 0) transition-opacity hover:opacity-100 focus:ring-2 focus:ring-oklch(0.705 0.015 286.067) focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-oklch(0.967 0.001 286.375) data-[state=open]:text-oklch(0.552 0.016 285.938) [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 dark:ring-offset-oklch(0.141 0.005 285.823) dark:focus:ring-oklch(0.552 0.016 285.938) dark:data-[state=open]:bg-oklch(0.274 0.006 286.033) dark:data-[state=open]:text-oklch(0.705 0.015 286.067)"
+            className="absolute top-4 right-4 cursor-pointer rounded-md p-1 text-slate-500 opacity-80 ring-offset-white transition hover:bg-slate-100 hover:text-slate-950 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/45 focus:ring-offset-2 disabled:pointer-events-none dark:text-slate-400 dark:ring-offset-slate-950 dark:hover:bg-slate-800 dark:hover:text-white [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
             <XIcon />
             <span className="sr-only">Close</span>

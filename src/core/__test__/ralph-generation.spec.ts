@@ -521,6 +521,100 @@ describe("createRalphFlowWithAgent", () => {
     }
   });
 
+  it("reports non-blocking quality warnings for example-shaped visual blocks", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
+
+    try {
+      vi.mocked(executeTask).mockResolvedValue(
+        createGeneratedFlowResult(
+          createFlow({
+            id: "visual-template-flow",
+            alias: "visual-template-flow",
+            name: "Visual template flow",
+            settings: { maxTransitions: 10 },
+            blocks: [
+              { id: "start", type: "START", title: "Start" },
+              {
+                id: "main-task",
+                type: "PROMPT",
+                title: "Main Task",
+                prompt: "Do the requested work.",
+              },
+              {
+                id: "review-result",
+                type: "VALIDATOR",
+                title: "Review Result",
+                prompt:
+                  "Validate the completed work. End with RALPH_DECISION: DONE, CONTINUE, RETRY, or ERROR.",
+                validationScope: { mode: "sinceLastValidator" },
+              },
+              {
+                id: "success",
+                type: "END",
+                title: "Success",
+                status: "success",
+              },
+              {
+                id: "work-note",
+                type: "NOTE",
+                title: "Operator note",
+                text: "Copied template note.",
+              },
+              {
+                id: "work-group",
+                type: "GROUP",
+                title: "Work loop",
+                childBlockIds: ["main-task", "review-result"],
+              },
+            ],
+            edges: [
+              {
+                id: "start-to-main-task",
+                from: "start",
+                fromOutput: "SUCCESS",
+                to: "main-task",
+              },
+              {
+                id: "main-task-to-review",
+                from: "main-task",
+                fromOutput: "SUCCESS",
+                to: "review-result",
+              },
+              {
+                id: "review-done",
+                from: "review-result",
+                fromOutput: "DONE",
+                to: "success",
+              },
+              {
+                id: "review-continue",
+                from: "review-result",
+                fromOutput: "CONTINUE",
+                to: "main-task",
+              },
+            ],
+          }),
+        ),
+      );
+
+      const result = await createRalphFlowWithAgent(workspace, {
+        name: "visual-template-flow",
+        prompt: "Create a small test flow.",
+        maxRounds: 1,
+        config: runtimeConfig,
+        customizations,
+      });
+      const validatorMarkdown = result.validatorResults[0]?.response?.markdown ?? "";
+
+      expect(result.status).toBe("created");
+      expect(validatorMarkdown).toContain("Small generated flows should usually omit NOTE and GROUP blocks");
+      expect(validatorMarkdown).toContain("schema-example block id(s)");
+      expect(validatorMarkdown).toContain("RALPH_DECISION: DONE");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("does not use prompt keyword matching for generated flow validation", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
 
@@ -785,10 +879,14 @@ describe("createRalphFlowWithAgent", () => {
         "Use graph blocks: START, PROMPT, VALIDATOR, DECISION, PACK, UTILITY, NOTE, GROUP, END.",
       );
       expect(generatorTask).toContain(
-        "NOTE and GROUP blocks are visual organization only",
+        "omit NOTE and GROUP blocks by default",
       );
+      expect(generatorTask).toContain("A generated flow may have zero, one, or multiple NOTE/GROUP blocks");
       expect(generatorTask).toContain("NOTE.text");
       expect(generatorTask).toContain("GROUP.childBlockIds");
+      expect(generatorTask).toContain("Minimal schema example:");
+      expect(generatorTask).not.toContain('"id": "work-note"');
+      expect(generatorTask).not.toContain('"id": "work-group"');
       expect(generatorTask).toContain("Do not write files yourself");
       expect(generatorTask).toContain("Use tools only when they materially reduce uncertainty.");
       expect(generatorTask).toContain("inspect workspace files or run short read-only commands");
@@ -810,6 +908,9 @@ describe("createRalphFlowWithAgent", () => {
       expect(generatorOptions?.systemPromptSections?.join("\n")).toContain(
         "You are Ralph Flow Generator",
       );
+      expect(generatorOptions?.systemPromptSections?.join("\n")).toContain(
+        "Omit NOTE and GROUP blocks by default",
+      );
       expect(
         generatorOptions?.additionalToolDefinitions?.map(
           (tool) => tool.spec.name,
@@ -826,6 +927,21 @@ describe("createRalphFlowWithAgent", () => {
           "ralph_submit_flow_candidate",
         ]),
       );
+      expect(
+        generatorOptions?.additionalToolDefinitions?.find(
+          (tool) => tool.spec.name === "ralph_submit_flow_candidate",
+        )?.spec.inputSchema,
+      ).toMatchObject({
+        properties: {
+          flow: expect.objectContaining({
+            properties: expect.objectContaining({
+              blocks: expect.any(Object),
+              edges: expect.any(Object),
+            }),
+          }),
+          flowJson: { type: "string" },
+        },
+      });
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

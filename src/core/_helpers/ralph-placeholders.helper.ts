@@ -2,6 +2,7 @@ import type {
   RalphFlow,
   RalphFlowBlock,
   RalphFlowVariable,
+  RalphInputField,
   RalphVariableType,
 } from "../ralph.js";
 
@@ -39,6 +40,88 @@ export interface ParsedRalphPlaceholder {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const RALPH_VARIABLE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+
+const getInputFieldVariableType = (
+  field: RalphInputField,
+): RalphVariableType => {
+  switch (field.type) {
+    case "number":
+      return "number";
+    case "boolean":
+      return "boolean";
+    case "url":
+      return "url";
+    case "path":
+      return "path";
+    case "file":
+      return "file";
+    case "files":
+      return "files";
+    case "image":
+      return "image";
+    case "images":
+      return "images";
+    case "textarea":
+    case "multiselect":
+      return "text";
+    case "select":
+    case "text":
+      return "string";
+  }
+};
+
+const getInputFieldVariableNames = (field: RalphInputField): string[] => {
+  const names = new Set<string>();
+  const configuredName = field.variableName?.trim();
+
+  if (configuredName && RALPH_VARIABLE_NAME_PATTERN.test(configuredName)) {
+    names.add(configuredName);
+  }
+
+  if (RALPH_VARIABLE_NAME_PATTERN.test(field.id)) {
+    names.add(field.id);
+  }
+
+  return [...names];
+};
+
+const getDefaultInterviewVariableName = (blockId: string): string => {
+  return `${blockId.replace(/[^A-Za-z0-9_]+/gu, "_")}_interview`;
+};
+
+const getProducedVariables = (block: RalphFlowBlock): RalphFlowVariable[] => {
+  if (block.type === "INPUT") {
+    return block.fields.flatMap((field) =>
+      getInputFieldVariableNames(field).map((name) => ({
+        name,
+        type: getInputFieldVariableType(field),
+        default: "",
+        required: false,
+      })),
+    );
+  }
+
+  if (block.type === "INTERVIEW") {
+    const configuredName = block.outputVariableName?.trim();
+    const name =
+      configuredName && RALPH_VARIABLE_NAME_PATTERN.test(configuredName)
+        ? configuredName
+        : getDefaultInterviewVariableName(block.id);
+
+    return [
+      {
+        name,
+        type: "text",
+        default: "",
+        required: false,
+      },
+    ];
+  }
+
+  return [];
 };
 
 const isRalphPlaceholderVariableType = (
@@ -147,7 +230,18 @@ export const getRalphPromptLikeTexts = (block: RalphFlowBlock): string[] => {
     case "PROMPT":
     case "VALIDATOR":
     case "DECISION":
+    case "INTERVIEW":
       return [block.prompt];
+    case "INPUT":
+      return [
+        block.prompt ?? "",
+        ...block.fields.flatMap((field) => [
+          field.label,
+          field.placeholder ?? "",
+          field.help ?? "",
+          typeof field.defaultValue === "string" ? field.defaultValue : "",
+        ]),
+      ];
     case "MCP_TOOL":
       return [
         block.serverId,
@@ -208,6 +302,12 @@ export const discoverRalphFlowVariables = (
   }
 
   for (const block of flow.blocks) {
+    for (const produced of getProducedVariables(block)) {
+      if (!variables.has(produced.name)) {
+        variables.set(produced.name, produced);
+      }
+    }
+
     for (const text of [
       ...getRalphPromptLikeTexts(block),
       ...getRalphAttachmentTemplateTexts(block),
@@ -220,8 +320,11 @@ export const discoverRalphFlowVariables = (
         const current = variables.get(placeholder.variable.name);
         variables.set(placeholder.variable.name, {
           ...placeholder.variable,
-          ...(current?.default !== undefined
-            ? { default: current.default, required: current.required }
+          ...(current
+            ? {
+                ...(current.default !== undefined ? { default: current.default } : {}),
+                required: current.required,
+              }
             : {}),
           type: current?.type ?? placeholder.variable.type,
         });

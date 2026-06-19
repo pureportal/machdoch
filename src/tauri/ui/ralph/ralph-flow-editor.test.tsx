@@ -8,12 +8,15 @@ import {
   deleteRalphFlow,
   listRalphFlowRevisions,
   listRalphFlows,
+  listRalphRuns,
   loadActiveDesktopTasks,
   loadProviderModelCatalog,
   resolveDroppedPaths,
   restoreRalphFlowRevision,
   runRalphFlow,
   saveRalphFlow,
+  showRalphRunDetail,
+  showRalphRunLog,
   showRalphFlow,
   subscribeToDesktopTaskProgress,
   type DesktopTaskProgressEvent,
@@ -27,12 +30,15 @@ vi.mock("../runtime", () => ({
   deleteRalphFlow: vi.fn(),
   listRalphFlowRevisions: vi.fn(),
   listRalphFlows: vi.fn(),
+  listRalphRuns: vi.fn(),
   loadActiveDesktopTasks: vi.fn(),
   loadProviderModelCatalog: vi.fn(),
   resolveDroppedPaths: vi.fn(),
   restoreRalphFlowRevision: vi.fn(),
   runRalphFlow: vi.fn(),
   saveRalphFlow: vi.fn(),
+  showRalphRunDetail: vi.fn(),
+  showRalphRunLog: vi.fn(),
   showRalphFlow: vi.fn(),
   subscribeToDesktopTaskProgress: vi.fn(),
 }));
@@ -103,12 +109,15 @@ describe("RalphFlowEditor", () => {
     vi.mocked(deleteRalphFlow).mockReset();
     vi.mocked(listRalphFlowRevisions).mockReset();
     vi.mocked(listRalphFlows).mockReset();
+    vi.mocked(listRalphRuns).mockReset();
     vi.mocked(loadActiveDesktopTasks).mockReset();
     vi.mocked(loadProviderModelCatalog).mockReset();
     vi.mocked(resolveDroppedPaths).mockReset();
     vi.mocked(restoreRalphFlowRevision).mockReset();
     vi.mocked(runRalphFlow).mockReset();
     vi.mocked(saveRalphFlow).mockReset();
+    vi.mocked(showRalphRunDetail).mockReset();
+    vi.mocked(showRalphRunLog).mockReset();
     vi.mocked(showRalphFlow).mockReset();
     vi.mocked(subscribeToDesktopTaskProgress).mockReset();
     desktopProgressListener = null;
@@ -128,6 +137,9 @@ describe("RalphFlowEditor", () => {
     vi.mocked(listRalphFlowRevisions).mockResolvedValue({
       flow: "ralph-flow",
       revisions: [],
+    });
+    vi.mocked(listRalphRuns).mockResolvedValue({
+      runs: [],
     });
     vi.mocked(loadActiveDesktopTasks).mockResolvedValue([]);
     vi.mocked(showRalphFlow).mockResolvedValue({
@@ -181,6 +193,33 @@ describe("RalphFlowEditor", () => {
       },
     }));
     vi.mocked(cancelDesktopTask).mockResolvedValue(undefined);
+    vi.mocked(showRalphRunDetail).mockResolvedValue({
+      scope: "workspace",
+      path: "C:\\Project\\.machdoch\\ralph\\runs\\run-1\\run.json",
+      record: {
+        schemaVersion: 1,
+        id: "run-1",
+        createdAt: "2026-06-19T07:00:00.000Z",
+        flowId: "background-flow",
+        flowName: "Background Flow",
+        status: "completed",
+        summary: "Done.",
+        variableValues: {},
+        events: [],
+        blockResults: [],
+        validation: {
+          valid: true,
+          errors: [],
+          warnings: [],
+        },
+      },
+    });
+    vi.mocked(showRalphRunLog).mockResolvedValue({
+      id: "run-1",
+      kind: "simple",
+      path: "C:\\Project\\.machdoch\\ralph\\runs\\run-1\\simple.md",
+      content: "Run log.",
+    });
     openMock.mockReset();
     openMock.mockResolvedValue(null);
 
@@ -1761,6 +1800,165 @@ describe("RalphFlowEditor", () => {
       expect(loadActiveDesktopTasks).toHaveBeenCalled();
     });
     expect(await screen.findByLabelText("Flow status: Running")).toBeTruthy();
+  });
+
+  it("keeps the run button label scoped to the selected flow", async () => {
+    const flow = createRunnableFlow();
+
+    vi.mocked(loadActiveDesktopTasks).mockResolvedValue([
+      {
+        id: "ralph-other-flow-1700000000000-abc123",
+        kind: "ralph",
+        workspaceRoot: "C:\\Project",
+        arguments: ["run", "other-flow"],
+        startedAt: 1_700_000_000_000,
+      },
+    ]);
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: flow.id,
+          name: flow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+          blockCount: 2,
+          edgeCount: 1,
+          variableCount: 0,
+          valid: true,
+        },
+        {
+          id: "other-flow",
+          name: "Other Flow",
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\other-flow.json",
+          blockCount: 2,
+          edgeCount: 1,
+          variableCount: 0,
+          valid: true,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+      flow,
+    });
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    await screen.findByText("Ready to run.");
+    await waitFor(() => {
+      expect(loadActiveDesktopTasks).toHaveBeenCalled();
+    });
+
+    const runButton = screen
+      .getAllByRole("button", { name: "Run Ralph flow" })
+      .find((button) => !button.hasAttribute("disabled"));
+
+    expect(runButton?.textContent).toContain("Run");
+    expect(runButton?.textContent).not.toContain("Run another");
+  });
+
+  it("opens structured run details from history", async () => {
+    const flow = createRunnableFlow();
+
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: flow.id,
+          name: flow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+          blockCount: 2,
+          edgeCount: 1,
+          variableCount: 1,
+          valid: true,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+      flow: {
+        ...flow,
+        variables: [
+          {
+            name: "scope",
+            type: "path",
+            required: true,
+          },
+        ],
+      },
+    });
+    vi.mocked(listRalphRuns).mockResolvedValue({
+      runs: [
+        {
+          id: "run-42",
+          path: "C:\\Project\\.machdoch\\ralph\\runs\\run-42\\run.json",
+          createdAt: "2026-06-19T07:00:00.000Z",
+          finishedAt: "2026-06-19T07:00:02.000Z",
+          flowId: flow.id,
+          flowName: flow.name,
+          status: "completed",
+          summary: "Completed history.",
+          blockCount: 1,
+          eventCount: 2,
+        },
+      ],
+    });
+    vi.mocked(showRalphRunDetail).mockResolvedValue({
+      scope: "workspace",
+      path: "C:\\Project\\.machdoch\\ralph\\runs\\run-42\\run.json",
+      record: {
+        schemaVersion: 1,
+        id: "run-42",
+        createdAt: "2026-06-19T07:00:00.000Z",
+        finishedAt: "2026-06-19T07:00:02.000Z",
+        flowId: flow.id,
+        flowName: flow.name,
+        status: "completed",
+        summary: "Completed history.",
+        variableValues: {
+          scope: "src/core",
+        },
+        events: [
+          { type: "block-start", blockId: "start", attempt: 1 },
+          {
+            type: "end",
+            blockId: "end",
+            status: "completed",
+            summary: "Done.",
+          },
+        ],
+        blockResults: [
+          {
+            blockId: "start",
+            output: "SUCCESS",
+            status: "completed",
+            attempt: 1,
+            summary: "Started.",
+          },
+        ],
+        validation: {
+          valid: true,
+          errors: [],
+          warnings: [],
+        },
+      },
+    });
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    fireEvent.click(await screen.findByText("Ready to run."));
+    fireEvent.click(await screen.findByRole("button", { name: "History" }));
+    fireEvent.click(await screen.findByText("Completed history."));
+
+    await waitFor(() => {
+      expect(showRalphRunDetail).toHaveBeenCalledWith(
+        "C:\\Project",
+        "run-42",
+        "workspace",
+      );
+    });
+    expect(await screen.findByText("Resolved variables")).toBeTruthy();
+    expect(await screen.findByText("src/core")).toBeTruthy();
   });
 
   it("stops an active Ralph run through the desktop cancel bridge", async () => {

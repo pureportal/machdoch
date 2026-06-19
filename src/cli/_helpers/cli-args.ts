@@ -57,11 +57,14 @@ export type RalphCliAction =
   | "delete"
   | "save"
   | "run"
+  | "resume"
+  | "run-detail"
   | "runs"
   | "log"
   | "revisions"
   | "restore"
   | "create"
+  | "interview"
   | "watches";
 export type RalphCliGenerationMode = "do-it" | "interview";
 export type RalphCliGenerationTarget = "flow" | "prompt-block" | "refactor";
@@ -150,6 +153,8 @@ export interface RalphCliOptions {
   target?: RalphCliGenerationTarget;
   params?: string[];
   paramsFile?: string;
+  inputJson?: string;
+  inputJsonFile?: string;
   maxRounds?: number;
   maxTransitions?: number;
   trace?: boolean;
@@ -323,11 +328,14 @@ const RALPH_ACTIONS: ReadonlySet<RalphCliAction> = new Set([
   "delete",
   "save",
   "run",
+  "resume",
+  "run-detail",
   "runs",
   "log",
   "revisions",
   "restore",
   "create",
+  "interview",
   "watches",
 ]);
 const RALPH_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<RalphCliAction> = new Set([
@@ -336,6 +344,8 @@ const RALPH_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<RalphCliAction> = new Set([
   "delete",
   "save",
   "run",
+  "resume",
+  "run-detail",
   "log",
   "revisions",
   "restore",
@@ -663,9 +673,12 @@ Usage:
   machdoch ralph restore <flow> --revision <revision-id> [--scope <user|workspace>] [--json]
   machdoch ralph save <flow> --flow-json <json> [--scope <user|workspace>] [--json]
   machdoch ralph run <flow> [--scope <user|workspace>] [--param <name=value>] [--json]
+  machdoch ralph resume <run-id> (--input-json <json>|--input-json-file <path>) [--scope <user|workspace>] [--json]
   machdoch ralph runs [flow] [--scope <user|workspace>] [--json]
+  machdoch ralph run-detail <run-id> [--scope <user|workspace>] [--json]
   machdoch ralph log <run-id> [--scope <user|workspace>] [--trace] [--json]
   machdoch ralph create [flow] --prompt <text> [--scope <user|workspace>] [--name <flow>] [--flow-target <flow|prompt-block|refactor>] [--generation-mode <do-it|interview>] [--max-rounds <n>] [--json]
+  machdoch ralph interview [flow] --prompt <text> [--scope <user|workspace>] [--name <flow>] [--flow-target <flow|prompt-block|refactor>] [--existing-flow-json <json>] [--input-json <json>] [--max-rounds <n>] [--json]
   machdoch ralph watches list|sync|run [--json]
   machdoch ralph watches create (--watch-json <json>|--watch-json-file <path>) [--json]
   machdoch ralph watches delete <watch-id> [--json]
@@ -764,8 +777,11 @@ Options:
   --generation-mode <mode>
                           Ralph generation style: do-it or interview.
   --param <name=value>    Set a Ralph flow variable for \`ralph run\`. Repeat for multiple variables.
-  --max-rounds <n>        Maximum generator/validator rounds for \`ralph create\` or \`instructions generate\`.
-  --max-transitions <n>   Stop a Ralph run after this many graph transitions.
+  --input-json <json>     Submit answers for \`ralph resume\`. Use either a values object or a full input response.
+  --input-json-file <path>
+                          Read Ralph resume answers from a JSON file.
+  --max-rounds <n>        Maximum rounds for \`ralph create\`, \`ralph interview\`, or \`instructions generate\`.
+  --max-transitions <n>   Stop a Ralph run or resume after this many graph transitions.
   --trace                 Show the detailed JSONL trace for \`ralph log\`.
   --include-disabled      Include disabled preset and configured MCP servers in \`mcp servers\`.
   --arguments-json <json> JSON object arguments for \`mcp call-tool\` or \`mcp get-prompt\`.
@@ -876,6 +892,8 @@ export const parseCliArgs = (
         "generation-mode"?: string;
         param?: string[];
         "params-file"?: string;
+        "input-json"?: string;
+        "input-json-file"?: string;
         "max-rounds"?: string;
         "max-transitions"?: string;
         trace?: boolean;
@@ -972,6 +990,8 @@ export const parseCliArgs = (
         "generation-mode": { type: "string" },
         param: { type: "string", multiple: true },
         "params-file": { type: "string" },
+        "input-json": { type: "string" },
+        "input-json-file": { type: "string" },
         "max-rounds": { type: "string" },
         "max-transitions": { type: "string" },
         trace: { type: "boolean" },
@@ -1108,6 +1128,8 @@ export const parseCliArgs = (
     ?.map((entry) => normalizeOptionalString(entry))
     .filter((entry): entry is string => Boolean(entry));
   const rawRalphParamsFile = normalizeOptionalString(values?.["params-file"]);
+  const rawRalphInputJson = normalizeOptionalString(values?.["input-json"]);
+  const rawRalphInputJsonFile = normalizeOptionalString(values?.["input-json-file"]);
   const rawRalphMaxRounds = normalizeOptionalString(values?.["max-rounds"]);
   const rawRalphMaxTransitions = normalizeOptionalString(values?.["max-transitions"]);
   const rawRalphTrace = values?.trace === true;
@@ -1655,15 +1677,21 @@ export const parseCliArgs = (
       RALPH_ACTIONS_REQUIRING_SUBJECT.has(action) &&
       !normalizeOptionalString(rawSubject)
     ) {
-      fail(`Expected a flow id after \`machdoch ralph ${action}\`.`);
+      fail(
+        action === "log" || action === "run-detail" || action === "resume"
+          ? `Expected a run id after \`machdoch ralph ${action}\`.`
+          : `Expected a flow id after \`machdoch ralph ${action}\`.`,
+      );
     }
 
-    if (action === "create" && !rawSchedulerPrompt && !rawSchedulerPromptFile) {
-      fail("`machdoch ralph create` expects --prompt or --prompt-file.");
+    const isGenerationCommand = action === "create" || action === "interview";
+
+    if (isGenerationCommand && !rawSchedulerPrompt && !rawSchedulerPromptFile) {
+      fail(`\`machdoch ralph ${action}\` expects --prompt or --prompt-file.`);
     }
 
-    if (action !== "create" && (rawSchedulerPrompt || rawSchedulerPromptFile)) {
-      fail("--prompt and --prompt-file are only valid for `machdoch ralph create`.");
+    if (!isGenerationCommand && (rawSchedulerPrompt || rawSchedulerPromptFile)) {
+      fail("--prompt and --prompt-file are only valid for `machdoch ralph create` or `machdoch ralph interview`.");
     }
 
     if (action === "save" && !rawRalphFlowJson && !rawRalphFlowJsonFile) {
@@ -1692,19 +1720,19 @@ export const parseCliArgs = (
       fail("--watch-json-file is only valid for `machdoch ralph watches create`.");
     }
 
-    if (action === "create" && rawRalphExistingFlowJson && rawRalphExistingFlowJsonFile) {
-      fail("Use either --existing-flow-json or --existing-flow-json-file for `machdoch ralph create`, not both.");
+    if (isGenerationCommand && rawRalphExistingFlowJson && rawRalphExistingFlowJsonFile) {
+      fail(`Use either --existing-flow-json or --existing-flow-json-file for \`machdoch ralph ${action}\`, not both.`);
     }
 
     if (
-      action !== "create" &&
+      !isGenerationCommand &&
       (rawRalphExistingFlowJson || rawRalphExistingFlowJsonFile)
     ) {
       if (rawRalphExistingFlowJson) {
-        fail("--existing-flow-json is only valid for `machdoch ralph create`.");
+        fail("--existing-flow-json is only valid for `machdoch ralph create` or `machdoch ralph interview`.");
       }
 
-      fail("--existing-flow-json-file is only valid for `machdoch ralph create`.");
+      fail("--existing-flow-json-file is only valid for `machdoch ralph create` or `machdoch ralph interview`.");
     }
 
     if (action === "restore" && !rawRalphRevision) {
@@ -1715,8 +1743,8 @@ export const parseCliArgs = (
       fail("--revision is only valid for `machdoch ralph restore`.");
     }
 
-    if (action !== "create" && rawRalphFlowTarget) {
-      fail("--flow-target is only valid for `machdoch ralph create`.");
+    if (!isGenerationCommand && rawRalphFlowTarget) {
+      fail("--flow-target is only valid for `machdoch ralph create` or `machdoch ralph interview`.");
     }
 
     if (
@@ -1747,12 +1775,28 @@ export const parseCliArgs = (
       fail("--params-file is only valid for `machdoch ralph run`.");
     }
 
-    if (action !== "create" && rawRalphMaxRounds) {
-      fail("--max-rounds is only valid for `machdoch ralph create`.");
+    if (action === "resume" && !rawRalphInputJson && !rawRalphInputJsonFile) {
+      fail("`machdoch ralph resume` expects --input-json or --input-json-file.");
     }
 
-    if (action !== "run" && rawRalphMaxTransitions) {
-      fail("--max-transitions is only valid for `machdoch ralph run`.");
+    if ((action === "resume" || action === "interview") && rawRalphInputJson && rawRalphInputJsonFile) {
+      fail(`Use either --input-json or --input-json-file for \`machdoch ralph ${action}\`, not both.`);
+    }
+
+    if (action !== "resume" && action !== "interview" && rawRalphInputJson) {
+      fail("--input-json is only valid for `machdoch ralph resume` or `machdoch ralph interview`.");
+    }
+
+    if (action !== "resume" && action !== "interview" && rawRalphInputJsonFile) {
+      fail("--input-json-file is only valid for `machdoch ralph resume` or `machdoch ralph interview`.");
+    }
+
+    if (!isGenerationCommand && rawRalphMaxRounds) {
+      fail("--max-rounds is only valid for `machdoch ralph create` or `machdoch ralph interview`.");
+    }
+
+    if (action !== "run" && action !== "resume" && rawRalphMaxTransitions) {
+      fail("--max-transitions is only valid for `machdoch ralph run` or `machdoch ralph resume`.");
     }
 
     if (action !== "log" && rawRalphTrace) {
@@ -1849,6 +1893,8 @@ export const parseCliArgs = (
             ? { params: rawRalphParams }
             : {}),
           ...(rawRalphParamsFile ? { paramsFile: rawRalphParamsFile } : {}),
+          ...(rawRalphInputJson ? { inputJson: rawRalphInputJson } : {}),
+          ...(rawRalphInputJsonFile ? { inputJsonFile: rawRalphInputJsonFile } : {}),
           ...(ralphMaxRounds !== undefined ? { maxRounds: ralphMaxRounds } : {}),
           ...(ralphMaxTransitions !== undefined
             ? { maxTransitions: ralphMaxTransitions }

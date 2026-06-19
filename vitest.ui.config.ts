@@ -25,7 +25,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
-    include: ["src/tauri/ui/**/*.test.ts", "src/tauri/ui/**/*.test.tsx"],
+    include: ["src/tauri/ui/**/*.spec.ts"],
     fileParallelism: false,
     passWithNoTests: true,
     restoreMocks: true,
@@ -35,8 +35,9 @@ export default defineConfig({
       include: ["src/tauri/ui/**/*.ts", "src/tauri/ui/**/*.tsx"],
       exclude: [
         "src/tauri/ui/**/*.test.ts",
-        "src/tauri/ui/**/*.test.tsx"
-      ]
-    }
-  }
+        "src/tauri/ui/**/*.test.tsx",
+        "src/tauri/ui/**/*.spec.ts",
+      ],
+    },
+  },
 });
