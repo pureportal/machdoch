@@ -35,7 +35,42 @@ import {
   normalizeSchedulerText,
   normalizeSchedulerTrimmedText,
 } from "./_helpers/normalize-scheduler-value.helper.js";
+import {
+  createScheduledJobTaskText,
+} from "./_helpers/create-scheduled-job-task-text.helper.js";
+import {
+  getScheduledJobContextPaths,
+} from "./_helpers/get-scheduled-job-context-paths.helper.js";
+import {
+  getSchedulerFrontmatterBoolean,
+} from "./_helpers/get-scheduler-frontmatter-boolean.helper.js";
+import {
+  getSchedulerFrontmatterNumber,
+} from "./_helpers/get-scheduler-frontmatter-number.helper.js";
+import {
+  getSchedulerFrontmatterString,
+} from "./_helpers/get-scheduler-frontmatter-string.helper.js";
+import {
+  getSchedulerFrontmatterStringList,
+} from "./_helpers/get-scheduler-frontmatter-string-list.helper.js";
+import {
+  createSchedulerEventRunDedupeSuffix,
+  getSchedulerEventTriggerFiringMode,
+  getSchedulerEventTriggerRecoveryMatched,
+  getSchedulerStatefulTriggerSkipReason,
+  getSchedulerTriggerCooldownSkipReason,
+  getSchedulerTriggerRateLimitSkipReason,
+  normalizeSchedulerEventPayload,
+  schedulerEventFiltersMatch,
+  schedulerEventTypeMatches,
+} from "./_helpers/scheduler-event-trigger-matching.helper.js";
 import { normalizeStringList } from "../helpers/normalize-string-list.helper.js";
+export {
+  createScheduledJobTaskText,
+} from "./_helpers/create-scheduled-job-task-text.helper.js";
+export {
+  getScheduledJobContextPaths,
+} from "./_helpers/get-scheduled-job-context-paths.helper.js";
 export {
   getNextCronRunAfter,
   parseCronExpression,
@@ -57,7 +92,6 @@ const DEFAULT_HISTORY_LIMIT = 100;
 const DEFAULT_EVENT_HISTORY_LIMIT = 1_000;
 const DEFAULT_MAX_CATCH_UP_RUNS = 100;
 const DEFAULT_CONCURRENCY_LIMIT = 1;
-const DEFAULT_STATEFUL_TRIGGER_REPEAT_MS = 60 * 60_000;
 const DEFAULT_RETRY_POLICY: ScheduledRetryPolicy = {
   maxAttempts: 1,
   factor: 2,
@@ -1345,185 +1379,6 @@ const isMissedRunPolicyValue = (
   return value === "skip" || value === "enqueue-latest" || value === "enqueue-all";
 };
 
-const getFrontmatterString = (
-  attributes: Record<string, FrontmatterValue>,
-  key: string,
-): string | undefined => {
-  const value = attributes[key];
-
-  return typeof value === "string" ? normalizeSchedulerTrimmedText(value) : undefined;
-};
-
-const getFrontmatterBoolean = (
-  attributes: Record<string, FrontmatterValue>,
-  key: string,
-): boolean | undefined => {
-  const value = attributes[key];
-
-  if (typeof value === "boolean") {
-    return value;
-  }
-
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const normalized = value.trim().toLowerCase();
-
-  if (["true", "yes", "on", "1"].includes(normalized)) {
-    return true;
-  }
-
-  if (["false", "no", "off", "0"].includes(normalized)) {
-    return false;
-  }
-
-  return undefined;
-};
-
-const getFrontmatterNumber = (
-  attributes: Record<string, FrontmatterValue>,
-  key: string,
-): number | undefined => {
-  const value = attributes[key];
-
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const parsed = Number(value.trim());
-
-  return Number.isFinite(parsed) ? parsed : undefined;
-};
-
-const getFrontmatterStringList = (
-  attributes: Record<string, FrontmatterValue>,
-  key: string,
-): string[] => {
-  const value = attributes[key];
-
-  if (Array.isArray(value)) {
-    return normalizeStringList(value);
-  }
-
-  if (typeof value === "string") {
-    return normalizeStringList(value.split(","));
-  }
-
-  return [];
-};
-
-const formatContextPathBlock = (paths: string[]): string => {
-  if (paths.length === 0) {
-    return "";
-  }
-
-  if (paths.length === 1) {
-    const [path] = paths;
-
-    return path ? `Use this path: "${path}"` : "";
-  }
-
-  return ["Use these paths:", ...paths.map((path) => `- path: "${path}"`)].join(
-    "\n",
-  );
-};
-
-const replaceSnapshotVariables = (
-  value: string,
-  variables: Record<string, string> | undefined,
-): string => {
-  if (!variables) {
-    return value;
-  }
-
-  return Object.entries(variables).reduce((current, [key, replacement]) => {
-    return current.replaceAll(`{${key}}`, replacement);
-  }, value);
-};
-
-const formatContextPackSection = (
-  pack: ScheduledContextPackSnapshot,
-): string => {
-  const lines = [`## Context Pack: ${pack.name}`];
-  const instructions = replaceSnapshotVariables(
-    pack.instructions ?? "",
-    pack.variableValues,
-  ).trim();
-  const prompt = replaceSnapshotVariables(
-    pack.prompt ?? "",
-    pack.variableValues,
-  ).trim();
-  const contextPathBlock = formatContextPathBlock(pack.contextPaths ?? []);
-
-  if (instructions) {
-    lines.push(`### Instructions\n${instructions}`);
-  }
-
-  if (prompt) {
-    lines.push(`### Prompt\n${prompt}`);
-  }
-
-  if (contextPathBlock) {
-    lines.push(`### Context Paths\n${contextPathBlock}`);
-  }
-
-  return lines.join("\n\n");
-};
-
-const formatMacroSection = (macro: ScheduledMacroReference): string => {
-  const lines = [`## Saved Macro: ${macro.name}`];
-
-  if (macro.promptInvocation) {
-    lines.push(`Run this saved prompt or macro invocation:\n${macro.promptInvocation}`);
-  } else {
-    lines.push(`Run the saved macro named "${macro.name}".`);
-  }
-
-  if (macro.inputValues && Object.keys(macro.inputValues).length > 0) {
-    lines.push(
-      [
-        "Inputs:",
-        ...Object.entries(macro.inputValues).map(
-          ([key, value]) => `- ${key}: ${value}`,
-        ),
-      ].join("\n"),
-    );
-  }
-
-  return lines.join("\n\n");
-};
-
-export const getScheduledJobContextPaths = (job: ScheduledJob): string[] => {
-  return normalizeStringList([
-    ...job.target.contextPaths,
-    ...job.target.contextPacks.flatMap((pack) => pack.contextPaths ?? []),
-  ]);
-};
-
-export const createScheduledJobTaskText = (job: ScheduledJob): string => {
-  if (job.target.type === "ralph-flow") {
-    return job.target.prompt.trim();
-  }
-
-  const sections = [
-    ...job.target.contextPacks.map(formatContextPackSection),
-    ...job.target.macros.map(formatMacroSection),
-    job.target.prompt,
-  ].filter((section) => section.trim().length > 0);
-  const contextPathBlock = formatContextPathBlock(job.target.contextPaths);
-
-  if (contextPathBlock) {
-    sections.push(contextPathBlock);
-  }
-
-  return sections.join("\n\n").trim();
-};
-
 const toWorkspaceRelativePath = (
   workspaceRoot: string,
   absolutePath: string,
@@ -1556,7 +1411,7 @@ const derivePromptName = (
   filePath: string,
   attributes: Record<string, FrontmatterValue>,
 ): string => {
-  const configuredName = getFrontmatterString(attributes, "name");
+  const configuredName = getSchedulerFrontmatterString(attributes, "name");
 
   if (configuredName) {
     return configuredName;
@@ -1575,11 +1430,11 @@ const parsePromptSchedule = (
 ): ScheduledJobScheduleInput | undefined => {
   const scheduleValue = attributes.schedule;
   const cron =
-    getFrontmatterString(attributes, "schedule-cron") ??
+    getSchedulerFrontmatterString(attributes, "schedule-cron") ??
     (typeof scheduleValue === "string" && scheduleValue.trim().includes(" ")
       ? scheduleValue.trim()
       : undefined);
-  const timezone = getFrontmatterString(attributes, "schedule-timezone");
+  const timezone = getSchedulerFrontmatterString(attributes, "schedule-timezone");
 
   if (cron) {
     return {
@@ -1589,8 +1444,8 @@ const parsePromptSchedule = (
     };
   }
 
-  const intervalMs = getFrontmatterNumber(attributes, "schedule-interval-ms");
-  const anchorAt = getFrontmatterNumber(attributes, "schedule-anchor-at");
+  const intervalMs = getSchedulerFrontmatterNumber(attributes, "schedule-interval-ms");
+  const anchorAt = getSchedulerFrontmatterNumber(attributes, "schedule-anchor-at");
 
   if (intervalMs !== undefined) {
     return {
@@ -1600,8 +1455,8 @@ const parsePromptSchedule = (
     };
   }
 
-  const delayMs = getFrontmatterNumber(attributes, "schedule-delay-ms");
-  const runAt = getFrontmatterNumber(attributes, "schedule-run-at");
+  const delayMs = getSchedulerFrontmatterNumber(attributes, "schedule-delay-ms");
+  const runAt = getSchedulerFrontmatterNumber(attributes, "schedule-run-at");
 
   if (delayMs !== undefined || runAt !== undefined) {
     return {
@@ -1640,8 +1495,8 @@ const parsePromptScheduleInput = async (
   const document = parseMarkdownDocument(content);
   const promptName = derivePromptName(filePath, document.attributes);
   const enabled =
-    getFrontmatterBoolean(document.attributes, "schedule-enabled") ??
-    getFrontmatterBoolean(document.attributes, "schedule") ??
+    getSchedulerFrontmatterBoolean(document.attributes, "schedule-enabled") ??
+    getSchedulerFrontmatterBoolean(document.attributes, "schedule") ??
     false;
   const schedule = parsePromptSchedule(document.attributes, warnings);
 
@@ -1654,65 +1509,65 @@ const parsePromptScheduleInput = async (
     };
   }
 
-  const modeText = getFrontmatterString(document.attributes, "schedule-mode");
-  const providerText = getFrontmatterString(
+  const modeText = getSchedulerFrontmatterString(document.attributes, "schedule-mode");
+  const providerText = getSchedulerFrontmatterString(
     document.attributes,
     "schedule-provider",
   );
-  const missedRunPolicyText = getFrontmatterString(
+  const missedRunPolicyText = getSchedulerFrontmatterString(
     document.attributes,
     "schedule-missed-run-policy",
   );
   const scheduleArguments =
-    getFrontmatterString(document.attributes, "schedule-arguments") ?? "";
+    getSchedulerFrontmatterString(document.attributes, "schedule-arguments") ?? "";
   const promptInvocation = `/${promptName}${scheduleArguments ? ` ${scheduleArguments}` : ""}`;
   const missedRunPolicy = isMissedRunPolicyValue(missedRunPolicyText)
     ? missedRunPolicyText
     : undefined;
-  const profile = getFrontmatterString(document.attributes, "schedule-profile");
-  const model = getFrontmatterString(document.attributes, "schedule-model");
-  const missedRunGraceMs = getFrontmatterNumber(
+  const profile = getSchedulerFrontmatterString(document.attributes, "schedule-profile");
+  const model = getSchedulerFrontmatterString(document.attributes, "schedule-model");
+  const missedRunGraceMs = getSchedulerFrontmatterNumber(
     document.attributes,
     "schedule-missed-run-grace-ms",
   );
-  const retryAttempts = getFrontmatterNumber(
+  const retryAttempts = getSchedulerFrontmatterNumber(
     document.attributes,
     "schedule-retry-attempts",
   );
-  const retryMinMs = getFrontmatterNumber(
+  const retryMinMs = getSchedulerFrontmatterNumber(
     document.attributes,
     "schedule-retry-min-ms",
   );
-  const retryMaxMs = getFrontmatterNumber(
+  const retryMaxMs = getSchedulerFrontmatterNumber(
     document.attributes,
     "schedule-retry-max-ms",
   );
-  const retryFactor = getFrontmatterNumber(
+  const retryFactor = getSchedulerFrontmatterNumber(
     document.attributes,
     "schedule-retry-factor",
   );
-  const retryRandomize = getFrontmatterBoolean(
+  const retryRandomize = getSchedulerFrontmatterBoolean(
     document.attributes,
     "schedule-retry-randomize",
   );
-  const concurrencyKey = getFrontmatterString(
+  const concurrencyKey = getSchedulerFrontmatterString(
     document.attributes,
     "schedule-queue-key",
   );
-  const concurrencyLimit = getFrontmatterNumber(
+  const concurrencyLimit = getSchedulerFrontmatterNumber(
     document.attributes,
     "schedule-concurrency-limit",
   );
-  const ttlMs = getFrontmatterNumber(document.attributes, "schedule-ttl-ms");
-  const maxDurationMs = getFrontmatterNumber(
+  const ttlMs = getSchedulerFrontmatterNumber(document.attributes, "schedule-ttl-ms");
+  const maxDurationMs = getSchedulerFrontmatterNumber(
     document.attributes,
     "schedule-max-duration-ms",
   );
-  const historyLimit = getFrontmatterNumber(
+  const historyLimit = getSchedulerFrontmatterNumber(
     document.attributes,
     "schedule-history-limit",
   );
-  const maxCatchUpRuns = getFrontmatterNumber(
+  const maxCatchUpRuns = getSchedulerFrontmatterNumber(
     document.attributes,
     "schedule-max-catch-up-runs",
   );
@@ -1725,17 +1580,17 @@ const parsePromptScheduleInput = async (
 
   const input: CreateScheduledJobInput = {
     name:
-      getFrontmatterString(document.attributes, "schedule-name") ??
+      getSchedulerFrontmatterString(document.attributes, "schedule-name") ??
       `Prompt: ${promptName}`,
     schedule,
     target: {
       workspaceRoot,
       prompt: promptInvocation,
-      contextPaths: getFrontmatterStringList(
+      contextPaths: getSchedulerFrontmatterStringList(
         document.attributes,
         "schedule-context",
       ),
-      imagePaths: getFrontmatterStringList(
+      imagePaths: getSchedulerFrontmatterStringList(
         document.attributes,
         "schedule-image",
       ),
@@ -1747,7 +1602,7 @@ const parsePromptScheduleInput = async (
       ...(model ? { model } : {}),
     },
     dedupeKey:
-      getFrontmatterString(document.attributes, "schedule-dedupe-key") ??
+      getSchedulerFrontmatterString(document.attributes, "schedule-dedupe-key") ??
       `prompt:${relativePath}`,
     ...(missedRunPolicy ? { missedRunPolicy } : {}),
     ...(missedRunGraceMs !== undefined ? { missedRunGraceMs } : {}),
@@ -2097,12 +1952,6 @@ const countRunningRunsByQueue = (
   return counts;
 };
 
-const normalizeEventPayload = (
-  payload: Record<string, unknown> | undefined,
-): Record<string, unknown> => {
-  return cloneRecord(payload) ?? {};
-};
-
 const normalizeTriggerEventInput = (
   input: ScheduledTriggerEventInput,
   timestamp: number,
@@ -2127,365 +1976,13 @@ const normalizeTriggerEventInput = (
     type,
     kind,
     source,
-    payload: normalizeEventPayload(input.payload),
+    payload: normalizeSchedulerEventPayload(input.payload),
     occurredAt,
     receivedAt: timestamp,
     matches: [],
     ...(workspaceRoot ? { workspaceRoot } : {}),
     ...(dedupeKey ? { dedupeKey } : {}),
   };
-};
-
-const getPathValue = (
-  record: Record<string, unknown>,
-  path: string,
-): unknown => {
-  return path.split(".").reduce<unknown>((current, part) => {
-    if (!isRecordValue(current)) {
-      return undefined;
-    }
-
-    return current[part];
-  }, record);
-};
-
-const matchStringPattern = (value: string, pattern: string): boolean => {
-  if (pattern === "*") {
-    return true;
-  }
-
-  if (!pattern.includes("*")) {
-    return value === pattern;
-  }
-
-  const escaped = pattern
-    .split("*")
-    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
-    .join(".*");
-
-  return new RegExp(`^${escaped}$`, "u").test(value);
-};
-
-const eventTypeMatches = (
-  trigger: ScheduledEventTrigger,
-  event: ScheduledTriggerEvent,
-): boolean => {
-  if (trigger.kind !== event.kind) {
-    return false;
-  }
-
-  if (trigger.eventType === "*" || trigger.eventType === event.type) {
-    return true;
-  }
-
-  return matchStringPattern(event.type, trigger.eventType);
-};
-
-const coerceFilterNumber = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number(value);
-
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-
-  return undefined;
-};
-
-const compareFilterNumbers = (
-  actual: unknown,
-  expected: unknown,
-  predicate: (left: number, right: number) => boolean,
-): boolean => {
-  const actualNumber = coerceFilterNumber(actual);
-  const expectedNumber = coerceFilterNumber(expected);
-
-  return (
-    actualNumber !== undefined &&
-    expectedNumber !== undefined &&
-    predicate(actualNumber, expectedNumber)
-  );
-};
-
-const filterExpressionMatches = (
-  actual: unknown,
-  expression: Record<string, unknown>,
-): boolean => {
-  const operator = normalizeSchedulerText(
-    typeof expression.op === "string"
-      ? expression.op
-      : typeof expression.operator === "string"
-        ? expression.operator
-        : undefined,
-  )?.toLowerCase();
-  const expected =
-    "value" in expression
-      ? expression.value
-      : "threshold" in expression
-        ? expression.threshold
-        : "equals" in expression
-          ? expression.equals
-          : undefined;
-
-  switch (operator) {
-    case ">":
-    case "gt":
-      return compareFilterNumbers(actual, expected, (left, right) => left > right);
-    case ">=":
-    case "gte":
-      return compareFilterNumbers(actual, expected, (left, right) => left >= right);
-    case "<":
-    case "lt":
-      return compareFilterNumbers(actual, expected, (left, right) => left < right);
-    case "<=":
-    case "lte":
-      return compareFilterNumbers(actual, expected, (left, right) => left <= right);
-    case "!=":
-    case "neq":
-    case "not":
-      return !filterValueMatches(actual, expected);
-    case "=":
-    case "==":
-    case "eq":
-      return filterValueMatches(actual, expected);
-    case "contains":
-      return (
-        typeof actual === "string" &&
-        typeof expected === "string" &&
-        actual.includes(expected)
-      );
-    case "startswith":
-    case "prefix":
-      return (
-        typeof actual === "string" &&
-        typeof expected === "string" &&
-        actual.startsWith(expected)
-      );
-    case "endswith":
-    case "suffix":
-      return (
-        typeof actual === "string" &&
-        typeof expected === "string" &&
-        actual.endsWith(expected)
-      );
-    case "matches":
-    case "pattern":
-      return (
-        typeof actual === "string" &&
-        typeof expected === "string" &&
-        matchStringPattern(actual, expected)
-      );
-    case "exists":
-      return expression.value === false
-        ? actual === undefined || actual === null
-        : actual !== undefined && actual !== null;
-    default:
-      if (
-        "min" in expression &&
-        !compareFilterNumbers(actual, expression.min, (left, right) => left >= right)
-      ) {
-        return false;
-      }
-
-      if (
-        "max" in expression &&
-        !compareFilterNumbers(actual, expression.max, (left, right) => left <= right)
-      ) {
-        return false;
-      }
-
-      return expected !== undefined ? filterValueMatches(actual, expected) : false;
-  }
-};
-
-const filterValueMatches = (actual: unknown, expected: unknown): boolean => {
-  if (Array.isArray(expected)) {
-    return expected.some((entry) => filterValueMatches(actual, entry));
-  }
-
-  if (isRecordValue(expected)) {
-    return filterExpressionMatches(actual, expected);
-  }
-
-  if (typeof expected === "string") {
-    return typeof actual === "string" && matchStringPattern(actual, expected);
-  }
-
-  return Object.is(actual, expected);
-};
-
-const createEventFilterRecord = (
-  event: ScheduledTriggerEvent,
-): Record<string, unknown> => ({
-  type: event.type,
-  kind: event.kind,
-  source: event.source,
-  workspaceRoot: event.workspaceRoot,
-  payload: event.payload,
-});
-
-const eventFilterRecordMatches = (
-  filters: Record<string, unknown> | undefined,
-  event: ScheduledTriggerEvent,
-): boolean => {
-  if (!filters || Object.keys(filters).length === 0) {
-    return true;
-  }
-
-  const eventRecord = createEventFilterRecord(event);
-
-  return Object.entries(filters).every(([path, expected]) => {
-    return filterValueMatches(getPathValue(eventRecord, path), expected);
-  });
-};
-
-const eventFiltersMatch = (
-  trigger: ScheduledEventTrigger,
-  event: ScheduledTriggerEvent,
-): boolean => eventFilterRecordMatches(trigger.filters, event);
-
-const renderDedupeTemplate = (
-  template: string,
-  job: ScheduledJob,
-  trigger: ScheduledEventTrigger,
-  event: ScheduledTriggerEvent,
-): string => {
-  return template.replace(/\{([a-zA-Z0-9_.-]+)\}/gu, (_match, path: string) => {
-    const record: Record<string, unknown> = {
-      jobId: job.id,
-      triggerId: trigger.id,
-      eventId: event.id,
-      eventType: event.type,
-      eventDedupeKey: event.dedupeKey,
-      source: event.source,
-      workspaceRoot: event.workspaceRoot,
-      payload: event.payload,
-    };
-    const value = getPathValue(record, path);
-
-    return value === undefined || value === null ? "" : String(value);
-  });
-};
-
-const createEventRunDedupeSuffix = (
-  job: ScheduledJob,
-  trigger: ScheduledEventTrigger,
-  event: ScheduledTriggerEvent,
-): string => {
-  const baseSuffix = trigger.dedupeKeyTemplate
-    ? renderDedupeTemplate(trigger.dedupeKeyTemplate, job, trigger, event)
-    : `${trigger.id}:${event.dedupeKey ?? event.id}`;
-
-  if (getTriggerFiringMode(trigger) !== "state") {
-    return baseSuffix;
-  }
-
-  const repeatIntervalMs = getStatefulTriggerRepeatIntervalMs(trigger);
-  const stateStartedAt = trigger.lastStateChangedAt ?? event.receivedAt;
-  const repeatBucket = Math.max(
-    0,
-    Math.floor((event.receivedAt - stateStartedAt) / repeatIntervalMs),
-  );
-
-  return `${baseSuffix}:state:${stateStartedAt}:${repeatBucket}`;
-};
-
-const getTriggerFiringMode = (
-  trigger: ScheduledEventTrigger,
-): ScheduledTriggerFiringMode => trigger.firingMode ?? "event";
-
-const getStatefulTriggerRepeatIntervalMs = (
-  trigger: ScheduledEventTrigger,
-): number =>
-  trigger.repeatIntervalMs ??
-  trigger.cooldownMs ??
-  DEFAULT_STATEFUL_TRIGGER_REPEAT_MS;
-
-const getTriggerRecoveryMatched = (
-  trigger: ScheduledEventTrigger,
-  event: ScheduledTriggerEvent,
-  activationMatched: boolean,
-): boolean => {
-  if (trigger.recoveryFilters) {
-    return eventFilterRecordMatches(trigger.recoveryFilters, event);
-  }
-
-  return !activationMatched;
-};
-
-const getStatefulTriggerSkipReason = (
-  trigger: ScheduledEventTrigger,
-  event: ScheduledTriggerEvent,
-): string | undefined => {
-  if (getTriggerFiringMode(trigger) !== "state") {
-    return undefined;
-  }
-
-  if (trigger.lastState !== "active" || trigger.lastFiredAt === undefined) {
-    return undefined;
-  }
-
-  const repeatIntervalMs = getStatefulTriggerRepeatIntervalMs(trigger);
-
-  if (event.receivedAt - trigger.lastFiredAt >= repeatIntervalMs) {
-    return undefined;
-  }
-
-  return `Skipped while stateful trigger remains active; next repeat is allowed after ${repeatIntervalMs}ms.`;
-};
-
-const getTriggerCooldownSkipReason = (
-  trigger: ScheduledEventTrigger,
-  event: ScheduledTriggerEvent,
-): string | undefined => {
-  if (
-    trigger.cooldownMs === undefined ||
-    trigger.lastFiredAt === undefined ||
-    event.receivedAt - trigger.lastFiredAt >= trigger.cooldownMs
-  ) {
-    return undefined;
-  }
-
-  return `Skipped by trigger cooldown of ${trigger.cooldownMs}ms.`;
-};
-
-const getTriggerRateLimitSkipReason = (
-  state: SmartSchedulerState,
-  trigger: ScheduledEventTrigger,
-  event: ScheduledTriggerEvent,
-): string | undefined => {
-  if (!trigger.maxEventsPerWindow) {
-    return undefined;
-  }
-
-  const windowStartedAt = event.receivedAt - trigger.maxEventsPerWindow.windowMs;
-  const firedEvents = state.events.reduce((count, candidate) => {
-    if (
-      candidate.receivedAt < windowStartedAt ||
-      candidate.receivedAt > event.receivedAt
-    ) {
-      return count;
-    }
-
-    return (
-      count +
-      candidate.matches.filter(
-        (match) =>
-          match.triggerId === trigger.id &&
-          match.matched &&
-          match.deduplicated !== true,
-      ).length
-    );
-  }, 0);
-
-  if (firedEvents < trigger.maxEventsPerWindow.maxEvents) {
-    return undefined;
-  }
-
-  return `Skipped by trigger rate limit of ${trigger.maxEventsPerWindow.maxEvents} event(s) per ${trigger.maxEventsPerWindow.windowMs}ms.`;
 };
 
 export class DurableSmartScheduler {
@@ -3004,7 +2501,7 @@ export class DurableSmartScheduler {
             continue;
           }
 
-          if (!eventTypeMatches(trigger, event)) {
+          if (!schedulerEventTypeMatches(trigger, event)) {
             continue;
           }
 
@@ -3014,15 +2511,20 @@ export class DurableSmartScheduler {
             matched: false,
           };
 
-          const activationMatched = eventFiltersMatch(trigger, event);
+          const activationMatched = schedulerEventFiltersMatch(trigger, event);
 
-          const isStatefulTrigger = getTriggerFiringMode(trigger) === "state";
+          const isStatefulTrigger =
+            getSchedulerEventTriggerFiringMode(trigger) === "state";
           const wasStateActive = trigger.lastState === "active";
 
           if (
             isStatefulTrigger &&
             wasStateActive &&
-            getTriggerRecoveryMatched(trigger, event, activationMatched)
+            getSchedulerEventTriggerRecoveryMatched(
+              trigger,
+              event,
+              activationMatched,
+            )
           ) {
             trigger.lastState = "idle";
             trigger.lastStateChangedAt = now;
@@ -3045,7 +2547,7 @@ export class DurableSmartScheduler {
           }
 
           const statefulSkipReason = wasStateActive
-            ? getStatefulTriggerSkipReason(trigger, event)
+            ? getSchedulerStatefulTriggerSkipReason(trigger, event)
             : undefined;
 
           if (statefulSkipReason) {
@@ -3056,7 +2558,7 @@ export class DurableSmartScheduler {
             continue;
           }
 
-          const cooldownSkipReason = getTriggerCooldownSkipReason(
+          const cooldownSkipReason = getSchedulerTriggerCooldownSkipReason(
             trigger,
             event,
           );
@@ -3068,7 +2570,7 @@ export class DurableSmartScheduler {
             continue;
           }
 
-          const rateLimitSkipReason = getTriggerRateLimitSkipReason(
+          const rateLimitSkipReason = getSchedulerTriggerRateLimitSkipReason(
             state,
             trigger,
             event,
@@ -3082,7 +2584,11 @@ export class DurableSmartScheduler {
             continue;
           }
 
-          const dedupeSuffix = createEventRunDedupeSuffix(job, trigger, event);
+          const dedupeSuffix = createSchedulerEventRunDedupeSuffix(
+            job,
+            trigger,
+            event,
+          );
           const dedupeKey = createRunDedupeKey(
             job,
             event.occurredAt,

@@ -1,6 +1,6 @@
 import { existsSync, watch } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   DurableSmartScheduler,
   getUserSchedulerStatePath,
@@ -31,6 +31,8 @@ import {
   createEmptyRalphWatchState,
 } from "./_helpers/create-empty-ralph-watch-state.helper.js";
 import { parseRalphWatchState } from "./_helpers/parse-ralph-watch-state.helper.js";
+import { collectRalphWatchSnapshotEvents } from "./_helpers/collect-ralph-watch-snapshot-events.helper.js";
+import { createRalphWatchFileEvent } from "./_helpers/create-ralph-watch-file-event.helper.js";
 
 export { normalizeRalphWatchInput } from "./_helpers/normalize-ralph-watch-input.helper.js";
 export { watchRootMatchesPath } from "./_helpers/watch-root-matches-path.helper.js";
@@ -358,23 +360,15 @@ export class RalphWatchService {
         const current = await scanRalphWatchFiles(root);
         const now = Date.now();
 
-        for (const [path, snapshot] of current.entries()) {
-          const oldSnapshot = previous.get(path);
-
-          if (!oldSnapshot) {
-            this.queueEvent(watchDefinition, root, "created", path, snapshot, now);
-          } else if (
-            oldSnapshot.size !== snapshot.size ||
-            oldSnapshot.mtimeMs !== snapshot.mtimeMs
-          ) {
-            this.queueEvent(watchDefinition, root, "changed", path, snapshot, now);
-          }
-        }
-
-        for (const [path, snapshot] of previous.entries()) {
-          if (!current.has(path)) {
-            this.queueEvent(watchDefinition, root, "deleted", path, snapshot, now);
-          }
+        for (const event of collectRalphWatchSnapshotEvents(previous, current)) {
+          this.queueEvent(
+            watchDefinition,
+            root,
+            event.eventType,
+            event.path,
+            event.snapshot,
+            now,
+          );
         }
 
         previous = current;
@@ -451,16 +445,13 @@ export class RalphWatchService {
       return;
     }
 
-    const event: RalphWatchFileEvent = {
-      type: eventType,
+    const event = createRalphWatchFileEvent({
+      root,
+      eventType,
       path,
-      rootPath: root.path,
-      relativePath: relative(root.path, path).split(sep).join("/"),
-      ...(snapshot?.size !== undefined ? { size: snapshot.size } : {}),
-      ...(snapshot?.mtimeMs !== undefined ? { mtimeMs: snapshot.mtimeMs } : {}),
-      ...(snapshot?.isDirectory !== undefined ? { isDirectory: snapshot.isDirectory } : {}),
+      snapshot,
       occurredAt,
-    };
+    });
 
     try {
       const result = await emitRalphWatchEvent(this.scheduler, watchDefinition, event);

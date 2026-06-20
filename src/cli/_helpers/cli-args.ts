@@ -1,832 +1,78 @@
 import process from "node:process";
 import { parseArgs as parseNodeArgs } from "node:util";
 import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
+import type { InstructionAudience, InstructionMode } from "../../core/types.js";
+import type { ModelProvider, ReasoningMode, RuntimeAgentLimitOverrides, RunMode, UserApiProvider } from "../../core/runtime-contract.generated.js";
 import {
-  REASONING_MODES,
-  VALID_MODEL_PROVIDERS,
-} from "../../core/runtime-contract.generated.js";
+  INSTRUCTION_ACTIONS,
+  INSTRUCTION_ACTIONS_REQUIRING_SUBJECT,
+  INSTRUCTION_AUDIENCES,
+  INSTRUCTION_MODES,
+  INSTRUCTION_SCOPES,
+  MCP_ACTIONS,
+  MCP_ACTIONS_REQUIRING_SERVER,
+  MCP_ACTIONS_REQUIRING_TARGET,
+  RALPH_ACTIONS,
+  RALPH_ACTIONS_REQUIRING_SUBJECT,
+  RALPH_GENERATION_MODES,
+  RALPH_GENERATION_TARGETS,
+  RALPH_SCOPES,
+  RALPH_WATCH_ACTIONS,
+  SCHEDULER_ACTIONS,
+  SCHEDULER_ACTIONS_REQUIRING_SUBJECT,
+  VALID_MODE_DESCRIPTION,
+  VALID_MODES,
+  VALID_PROVIDERS,
+  VALID_REASONING_MODE_DESCRIPTION,
+  VALID_REASONING_MODES,
+  VALID_RUNTIME_PROVIDER_DESCRIPTION,
+  VALID_RUNTIME_PROVIDERS,
+} from "./cli-args-constants.js";
+import { createParsedArgs, createSharedParsedOptions } from "./create-parsed-cli-args.helper.js";
+import { createSchedulerCliOptions } from "./create-scheduler-cli-options.helper.js";
+import { getHelpText } from "./cli-help-text.js";
+import {
+  assertNoAdditionalPositionals,
+  fail,
+  normalizeContextPaths,
+  normalizeImagePaths,
+  parseBooleanToggle,
+  parseMemoryOverride,
+  parseOptionalInteger,
+  parseOptionalPositiveInteger,
+  parsePositiveInteger,
+} from "./parse-cli-primitive.helper.js";
+export type {
+  CommandName,
+  InstructionCliAction,
+  InstructionCliOptions,
+  InstructionCliScope,
+  McpCliAction,
+  McpCliOptions,
+  ParsedCliArgs,
+  RalphCliAction,
+  RalphCliGenerationMode,
+  RalphCliGenerationTarget,
+  RalphCliOptions,
+  RalphCliScope,
+  RalphWatchCliAction,
+  SchedulerCliAction,
+  SchedulerCliOptions,
+} from "./cli-args-types.js";
 import type {
-  InstructionAudience,
-  InstructionMode,
-  InstructionScope,
-} from "../../core/types.js";
-import type {
-  ModelProvider,
-  ReasoningMode,
-  RuntimeAgentLimitOverrides,
-  RunMode,
-  UserApiProvider,
-} from "../../core/runtime-contract.generated.js";
+  InstructionCliAction,
+  InstructionCliScope,
+  McpCliAction,
+  ParsedCliArgs,
+  RalphCliAction,
+  RalphCliGenerationMode,
+  RalphCliGenerationTarget,
+  RalphCliScope,
+  RalphWatchCliAction,
+  SchedulerCliAction,
+} from "./cli-args-types.js";
 
-export type CommandName =
-  | "run"
-  | "chat"
-  | "ralph"
-  | "scheduler"
-  | "mcp"
-  | "set-api"
-  | "set-config"
-  | "set-global-memory"
-  | "inspect"
-  | "instructions"
-  | "config"
-  | "tools"
-  | "profiles"
-  | "set-default-model"
-  | "help";
-
-export type SchedulerCliAction =
-  | "list"
-  | "create"
-  | "pause"
-  | "resume"
-  | "delete"
-  | "runs"
-  | "events"
-  | "event"
-  | "run-due"
-  | "trigger"
-  | "retry"
-  | "cancel"
-  | "sync-prompts";
-
-export type RalphCliAction =
-  | "list"
-  | "show"
-  | "validate"
-  | "delete"
-  | "save"
-  | "run"
-  | "resume"
-  | "run-detail"
-  | "runs"
-  | "log"
-  | "revisions"
-  | "restore"
-  | "create"
-  | "interview"
-  | "watches";
-export type RalphCliGenerationMode = "do-it" | "interview";
-export type RalphCliGenerationTarget = "flow" | "prompt-block" | "refactor";
-export type RalphCliScope = "user" | "workspace";
-export type RalphWatchCliAction = "list" | "create" | "delete" | "sync" | "run";
-
-export type McpCliAction =
-  | "servers"
-  | "cache"
-  | "discover"
-  | "refresh"
-  | "oauth-start"
-  | "oauth-finish"
-  | "call-tool"
-  | "read-resource"
-  | "get-prompt";
-
-export type InstructionCliAction =
-  | "list"
-  | "show"
-  | "validate"
-  | "create"
-  | "save"
-  | "generate";
-
-export type InstructionCliScope = InstructionScope;
-
-export interface SchedulerCliOptions {
-  action: SchedulerCliAction;
-  subject?: string;
-  name?: string;
-  cron?: string;
-  triggers?: string[];
-  triggerFilters?: string[];
-  triggerRecoveryFilters?: string[];
-  triggerFiringMode?: string;
-  triggerCooldownMs?: number;
-  triggerRepeatMs?: number;
-  triggerDebounceMs?: number;
-  triggerDedupeKeyTemplate?: string;
-  triggerMaxEvents?: number;
-  triggerWindowMs?: number;
-  intervalMs?: number;
-  delayMs?: number;
-  runAt?: number;
-  timezone?: string;
-  prompt?: string;
-  promptFile?: string;
-  contextPacks?: string[];
-  macros?: string[];
-  missedRunPolicy?: string;
-  missedRunGraceMs?: number;
-  retryAttempts?: number;
-  retryMinMs?: number;
-  retryMaxMs?: number;
-  retryFactor?: number;
-  retryRandomize?: boolean;
-  dedupeKey?: string;
-  ttlMs?: number;
-  maxDurationMs?: number;
-  concurrencyKey?: string;
-  concurrencyLimit?: number;
-  historyLimit?: number;
-  maxCatchUpRuns?: number;
-  eventType?: string;
-  eventKind?: string;
-  eventSource?: string;
-  eventPayloadJson?: string;
-  eventDedupeKey?: string;
-  eventOccurredAt?: number;
-}
-
-export interface RalphCliOptions {
-  action: RalphCliAction;
-  subject?: string;
-  scope?: RalphCliScope;
-  name?: string;
-  prompt?: string;
-  promptFile?: string;
-  flowJson?: string;
-  flowJsonFile?: string;
-  existingFlowJson?: string;
-  existingFlowJsonFile?: string;
-  revision?: string;
-  generationMode?: RalphCliGenerationMode;
-  target?: RalphCliGenerationTarget;
-  params?: string[];
-  paramsFile?: string;
-  inputJson?: string;
-  inputJsonFile?: string;
-  maxRounds?: number;
-  maxTransitions?: number;
-  trace?: boolean;
-  watchAction?: RalphWatchCliAction;
-  watchJson?: string;
-  watchJsonFile?: string;
-}
-
-export interface McpCliOptions {
-  action: McpCliAction;
-  serverId?: string;
-  target?: string;
-  argumentsJson?: string;
-  includeDisabled?: boolean;
-}
-
-export interface InstructionCliOptions {
-  action: InstructionCliAction;
-  subject?: string;
-  name?: string;
-  scope?: InstructionCliScope;
-  prompt?: string;
-  promptFile?: string;
-  path?: string;
-  applyTo?: string[];
-  exclude?: string[];
-  keywords?: string[];
-  mode?: InstructionMode;
-  audience?: InstructionAudience;
-  priority?: number;
-  maxRounds?: number;
-}
-
-export interface ParsedCliArgs {
-  command: CommandName;
-  task?: string;
-  ralph?: RalphCliOptions;
-  scheduler?: SchedulerCliOptions;
-  mcp?: McpCliOptions;
-  instructions?: InstructionCliOptions;
-  mode?: RunMode;
-  profile?: string;
-  provider?: UserApiProvider;
-  runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
-  key?: string;
-  configSetting?: string;
-  configValue?: string;
-  model?: string;
-  defaultModel?: string;
-  reasoning?: ReasoningMode;
-  sessionMemoryEnabled?: boolean;
-  globalMemoryEnabled?: boolean;
-  setGlobalMemoryEnabled?: boolean;
-  agentLimits?: RuntimeAgentLimitOverrides;
-  conversationContextFile?: string;
-  contextPaths?: string[];
-  imagePaths?: string[];
-  json: boolean;
-  verbose: boolean;
-  workspaceRoot: string;
-}
-
-const VALID_MODES: ReadonlySet<RunMode> = new Set([
-  "ask",
-  "machdoch",
-]);
-const VALID_MODE_DESCRIPTION = "ask or machdoch";
-const VALID_PROVIDERS: ReadonlySet<UserApiProvider> = new Set([
-  "openai",
-  "anthropic",
-  "google",
-]);
-const VALID_RUNTIME_PROVIDERS: ReadonlySet<
-  Exclude<ModelProvider, "unconfigured">
-> = new Set(VALID_MODEL_PROVIDERS);
-const VALID_RUNTIME_PROVIDER_DESCRIPTION =
-  "openai, anthropic, google, codex-cli, claude-cli, or copilot-cli";
-const VALID_REASONING_MODES: ReadonlySet<ReasoningMode> = new Set(
-  REASONING_MODES,
-);
-const VALID_REASONING_MODE_DESCRIPTION =
-  "default, none, minimal, low, medium, high, xhigh, or max";
-const VALID_BOOLEAN_TOGGLE_VALUES: ReadonlySet<string> = new Set(["on", "off"]);
-const VALID_MEMORY_OVERRIDE_VALUES: ReadonlySet<string> = new Set([
-  "inherit",
-  "on",
-  "off",
-]);
-const COMMANDS_WITHOUT_POSITIONALS: ReadonlySet<CommandName> = new Set([
-  "inspect",
-  "config",
-  "tools",
-  "profiles",
-  "help",
-]);
-const SCHEDULER_ACTIONS: ReadonlySet<SchedulerCliAction> = new Set([
-  "list",
-  "create",
-  "pause",
-  "resume",
-  "delete",
-  "runs",
-  "events",
-  "event",
-  "run-due",
-  "trigger",
-  "retry",
-  "cancel",
-  "sync-prompts",
-]);
-const SCHEDULER_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<SchedulerCliAction> =
-  new Set(["pause", "resume", "delete", "trigger", "retry", "cancel"]);
-const MCP_ACTIONS: ReadonlySet<McpCliAction> = new Set([
-  "servers",
-  "cache",
-  "discover",
-  "refresh",
-  "oauth-start",
-  "oauth-finish",
-  "call-tool",
-  "read-resource",
-  "get-prompt",
-]);
-const MCP_ACTIONS_REQUIRING_SERVER: ReadonlySet<McpCliAction> = new Set([
-  "discover",
-  "refresh",
-  "oauth-start",
-  "oauth-finish",
-  "call-tool",
-  "read-resource",
-  "get-prompt",
-]);
-const MCP_ACTIONS_REQUIRING_TARGET: ReadonlySet<McpCliAction> = new Set([
-  "oauth-finish",
-  "call-tool",
-  "read-resource",
-  "get-prompt",
-]);
-const INSTRUCTION_ACTIONS: ReadonlySet<InstructionCliAction> = new Set([
-  "list",
-  "show",
-  "validate",
-  "create",
-  "save",
-  "generate",
-]);
-const INSTRUCTION_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<InstructionCliAction> =
-  new Set(["show"]);
-const INSTRUCTION_SCOPES: ReadonlySet<InstructionCliScope> = new Set([
-  "user",
-  "workspace",
-  "compatibility",
-]);
-const INSTRUCTION_MODES: ReadonlySet<InstructionMode> = new Set([
-  "always",
-  "auto",
-  "agent-requested",
-  "manual",
-  "disabled",
-]);
-const INSTRUCTION_AUDIENCES: ReadonlySet<InstructionAudience> = new Set([
-  "executor",
-  "validator",
-  "generator",
-  "all",
-]);
-const RALPH_ACTIONS: ReadonlySet<RalphCliAction> = new Set([
-  "list",
-  "show",
-  "validate",
-  "delete",
-  "save",
-  "run",
-  "resume",
-  "run-detail",
-  "runs",
-  "log",
-  "revisions",
-  "restore",
-  "create",
-  "interview",
-  "watches",
-]);
-const RALPH_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<RalphCliAction> = new Set([
-  "show",
-  "validate",
-  "delete",
-  "save",
-  "run",
-  "resume",
-  "run-detail",
-  "log",
-  "revisions",
-  "restore",
-]);
-const RALPH_GENERATION_MODES: ReadonlySet<RalphCliGenerationMode> = new Set([
-  "do-it",
-  "interview",
-]);
-const RALPH_GENERATION_TARGETS: ReadonlySet<RalphCliGenerationTarget> = new Set([
-  "flow",
-  "prompt-block",
-  "refactor",
-]);
-const RALPH_SCOPES: ReadonlySet<RalphCliScope> = new Set([
-  "workspace",
-  "user",
-]);
-const RALPH_WATCH_ACTIONS: ReadonlySet<RalphWatchCliAction> = new Set([
-  "list",
-  "create",
-  "delete",
-  "sync",
-  "run",
-]);
-
-const fail = (message: string): never => {
-  throw new Error(message);
-};
-
-const createParsedArgs = (
-  base: Omit<
-    ParsedCliArgs,
-    | "mode"
-    | "profile"
-    | "task"
-    | "ralph"
-    | "scheduler"
-    | "mcp"
-    | "instructions"
-    | "provider"
-    | "runtimeProvider"
-    | "key"
-    | "configSetting"
-    | "configValue"
-    | "model"
-    | "defaultModel"
-    | "reasoning"
-    | "sessionMemoryEnabled"
-    | "globalMemoryEnabled"
-    | "setGlobalMemoryEnabled"
-    | "agentLimits"
-    | "conversationContextFile"
-    | "contextPaths"
-    | "imagePaths"
-  >,
-  options?: {
-    mode?: RunMode;
-    profile?: string;
-    provider?: UserApiProvider;
-    runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
-    key?: string;
-    configSetting?: string;
-    configValue?: string;
-    model?: string;
-    defaultModel?: string;
-    reasoning?: ReasoningMode;
-    sessionMemoryEnabled?: boolean;
-    globalMemoryEnabled?: boolean;
-    setGlobalMemoryEnabled?: boolean;
-    agentLimits?: RuntimeAgentLimitOverrides;
-    conversationContextFile?: string;
-    contextPaths?: string[];
-    imagePaths?: string[];
-    ralph?: RalphCliOptions;
-    scheduler?: SchedulerCliOptions;
-    mcp?: McpCliOptions;
-    instructions?: InstructionCliOptions;
-    task?: string;
-  },
-): ParsedCliArgs => {
-  return {
-    ...base,
-    ...(options?.mode ? { mode: options.mode } : {}),
-    ...(options?.profile ? { profile: options.profile } : {}),
-    ...(options?.provider ? { provider: options.provider } : {}),
-    ...(options?.runtimeProvider
-      ? { runtimeProvider: options.runtimeProvider }
-      : {}),
-    ...(options?.key ? { key: options.key } : {}),
-    ...(options?.configSetting ? { configSetting: options.configSetting } : {}),
-    ...(options?.configValue ? { configValue: options.configValue } : {}),
-    ...(options?.model ? { model: options.model } : {}),
-    ...(options?.defaultModel ? { defaultModel: options.defaultModel } : {}),
-    ...(options?.reasoning ? { reasoning: options.reasoning } : {}),
-    ...(options?.sessionMemoryEnabled !== undefined
-      ? { sessionMemoryEnabled: options.sessionMemoryEnabled }
-      : {}),
-    ...(options?.globalMemoryEnabled !== undefined
-      ? { globalMemoryEnabled: options.globalMemoryEnabled }
-      : {}),
-    ...(options?.setGlobalMemoryEnabled !== undefined
-      ? { setGlobalMemoryEnabled: options.setGlobalMemoryEnabled }
-      : {}),
-    ...(options?.agentLimits ? { agentLimits: options.agentLimits } : {}),
-    ...(options?.conversationContextFile
-      ? { conversationContextFile: options.conversationContextFile }
-      : {}),
-    ...(options?.contextPaths && options.contextPaths.length > 0
-      ? { contextPaths: options.contextPaths }
-      : {}),
-    ...(options?.imagePaths && options.imagePaths.length > 0
-      ? { imagePaths: options.imagePaths }
-      : {}),
-    ...(options?.task ? { task: options.task } : {}),
-    ...(options?.ralph ? { ralph: options.ralph } : {}),
-    ...(options?.scheduler ? { scheduler: options.scheduler } : {}),
-    ...(options?.mcp ? { mcp: options.mcp } : {}),
-    ...(options?.instructions ? { instructions: options.instructions } : {}),
-  };
-};
-
-const createSharedParsedOptions = (options: {
-  json: boolean;
-  verbose: boolean;
-  workspaceRoot: string;
-  mode?: RunMode;
-  profile?: string;
-  runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
-  model?: string;
-  defaultModel?: string;
-  reasoning?: ReasoningMode;
-  sessionMemoryEnabled?: boolean;
-  globalMemoryEnabled?: boolean;
-  agentLimits?: RuntimeAgentLimitOverrides;
-  conversationContextFile?: string;
-  contextPaths?: string[];
-  imagePaths?: string[];
-}): Omit<ParsedCliArgs, "command" | "task"> => {
-  return {
-    json: options.json,
-    verbose: options.verbose,
-    workspaceRoot: options.workspaceRoot,
-    ...(options.mode ? { mode: options.mode } : {}),
-    ...(options.profile ? { profile: options.profile } : {}),
-    ...(options.runtimeProvider
-      ? { runtimeProvider: options.runtimeProvider }
-      : {}),
-    ...(options.model ? { model: options.model } : {}),
-    ...(options.defaultModel ? { defaultModel: options.defaultModel } : {}),
-    ...(options.reasoning ? { reasoning: options.reasoning } : {}),
-    ...(options.sessionMemoryEnabled !== undefined
-      ? { sessionMemoryEnabled: options.sessionMemoryEnabled }
-      : {}),
-    ...(options.globalMemoryEnabled !== undefined
-      ? { globalMemoryEnabled: options.globalMemoryEnabled }
-      : {}),
-    ...(options.agentLimits ? { agentLimits: options.agentLimits } : {}),
-    ...(options.conversationContextFile
-      ? { conversationContextFile: options.conversationContextFile }
-      : {}),
-    ...(options.contextPaths && options.contextPaths.length > 0
-      ? { contextPaths: options.contextPaths }
-      : {}),
-    ...(options.imagePaths && options.imagePaths.length > 0
-      ? { imagePaths: options.imagePaths }
-      : {}),
-  };
-};
-
-const parseBooleanToggle = (value: string, flagName: string): boolean => {
-  if (!VALID_BOOLEAN_TOGGLE_VALUES.has(value)) {
-    fail(`Expected ${flagName} to be followed by on or off.`);
-  }
-
-  return value === "on";
-};
-
-const parseMemoryOverride = (
-  value: string,
-  flagName: string,
-): boolean | undefined => {
-  if (!VALID_MEMORY_OVERRIDE_VALUES.has(value)) {
-    fail(`Expected ${flagName} to be followed by inherit, on, or off.`);
-  }
-
-  if (value === "inherit") {
-    return undefined;
-  }
-
-  return value === "on";
-};
-
-const parsePositiveInteger = (value: string, flagName: string): number => {
-  const parsed = Number(value);
-
-  if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isInteger(parsed)) {
-    fail(`Expected ${flagName} to be followed by a positive integer.`);
-  }
-
-  return parsed;
-};
-
-const parsePositiveNumber = (value: string, flagName: string): number => {
-  const parsed = Number(value);
-
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    fail(`Expected ${flagName} to be followed by a positive number.`);
-  }
-
-  return parsed;
-};
-
-const parseOptionalPositiveInteger = (
-  value: string | undefined,
-  flagName: string,
-): number | undefined => {
-  return value ? parsePositiveInteger(value, flagName) : undefined;
-};
-
-const parseOptionalPositiveNumber = (
-  value: string | undefined,
-  flagName: string,
-): number | undefined => {
-  return value ? parsePositiveNumber(value, flagName) : undefined;
-};
-
-const parseOptionalInteger = (
-  value: string | undefined,
-  flagName: string,
-): number | undefined => {
-  if (!value) {
-    return undefined;
-  }
-
-  const parsed = Number(value);
-
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
-    fail(`Expected ${flagName} to be followed by an integer.`);
-  }
-
-  return parsed;
-};
-
-const normalizeContextPaths = (
-  values: string[] | undefined,
-): string[] | undefined => {
-  if (values === undefined) {
-    return undefined;
-  }
-
-  const normalizedPaths = values.flatMap((value) => {
-    const normalized = normalizeOptionalString(value);
-
-    return normalized ? [normalized] : [];
-  });
-
-  if (normalizedPaths.length === 0) {
-    fail("Expected --context to be followed by a file or folder path.");
-  }
-
-  return Array.from(new Set(normalizedPaths));
-};
-
-const normalizeImagePaths = (
-  values: string[] | undefined,
-): string[] | undefined => {
-  if (values === undefined) {
-    return undefined;
-  }
-
-  const normalizedPaths = values.flatMap((value) => {
-    const normalized = normalizeOptionalString(value);
-
-    return normalized ? [normalized] : [];
-  });
-
-  if (normalizedPaths.length === 0) {
-    fail("Expected --image to be followed by an image file path.");
-  }
-
-  return Array.from(new Set(normalizedPaths));
-};
-
-const assertNoAdditionalPositionals = (
-  command: CommandName,
-  positionals: string[],
-): void => {
-  if (positionals.length === 0 || !COMMANDS_WITHOUT_POSITIONALS.has(command)) {
-    return;
-  }
-
-  fail(
-    `Command \`${command}\` does not accept positional arguments: ${positionals.join(" ")}`,
-  );
-};
-
-export const getHelpText = (): string => {
-  return `machdoch
-
-Usage:
-  machdoch [--mode <ask|machdoch>]
-  machdoch <task>
-  machdoch --task <task> [--mode <ask|machdoch>]
-  machdoch run <task>
-  machdoch --quick --task <task> [--mode <ask|machdoch>]
-  machdoch --set-api --provider <openai|anthropic|google> --key <value>
-  machdoch --set-global-memory <on|off>
-  machdoch --runtime-provider <openai|anthropic|google|codex-cli|claude-cli|copilot-cli>
-  machdoch --model <name>
-  machdoch --reasoning <default|none|minimal|low|medium|high|xhigh|max>
-  machdoch --default-model <name>
-  machdoch inspect [--json]
-  machdoch config [--json]
-  machdoch config set <setting> <value> [--json]
-  machdoch tools [--json]
-  machdoch profiles [--json]
-  machdoch instructions list|validate [--scope <user|workspace|compatibility>] [--json]
-  machdoch instructions show <name-or-path> [--scope <user|workspace|compatibility>] [--json]
-  machdoch instructions create [name] --prompt <text> [--scope <user|workspace>] [--apply-to <glob>] [--json]
-  machdoch instructions save [name] --prompt <text> [--path <file>] [--scope <user|workspace>] [--apply-to <glob>] [--json]
-  machdoch instructions generate [name] --prompt <wish> [--path <file>] [--scope <user|workspace>] [--apply-to <glob>] [--max-rounds <n>] [--json]
-  machdoch ralph list [--scope <user|workspace>] [--json]
-  machdoch ralph show|validate|delete <flow> [--scope <user|workspace>] [--json]
-  machdoch ralph revisions <flow> [--scope <user|workspace>] [--json]
-  machdoch ralph restore <flow> --revision <revision-id> [--scope <user|workspace>] [--json]
-  machdoch ralph save <flow> --flow-json <json> [--scope <user|workspace>] [--json]
-  machdoch ralph run <flow> [--scope <user|workspace>] [--param <name=value>] [--json]
-  machdoch ralph resume <run-id> (--input-json <json>|--input-json-file <path>) [--scope <user|workspace>] [--json]
-  machdoch ralph runs [flow] [--scope <user|workspace>] [--json]
-  machdoch ralph run-detail <run-id> [--scope <user|workspace>] [--json]
-  machdoch ralph log <run-id> [--scope <user|workspace>] [--trace] [--json]
-  machdoch ralph create [flow] --prompt <text> [--scope <user|workspace>] [--name <flow>] [--flow-target <flow|prompt-block|refactor>] [--generation-mode <do-it|interview>] [--max-rounds <n>] [--json]
-  machdoch ralph interview [flow] --prompt <text> [--scope <user|workspace>] [--name <flow>] [--flow-target <flow|prompt-block|refactor>] [--existing-flow-json <json>] [--input-json <json>] [--max-rounds <n>] [--json]
-  machdoch ralph watches list|sync|run [--json]
-  machdoch ralph watches create (--watch-json <json>|--watch-json-file <path>) [--json]
-  machdoch ralph watches delete <watch-id> [--json]
-  machdoch mcp servers [--include-disabled] [--json]
-  machdoch mcp cache [--json]
-  machdoch mcp discover|refresh <server-id> [--json]
-  machdoch mcp oauth-start <server-id> [--json]
-  machdoch mcp oauth-finish <server-id> <callback-url-or-code> [--json]
-  machdoch mcp call-tool <server-id> <tool-name> [--arguments-json <json>] [--json]
-  machdoch mcp read-resource <server-id> <uri> [--json]
-  machdoch mcp get-prompt <server-id> <prompt-name> [--arguments-json <json>] [--json]
-  machdoch scheduler list [--json]
-  machdoch scheduler create (--cron <expr>|--trigger <kind:event>) --prompt <text> [--timezone <iana>] [--json]
-  machdoch scheduler pause|resume|delete|trigger <job-id> [--json]
-  machdoch scheduler runs [job-id] [--json]
-  machdoch scheduler events [--json]
-  machdoch scheduler event --event-type <type> [--event-kind <kind>] [--json]
-  machdoch scheduler run-due [--json]
-  machdoch scheduler retry|cancel <run-id> [--json]
-  machdoch scheduler sync-prompts [--json]
-
-Options:
-  --mode <ask|machdoch>
-                          Override the runtime mode for this command or chat session.
-  --quick                 Force a one-shot task run that exits at a terminal state. Use --mode to choose ask or machdoch.
-  --set-api               Save a provider API key into the user-scoped Machdoch config file.
-  --provider <name>       Provider name for --set-api (openai, anthropic, google).
-  --runtime-provider <name>
-                          Override the runtime provider for this command or chat session.
-  --key <value>           API key value for --set-api.
-  --task <text>           Provide the task text explicitly instead of positionals.
-  --model <name>          Override the active model for this run or chat session.
-  --reasoning <mode>      Override model reasoning effort for this run or chat session.
-  --default-model <name>  Persist the workspace default model to .machdoch/config.json.
-  --set-global-memory <on|off>
-                          Persist whether cross-session global memory is enabled.
-  --session-memory <on|off>
-                          Enable or disable per-session memory for this run or chat session.
-  --global-memory <inherit|on|off>
-                          Override cross-session global memory for this run or chat session.
-  --executor-turns <count>
-                          Override the per-executor model turn limit.
-  --autopilot-iterations <count>
-                          Override the Machdoch continuation limit.
-  --infinite              Disable executor turn and Machdoch continuation limits. The wall-clock safety timeout still applies.
-  --conversation-context-file <path>
-                          Load conversation history and memory context from a JSON file.
-  --context <path>        Add a file or folder path as task context. Repeat for multiple paths.
-  --image <path>          Attach an image for a vision-capable model to read. Repeat for multiple images.
-  --profile <name>        Use a named profile from .machdoch/config.json.
-  --cwd <path>            Use a different workspace root.
-  --cron <expr>           Scheduler cron expression for \`scheduler create\`.
-  --trigger <kind:event>  Add an event trigger for \`scheduler create\`, for example workspace-file:workspace-file.created. Repeat for multiple triggers.
-  --trigger-filter <path=value>
-                          Add an activation filter such as payload.path=*.pdf or payload.usedPercent>=90. Repeat for multiple filters.
-  --trigger-recovery-filter <path=value>
-                          Add a recovery filter for stateful triggers, for example payload.usedPercent<=80.
-  --trigger-firing-mode <event|state>
-                          Use state for threshold/condition triggers that repeat only after cooldown/recovery.
-  --trigger-cooldown-ms <ms>
-                          Minimum time between runs fired by an event trigger.
-  --trigger-repeat-ms <ms>
-                          Repeat interval for stateful triggers while the condition remains active.
-  --trigger-debounce-ms <ms>
-                          Debounce window for bursty event sources.
-  --trigger-dedupe-key-template <template>
-                          Event run dedupe template such as file:{payload.path}:{payload.mtime}.
-  --trigger-max-events <n>
-                          Maximum trigger firings allowed per trigger window.
-  --trigger-window-ms <ms>
-                          Rolling window used with --trigger-max-events.
-  --interval-ms <ms>      Scheduler interval in milliseconds for \`scheduler create\`.
-  --delay-ms <ms>         Scheduler one-shot delay in milliseconds for \`scheduler create\`.
-  --run-at <epoch-ms>     Scheduler one-shot absolute run time in epoch milliseconds.
-  --timezone <iana>       IANA timezone for cron schedules.
-  --prompt <text>         Scheduled task prompt text.
-  --prompt-file <path>    Read scheduled task prompt text from a file.
-  --scope <user|workspace|compatibility>
-                          Instruction or Ralph scope. Compatibility only applies to instructions.
-  --path <file>           Instruction file path for explicit save or generation updates.
-  --apply-to <glob>       Workspace glob that auto-attaches an instruction. Repeat for multiple globs.
-  --exclude <glob>        Workspace glob that prevents an instruction from attaching. Repeat for multiple globs.
-  --keyword <term>        Keyword that auto-attaches an instruction. Repeat for multiple terms.
-  --instruction-mode <mode>
-                          Instruction activation: always, auto, agent-requested, manual, or disabled.
-  --audience <target>     Instruction audience: executor, validator, generator, or all.
-  --priority <integer>    Instruction ordering priority.
-  --flow-json <json>      Save a complete Ralph flow JSON document for \`ralph save\`.
-  --watch-json <json>     Save a Ralph watch definition for \`ralph watches create\`.
-  --watch-json-file <path>
-                          Read a Ralph watch definition from a JSON file.
-  --existing-flow-json <json>
-                          Provide the current Ralph flow JSON to \`ralph create\` for AI-assisted edits.
-  --revision <id>         Ralph flow revision id for \`ralph restore\`.
-  --flow-target <target>  Ralph generation target: flow, prompt-block, or refactor.
-  --generation-mode <mode>
-                          Ralph generation style: do-it or interview.
-  --param <name=value>    Set a Ralph flow variable for \`ralph run\`. Repeat for multiple variables.
-  --input-json <json>     Submit answers for \`ralph resume\`. Use either a values object or a full input response.
-  --input-json-file <path>
-                          Read Ralph resume answers from a JSON file.
-  --max-rounds <n>        Maximum rounds for \`ralph create\`, \`ralph interview\`, or \`instructions generate\`.
-  --max-transitions <n>   Stop a Ralph run or resume after this many graph transitions.
-  --trace                 Show the detailed JSONL trace for \`ralph log\`.
-  --include-disabled      Include disabled preset and configured MCP servers in \`mcp servers\`.
-  --arguments-json <json> JSON object arguments for \`mcp call-tool\` or \`mcp get-prompt\`.
-  --context-pack <json>   Add a scheduled context-pack snapshot as JSON. Repeat for multiple packs.
-  --macro <name|prompt>   Add a saved macro reference or prompt invocation. Repeat for multiple macros.
-  --missed-run-policy <skip|enqueue-latest|enqueue-all>
-                          Control catch-up behavior after downtime.
-  --retry-attempts <n>    Maximum scheduler attempts for a run.
-  --ttl-ms <ms>           Expire queued runs that do not start within this duration.
-  --max-duration-ms <ms>  Abort scheduled runs that exceed this duration.
-  --event-type <type>     Event type for \`scheduler event\`, for example workspace-file.created.
-  --event-kind <kind>     Event trigger category for \`scheduler event\`.
-  --event-source <source> Event source for \`scheduler event\`.
-  --event-payload-json <json>
-                          JSON payload for \`scheduler event\`.
-  --event-dedupe-key <key>
-                          Stable source event key for \`scheduler event\`.
-  --event-occurred-at <epoch-ms>
-                          Event occurrence time in epoch milliseconds.
-  --dedupe-key <key>      Stable key used to update an existing schedule instead of creating a duplicate.
-  --concurrency-key <key> Share queue capacity across related scheduled jobs.
-  --concurrency-limit <n> Maximum actively running jobs for the queue key.
-  --json                  Print machine-readable JSON.
-  --verbose, -v           Print compact progress updates during \`machdoch run\`.
-  -h, --help              Show help.
-
-Config settings accepted by \`machdoch config set\`:
-  api.<openai|anthropic|google>.key
-  agent-cli.<codex-cli|claude-cli|copilot-cli>.path
-  web-search.provider
-  web-search.<perplexity|tavily|serper>.key
-  voice.provider
-  speech-to-text.<provider|input-device>
-  desktop.<setting>
-  memory.global
-  agent-limits.<infinite|executor-turns|autopilot-iterations>
-  workspace.<model|provider|mode|reasoning|offline>
-
-Default CLI mode is interactive and keeps running until /exit, /quit, or Ctrl+C.
-\`machdoch <task>\` and \`machdoch --task <text>\` start interactive chat with an initial task.
-Use \`/paste\` in interactive chat to submit multiline task text; finish with a line containing only \`/end\`.
-Use \`machdoch run <task>\` or \`machdoch --quick --task <text>\` for one-shot execution that exits.
-During a task run, press Ctrl+C to request cancellation after the current execution step.
-`;
-};
+export { getHelpText };
 
 export const parseCliArgs = (
   argv: string[],
@@ -2071,302 +1317,56 @@ export const parseCliArgs = (
       fail(`Expected an id after \`machdoch scheduler ${action}\`.`);
     }
 
-    if (action === "create") {
-      const scheduleCount = [
-        rawSchedulerCron,
-        rawSchedulerIntervalMs,
-        rawSchedulerDelayMs ?? rawSchedulerRunAt,
-      ].filter(Boolean).length;
-      const triggerCount = rawSchedulerTriggers?.length ?? 0;
-
-      if (scheduleCount > 1) {
-        fail(
-          "`machdoch scheduler create` expects at most one of --cron, --interval-ms, or --delay-ms/--run-at.",
-        );
-      }
-
-      if (scheduleCount + triggerCount === 0) {
-        fail(
-          "`machdoch scheduler create` expects --cron, --interval-ms, --delay-ms/--run-at, or --trigger.",
-        );
-      }
-
-      if (!rawSchedulerPrompt && !rawSchedulerPromptFile) {
-        fail(
-          "`machdoch scheduler create` expects --prompt or --prompt-file.",
-        );
-      }
-    }
-
-    if (action === "event" && !rawSchedulerEventType) {
-      fail("`machdoch scheduler event` expects --event-type.");
-    }
-
     return createParsedArgs(
       {
         ...sharedOptions,
         command: "scheduler",
       },
       {
-        scheduler: {
+        scheduler: createSchedulerCliOptions({
           action,
-          ...(normalizeOptionalString(rawSubject)
-            ? { subject: normalizeOptionalString(rawSubject) }
-            : {}),
-          ...(rawSchedulerName ? { name: rawSchedulerName } : {}),
-          ...(rawSchedulerCron ? { cron: rawSchedulerCron } : {}),
-          ...(rawSchedulerTriggers && rawSchedulerTriggers.length > 0
-            ? { triggers: rawSchedulerTriggers }
-            : {}),
-          ...(rawSchedulerTriggerFilters && rawSchedulerTriggerFilters.length > 0
-            ? { triggerFilters: rawSchedulerTriggerFilters }
-            : {}),
-          ...(rawSchedulerTriggerRecoveryFilters &&
-          rawSchedulerTriggerRecoveryFilters.length > 0
-            ? { triggerRecoveryFilters: rawSchedulerTriggerRecoveryFilters }
-            : {}),
-          ...(rawSchedulerTriggerFiringMode
-            ? { triggerFiringMode: rawSchedulerTriggerFiringMode }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerTriggerCooldownMs,
-            "--trigger-cooldown-ms",
-          ) !== undefined
-            ? {
-                triggerCooldownMs: parseOptionalPositiveInteger(
-                  rawSchedulerTriggerCooldownMs,
-                  "--trigger-cooldown-ms",
-                ),
-              }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerTriggerRepeatMs,
-            "--trigger-repeat-ms",
-          ) !== undefined
-            ? {
-                triggerRepeatMs: parseOptionalPositiveInteger(
-                  rawSchedulerTriggerRepeatMs,
-                  "--trigger-repeat-ms",
-                ),
-              }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerTriggerDebounceMs,
-            "--trigger-debounce-ms",
-          ) !== undefined
-            ? {
-                triggerDebounceMs: parseOptionalPositiveInteger(
-                  rawSchedulerTriggerDebounceMs,
-                  "--trigger-debounce-ms",
-                ),
-              }
-            : {}),
-          ...(rawSchedulerTriggerDedupeKeyTemplate
-            ? { triggerDedupeKeyTemplate: rawSchedulerTriggerDedupeKeyTemplate }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerTriggerMaxEvents,
-            "--trigger-max-events",
-          ) !== undefined
-            ? {
-                triggerMaxEvents: parseOptionalPositiveInteger(
-                  rawSchedulerTriggerMaxEvents,
-                  "--trigger-max-events",
-                ),
-              }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerTriggerWindowMs,
-            "--trigger-window-ms",
-          ) !== undefined
-            ? {
-                triggerWindowMs: parseOptionalPositiveInteger(
-                  rawSchedulerTriggerWindowMs,
-                  "--trigger-window-ms",
-                ),
-              }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerIntervalMs,
-            "--interval-ms",
-          ) !== undefined
-            ? {
-                intervalMs: parseOptionalPositiveInteger(
-                  rawSchedulerIntervalMs,
-                  "--interval-ms",
-                ),
-              }
-            : {}),
-          ...(parseOptionalPositiveInteger(rawSchedulerDelayMs, "--delay-ms") !==
-          undefined
-            ? {
-                delayMs: parseOptionalPositiveInteger(
-                  rawSchedulerDelayMs,
-                  "--delay-ms",
-                ),
-              }
-            : {}),
-          ...(parseOptionalPositiveInteger(rawSchedulerRunAt, "--run-at") !==
-          undefined
-            ? {
-                runAt: parseOptionalPositiveInteger(
-                  rawSchedulerRunAt,
-                  "--run-at",
-                ),
-              }
-            : {}),
-          ...(rawSchedulerTimezone ? { timezone: rawSchedulerTimezone } : {}),
-          ...(rawSchedulerPrompt ? { prompt: rawSchedulerPrompt } : {}),
-          ...(rawSchedulerPromptFile
-            ? { promptFile: rawSchedulerPromptFile }
-            : {}),
-          ...(rawSchedulerContextPacks && rawSchedulerContextPacks.length > 0
-            ? { contextPacks: rawSchedulerContextPacks }
-            : {}),
-          ...(rawSchedulerMacros && rawSchedulerMacros.length > 0
-            ? { macros: rawSchedulerMacros }
-            : {}),
-          ...(rawSchedulerMissedRunPolicy
-            ? { missedRunPolicy: rawSchedulerMissedRunPolicy }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerMissedRunGraceMs,
-            "--missed-run-grace-ms",
-          ) !== undefined
-            ? {
-                missedRunGraceMs: parseOptionalPositiveInteger(
-                  rawSchedulerMissedRunGraceMs,
-                  "--missed-run-grace-ms",
-                ),
-              }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerRetryAttempts,
-            "--retry-attempts",
-          ) !== undefined
-            ? {
-                retryAttempts: parseOptionalPositiveInteger(
-                  rawSchedulerRetryAttempts,
-                  "--retry-attempts",
-                ),
-              }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerRetryMinMs,
-            "--retry-min-ms",
-          ) !== undefined
-            ? {
-                retryMinMs: parseOptionalPositiveInteger(
-                  rawSchedulerRetryMinMs,
-                  "--retry-min-ms",
-                ),
-              }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerRetryMaxMs,
-            "--retry-max-ms",
-          ) !== undefined
-            ? {
-                retryMaxMs: parseOptionalPositiveInteger(
-                  rawSchedulerRetryMaxMs,
-                  "--retry-max-ms",
-                ),
-              }
-            : {}),
-          ...(parseOptionalPositiveNumber(
-            rawSchedulerRetryFactor,
-            "--retry-factor",
-          ) !== undefined
-            ? {
-                retryFactor: parseOptionalPositiveNumber(
-                  rawSchedulerRetryFactor,
-                  "--retry-factor",
-                ),
-              }
-            : {}),
-          ...(rawSchedulerRetryRandomize
-            ? {
-                retryRandomize: parseBooleanToggle(
-                  rawSchedulerRetryRandomize,
-                  "--retry-randomize",
-                ),
-              }
-            : {}),
-          ...(rawSchedulerDedupeKey ? { dedupeKey: rawSchedulerDedupeKey } : {}),
-          ...(parseOptionalPositiveInteger(rawSchedulerTtlMs, "--ttl-ms") !==
-          undefined
-            ? { ttlMs: parseOptionalPositiveInteger(rawSchedulerTtlMs, "--ttl-ms") }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerMaxDurationMs,
-            "--max-duration-ms",
-          ) !== undefined
-            ? {
-                maxDurationMs: parseOptionalPositiveInteger(
-                  rawSchedulerMaxDurationMs,
-                  "--max-duration-ms",
-                ),
-              }
-            : {}),
-          ...(rawSchedulerConcurrencyKey
-            ? { concurrencyKey: rawSchedulerConcurrencyKey }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerConcurrencyLimit,
-            "--concurrency-limit",
-          ) !== undefined
-            ? {
-                concurrencyLimit: parseOptionalPositiveInteger(
-                  rawSchedulerConcurrencyLimit,
-                  "--concurrency-limit",
-                ),
-              }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerHistoryLimit,
-            "--history-limit",
-          ) !== undefined
-            ? {
-                historyLimit: parseOptionalPositiveInteger(
-                  rawSchedulerHistoryLimit,
-                  "--history-limit",
-                ),
-              }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerMaxCatchUpRuns,
-            "--max-catch-up-runs",
-          ) !== undefined
-            ? {
-                maxCatchUpRuns: parseOptionalPositiveInteger(
-                  rawSchedulerMaxCatchUpRuns,
-                  "--max-catch-up-runs",
-                ),
-              }
-            : {}),
-          ...(rawSchedulerEventType ? { eventType: rawSchedulerEventType } : {}),
-          ...(rawSchedulerEventKind ? { eventKind: rawSchedulerEventKind } : {}),
-          ...(rawSchedulerEventSource
-            ? { eventSource: rawSchedulerEventSource }
-            : {}),
-          ...(rawSchedulerEventPayloadJson
-            ? { eventPayloadJson: rawSchedulerEventPayloadJson }
-            : {}),
-          ...(rawSchedulerEventDedupeKey
-            ? { eventDedupeKey: rawSchedulerEventDedupeKey }
-            : {}),
-          ...(parseOptionalPositiveInteger(
-            rawSchedulerEventOccurredAt,
-            "--event-occurred-at",
-          ) !== undefined
-            ? {
-                eventOccurredAt: parseOptionalPositiveInteger(
-                  rawSchedulerEventOccurredAt,
-                  "--event-occurred-at",
-                ),
-              }
-            : {}),
-        } as SchedulerCliOptions,
+          rawSubject,
+          rawSchedulerName,
+          rawSchedulerCron,
+          rawSchedulerTriggers,
+          rawSchedulerTriggerFilters,
+          rawSchedulerTriggerRecoveryFilters,
+          rawSchedulerTriggerFiringMode,
+          rawSchedulerTriggerCooldownMs,
+          rawSchedulerTriggerRepeatMs,
+          rawSchedulerTriggerDebounceMs,
+          rawSchedulerTriggerDedupeKeyTemplate,
+          rawSchedulerTriggerMaxEvents,
+          rawSchedulerTriggerWindowMs,
+          rawSchedulerIntervalMs,
+          rawSchedulerDelayMs,
+          rawSchedulerRunAt,
+          rawSchedulerTimezone,
+          rawSchedulerPrompt,
+          rawSchedulerPromptFile,
+          rawSchedulerContextPacks,
+          rawSchedulerMacros,
+          rawSchedulerMissedRunPolicy,
+          rawSchedulerMissedRunGraceMs,
+          rawSchedulerRetryAttempts,
+          rawSchedulerRetryMinMs,
+          rawSchedulerRetryMaxMs,
+          rawSchedulerRetryFactor,
+          rawSchedulerRetryRandomize,
+          rawSchedulerDedupeKey,
+          rawSchedulerTtlMs,
+          rawSchedulerMaxDurationMs,
+          rawSchedulerConcurrencyKey,
+          rawSchedulerConcurrencyLimit,
+          rawSchedulerHistoryLimit,
+          rawSchedulerMaxCatchUpRuns,
+          rawSchedulerEventType,
+          rawSchedulerEventKind,
+          rawSchedulerEventSource,
+          rawSchedulerEventPayloadJson,
+          rawSchedulerEventDedupeKey,
+          rawSchedulerEventOccurredAt,
+        }),
       },
     );
   }

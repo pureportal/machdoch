@@ -1,10 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  normalizeRalphWatchId,
-  normalizeRalphWatchInput,
-} from "./normalize-ralph-watch-input.helper.ts";
+import { normalizeRalphWatchInput } from "./normalize-ralph-watch-input.helper.ts";
 import type { RalphWatchInput } from "../ralph-watches.ts";
 
 const createWatchInput = (rootPath: string): RalphWatchInput => ({
@@ -18,20 +15,6 @@ const createWatchInput = (rootPath: string): RalphWatchInput => ({
     allowWrites: false,
     allowNetwork: true,
   },
-});
-
-describe("normalizeRalphWatchId", () => {
-  it.each([
-    ["spaces and punctuation", "  Nightly Import! ", "nightly-import"],
-    ["underscores", "watch_daily_run", "watch-daily-run"],
-    ["long ids", "x".repeat(100), "x".repeat(80)],
-  ])("normalizes %s", (_label, value, expected) => {
-    expect(normalizeRalphWatchId(value)).toBe(expected);
-  });
-
-  it.each(["", "   ", undefined])("creates a fallback id for %s", (value) => {
-    expect(normalizeRalphWatchId(value)).toMatch(/^watch-/u);
-  });
 });
 
 describe("normalizeRalphWatchInput", () => {

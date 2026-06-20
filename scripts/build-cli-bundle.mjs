@@ -26,6 +26,7 @@ await build({
   },
   bundle: true,
   entryPoints: ["src/cli/main.ts"],
+  external: ["playwright-core"],
   format: "cjs",
   logLevel: "info",
   outfile: outputFile,

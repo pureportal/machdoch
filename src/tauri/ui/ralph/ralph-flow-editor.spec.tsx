@@ -1146,7 +1146,12 @@ describe("RalphFlowEditor", () => {
       screen.queryByRole("button", { name: "Delete Ralph flow Existing Flow" }),
     ).toBeNull();
     fireEvent.contextMenu(flowButton);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+    const deleteMenuItem = await screen.findByRole("menuitem", { name: "Delete" });
+
+    await waitFor(() => {
+      expect((deleteMenuItem as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(deleteMenuItem);
 
     await waitFor(() => {
       expect(deleteRalphFlow).toHaveBeenCalledWith(

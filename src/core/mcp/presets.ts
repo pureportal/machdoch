@@ -1,4 +1,5 @@
 import type { McpPresetDefinition } from "./types.js";
+import { cloneMcpPreset } from "./_helpers/clone-mcp-preset.helper.js";
 
 export const MCP_PRESETS: readonly McpPresetDefinition[] = [
   {
@@ -263,18 +264,5 @@ export const getMcpPreset = (
 };
 
 export const listMcpPresets = (): McpPresetDefinition[] => {
-  return MCP_PRESETS.map((preset) => ({
-    ...preset,
-    server: {
-      ...preset.server,
-      transport: { ...preset.server.transport },
-      ...(preset.server.auth ? { auth: { ...preset.server.auth } } : {}),
-      ...(preset.server.exposure
-        ? { exposure: { ...preset.server.exposure } }
-        : {}),
-      ...(preset.server.toolOverrides
-        ? { toolOverrides: { ...preset.server.toolOverrides } }
-        : {}),
-    },
-  }));
+  return MCP_PRESETS.map(cloneMcpPreset);
 };

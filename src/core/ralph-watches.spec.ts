@@ -9,7 +9,7 @@ import {
   syncRalphWatchSchedulerJobs,
   upsertRalphWatch,
   watchRootMatchesPath,
-} from "../ralph-watches.js";
+} from "./ralph-watches.js";
 
 describe("Ralph watches", () => {
   const rootsToClean: string[] = [];

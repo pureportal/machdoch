@@ -60,5 +60,6 @@ export default defineConfig({
     minify: tauriDebug ? false : "esbuild",
     sourcemap: tauriDebug,
     target: tauriBuildTarget,
+    chunkSizeWarningLimit: 700,
   },
 });

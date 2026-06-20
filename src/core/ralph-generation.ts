@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { loadRuntimeConfig } from "./config.js";
 import { discoverCustomizations } from "./customizations.js";
 import { executeTask } from "./execution.js";
@@ -9,36 +9,53 @@ import {
   createToolErrorResult,
   type AgentToolDefinition,
 } from "./_helpers/agent-tools-shared.js";
+import { FLOW_FILE_EXTENSION } from "./_helpers/ralph-flow-ids.helper.js";
+import {
+  createAvailableGeneratedFlowAlias,
+  writeGeneratedRalphFlowWithAliasFallback,
+} from "./_helpers/create-available-generated-flow-alias.helper.js";
+import { createGenerationAttemptFlowPath } from "./_helpers/create-generation-attempt-flow-path.helper.js";
+import { createGenerationActorResultMessage } from "./_helpers/create-generation-actor-result-message.helper.js";
+import { createGenerationDidNotConvergeSummary } from "./_helpers/create-generation-did-not-converge-summary.helper.js";
+import { createGenerationFeedbackExcerpt } from "./_helpers/create-generation-feedback-excerpt.helper.js";
+import { createLocalGenerationValidatorResult } from "./_helpers/create-local-generation-validator-result.helper.js";
+import {
+  RalphFileGenerationLogger,
+  createRalphGenerationLogger,
+} from "./_helpers/create-ralph-generation-logger.helper.js";
+import { createTaskDidNotExecuteFeedback } from "./_helpers/create-task-did-not-execute-feedback.helper.js";
+import { clampRalphGenerationInterviewMaxTurns } from "./_helpers/clamp-ralph-generation-interview-max-turns.helper.js";
+import { mergeRalphGenerationInterviewLines } from "./_helpers/merge-ralph-generation-interview-lines.helper.js";
+import { readGeneratedRalphFlow } from "./_helpers/read-generated-ralph-flow.helper.js";
+import {
+  RALPH_GENERATION_INTERVIEW_INPUT_TYPES,
+  RALPH_GENERATION_INTERVIEW_SECTION_TITLE,
+  readRalphGenerationInterviewSubmission,
+  type RalphGenerationInterviewSubmission,
+} from "./_helpers/read-ralph-generation-interview-submission.helper.js";
+import { validateGeneratedRalphFlowStructure } from "./_helpers/validate-generated-ralph-flow-structure.helper.js";
 import { loadMcpConfigSync, loadMcpDiscoveryCacheSync } from "./mcp/config.js";
 import { normalizeRalphFlowLayout } from "./ralph-layout.js";
 import {
-  FLOW_FILE_EXTENSION,
   MAX_RALPH_SIMPLE_LOG_CHARS,
   RALPH_BLOCK_TYPES,
   RALPH_FLOW_SCHEMA_VERSION,
   RALPH_UTILITY_TYPES,
   capLogText,
   createLogTimestamp,
-  createRalphLogLine,
   createRalphTaskExecutionOptions,
   createValidationResult,
   getRalphFlowPath,
   getRalphFlowStorageDirectory,
-  getRalphStorageDirectory,
-  hasGraphCycle,
-  listRalphFlows,
   normalizeFlowAlias,
-  normalizeRunId,
   parseRalphFlowJson,
   sanitizeTraceValue,
   validateRalphFlow,
-  writeRalphFlow,
   type RalphBlockType,
   type RalphFlow,
   type RalphFlowScope,
   type RalphInputField,
   type RalphInputFieldType,
-  type RalphInputOption,
   type RalphInputValue,
   type RalphUtilityType,
   type RalphValidationResult,
@@ -52,6 +69,8 @@ import type {
   TaskExecutionResult,
 } from "./types.js";
 
+export { getRalphGenerationDirectory } from "./_helpers/create-ralph-generation-logger.helper.js";
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
@@ -61,8 +80,6 @@ export const MAX_RALPH_GENERATION_MAX_ROUNDS = 25;
 export const DEFAULT_RALPH_GENERATION_INTERVIEW_MAX_TURNS = 5;
 export const MAX_RALPH_GENERATION_INTERVIEW_MAX_TURNS = 5;
 const DEFAULT_RALPH_GENERATION_ACTOR_TIMEOUT_MS = 3 * 60 * 1_000;
-
-const RALPH_GENERATION_SUBDIRECTORY = "generations";
 
 export type RalphGenerationActor = "generator" | "validator";
 
@@ -219,145 +236,6 @@ export interface RalphGenerationInterviewResult {
   result?: TaskExecutionResult;
 }
 
-export const getRalphGenerationDirectory = (
-  workspaceRoot: string,
-  scope: RalphFlowScope = "workspace",
-): string => {
-  return join(
-    getRalphStorageDirectory(workspaceRoot, scope),
-    RALPH_GENERATION_SUBDIRECTORY,
-  );
-};
-
-const createRalphGenerationArtifactPaths = (
-  generationDirectory: string,
-  timestamp: string,
-  preferredId?: string,
-): RalphGenerationLogPaths => {
-  const baseName = preferredId
-    ? normalizeRunId(preferredId)
-    : timestamp.replace(/[:.]/gu, "-");
-  let id = baseName;
-  let candidateDirectory = join(generationDirectory, id);
-  let suffix = 1;
-
-  while (existsSync(candidateDirectory)) {
-    id = `${baseName}-${suffix}`;
-    candidateDirectory = join(generationDirectory, id);
-    suffix += 1;
-  }
-
-  return {
-    id,
-    directory: candidateDirectory,
-    recordPath: join(candidateDirectory, "generation.json"),
-    simpleMarkdownPath: join(candidateDirectory, "simple.md"),
-    traceJsonlPath: join(candidateDirectory, "trace.jsonl"),
-  };
-};
-
-const formatGenerationMarkdownEntry = (event: RalphGenerationEvent): string => {
-  const round = event.round ? ` round ${event.round}` : "";
-  const actor = event.actor ? ` ${event.actor}` : "";
-  const counts =
-    event.blockCount !== undefined || event.edgeCount !== undefined
-      ? ` (${event.blockCount ?? 0} blocks, ${event.edgeCount ?? 0} edges)`
-      : "";
-
-  return `- ${event.createdAt}${round}${actor} ${event.message}${counts}`;
-};
-
-class RalphFileGenerationLogger {
-  private pending: Promise<void> = Promise.resolve();
-  private failed = false;
-
-  public constructor(public readonly paths: RalphGenerationLogPaths) {}
-
-  public event(event: RalphGenerationEvent): void {
-    const safeEvent: RalphGenerationEvent = {
-      ...event,
-      message: capLogText(event.message, MAX_RALPH_SIMPLE_LOG_CHARS),
-    };
-
-    this.enqueue(async () => {
-      await appendFile(this.paths.traceJsonlPath, createRalphLogLine(safeEvent), "utf8");
-      await appendFile(
-        this.paths.simpleMarkdownPath,
-        `${formatGenerationMarkdownEntry(safeEvent)}\n`,
-        "utf8",
-      );
-    });
-  }
-
-  public async record(result: RalphFlowGenerationResult): Promise<void> {
-    await this.flush();
-    await writeFile(
-      this.paths.recordPath,
-      `${JSON.stringify(sanitizeTraceValue(result), null, 2)}\n`,
-      "utf8",
-    );
-  }
-
-  public async flush(): Promise<void> {
-    await this.pending.catch(() => undefined);
-  }
-
-  private enqueue(write: () => Promise<void>): void {
-    if (this.failed) {
-      return;
-    }
-
-    this.pending = this.pending
-      .then(write)
-      .catch(() => {
-        this.failed = true;
-      });
-  }
-}
-
-const createRalphGenerationLogger = async (
-  workspaceRoot: string,
-  options: {
-    runId: string;
-    flowPath: string;
-    generationFlowPath: string;
-    prompt: string;
-    scope?: RalphFlowScope;
-  },
-): Promise<RalphFileGenerationLogger> => {
-  const createdAt = createLogTimestamp();
-  const paths = createRalphGenerationArtifactPaths(
-    getRalphGenerationDirectory(workspaceRoot, options.scope ?? "workspace"),
-    createdAt,
-    options.runId,
-  );
-  const logger = new RalphFileGenerationLogger(paths);
-
-  await mkdir(paths.directory, { recursive: true });
-  await writeFile(
-    paths.simpleMarkdownPath,
-    [
-      `# Ralph Generation ${paths.id}`,
-      "",
-      `Started: ${createdAt}`,
-      `Flow path: ${options.flowPath}`,
-      `Temporary flow path base: ${options.generationFlowPath}`,
-      "Per-round temporary flow paths append `-round-N` before the file extension.",
-      "",
-      "## Prompt",
-      "",
-      capLogText(options.prompt, MAX_RALPH_SIMPLE_LOG_CHARS),
-      "",
-      "## Activity",
-      "",
-    ].join("\n"),
-    "utf8",
-  );
-  await writeFile(paths.traceJsonlPath, "", "utf8");
-
-  return logger;
-};
-
 interface RalphGenerationBlockContract {
   type: RalphBlockType;
   role: string;
@@ -381,152 +259,6 @@ interface RalphGeneratedFlowIdentity {
   alias?: string;
   name: string;
 }
-
-const MAX_RALPH_GENERATED_FLOW_ALIAS_LENGTH = 80;
-const MAX_RALPH_GENERATED_FLOW_ALIAS_ATTEMPTS = 1_000;
-const MAX_RALPH_GENERATED_FLOW_ALIAS_WRITE_ATTEMPTS = 5;
-
-const isRalphFlowAliasCollisionError = (error: unknown): boolean => {
-  return (
-    error instanceof Error &&
-    /^Ralph flow alias `[^`]+` is already used by `[^`]+`\.$/u.test(error.message)
-  );
-};
-
-const createGeneratedFlowAliasCandidate = (
-  baseAlias: string,
-  suffix: number,
-): string => {
-  if (suffix === 0) {
-    return baseAlias;
-  }
-
-  const suffixText = `-${suffix}`;
-  const maxBaseLength = Math.max(
-    1,
-    MAX_RALPH_GENERATED_FLOW_ALIAS_LENGTH - suffixText.length,
-  );
-  const trimmedBase = baseAlias.slice(0, maxBaseLength).replace(/-+$/gu, "");
-  const candidate = normalizeFlowAlias(`${trimmedBase}${suffixText}`);
-
-  if (!candidate) {
-    throw new Error("Expected a Ralph flow alias candidate.");
-  }
-
-  return candidate;
-};
-
-const collectUnavailableGeneratedFlowAliases = async (
-  workspaceRoot: string,
-  scope: RalphFlowScope,
-  currentFlowId: string,
-): Promise<Set<string>> => {
-  const unavailableAliases = new Set<string>();
-  const normalizedCurrentFlowId = normalizeFlowAlias(currentFlowId);
-  const flowSummaries = await listRalphFlows(workspaceRoot, { scope });
-
-  for (const summary of flowSummaries) {
-    const existingId = normalizeFlowAlias(summary.id);
-
-    if (existingId && existingId !== normalizedCurrentFlowId) {
-      unavailableAliases.add(existingId);
-    }
-
-    if (summary.alias) {
-      const existingAlias = normalizeFlowAlias(summary.alias);
-
-      if (existingAlias && existingId !== normalizedCurrentFlowId) {
-        unavailableAliases.add(existingAlias);
-      }
-    }
-  }
-
-  return unavailableAliases;
-};
-
-const createAvailableGeneratedFlowAlias = async (
-  workspaceRoot: string,
-  scope: RalphFlowScope,
-  preferredAlias: string,
-  currentFlowId: string,
-): Promise<string> => {
-  const baseAlias = normalizeFlowAlias(preferredAlias);
-
-  if (!baseAlias) {
-    throw new Error("Expected a Ralph flow alias before generation.");
-  }
-
-  const unavailableAliases = await collectUnavailableGeneratedFlowAliases(
-    workspaceRoot,
-    scope,
-    currentFlowId,
-  );
-
-  for (
-    let suffix = 0;
-    suffix < MAX_RALPH_GENERATED_FLOW_ALIAS_ATTEMPTS;
-    suffix += 1
-  ) {
-    const candidate = createGeneratedFlowAliasCandidate(baseAlias, suffix);
-
-    if (!unavailableAliases.has(candidate)) {
-      return candidate;
-    }
-  }
-
-  throw new Error(
-    `Could not allocate a unique Ralph flow alias from \`${preferredAlias}\`.`,
-  );
-};
-
-const writeGeneratedRalphFlowWithAliasFallback = async (
-  workspaceRoot: string,
-  flow: RalphFlow,
-  options: {
-    scope: RalphFlowScope;
-    fallbackAliasBase: string;
-    allowAliasFallback: boolean;
-  },
-): Promise<RalphFlow> => {
-  let writableFlow = flow;
-
-  for (
-    let attempt = 1;
-    attempt <= MAX_RALPH_GENERATED_FLOW_ALIAS_WRITE_ATTEMPTS;
-    attempt += 1
-  ) {
-    try {
-      await writeRalphFlow(workspaceRoot, writableFlow, {
-        createRevision: true,
-        scope: options.scope,
-      });
-
-      return writableFlow;
-    } catch (error) {
-      if (
-        !options.allowAliasFallback ||
-        !isRalphFlowAliasCollisionError(error) ||
-        attempt >= MAX_RALPH_GENERATED_FLOW_ALIAS_WRITE_ATTEMPTS
-      ) {
-        throw error;
-      }
-
-      const fallbackAlias = await createAvailableGeneratedFlowAlias(
-        workspaceRoot,
-        options.scope,
-        writableFlow.alias ?? options.fallbackAliasBase,
-        writableFlow.id,
-      );
-
-      writableFlow = normalizeRalphFlowLayout({
-        ...writableFlow,
-        alias: fallbackAlias,
-      });
-    }
-  }
-
-  return writableFlow;
-};
 
 const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
   RalphBlockType,
@@ -1681,31 +1413,6 @@ const createRalphGenerationToolDefinitions = (
   ];
 };
 
-const RALPH_GENERATION_INTERVIEW_SECTION_TITLE =
-  "Ralph generation interview round";
-const RALPH_GENERATION_INTERVIEW_INPUT_TYPES = [
-  "text",
-  "textarea",
-  "number",
-  "boolean",
-  "select",
-  "multiselect",
-  "url",
-  "path",
-  "file",
-  "files",
-  "image",
-  "images",
-] as const satisfies readonly RalphInputFieldType[];
-
-const isRalphGenerationInterviewInputType = (
-  value: string,
-): value is RalphInputFieldType => {
-  return RALPH_GENERATION_INTERVIEW_INPUT_TYPES.includes(
-    value as RalphInputFieldType,
-  );
-};
-
 const createRalphGenerationInterviewToolDefinitions =
   (): AgentToolDefinition[] => [
     {
@@ -1810,333 +1517,6 @@ const createRalphGenerationInterviewToolDefinitions =
       },
     },
   ];
-
-const clampRalphGenerationInterviewMaxTurns = (
-  value: number | undefined,
-): number => {
-  if (value === undefined || !Number.isInteger(value)) {
-    return DEFAULT_RALPH_GENERATION_INTERVIEW_MAX_TURNS;
-  }
-
-  return Math.min(
-    Math.max(value, 1),
-    MAX_RALPH_GENERATION_INTERVIEW_MAX_TURNS,
-  );
-};
-
-const normalizeRalphGenerationInterviewFieldId = (
-  value: unknown,
-  fallback: string,
-): string => {
-  const normalized =
-    typeof value === "string"
-      ? value
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9_-]+/gu, "-")
-          .replace(/^-+|-+$/gu, "")
-      : "";
-
-  return normalized || fallback;
-};
-
-const normalizeRalphGenerationInterviewFieldType = (
-  value: unknown,
-): RalphInputFieldType => {
-  if (typeof value !== "string") {
-    return "textarea";
-  }
-
-  const normalized = value.trim().toLowerCase().replace(/-/gu, "_");
-  const aliases: Record<string, RalphInputFieldType> = {
-    checkbox: "boolean",
-    checkboxes: "multiselect",
-    choice: "select",
-    choices: "select",
-    input: "text",
-    integer: "number",
-    multi_select: "multiselect",
-    multiple_choice: "select",
-    regex: "text",
-    single_choice: "select",
-    string: "text",
-    text_area: "textarea",
-  };
-  const aliased = aliases[normalized];
-
-  if (aliased) {
-    return aliased;
-  }
-
-  return isRalphGenerationInterviewInputType(normalized)
-    ? normalized
-    : "textarea";
-};
-
-const normalizeRalphGenerationInterviewOptions = (
-  value: unknown,
-): RalphInputOption[] | undefined => {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-
-  const options = value
-    .flatMap((entry): RalphInputOption[] => {
-      if (typeof entry === "string") {
-        const optionValue = entry.trim();
-
-        return optionValue ? [{ value: optionValue, label: optionValue }] : [];
-      }
-
-      if (!isRecord(entry)) {
-        return [];
-      }
-
-      const optionValue =
-        typeof entry.value === "string" ? entry.value.trim() : "";
-      const optionLabel =
-        typeof entry.label === "string" && entry.label.trim()
-          ? entry.label.trim()
-          : optionValue;
-
-      return optionValue ? [{ value: optionValue, label: optionLabel }] : [];
-    })
-    .slice(0, 20);
-
-  return options.length > 0 ? options : undefined;
-};
-
-const normalizeRalphGenerationInterviewValidation = (
-  value: unknown,
-): RalphInputField["validation"] | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const validation: NonNullable<RalphInputField["validation"]> = {};
-  for (const key of ["min", "max", "step", "minLength", "maxLength"] as const) {
-    if (typeof value[key] === "number" && Number.isFinite(value[key])) {
-      validation[key] = value[key];
-    }
-  }
-
-  if (typeof value.pattern === "string" && value.pattern.trim()) {
-    validation.pattern = value.pattern.trim();
-  }
-
-  return Object.keys(validation).length > 0 ? validation : undefined;
-};
-
-const normalizeRalphGenerationInterviewHelp = (
-  value: unknown,
-): string | undefined => {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const normalized = value.replace(/\s+/gu, " ").trim();
-
-  if (!normalized) {
-    return undefined;
-  }
-
-  return normalized.length > 140
-    ? `${normalized.slice(0, 137).trimEnd()}...`
-    : normalized;
-};
-
-const normalizeRalphGenerationInterviewInputValue = (
-  value: unknown,
-): RalphInputValue | undefined => {
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    value === null
-  ) {
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    return value.filter((entry): entry is string => typeof entry === "string");
-  }
-
-  return undefined;
-};
-
-interface RalphGenerationInterviewSubmission {
-  complete: boolean;
-  summary?: string;
-  questionScope?: string;
-  contextSummary?: string;
-  findings: string[];
-  assumptions: string[];
-  relevantFiles: string[];
-  fields: RalphInputField[];
-}
-
-const normalizeRalphGenerationInterviewStringArray = (
-  value: unknown,
-): string[] => {
-  return Array.isArray(value)
-    ? value.flatMap((entry) =>
-        typeof entry === "string" && entry.trim() ? [entry.trim()] : [],
-      )
-    : [];
-};
-
-const normalizeRalphGenerationInterviewSubmission = (
-  value: unknown,
-): RalphGenerationInterviewSubmission => {
-  if (!isRecord(value)) {
-    throw new Error("Interview response must be a JSON object.");
-  }
-
-  const questions = Array.isArray(value.questions) ? value.questions : [];
-  const fields = questions
-    .flatMap((entry, index): RalphInputField[] => {
-      if (!isRecord(entry)) {
-        return [];
-      }
-
-      const label =
-        typeof entry.label === "string" && entry.label.trim()
-          ? entry.label.trim()
-          : typeof entry.question === "string" && entry.question.trim()
-            ? entry.question.trim()
-            : "";
-
-      if (!label) {
-        return [];
-      }
-
-      const type = normalizeRalphGenerationInterviewFieldType(entry.type);
-      const options = normalizeRalphGenerationInterviewOptions(entry.options);
-
-      if ((type === "select" || type === "multiselect") && !options) {
-        return [];
-      }
-
-      const defaultValue = normalizeRalphGenerationInterviewInputValue(
-        entry.defaultValue ?? entry.default,
-      );
-      const validation = normalizeRalphGenerationInterviewValidation(
-        entry.validation,
-      );
-      const help = normalizeRalphGenerationInterviewHelp(entry.help);
-
-      return [
-        {
-          id: normalizeRalphGenerationInterviewFieldId(
-            entry.id,
-            `question_${index + 1}`,
-          ),
-          label,
-          type,
-          required: entry.required === true,
-          skippable: entry.skippable !== false,
-          ...(typeof entry.placeholder === "string" && entry.placeholder.trim()
-            ? { placeholder: entry.placeholder.trim() }
-            : {}),
-          ...(help ? { help } : {}),
-          ...(defaultValue !== undefined ? { defaultValue } : {}),
-          ...(options ? { options } : {}),
-          ...(validation ? { validation } : {}),
-          ...(typeof entry.variableName === "string" && entry.variableName.trim()
-            ? { variableName: entry.variableName.trim() }
-            : {}),
-        },
-      ];
-    })
-    .slice(0, 6);
-
-  return {
-    complete: value.complete === true,
-    ...(typeof value.summary === "string" && value.summary.trim()
-      ? { summary: value.summary.trim() }
-      : {}),
-    ...(typeof value.questionScope === "string" && value.questionScope.trim()
-      ? { questionScope: value.questionScope.trim() }
-      : {}),
-    ...(typeof value.contextSummary === "string" && value.contextSummary.trim()
-      ? { contextSummary: value.contextSummary.trim() }
-      : {}),
-    findings: normalizeRalphGenerationInterviewStringArray(value.findings),
-    assumptions: normalizeRalphGenerationInterviewStringArray(value.assumptions),
-    relevantFiles: normalizeRalphGenerationInterviewStringArray(
-      value.relevantFiles,
-    ),
-    fields,
-  };
-};
-
-const parseRalphGenerationInterviewJsonCandidate = (text: string): unknown => {
-  const trimmed = text.trim();
-  const taggedMatch = trimmed.match(
-    /<ralph_generation_interview>\s*([\s\S]*?)\s*<\/ralph_generation_interview>/iu,
-  );
-  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/iu);
-  const candidate = taggedMatch?.[1]?.trim() ?? fencedMatch?.[1]?.trim() ?? trimmed;
-
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    const start = candidate.indexOf("{");
-    const end = candidate.lastIndexOf("}");
-
-    if (start >= 0 && end > start) {
-      return JSON.parse(candidate.slice(start, end + 1));
-    }
-
-    throw new Error("Interview response did not contain valid JSON.");
-  }
-};
-
-const readRalphGenerationInterviewSubmission = (
-  result: TaskExecutionResult,
-): RalphGenerationInterviewSubmission => {
-  const candidates = [
-    ...result.outputSections
-      .filter((section) => section.title === RALPH_GENERATION_INTERVIEW_SECTION_TITLE)
-      .map((section) => section.lines.join("\n")),
-    result.response?.markdown,
-    ...result.outputSections.map((section) => section.lines.join("\n")),
-    result.summary,
-  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-
-  for (const candidate of candidates) {
-    try {
-      return normalizeRalphGenerationInterviewSubmission(
-        parseRalphGenerationInterviewJsonCandidate(candidate),
-      );
-    } catch {
-      // Try the next candidate; agents may include narrative around the contract.
-    }
-  }
-
-  throw new Error("The interviewer did not return a valid interview contract.");
-};
-
-const mergeRalphGenerationInterviewLines = (
-  current: readonly string[],
-  incoming: readonly string[],
-): string[] => {
-  const result = [...current];
-  const seen = new Set(result.map((entry) => entry.toLowerCase()));
-
-  for (const entry of incoming) {
-    const key = entry.toLowerCase();
-
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    result.push(entry);
-  }
-
-  return result.slice(-20);
-};
 
 const createRalphGenerationInterviewSession = (
   options: RalphGenerationInterviewOptions,
@@ -2511,261 +1891,6 @@ const createFlowGenerationTask = (
     .join("\n");
 };
 
-type GeneratedRalphFlowSource =
-  | "file"
-  | "tagged-response"
-  | "fenced-response"
-  | "raw-response";
-
-interface GeneratedRalphFlowReadResult {
-  flow?: RalphFlow;
-  source?: GeneratedRalphFlowSource;
-  error?: string;
-}
-
-interface GeneratedRalphFlowJsonCandidate {
-  source: Exclude<GeneratedRalphFlowSource, "file">;
-  raw: string;
-}
-
-const RALPH_FLOW_JSON_TAG_PATTERN =
-  /<ralph_flow_json>\s*([\s\S]*?)\s*<\/ralph_flow_json>/giu;
-const FENCED_JSON_PATTERN = /```(?:json)?\s*([\s\S]*?)```/giu;
-
-const looksLikeRalphFlowJsonText = (value: string): boolean => {
-  const text = value.trim();
-
-  return (
-    text.includes('"schemaVersion"') &&
-    text.includes('"blocks"') &&
-    text.includes('"edges"')
-  );
-};
-
-const getGenerationResultTextCandidates = (
-  result: TaskExecutionResult,
-): string[] => {
-  const candidates = [
-    result.response?.markdown,
-    ...result.outputSections.map((section) => section.lines.join("\n")),
-    result.summary,
-  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-  const seen = new Set<string>();
-  const uniqueCandidates: string[] = [];
-
-  for (const candidate of candidates) {
-    if (seen.has(candidate)) {
-      continue;
-    }
-
-    seen.add(candidate);
-    uniqueCandidates.push(candidate);
-  }
-
-  return uniqueCandidates;
-};
-
-const extractGeneratedRalphFlowJsonCandidates = (
-  text: string,
-): GeneratedRalphFlowJsonCandidate[] => {
-  const candidates: GeneratedRalphFlowJsonCandidate[] = [];
-
-  for (const match of text.matchAll(RALPH_FLOW_JSON_TAG_PATTERN)) {
-    const raw = match[1]?.trim();
-
-    if (raw) {
-      candidates.push({ source: "tagged-response", raw });
-    }
-  }
-
-  for (const match of text.matchAll(FENCED_JSON_PATTERN)) {
-    const raw = match[1]?.trim();
-
-    if (raw && looksLikeRalphFlowJsonText(raw)) {
-      candidates.push({ source: "fenced-response", raw });
-    }
-  }
-
-  const trimmed = text.trim();
-  if (trimmed.startsWith("{") && looksLikeRalphFlowJsonText(trimmed)) {
-    candidates.push({ source: "raw-response", raw: trimmed });
-  }
-
-  return candidates;
-};
-
-const tryParseGeneratedRalphFlowJson = (
-  raw: string,
-): { flow?: RalphFlow; error?: string } => {
-  try {
-    return { flow: parseRalphFlowJson(raw) };
-  } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-};
-
-const createGenerationAttemptFlowPath = (
-  generationFlowPath: string,
-  round: number,
-): string => {
-  const extension = extname(generationFlowPath) || FLOW_FILE_EXTENSION;
-  const basePath = generationFlowPath.endsWith(extension)
-    ? generationFlowPath.slice(0, -extension.length)
-    : generationFlowPath;
-
-  return `${basePath}-round-${round}${extension}`;
-};
-
-const readGeneratedRalphFlow = async (
-  generationFlowPath: string,
-  result: TaskExecutionResult,
-): Promise<GeneratedRalphFlowReadResult> => {
-  const errors: string[] = [];
-
-  for (const text of getGenerationResultTextCandidates(result)) {
-    for (const candidate of extractGeneratedRalphFlowJsonCandidates(text)) {
-      const parsed = tryParseGeneratedRalphFlowJson(candidate.raw);
-
-      if (parsed.flow) {
-        return { flow: parsed.flow, source: candidate.source };
-      }
-
-      errors.push(
-        `Generator ${candidate.source} JSON was invalid: ${parsed.error ?? "unknown error"}`,
-      );
-    }
-  }
-
-  if (existsSync(generationFlowPath)) {
-    const parsed = tryParseGeneratedRalphFlowJson(
-      await readFile(generationFlowPath, "utf8"),
-    );
-
-    if (parsed.flow) {
-      return { flow: parsed.flow, source: "file" };
-    }
-
-    errors.push(
-      `Generated file was not valid Ralph JSON: ${parsed.error ?? "unknown error"}`,
-    );
-  }
-
-  return {
-    error:
-      errors.length > 0
-        ? errors.join(" ")
-        : "The generator did not create a parseable Ralph flow JSON object in its file output or final response.",
-  };
-};
-
-interface RalphGenerationStructureValidation {
-  decision: "DONE" | "RETRY";
-  issues: string[];
-  warnings: string[];
-}
-
-const RALPH_GENERATION_EXAMPLE_BLOCK_IDS = new Set([
-  "wait-before-work",
-  "do-work",
-  "validate-work",
-  "work-note",
-  "work-group",
-  "main-task",
-  "review-result",
-]);
-
-const createGeneratedRalphFlowQualityWarnings = (
-  flow: RalphFlow,
-): string[] => {
-  const warnings: string[] = [];
-  const visualBlocks = flow.blocks.filter(
-    (block) => block.type === "NOTE" || block.type === "GROUP",
-  );
-  const copiedExampleBlockIds = flow.blocks
-    .map((block) => block.id)
-    .filter((blockId) => RALPH_GENERATION_EXAMPLE_BLOCK_IDS.has(blockId));
-
-  if (visualBlocks.length > 0 && flow.blocks.length <= 7) {
-    warnings.push(
-      "Small generated flows should usually omit NOTE and GROUP blocks unless visual organization materially improves readability.",
-    );
-  }
-
-  if (copiedExampleBlockIds.length > 0) {
-    warnings.push(
-      `Generated flow appears to reuse schema-example block id(s): ${copiedExampleBlockIds.join(", ")}. Use request-specific kebab-case ids instead.`,
-    );
-  }
-
-  return warnings;
-};
-
-const validateGeneratedRalphFlowStructure = (
-  flow: RalphFlow,
-): RalphGenerationStructureValidation => {
-  const issues: string[] = [];
-
-  if (
-    hasGraphCycle(flow) &&
-    flow.settings?.maxTransitions === undefined
-  ) {
-    issues.push(
-      "The generated graph has a cycle but no settings.maxTransitions cap.",
-    );
-  }
-
-  return {
-    decision: issues.length === 0 ? "DONE" : "RETRY",
-    issues,
-    warnings: createGeneratedRalphFlowQualityWarnings(flow),
-  };
-};
-
-const createLocalGenerationValidatorResult = (
-  task: string,
-  config: RuntimeConfig,
-  validation: RalphGenerationStructureValidation,
-  durationMs: number,
-): TaskExecutionResult => {
-  const decisionLine = `RALPH_DECISION: ${validation.decision}`;
-  const issueLines =
-    validation.issues.length > 0
-      ? validation.issues.map((issue) => `- ${issue}`)
-      : ["No local structural issues found."];
-  const warningLines =
-    validation.warnings.length > 0
-      ? ["Warnings:", ...validation.warnings.map((warning) => `- ${warning}`)]
-      : [];
-
-  return {
-    task,
-    mode: config.mode,
-    status: "executed",
-    summary: `Local Ralph generation validator returned ${validation.decision}.`,
-    executedTools: [],
-    outputSections: [
-      {
-        title: "Local Ralph generation validator",
-        lines: [
-          `decision: ${validation.decision}`,
-          `durationMs: ${durationMs}`,
-          ...issueLines,
-          ...warningLines,
-        ],
-      },
-    ],
-    response: {
-      markdown: [...issueLines, ...warningLines, decisionLine].join("\n"),
-      highlights: [],
-      relatedFiles: [],
-      verification: [],
-      followUps: [],
-    },
-  };
-};
-
 const UI_VERIFICATION_SCRIPT_PRIORITY = [
   "typecheck:ui",
   "build:ui",
@@ -2948,29 +2073,9 @@ const createBlockedGenerationResult = (
   };
 };
 
-const createTaskDidNotExecuteFeedback = (
-  actor: "generator" | "validator",
-  result: TaskExecutionResult,
-): string => {
-  return `The Ralph ${actor} did not execute successfully (${result.status}): ${
-    result.reason ?? result.summary
-  }`;
-};
-
 type EmitRalphGenerationEvent = (
   event: Omit<RalphGenerationEvent, "generationRunId" | "createdAt">,
 ) => Promise<void>;
-
-const createGenerationActorResultMessage = (
-  actor: RalphGenerationActor,
-  result: TaskExecutionResult,
-): string => {
-  const summary = createGenerationFeedbackExcerpt(result.reason ?? result.summary);
-
-  return result.status === "executed"
-    ? `Ralph ${actor} completed.`
-    : `Ralph ${actor} returned ${result.status}${summary ? `: ${summary}` : "."}`;
-};
 
 const createGenerationActorRuntimeConfig = (
   config: RuntimeConfig,
@@ -2990,37 +2095,6 @@ const createGenerationActorRuntimeConfig = (
 const createGenerationAttemptConfigs = (
   config: RuntimeConfig,
 ): RuntimeConfig[] => [config];
-
-const createGenerationFeedbackExcerpt = (value: string | undefined): string => {
-  const normalized = value?.replace(/\s+/gu, " ").trim() ?? "";
-
-  return normalized.length > 1_200
-    ? `${normalized.slice(0, 1_200)}...`
-    : normalized;
-};
-
-const createGenerationDidNotConvergeSummary = (
-  maxRounds: number,
-  validation: RalphValidationResult,
-  validatorFeedback: string | undefined,
-): string => {
-  const details: string[] = [];
-
-  if (!validation.valid && validation.errors.length > 0) {
-    details.push(`Last schema error: ${validation.errors[0]}`);
-  }
-
-  const feedback = createGenerationFeedbackExcerpt(validatorFeedback);
-
-  if (feedback) {
-    details.push(`Last feedback: ${feedback}`);
-  }
-
-  return [
-    `Ralph flow generation did not converge after ${maxRounds} round(s).`,
-    ...details,
-  ].join(" ");
-};
 
 interface RalphGenerationActorTracePaths {
   flowPath: string;
@@ -3183,7 +2257,10 @@ export const createRalphGenerationInterviewWithAgent = async (
 ): Promise<RalphGenerationInterviewResult> => {
   const prompt = options.prompt.trim();
   const scope = options.scope ?? "workspace";
-  const maxTurns = clampRalphGenerationInterviewMaxTurns(options.maxTurns);
+  const maxTurns = clampRalphGenerationInterviewMaxTurns(options.maxTurns, {
+    defaultMaxTurns: DEFAULT_RALPH_GENERATION_INTERVIEW_MAX_TURNS,
+    maxTurns: MAX_RALPH_GENERATION_INTERVIEW_MAX_TURNS,
+  });
   const baseSession = createRalphGenerationInterviewSession(
     { ...options, prompt },
     scope,
@@ -3718,7 +2795,7 @@ export const createRalphFlowWithAgent = async (
       const localValidatorDurationMs = Date.now() - localValidatorStartedAt;
       const validatorResult = createLocalGenerationValidatorResult(
         `Validate generated Ralph flow ${roundGenerationFlowPath}.`,
-        config,
+        config.mode,
         structureValidation,
         localValidatorDurationMs,
       );

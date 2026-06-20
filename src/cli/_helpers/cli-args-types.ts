@@ -1,0 +1,211 @@
+import type {
+  InstructionAudience,
+  InstructionMode,
+  InstructionScope,
+} from "../../core/types.js";
+import type {
+  ModelProvider,
+  ReasoningMode,
+  RuntimeAgentLimitOverrides,
+  RunMode,
+  UserApiProvider,
+} from "../../core/runtime-contract.generated.js";
+
+export type CommandName =
+  | "run"
+  | "chat"
+  | "ralph"
+  | "scheduler"
+  | "mcp"
+  | "set-api"
+  | "set-config"
+  | "set-global-memory"
+  | "inspect"
+  | "instructions"
+  | "config"
+  | "tools"
+  | "profiles"
+  | "set-default-model"
+  | "help";
+
+export type SchedulerCliAction =
+  | "list"
+  | "create"
+  | "pause"
+  | "resume"
+  | "delete"
+  | "runs"
+  | "events"
+  | "event"
+  | "run-due"
+  | "trigger"
+  | "retry"
+  | "cancel"
+  | "sync-prompts";
+
+export type RalphCliAction =
+  | "list"
+  | "show"
+  | "validate"
+  | "delete"
+  | "save"
+  | "run"
+  | "resume"
+  | "run-detail"
+  | "runs"
+  | "log"
+  | "revisions"
+  | "restore"
+  | "create"
+  | "interview"
+  | "watches";
+export type RalphCliGenerationMode = "do-it" | "interview";
+export type RalphCliGenerationTarget = "flow" | "prompt-block" | "refactor";
+export type RalphCliScope = "user" | "workspace";
+export type RalphWatchCliAction = "list" | "create" | "delete" | "sync" | "run";
+
+export type McpCliAction =
+  | "servers"
+  | "cache"
+  | "discover"
+  | "refresh"
+  | "oauth-start"
+  | "oauth-finish"
+  | "call-tool"
+  | "read-resource"
+  | "get-prompt";
+
+export type InstructionCliAction =
+  | "list"
+  | "show"
+  | "validate"
+  | "create"
+  | "save"
+  | "generate";
+
+export type InstructionCliScope = InstructionScope;
+
+export interface SchedulerCliOptions {
+  action: SchedulerCliAction;
+  subject?: string;
+  name?: string;
+  cron?: string;
+  triggers?: string[];
+  triggerFilters?: string[];
+  triggerRecoveryFilters?: string[];
+  triggerFiringMode?: string;
+  triggerCooldownMs?: number;
+  triggerRepeatMs?: number;
+  triggerDebounceMs?: number;
+  triggerDedupeKeyTemplate?: string;
+  triggerMaxEvents?: number;
+  triggerWindowMs?: number;
+  intervalMs?: number;
+  delayMs?: number;
+  runAt?: number;
+  timezone?: string;
+  prompt?: string;
+  promptFile?: string;
+  contextPacks?: string[];
+  macros?: string[];
+  missedRunPolicy?: string;
+  missedRunGraceMs?: number;
+  retryAttempts?: number;
+  retryMinMs?: number;
+  retryMaxMs?: number;
+  retryFactor?: number;
+  retryRandomize?: boolean;
+  dedupeKey?: string;
+  ttlMs?: number;
+  maxDurationMs?: number;
+  concurrencyKey?: string;
+  concurrencyLimit?: number;
+  historyLimit?: number;
+  maxCatchUpRuns?: number;
+  eventType?: string;
+  eventKind?: string;
+  eventSource?: string;
+  eventPayloadJson?: string;
+  eventDedupeKey?: string;
+  eventOccurredAt?: number;
+}
+
+export interface RalphCliOptions {
+  action: RalphCliAction;
+  subject?: string;
+  scope?: RalphCliScope;
+  name?: string;
+  prompt?: string;
+  promptFile?: string;
+  flowJson?: string;
+  flowJsonFile?: string;
+  existingFlowJson?: string;
+  existingFlowJsonFile?: string;
+  revision?: string;
+  generationMode?: RalphCliGenerationMode;
+  target?: RalphCliGenerationTarget;
+  params?: string[];
+  paramsFile?: string;
+  inputJson?: string;
+  inputJsonFile?: string;
+  maxRounds?: number;
+  maxTransitions?: number;
+  trace?: boolean;
+  watchAction?: RalphWatchCliAction;
+  watchJson?: string;
+  watchJsonFile?: string;
+}
+
+export interface McpCliOptions {
+  action: McpCliAction;
+  serverId?: string;
+  target?: string;
+  argumentsJson?: string;
+  includeDisabled?: boolean;
+}
+
+export interface InstructionCliOptions {
+  action: InstructionCliAction;
+  subject?: string;
+  name?: string;
+  scope?: InstructionCliScope;
+  prompt?: string;
+  promptFile?: string;
+  path?: string;
+  applyTo?: string[];
+  exclude?: string[];
+  keywords?: string[];
+  mode?: InstructionMode;
+  audience?: InstructionAudience;
+  priority?: number;
+  maxRounds?: number;
+}
+
+export interface ParsedCliArgs {
+  command: CommandName;
+  task?: string;
+  ralph?: RalphCliOptions;
+  scheduler?: SchedulerCliOptions;
+  mcp?: McpCliOptions;
+  instructions?: InstructionCliOptions;
+  mode?: RunMode;
+  profile?: string;
+  provider?: UserApiProvider;
+  runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
+  key?: string;
+  configSetting?: string;
+  configValue?: string;
+  model?: string;
+  defaultModel?: string;
+  reasoning?: ReasoningMode;
+  sessionMemoryEnabled?: boolean;
+  globalMemoryEnabled?: boolean;
+  setGlobalMemoryEnabled?: boolean;
+  agentLimits?: RuntimeAgentLimitOverrides;
+  conversationContextFile?: string;
+  contextPaths?: string[];
+  imagePaths?: string[];
+  json: boolean;
+  verbose: boolean;
+  workspaceRoot: string;
+}

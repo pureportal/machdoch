@@ -1,5 +1,6 @@
-import { normalizeRalphFlowLayout } from "../ralph-layout.js";
-import type { RalphFlow } from "../ralph.js";
+import { normalizeRalphFlowLayout } from "./ralph-layout.js";
+import type { RalphFlow } from "./ralph.js";
+
 describe("normalizeRalphFlowLayout", () => {
   it("separates overlapping generated branch nodes into readable columns", () => {
     const flow: RalphFlow = {
@@ -200,5 +201,3 @@ describe("normalizeRalphFlowLayout", () => {
     }
   });
 });
-
-
