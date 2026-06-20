@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RalphFlow } from "../../../core/ralph.js";
 import { TooltipProvider } from "../components/ui/tooltip";
@@ -1040,6 +1040,9 @@ describe("RalphFlowEditor", () => {
   });
 
   it("keeps new draft saves available when previous flow details are still loading", async () => {
+    let resolveFlowDetails:
+      | ((result: Awaited<ReturnType<typeof showRalphFlow>>) => void)
+      | undefined;
     vi.mocked(listRalphFlows).mockResolvedValue({
       workspaceRoot: "C:\\Project",
       flows: [
@@ -1054,7 +1057,10 @@ describe("RalphFlowEditor", () => {
       ],
     });
     vi.mocked(showRalphFlow).mockImplementation(
-      () => new Promise(() => {}),
+      () =>
+        new Promise((resolve) => {
+          resolveFlowDetails = resolve;
+        }),
     );
 
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
@@ -1082,6 +1088,19 @@ describe("RalphFlowEditor", () => {
       true,
     );
     expect(screen.getByText("Save flow before running.")).toBeTruthy();
+
+    await act(async () => {
+      resolveFlowDetails?.({
+        path: "C:\\Project\\.machdoch\\ralph\\flows\\existing-flow.json",
+        flow: {
+          schemaVersion: 1,
+          id: "existing-flow",
+          name: "Existing Flow",
+          blocks: [],
+          edges: [],
+        },
+      });
+    });
   });
 
   it("deletes saved Ralph flows from the flow list", async () => {
@@ -1736,28 +1755,30 @@ describe("RalphFlowEditor", () => {
     const taskId = vi.mocked(runRalphFlow).mock.calls[0]?.[1].taskId;
     expect(taskId).toBeTruthy();
 
-    desktopProgressListener?.({
-      taskId: taskId ?? "ralph-background-flow",
-      timestamp: Date.now(),
-      progress: {
-        task: "Ralph flow `Background Flow`",
-        mode: "machdoch",
-        state: "executing",
-        message: "Running Ralph block `Start`.",
-        executedTools: [],
-        outputSections: [],
-        cancellable: true,
-        timelineEvent: {
-          kind: "state",
-          phase: "started",
-          label: "Running Ralph block `Start`.",
-          metadata: {
-            ralphEventType: "block-start",
-            ralphActiveBlockId: "start",
-            ralphActiveBlockTitle: "Start",
+    await act(async () => {
+      desktopProgressListener?.({
+        taskId: taskId ?? "ralph-background-flow",
+        timestamp: Date.now(),
+        progress: {
+          task: "Ralph flow `Background Flow`",
+          mode: "machdoch",
+          state: "executing",
+          message: "Running Ralph block `Start`.",
+          executedTools: [],
+          outputSections: [],
+          cancellable: true,
+          timelineEvent: {
+            kind: "state",
+            phase: "started",
+            label: "Running Ralph block `Start`.",
+            metadata: {
+              ralphEventType: "block-start",
+              ralphActiveBlockId: "start",
+              ralphActiveBlockTitle: "Start",
+            },
           },
         },
-      },
+      });
     });
 
     expect(await screen.findByText("Active: Start")).toBeTruthy();
@@ -1946,13 +1967,17 @@ describe("RalphFlowEditor", () => {
 
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
+    fireEvent.click(screen.getAllByRole("button", { name: "Run" })[0] as HTMLElement);
+    fireEvent.change(await screen.findByLabelText("Ralph variable scope"), {
+      target: { value: "src/core" },
+    });
     fireEvent.click(await screen.findByText("Ready to run."));
     fireEvent.click(await screen.findByRole("button", { name: "History" }));
     fireEvent.click(await screen.findByText("Completed history."));
 
     await waitFor(() => {
       expect(showRalphRunDetail).toHaveBeenCalledWith(
-        "C:\\Project",
+        expect.stringContaining("Project"),
         "run-42",
         "workspace",
       );

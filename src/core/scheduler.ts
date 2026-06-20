@@ -27,6 +27,15 @@ import {
   parseCronExpression,
 } from "./_helpers/parse-cron-expression.helper.js";
 import { splitDueTimesByMissedPolicy } from "./_helpers/split-due-times-by-missed-policy.helper.js";
+import {
+  normalizeSchedulerMultilineText,
+  normalizeSchedulerOptionalPositiveInteger,
+  normalizeSchedulerPositiveInteger,
+  normalizeSchedulerPositiveNumber,
+  normalizeSchedulerText,
+  normalizeSchedulerTrimmedText,
+} from "./_helpers/normalize-scheduler-value.helper.js";
+import { normalizeStringList } from "../helpers/normalize-string-list.helper.js";
 export {
   getNextCronRunAfter,
   parseCronExpression,
@@ -844,66 +853,8 @@ const createRunId = (): string => `run_${randomUUID()}`;
 
 const createEventId = (): string => `event_${randomUUID()}`;
 
-const normalizeText = (value: string | undefined): string | undefined => {
-  const normalized = value?.replace(/\s+/gu, " ").trim();
-
-  return normalized ? normalized : undefined;
-};
-
-const normalizeTrimmedText = (value: string | undefined): string | undefined => {
-  const normalized = value?.trim();
-
-  return normalized ? normalized : undefined;
-};
-
-const normalizeMultilineText = (value: string | undefined): string => {
-  return value?.trim() ?? "";
-};
-
-const normalizeStringList = (values: string[] | undefined): string[] => {
-  return Array.from(
-    new Set(
-      (values ?? [])
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0),
-    ),
-  );
-};
-
-const normalizePositiveInteger = (
-  value: number | undefined,
-  fallback: number,
-): number => {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    return fallback;
-  }
-
-  return Math.max(1, Math.trunc(value));
-};
-
-const normalizePositiveNumber = (
-  value: number | undefined,
-  fallback: number,
-): number => {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    return fallback;
-  }
-
-  return value;
-};
-
-const normalizeOptionalPositiveInteger = (
-  value: number | undefined,
-): number | undefined => {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    return undefined;
-  }
-
-  return Math.max(1, Math.trunc(value));
-};
-
 const normalizeTimeZone = (value: string | undefined): string => {
-  const timezone = normalizeText(value) ?? DEFAULT_TIMEZONE;
+  const timezone = normalizeSchedulerText(value) ?? DEFAULT_TIMEZONE;
 
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
@@ -919,7 +870,7 @@ const normalizeSchedule = (
 ): ScheduledJobSchedule => {
   switch (input.type) {
     case "cron": {
-      const expression = normalizeText(input.expression);
+      const expression = normalizeSchedulerText(input.expression);
 
       if (!expression) {
         throw new Error("Expected cron schedule to include an expression.");
@@ -934,7 +885,7 @@ const normalizeSchedule = (
       };
     }
     case "interval": {
-      const intervalMs = normalizeOptionalPositiveInteger(input.intervalMs);
+      const intervalMs = normalizeSchedulerOptionalPositiveInteger(input.intervalMs);
 
       if (intervalMs === undefined) {
         throw new Error("Expected interval schedule to include a positive intervalMs.");
@@ -953,7 +904,7 @@ const normalizeSchedule = (
       const runAt =
         typeof input.runAt === "number" && Number.isFinite(input.runAt)
           ? Math.trunc(input.runAt)
-          : timestamp + normalizePositiveInteger(input.delayMs, 0);
+          : timestamp + normalizeSchedulerPositiveInteger(input.delayMs, 0);
 
       return {
         type: "delay",
@@ -976,7 +927,7 @@ const cloneRecord = (
 const normalizeTriggerGuard = (
   guard: ScheduledTriggerGuard,
 ): ScheduledTriggerGuard | undefined => {
-  const kind = normalizeText(guard.kind);
+  const kind = normalizeSchedulerText(guard.kind);
 
   if (!kind) {
     return undefined;
@@ -1007,8 +958,8 @@ const normalizeRateLimitPolicy = (
     return undefined;
   }
 
-  const maxEvents = normalizeOptionalPositiveInteger(value.maxEvents);
-  const windowMs = normalizeOptionalPositiveInteger(value.windowMs);
+  const maxEvents = normalizeSchedulerOptionalPositiveInteger(value.maxEvents);
+  const windowMs = normalizeSchedulerOptionalPositiveInteger(value.windowMs);
 
   if (maxEvents === undefined || windowMs === undefined) {
     return undefined;
@@ -1022,13 +973,13 @@ const normalizeTriggerCommon = (
   timestamp: number,
   existingTrigger?: ScheduledJobTrigger,
 ): Omit<ScheduledTriggerBase, "kind"> => {
-  const name = normalizeText(input.name);
-  const debounceMs = normalizeOptionalPositiveInteger(input.debounceMs);
-  const cooldownMs = normalizeOptionalPositiveInteger(input.cooldownMs);
-  const repeatIntervalMs = normalizeOptionalPositiveInteger(
+  const name = normalizeSchedulerText(input.name);
+  const debounceMs = normalizeSchedulerOptionalPositiveInteger(input.debounceMs);
+  const cooldownMs = normalizeSchedulerOptionalPositiveInteger(input.cooldownMs);
+  const repeatIntervalMs = normalizeSchedulerOptionalPositiveInteger(
     input.repeatIntervalMs,
   );
-  const dedupeKeyTemplate = normalizeText(input.dedupeKeyTemplate);
+  const dedupeKeyTemplate = normalizeSchedulerText(input.dedupeKeyTemplate);
   const filters = cloneRecord(input.filters);
   const recoveryFilters = cloneRecord(input.recoveryFilters);
   const guards = normalizeTriggerGuards(input.guards);
@@ -1042,7 +993,7 @@ const normalizeTriggerCommon = (
   const maxEventsPerWindow = normalizeRateLimitPolicy(input.maxEventsPerWindow);
 
   return {
-    id: normalizeText(input.id) ?? existingTrigger?.id ?? createTriggerId(),
+    id: normalizeSchedulerText(input.id) ?? existingTrigger?.id ?? createTriggerId(),
     enabled: input.enabled ?? existingTrigger?.enabled ?? true,
     createdAt: existingTrigger?.createdAt ?? timestamp,
     updatedAt: timestamp,
@@ -1117,7 +1068,7 @@ const normalizeTriggerInput = (
     };
   }
 
-  const eventType = normalizeText(input.eventType) ?? input.kind;
+  const eventType = normalizeSchedulerText(input.eventType) ?? input.kind;
 
   return {
     ...common,
@@ -1195,14 +1146,14 @@ const getJobScheduleSummary = (
 const normalizeContextPack = (
   pack: ScheduledContextPackSnapshot,
 ): ScheduledContextPackSnapshot | undefined => {
-  const name = normalizeText(pack.name);
+  const name = normalizeSchedulerText(pack.name);
 
   if (!name) {
     return undefined;
   }
 
-  const instructions = normalizeMultilineText(pack.instructions);
-  const prompt = normalizeMultilineText(pack.prompt);
+  const instructions = normalizeSchedulerMultilineText(pack.instructions);
+  const prompt = normalizeSchedulerMultilineText(pack.prompt);
   const contextPaths = normalizeStringList(pack.contextPaths);
 
   return {
@@ -1217,13 +1168,13 @@ const normalizeContextPack = (
 const normalizeMacroReference = (
   macro: ScheduledMacroReference,
 ): ScheduledMacroReference | undefined => {
-  const name = normalizeText(macro.name);
+  const name = normalizeSchedulerText(macro.name);
 
   if (!name) {
     return undefined;
   }
 
-  const promptInvocation = normalizeText(macro.promptInvocation);
+  const promptInvocation = normalizeSchedulerText(macro.promptInvocation);
 
   return {
     name,
@@ -1246,7 +1197,7 @@ const normalizeRalphFlowTarget = (
     return undefined;
   }
 
-  const flowId = normalizeTrimmedText(target.ralphFlow?.id);
+  const flowId = normalizeSchedulerTrimmedText(target.ralphFlow?.id);
 
   if (!flowId) {
     throw new Error("Expected scheduled Ralph target to include a flow id.");
@@ -1284,7 +1235,7 @@ const normalizeRalphFlowTarget = (
 };
 
 const normalizeTarget = (target: ScheduledJobTargetInput): ScheduledJobTarget => {
-  const workspaceRoot = normalizeTrimmedText(target.workspaceRoot);
+  const workspaceRoot = normalizeSchedulerTrimmedText(target.workspaceRoot);
 
   if (!workspaceRoot) {
     throw new Error("Expected scheduled job target to include a workspace root.");
@@ -1292,7 +1243,7 @@ const normalizeTarget = (target: ScheduledJobTargetInput): ScheduledJobTarget =>
 
   const ralphFlow = normalizeRalphFlowTarget(target);
   const targetType: ScheduledJobTargetType = ralphFlow ? "ralph-flow" : "prompt";
-  const prompt = normalizeMultilineText(target.prompt);
+  const prompt = normalizeSchedulerMultilineText(target.prompt);
   const contextPacks = (target.contextPacks ?? []).flatMap((pack) => {
     const normalized = normalizeContextPack(pack);
 
@@ -1335,24 +1286,24 @@ const normalizeTarget = (target: ScheduledJobTargetInput): ScheduledJobTarget =>
 const normalizeRetryPolicy = (
   retry: Partial<ScheduledRetryPolicy> | undefined,
 ): ScheduledRetryPolicy => {
-  const minTimeoutMs = normalizePositiveInteger(
+  const minTimeoutMs = normalizeSchedulerPositiveInteger(
     retry?.minTimeoutMs,
     DEFAULT_RETRY_POLICY.minTimeoutMs,
   );
   const maxTimeoutMs = Math.max(
     minTimeoutMs,
-    normalizePositiveInteger(
+    normalizeSchedulerPositiveInteger(
       retry?.maxTimeoutMs,
       DEFAULT_RETRY_POLICY.maxTimeoutMs,
     ),
   );
 
   return {
-    maxAttempts: normalizePositiveInteger(
+    maxAttempts: normalizeSchedulerPositiveInteger(
       retry?.maxAttempts,
       DEFAULT_RETRY_POLICY.maxAttempts,
     ),
-    factor: normalizePositiveNumber(retry?.factor, DEFAULT_RETRY_POLICY.factor),
+    factor: normalizeSchedulerPositiveNumber(retry?.factor, DEFAULT_RETRY_POLICY.factor),
     minTimeoutMs,
     maxTimeoutMs,
     randomize: retry?.randomize ?? DEFAULT_RETRY_POLICY.randomize,
@@ -1364,8 +1315,8 @@ const normalizeQueuePolicy = (
   queue: Partial<ScheduledQueuePolicy> | undefined,
 ): ScheduledQueuePolicy => {
   return {
-    concurrencyKey: normalizeText(queue?.concurrencyKey) ?? jobId,
-    concurrencyLimit: normalizePositiveInteger(
+    concurrencyKey: normalizeSchedulerText(queue?.concurrencyKey) ?? jobId,
+    concurrencyLimit: normalizeSchedulerPositiveInteger(
       queue?.concurrencyLimit,
       DEFAULT_CONCURRENCY_LIMIT,
     ),
@@ -1400,7 +1351,7 @@ const getFrontmatterString = (
 ): string | undefined => {
   const value = attributes[key];
 
-  return typeof value === "string" ? normalizeTrimmedText(value) : undefined;
+  return typeof value === "string" ? normalizeSchedulerTrimmedText(value) : undefined;
 };
 
 const getFrontmatterBoolean = (
@@ -2156,15 +2107,15 @@ const normalizeTriggerEventInput = (
   input: ScheduledTriggerEventInput,
   timestamp: number,
 ): ScheduledTriggerEvent => {
-  const type = normalizeText(input.type);
+  const type = normalizeSchedulerText(input.type);
 
   if (!type) {
     throw new Error("Expected scheduler event to include a type.");
   }
 
-  const source = normalizeText(input.source) ?? "manual";
-  const workspaceRoot = normalizeTrimmedText(input.workspaceRoot);
-  const dedupeKey = normalizeText(input.dedupeKey);
+  const source = normalizeSchedulerText(input.source) ?? "manual";
+  const workspaceRoot = normalizeSchedulerTrimmedText(input.workspaceRoot);
+  const dedupeKey = normalizeSchedulerText(input.dedupeKey);
   const occurredAt =
     typeof input.occurredAt === "number" && Number.isFinite(input.occurredAt)
       ? Math.trunc(input.occurredAt)
@@ -2263,7 +2214,7 @@ const filterExpressionMatches = (
   actual: unknown,
   expression: Record<string, unknown>,
 ): boolean => {
-  const operator = normalizeText(
+  const operator = normalizeSchedulerText(
     typeof expression.op === "string"
       ? expression.op
       : typeof expression.operator === "string"
@@ -2589,7 +2540,7 @@ export class DurableSmartScheduler {
   async upsertJob(input: CreateScheduledJobInput): Promise<ScheduledJob> {
     return this.mutateState((state) => {
       const now = this.now();
-      const dedupeKey = normalizeText(input.dedupeKey);
+      const dedupeKey = normalizeSchedulerText(input.dedupeKey);
       const existingJob = dedupeKey
         ? state.jobs.find(
             (job) => job.dedupeKey === dedupeKey && job.status !== "deleted",
@@ -2603,12 +2554,12 @@ export class DurableSmartScheduler {
       const queue = normalizeQueuePolicy(id, input.queue);
       const nextRunAt = getEarliestTriggerRunAt(triggers);
       const name =
-        normalizeText(input.name) ??
+        normalizeSchedulerText(input.name) ??
         existingJob?.name ??
-        normalizeTrimmedText(target.prompt.split(/\r?\n/u)[0]?.slice(0, 80)) ??
+        normalizeSchedulerTrimmedText(target.prompt.split(/\r?\n/u)[0]?.slice(0, 80)) ??
         "Scheduled job";
-      const ttlMs = normalizeOptionalPositiveInteger(input.ttlMs);
-      const maxDurationMs = normalizeOptionalPositiveInteger(input.maxDurationMs);
+      const ttlMs = normalizeSchedulerOptionalPositiveInteger(input.ttlMs);
+      const maxDurationMs = normalizeSchedulerOptionalPositiveInteger(input.maxDurationMs);
       const job: ScheduledJob = {
         id,
         name,
@@ -2617,17 +2568,17 @@ export class DurableSmartScheduler {
         triggers,
         target,
         missedRunPolicy: normalizeMissedRunPolicy(input.missedRunPolicy),
-        missedRunGraceMs: normalizePositiveInteger(
+        missedRunGraceMs: normalizeSchedulerPositiveInteger(
           input.missedRunGraceMs,
           DEFAULT_MISSED_RUN_GRACE_MS,
         ),
         retry,
         queue,
-        historyLimit: normalizePositiveInteger(
+        historyLimit: normalizeSchedulerPositiveInteger(
           input.historyLimit,
           DEFAULT_HISTORY_LIMIT,
         ),
-        maxCatchUpRuns: normalizePositiveInteger(
+        maxCatchUpRuns: normalizeSchedulerPositiveInteger(
           input.maxCatchUpRuns,
           DEFAULT_MAX_CATCH_UP_RUNS,
         ),
@@ -2714,18 +2665,18 @@ export class DurableSmartScheduler {
       const schedule = getJobScheduleSummary(triggers);
       const target = normalizeTarget(targetInput);
       const nextRunAt = getEarliestTriggerRunAt(triggers);
-      const dedupeKey = normalizeText(input.dedupeKey) ?? existingJob.dedupeKey;
+      const dedupeKey = normalizeSchedulerText(input.dedupeKey) ?? existingJob.dedupeKey;
       const ttlMs =
         input.ttlMs !== undefined
-          ? normalizeOptionalPositiveInteger(input.ttlMs)
+          ? normalizeSchedulerOptionalPositiveInteger(input.ttlMs)
           : existingJob.ttlMs;
       const maxDurationMs =
         input.maxDurationMs !== undefined
-          ? normalizeOptionalPositiveInteger(input.maxDurationMs)
+          ? normalizeSchedulerOptionalPositiveInteger(input.maxDurationMs)
           : existingJob.maxDurationMs;
       const updatedJob: ScheduledJob = {
         id: existingJob.id,
-        name: normalizeText(input.name) ?? existingJob.name,
+        name: normalizeSchedulerText(input.name) ?? existingJob.name,
         status:
           existingJob.status === "completed" && triggers.length > 0
             ? "active"
@@ -2737,7 +2688,7 @@ export class DurableSmartScheduler {
           input.missedRunPolicy ?? existingJob.missedRunPolicy,
         missedRunGraceMs:
           input.missedRunGraceMs !== undefined
-            ? normalizePositiveInteger(
+            ? normalizeSchedulerPositiveInteger(
                 input.missedRunGraceMs,
                 existingJob.missedRunGraceMs,
               )
@@ -2753,11 +2704,11 @@ export class DurableSmartScheduler {
           : existingJob.queue,
         historyLimit:
           input.historyLimit !== undefined
-            ? normalizePositiveInteger(input.historyLimit, existingJob.historyLimit)
+            ? normalizeSchedulerPositiveInteger(input.historyLimit, existingJob.historyLimit)
             : existingJob.historyLimit,
         maxCatchUpRuns:
           input.maxCatchUpRuns !== undefined
-            ? normalizePositiveInteger(
+            ? normalizeSchedulerPositiveInteger(
                 input.maxCatchUpRuns,
                 existingJob.maxCatchUpRuns,
               )

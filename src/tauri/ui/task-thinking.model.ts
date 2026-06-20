@@ -5,7 +5,7 @@ import type {
   TaskExecutionTokenUsage,
 } from "../../core/types.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
-import type { TaskPanelTone } from "./task-panel.model";
+import type { TaskPanelTone } from "./task-panel";
 
 const THINKING_STATE_LABELS: Record<TaskExecutionState, string> = {
   starting: "Starting",

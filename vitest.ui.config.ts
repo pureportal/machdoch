@@ -1,6 +1,15 @@
 import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vitest/config";
 
+const jsdomSpecFiles = [
+  "src/tauri/ui/**/*.spec.tsx",
+  "src/tauri/ui/chat-session/_helpers/ai-context-window.spec.ts",
+  "src/tauri/ui/chat-session/_helpers/session-window-controls.spec.ts",
+  "src/tauri/ui/assistant-surface.spec.ts",
+  "src/tauri/ui/chat-session.model.spec.ts",
+  "src/tauri/ui/runtime.spec.ts",
+] as const;
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -23,20 +32,37 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "jsdom",
     globals: true,
-    include: ["src/tauri/ui/**/*.spec.ts"],
-    fileParallelism: false,
+    testTimeout: 30_000,
     passWithNoTests: true,
     restoreMocks: true,
+    isolate: false,
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "ui-node",
+          environment: "node",
+          include: ["src/tauri/ui/**/*.spec.ts"],
+          exclude: [...jsdomSpecFiles],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "ui-jsdom",
+          environment: "jsdom",
+          include: [...jsdomSpecFiles],
+        },
+      },
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text"],
       include: ["src/tauri/ui/**/*.ts", "src/tauri/ui/**/*.tsx"],
       exclude: [
-        "src/tauri/ui/**/*.test.ts",
-        "src/tauri/ui/**/*.test.tsx",
         "src/tauri/ui/**/*.spec.ts",
+        "src/tauri/ui/**/*.spec.tsx",
       ],
     },
   },

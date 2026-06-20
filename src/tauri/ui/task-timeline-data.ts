@@ -1,5 +1,5 @@
 import type { TaskExecutionStatus } from "../../core/types.js";
-import type { TaskPanelSource, TaskPanelTone } from "./task-panel.model";
+import type { TaskPanelSource, TaskPanelTone } from "./task-panel";
 
 export interface TaskTimelineMessage {
   id: string;

@@ -1,5 +1,6 @@
 import type { ConfiguredModelProvider } from "./provider-model-registry.js";
 import type { ReasoningMode } from "./runtime-contract.generated.js";
+import { normalizeModelId } from "../helpers/normalize-model-id.helper.js";
 
 const ALL_REASONING_MODES = [
   "default",
@@ -114,9 +115,6 @@ const COPILOT_CLI_REASONING_MODES = [
   "xhigh",
   "max",
 ] as const satisfies readonly ReasoningMode[];
-
-const normalizeModelId = (model: string | null | undefined): string =>
-  model?.trim().toLowerCase() ?? "";
 
 const isOpenAiGpt55Model = (model: string): boolean =>
   /^gpt-5\.5(?:-|$)/u.test(model);

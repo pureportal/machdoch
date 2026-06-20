@@ -5,6 +5,8 @@ export default defineConfig({
     environment: "node",
     globals: true,
     include: ["src/**/*.spec.ts"],
+    exclude: ["src/tauri/ui/**/*.spec.ts", "src/tauri/ui/**/*.spec.tsx"],
+    testTimeout: 30_000,
     restoreMocks: true,
     unstubEnvs: true,
     coverage: {

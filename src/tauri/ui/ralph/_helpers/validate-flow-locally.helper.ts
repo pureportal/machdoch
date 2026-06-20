@@ -10,6 +10,8 @@ import {
   getBlockOutputs,
   isVisualRalphCanvasBlock,
 } from "./get-block-outputs.helper";
+import { getReachableBlockIds } from "./get-reachable-block-ids.helper";
+import { hasLocalFlowCycle } from "./has-local-flow-cycle.helper";
 
 const DEFAULT_RALPH_FLOW_SCOPE: RalphFlowScope = "workspace";
 
@@ -49,64 +51,6 @@ const isFlowAliasUsed = (
       createFlowAlias(flow.id) === normalizedAlias
     );
   });
-};
-
-const getReachableBlockIds = (flow: RalphFlow): Set<string> => {
-  const reachable = new Set<string>();
-  const starts = flow.blocks.filter((block) => block.type === "START");
-  const pending = starts.map((block) => block.id);
-
-  while (pending.length > 0) {
-    const current = pending.shift();
-
-    if (!current || reachable.has(current)) {
-      continue;
-    }
-
-    reachable.add(current);
-    for (const edge of flow.edges.filter((candidate) => candidate.from === current)) {
-      pending.push(edge.to);
-    }
-  }
-
-  return reachable;
-};
-
-const hasLocalFlowCycle = (flow: RalphFlow): boolean => {
-  const edgesBySource = new Map<string, string[]>();
-
-  for (const edge of flow.edges) {
-    const targets = edgesBySource.get(edge.from) ?? [];
-    targets.push(edge.to);
-    edgesBySource.set(edge.from, targets);
-  }
-
-  const visiting = new Set<string>();
-  const visited = new Set<string>();
-  const visit = (blockId: string): boolean => {
-    if (visiting.has(blockId)) {
-      return true;
-    }
-
-    if (visited.has(blockId)) {
-      return false;
-    }
-
-    visiting.add(blockId);
-
-    for (const target of edgesBySource.get(blockId) ?? []) {
-      if (visit(target)) {
-        return true;
-      }
-    }
-
-    visiting.delete(blockId);
-    visited.add(blockId);
-
-    return false;
-  };
-
-  return flow.blocks.some((block) => visit(block.id));
 };
 
 export const validateFlowLocally = (

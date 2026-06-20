@@ -297,6 +297,47 @@ const cronExpressionMatches = (
   );
 };
 
+const getNextCronValueDelta = (
+  values: ReadonlySet<number>,
+  current: number,
+  rangeSize: number,
+): number => {
+  const sortedValues = [...values].sort((left, right) => left - right);
+
+  for (const value of sortedValues) {
+    if (value > current) {
+      return value - current;
+    }
+  }
+
+  const firstValue = sortedValues[0];
+
+  return firstValue === undefined ? 1 : rangeSize - current + firstValue;
+};
+
+const getUtcCronCandidateStep = (
+  parsed: ParsedCronExpression,
+  parts: TimeZoneDateParts,
+): number => {
+  if (!cronFieldMatches(parsed.month, parts.month, parts, "other")) {
+    return 24 * 60 * MINUTE_MS;
+  }
+
+  if (!cronFieldMatches(parsed.minute, parts.minute, parts, "other")) {
+    return getNextCronValueDelta(parsed.minute.values, parts.minute, 60) * MINUTE_MS;
+  }
+
+  if (!cronFieldMatches(parsed.hour, parts.hour, parts, "other")) {
+    return getNextCronValueDelta(parsed.hour.values, parts.hour, 24) * 60 * MINUTE_MS;
+  }
+
+  if (!cronDayMatches(parsed, parts)) {
+    return 24 * 60 * MINUTE_MS;
+  }
+
+  return MINUTE_MS;
+};
+
 export const getNextCronRunAfter = (
   expression: string,
   timezone: string,
@@ -308,16 +349,15 @@ export const getNextCronRunAfter = (
     Math.floor(afterTimestamp / MINUTE_MS) * MINUTE_MS + MINUTE_MS;
 
   while (candidate <= endTimestamp) {
-    if (
-      cronExpressionMatches(
-        parsed,
-        getTimeZoneDateParts(candidate, timezone),
-      )
-    ) {
+    const parts = getTimeZoneDateParts(candidate, timezone);
+
+    if (cronExpressionMatches(parsed, parts)) {
       return candidate;
     }
 
-    candidate += MINUTE_MS;
+    candidate += timezone === "UTC"
+      ? getUtcCronCandidateStep(parsed, parts)
+      : MINUTE_MS;
   }
 
   throw new Error(`Unable to find next cron run within one year: ${expression}`);

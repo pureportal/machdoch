@@ -23,7 +23,7 @@ import {
   RUNNABLE_PROVIDER_ORDER,
   type RuntimeProvider,
 } from "./model-catalog";
-import type { TaskPanelSource, TaskPanelTone } from "./task-panel.model";
+import type { TaskPanelSource, TaskPanelTone } from "./task-panel";
 import type {
   TaskThinkingActionOutputLine,
   TaskThinkingEntry,

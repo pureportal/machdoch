@@ -450,8 +450,10 @@ const emitWindowDropEvent = (
 };
 
 describe("ChatSession component", () => {
-  it("renders empty state initially", () => {
+  it("renders empty state initially", async () => {
     const { container } = render(<ChatSession />);
+    await flushShellHydration();
+
     expect(screen.getByText(/Ready to automate/i)).toBeDefined();
     expect(
       screen.queryByText(/Pick a workspace anytime, or start from your home/i),

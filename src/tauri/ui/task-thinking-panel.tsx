@@ -18,7 +18,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { cn } from "./lib/utils";
-import type { TaskPanelTone } from "./task-panel.model";
+import type { TaskPanelTone } from "./task-panel";
 import type {
   TaskThinkingModelStream,
   TaskThinkingTimelineEvent,

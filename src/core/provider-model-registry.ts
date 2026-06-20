@@ -1,6 +1,7 @@
 import type { AgentModelImageMediaType } from "./types.js";
 import type { ModelProvider } from "./runtime-contract.generated.js";
 import { DEFAULT_MODEL_BY_PROVIDER as CONTRACT_DEFAULT_MODEL_BY_PROVIDER } from "./runtime-contract.generated.js";
+import { normalizeModelId } from "../helpers/normalize-model-id.helper.js";
 
 export type ConfiguredModelProvider = Exclude<ModelProvider, "unconfigured">;
 
@@ -800,8 +801,6 @@ export const PROVIDER_MODEL_METADATA = [
     source: "curated-fallback",
   },
 ] as const satisfies readonly ProviderModelMetadata[];
-
-const normalizeModelId = (model: string): string => model.trim().toLowerCase();
 
 export const getDefaultModelForProvider = (
   provider: ConfiguredModelProvider,

@@ -17,6 +17,7 @@ import {
 } from "./customizations.js";
 import { executeTask } from "./execution.js";
 import { parseMarkdownDocument } from "./frontmatter.js";
+import { normalizeStringList } from "../helpers/normalize-string-list.helper.js";
 import type {
   AgentModelAdapter,
   CustomizationDiagnostic,
@@ -136,16 +137,6 @@ const validateInstructionMetadataInput = (input: {
       "Instruction audience must be executor, validator, generator, or all.",
     );
   }
-};
-
-const normalizeStringList = (values: string[] | undefined): string[] => {
-  return Array.from(
-    new Set(
-      (values ?? [])
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0),
-    ),
-  );
 };
 
 const sanitizeFrontmatterValue = (value: string): string => {

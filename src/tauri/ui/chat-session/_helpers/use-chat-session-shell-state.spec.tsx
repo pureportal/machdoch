@@ -307,6 +307,7 @@ describe("useChatSessionShellState", () => {
     act(() => {
       result.current.setActiveSessionId(secondSession.id);
     });
+    await flushShellPersistence();
 
     expect(result.current.activeSessionId).toBe(secondSession.id);
 
@@ -316,6 +317,7 @@ describe("useChatSessionShellState", () => {
         activeSessionId: firstSession.id,
       }));
     });
+    await flushShellPersistence();
 
     expect(result.current.activeSessionId).toBe(secondSession.id);
     expect(result.current.activeSession.id).toBe(secondSession.id);
@@ -393,6 +395,7 @@ describe("useChatSessionShellState", () => {
         activeSessionId: secondSession.id,
       }));
     });
+    await flushShellPersistence();
 
     expect(result.current.activeSessionId).toBe(secondSession.id);
     expect(result.current.activeSession.id).toBe(secondSession.id);

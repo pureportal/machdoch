@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import {
   afterEach,
   beforeAll,
@@ -45,8 +45,15 @@ afterEach(() => {
 });
 
 describe("AssistantPopupShell", () => {
-  it("does not expose settings in the Quick Chat window", () => {
+  it("does not expose settings in the Quick Chat window", async () => {
     render(<AssistantPopupShell />);
+
+    await waitFor(() => {
+      expect(windowFocusChangedListeners.size).toBe(1);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(
       screen.queryByRole("button", { name: /open settings/i }),
@@ -61,9 +68,11 @@ describe("AssistantPopupShell", () => {
       expect(windowFocusChangedListeners.size).toBe(1);
     });
 
-    for (const listener of windowFocusChangedListeners) {
-      listener({ payload: false });
-    }
+    await act(async () => {
+      for (const listener of windowFocusChangedListeners) {
+        listener({ payload: false });
+      }
+    });
 
     await waitFor(() => {
       expect(currentWindowMock.hide).toHaveBeenCalledTimes(1);
