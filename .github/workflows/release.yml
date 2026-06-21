@@ -243,10 +243,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: pnpm
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -259,20 +263,11 @@ jobs:
 
       - name: Install dependencies
         shell: bash
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+        run: pnpm install --frozen-lockfile
 
-      - name: Build and upload release assets
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          releaseId: ${{ needs.prepare-release.outputs.release_id }}
-          tagName: ${{ needs.prepare-release.outputs.tag_name }}
+      - name: Build release assets
+        shell: bash
+        run: pnpm tauri build
 
       - name: List bundle outputs
         shell: bash
@@ -303,6 +298,19 @@ jobs:
           fi
 
           printf "paths<<EOF\n%s\nEOF\n" "$(printf "%s\n" "${files[@]}")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
+        shell: bash
+        run: |
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            gh release upload "$TAG_NAME" "$file" --clobber
+          done <<'EOF'
+          ${{ steps.bundles.outputs.paths }}
+          EOF
 
       - name: Create stable release aliases
         id: aliases
