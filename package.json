@@ -1,6 +1,6 @@
 {
   "name": "machdoch",
-  "version": "0.19.2",
+  "version": "0.19.3",
   "private": true,
   "description": "Local-first OS AI agent for CLI and desktop.",
   "type": "module",
@@ -30,7 +30,7 @@
     "coverage": "vitest run --coverage"
   },
   "engines": {
-    "node": ">=20.10"
+    "node": ">=22.13"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
