@@ -8,6 +8,9 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 use serde::{Deserialize, Serialize};
 use tauri_plugin_autostart::ManagerExt as _;
 
@@ -58,6 +61,9 @@ const MCP_CONFIG_FILE_NAME: &str = "mcp.json";
 const MCP_WORKSPACE_CONFIG_DIRECTORY: [&str; 2] = [".machdoch", "mcp"];
 const MAX_GLOBAL_MEMORY_ENTRIES: usize = 40;
 const MAX_MEMORY_CONTENT_LENGTH: usize = 280;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2328,13 +2334,21 @@ fn run_agent_cli_command(
     env_values: &HashMap<String, String>,
     timeout: Duration,
 ) -> Result<AgentCliCommandOutput, String> {
-    let mut child = Command::new(executable)
+    let mut command = Command::new(executable);
+    command
         .args(args)
         .envs(env_values)
         .env("NO_COLOR", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = command
         .spawn()
         .map_err(|error| format!("Failed to start {}: {error}", executable.display()))?;
     let started_at = Instant::now();

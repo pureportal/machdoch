@@ -898,7 +898,9 @@ fn terminate_child_process_tree(child: &mut Child) {
     #[cfg(target_os = "windows")]
     {
         let pid = child.id().to_string();
-        let taskkill_result = Command::new("taskkill")
+        let mut command = Command::new("taskkill");
+        hide_child_process_window(&mut command);
+        let taskkill_result = command
             .args(["/PID", pid.as_str(), "/T", "/F"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -975,6 +977,18 @@ fn parse_instruction_command_response(stdout: &str) -> Result<Value, String> {
     })
 }
 
+fn hide_child_process_window(command: &mut Command) {
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = command;
+    }
+}
+
 fn execute_scheduler_command(request: SchedulerCommandRequest) -> Result<Value, String> {
     let workspace_path = resolve_workspace_root_path(&request.workspace_root)?;
     let normalized_workspace_root = workspace_path.display().to_string();
@@ -993,15 +1007,15 @@ fn execute_scheduler_command(request: SchedulerCommandRequest) -> Result<Value, 
         }
     }
 
-    let output = crate::shared_cli::create_shared_cli_command(&cli_args)?
-        .command
-        .output()
-        .map_err(|error| {
-            format!(
-                "Failed to launch the scheduler CLI. {} {error}",
-                crate::shared_cli::cli_runtime_error_hint()
-            )
-        })?;
+    let mut cli_command = crate::shared_cli::create_shared_cli_command(&cli_args)?;
+    hide_child_process_window(&mut cli_command.command);
+
+    let output = cli_command.command.output().map_err(|error| {
+        format!(
+            "Failed to launch the scheduler CLI. {} {error}",
+            crate::shared_cli::cli_runtime_error_hint()
+        )
+    })?;
     let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
 
@@ -1233,15 +1247,15 @@ fn execute_mcp_command(request: McpCommandRequest) -> Result<Value, String> {
         }
     }
 
-    let output = crate::shared_cli::create_shared_cli_command(&cli_args)?
-        .command
-        .output()
-        .map_err(|error| {
-            format!(
-                "Failed to launch the MCP CLI. {} {error}",
-                crate::shared_cli::cli_runtime_error_hint()
-            )
-        })?;
+    let mut cli_command = crate::shared_cli::create_shared_cli_command(&cli_args)?;
+    hide_child_process_window(&mut cli_command.command);
+
+    let output = cli_command.command.output().map_err(|error| {
+        format!(
+            "Failed to launch the MCP CLI. {} {error}",
+            crate::shared_cli::cli_runtime_error_hint()
+        )
+    })?;
     let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
 
@@ -1273,15 +1287,15 @@ fn execute_instruction_command(request: InstructionCommandRequest) -> Result<Val
         }
     }
 
-    let output = crate::shared_cli::create_shared_cli_command(&cli_args)?
-        .command
-        .output()
-        .map_err(|error| {
-            format!(
-                "Failed to launch the instruction CLI. {} {error}",
-                crate::shared_cli::cli_runtime_error_hint()
-            )
-        })?;
+    let mut cli_command = crate::shared_cli::create_shared_cli_command(&cli_args)?;
+    hide_child_process_window(&mut cli_command.command);
+
+    let output = cli_command.command.output().map_err(|error| {
+        format!(
+            "Failed to launch the instruction CLI. {} {error}",
+            crate::shared_cli::cli_runtime_error_hint()
+        )
+    })?;
     let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
 
