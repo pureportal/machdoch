@@ -29,7 +29,7 @@ export interface ParsedMarkdownDocument {
   body: string;
 }
 
-export type InstructionScope = "user" | "workspace" | "compatibility";
+export type InstructionScope = "user" | "workspace" | "compatibility" | "ralph-flow";
 
 export type InstructionMode = "always" | "auto" | "agent-requested" | "manual" | "disabled";
 
@@ -51,6 +51,8 @@ export interface DiscoveredInstruction {
   mode?: InstructionMode;
   audience?: InstructionAudience;
   scope?: InstructionScope;
+  ralphFlowId?: string;
+  ralphFlowScope?: "user" | "workspace";
   sizeBytes?: number;
 }
 
@@ -519,6 +521,7 @@ export interface TaskExecutionResult {
   summary: string;
   executedTools: ToolName[];
   reason?: string;
+  metadata?: Record<string, unknown>;
   outputSections: TaskExecutionSection[];
   response?: TaskExecutionNarrative;
   autopilot?: TaskAutopilotReport;

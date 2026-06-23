@@ -18,11 +18,11 @@ Usage:
   machdoch config set <setting> <value> [--json]
   machdoch tools [--json]
   machdoch profiles [--json]
-  machdoch instructions list|validate [--scope <user|workspace|compatibility>] [--json]
-  machdoch instructions show <name-or-path> [--scope <user|workspace|compatibility>] [--json]
-  machdoch instructions create [name] --prompt <text> [--scope <user|workspace>] [--apply-to <glob>] [--json]
-  machdoch instructions save [name] --prompt <text> [--path <file>] [--scope <user|workspace>] [--apply-to <glob>] [--json]
-  machdoch instructions generate [name] --prompt <wish> [--path <file>] [--scope <user|workspace>] [--apply-to <glob>] [--max-rounds <n>] [--json]
+  machdoch instructions list|validate [--scope <user|workspace|compatibility|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--json]
+  machdoch instructions show <name-or-path> [--scope <user|workspace|compatibility|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--json]
+  machdoch instructions create [name] --prompt <text> [--scope <user|workspace|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--apply-to <glob>] [--json]
+  machdoch instructions save [name] --prompt <text> [--path <file>] [--scope <user|workspace|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--apply-to <glob>] [--json]
+  machdoch instructions generate [name] --prompt <wish> [--path <file>] [--scope <user|workspace|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--apply-to <glob>] [--max-rounds <n>] [--json]
   machdoch ralph list [--scope <user|workspace>] [--json]
   machdoch ralph show|validate|delete <flow> [--scope <user|workspace>] [--json]
   machdoch ralph revisions <flow> [--scope <user|workspace>] [--json]
@@ -48,11 +48,13 @@ Usage:
   machdoch mcp get-prompt <server-id> <prompt-name> [--arguments-json <json>] [--json]
   machdoch scheduler list [--json]
   machdoch scheduler create (--cron <expr>|--trigger <kind:event>) --prompt <text> [--timezone <iana>] [--json]
+  machdoch scheduler create (--cron <expr>|--trigger <kind:event>) --scheduler-target ralph-flow --scheduled-ralph-flow <id> [--json]
   machdoch scheduler pause|resume|delete|trigger <job-id> [--json]
   machdoch scheduler runs [job-id] [--json]
   machdoch scheduler events [--json]
   machdoch scheduler event --event-type <type> [--event-kind <kind>] [--json]
   machdoch scheduler run-due [--json]
+  machdoch scheduler service [--service-start-event-type <type>] [--service-poll-ms <ms>] [--service-idle-shutdown-ms <ms>] [--json]
   machdoch scheduler retry|cancel <run-id> [--json]
   machdoch scheduler sync-prompts [--json]
 
@@ -112,8 +114,33 @@ Options:
   --timezone <iana>       IANA timezone for cron schedules.
   --prompt <text>         Scheduled task prompt text.
   --prompt-file <path>    Read scheduled task prompt text from a file.
-  --scope <user|workspace|compatibility>
-                          Instruction or Ralph scope. Compatibility only applies to instructions.
+  --scheduler-target <prompt|ralph-flow>
+                          Choose whether a scheduled job runs a prompt or an existing RALPH-Flow.
+  --scheduled-ralph-flow <id>
+                          Existing RALPH-Flow id or alias for \`scheduler create --scheduler-target ralph-flow\`.
+  --scheduled-ralph-flow-scope <workspace|user>
+                          Scope used to load the scheduled RALPH-Flow.
+  --scheduled-ralph-param <name=value>
+                          Set a scheduled RALPH variable. Repeat for multiple variables.
+  --scheduled-ralph-run-log-scope <workspace|user>
+                          Scope where scheduled RALPH run logs are written.
+  --scheduled-ralph-max-transitions <n>
+                          Maximum graph transitions for scheduled RALPH runs.
+  --scheduled-ralph-allowed-root <path>
+                          Filesystem root allowed for scheduled RALPH execution. Repeat for multiple roots.
+  --scheduled-ralph-allow-commands <on|off>
+                          Allow command/check/git utility execution in scheduled RALPH runs.
+  --scheduled-ralph-allow-writes <on|off>
+                          Allow file writes in scheduled RALPH runs.
+  --scheduled-ralph-allow-network <on|off>
+                          Allow network utilities in scheduled RALPH runs.
+  --scheduled-ralph-allow-mcp-tools <on|off>
+                          Allow MCP tool/resource/prompt blocks in scheduled RALPH runs.
+  --scope <user|workspace|compatibility|ralph-flow>
+                          Instruction or Ralph scope. Compatibility and ralph-flow only apply to instructions.
+  --ralph-flow <flow>     Ralph flow id or alias for --scope ralph-flow instruction commands.
+  --flow-scope <user|workspace>
+                          Ralph flow storage scope for --scope ralph-flow instruction commands.
   --path <file>           Instruction file path for explicit save or generation updates.
   --apply-to <glob>       Workspace glob that auto-attaches an instruction. Repeat for multiple globs.
   --exclude <glob>        Workspace glob that prevents an instruction from attaching. Repeat for multiple globs.
@@ -157,6 +184,21 @@ Options:
                           Stable source event key for \`scheduler event\`.
   --event-occurred-at <epoch-ms>
                           Event occurrence time in epoch milliseconds.
+  --service-poll-ms <ms>  Poll interval for \`scheduler service\`.
+  --service-idle-shutdown-ms <ms>
+                          Stop \`scheduler service\` after this many idle milliseconds.
+  --service-abandoned-run-stale-ms <ms>
+                          Recover running jobs whose heartbeat is stale by this many milliseconds.
+  --service-max-iterations <n>
+                          Stop \`scheduler service\` after this many loop iterations.
+  --service-max-runs-per-tick <n>
+                          Maximum queued scheduler runs claimed per service loop.
+  --service-start-event-type <type>
+                          Emit an event before \`scheduler service\` starts, for example system.startup.
+  --service-start-event-kind <kind>
+                          Event trigger category for the service start event.
+  --service-start-event-dedupe-key <key>
+                          Stable dedupe key for the service start event.
   --dedupe-key <key>      Stable key used to update an existing schedule instead of creating a duplicate.
   --concurrency-key <key> Share queue capacity across related scheduled jobs.
   --concurrency-limit <n> Maximum actively running jobs for the queue key.

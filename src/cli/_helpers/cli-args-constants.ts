@@ -61,6 +61,7 @@ export const SCHEDULER_ACTIONS: ReadonlySet<SchedulerCliAction> = new Set([
   "retry",
   "cancel",
   "sync-prompts",
+  "service",
 ]);
 export const SCHEDULER_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<SchedulerCliAction> =
   new Set(["pause", "resume", "delete", "trigger", "retry", "cancel"]);
@@ -104,6 +105,7 @@ export const INSTRUCTION_SCOPES: ReadonlySet<InstructionCliScope> = new Set([
   "user",
   "workspace",
   "compatibility",
+  "ralph-flow",
 ]);
 export const INSTRUCTION_MODES: ReadonlySet<InstructionMode> = new Set([
   "always",

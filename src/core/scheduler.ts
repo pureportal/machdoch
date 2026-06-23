@@ -92,6 +92,11 @@ const DEFAULT_HISTORY_LIMIT = 100;
 const DEFAULT_EVENT_HISTORY_LIMIT = 1_000;
 const DEFAULT_MAX_CATCH_UP_RUNS = 100;
 const DEFAULT_CONCURRENCY_LIMIT = 1;
+const DEFAULT_SCHEDULER_SERVICE_POLL_INTERVAL_MS = 30_000;
+const DEFAULT_SCHEDULER_SERVICE_IDLE_SHUTDOWN_MS = 0;
+const DEFAULT_SCHEDULER_SERVICE_MAX_CHAIN_DEPTH = 25;
+const DEFAULT_SCHEDULER_RUNNING_HEARTBEAT_MS = 30_000;
+const DEFAULT_SCHEDULER_ABANDONED_RUN_STALE_MS = 5 * 60_000;
 const DEFAULT_RETRY_POLICY: ScheduledRetryPolicy = {
   maxAttempts: 1,
   factor: 2,
@@ -448,6 +453,7 @@ export interface ScheduledTriggerEventInput {
   workspaceRoot?: string;
   payload?: Record<string, unknown>;
   dedupeKey?: string;
+  parentRunId?: string;
   occurredAt?: number;
 }
 
@@ -468,6 +474,7 @@ export interface ScheduledTriggerEvent {
   workspaceRoot?: string;
   payload: Record<string, unknown>;
   dedupeKey?: string;
+  parentRunId?: string;
   occurredAt: number;
   receivedAt: number;
   matches: ScheduledTriggerEventMatch[];
@@ -533,6 +540,36 @@ export interface RunQueuedScheduledJobsResult {
   queued: ScheduledJobRun[];
 }
 
+export interface SchedulerRecoveredRun {
+  runId: string;
+  jobId: string;
+  previousStatus: ScheduledRunStatus;
+  status: ScheduledRunStatus;
+}
+
+export interface SchedulerServiceIterationResult {
+  recovered: SchedulerRecoveredRun[];
+  queued: ScheduledJobRun[];
+  runs: ScheduledJobRun[];
+}
+
+export interface SchedulerServiceOptions {
+  pollIntervalMs?: number;
+  idleShutdownMs?: number;
+  abandonedRunStaleMs?: number;
+  maxIterations?: number;
+  maxRunsPerTick?: number;
+  signal?: AbortSignal;
+  onIteration?: (result: SchedulerServiceIterationResult) => void | Promise<void>;
+}
+
+export interface SchedulerServiceResult {
+  iterations: number;
+  recoveredRuns: number;
+  queuedRuns: number;
+  finishedRuns: number;
+}
+
 export interface ScheduledPromptDefinition {
   path: string;
   name: string;
@@ -569,6 +606,31 @@ export const getUserSchedulerStatePath = (): string => {
 const sleep = async (durationMs: number): Promise<void> => {
   await new Promise<void>((resolve) => {
     setTimeout(resolve, durationMs);
+  });
+};
+
+const sleepWithSignal = async (
+  durationMs: number,
+  signal: AbortSignal | undefined,
+): Promise<void> => {
+  if (durationMs <= 0 || signal?.aborted) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    let timeout: ReturnType<typeof setTimeout>;
+    const onAbort = (): void => {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    const onTimeout = (): void => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    };
+
+    timeout = setTimeout(onTimeout, durationMs);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 };
 
@@ -1772,6 +1834,55 @@ const findExistingRunByDedupeKey = (
   return state.runs.find((run) => run.dedupeKey === dedupeKey);
 };
 
+const getRunChain = (
+  state: SmartSchedulerState,
+  parentRunId: string | undefined,
+): ScheduledJobRun[] => {
+  const chain: ScheduledJobRun[] = [];
+  const visitedRunIds = new Set<string>();
+  let cursor = parentRunId;
+
+  while (cursor && !visitedRunIds.has(cursor)) {
+    visitedRunIds.add(cursor);
+    const run = state.runs.find((candidate) => candidate.id === cursor);
+
+    if (!run) {
+      break;
+    }
+
+    chain.push(run);
+    cursor = run.parentRunId;
+
+    if (chain.length > DEFAULT_SCHEDULER_SERVICE_MAX_CHAIN_DEPTH) {
+      break;
+    }
+  }
+
+  return chain;
+};
+
+const getJobEventChainSkipReason = (
+  state: SmartSchedulerState,
+  event: ScheduledTriggerEvent,
+  targetJobId: string,
+): string | undefined => {
+  if (event.kind !== "job-event" || !event.parentRunId) {
+    return undefined;
+  }
+
+  const chain = getRunChain(state, event.parentRunId);
+
+  if (chain.length >= DEFAULT_SCHEDULER_SERVICE_MAX_CHAIN_DEPTH) {
+    return `Skipped to avoid exceeding chained scheduler depth ${DEFAULT_SCHEDULER_SERVICE_MAX_CHAIN_DEPTH}.`;
+  }
+
+  if (chain.some((run) => run.jobId === targetJobId)) {
+    return "Skipped to avoid a chained scheduler cycle.";
+  }
+
+  return undefined;
+};
+
 const createRunHandle = (run: Pick<ScheduledJobRun, "jobId" | "id">): ScheduledRunHandle => ({
   jobId: run.jobId,
   runId: run.id,
@@ -1919,6 +2030,134 @@ const taskResultCancelled = (result: TaskExecutionResult): boolean => {
   return result.status === "cancelled";
 };
 
+const getRecordEntry = (
+  value: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | undefined => {
+  const entry = value[key];
+
+  return isRecordValue(entry) ? entry : undefined;
+};
+
+const getStringEntry = (
+  value: Record<string, unknown>,
+  key: string,
+): string | undefined => {
+  const entry = value[key];
+
+  return typeof entry === "string" && entry.trim() ? entry : undefined;
+};
+
+const getRalphCompletionMetadata = (
+  result: TaskExecutionResult | undefined,
+): Record<string, unknown> | undefined => {
+  if (!result?.metadata) {
+    return undefined;
+  }
+
+  return getRecordEntry(result.metadata, "ralphFlow");
+};
+
+const createRunCompletionPayload = (
+  job: ScheduledJob,
+  run: ScheduledJobRun,
+): Record<string, unknown> => {
+  return {
+    jobId: job.id,
+    jobName: job.name,
+    runId: run.id,
+    status: run.status,
+    resultStatus: run.result?.status,
+    targetType: job.target.type,
+    source: run.source,
+    attempt: run.attempt,
+    maxAttempts: run.maxAttempts,
+    scheduledFor: run.scheduledFor,
+    enqueuedAt: run.enqueuedAt,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    queueKey: run.queueKey,
+    triggerId: run.triggerId,
+    eventId: run.eventId,
+    parentRunId: run.parentRunId,
+    summary: run.result?.summary,
+    error: run.error,
+  };
+};
+
+const createRalphCompletionPayload = (
+  job: ScheduledJob,
+  run: ScheduledJobRun,
+  ralph: Record<string, unknown>,
+): Record<string, unknown> => {
+  return {
+    ...createRunCompletionPayload(job, run),
+    ralph: {
+      scope: getStringEntry(ralph, "scope"),
+      flowId: getStringEntry(ralph, "flowId"),
+      flowName: getStringEntry(ralph, "flowName"),
+      runId: getStringEntry(ralph, "runId"),
+      status: getStringEntry(ralph, "status"),
+      runLogScope: getStringEntry(ralph, "runLogScope"),
+    },
+  };
+};
+
+const createRunCompletionEventInputs = (
+  job: ScheduledJob,
+  run: ScheduledJobRun,
+): ScheduledTriggerEventInput[] => {
+  if (!isTerminalRunStatus(run.status)) {
+    return [];
+  }
+
+  const baseEvent = {
+    kind: "job-event" as const,
+    source: "scheduler",
+    workspaceRoot: job.target.workspaceRoot,
+    parentRunId: run.id,
+    occurredAt: run.finishedAt ?? run.updatedAt,
+  };
+  const genericPayload = createRunCompletionPayload(job, run);
+  const events: ScheduledTriggerEventInput[] = [
+    {
+      ...baseEvent,
+      type: "job-event.finished",
+      payload: genericPayload,
+      dedupeKey: `run:${run.id}:job-event.finished`,
+    },
+    {
+      ...baseEvent,
+      type: `job-event.${run.status}`,
+      payload: genericPayload,
+      dedupeKey: `run:${run.id}:job-event.${run.status}`,
+    },
+  ];
+  const ralph = getRalphCompletionMetadata(run.result);
+  const ralphStatus = ralph ? getStringEntry(ralph, "status") : undefined;
+
+  if (ralph && ralphStatus) {
+    const payload = createRalphCompletionPayload(job, run, ralph);
+
+    events.push(
+      {
+        ...baseEvent,
+        type: "job-event.ralph-flow.finished",
+        payload,
+        dedupeKey: `run:${run.id}:job-event.ralph-flow.finished`,
+      },
+      {
+        ...baseEvent,
+        type: `job-event.ralph-flow.${ralphStatus}`,
+        payload,
+        dedupeKey: `run:${run.id}:job-event.ralph-flow.${ralphStatus}`,
+      },
+    );
+  }
+
+  return events;
+};
+
 const getRetryDelayMs = (
   retry: ScheduledRetryPolicy,
   completedAttempt: number,
@@ -1965,6 +2204,7 @@ const normalizeTriggerEventInput = (
   const source = normalizeSchedulerText(input.source) ?? "manual";
   const workspaceRoot = normalizeSchedulerTrimmedText(input.workspaceRoot);
   const dedupeKey = normalizeSchedulerText(input.dedupeKey);
+  const parentRunId = normalizeSchedulerText(input.parentRunId);
   const occurredAt =
     typeof input.occurredAt === "number" && Number.isFinite(input.occurredAt)
       ? Math.trunc(input.occurredAt)
@@ -1982,6 +2222,7 @@ const normalizeTriggerEventInput = (
     matches: [],
     ...(workspaceRoot ? { workspaceRoot } : {}),
     ...(dedupeKey ? { dedupeKey } : {}),
+    ...(parentRunId ? { parentRunId } : {}),
   };
 };
 
@@ -2122,7 +2363,9 @@ export class DurableSmartScheduler {
         throw new Error(`Scheduled job not found: ${jobId}`);
       }
 
+      const targetType = input.target?.type ?? existingJob.target.type;
       const targetInput: ScheduledJobTargetInput = {
+        type: targetType,
         workspaceRoot:
           input.target?.workspaceRoot ?? existingJob.target.workspaceRoot,
         prompt: input.target?.prompt ?? existingJob.target.prompt,
@@ -2132,6 +2375,15 @@ export class DurableSmartScheduler {
         contextPacks:
           input.target?.contextPacks ?? existingJob.target.contextPacks,
         macros: input.target?.macros ?? existingJob.target.macros,
+        ...(targetType === "ralph-flow"
+          ? {
+              ralphFlow:
+                input.target?.ralphFlow ?? existingJob.target.ralphFlow ??
+                (() => {
+                  throw new Error("Expected updated Ralph target to include a flow id.");
+                })(),
+            }
+          : {}),
         ...(input.target?.mode ?? existingJob.target.mode
           ? { mode: input.target?.mode ?? existingJob.target.mode }
           : {}),
@@ -2584,6 +2836,16 @@ export class DurableSmartScheduler {
             continue;
           }
 
+          const chainSkipReason = getJobEventChainSkipReason(state, event, job.id);
+
+          if (chainSkipReason) {
+            trigger.lastMatchedAt = now;
+            trigger.lastSkippedAt = now;
+            match.skippedReason = chainSkipReason;
+            event.matches.push(match);
+            continue;
+          }
+
           const dedupeSuffix = createSchedulerEventRunDedupeSuffix(
             job,
             trigger,
@@ -2620,6 +2882,7 @@ export class DurableSmartScheduler {
             {
               triggerId: trigger.id,
               eventId: event.id,
+              ...(event.parentRunId ? { parentRunId: event.parentRunId } : {}),
               dedupeSuffix,
             },
           );
@@ -2657,6 +2920,37 @@ export class DurableSmartScheduler {
     );
   }
 
+  async recoverAbandonedRuns(
+    reason = "Scheduler service recovered an abandoned running run.",
+    staleAfterMs = DEFAULT_SCHEDULER_ABANDONED_RUN_STALE_MS,
+  ): Promise<SchedulerRecoveredRun[]> {
+    const state = await this.getState();
+    const now = this.now();
+    const abandonedRuns = state.runs.filter(
+      (run) =>
+        run.status === "running" &&
+        !this.activeRunControllers.has(run.id) &&
+        now - run.updatedAt >= staleAfterMs,
+    );
+    const recovered: SchedulerRecoveredRun[] = [];
+
+    for (const run of abandonedRuns) {
+      const finishedRun = await this.finishRunAttempt(run.id, {
+        status: "failed",
+        error: reason,
+      });
+
+      recovered.push({
+        runId: finishedRun.id,
+        jobId: finishedRun.jobId,
+        previousStatus: "running",
+        status: finishedRun.status,
+      });
+    }
+
+    return recovered;
+  }
+
   async runDueJobs(
     options: RunQueuedScheduledJobsOptions = {},
   ): Promise<RunQueuedScheduledJobsResult> {
@@ -2667,6 +2961,82 @@ export class DurableSmartScheduler {
       runs,
       queued: queued.map((result) => result.run),
     };
+  }
+
+  async runService(
+    options: SchedulerServiceOptions = {},
+  ): Promise<SchedulerServiceResult> {
+    const pollIntervalMs = Math.max(
+      1,
+      Math.trunc(options.pollIntervalMs ?? DEFAULT_SCHEDULER_SERVICE_POLL_INTERVAL_MS),
+    );
+    const idleShutdownMs = Math.max(
+      0,
+      Math.trunc(options.idleShutdownMs ?? DEFAULT_SCHEDULER_SERVICE_IDLE_SHUTDOWN_MS),
+    );
+    const abandonedRunStaleMs = Math.max(
+      DEFAULT_SCHEDULER_RUNNING_HEARTBEAT_MS,
+      Math.trunc(options.abandonedRunStaleMs ?? DEFAULT_SCHEDULER_ABANDONED_RUN_STALE_MS),
+    );
+    const maxIterations =
+      options.maxIterations !== undefined
+        ? Math.max(1, Math.trunc(options.maxIterations))
+        : undefined;
+    const result: SchedulerServiceResult = {
+      iterations: 0,
+      recoveredRuns: 0,
+      queuedRuns: 0,
+      finishedRuns: 0,
+    };
+    let idleSince: number | undefined;
+
+    while (!options.signal?.aborted) {
+      const recovered = await this.recoverAbandonedRuns(
+        "Scheduler service recovered an abandoned running run.",
+        abandonedRunStaleMs,
+      );
+      const due = await this.runDueJobs(
+        options.maxRunsPerTick !== undefined
+          ? { maxRuns: options.maxRunsPerTick }
+          : {},
+      );
+      const iteration: SchedulerServiceIterationResult = {
+        recovered,
+        queued: due.queued,
+        runs: due.runs,
+      };
+
+      result.iterations += 1;
+      result.recoveredRuns += recovered.length;
+      result.queuedRuns += due.queued.length;
+      result.finishedRuns += due.runs.length;
+
+      await options.onIteration?.(iteration);
+
+      const didFinishOrRecover = recovered.length > 0 || due.runs.length > 0;
+
+      if (didFinishOrRecover) {
+        idleSince = undefined;
+      } else {
+        idleSince ??= this.now();
+      }
+
+      if (maxIterations !== undefined && result.iterations >= maxIterations) {
+        break;
+      }
+
+      if (
+        idleShutdownMs > 0 &&
+        idleSince !== undefined &&
+        this.now() - idleSince >= idleShutdownMs
+      ) {
+        break;
+      }
+
+      await sleepWithSignal(didFinishOrRecover ? 1 : pollIntervalMs, options.signal);
+    }
+
+    return result;
   }
 
   async runQueuedRuns(
@@ -2763,6 +3133,7 @@ export class DurableSmartScheduler {
     const controller = new AbortController();
     this.activeRunControllers.set(runId, controller);
     let cleanupMaxDurationTimer = (): void => undefined;
+    const cleanupHeartbeat = this.startRunningRunHeartbeat(runId);
 
     try {
       const { job, run, event } = await this.getRunnableSnapshot(runId);
@@ -2781,8 +3152,29 @@ export class DurableSmartScheduler {
       return await this.finishRunWithError(runId, error);
     } finally {
       cleanupMaxDurationTimer();
+      cleanupHeartbeat();
       this.activeRunControllers.delete(runId);
     }
+  }
+
+  private startRunningRunHeartbeat(runId: string): () => void {
+    const timer = setInterval(() => {
+      void this.touchRunningRun(runId);
+    }, DEFAULT_SCHEDULER_RUNNING_HEARTBEAT_MS);
+
+    return () => clearInterval(timer);
+  }
+
+  private async touchRunningRun(runId: string): Promise<void> {
+    await this.mutateState((state) => {
+      const run = state.runs.find((candidate) => candidate.id === runId);
+
+      if (!run || run.status !== "running") {
+        return;
+      }
+
+      run.updatedAt = this.now();
+    });
   }
 
   private async getRunnableSnapshot(
@@ -2905,7 +3297,7 @@ export class DurableSmartScheduler {
       error?: string;
     },
   ): Promise<ScheduledJobRun> {
-    return this.mutateState((state) => {
+    const finished = await this.mutateState((state) => {
       const now = this.now();
       const run = state.runs.find((candidate) => candidate.id === runId);
 
@@ -2968,8 +3360,29 @@ export class DurableSmartScheduler {
         job.lastFinishedAt = now;
       }
 
-      return { ...run };
+      return {
+        run: { ...run },
+        ...(job ? { job: { ...job } } : {}),
+        emitCompletionEvents: !shouldRetry && isTerminalRunStatus(run.status),
+      };
     });
+
+    if (finished.emitCompletionEvents && finished.job) {
+      await this.recordRunCompletionEvents(finished.job, finished.run);
+    }
+
+    return finished.run;
+  }
+
+  private async recordRunCompletionEvents(
+    job: ScheduledJob,
+    run: ScheduledJobRun,
+  ): Promise<void> {
+    const events = createRunCompletionEventInputs(job, run);
+
+    for (const event of events) {
+      await this.recordEventAndEnqueueRuns(event);
+    }
   }
 
   async getRun(

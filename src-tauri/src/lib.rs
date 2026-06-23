@@ -8,6 +8,9 @@ mod shared_cli;
 mod ui_control;
 mod voice;
 
+#[cfg(desktop)]
+use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags as WindowStateFlags};
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     desktop_shell::hide_console_window_for_background_ui_launch();
@@ -52,6 +55,19 @@ pub fn run() {
 
     #[cfg(debug_assertions)]
     let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+
+    #[cfg(desktop)]
+    let builder = builder.plugin(
+        WindowStateBuilder::default()
+            .with_filter(|label| label == desktop_shell::MAIN_WINDOW_LABEL)
+            .with_state_flags(
+                WindowStateFlags::POSITION
+                    | WindowStateFlags::SIZE
+                    | WindowStateFlags::MAXIMIZED
+                    | WindowStateFlags::FULLSCREEN,
+            )
+            .build(),
+    );
 
     builder
         .manage(desktop_task::AttachmentPathGrantMap::default())

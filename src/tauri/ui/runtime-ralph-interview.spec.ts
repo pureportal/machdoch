@@ -69,6 +69,7 @@ describe("Ralph generation interview runtime bridge", () => {
       target: "refactor",
       session,
       answers: { scope: "src/core" },
+      answerComments: { scope: "Limit this to core files." },
       mode: "machdoch",
       profile: "workspace",
       provider: "openai",
@@ -110,6 +111,7 @@ describe("Ralph generation interview runtime bridge", () => {
           JSON.stringify({
             session,
             answers: { scope: "src/core" },
+            answerComments: { scope: "Limit this to core files." },
           }),
         ],
         taskId: "ralph-interview-task",

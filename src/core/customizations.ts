@@ -1,6 +1,12 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
+import {
+  getRalphFlowAlwaysOnInstructionPath,
+  getRalphFlowConditionalInstructionDirectory,
+  type RalphFlowScope,
+} from "./_helpers/create-ralph-storage-paths.helper.js";
+import { normalizeFlowId } from "./_helpers/ralph-flow-ids.helper.js";
 import { getUserConfigPath } from "./env.js";
 import { parseMarkdownDocument } from "./frontmatter.js";
 import type {
@@ -84,6 +90,10 @@ export interface CustomizationDiscoveryOptions {
   discoverGithubCustomizations?: boolean;
   discoverUserCustomizations?: boolean;
   includeDiagnostics?: boolean;
+  ralphFlow?: {
+    id: string;
+    scope?: RalphFlowScope;
+  };
 }
 
 const MAX_INSTRUCTION_FILE_BYTES = 128 * 1024;
@@ -128,9 +138,12 @@ export const getUserInstructionDirectory = (): string => {
 const toInstructionPath = (
   workspaceRoot: string,
   absolutePath: string,
-  scope?: InstructionScope,
+  options?: {
+    scope?: InstructionScope;
+    pathRoot?: "user" | "workspace";
+  },
 ): string => {
-  if (scope === "user") {
+  if (options?.scope === "user" || options?.pathRoot === "user") {
     return absolutePath;
   }
 
@@ -327,6 +340,9 @@ const normalizePromptTools = (tools: unknown): ToolName[] => {
 interface LoadInstructionOptions {
   fallbackName?: string;
   scope?: InstructionScope;
+  pathRoot?: "user" | "workspace";
+  ralphFlowId?: string;
+  ralphFlowScope?: RalphFlowScope;
   diagnostics?: CustomizationDiagnostic[];
 }
 
@@ -384,7 +400,10 @@ const loadInstruction = async (
 
   return {
     kind,
-    path: toInstructionPath(workspaceRoot, filePath, options?.scope),
+    path: toInstructionPath(workspaceRoot, filePath, {
+      ...(options?.scope ? { scope: options.scope } : {}),
+      ...(options?.pathRoot ? { pathRoot: options.pathRoot } : {}),
+    }),
     name:
       typeof document.attributes.name === "string"
         ? document.attributes.name
@@ -404,6 +423,8 @@ const loadInstruction = async (
     ...(mode ? { mode } : {}),
     ...(audience ? { audience } : {}),
     ...(options?.scope ? { scope: options.scope } : {}),
+    ...(options?.ralphFlowId ? { ralphFlowId: options.ralphFlowId } : {}),
+    ...(options?.ralphFlowScope ? { ralphFlowScope: options.ralphFlowScope } : {}),
     ...(sizeBytes > MAX_INSTRUCTION_FILE_BYTES ? { sizeBytes } : {}),
   };
 };
@@ -522,6 +543,24 @@ export const discoverCustomizations = async (
   const githubPromptsRoot = join(githubRoot, "prompts");
   const githubSkillsRoot = join(githubRoot, "skills");
   const agentsInstructionPath = join(workspaceRoot, "AGENTS.md");
+  const ralphFlowId = options?.ralphFlow
+    ? normalizeFlowId(options.ralphFlow.id)
+    : "";
+  const ralphFlowScope = options?.ralphFlow?.scope ?? "workspace";
+  const ralphFlowAlwaysOnInstructionPath = ralphFlowId
+    ? getRalphFlowAlwaysOnInstructionPath(
+        workspaceRoot,
+        ralphFlowId,
+        ralphFlowScope,
+      )
+    : undefined;
+  const ralphFlowConditionalInstructionRoot = ralphFlowId
+    ? getRalphFlowConditionalInstructionDirectory(
+        workspaceRoot,
+        ralphFlowId,
+        ralphFlowScope,
+      )
+    : undefined;
 
   const instructions: DiscoveredInstruction[] = [];
   const instructionOptions = (
@@ -590,6 +629,27 @@ export const discoverCustomizations = async (
     }
   }
 
+  if (
+    ralphFlowId &&
+    ralphFlowAlwaysOnInstructionPath &&
+    existsSync(ralphFlowAlwaysOnInstructionPath)
+  ) {
+    instructions.push(
+      await loadInstruction(
+        workspaceRoot,
+        ralphFlowAlwaysOnInstructionPath,
+        "always-on",
+        instructionOptions({
+          fallbackName: `${ralphFlowId}-instructions`,
+          scope: "ralph-flow",
+          pathRoot: ralphFlowScope === "user" ? "user" : "workspace",
+          ralphFlowId,
+          ralphFlowScope,
+        }),
+      ),
+    );
+  }
+
   const userConditionalInstructionPaths = options?.discoverUserCustomizations
     ? (await walkFiles(userConditionalInstructionRoot)).filter((filePath) =>
         filePath.endsWith(".instructions.md"),
@@ -598,6 +658,12 @@ export const discoverCustomizations = async (
   const conditionalInstructionPaths = (
     await walkFiles(conditionalInstructionRoot)
   ).filter((filePath) => filePath.endsWith(".instructions.md"));
+  const ralphFlowConditionalInstructionPaths =
+    ralphFlowId && ralphFlowConditionalInstructionRoot
+      ? (await walkFiles(ralphFlowConditionalInstructionRoot)).filter(
+          (filePath) => filePath.endsWith(".instructions.md"),
+        )
+      : [];
   const promptPaths = (await walkFiles(promptsRoot)).filter((filePath) =>
     filePath.endsWith(".prompt.md"),
   );
@@ -626,10 +692,13 @@ export const discoverCustomizations = async (
     ...userConditionalInstructionPaths,
     ...conditionalInstructionPaths,
     ...githubConditionalInstructionPaths,
+    ...ralphFlowConditionalInstructionPaths,
   ].sort()) {
     const isUserInstruction = userConditionalInstructionPaths.includes(filePath);
     const isCompatibilityInstruction =
       githubConditionalInstructionPaths.includes(filePath);
+    const isRalphFlowInstruction =
+      ralphFlowConditionalInstructionPaths.includes(filePath);
     instructions.push(
       await loadInstruction(
         workspaceRoot,
@@ -640,6 +709,13 @@ export const discoverCustomizations = async (
             ? { scope: "user" }
             : isCompatibilityInstruction
               ? { scope: "compatibility" }
+              : isRalphFlowInstruction
+                ? {
+                    scope: "ralph-flow",
+                    pathRoot: ralphFlowScope === "user" ? "user" : "workspace",
+                    ralphFlowId,
+                    ralphFlowScope,
+                  }
               : {},
         ),
       ),

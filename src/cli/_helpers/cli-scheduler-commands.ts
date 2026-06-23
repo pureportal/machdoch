@@ -25,6 +25,7 @@ import {
   type ScheduledMacroReference,
   type ScheduledMissedRunPolicy,
   type ScheduledRunEnqueueResult,
+  type SchedulerServiceIterationResult,
   type ScheduledTaskExecutor,
   type ScheduledTaskExecutionRequest,
   type ScheduledTriggerFiringMode,
@@ -167,6 +168,31 @@ const parseMacroReference = (value: string): ScheduledMacroReference => {
   return {
     name: normalized,
   };
+};
+
+const parseScheduledRalphParams = (
+  params: string[] | undefined,
+): Record<string, string> => {
+  const values: Record<string, string> = {};
+
+  for (const param of params ?? []) {
+    const separatorIndex = param.indexOf("=");
+
+    if (separatorIndex <= 0) {
+      throw new Error("Expected --scheduled-ralph-param to use name=value syntax.");
+    }
+
+    const key = param.slice(0, separatorIndex).trim();
+    const value = param.slice(separatorIndex + 1);
+
+    if (!key) {
+      throw new Error("Expected --scheduled-ralph-param to include a non-empty name.");
+    }
+
+    values[key] = value;
+  }
+
+  return values;
 };
 
 const parseTriggerKind = (value: string): ScheduledEventTriggerKind => {
@@ -344,13 +370,56 @@ const createJobInput = async (
   args: ParsedCliArgs,
   options: SchedulerCliOptions,
 ): Promise<CreateScheduledJobInput> => {
-  const prompt = options.promptFile
-    ? await readSchedulerPromptFile(args.workspaceRoot, options.promptFile)
-    : options.prompt ?? "";
+  const schedulerTarget = options.schedulerTarget ?? "prompt";
+  const prompt = schedulerTarget === "prompt"
+    ? options.promptFile
+      ? await readSchedulerPromptFile(args.workspaceRoot, options.promptFile)
+      : options.prompt ?? ""
+    : "";
   const missedRunPolicy = isMissedRunPolicy(options.missedRunPolicy)
     ? options.missedRunPolicy
     : undefined;
   const triggers = createTriggerInputs(options);
+  const target: CreateScheduledJobInput["target"] =
+    schedulerTarget === "ralph-flow"
+      ? {
+          type: "ralph-flow",
+          workspaceRoot: args.workspaceRoot,
+          ralphFlow: {
+            id: options.scheduledRalphFlow ??
+              fail("Expected --scheduled-ralph-flow for scheduled Ralph jobs."),
+            scope: options.scheduledRalphFlowScope ?? "workspace",
+            params: parseScheduledRalphParams(options.scheduledRalphParams),
+            ...(options.scheduledRalphRunLogScope
+              ? { runLogScope: options.scheduledRalphRunLogScope }
+              : {}),
+            ...(options.scheduledRalphMaxTransitions !== undefined
+              ? { maxTransitions: options.scheduledRalphMaxTransitions }
+              : {}),
+            permissions: {
+              allowedRoots: options.scheduledRalphAllowedRoots ?? [
+                args.workspaceRoot,
+              ],
+              allowCommands: options.scheduledRalphAllowCommands ?? false,
+              allowWrites: options.scheduledRalphAllowWrites ?? false,
+              allowNetwork: options.scheduledRalphAllowNetwork ?? false,
+              allowMcpTools: options.scheduledRalphAllowMcpTools ?? false,
+            },
+          },
+        }
+      : {
+          workspaceRoot: args.workspaceRoot,
+          prompt,
+          contextPaths: args.contextPaths ?? [],
+          imagePaths: args.imagePaths ?? [],
+          contextPacks: (options.contextPacks ?? []).map(parseContextPackSnapshot),
+          macros: (options.macros ?? []).map(parseMacroReference),
+          ...(args.mode ? { mode: args.mode } : {}),
+          ...(args.profile ? { profile: args.profile } : {}),
+          ...(args.runtimeProvider ? { provider: args.runtimeProvider } : {}),
+          ...(args.model ? { model: args.model } : {}),
+          ...(args.reasoning ? { reasoning: args.reasoning } : {}),
+        };
 
   if (options.missedRunPolicy && !missedRunPolicy) {
     fail(
@@ -382,22 +451,10 @@ const createJobInput = async (
                 ...(options.delayMs ? { delayMs: options.delayMs } : {}),
                 ...(options.runAt ? { runAt: options.runAt } : {}),
               },
-            }
-          : {}),
+        }
+      : {}),
     ...(triggers && triggers.length > 0 ? { triggers } : {}),
-    target: {
-      workspaceRoot: args.workspaceRoot,
-      prompt,
-      contextPaths: args.contextPaths ?? [],
-      imagePaths: args.imagePaths ?? [],
-      contextPacks: (options.contextPacks ?? []).map(parseContextPackSnapshot),
-      macros: (options.macros ?? []).map(parseMacroReference),
-      ...(args.mode ? { mode: args.mode } : {}),
-      ...(args.profile ? { profile: args.profile } : {}),
-      ...(args.runtimeProvider ? { provider: args.runtimeProvider } : {}),
-      ...(args.model ? { model: args.model } : {}),
-      ...(args.reasoning ? { reasoning: args.reasoning } : {}),
-    },
+    target,
     ...(missedRunPolicy ? { missedRunPolicy } : {}),
     ...(options.missedRunGraceMs ? { missedRunGraceMs: options.missedRunGraceMs } : {}),
     retry: {
@@ -684,6 +741,12 @@ const assertScheduledRalphPermissions = (
 const summarizeRalphAsTaskResult = (
   task: string,
   result: RalphRunResult,
+  metadata: {
+    flowId: string;
+    flowName: string;
+    scope: RalphFlowScope;
+    runLogScope: RalphFlowScope;
+  },
 ): TaskExecutionResult => {
   const status: TaskExecutionResult["status"] =
     result.status === "completed"
@@ -699,6 +762,16 @@ const summarizeRalphAsTaskResult = (
     summary: result.summary,
     executedTools: [],
     ...(status !== "executed" ? { reason: result.summary } : {}),
+    metadata: {
+      ralphFlow: {
+        flowId: metadata.flowId,
+        flowName: metadata.flowName,
+        scope: metadata.scope,
+        runId: result.runId,
+        status: result.status,
+        runLogScope: metadata.runLogScope,
+      },
+    },
     outputSections: [
       {
         title: "Ralph Run",
@@ -733,13 +806,19 @@ const executeScheduledRalphFlow = async (
     undefined,
     request.reasoning,
   );
-  const customizations = await discoverCustomizations(
-    request.workspaceRoot,
-    createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
-  );
   const flow = await readRalphFlow(request.workspaceRoot, target.id, {
     scope: flowScope,
   });
+  const customizations = await discoverCustomizations(
+    request.workspaceRoot,
+    {
+      ...createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
+      ralphFlow: {
+        id: flow.id,
+        scope: flowScope,
+      },
+    },
+  );
   const variableValues = renderScheduledParams(target.params, request);
   assertScheduledRalphPermissions(flow, request, variableValues);
   const runId = `scheduled-${request.run.id}-${flow.id}`;
@@ -767,6 +846,12 @@ const executeScheduledRalphFlow = async (
   return summarizeRalphAsTaskResult(
     `Run Ralph flow ${flow.name} (${flowScope}:${flow.id}).`,
     result,
+    {
+      flowId: flow.id,
+      flowName: flow.name,
+      scope: flowScope,
+      runLogScope,
+    },
   );
 };
 
@@ -850,8 +935,10 @@ const summarizeJob = (job: ScheduledJob): Record<string, unknown> => ({
   schedule: job.schedule ?? null,
   triggers: job.triggers,
   triggerLabel: formatSchedulerTriggerLabel(job),
+  targetType: job.target.type,
   workspaceRoot: job.target.workspaceRoot,
   prompt: job.target.prompt,
+  ralphFlow: job.target.ralphFlow ?? null,
   nextRunAt: job.nextRunAt ?? null,
   lastStartedAt: job.lastStartedAt ?? null,
   lastFinishedAt: job.lastFinishedAt ?? null,
@@ -966,7 +1053,8 @@ export const printSchedulerSummary = async (
     executor:
       options.action === "run-due" ||
       options.action === "trigger" ||
-      options.action === "retry",
+      options.action === "retry" ||
+      options.action === "service",
   });
 
   switch (options.action) {
@@ -1083,6 +1171,90 @@ export const printSchedulerSummary = async (
       writeStdoutLine(`queued due runs: ${result.queued.length}`);
       printRunLines(result.runs);
       return;
+    }
+    case "service": {
+      const controller = new AbortController();
+      const stop = (): void => {
+        if (!controller.signal.aborted) {
+          controller.abort("Scheduler service stopped.");
+        }
+      };
+
+      process.once("SIGINT", stop);
+      process.once("SIGTERM", stop);
+
+      try {
+        if (options.serviceStartEventType) {
+          const startEvent = await scheduler.recordEventAndEnqueueRuns({
+            type: options.serviceStartEventType,
+            ...(options.serviceStartEventKind
+              ? { kind: parseTriggerKind(options.serviceStartEventKind) }
+              : {}),
+            source: "scheduler-service",
+            workspaceRoot: args.workspaceRoot,
+            ...(options.serviceStartEventDedupeKey
+              ? { dedupeKey: options.serviceStartEventDedupeKey }
+              : {}),
+          });
+
+          if (!args.json) {
+            writeStdoutLine(
+              `scheduler service event: ${startEvent.event.type} enqueued=${startEvent.enqueued.length}`,
+            );
+          }
+        }
+
+        const serviceOptions = {
+          ...(options.servicePollMs !== undefined
+            ? { pollIntervalMs: options.servicePollMs }
+            : {}),
+          ...(options.serviceIdleShutdownMs !== undefined
+            ? { idleShutdownMs: options.serviceIdleShutdownMs }
+            : {}),
+          ...(options.serviceAbandonedRunStaleMs !== undefined
+            ? { abandonedRunStaleMs: options.serviceAbandonedRunStaleMs }
+            : {}),
+          ...(options.serviceMaxIterations !== undefined
+            ? { maxIterations: options.serviceMaxIterations }
+            : {}),
+          ...(options.serviceMaxRunsPerTick !== undefined
+            ? { maxRunsPerTick: options.serviceMaxRunsPerTick }
+            : {}),
+          signal: controller.signal,
+          ...(!args.json
+            ? {
+                onIteration: (iteration: SchedulerServiceIterationResult) => {
+                  if (
+                    iteration.recovered.length === 0 &&
+                    iteration.queued.length === 0 &&
+                    iteration.runs.length === 0
+                  ) {
+                    return;
+                  }
+
+                  writeStdoutLine(
+                    `scheduler service: recovered=${iteration.recovered.length} queued=${iteration.queued.length} finished=${iteration.runs.length}`,
+                  );
+                },
+              }
+            : {}),
+        };
+        const result = await scheduler.runService(serviceOptions);
+
+        if (args.json) {
+          printJson(result);
+          return;
+        }
+
+        writeStdoutLine(`scheduler service iterations: ${result.iterations}`);
+        writeStdoutLine(`recovered runs: ${result.recoveredRuns}`);
+        writeStdoutLine(`queued due runs: ${result.queuedRuns}`);
+        writeStdoutLine(`finished runs: ${result.finishedRuns}`);
+        return;
+      } finally {
+        process.off("SIGINT", stop);
+        process.off("SIGTERM", stop);
+      }
     }
     case "trigger": {
       const subject = options.subject ?? fail("No scheduled job id was provided.");

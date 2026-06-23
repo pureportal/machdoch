@@ -9,6 +9,12 @@ import {
   resolve,
 } from "node:path";
 import { randomUUID } from "node:crypto";
+import {
+  getRalphFlowConditionalInstructionDirectory,
+  getRalphFlowInstructionDirectory,
+  type RalphFlowScope,
+} from "./_helpers/create-ralph-storage-paths.helper.js";
+import { normalizeFlowId } from "./_helpers/ralph-flow-ids.helper.js";
 import { loadRuntimeConfig } from "./config.js";
 import {
   discoverCustomizations,
@@ -33,13 +39,19 @@ import type { RuntimeConfig } from "./runtime-contract.generated.js";
 
 export type WritableInstructionScope = Extract<
   InstructionScope,
-  "user" | "workspace"
+  "user" | "workspace" | "ralph-flow"
 >;
+
+export interface RalphFlowInstructionTarget {
+  id: string;
+  scope?: RalphFlowScope;
+}
 
 export interface InstructionFileInput {
   name: string;
   body: string;
   scope?: WritableInstructionScope;
+  ralphFlow?: RalphFlowInstructionTarget;
   mode?: InstructionMode;
   audience?: InstructionAudience;
   applyTo?: string[];
@@ -57,6 +69,10 @@ export interface InstructionFileWriteResult {
   path: string;
   scope: WritableInstructionScope;
   name: string;
+  ralphFlow?: {
+    id: string;
+    scope: RalphFlowScope;
+  };
   created: boolean;
 }
 
@@ -84,6 +100,10 @@ export interface InstructionGenerationResult {
   path: string;
   scope: WritableInstructionScope;
   name: string;
+  ralphFlow?: {
+    id: string;
+    scope: RalphFlowScope;
+  };
   rounds: number;
   validation: InstructionValidationResult;
   generatorResults: TaskExecutionResult[];
@@ -119,7 +139,11 @@ const normalizeWritableInstructionScope = (
     return scope;
   }
 
-  throw new Error("Instruction scope must be user or workspace.");
+  if (scope === "ralph-flow") {
+    return scope;
+  }
+
+  throw new Error("Instruction scope must be user, workspace, or ralph-flow.");
 };
 
 const validateInstructionMetadataInput = (input: {
@@ -195,13 +219,44 @@ export const getWorkspaceInstructionDirectory = (
   return join(workspaceRoot, ".machdoch", "instructions");
 };
 
+const normalizeRalphFlowInstructionTarget = (
+  ralphFlow: RalphFlowInstructionTarget | undefined,
+): { id: string; scope: RalphFlowScope } => {
+  const id = normalizeFlowId(ralphFlow?.id ?? "");
+
+  if (!id) {
+    throw new Error("Ralph flow instruction scope requires a Ralph flow id.");
+  }
+
+  const scope = ralphFlow?.scope ?? "workspace";
+
+  if (scope !== "user" && scope !== "workspace") {
+    throw new Error("Ralph flow instruction scope must target a user or workspace flow.");
+  }
+
+  return { id, scope };
+};
+
 export const getInstructionDirectory = (
   workspaceRoot: string,
   scope: WritableInstructionScope,
+  ralphFlow?: RalphFlowInstructionTarget,
 ): string => {
-  return scope === "user"
-    ? getUserInstructionDirectory()
-    : getWorkspaceInstructionDirectory(workspaceRoot);
+  switch (scope) {
+    case "user":
+      return getUserInstructionDirectory();
+    case "workspace":
+      return getWorkspaceInstructionDirectory(workspaceRoot);
+    case "ralph-flow": {
+      const target = normalizeRalphFlowInstructionTarget(ralphFlow);
+
+      return getRalphFlowConditionalInstructionDirectory(
+        workspaceRoot,
+        target.id,
+        target.scope,
+      );
+    }
+  }
 };
 
 const isPathInside = (parentPath: string, candidatePath: string): boolean => {
@@ -235,15 +290,53 @@ const resolveUserInstructionRelativePath = (path: string): string => {
   return resolve(getUserInstructionDirectory(), normalizedPath);
 };
 
+const resolveRalphFlowInstructionRelativePath = (
+  workspaceRoot: string,
+  ralphFlow: RalphFlowInstructionTarget | undefined,
+  path: string,
+): string => {
+  const target = normalizeRalphFlowInstructionTarget(ralphFlow);
+  const root = getRalphFlowInstructionDirectory(
+    workspaceRoot,
+    target.id,
+    target.scope,
+  );
+  const conditionalRoot = getRalphFlowConditionalInstructionDirectory(
+    workspaceRoot,
+    target.id,
+    target.scope,
+  );
+  const normalizedPath = path.trim().replace(/\\/gu, "/");
+
+  if (
+    normalizedPath === ".machdoch" ||
+    normalizedPath.startsWith(".machdoch/")
+  ) {
+    throw new Error(
+      "Ralph flow instruction paths are relative to the flow instruction directory; use instructions.md, instructions/<file>, or a file name.",
+    );
+  }
+
+  if (
+    normalizedPath === "instructions.md" ||
+    normalizedPath.startsWith("instructions/")
+  ) {
+    return resolve(root, normalizedPath);
+  }
+
+  return resolve(conditionalRoot, normalizedPath);
+};
+
 const resolveWritableInstructionPath = (
   workspaceRoot: string,
   scope: WritableInstructionScope,
   name: string,
   path: string | undefined,
+  ralphFlow?: RalphFlowInstructionTarget,
 ): string => {
   if (!path) {
     return join(
-      getInstructionDirectory(workspaceRoot, scope),
+      getInstructionDirectory(workspaceRoot, scope, ralphFlow),
       `${createInstructionSlug(name)}.instructions.md`,
     );
   }
@@ -252,9 +345,26 @@ const resolveWritableInstructionPath = (
     ? resolve(path)
     : scope === "user"
       ? resolveUserInstructionRelativePath(path)
+      : scope === "ralph-flow"
+        ? resolveRalphFlowInstructionRelativePath(workspaceRoot, ralphFlow, path)
       : resolve(workspaceRoot, path);
-  const allowedRoot =
-    scope === "user" ? getUserCustomizationRoot() : resolve(workspaceRoot);
+  const allowedRoot = (() => {
+    if (scope === "user") {
+      return getUserCustomizationRoot();
+    }
+
+    if (scope === "ralph-flow") {
+      const target = normalizeRalphFlowInstructionTarget(ralphFlow);
+
+      return getRalphFlowInstructionDirectory(
+        workspaceRoot,
+        target.id,
+        target.scope,
+      );
+    }
+
+    return resolve(workspaceRoot);
+  })();
 
   if (!isPathInside(allowedRoot, resolvedPath)) {
     throw new Error(
@@ -308,7 +418,12 @@ export const writeInstructionFile = async (
     scope,
     name,
     options.path,
+    input.ralphFlow,
   );
+  const ralphFlow =
+    scope === "ralph-flow"
+      ? normalizeRalphFlowInstructionTarget(input.ralphFlow)
+      : undefined;
   const existed = existsSync(filePath);
 
   if (existed && !options.overwrite) {
@@ -322,6 +437,7 @@ export const writeInstructionFile = async (
     path: filePath,
     scope,
     name,
+    ...(ralphFlow ? { ralphFlow } : {}),
     created: !existed,
   };
 };
@@ -544,12 +660,19 @@ const createBlockedGenerationResult = (
   validation: InstructionValidationResult,
   generatorResults: TaskExecutionResult[],
   summary: string,
+  ralphFlow?: RalphFlowInstructionTarget,
 ): InstructionGenerationResult => {
+  const normalizedRalphFlow =
+    scope === "ralph-flow"
+      ? normalizeRalphFlowInstructionTarget(ralphFlow)
+      : undefined;
+
   return {
     status: "blocked",
     path,
     scope,
     name,
+    ...(normalizedRalphFlow ? { ralphFlow: normalizedRalphFlow } : {}),
     rounds: generatorResults.length,
     validation,
     generatorResults,
@@ -566,11 +689,16 @@ export const generateInstructionFileWithAgent = async (
   validateInstructionMetadataInput(options);
 
   const scope = normalizeWritableInstructionScope(options.scope);
+  const ralphFlow =
+    scope === "ralph-flow"
+      ? normalizeRalphFlowInstructionTarget(options.ralphFlow)
+      : undefined;
   const finalPath = resolveWritableInstructionPath(
     workspaceRoot,
     scope,
     name,
     options.path,
+    options.ralphFlow,
   );
   const maxRounds = options.maxRounds ?? DEFAULT_GENERATION_MAX_ROUNDS;
   const generatorResults: TaskExecutionResult[] = [];
@@ -585,6 +713,7 @@ export const generateInstructionFileWithAgent = async (
       { valid: false, diagnostics: [{ level: "error", code: "name-required", message: "Expected an instruction name.", path: finalPath }] },
       generatorResults,
       "Expected an instruction name.",
+      options.ralphFlow,
     );
   }
 
@@ -596,6 +725,7 @@ export const generateInstructionFileWithAgent = async (
       { valid: false, diagnostics: [{ level: "error", code: "prompt-required", message: "Expected an instruction generation prompt.", path: finalPath }] },
       generatorResults,
       "Expected an instruction generation prompt.",
+      options.ralphFlow,
     );
   }
 
@@ -621,6 +751,7 @@ export const generateInstructionFileWithAgent = async (
       },
       generatorResults,
       `maxRounds must be an integer from 1 to ${MAX_GENERATION_MAX_ROUNDS}.`,
+      options.ralphFlow,
     );
   }
 
@@ -642,6 +773,7 @@ export const generateInstructionFileWithAgent = async (
       },
       generatorResults,
       `Instruction file already exists: ${finalPath}`,
+      options.ralphFlow,
     );
   }
 
@@ -661,6 +793,7 @@ export const generateInstructionFileWithAgent = async (
       discoverGithubCustomizations:
         Boolean(config.compatibility.discoverGithubCustomizations),
       includeDiagnostics: true,
+      ...(ralphFlow ? { ralphFlow } : {}),
     }));
   const existingContent = existed ? await readFile(finalPath, "utf8") : undefined;
 
@@ -730,6 +863,7 @@ export const generateInstructionFileWithAgent = async (
       path: finalPath,
       scope,
       name,
+      ...(ralphFlow ? { ralphFlow } : {}),
       rounds: round,
       validation,
       generatorResults,
@@ -756,5 +890,6 @@ export const generateInstructionFileWithAgent = async (
     },
     generatorResults,
     "Instruction generation did not produce a valid instruction file.",
+    options.ralphFlow,
   );
 };

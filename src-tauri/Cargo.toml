@@ -1,6 +1,6 @@
 [package]
 name = "machdoch"
-version = "0.19.4"
+version = "0.20.0"
 description = "Local-first OS AI agent desktop shell"
 authors = ["machdoch contributors"]
 edition = "2021"
@@ -33,6 +33,9 @@ tauri-plugin-opener = "2.5"
 tauri-plugin-store = "2.4"
 tokio = { version = "1", features = ["net", "sync", "time"] }
 xcap = "0.9.4"
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-window-state = "2.4"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = [

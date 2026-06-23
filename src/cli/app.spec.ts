@@ -626,7 +626,7 @@ describe("parseCliArgs", () => {
         },
       ),
     ).toThrow(
-      "Compatibility instruction files are read-only; use user or workspace scope.",
+      "Compatibility instruction files are read-only; use user, workspace, or ralph-flow scope.",
     );
   });
 
@@ -974,6 +974,110 @@ describe("parseCliArgs", () => {
       json: false,
       verbose: false,
       workspaceRoot: "C:/repo",
+    });
+  });
+
+  it("parses scheduled Ralph flow creation and scheduler service controls", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--cwd",
+          "C:/repo",
+          "scheduler",
+          "create",
+          "--name",
+          "Daily security analysis",
+          "--cron",
+          "0 8 * * *",
+          "--timezone",
+          "Europe/Berlin",
+          "--scheduler-target",
+          "ralph-flow",
+          "--scheduled-ralph-flow",
+          "security-analysis",
+          "--scheduled-ralph-flow-scope",
+          "workspace",
+          "--scheduled-ralph-param",
+          "severity=high",
+          "--scheduled-ralph-run-log-scope",
+          "workspace",
+          "--scheduled-ralph-max-transitions",
+          "80",
+          "--scheduled-ralph-allowed-root",
+          "C:/repo",
+          "--scheduled-ralph-allow-commands",
+          "on",
+          "--scheduled-ralph-allow-writes",
+          "off",
+          "--scheduled-ralph-allow-network",
+          "off",
+          "--scheduled-ralph-allow-mcp-tools",
+          "off",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "scheduler",
+      scheduler: {
+        action: "create",
+        name: "Daily security analysis",
+        cron: "0 8 * * *",
+        timezone: "Europe/Berlin",
+        schedulerTarget: "ralph-flow",
+        scheduledRalphFlow: "security-analysis",
+        scheduledRalphFlowScope: "workspace",
+        scheduledRalphParams: ["severity=high"],
+        scheduledRalphRunLogScope: "workspace",
+        scheduledRalphMaxTransitions: 80,
+        scheduledRalphAllowedRoots: ["C:/repo"],
+        scheduledRalphAllowCommands: true,
+        scheduledRalphAllowWrites: false,
+        scheduledRalphAllowNetwork: false,
+        scheduledRalphAllowMcpTools: false,
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/repo",
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "scheduler",
+          "service",
+          "--service-poll-ms",
+          "1000",
+          "--service-idle-shutdown-ms",
+          "60000",
+          "--service-max-iterations",
+          "2",
+          "--service-max-runs-per-tick",
+          "3",
+          "--service-start-event-type",
+          "system.startup",
+          "--service-start-event-kind",
+          "system",
+          "--service-start-event-dedupe-key",
+          "boot:2026-06-22",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toMatchObject({
+      command: "scheduler",
+      scheduler: {
+        action: "service",
+        servicePollMs: 1000,
+        serviceIdleShutdownMs: 60000,
+        serviceMaxIterations: 2,
+        serviceMaxRunsPerTick: 3,
+        serviceStartEventType: "system.startup",
+        serviceStartEventKind: "system",
+        serviceStartEventDedupeKey: "boot:2026-06-22",
+      },
     });
   });
 

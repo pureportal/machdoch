@@ -81,7 +81,18 @@ const SCHEDULER_PANEL_REFRESH_INTERVAL_MS = 10_000;
 
 interface SchedulerFormState {
   name: string;
+  targetType: "prompt" | "ralph-flow";
   prompt: string;
+  ralphFlowId: string;
+  ralphFlowScope: "workspace" | "user";
+  ralphParams: string;
+  ralphRunLogScope: "workspace" | "user";
+  ralphMaxTransitions: string;
+  ralphAllowedRoots: string;
+  ralphAllowCommands: boolean;
+  ralphAllowWrites: boolean;
+  ralphAllowNetwork: boolean;
+  ralphAllowMcpTools: boolean;
   scheduleType: ScheduleType;
   cron: string;
   timezone: string;
@@ -125,7 +136,18 @@ interface SchedulerFormState {
 
 const createDefaultFormState = (): SchedulerFormState => ({
   name: "",
+  targetType: "prompt",
   prompt: "",
+  ralphFlowId: "",
+  ralphFlowScope: "workspace",
+  ralphParams: "",
+  ralphRunLogScope: "workspace",
+  ralphMaxTransitions: "80",
+  ralphAllowedRoots: "",
+  ralphAllowCommands: false,
+  ralphAllowWrites: false,
+  ralphAllowNetwork: false,
+  ralphAllowMcpTools: false,
   scheduleType: "cron",
   cron: "0 9 * * *",
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
@@ -263,6 +285,29 @@ const splitLines = (value: string): string[] => {
         .filter((entry) => entry.length > 0),
     ),
   );
+};
+
+const parseRalphParams = (value: string): Record<string, string> => {
+  const params: Record<string, string> = {};
+
+  for (const entry of splitLines(value)) {
+    const separatorIndex = entry.indexOf("=");
+
+    if (separatorIndex <= 0) {
+      throw new Error("Ralph params must use name=value lines.");
+    }
+
+    const key = entry.slice(0, separatorIndex).trim();
+    const paramValue = entry.slice(separatorIndex + 1);
+
+    if (!key) {
+      throw new Error("Ralph params must include a non-empty name.");
+    }
+
+    params[key] = paramValue;
+  }
+
+  return params;
 };
 
 const parseOptionalPositiveInteger = (
@@ -576,9 +621,14 @@ export const SchedulerPanel = ({
 
   const buildCreateInput = (): SchedulerCreateJobInput => {
     const prompt = form.prompt.trim();
+    const ralphFlowId = form.ralphFlowId.trim();
 
-    if (!prompt) {
+    if (form.targetType === "prompt" && !prompt) {
       throw new Error("Prompt is required.");
+    }
+
+    if (form.targetType === "ralph-flow" && !ralphFlowId) {
+      throw new Error("Ralph flow id is required.");
     }
 
     const intervalMs = parseOptionalPositiveInteger(
@@ -692,15 +742,10 @@ export const SchedulerPanel = ({
       });
     }
 
-    return {
+    const sharedInput = {
       ...(form.name.trim() ? { name: form.name.trim() } : {}),
       ...(schedule ? { schedule } : {}),
       ...(triggers.length > 0 ? { triggers } : {}),
-      prompt,
-      contextPaths: splitLines(form.contextPaths),
-      imagePaths: splitLines(form.imagePaths),
-      contextPacks: parseContextPacks(form.contextPackJson),
-      macros: splitLines(form.macros),
       missedRunPolicy: form.missedRunPolicy,
       retryAttempts: parseOptionalPositiveInteger(
         form.retryAttempts,
@@ -740,6 +785,44 @@ export const SchedulerPanel = ({
         form.maxCatchUpRuns,
         "Catch-up limit",
       ),
+    };
+
+    if (form.targetType === "ralph-flow") {
+      return {
+        ...sharedInput,
+        targetType: "ralph-flow",
+        ralphFlow: {
+          id: ralphFlowId,
+          scope: form.ralphFlowScope,
+          params: parseRalphParams(form.ralphParams),
+          runLogScope: form.ralphRunLogScope,
+          maxTransitions: parseOptionalPositiveInteger(
+            form.ralphMaxTransitions,
+            "Ralph max transitions",
+          ),
+          permissions: {
+            allowedRoots: splitLines(form.ralphAllowedRoots).length > 0
+              ? splitLines(form.ralphAllowedRoots)
+              : activeWorkspace
+                ? [activeWorkspace]
+                : [],
+            allowCommands: form.ralphAllowCommands,
+            allowWrites: form.ralphAllowWrites,
+            allowNetwork: form.ralphAllowNetwork,
+            allowMcpTools: form.ralphAllowMcpTools,
+          },
+        },
+      };
+    }
+
+    return {
+      ...sharedInput,
+      targetType: "prompt",
+      prompt,
+      contextPaths: splitLines(form.contextPaths),
+      imagePaths: splitLines(form.imagePaths),
+      contextPacks: parseContextPacks(form.contextPackJson),
+      macros: splitLines(form.macros),
       ...(form.mode ? { mode: form.mode } : {}),
       ...(reasoningValue ? { reasoning: reasoningValue } : {}),
       ...(form.profile.trim() ? { profile: form.profile.trim() } : {}),
@@ -881,6 +964,12 @@ export const SchedulerPanel = ({
                               >
                                 {job.status}
                               </Badge>
+                              <Badge
+                                variant="outline"
+                                className="border-slate-700 bg-slate-950 text-slate-300"
+                              >
+                                {job.targetType === "ralph-flow" ? "RALPH" : "Prompt"}
+                              </Badge>
                             </div>
                             <div className="mt-1 truncate font-mono text-xs text-slate-500">
                               {job.id}
@@ -993,10 +1082,11 @@ export const SchedulerPanel = ({
                             </div>
                           </div>
                           <div>
-                            <div className="text-slate-600">Retries</div>
+                            <div className="text-slate-600">Target</div>
                             <div className="text-slate-300">
-                              {job.retry.maxAttempts} |{" "}
-                              {formatDuration(job.maxDurationMs)}
+                              {job.ralphFlow
+                                ? `${job.ralphFlow.scope}:${job.ralphFlow.id}`
+                                : `${job.retry.maxAttempts} | ${formatDuration(job.maxDurationMs)}`}
                             </div>
                           </div>
                         </div>
@@ -1189,18 +1279,165 @@ export const SchedulerPanel = ({
               </div>
 
               <div className="grid gap-2">
-                <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-prompt">
-                  Prompt
-                </label>
-                <Textarea
-                  id="scheduler-prompt"
-                  value={form.prompt}
-                  rows={4}
-                  onChange={(event) => updateForm({ prompt: event.target.value })}
-                  className="max-h-40 min-h-24 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600"
-                  placeholder="/daily-review"
-                />
+                <div className="text-xs font-medium text-slate-400">Target</div>
+                <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
+                  {(["prompt", "ralph-flow"] as const).map((targetType) => (
+                    <Button
+                      key={targetType}
+                      type="button"
+                      variant={form.targetType === targetType ? "secondary" : "ghost"}
+                      size="sm"
+                      onClick={() => updateForm({ targetType })}
+                      className={cn(
+                        "h-8 rounded-md text-xs capitalize",
+                        form.targetType === targetType
+                          ? "bg-slate-700 text-white hover:bg-slate-700"
+                          : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                      )}
+                    >
+                      {targetType === "prompt" ? "Prompt" : "RALPH Flow"}
+                    </Button>
+                  ))}
+                </div>
               </div>
+
+              {form.targetType === "prompt" ? (
+                <div className="grid gap-2">
+                  <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-prompt">
+                    Prompt
+                  </label>
+                  <Textarea
+                    id="scheduler-prompt"
+                    value={form.prompt}
+                    rows={4}
+                    onChange={(event) => updateForm({ prompt: event.target.value })}
+                    className="max-h-40 min-h-24 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600"
+                    placeholder="/daily-review"
+                  />
+                </div>
+              ) : (
+                <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/35 p-3">
+                  <div className="grid gap-2">
+                    <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-ralph-flow">
+                      RALPH Flow ID
+                    </label>
+                    <Input
+                      id="scheduler-ralph-flow"
+                      value={form.ralphFlowId}
+                      onChange={(event) => updateForm({ ralphFlowId: event.target.value })}
+                      className="h-9 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600"
+                      placeholder="security-analysis"
+                    />
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-ralph-scope">
+                        Flow Scope
+                      </label>
+                      <select
+                        id="scheduler-ralph-scope"
+                        value={form.ralphFlowScope}
+                        onChange={(event) =>
+                          updateForm({
+                            ralphFlowScope: event.target.value as "workspace" | "user",
+                          })
+                        }
+                        className="h-9 rounded-lg border border-slate-800 bg-slate-900/70 px-3 text-sm text-slate-100"
+                      >
+                        <option value="workspace">Workspace</option>
+                        <option value="user">User</option>
+                      </select>
+                    </div>
+                    <div className="grid gap-2">
+                      <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-ralph-log-scope">
+                        Log Scope
+                      </label>
+                      <select
+                        id="scheduler-ralph-log-scope"
+                        value={form.ralphRunLogScope}
+                        onChange={(event) =>
+                          updateForm({
+                            ralphRunLogScope: event.target.value as "workspace" | "user",
+                          })
+                        }
+                        className="h-9 rounded-lg border border-slate-800 bg-slate-900/70 px-3 text-sm text-slate-100"
+                      >
+                        <option value="workspace">Workspace</option>
+                        <option value="user">User</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-ralph-params">
+                      Params
+                    </label>
+                    <Textarea
+                      id="scheduler-ralph-params"
+                      value={form.ralphParams}
+                      rows={3}
+                      onChange={(event) => updateForm({ ralphParams: event.target.value })}
+                      className="max-h-32 min-h-20 rounded-lg border-slate-800 bg-slate-900/70 font-mono text-xs text-slate-100 placeholder:text-slate-600"
+                      placeholder={"path=src\nseverity=high"}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-ralph-max-transitions">
+                      Max Transitions
+                    </label>
+                    <Input
+                      id="scheduler-ralph-max-transitions"
+                      value={form.ralphMaxTransitions}
+                      onChange={(event) =>
+                        updateForm({ ralphMaxTransitions: event.target.value })
+                      }
+                      className="h-9 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-ralph-roots">
+                      Allowed Roots
+                    </label>
+                    <Textarea
+                      id="scheduler-ralph-roots"
+                      value={form.ralphAllowedRoots}
+                      rows={2}
+                      onChange={(event) =>
+                        updateForm({ ralphAllowedRoots: event.target.value })
+                      }
+                      className="max-h-28 min-h-16 rounded-lg border-slate-800 bg-slate-900/70 font-mono text-xs text-slate-100 placeholder:text-slate-600"
+                      placeholder={activeWorkspace ?? "C:/workspace"}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <div className="text-xs font-medium text-slate-400">Permissions</div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
+                      {[
+                        ["ralphAllowCommands", "Commands"],
+                        ["ralphAllowWrites", "Writes"],
+                        ["ralphAllowNetwork", "Network"],
+                        ["ralphAllowMcpTools", "MCP Tools"],
+                      ].map(([key, label]) => (
+                        <label
+                          key={key}
+                          className="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-950/50 px-2 py-2"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={Boolean(form[key as keyof SchedulerFormState])}
+                            onChange={(event) =>
+                              updateForm({
+                                [key]: event.target.checked,
+                              } as Partial<SchedulerFormState>)
+                            }
+                            className="h-4 w-4 rounded border-slate-700 bg-slate-900"
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="grid gap-2">
                 <div className="text-xs font-medium text-slate-400">Schedule</div>
@@ -1470,36 +1707,38 @@ export const SchedulerPanel = ({
                 </div>
               </div>
 
-              <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/35 p-3">
-                <div className="text-xs font-medium text-slate-300">
-                  Context
+              {form.targetType === "prompt" ? (
+                <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/35 p-3">
+                  <div className="text-xs font-medium text-slate-300">
+                    Context
+                  </div>
+                  <Textarea
+                    value={form.contextPaths}
+                    rows={2}
+                    onChange={(event) =>
+                      updateForm({ contextPaths: event.target.value })
+                    }
+                    className="max-h-28 rounded-lg border-slate-800 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
+                    placeholder="src/core"
+                  />
+                  <Textarea
+                    value={form.contextPackJson}
+                    rows={2}
+                    onChange={(event) =>
+                      updateForm({ contextPackJson: event.target.value })
+                    }
+                    className="max-h-28 rounded-lg border-slate-800 bg-slate-950 font-mono text-xs text-slate-100 placeholder:text-slate-600"
+                    placeholder='{"name":"release-check"}'
+                  />
+                  <Textarea
+                    value={form.macros}
+                    rows={2}
+                    onChange={(event) => updateForm({ macros: event.target.value })}
+                    className="max-h-28 rounded-lg border-slate-800 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
+                    placeholder="/triage --scope backend"
+                  />
                 </div>
-                <Textarea
-                  value={form.contextPaths}
-                  rows={2}
-                  onChange={(event) =>
-                    updateForm({ contextPaths: event.target.value })
-                  }
-                  className="max-h-28 rounded-lg border-slate-800 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
-                  placeholder="src/core"
-                />
-                <Textarea
-                  value={form.contextPackJson}
-                  rows={2}
-                  onChange={(event) =>
-                    updateForm({ contextPackJson: event.target.value })
-                  }
-                  className="max-h-28 rounded-lg border-slate-800 bg-slate-950 font-mono text-xs text-slate-100 placeholder:text-slate-600"
-                  placeholder='{"name":"release-check"}'
-                />
-                <Textarea
-                  value={form.macros}
-                  rows={2}
-                  onChange={(event) => updateForm({ macros: event.target.value })}
-                  className="max-h-28 rounded-lg border-slate-800 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
-                  placeholder="/triage --scope backend"
-                />
-              </div>
+              ) : null}
 
               <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/35 p-3">
                 <div className="text-xs font-medium text-slate-300">
@@ -1600,11 +1839,12 @@ export const SchedulerPanel = ({
                 </div>
               </div>
 
-              <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/35 p-3">
-                <div className="text-xs font-medium text-slate-300">
-                  Runtime
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2">
+              {form.targetType === "prompt" ? (
+                <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/35 p-3">
+                  <div className="text-xs font-medium text-slate-300">
+                    Runtime
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
                   <label className="grid gap-1 text-[11px] font-medium text-slate-500">
                     <span>Run Mode</span>
                     <select
@@ -1698,8 +1938,9 @@ export const SchedulerPanel = ({
                       placeholder="Workspace default"
                     />
                   </label>
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </form>
           </aside>
         </div>

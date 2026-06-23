@@ -79,6 +79,52 @@ describe("cli args public parser", () => {
     });
   });
 
+  it("parses Ralph flow instruction scope options", () => {
+    expect(
+      parseCliArgs(
+        [
+          "instructions",
+          "create",
+          "Flow Rules",
+          "--scope",
+          "ralph-flow",
+          "--ralph-flow",
+          "build-flow",
+          "--flow-scope",
+          "workspace",
+          "--prompt",
+          "Keep flow steps focused.",
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toMatchObject({
+      command: "instructions",
+      instructions: {
+        action: "create",
+        subject: "Flow Rules",
+        scope: "ralph-flow",
+        ralphFlow: "build-flow",
+        ralphFlowScope: "workspace",
+        prompt: "Keep flow steps focused.",
+      },
+    });
+
+    expect(() =>
+      parseCliArgs(
+        [
+          "instructions",
+          "create",
+          "Flow Rules",
+          "--scope",
+          "ralph-flow",
+          "--prompt",
+          "Keep flow steps focused.",
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toThrow("Ralph flow instruction scope requires --ralph-flow.");
+  });
+
   it("rejects invalid empty, conflicting, and out-of-range inputs", () => {
     expect(() =>
       parseCliArgs(["--task", "run", "extra"], {

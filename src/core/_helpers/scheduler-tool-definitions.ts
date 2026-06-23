@@ -22,6 +22,7 @@ import type {
 } from "../runtime-contract.generated.js";
 import {
   coerceInteger,
+  coerceBoolean,
   coerceString,
   createToolErrorResult,
   type AgentToolDefinition,
@@ -399,10 +400,71 @@ const schedulerPolicySchema = {
 } as const;
 
 const schedulerTargetSchema = {
+  targetType: {
+    type: "string",
+    enum: ["prompt", "ralph-flow"],
+    description:
+      "Use prompt for a scheduled AI task or ralph-flow to run an existing RALPH-Flow unattended.",
+  },
   prompt: {
     type: "string",
     description:
       "The enriched scheduled task prompt. Do not store the user's vague wording verbatim. Write a clear, durable instruction set with objective, workspace/platform assumptions, safety constraints, and verification expectations.",
+  },
+  ralphFlow: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      id: {
+        type: "string",
+        description: "Existing RALPH-Flow id or alias to run.",
+      },
+      scope: {
+        type: "string",
+        enum: ["workspace", "user"],
+        description: "Where the RALPH-Flow is stored.",
+      },
+      params: {
+        type: "array",
+        items: schedulerKeyValueEntrySchema,
+        description: "RALPH variable values as key/value entries.",
+      },
+      maxTransitions: {
+        type: "integer",
+        minimum: 1,
+        description: "Maximum graph transitions for the unattended run.",
+      },
+      runLogScope: {
+        type: "string",
+        enum: ["workspace", "user"],
+        description: "Where scheduled RALPH run logs should be written.",
+      },
+      permissions: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          allowedRoots: {
+            type: "array",
+            items: { type: "string" },
+            description: "Allowed filesystem roots for scheduled execution.",
+          },
+          allowCommands: { type: "boolean" },
+          allowWrites: { type: "boolean" },
+          allowNetwork: { type: "boolean" },
+          allowMcpTools: { type: "boolean" },
+        },
+        required: [
+          "allowedRoots",
+          "allowCommands",
+          "allowWrites",
+          "allowNetwork",
+          "allowMcpTools",
+        ],
+      },
+    },
+    required: ["id", "permissions"],
+    description:
+      "RALPH-Flow target for unattended scheduled execution. Required when targetType is ralph-flow.",
   },
   contextPaths: {
     type: "array",
@@ -1050,11 +1112,73 @@ const parseProvider = (
   return normalizeEnum(coerceString(record, "provider"), MODEL_PROVIDERS);
 };
 
+const parseRalphFlowTarget = (
+  record: Record<string, unknown>,
+  workspaceRoot: string,
+): CreateScheduledJobInput["target"] | string => {
+  const value = record.ralphFlow;
+
+  if (!isRecord(value)) {
+    return "Expected `ralphFlow` when targetType is ralph-flow.";
+  }
+
+  const id = coerceString(value, "id");
+
+  if (!id) {
+    return "Expected `ralphFlow.id` before creating a scheduled RALPH job.";
+  }
+
+  const permissionsValue = value.permissions;
+
+  if (!isRecord(permissionsValue)) {
+    return "Expected `ralphFlow.permissions` before creating a scheduled RALPH job.";
+  }
+
+  const scope = normalizeEnum(coerceString(value, "scope"), ["workspace", "user"] as const);
+  const runLogScope = normalizeEnum(
+    coerceString(value, "runLogScope"),
+    ["workspace", "user"] as const,
+  );
+  const maxTransitions = coercePositiveInteger(value, "maxTransitions");
+  const params = parseStringEntryRecord(value.params) ?? {};
+  const allowedRoots = coerceStringArray(permissionsValue, "allowedRoots") ?? [
+    workspaceRoot,
+  ];
+
+  return {
+    type: "ralph-flow",
+    workspaceRoot,
+    ralphFlow: {
+      id,
+      scope: scope ?? "workspace",
+      params,
+      ...(runLogScope ? { runLogScope } : {}),
+      ...(maxTransitions !== undefined ? { maxTransitions } : {}),
+      permissions: {
+        allowedRoots,
+        allowCommands: coerceBoolean(permissionsValue, "allowCommands") ?? false,
+        allowWrites: coerceBoolean(permissionsValue, "allowWrites") ?? false,
+        allowNetwork: coerceBoolean(permissionsValue, "allowNetwork") ?? false,
+        allowMcpTools: coerceBoolean(permissionsValue, "allowMcpTools") ?? false,
+      },
+    },
+  };
+};
+
 const createTargetInput = (
   record: Record<string, unknown>,
   workspaceRoot: string,
   options: { requirePrompt: boolean },
 ): CreateScheduledJobInput["target"] | string => {
+  const targetType = normalizeEnum(
+    coerceString(record, "targetType"),
+    ["prompt", "ralph-flow"] as const,
+  ) ?? (isRecord(record.ralphFlow) ? "ralph-flow" : "prompt");
+
+  if (targetType === "ralph-flow") {
+    return parseRalphFlowTarget(record, workspaceRoot);
+  }
+
   const prompt = coerceString(record, "prompt");
 
   if (options.requirePrompt && !prompt) {
@@ -1088,7 +1212,17 @@ const createTargetInput = (
 
 const createUpdateTargetInput = (
   record: Record<string, unknown>,
-): UpdateScheduledJobInput["target"] | undefined => {
+  workspaceRoot: string,
+): UpdateScheduledJobInput["target"] | string | undefined => {
+  const targetType = normalizeEnum(
+    coerceString(record, "targetType"),
+    ["prompt", "ralph-flow"] as const,
+  );
+
+  if (targetType === "ralph-flow" || isRecord(record.ralphFlow)) {
+    return parseRalphFlowTarget(record, workspaceRoot);
+  }
+
   const target: UpdateScheduledJobInput["target"] = {};
   const prompt = coerceString(record, "prompt");
   const contextPaths = coerceStringArray(record, "contextPaths");
@@ -1200,6 +1334,7 @@ const createJobInput = (
 
 const createUpdateInput = (
   args: Record<string, unknown>,
+  workspaceRoot: string,
 ): UpdateScheduledJobInput | string => {
   const schedule = parseScheduleInput(args.schedule);
   const triggers = parseTriggerInputs(args.triggers);
@@ -1212,7 +1347,11 @@ const createUpdateInput = (
     return triggers;
   }
 
-  const target = createUpdateTargetInput(args);
+  const target = createUpdateTargetInput(args, workspaceRoot);
+
+  if (typeof target === "string") {
+    return target;
+  }
   const missedRunPolicy = parseMissedRunPolicy(args);
   const retry = parseRetryPolicy(args);
   const queue = parseQueuePolicy(args);
@@ -1736,7 +1875,6 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
             ...schedulerTargetSchema,
             ...schedulerPolicySchema,
           },
-          required: ["prompt"],
         },
       },
       backingTool: "scheduler",
@@ -1802,7 +1940,7 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
           );
         }
 
-        const input = createUpdateInput(args);
+        const input = createUpdateInput(args, context.workspaceRoot);
 
         if (typeof input === "string") {
           return createToolErrorResult(

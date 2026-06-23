@@ -131,6 +131,62 @@ describe("instruction file helpers", () => {
     expect(alwaysOn.path).toBe(join(userConfigRoot, "instructions.md"));
   });
 
+  it("writes Ralph flow instruction files under the flow instruction area", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const conditional = await writeInstructionFile(workspaceRoot, {
+      name: "Flow Review",
+      body: "Apply the review rules for this flow.",
+      scope: "ralph-flow",
+      ralphFlow: {
+        id: "Review Flow",
+        scope: "workspace",
+      },
+    });
+    const alwaysOn = await writeInstructionFile(
+      workspaceRoot,
+      {
+        name: "Flow Defaults",
+        body: "Always apply this flow's defaults.",
+        scope: "ralph-flow",
+        ralphFlow: {
+          id: "Review Flow",
+          scope: "workspace",
+        },
+      },
+      { path: "instructions.md" },
+    );
+
+    expect(conditional).toEqual({
+      path: join(
+        workspaceRoot,
+        ".machdoch",
+        "ralph",
+        "instructions",
+        "review-flow",
+        "instructions",
+        "flow-review.instructions.md",
+      ),
+      scope: "ralph-flow",
+      name: "Flow Review",
+      ralphFlow: {
+        id: "review-flow",
+        scope: "workspace",
+      },
+      created: true,
+    });
+    expect(alwaysOn.path).toBe(
+      join(
+        workspaceRoot,
+        ".machdoch",
+        "ralph",
+        "instructions",
+        "review-flow",
+        "instructions.md",
+      ),
+    );
+  });
+
   it("rejects workspace-shaped paths for user-scope instruction writes", async () => {
     const workspaceRoot = await createWorkspace();
     process.env.MACHDOCH_USER_CONFIG_DIR = join(workspaceRoot, ".user-config");
@@ -159,7 +215,7 @@ describe("instruction file helpers", () => {
         body: "Body.",
         scope: "compatibility",
       } as unknown as Parameters<typeof writeInstructionFile>[1]),
-    ).rejects.toThrow("Instruction scope must be user or workspace.");
+    ).rejects.toThrow("Instruction scope must be user, workspace, or ralph-flow.");
 
     await expect(
       writeInstructionFile(workspaceRoot, {

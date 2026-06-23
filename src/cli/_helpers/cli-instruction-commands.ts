@@ -4,9 +4,11 @@ import { loadRuntimeConfig } from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import {
   generateInstructionFileWithAgent,
+  type RalphFlowInstructionTarget,
   type WritableInstructionScope,
   writeInstructionFile,
 } from "../../core/instructions.js";
+import { resolveRalphFlowReference, type RalphFlowScope } from "../../core/ralph.js";
 import type {
   CustomizationDiagnostic,
   DiscoveredInstruction,
@@ -106,8 +108,12 @@ const getWritableInstructionScope = (
     return scope;
   }
 
+  if (scope === "ralph-flow") {
+    return scope;
+  }
+
   return fail(
-    "Compatibility instruction files are read-only; use user or workspace scope.",
+    "Compatibility instruction files are read-only; use user, workspace, or ralph-flow scope.",
   );
 };
 
@@ -145,7 +151,31 @@ const findInstruction = (
   return match;
 };
 
+const resolveInstructionRalphFlowTarget = async (
+  args: ParsedCliArgs,
+  options: InstructionCliOptions,
+): Promise<Required<RalphFlowInstructionTarget>> => {
+  const flowReference = options.ralphFlow?.trim();
+
+  if (!flowReference) {
+    return fail("Ralph flow instruction scope requires --ralph-flow.");
+  }
+
+  const requestedScope = (options.ralphFlowScope ?? "workspace") as RalphFlowScope;
+  const resolution = await resolveRalphFlowReference(
+    args.workspaceRoot,
+    flowReference,
+    { scope: requestedScope },
+  );
+
+  return {
+    id: resolution.id,
+    scope: resolution.scope,
+  };
+};
+
 const loadInstructionRegistry = async (args: ParsedCliArgs) => {
+  const options = args.instructions;
   const config = await loadRuntimeConfig(
     args.workspaceRoot,
     args.mode,
@@ -158,7 +188,14 @@ const loadInstructionRegistry = async (args: ParsedCliArgs) => {
 
   const customizations = await discoverCustomizations(
     args.workspaceRoot,
-    createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
+    {
+      ...createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
+      ...(options?.scope === "ralph-flow" && options.ralphFlow
+        ? {
+            ralphFlow: await resolveInstructionRalphFlowTarget(args, options),
+          }
+        : {}),
+    },
   );
 
   return {
@@ -252,6 +289,10 @@ const writeInstructionFromCli = async (
     fail("No instruction name was provided.");
   const body = await readInstructionBodyFromCli(args, options);
   const scope = getWritableInstructionScope(options.scope);
+  const ralphFlow =
+    scope === "ralph-flow"
+      ? await resolveInstructionRalphFlowTarget(args, options)
+      : undefined;
 
   return writeInstructionFile(
     args.workspaceRoot,
@@ -259,6 +300,7 @@ const writeInstructionFromCli = async (
       name,
       body,
       ...(scope ? { scope } : {}),
+      ...(ralphFlow ? { ralphFlow } : {}),
       ...(options.mode ? { mode: options.mode } : {}),
       ...(options.audience ? { audience: options.audience } : {}),
       ...(options.applyTo ? { applyTo: options.applyTo } : {}),
@@ -285,6 +327,10 @@ const printInstructionList = (
     const metadata = [
       `scope=${scope}`,
       `mode=${mode}`,
+      instruction.ralphFlowId ? `ralphFlow=${instruction.ralphFlowId}` : undefined,
+      instruction.ralphFlowScope
+        ? `ralphFlowScope=${instruction.ralphFlowScope}`
+        : undefined,
       instruction.audience ? `audience=${instruction.audience}` : undefined,
       instruction.priority !== undefined
         ? `priority=${instruction.priority}`
@@ -315,6 +361,14 @@ const printInstructionDetails = (instruction: DiscoveredInstruction): void => {
   writeStdoutLine(`path: ${instruction.path}`);
   writeStdoutLine(`scope: ${inferInstructionScope(instruction)}`);
   writeStdoutLine(`mode: ${getInstructionMode(instruction)}`);
+
+  if (instruction.ralphFlowId) {
+    writeStdoutLine(`ralphFlow: ${instruction.ralphFlowId}`);
+  }
+
+  if (instruction.ralphFlowScope) {
+    writeStdoutLine(`ralphFlowScope: ${instruction.ralphFlowScope}`);
+  }
 
   if (instruction.audience) {
     writeStdoutLine(`audience: ${instruction.audience}`);
@@ -377,10 +431,15 @@ export const printInstructionSummary = async (
         )
       : options.prompt ?? fail("No instruction generation prompt was provided.");
     const scope = getWritableInstructionScope(options.scope);
+    const ralphFlow =
+      scope === "ralph-flow"
+        ? await resolveInstructionRalphFlowTarget(args, options)
+        : undefined;
     const result = await generateInstructionFileWithAgent(args.workspaceRoot, {
       name,
       prompt,
       ...(scope ? { scope } : {}),
+      ...(ralphFlow ? { ralphFlow } : {}),
       ...(options.mode ? { mode: options.mode } : {}),
       ...(options.audience ? { audience: options.audience } : {}),
       ...(options.applyTo ? { applyTo: options.applyTo } : {}),

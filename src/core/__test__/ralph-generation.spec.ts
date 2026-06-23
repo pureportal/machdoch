@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { vi } from "vitest";
 import { executeTask } from "../execution.js";
 import {
+  createRalphGenerationInterviewWithAgent,
   createRalphFlowWithAgent,
   type RalphGenerationEvent,
 } from "../ralph-generation.js";
@@ -210,6 +211,121 @@ describe("createRalphFlowWithAgent", () => {
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
+  });
+
+  it("passes answer comments into the next interview transcript", async () => {
+    vi.mocked(executeTask).mockResolvedValue(
+      createExecutionResult({
+        summary: "Ask the next question.",
+        response: {
+          markdown: [
+            "<ralph_generation_interview>",
+            JSON.stringify({
+              complete: false,
+              summary: "Need one more detail.",
+              questions: [
+                {
+                  id: "deadline",
+                  label: "Deadline?",
+                  type: "text",
+                  skippable: true,
+                },
+              ],
+            }),
+            "</ralph_generation_interview>",
+          ].join("\n"),
+          highlights: [],
+          relatedFiles: [],
+          verification: [],
+          followUps: [],
+        },
+      }),
+    );
+
+    const result = await createRalphGenerationInterviewWithAgent("C:/workspace", {
+      prompt: "Create a release flow.",
+      config: runtimeConfig,
+      customizations,
+      session: {
+        id: "interview-1",
+        prompt: "Create a release flow.",
+        scope: "workspace",
+        target: "flow",
+        turn: 1,
+        maxTurns: 5,
+        findings: [],
+        assumptions: [],
+        relevantFiles: [],
+        transcript: [
+          {
+            turn: 1,
+            questions: [
+              {
+                id: "scope",
+                label: "Scope?",
+                type: "text",
+              },
+            ],
+            answers: [],
+            createdAt: "2026-06-19T00:00:00.000Z",
+          },
+        ],
+      },
+      answers: { scope: null },
+      answerComments: { scope: "Skipped because the flow should infer scope." },
+    });
+
+    expect(result.status).toBe("questions");
+    expect(result.session.transcript[0]?.answers[0]).toMatchObject({
+      fieldId: "scope",
+      value: null,
+      comment: "Skipped because the flow should infer scope.",
+    });
+    expect(vi.mocked(executeTask).mock.calls[0]?.[0]).toContain(
+      "Answer comment for Scope?: Skipped because the flow should infer scope.",
+    );
+  });
+
+  it("includes answer comments in the final interview generation prompt", async () => {
+    const result = await createRalphGenerationInterviewWithAgent("C:/workspace", {
+      prompt: "Create a release flow.",
+      maxTurns: 1,
+      config: runtimeConfig,
+      customizations,
+      session: {
+        id: "interview-1",
+        prompt: "Create a release flow.",
+        scope: "workspace",
+        target: "flow",
+        turn: 1,
+        maxTurns: 1,
+        findings: [],
+        assumptions: [],
+        relevantFiles: [],
+        transcript: [
+          {
+            turn: 1,
+            questions: [
+              {
+                id: "scope",
+                label: "Scope?",
+                type: "text",
+              },
+            ],
+            answers: [],
+            createdAt: "2026-06-19T00:00:00.000Z",
+          },
+        ],
+      },
+      answers: { scope: "src/core" },
+      answerComments: { scope: "Include related tests if touched." },
+    });
+
+    expect(result.status).toBe("complete");
+    expect(result.finalPrompt).toContain(
+      "- Scope?: src/core\n  Comment: Include related tests if touched.",
+    );
+    expect(executeTask).not.toHaveBeenCalled();
   });
 
   it("uses the generated flow identity when the model submits a conflicting alias", async () => {

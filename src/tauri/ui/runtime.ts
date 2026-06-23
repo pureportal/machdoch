@@ -754,8 +754,10 @@ export interface SchedulerJobSummary {
   schedule: SchedulerScheduleSummary | null;
   triggers: SchedulerTriggerSummary[];
   triggerLabel: string;
+  targetType: "prompt" | "ralph-flow";
   workspaceRoot: string;
   prompt: string;
+  ralphFlow: SchedulerRalphFlowSummary | null;
   nextRunAt: number | null;
   lastStartedAt: number | null;
   lastFinishedAt: number | null;
@@ -793,12 +795,36 @@ export interface SchedulerContextPackInput {
   variableValues?: Record<string, string>;
 }
 
+export interface SchedulerRalphFlowPermissionsInput {
+  allowedRoots: string[];
+  allowCommands: boolean;
+  allowWrites: boolean;
+  allowNetwork: boolean;
+  allowMcpTools: boolean;
+}
+
+export interface SchedulerRalphFlowInput {
+  scope?: "workspace" | "user";
+  id: string;
+  params?: Record<string, string>;
+  maxTransitions?: number;
+  runLogScope?: "workspace" | "user";
+  permissions: SchedulerRalphFlowPermissionsInput;
+}
+
+export interface SchedulerRalphFlowSummary extends SchedulerRalphFlowInput {
+  scope: "workspace" | "user";
+  params: Record<string, string>;
+}
+
 export interface SchedulerCreateJobInput {
   name?: string;
   schedule?: SchedulerCreateScheduleInput;
   triggers?: SchedulerCreateTriggerInput[];
+  targetType?: "prompt" | "ralph-flow";
   prompt?: string;
   promptFile?: string;
+  ralphFlow?: SchedulerRalphFlowInput;
   contextPaths?: string[];
   imagePaths?: string[];
   contextPacks?: SchedulerContextPackInput[];
@@ -971,6 +997,7 @@ export interface RalphGenerationInterviewInput {
   target?: "flow" | "prompt-block" | "refactor";
   session?: RalphGenerationInterviewSession;
   answers?: Record<string, RalphInputValue>;
+  answerComments?: Record<string, string>;
   mode?: RunMode;
   profile?: string;
   provider?: RuntimeProvider;
@@ -1611,9 +1638,89 @@ const isSchedulerQueueSummary = (
   );
 };
 
+const normalizeStringRecord = (value: unknown): Record<string, string> | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const entries = Object.entries(value);
+
+  if (entries.some((entry) => typeof entry[1] !== "string")) {
+    return null;
+  }
+
+  return Object.fromEntries(entries) as Record<string, string>;
+};
+
+const normalizeSchedulerRalphFlowPermissions = (
+  value: unknown,
+): SchedulerRalphFlowPermissionsInput | null => {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.allowedRoots) ||
+    value.allowedRoots.some((entry) => typeof entry !== "string") ||
+    typeof value.allowCommands !== "boolean" ||
+    typeof value.allowWrites !== "boolean" ||
+    typeof value.allowNetwork !== "boolean" ||
+    typeof value.allowMcpTools !== "boolean"
+  ) {
+    return null;
+  }
+
+  return {
+    allowedRoots: value.allowedRoots,
+    allowCommands: value.allowCommands,
+    allowWrites: value.allowWrites,
+    allowNetwork: value.allowNetwork,
+    allowMcpTools: value.allowMcpTools,
+  };
+};
+
+const normalizeSchedulerRalphFlowSummary = (
+  value: unknown,
+): SchedulerRalphFlowSummary | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    (value.scope !== "workspace" && value.scope !== "user")
+  ) {
+    return null;
+  }
+
+  const params = normalizeStringRecord(value.params);
+  const permissions = normalizeSchedulerRalphFlowPermissions(value.permissions);
+
+  if (!params || !permissions) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    scope: value.scope,
+    params,
+    ...(typeof value.maxTransitions === "number" &&
+    Number.isFinite(value.maxTransitions)
+      ? { maxTransitions: value.maxTransitions }
+      : {}),
+    ...(value.runLogScope === "workspace" || value.runLogScope === "user"
+      ? { runLogScope: value.runLogScope }
+      : {}),
+    permissions,
+  };
+};
+
 const normalizeSchedulerJobSummary = (
   value: unknown,
 ): SchedulerJobSummary | null => {
+  const targetType =
+    value && isRecord(value) && value.targetType === "ralph-flow"
+      ? "ralph-flow"
+      : "prompt";
+  const ralphFlow =
+    value && isRecord(value) && value.ralphFlow !== null
+      ? normalizeSchedulerRalphFlowSummary(value.ralphFlow)
+      : null;
+
   if (
     !isRecord(value) ||
     typeof value.id !== "string" ||
@@ -1622,6 +1729,10 @@ const normalizeSchedulerJobSummary = (
     !(value.schedule === null || isSchedulerScheduleSummary(value.schedule)) ||
     !normalizeSchedulerTriggerList(value.triggers) ||
     typeof value.triggerLabel !== "string" ||
+    (value.targetType !== undefined &&
+      value.targetType !== "prompt" &&
+      value.targetType !== "ralph-flow") ||
+    (targetType === "ralph-flow" && !ralphFlow) ||
     typeof value.workspaceRoot !== "string" ||
     typeof value.prompt !== "string" ||
     !isNullableNumberPayloadField(value.nextRunAt) ||
@@ -1643,8 +1754,10 @@ const normalizeSchedulerJobSummary = (
     schedule: value.schedule,
     triggers: normalizeSchedulerTriggerList(value.triggers) ?? [],
     triggerLabel: value.triggerLabel,
+    targetType,
     workspaceRoot: value.workspaceRoot,
     prompt: value.prompt,
+    ralphFlow,
     nextRunAt: normalizeNullableNumberField(value.nextRunAt),
     lastStartedAt: normalizeNullableNumberField(value.lastStartedAt),
     lastFinishedAt: normalizeNullableNumberField(value.lastFinishedAt),
@@ -3775,10 +3888,16 @@ const createRalphGenerationInterviewArguments = (
     : undefined);
   appendSchedulerOption(argumentsList, "--flow-target", input.target);
   appendSchedulerOption(argumentsList, "--max-rounds", input.maxTurns);
-  if (input.session || input.answers) {
+  const answerComments =
+    input.answerComments && Object.keys(input.answerComments).length > 0
+      ? input.answerComments
+      : undefined;
+
+  if (input.session || input.answers || answerComments) {
     appendSchedulerOption(argumentsList, "--input-json", JSON.stringify({
       ...(input.session ? { session: input.session } : {}),
       ...(input.answers ? { answers: input.answers } : {}),
+      ...(answerComments ? { answerComments } : {}),
     }));
   }
 
@@ -4258,15 +4377,73 @@ const appendSchedulerCreateTriggers = (
   }
 };
 
+const appendSchedulerRalphFlowTarget = (
+  argumentsList: string[],
+  ralphFlow: SchedulerRalphFlowInput,
+): void => {
+  appendSchedulerOption(argumentsList, "--scheduler-target", "ralph-flow");
+  appendSchedulerOption(
+    argumentsList,
+    "--scheduled-ralph-flow",
+    normalizeSchedulerCliString(ralphFlow.id),
+  );
+  appendSchedulerOption(argumentsList, "--scheduled-ralph-flow-scope", ralphFlow.scope);
+  appendSchedulerOption(
+    argumentsList,
+    "--scheduled-ralph-run-log-scope",
+    ralphFlow.runLogScope,
+  );
+  appendSchedulerOption(
+    argumentsList,
+    "--scheduled-ralph-max-transitions",
+    ralphFlow.maxTransitions,
+  );
+
+  for (const [name, value] of Object.entries(ralphFlow.params ?? {})) {
+    appendSchedulerOption(argumentsList, "--scheduled-ralph-param", `${name}=${value}`);
+  }
+
+  appendSchedulerRepeatedOption(
+    argumentsList,
+    "--scheduled-ralph-allowed-root",
+    ralphFlow.permissions.allowedRoots,
+  );
+  appendSchedulerOption(
+    argumentsList,
+    "--scheduled-ralph-allow-commands",
+    ralphFlow.permissions.allowCommands,
+  );
+  appendSchedulerOption(
+    argumentsList,
+    "--scheduled-ralph-allow-writes",
+    ralphFlow.permissions.allowWrites,
+  );
+  appendSchedulerOption(
+    argumentsList,
+    "--scheduled-ralph-allow-network",
+    ralphFlow.permissions.allowNetwork,
+  );
+  appendSchedulerOption(
+    argumentsList,
+    "--scheduled-ralph-allow-mcp-tools",
+    ralphFlow.permissions.allowMcpTools,
+  );
+};
+
 const createSchedulerCreateArguments = (
   input: SchedulerCreateJobInput,
 ): string[] => {
   const argumentsList = ["create"];
+  const targetType = input.targetType ?? "prompt";
   const prompt = normalizeSchedulerCliString(input.prompt);
   const promptFile = normalizeSchedulerCliString(input.promptFile);
 
-  if (!prompt && !promptFile) {
+  if (targetType === "prompt" && !prompt && !promptFile) {
     throw new Error("Expected a prompt or prompt file before creating a scheduled job.");
+  }
+
+  if (targetType === "ralph-flow" && !input.ralphFlow) {
+    throw new Error("Expected a Ralph flow target before creating a scheduled job.");
   }
 
   appendSchedulerOption(argumentsList, "--name", normalizeSchedulerCliString(input.name));
@@ -4274,16 +4451,20 @@ const createSchedulerCreateArguments = (
     appendSchedulerCreateSchedule(argumentsList, input.schedule);
   }
   appendSchedulerCreateTriggers(argumentsList, input.triggers);
-  appendSchedulerOption(argumentsList, "--prompt", prompt);
-  appendSchedulerOption(argumentsList, "--prompt-file", promptFile);
-  appendSchedulerRepeatedOption(argumentsList, "--context", input.contextPaths);
-  appendSchedulerRepeatedOption(argumentsList, "--image", input.imagePaths);
-  appendSchedulerRepeatedOption(
-    argumentsList,
-    "--context-pack",
-    input.contextPacks?.map(serializeSchedulerContextPack),
-  );
-  appendSchedulerRepeatedOption(argumentsList, "--macro", input.macros);
+  if (targetType === "ralph-flow" && input.ralphFlow) {
+    appendSchedulerRalphFlowTarget(argumentsList, input.ralphFlow);
+  } else {
+    appendSchedulerOption(argumentsList, "--prompt", prompt);
+    appendSchedulerOption(argumentsList, "--prompt-file", promptFile);
+    appendSchedulerRepeatedOption(argumentsList, "--context", input.contextPaths);
+    appendSchedulerRepeatedOption(argumentsList, "--image", input.imagePaths);
+    appendSchedulerRepeatedOption(
+      argumentsList,
+      "--context-pack",
+      input.contextPacks?.map(serializeSchedulerContextPack),
+    );
+    appendSchedulerRepeatedOption(argumentsList, "--macro", input.macros);
+  }
   appendSchedulerOption(argumentsList, "--missed-run-policy", input.missedRunPolicy);
   appendSchedulerOption(argumentsList, "--missed-run-grace-ms", input.missedRunGraceMs);
   appendSchedulerOption(argumentsList, "--retry-attempts", input.retryAttempts);

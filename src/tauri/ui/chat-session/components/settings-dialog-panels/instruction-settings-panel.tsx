@@ -45,7 +45,10 @@ export interface InstructionSettingsPanelProps {
 type InstructionEditorMode = "manual" | "ai";
 type InstructionWorkflow = "idle" | "create" | "edit" | "generate" | "copy";
 type InstructionAudienceDraft = "default" | InstructionAudience;
-type InstructionScopeLabel = WritableInstructionScope | "compatibility";
+type InstructionScopeLabel =
+  | WritableInstructionScope
+  | "compatibility"
+  | "ralph-flow";
 type InstructionScopeFilter = "all" | InstructionScopeLabel;
 type InstructionModeFilter =
   | "all"
@@ -105,6 +108,7 @@ const SCOPE_FILTER_OPTIONS: ReadonlyArray<{
   { value: "all", label: "All" },
   { value: "workspace", label: "Workspace" },
   { value: "user", label: "Global" },
+  { value: "ralph-flow", label: "Ralph flow" },
   { value: "compatibility", label: "Read-only" },
 ];
 
@@ -185,6 +189,10 @@ const getInstructionScope = (
 
   if (instruction.scope === "compatibility") {
     return "compatibility";
+  }
+
+  if (instruction.scope === "ralph-flow") {
+    return "ralph-flow";
   }
 
   return "workspace";
@@ -312,6 +320,8 @@ const scopeLabel = (scope: InstructionScopeLabel): string => {
       return "Global";
     case "compatibility":
       return "Read-only import";
+    case "ralph-flow":
+      return "Ralph flow";
     case "workspace":
       return "Workspace";
   }
@@ -707,7 +717,7 @@ export const InstructionSettingsPanel = ({
   ): void => {
     const scope = getInstructionScope(instruction);
 
-    if (scope === "compatibility") {
+    if (scope === "compatibility" || scope === "ralph-flow") {
       return;
     }
 
@@ -760,7 +770,7 @@ export const InstructionSettingsPanel = ({
   ): void => {
     const scope = getInstructionScope(instruction);
 
-    if (scope === "compatibility") {
+    if (scope === "compatibility" || scope === "ralph-flow") {
       copyInstruction(instruction, workspaceAvailable ? "workspace" : "user");
       return;
     }
@@ -969,7 +979,8 @@ export const InstructionSettingsPanel = ({
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {getInstructionScope(selectedInstruction) === "compatibility" ? (
+                      {getInstructionScope(selectedInstruction) === "compatibility" ||
+                      getInstructionScope(selectedInstruction) === "ralph-flow" ? (
                         <>
                           <Button
                             type="button"

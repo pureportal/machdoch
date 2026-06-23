@@ -385,4 +385,68 @@ Prefer strict TypeScript.
       },
     ]);
   });
+
+  it("discovers instructions scoped to a specific Ralph flow", async () => {
+    const workspaceRoot = await createWorkspace();
+    const flowInstructionRoot = join(
+      workspaceRoot,
+      ".machdoch",
+      "ralph",
+      "instructions",
+      "build-flow",
+    );
+
+    await mkdir(join(flowInstructionRoot, "instructions"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(flowInstructionRoot, "instructions.md"),
+      "Always apply build flow defaults.",
+    );
+    await writeFile(
+      join(flowInstructionRoot, "instructions", "release.instructions.md"),
+      `---
+name: Release flow rules
+mode: auto
+keywords: release
+---
+Keep release steps idempotent.
+`,
+    );
+
+    await expect(discoverCustomizations(workspaceRoot)).resolves.toMatchObject({
+      instructions: [],
+    });
+
+    const customizations = await discoverCustomizations(workspaceRoot, {
+      ralphFlow: {
+        id: "Build Flow",
+        scope: "workspace",
+      },
+    });
+
+    expect(customizations.instructions).toEqual([
+      {
+        kind: "always-on",
+        path: ".machdoch/ralph/instructions/build-flow/instructions.md",
+        name: "build-flow-instructions",
+        body: "Always apply build flow defaults.",
+        keywords: [],
+        scope: "ralph-flow",
+        ralphFlowId: "build-flow",
+        ralphFlowScope: "workspace",
+      },
+      {
+        kind: "conditional",
+        path: ".machdoch/ralph/instructions/build-flow/instructions/release.instructions.md",
+        name: "Release flow rules",
+        body: "Keep release steps idempotent.",
+        keywords: ["release"],
+        mode: "auto",
+        scope: "ralph-flow",
+        ralphFlowId: "build-flow",
+        ralphFlowScope: "workspace",
+      },
+    ]);
+  });
 });

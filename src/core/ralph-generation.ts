@@ -182,6 +182,7 @@ export interface RalphGenerationInterviewAnswer {
   label: string;
   type: RalphInputFieldType;
   value: RalphInputValue;
+  comment?: string;
 }
 
 export interface RalphGenerationInterviewTranscriptTurn {
@@ -220,6 +221,7 @@ export interface RalphGenerationInterviewOptions {
   maxTurns?: number;
   session?: RalphGenerationInterviewSession;
   answers?: Record<string, RalphInputValue>;
+  answerComments?: Record<string, string>;
   onStateChange?: TaskExecutionProgressHandler;
   runId?: string;
   signal?: AbortSignal;
@@ -235,6 +237,22 @@ export interface RalphGenerationInterviewResult {
   model?: string;
   result?: TaskExecutionResult;
 }
+
+const createExistingRalphFlowDiscoveryTarget = (
+  existingFlow: RalphFlow | undefined,
+  scope: RalphFlowScope,
+) => {
+  const id = existingFlow?.id.trim();
+
+  return id
+    ? {
+        ralphFlow: {
+          id,
+          scope,
+        },
+      }
+    : {};
+};
 
 interface RalphGenerationBlockContract {
   type: RalphBlockType;
@@ -1555,8 +1573,13 @@ const createRalphGenerationInterviewSession = (
 const applyRalphGenerationInterviewAnswers = (
   session: RalphGenerationInterviewSession,
   answers: Record<string, RalphInputValue> | undefined,
+  answerComments: Record<string, string> | undefined,
 ): RalphGenerationInterviewSession => {
-  if (!answers || session.transcript.length === 0) {
+  const hasAnswerComments = Object.values(answerComments ?? {}).some(
+    (comment) => comment.trim().length > 0,
+  );
+
+  if ((!answers && !hasAnswerComments) || session.transcript.length === 0) {
     return session;
   }
 
@@ -1567,12 +1590,17 @@ const applyRalphGenerationInterviewAnswers = (
   }
 
   const answerList: RalphGenerationInterviewAnswer[] = latestTurn.questions.map(
-    (field) => ({
-      fieldId: field.id,
-      label: field.label,
-      type: field.type,
-      value: answers[field.id] ?? null,
-    }),
+    (field) => {
+      const comment = answerComments?.[field.id]?.trim();
+
+      return {
+        fieldId: field.id,
+        label: field.label,
+        type: field.type,
+        value: answers?.[field.id] ?? null,
+        ...(comment ? { comment } : {}),
+      };
+    },
   );
 
   return {
@@ -1615,10 +1643,12 @@ const formatRalphGenerationInterviewTranscript = (
     ...(turn.summary ? [`Summary: ${turn.summary}`] : []),
     ...turn.questions.map((field) => `Question: ${field.label} (${field.type})`),
     ...(turn.answers.length > 0
-      ? turn.answers.map(
-          (answer) =>
-            `Answer: ${answer.label} = ${formatRalphGenerationInterviewValue(answer.value)}`,
-        )
+      ? turn.answers.flatMap((answer) => [
+          `Answer: ${answer.label} = ${formatRalphGenerationInterviewValue(answer.value)}`,
+          ...(answer.comment
+            ? [`Answer comment for ${answer.label}: ${answer.comment}`]
+            : []),
+        ])
       : ["Answers: pending"]
     ),
     "",
@@ -1726,7 +1756,10 @@ const createRalphGenerationPromptFromInterview = (
     turn.questionScope ? `${turn.questionScope}:` : `Turn ${turn.turn}:`,
     ...turn.answers.map(
       (answer) =>
-        `- ${answer.label}: ${formatRalphGenerationInterviewValue(answer.value)}`,
+        [
+          `- ${answer.label}: ${formatRalphGenerationInterviewValue(answer.value)}`,
+          ...(answer.comment ? [`  Comment: ${answer.comment}`] : []),
+        ].join("\n"),
     ),
     ...(turn.answers.length === 0 ? ["- No answers collected."] : []),
   ]),
@@ -2269,6 +2302,7 @@ export const createRalphGenerationInterviewWithAgent = async (
   const session = applyRalphGenerationInterviewAnswers(
     baseSession,
     options.answers,
+    options.answerComments,
   );
   const config =
     options.config ??
@@ -2320,6 +2354,7 @@ export const createRalphGenerationInterviewWithAgent = async (
       discoverGithubCustomizations:
         Boolean(config.compatibility.discoverGithubCustomizations),
       includeDiagnostics: true,
+      ...createExistingRalphFlowDiscoveryTarget(options.existingFlow, session.scope),
     }));
   const nextTurn = session.turn + 1;
   const executionOptions = await createRalphTaskExecutionOptions(
@@ -2562,6 +2597,7 @@ export const createRalphFlowWithAgent = async (
       discoverGithubCustomizations:
         Boolean(config.compatibility.discoverGithubCustomizations),
       includeDiagnostics: true,
+      ...createExistingRalphFlowDiscoveryTarget(options.existingFlow, scope),
     }));
   const generatorResults: TaskExecutionResult[] = [];
   const validatorResults: TaskExecutionResult[] = [];

@@ -431,6 +431,104 @@ describe("RalphFlowEditor", () => {
     });
   });
 
+  it("keeps the previous flow out of the next scope while details load", async () => {
+    const workspaceFlow = {
+      ...createRunnableFlow(),
+      id: "workspace-cleanup",
+      alias: "workspace-cleanup",
+      name: "Workspace Cleanup",
+    } satisfies RalphFlow;
+    const globalFlow = {
+      ...createRunnableFlow(),
+      id: "global-cleanup",
+      alias: "global-cleanup",
+      name: "Global Cleanup",
+    } satisfies RalphFlow;
+    let resolveGlobalFlow:
+      | ((result: Awaited<ReturnType<typeof showRalphFlow>>) => void)
+      | undefined;
+
+    vi.mocked(listRalphFlows).mockImplementation(async (_workspaceRoot, scope) => {
+      const resolvedScope = scope ?? "workspace";
+
+      return {
+        workspaceRoot: "C:\\Project",
+        scope: resolvedScope,
+        flows:
+          resolvedScope === "user"
+            ? [
+                {
+                  id: globalFlow.id,
+                  alias: globalFlow.alias,
+                  name: globalFlow.name,
+                  scope: "user",
+                  path: "C:\\Users\\andreas\\AppData\\Roaming\\machdoch\\ralph\\flows\\global-cleanup.json",
+                  blockCount: globalFlow.blocks.length,
+                  edgeCount: globalFlow.edges.length,
+                  variableCount: 0,
+                },
+              ]
+            : [
+                {
+                  id: workspaceFlow.id,
+                  alias: workspaceFlow.alias,
+                  name: workspaceFlow.name,
+                  scope: "workspace",
+                  path: "C:\\Project\\.machdoch\\ralph\\flows\\workspace-cleanup.json",
+                  blockCount: workspaceFlow.blocks.length,
+                  edgeCount: workspaceFlow.edges.length,
+                  variableCount: 0,
+                },
+              ],
+      };
+    });
+    vi.mocked(showRalphFlow).mockImplementation((_workspaceRoot, id, scope) => {
+      if (id === globalFlow.id) {
+        return new Promise((resolve) => {
+          resolveGlobalFlow = resolve;
+        });
+      }
+
+      return Promise.resolve({
+        path: "C:\\Project\\.machdoch\\ralph\\flows\\workspace-cleanup.json",
+        scope: scope ?? "workspace",
+        flow: workspaceFlow,
+      });
+    });
+
+    renderRalphFlowEditor("Review {{scope:path=ALL}}", {
+      flowLibraryMode: "all",
+    });
+
+    await screen.findByLabelText("Flow status: Ready");
+    expect(
+      screen.getAllByRole("button", { name: /Workspace Cleanup/u }),
+    ).toHaveLength(1);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Global Cleanup/u }),
+    );
+
+    await waitFor(() => {
+      expect(showRalphFlow).toHaveBeenCalledWith(
+        expect.stringContaining("Project"),
+        globalFlow.id,
+        "user",
+      );
+    });
+    expect(
+      screen.getAllByRole("button", { name: /Workspace Cleanup/u }),
+    ).toHaveLength(1);
+
+    await act(async () => {
+      resolveGlobalFlow?.({
+        path: "C:\\Users\\andreas\\AppData\\Roaming\\machdoch\\ralph\\flows\\global-cleanup.json",
+        scope: "user",
+        flow: globalFlow,
+      });
+    });
+  });
+
   it("creates an editable draft with condition route selectors", async () => {
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 

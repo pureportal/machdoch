@@ -689,6 +689,7 @@ pub(crate) fn sync_assistant_bubble_window<R: Runtime>(app: &AppHandle<R>) -> Re
     };
 
     if settings.assistant_bubble_enabled {
+        let _ = window.set_focusable(false);
         let _ = window.set_skip_taskbar(true);
         let _ = window.unminimize();
     } else {

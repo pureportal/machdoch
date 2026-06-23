@@ -634,6 +634,110 @@ describe("DurableSmartScheduler", () => {
     expect(requests[0]?.[1].maxDurationMs).toBe(5_000);
   });
 
+  it("emits Ralph completion events and runs chained jobs through the service", async () => {
+    const workspaceRoot = await createWorkspace();
+    const clock = createClock();
+    const requests: string[] = [];
+    const executor: ScheduledTaskExecutor = {
+      execute: async (request) => {
+        requests.push(request.job.name);
+
+        if (request.job.name === "Security analysis") {
+          return {
+            task: request.task,
+            mode: "machdoch",
+            status: "cancelled",
+            summary: "Ralph flow stopped.",
+            reason: "Ralph flow stopped.",
+            executedTools: [],
+            metadata: {
+              ralphFlow: {
+                flowId: "security-analysis",
+                flowName: "Security analysis",
+                scope: "workspace",
+                runId: "ralph-run-1",
+                status: "stopped",
+                runLogScope: "workspace",
+              },
+            },
+            outputSections: [],
+          };
+        }
+
+        return createSuccessfulResult("follow-up completed");
+      },
+    };
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+      clock,
+      executor,
+    });
+    const sourceJob = await scheduler.upsertJob({
+      name: "Security analysis",
+      schedule: { type: "delay", delayMs: 1_000 },
+      target: {
+        type: "ralph-flow",
+        workspaceRoot,
+        ralphFlow: {
+          id: "security-analysis",
+          scope: "workspace",
+          params: {},
+          permissions: {
+            allowedRoots: [workspaceRoot],
+            allowCommands: false,
+            allowWrites: false,
+            allowNetwork: false,
+            allowMcpTools: false,
+          },
+        },
+      },
+    });
+    const chainedJob = await scheduler.upsertJob({
+      name: "Stopped flow follow-up",
+      triggers: [
+        {
+          kind: "job-event",
+          eventType: "job-event.ralph-flow.stopped",
+          filters: { "payload.ralph.flowId": "security-analysis" },
+        },
+      ],
+      target: {
+        workspaceRoot,
+        prompt: "Summarize the stopped run.",
+      },
+    });
+
+    clock.set(1_000);
+
+    const { runs: [sourceRun] } = await scheduler.runDueJobs();
+
+    expect(sourceRun?.jobId).toBe(sourceJob.id);
+    expect(sourceRun?.status).toBe("cancelled");
+
+    const events = await scheduler.listEvents();
+    const stoppedEvent = events.find(
+      (event) => event.type === "job-event.ralph-flow.stopped",
+    );
+
+    expect(stoppedEvent?.parentRunId).toBe(sourceRun?.id);
+    expect(stoppedEvent?.matches[0]?.queuedRunId).toBeDefined();
+
+    const queuedFollowUp = (await scheduler.listRuns()).find(
+      (run) => run.jobId === chainedJob.id,
+    );
+
+    expect(queuedFollowUp?.status).toBe("queued");
+    expect(queuedFollowUp?.parentRunId).toBe(sourceRun?.id);
+
+    const serviceResult = await scheduler.runService({
+      maxIterations: 2,
+      pollIntervalMs: 1,
+    });
+
+    expect(serviceResult.finishedRuns).toBe(1);
+    expect(requests).toEqual(["Security analysis", "Stopped flow follow-up"]);
+  });
+
   it("retries failed runs with backoff", async () => {
     const workspaceRoot = await createWorkspace();
     const clock = createClock();

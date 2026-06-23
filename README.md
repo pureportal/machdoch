@@ -406,6 +406,12 @@ Native customization files live under `.machdoch/`:
   instructions.md
   instructions/
     security.instructions.md
+  ralph/
+    instructions/
+      review-flow/
+        instructions.md
+        instructions/
+          release.instructions.md
   prompts/
     debug-build.prompt.md
   skills/
@@ -434,6 +440,15 @@ task or management command loads customizations:
 - `instructions.md`
 - `instructions/**/*.instructions.md`
 
+Ralph flow instruction files are discovered only for the flow being run,
+resumed, scheduled, generated from an existing flow, or selected by
+`machdoch instructions --scope ralph-flow`:
+
+- `.machdoch/ralph/instructions/<flow-id>/instructions.md`
+- `.machdoch/ralph/instructions/<flow-id>/instructions/**/*.instructions.md`
+- user-scoped Ralph flows use the same `ralph/instructions/<flow-id>/...`
+  layout under the user config directory
+
 Instruction files may declare frontmatter metadata:
 
 - `mode`: `always`, `auto`, `agent-requested`, `manual`, or `disabled`
@@ -450,6 +465,7 @@ machdoch instructions show "Security defaults"
 machdoch instructions create "Review rules" --prompt "Prefer focused tests."
 machdoch instructions save "Review rules" --path .machdoch/instructions/review.instructions.md --prompt "Updated rules."
 machdoch instructions generate "Review rules" --prompt "Create durable review instructions for TypeScript work."
+machdoch instructions create "Flow rules" --scope ralph-flow --ralph-flow review-flow --prompt "Keep this flow focused."
 ```
 
 ## Capabilities

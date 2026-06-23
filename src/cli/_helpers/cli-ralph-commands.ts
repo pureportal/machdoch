@@ -228,7 +228,18 @@ const readRalphInputResponse = async (
 interface RalphGenerationInterviewCliInput {
   session?: RalphGenerationInterviewSession;
   answers?: Record<string, RalphInputValue>;
+  answerComments?: Record<string, string>;
 }
+
+const parseRalphGenerationInterviewAnswerComments = (
+  value: Record<string, unknown>,
+): Record<string, string> => {
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, entry]) =>
+      typeof entry === "string" ? [[key, entry]] : [],
+    ),
+  );
+};
 
 const readRalphGenerationInterviewInput = async (
   args: ParsedCliArgs,
@@ -249,12 +260,19 @@ const readRalphGenerationInterviewInput = async (
     throw new Error("Expected Ralph interview input to be a JSON object.");
   }
 
+  const answerComments = isRecord(parsed.answerComments)
+    ? parseRalphGenerationInterviewAnswerComments(parsed.answerComments)
+    : {};
+
   return {
     ...(isRecord(parsed.session)
       ? { session: parsed.session as unknown as RalphGenerationInterviewSession }
       : {}),
     ...(isRecord(parsed.answers)
       ? { answers: parseRalphInputValues(parsed.answers) }
+      : {}),
+    ...(Object.keys(answerComments).length > 0
+      ? { answerComments }
       : {}),
   };
 };
@@ -277,6 +295,24 @@ const createResumeRunLogPaths = (
 
 const getRalphCommandScope = (options: RalphCliOptions): RalphFlowScope => {
   return options.scope ?? "workspace";
+};
+
+const createRalphFlowDiscoveryOptions = (
+  discoverGithubCustomizations: boolean | undefined,
+  flow: RalphFlow | undefined,
+  scope: RalphFlowScope,
+) => {
+  return {
+    ...createDiscoveryOptions(discoverGithubCustomizations),
+    ...(flow
+      ? {
+          ralphFlow: {
+            id: flow.id,
+            scope,
+          },
+        }
+      : {}),
+  };
 };
 
 const readRalphWatchInput = async (
@@ -1175,11 +1211,15 @@ export const printRalphSummary = async (
         args.agentLimits,
         args.reasoning,
       );
+      const flow = await readRalphFlow(args.workspaceRoot, subject, { scope });
       const customizations = await discoverCustomizations(
         args.workspaceRoot,
-        createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
+        createRalphFlowDiscoveryOptions(
+          config.compatibility.discoverGithubCustomizations,
+          flow,
+          scope,
+        ),
       );
-      const flow = await readRalphFlow(args.workspaceRoot, subject, { scope });
       const fileParams = options.paramsFile
         ? await readRalphParamsFile(args.workspaceRoot, options.paramsFile)
         : [];
@@ -1268,11 +1308,15 @@ export const printRalphSummary = async (
         args.agentLimits,
         args.reasoning,
       );
+      const flow = await readRalphFlow(args.workspaceRoot, record.flowId, { scope });
       const customizations = await discoverCustomizations(
         args.workspaceRoot,
-        createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
+        createRalphFlowDiscoveryOptions(
+          config.compatibility.discoverGithubCustomizations,
+          flow,
+          scope,
+        ),
       );
-      const flow = await readRalphFlow(args.workspaceRoot, record.flowId, { scope });
       const paths = createResumeRunLogPaths(recordPath, record);
       const logger = await createRalphRunLogger(args.workspaceRoot, flow, {
         runId: record.id,
@@ -1362,7 +1406,11 @@ export const printRalphSummary = async (
       );
       const customizations = await discoverCustomizations(
         args.workspaceRoot,
-        createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
+        createRalphFlowDiscoveryOptions(
+          config.compatibility.discoverGithubCustomizations,
+          existingFlow,
+          scope,
+        ),
       );
       const result = await createRalphFlowWithAgent(args.workspaceRoot, {
         name,
@@ -1444,7 +1492,11 @@ export const printRalphSummary = async (
       );
       const customizations = await discoverCustomizations(
         args.workspaceRoot,
-        createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
+        createRalphFlowDiscoveryOptions(
+          config.compatibility.discoverGithubCustomizations,
+          existingFlow,
+          scope,
+        ),
       );
       const result = await createRalphGenerationInterviewWithAgent(
         args.workspaceRoot,
@@ -1459,6 +1511,7 @@ export const printRalphSummary = async (
           ...(options.maxRounds ? { maxTurns: options.maxRounds } : {}),
           ...(input.session ? { session: input.session } : {}),
           ...(input.answers ? { answers: input.answers } : {}),
+          ...(input.answerComments ? { answerComments: input.answerComments } : {}),
         },
       );
 

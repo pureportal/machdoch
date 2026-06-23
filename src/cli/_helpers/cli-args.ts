@@ -125,8 +125,19 @@ export const parseCliArgs = (
         "delay-ms"?: string;
         "run-at"?: string;
         timezone?: string;
+        "scheduler-target"?: string;
         prompt?: string;
         "prompt-file"?: string;
+        "scheduled-ralph-flow"?: string;
+        "scheduled-ralph-flow-scope"?: string;
+        "scheduled-ralph-param"?: string[];
+        "scheduled-ralph-run-log-scope"?: string;
+        "scheduled-ralph-max-transitions"?: string;
+        "scheduled-ralph-allowed-root"?: string[];
+        "scheduled-ralph-allow-commands"?: string;
+        "scheduled-ralph-allow-writes"?: string;
+        "scheduled-ralph-allow-network"?: string;
+        "scheduled-ralph-allow-mcp-tools"?: string;
         "flow-json"?: string;
         "flow-json-file"?: string;
         "watch-json"?: string;
@@ -165,6 +176,14 @@ export const parseCliArgs = (
         "event-payload-json"?: string;
         "event-dedupe-key"?: string;
         "event-occurred-at"?: string;
+        "service-poll-ms"?: string;
+        "service-idle-shutdown-ms"?: string;
+        "service-abandoned-run-stale-ms"?: string;
+        "service-max-iterations"?: string;
+        "service-max-runs-per-tick"?: string;
+        "service-start-event-type"?: string;
+        "service-start-event-kind"?: string;
+        "service-start-event-dedupe-key"?: string;
         "arguments-json"?: string;
         "include-disabled"?: boolean;
         scope?: string;
@@ -175,6 +194,8 @@ export const parseCliArgs = (
         "instruction-mode"?: string;
         audience?: string;
         priority?: string;
+        "ralph-flow"?: string;
+        "flow-scope"?: string;
       }
     | undefined;
   let positionals: string[] = [];
@@ -223,8 +244,19 @@ export const parseCliArgs = (
         "delay-ms": { type: "string" },
         "run-at": { type: "string" },
         timezone: { type: "string" },
+        "scheduler-target": { type: "string" },
         prompt: { type: "string" },
         "prompt-file": { type: "string" },
+        "scheduled-ralph-flow": { type: "string" },
+        "scheduled-ralph-flow-scope": { type: "string" },
+        "scheduled-ralph-param": { type: "string", multiple: true },
+        "scheduled-ralph-run-log-scope": { type: "string" },
+        "scheduled-ralph-max-transitions": { type: "string" },
+        "scheduled-ralph-allowed-root": { type: "string", multiple: true },
+        "scheduled-ralph-allow-commands": { type: "string" },
+        "scheduled-ralph-allow-writes": { type: "string" },
+        "scheduled-ralph-allow-network": { type: "string" },
+        "scheduled-ralph-allow-mcp-tools": { type: "string" },
         "flow-json": { type: "string" },
         "flow-json-file": { type: "string" },
         "watch-json": { type: "string" },
@@ -263,6 +295,14 @@ export const parseCliArgs = (
         "event-payload-json": { type: "string" },
         "event-dedupe-key": { type: "string" },
         "event-occurred-at": { type: "string" },
+        "service-poll-ms": { type: "string" },
+        "service-idle-shutdown-ms": { type: "string" },
+        "service-abandoned-run-stale-ms": { type: "string" },
+        "service-max-iterations": { type: "string" },
+        "service-max-runs-per-tick": { type: "string" },
+        "service-start-event-type": { type: "string" },
+        "service-start-event-kind": { type: "string" },
+        "service-start-event-dedupe-key": { type: "string" },
         "arguments-json": { type: "string" },
         "include-disabled": { type: "boolean" },
         scope: { type: "string" },
@@ -273,6 +313,8 @@ export const parseCliArgs = (
         "instruction-mode": { type: "string" },
         audience: { type: "string" },
         priority: { type: "string" },
+        "ralph-flow": { type: "string" },
+        "flow-scope": { type: "string" },
       },
       allowPositionals: true,
       strict: true,
@@ -353,8 +395,39 @@ export const parseCliArgs = (
   const rawSchedulerDelayMs = normalizeOptionalString(values?.["delay-ms"]);
   const rawSchedulerRunAt = normalizeOptionalString(values?.["run-at"]);
   const rawSchedulerTimezone = normalizeOptionalString(values?.timezone);
+  const rawSchedulerTarget = normalizeOptionalString(values?.["scheduler-target"]);
   const rawSchedulerPrompt = normalizeOptionalString(values?.prompt);
   const rawSchedulerPromptFile = normalizeOptionalString(values?.["prompt-file"]);
+  const rawScheduledRalphFlow = normalizeOptionalString(
+    values?.["scheduled-ralph-flow"],
+  );
+  const rawScheduledRalphFlowScope = normalizeOptionalString(
+    values?.["scheduled-ralph-flow-scope"],
+  );
+  const rawScheduledRalphParams = values?.["scheduled-ralph-param"]
+    ?.map((entry) => normalizeOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  const rawScheduledRalphRunLogScope = normalizeOptionalString(
+    values?.["scheduled-ralph-run-log-scope"],
+  );
+  const rawScheduledRalphMaxTransitions = normalizeOptionalString(
+    values?.["scheduled-ralph-max-transitions"],
+  );
+  const rawScheduledRalphAllowedRoots = values?.["scheduled-ralph-allowed-root"]
+    ?.map((entry) => normalizeOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  const rawScheduledRalphAllowCommands = normalizeOptionalString(
+    values?.["scheduled-ralph-allow-commands"],
+  );
+  const rawScheduledRalphAllowWrites = normalizeOptionalString(
+    values?.["scheduled-ralph-allow-writes"],
+  );
+  const rawScheduledRalphAllowNetwork = normalizeOptionalString(
+    values?.["scheduled-ralph-allow-network"],
+  );
+  const rawScheduledRalphAllowMcpTools = normalizeOptionalString(
+    values?.["scheduled-ralph-allow-mcp-tools"],
+  );
   const rawRalphFlowJson = normalizeOptionalString(values?.["flow-json"]);
   const rawRalphFlowJsonFile = normalizeOptionalString(values?.["flow-json-file"]);
   const rawRalphWatchJson = normalizeOptionalString(values?.["watch-json"]);
@@ -433,6 +506,30 @@ export const parseCliArgs = (
   const rawSchedulerEventOccurredAt = normalizeOptionalString(
     values?.["event-occurred-at"],
   );
+  const rawSchedulerServicePollMs = normalizeOptionalString(
+    values?.["service-poll-ms"],
+  );
+  const rawSchedulerServiceIdleShutdownMs = normalizeOptionalString(
+    values?.["service-idle-shutdown-ms"],
+  );
+  const rawSchedulerServiceAbandonedRunStaleMs = normalizeOptionalString(
+    values?.["service-abandoned-run-stale-ms"],
+  );
+  const rawSchedulerServiceMaxIterations = normalizeOptionalString(
+    values?.["service-max-iterations"],
+  );
+  const rawSchedulerServiceMaxRunsPerTick = normalizeOptionalString(
+    values?.["service-max-runs-per-tick"],
+  );
+  const rawSchedulerServiceStartEventType = normalizeOptionalString(
+    values?.["service-start-event-type"],
+  );
+  const rawSchedulerServiceStartEventKind = normalizeOptionalString(
+    values?.["service-start-event-kind"],
+  );
+  const rawSchedulerServiceStartEventDedupeKey = normalizeOptionalString(
+    values?.["service-start-event-dedupe-key"],
+  );
   const rawMcpArgumentsJson = normalizeOptionalString(values?.["arguments-json"]);
   const includeDisabledMcp = values?.["include-disabled"] === true;
   const rawInstructionScope = normalizeOptionalString(values?.scope);
@@ -451,6 +548,10 @@ export const parseCliArgs = (
   );
   const rawInstructionAudience = normalizeOptionalString(values?.audience);
   const rawInstructionPriority = normalizeOptionalString(values?.priority);
+  const rawInstructionRalphFlow = normalizeOptionalString(values?.["ralph-flow"]);
+  const rawInstructionRalphFlowScope = normalizeOptionalString(
+    values?.["flow-scope"],
+  );
 
   if (values?.mode !== undefined && !rawMode) {
     fail(`Expected --mode to be followed by ${VALID_MODE_DESCRIPTION}.`);
@@ -465,14 +566,32 @@ export const parseCliArgs = (
   }
 
   if (values?.scope !== undefined && !rawInstructionScope) {
-    fail("Expected --scope to be followed by user, workspace, or compatibility.");
+    fail("Expected --scope to be followed by user, workspace, compatibility, or ralph-flow.");
   }
 
   if (
     rawInstructionScope &&
     !INSTRUCTION_SCOPES.has(rawInstructionScope as InstructionCliScope)
   ) {
-    fail("Expected --scope to be followed by user, workspace, or compatibility.");
+    fail("Expected --scope to be followed by user, workspace, compatibility, or ralph-flow.");
+  }
+
+  if (values?.["ralph-flow"] !== undefined && !rawInstructionRalphFlow) {
+    fail("Expected --ralph-flow to be followed by a Ralph flow id or alias.");
+  }
+
+  if (
+    values?.["flow-scope"] !== undefined &&
+    !rawInstructionRalphFlowScope
+  ) {
+    fail("Expected --flow-scope to be followed by user or workspace.");
+  }
+
+  if (
+    rawInstructionRalphFlowScope &&
+    !RALPH_SCOPES.has(rawInstructionRalphFlowScope as RalphCliScope)
+  ) {
+    fail("Expected --flow-scope to be followed by user or workspace.");
   }
 
   if (values?.["instruction-mode"] !== undefined && !rawInstructionMode) {
@@ -813,6 +932,13 @@ export const parseCliArgs = (
   }
 
   const [first, ...rest] = positionals;
+
+  if (
+    first !== "instructions" &&
+    (rawInstructionRalphFlow || rawInstructionRalphFlowScope)
+  ) {
+    fail("--ralph-flow and --flow-scope are only valid for `machdoch instructions`.");
+  }
 
   if (first === "mcp") {
     if (quickRunRequested || rawTask) {
@@ -1235,7 +1361,19 @@ export const parseCliArgs = (
       (action === "create" || action === "save" || action === "generate") &&
       rawInstructionScope === "compatibility"
     ) {
-      fail("Compatibility instruction files are read-only; use user or workspace scope.");
+      fail("Compatibility instruction files are read-only; use user, workspace, or ralph-flow scope.");
+    }
+
+    if (rawInstructionScope === "ralph-flow" && !rawInstructionRalphFlow) {
+      fail("Ralph flow instruction scope requires --ralph-flow.");
+    }
+
+    if (rawInstructionScope !== "ralph-flow" && rawInstructionRalphFlow) {
+      fail("--ralph-flow requires --scope ralph-flow.");
+    }
+
+    if (rawInstructionScope !== "ralph-flow" && rawInstructionRalphFlowScope) {
+      fail("--flow-scope requires --scope ralph-flow.");
     }
 
     const instructionSubject = normalizeOptionalString(rawSubject);
@@ -1256,6 +1394,12 @@ export const parseCliArgs = (
           ...(rawSchedulerName ? { name: rawSchedulerName } : {}),
           ...(rawInstructionScope
             ? { scope: rawInstructionScope as InstructionCliScope }
+            : {}),
+          ...(rawInstructionRalphFlow
+            ? { ralphFlow: rawInstructionRalphFlow }
+            : {}),
+          ...(rawInstructionRalphFlowScope
+            ? { ralphFlowScope: rawInstructionRalphFlowScope as RalphCliScope }
             : {}),
           ...(rawSchedulerPrompt ? { prompt: rawSchedulerPrompt } : {}),
           ...(rawSchedulerPromptFile ? { promptFile: rawSchedulerPromptFile } : {}),
@@ -1342,8 +1486,19 @@ export const parseCliArgs = (
           rawSchedulerDelayMs,
           rawSchedulerRunAt,
           rawSchedulerTimezone,
+          rawSchedulerTarget,
           rawSchedulerPrompt,
           rawSchedulerPromptFile,
+          rawScheduledRalphFlow,
+          rawScheduledRalphFlowScope,
+          rawScheduledRalphParams,
+          rawScheduledRalphRunLogScope,
+          rawScheduledRalphMaxTransitions,
+          rawScheduledRalphAllowedRoots,
+          rawScheduledRalphAllowCommands,
+          rawScheduledRalphAllowWrites,
+          rawScheduledRalphAllowNetwork,
+          rawScheduledRalphAllowMcpTools,
           rawSchedulerContextPacks,
           rawSchedulerMacros,
           rawSchedulerMissedRunPolicy,
@@ -1366,6 +1521,14 @@ export const parseCliArgs = (
           rawSchedulerEventPayloadJson,
           rawSchedulerEventDedupeKey,
           rawSchedulerEventOccurredAt,
+          rawSchedulerServicePollMs,
+          rawSchedulerServiceIdleShutdownMs,
+          rawSchedulerServiceAbandonedRunStaleMs,
+          rawSchedulerServiceMaxIterations,
+          rawSchedulerServiceMaxRunsPerTick,
+          rawSchedulerServiceStartEventType,
+          rawSchedulerServiceStartEventKind,
+          rawSchedulerServiceStartEventDedupeKey,
         }),
       },
     );

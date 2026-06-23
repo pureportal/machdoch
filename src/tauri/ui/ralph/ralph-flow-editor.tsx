@@ -30,6 +30,7 @@ import {
   LayoutGrid,
   LoaderCircle,
   Maximize2,
+  MessageSquare,
   Octagon,
   Play,
   Plus,
@@ -259,6 +260,7 @@ import {
 import {
   createDefaultRalphInputValues,
   formatRalphInputValueForPrompt,
+  getDefaultRalphInputValue,
   validateRalphInputFieldValues,
 } from "./_helpers/validate-ralph-input-field-values.helper";
 import {
@@ -450,6 +452,8 @@ interface RalphGenerationInterviewDialogState {
   session?: RalphGenerationInterviewSession;
   fields: RalphInputField[];
   values: Record<string, RalphInputValue>;
+  answerComments: Record<string, string>;
+  expandedCommentFieldIds: string[];
   skippedFieldIds: string[];
   validationErrors: Record<string, string>;
   summary: string;
@@ -1109,11 +1113,39 @@ const createPromptBlockGenerationPrompt = (
   userPrompt,
 ].join("\n");
 
+const getTrimmedGenerationInterviewAnswerComments = (
+  answerComments: Record<string, string>,
+): Record<string, string> => {
+  return Object.fromEntries(
+    Object.entries(answerComments).flatMap(([fieldId, comment]) => {
+      const trimmedComment = comment.trim();
+
+      return trimmedComment ? [[fieldId, trimmedComment]] : [];
+    }),
+  );
+};
+
+const formatGenerationInterviewAnswerForPrompt = (
+  label: string,
+  value: RalphInputValue | undefined,
+  comment?: string,
+): string[] => {
+  const lines = [`- ${label}: ${formatRalphInputValueForPrompt(value)}`];
+  const trimmedComment = comment?.trim();
+
+  if (trimmedComment) {
+    lines.push(`  Comment: ${trimmedComment}`);
+  }
+
+  return lines;
+};
+
 const createLocalGenerationInterviewPrompt = (
   context: RalphAiGenerationStartContext,
   session: RalphGenerationInterviewSession | undefined,
   fields: readonly RalphInputField[],
   values: Record<string, RalphInputValue>,
+  answerComments: Record<string, string> = {},
 ): string => [
   context.generationPrompt,
   "",
@@ -1123,17 +1155,23 @@ const createLocalGenerationInterviewPrompt = (
   "Collected interview answers:",
   ...(session?.transcript ?? []).flatMap((turn) => [
     `Turn ${turn.turn}:`,
-    ...turn.answers.map(
-      (answer) =>
-        `- ${answer.label}: ${formatRalphInputValueForPrompt(answer.value)}`,
+    ...turn.answers.flatMap((answer) =>
+      formatGenerationInterviewAnswerForPrompt(
+        answer.label,
+        answer.value,
+        answer.comment,
+      ),
     ),
   ]),
   ...(fields.length > 0
     ? [
         "Current answers:",
-        ...fields.map(
-          (field) =>
-            `- ${field.label}: ${formatRalphInputValueForPrompt(values[field.id])}`,
+        ...fields.flatMap((field) =>
+          formatGenerationInterviewAnswerForPrompt(
+            field.label,
+            values[field.id],
+            answerComments[field.id],
+          ),
         ),
       ]
     : []),
@@ -1939,6 +1977,9 @@ export const RalphFlowEditor = ({
     DEFAULT_RALPH_FLOW_SCOPE,
   );
   const [draftFlow, setDraftFlow] = useState<RalphFlow | null>(null);
+  const [draftFlowScope, setDraftFlowScope] = useState<RalphFlowScope>(
+    DEFAULT_RALPH_FLOW_SCOPE,
+  );
   const [canvasNodes, setCanvasNodes] = useState<RalphCanvasNode[]>([]);
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [unsavedFlowId, setUnsavedFlowId] = useState<string | null>(null);
@@ -2051,9 +2092,13 @@ export const RalphFlowEditor = ({
     setSelectedId(nextSelectedId);
     setSelectedScope(nextSelectedScope);
   };
-  const replaceDraftFlow = (nextDraftFlow: RalphFlow | null): void => {
+  const replaceDraftFlow = (
+    nextDraftFlow: RalphFlow | null,
+    nextDraftFlowScope: RalphFlowScope = selectedScopeRef.current,
+  ): void => {
     draftFlowRef.current = nextDraftFlow;
     setDraftFlow(nextDraftFlow);
+    setDraftFlowScope(nextDraftFlowScope);
     setUndoStack([]);
     setRedoStack([]);
     setSelectedEdgeId(null);
@@ -2648,9 +2693,11 @@ export const RalphFlowEditor = ({
 
     if (
       draftFlow &&
-      !visibleFlows.some((flow) => hasFlowSelection(flow, draftFlow.id, selectedScope))
+      draftFlow.id === selectedId &&
+      draftFlowScope === selectedScope &&
+      !visibleFlows.some((flow) => hasFlowSelection(flow, draftFlow.id, draftFlowScope))
     ) {
-      visibleFlows.unshift(flowToSummary(draftFlow, "", selectedScope));
+      visibleFlows.unshift(flowToSummary(draftFlow, "", draftFlowScope));
     }
 
     for (const run of activeRuns) {
@@ -2674,7 +2721,7 @@ export const RalphFlowEditor = ({
     }
 
     return visibleFlows.sort(compareFlowSummaries);
-  }, [activeRuns, draftFlow, flows, selectedScope]);
+  }, [activeRuns, draftFlow, draftFlowScope, flows, selectedId, selectedScope]);
   const displayFlowRows = useMemo<RalphFlowListRow[]>(() => {
     if (flowLibraryMode !== "all") {
       return displayFlows.map((flow) => ({ type: "flow", flow }));
@@ -3590,7 +3637,7 @@ export const RalphFlowEditor = ({
   useEffect(() => {
     if (!isActive || !workspaceRoot || !selectedId) {
       setDetailsLoading(false);
-      replaceDraftFlow(null);
+      replaceDraftFlow(null, selectedScope);
       replaceSavedSnapshot("");
       setVariableValues({});
       setSelectedBlockId(null);
@@ -3612,7 +3659,7 @@ export const RalphFlowEditor = ({
           return;
         }
 
-        replaceDraftFlow(result.flow);
+        replaceDraftFlow(result.flow, selectedScope);
         replaceSavedSnapshot(getFlowSnapshot(result.flow));
         setSelectedBlockId(result.flow.blocks[0]?.id ?? null);
         setVariableValues(
@@ -3627,7 +3674,7 @@ export const RalphFlowEditor = ({
       })
       .catch((error) => {
         if (!cancelled) {
-          replaceDraftFlow(null);
+          replaceDraftFlow(null, selectedScope);
           replaceSavedSnapshot("");
           setVariableValues({});
           setSelectedBlockId(null);
@@ -4083,7 +4130,7 @@ export const RalphFlowEditor = ({
     const nextFlow = createBlankFlow(nextAlias);
 
     setDetailsLoading(false);
-    replaceDraftFlow(nextFlow);
+    replaceDraftFlow(nextFlow, creationScope);
     replaceSavedSnapshot("");
     replaceSelectedId(nextFlow.id, creationScope);
     setUnsavedFlowId(nextFlow.id);
@@ -4101,7 +4148,7 @@ export const RalphFlowEditor = ({
     generatedFlow: RalphFlow,
     scope: RalphFlowScope,
   ): void => {
-    replaceDraftFlow(generatedFlow);
+    replaceDraftFlow(generatedFlow, scope);
     replaceSavedSnapshot(getFlowSnapshot(generatedFlow));
     replaceSelectedId(generatedFlow.id, scope);
     setUnsavedFlowId((current) =>
@@ -4312,7 +4359,7 @@ export const RalphFlowEditor = ({
               currentDraftSnapshot === context.draftSnapshotAtStart);
 
         if (canAdoptGeneratedFlow) {
-          replaceDraftFlow(result.flow);
+          replaceDraftFlow(result.flow, context.targetScope);
           replaceSavedSnapshot(getFlowSnapshot(result.flow));
           replaceSelectedId(result.flow.id, context.targetScope);
           setUnsavedFlowId((current) =>
@@ -4376,6 +4423,8 @@ export const RalphFlowEditor = ({
               session: result.session,
               fields,
               values: nextValues,
+              answerComments: {},
+              expandedCommentFieldIds: [],
               skippedFieldIds: [],
               validationErrors: {},
               summary: result.summary,
@@ -4401,6 +4450,8 @@ export const RalphFlowEditor = ({
               session: result.session,
               fields,
               values: nextValues,
+              answerComments: {},
+              expandedCommentFieldIds: [],
               skippedFieldIds: [],
               validationErrors: {},
               summary: result.summary,
@@ -4429,6 +4480,8 @@ export const RalphFlowEditor = ({
             session: result.session,
             fields: [],
             values: {},
+            answerComments: {},
+            expandedCommentFieldIds: [],
             skippedFieldIds: [],
             validationErrors: {},
             summary: result.summary,
@@ -4451,6 +4504,7 @@ export const RalphFlowEditor = ({
     context: RalphAiGenerationStartContext,
     session?: RalphGenerationInterviewSession,
     answers?: Record<string, RalphInputValue>,
+    answerComments?: Record<string, string>,
   ): Promise<void> => {
     if (!workspaceRoot) {
       return;
@@ -4464,6 +4518,8 @@ export const RalphFlowEditor = ({
       session: session ?? current?.session,
       fields: current?.fields ?? [],
       values: current?.values ?? {},
+      answerComments: current?.answerComments ?? {},
+      expandedCommentFieldIds: current?.expandedCommentFieldIds ?? [],
       skippedFieldIds: current?.skippedFieldIds ?? [],
       validationErrors: {},
       summary: session
@@ -4491,6 +4547,9 @@ export const RalphFlowEditor = ({
         taskId,
         ...(session ? { session } : {}),
         ...(answers ? { answers } : {}),
+        ...(answerComments && Object.keys(answerComments).length > 0
+          ? { answerComments }
+          : {}),
       });
 
       await applyGenerationInterviewResult(context, taskId, result);
@@ -4556,7 +4615,10 @@ export const RalphFlowEditor = ({
       return false;
     }
 
-    if (selectedId && draftFlow.id !== selectedId) {
+    if (
+      selectedId &&
+      (draftFlow.id !== selectedId || draftFlowScope !== selectedScope)
+    ) {
       setMessage(
         "The selected flow changed while details were loading. Reopen the flow before saving.",
       );
@@ -4579,7 +4641,7 @@ export const RalphFlowEditor = ({
         return false;
       }
 
-      replaceDraftFlow(result.flow);
+      replaceDraftFlow(result.flow, saveScope);
       replaceSavedSnapshot(getFlowSnapshot(result.flow));
       replaceSelectedId(result.flow.id, saveScope);
       setUnsavedFlowId((current) =>
@@ -4835,7 +4897,7 @@ export const RalphFlowEditor = ({
 
       if (operation === "move" && selectedSourceFlow) {
         replaceSelectedId(savedResult.flow.id, targetScope);
-        replaceDraftFlow(savedResult.flow);
+        replaceDraftFlow(savedResult.flow, targetScope);
         replaceSavedSnapshot(getFlowSnapshot(savedResult.flow));
         setUnsavedFlowId(null);
         setRevisions([]);
@@ -4919,7 +4981,7 @@ export const RalphFlowEditor = ({
         selectedScopeRef.current === flowScope
       ) {
         replaceSelectedId("", flowScope);
-        replaceDraftFlow(null);
+        replaceDraftFlow(null, flowScope);
         replaceSavedSnapshot("");
         setUnsavedFlowId(null);
         setSelectedBlockId(null);
@@ -4973,7 +5035,7 @@ export const RalphFlowEditor = ({
         return;
       }
 
-      replaceDraftFlow(result.flow);
+      replaceDraftFlow(result.flow, selectedScopeAtStart);
       replaceSavedSnapshot(getFlowSnapshot(result.flow));
       replaceSelectedId(result.flow.id, selectedScopeAtStart);
       setUnsavedFlowId(null);
@@ -5105,6 +5167,36 @@ export const RalphFlowEditor = ({
     );
   };
 
+  const updateGenerationInterviewComment = (
+    fieldId: string,
+    comment: string,
+  ): void => {
+    setGenerationInterview((current) =>
+      current
+        ? {
+            ...current,
+            answerComments: {
+              ...current.answerComments,
+              [fieldId]: comment,
+            },
+          }
+        : current,
+    );
+  };
+
+  const toggleGenerationInterviewComment = (fieldId: string): void => {
+    setGenerationInterview((current) =>
+      current
+        ? {
+            ...current,
+            expandedCommentFieldIds: current.expandedCommentFieldIds.includes(fieldId)
+              ? current.expandedCommentFieldIds.filter((id) => id !== fieldId)
+              : [...current.expandedCommentFieldIds, fieldId],
+          }
+        : current,
+    );
+  };
+
   const skipGenerationInterviewField = (fieldId: string): void => {
     setGenerationInterview((current) =>
       current
@@ -5146,10 +5238,15 @@ export const RalphFlowEditor = ({
       return;
     }
 
+    const answerComments = getTrimmedGenerationInterviewAnswerComments(
+      generationInterview.answerComments,
+    );
+
     await requestGenerationInterviewRound(
       generationInterview.context,
       generationInterview.session,
       generationInterview.values,
+      answerComments,
     );
   };
 
@@ -5173,6 +5270,9 @@ export const RalphFlowEditor = ({
     const taskId =
       generationInterview.taskId ??
       `generation-interview-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const answerComments = getTrimmedGenerationInterviewAnswerComments(
+      generationInterview.answerComments,
+    );
     const finalPrompt =
       generationInterview.finalPrompt ??
       createLocalGenerationInterviewPrompt(
@@ -5180,6 +5280,7 @@ export const RalphFlowEditor = ({
         generationInterview.session,
         generationInterview.fields,
         generationInterview.values,
+        answerComments,
       );
 
     setGenerationInterview((current) =>
@@ -7903,9 +8004,15 @@ export const RalphFlowEditor = ({
                         {state.fields.map((field) => {
                           const error = state.validationErrors[field.id];
                           const skipped = state.skippedFieldIds.includes(field.id);
+                          const answerComment =
+                            state.answerComments[field.id] ?? "";
+                          const commentOpen =
+                            state.expandedCommentFieldIds.includes(field.id);
+                          const hasComment =
+                            answerComment.trim().length > 0;
 
                           return (
-                            <label
+                            <div
                               key={field.id}
                               className={cn(
                                 "grid gap-3 rounded-lg border border-slate-700/70 bg-slate-900/70 p-4 text-sm text-slate-100 shadow-sm shadow-black/15",
@@ -7916,11 +8023,37 @@ export const RalphFlowEditor = ({
                                 <span className="min-w-0 font-semibold leading-5 text-slate-50">
                                   {field.label}
                                 </span>
-                                {skipped ? (
-                                  <span className="shrink-0 text-xs font-medium text-slate-500">
-                                    Skipped
-                                  </span>
-                                ) : null}
+                                <span className="flex shrink-0 items-center gap-1.5">
+                                  {skipped ? (
+                                    <span className="text-xs font-medium text-slate-500">
+                                      Skipped
+                                    </span>
+                                  ) : null}
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() =>
+                                          toggleGenerationInterviewComment(field.id)
+                                        }
+                                        aria-label={`${commentOpen ? "Hide" : "Add"} comment for ${field.label}`}
+                                        className={cn(
+                                          "h-7 w-7 rounded-md hover:bg-slate-800 hover:text-slate-100",
+                                          hasComment || commentOpen
+                                            ? "text-cyan-200"
+                                            : "text-slate-500",
+                                        )}
+                                      >
+                                        <MessageSquare className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {commentOpen ? "Hide comment" : "Add comment"}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </span>
                               </span>
                               {field.help ? (
                                 <p className="rounded-md border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs font-medium leading-5 text-cyan-50">
@@ -7932,6 +8065,20 @@ export const RalphFlowEditor = ({
                                 state.values[field.id] ?? getDefaultRalphInputValue(field),
                                 (value) => updateGenerationInterviewValue(field.id, value),
                               )}
+                              {commentOpen ? (
+                                <Textarea
+                                  value={answerComment}
+                                  aria-label={`Comment for ${field.label}`}
+                                  placeholder="Add extra context for this answer"
+                                  onChange={(event) =>
+                                    updateGenerationInterviewComment(
+                                      field.id,
+                                      event.target.value,
+                                    )
+                                  }
+                                  className="min-h-20 border-slate-700 bg-slate-950 text-sm text-slate-100"
+                                />
+                              ) : null}
                               <span className="flex min-w-0 items-start justify-between gap-3">
                                 {error ? (
                                   <span className="min-w-0 text-xs leading-5 text-rose-200">
@@ -7955,7 +8102,7 @@ export const RalphFlowEditor = ({
                                   </Button>
                                 ) : null}
                               </span>
-                            </label>
+                            </div>
                           );
                         })}
                       </div>

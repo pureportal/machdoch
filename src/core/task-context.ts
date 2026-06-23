@@ -119,6 +119,24 @@ const createMetadataMatchReason = (matchedTerms: string[]): string => {
   return `Matched instruction metadata: ${matchedTerms.join(", ")}`;
 };
 
+const createAlwaysInstructionReason = (
+  instruction: DiscoveredInstruction,
+): string => {
+  switch (instruction.scope) {
+    case "user":
+      return "Always-on user instruction.";
+    case "ralph-flow":
+      return "Always-on Ralph flow instruction.";
+    case "compatibility":
+      return "Always-on compatibility instruction.";
+    case "workspace":
+    case undefined:
+      return "Always-on workspace instruction.";
+    default:
+      return "Always-on workspace instruction.";
+  }
+};
+
 const createInstructionLookupKey = (value: string): string => {
   return value.trim().replace(/\\/gu, "/").toLowerCase();
 };
@@ -349,10 +367,7 @@ const findApplicableInstructions = (
         path: instruction.path,
         priority: instruction.priority ?? 0,
         body: instruction.body,
-        reason:
-          instruction.scope === "user"
-            ? "Always-on user instruction."
-            : "Always-on workspace instruction.",
+        reason: createAlwaysInstructionReason(instruction),
       });
       continue;
     }

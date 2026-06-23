@@ -41,7 +41,8 @@ export type SchedulerCliAction =
   | "trigger"
   | "retry"
   | "cancel"
-  | "sync-prompts";
+  | "sync-prompts"
+  | "service";
 
 export type RalphCliAction =
   | "list"
@@ -104,8 +105,19 @@ export interface SchedulerCliOptions {
   delayMs?: number;
   runAt?: number;
   timezone?: string;
+  schedulerTarget?: "prompt" | "ralph-flow";
   prompt?: string;
   promptFile?: string;
+  scheduledRalphFlow?: string;
+  scheduledRalphFlowScope?: "workspace" | "user";
+  scheduledRalphParams?: string[];
+  scheduledRalphRunLogScope?: "workspace" | "user";
+  scheduledRalphMaxTransitions?: number;
+  scheduledRalphAllowedRoots?: string[];
+  scheduledRalphAllowCommands?: boolean;
+  scheduledRalphAllowWrites?: boolean;
+  scheduledRalphAllowNetwork?: boolean;
+  scheduledRalphAllowMcpTools?: boolean;
   contextPacks?: string[];
   macros?: string[];
   missedRunPolicy?: string;
@@ -128,6 +140,14 @@ export interface SchedulerCliOptions {
   eventPayloadJson?: string;
   eventDedupeKey?: string;
   eventOccurredAt?: number;
+  servicePollMs?: number;
+  serviceIdleShutdownMs?: number;
+  serviceAbandonedRunStaleMs?: number;
+  serviceMaxIterations?: number;
+  serviceMaxRunsPerTick?: number;
+  serviceStartEventType?: string;
+  serviceStartEventKind?: string;
+  serviceStartEventDedupeKey?: string;
 }
 
 export interface RalphCliOptions {
@@ -169,6 +189,8 @@ export interface InstructionCliOptions {
   subject?: string;
   name?: string;
   scope?: InstructionCliScope;
+  ralphFlow?: string;
+  ralphFlowScope?: RalphCliScope;
   prompt?: string;
   promptFile?: string;
   path?: string;

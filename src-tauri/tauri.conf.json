@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "machdoch",
-  "version": "0.19.4",
+  "version": "0.20.0",
   "identifier": "com.machdoch.desktop",
   "build": {
     "beforeDevCommand": {
@@ -32,6 +32,10 @@
         "minHeight": 720,
         "center": true,
         "visible": false,
+        "preventOverflow": {
+          "width": 24,
+          "height": 24
+        },
         "resizable": true,
         "skipTaskbar": false,
         "decorations": false,
@@ -45,6 +49,8 @@
         "minWidth": 128,
         "minHeight": 104,
         "visible": false,
+        "focus": false,
+        "focusable": false,
         "resizable": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,

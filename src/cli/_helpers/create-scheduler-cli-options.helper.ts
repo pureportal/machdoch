@@ -29,8 +29,19 @@ export interface RawSchedulerCliOptions {
   rawSchedulerDelayMs?: string | undefined;
   rawSchedulerRunAt?: string | undefined;
   rawSchedulerTimezone?: string | undefined;
+  rawSchedulerTarget?: string | undefined;
   rawSchedulerPrompt?: string | undefined;
   rawSchedulerPromptFile?: string | undefined;
+  rawScheduledRalphFlow?: string | undefined;
+  rawScheduledRalphFlowScope?: string | undefined;
+  rawScheduledRalphParams?: string[] | undefined;
+  rawScheduledRalphRunLogScope?: string | undefined;
+  rawScheduledRalphMaxTransitions?: string | undefined;
+  rawScheduledRalphAllowedRoots?: string[] | undefined;
+  rawScheduledRalphAllowCommands?: string | undefined;
+  rawScheduledRalphAllowWrites?: string | undefined;
+  rawScheduledRalphAllowNetwork?: string | undefined;
+  rawScheduledRalphAllowMcpTools?: string | undefined;
   rawSchedulerContextPacks?: string[] | undefined;
   rawSchedulerMacros?: string[] | undefined;
   rawSchedulerMissedRunPolicy?: string | undefined;
@@ -53,6 +64,14 @@ export interface RawSchedulerCliOptions {
   rawSchedulerEventPayloadJson?: string | undefined;
   rawSchedulerEventDedupeKey?: string | undefined;
   rawSchedulerEventOccurredAt?: string | undefined;
+  rawSchedulerServicePollMs?: string | undefined;
+  rawSchedulerServiceIdleShutdownMs?: string | undefined;
+  rawSchedulerServiceAbandonedRunStaleMs?: string | undefined;
+  rawSchedulerServiceMaxIterations?: string | undefined;
+  rawSchedulerServiceMaxRunsPerTick?: string | undefined;
+  rawSchedulerServiceStartEventType?: string | undefined;
+  rawSchedulerServiceStartEventKind?: string | undefined;
+  rawSchedulerServiceStartEventDedupeKey?: string | undefined;
 }
 
 const assignPositiveInteger = (
@@ -87,8 +106,19 @@ export const createSchedulerCliOptions = ({
   rawSchedulerDelayMs,
   rawSchedulerRunAt,
   rawSchedulerTimezone,
+  rawSchedulerTarget,
   rawSchedulerPrompt,
   rawSchedulerPromptFile,
+  rawScheduledRalphFlow,
+  rawScheduledRalphFlowScope,
+  rawScheduledRalphParams,
+  rawScheduledRalphRunLogScope,
+  rawScheduledRalphMaxTransitions,
+  rawScheduledRalphAllowedRoots,
+  rawScheduledRalphAllowCommands,
+  rawScheduledRalphAllowWrites,
+  rawScheduledRalphAllowNetwork,
+  rawScheduledRalphAllowMcpTools,
   rawSchedulerContextPacks,
   rawSchedulerMacros,
   rawSchedulerMissedRunPolicy,
@@ -111,7 +141,24 @@ export const createSchedulerCliOptions = ({
   rawSchedulerEventPayloadJson,
   rawSchedulerEventDedupeKey,
   rawSchedulerEventOccurredAt,
+  rawSchedulerServicePollMs,
+  rawSchedulerServiceIdleShutdownMs,
+  rawSchedulerServiceAbandonedRunStaleMs,
+  rawSchedulerServiceMaxIterations,
+  rawSchedulerServiceMaxRunsPerTick,
+  rawSchedulerServiceStartEventType,
+  rawSchedulerServiceStartEventKind,
+  rawSchedulerServiceStartEventDedupeKey,
 }: RawSchedulerCliOptions): SchedulerCliOptions => {
+  const rawTarget = rawSchedulerTarget ?? (rawScheduledRalphFlow ? "ralph-flow" : "prompt");
+
+  if (rawTarget !== "prompt" && rawTarget !== "ralph-flow") {
+    fail("Expected --scheduler-target to be prompt or ralph-flow.");
+  }
+
+  const target: NonNullable<SchedulerCliOptions["schedulerTarget"]> =
+    rawTarget === "ralph-flow" ? "ralph-flow" : "prompt";
+
   if (action === "create") {
     const scheduleCount = [
       rawSchedulerCron,
@@ -132,8 +179,12 @@ export const createSchedulerCliOptions = ({
       );
     }
 
-    if (!rawSchedulerPrompt && !rawSchedulerPromptFile) {
+    if (target === "prompt" && !rawSchedulerPrompt && !rawSchedulerPromptFile) {
       fail("`machdoch scheduler create` expects --prompt or --prompt-file.");
+    }
+
+    if (target === "ralph-flow" && !rawScheduledRalphFlow) {
+      fail("`machdoch scheduler create --scheduler-target ralph-flow` expects --scheduled-ralph-flow.");
     }
   }
 
@@ -223,12 +274,85 @@ export const createSchedulerCliOptions = ({
     options.timezone = rawSchedulerTimezone;
   }
 
+  if (rawSchedulerTarget || target === "ralph-flow") {
+    options.schedulerTarget = target;
+  }
+
   if (rawSchedulerPrompt) {
     options.prompt = rawSchedulerPrompt;
   }
 
   if (rawSchedulerPromptFile) {
     options.promptFile = rawSchedulerPromptFile;
+  }
+
+  if (rawScheduledRalphFlow) {
+    options.scheduledRalphFlow = rawScheduledRalphFlow;
+  }
+
+  if (rawScheduledRalphFlowScope) {
+    if (
+      rawScheduledRalphFlowScope !== "workspace" &&
+      rawScheduledRalphFlowScope !== "user"
+    ) {
+      fail("Expected --scheduled-ralph-flow-scope to be workspace or user.");
+    }
+
+    options.scheduledRalphFlowScope = rawScheduledRalphFlowScope as "workspace" | "user";
+  }
+
+  if (rawScheduledRalphParams && rawScheduledRalphParams.length > 0) {
+    options.scheduledRalphParams = rawScheduledRalphParams;
+  }
+
+  if (rawScheduledRalphRunLogScope) {
+    if (
+      rawScheduledRalphRunLogScope !== "workspace" &&
+      rawScheduledRalphRunLogScope !== "user"
+    ) {
+      fail("Expected --scheduled-ralph-run-log-scope to be workspace or user.");
+    }
+
+    options.scheduledRalphRunLogScope = rawScheduledRalphRunLogScope as "workspace" | "user";
+  }
+
+  assignPositiveInteger(
+    options,
+    "scheduledRalphMaxTransitions",
+    rawScheduledRalphMaxTransitions,
+    "--scheduled-ralph-max-transitions",
+  );
+
+  if (rawScheduledRalphAllowedRoots && rawScheduledRalphAllowedRoots.length > 0) {
+    options.scheduledRalphAllowedRoots = rawScheduledRalphAllowedRoots;
+  }
+
+  if (rawScheduledRalphAllowCommands) {
+    options.scheduledRalphAllowCommands = parseBooleanToggle(
+      rawScheduledRalphAllowCommands,
+      "--scheduled-ralph-allow-commands",
+    );
+  }
+
+  if (rawScheduledRalphAllowWrites) {
+    options.scheduledRalphAllowWrites = parseBooleanToggle(
+      rawScheduledRalphAllowWrites,
+      "--scheduled-ralph-allow-writes",
+    );
+  }
+
+  if (rawScheduledRalphAllowNetwork) {
+    options.scheduledRalphAllowNetwork = parseBooleanToggle(
+      rawScheduledRalphAllowNetwork,
+      "--scheduled-ralph-allow-network",
+    );
+  }
+
+  if (rawScheduledRalphAllowMcpTools) {
+    options.scheduledRalphAllowMcpTools = parseBooleanToggle(
+      rawScheduledRalphAllowMcpTools,
+      "--scheduled-ralph-allow-mcp-tools",
+    );
   }
 
   if (rawSchedulerContextPacks && rawSchedulerContextPacks.length > 0) {
@@ -345,6 +469,49 @@ export const createSchedulerCliOptions = ({
     rawSchedulerEventOccurredAt,
     "--event-occurred-at",
   );
+
+  assignPositiveInteger(
+    options,
+    "servicePollMs",
+    rawSchedulerServicePollMs,
+    "--service-poll-ms",
+  );
+  assignPositiveInteger(
+    options,
+    "serviceIdleShutdownMs",
+    rawSchedulerServiceIdleShutdownMs,
+    "--service-idle-shutdown-ms",
+  );
+  assignPositiveInteger(
+    options,
+    "serviceAbandonedRunStaleMs",
+    rawSchedulerServiceAbandonedRunStaleMs,
+    "--service-abandoned-run-stale-ms",
+  );
+  assignPositiveInteger(
+    options,
+    "serviceMaxIterations",
+    rawSchedulerServiceMaxIterations,
+    "--service-max-iterations",
+  );
+  assignPositiveInteger(
+    options,
+    "serviceMaxRunsPerTick",
+    rawSchedulerServiceMaxRunsPerTick,
+    "--service-max-runs-per-tick",
+  );
+
+  if (rawSchedulerServiceStartEventType) {
+    options.serviceStartEventType = rawSchedulerServiceStartEventType;
+  }
+
+  if (rawSchedulerServiceStartEventKind) {
+    options.serviceStartEventKind = rawSchedulerServiceStartEventKind;
+  }
+
+  if (rawSchedulerServiceStartEventDedupeKey) {
+    options.serviceStartEventDedupeKey = rawSchedulerServiceStartEventDedupeKey;
+  }
 
   return options;
 };
