@@ -11,21 +11,47 @@ import type {
   RalphUtilityConditionStyle,
   RalphUtilityWaitMode,
 } from "../ralph.js";
+import { normalizeRalphScopeSelectionStrategy } from "./ralph-scope-registry.helper.js";
 
 export const RALPH_UTILITY_TYPES = [
   "WAIT",
   "HTTP_FETCH",
   "POLL",
+  "CONDITION",
   "RUN_COMMAND",
   "READ_FILE",
   "WRITE_FILE",
+  "READ_JSON",
+  "WRITE_JSON",
+  "PATCH_JSON",
+  "APPEND_JSONL",
+  "READ_JSONL",
+  "QUERY_JSONL",
+  "FILE_EXISTS",
+  "DELETE_FILE",
+  "MOVE_FILE",
+  "ARCHIVE_FILE",
+  "LOOP_COUNTER",
+  "PROMPT_JSON",
+  "VALIDATOR_JSON",
+  "SELECT_JSON_TASK",
+  "MARK_JSON_TASK",
+  "CHANGE_SCOPE_GUARD",
+  "SCAN_SCOPE_EVIDENCE",
+  "UPDATE_SCOPE_REGISTRY",
+  "SELECT_SCOPE",
+  "MARK_SCOPE_RESULT",
   "SEARCH_FILES",
   "RUN_CHECK",
   "UI_ANALYZE",
   "GIT_STATUS",
+  "GIT_SNAPSHOT",
+  "GIT_DIFF_SUMMARY",
+  "DETECT_PROJECT_COMMANDS",
   "SET_VARIABLE",
   "TRANSFORM_JSON",
   "VALIDATE_JSON",
+  "FINAL_REPORT",
   "NOTIFY",
 ] as const;
 
@@ -76,6 +102,20 @@ const coerceNumberArray = (value: unknown): number[] | undefined => {
   );
 
   return numbers.length > 0 ? numbers : undefined;
+};
+
+const coerceFiniteNumber = (value: unknown): number | undefined => {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  return undefined;
 };
 
 const coerceUtilityWaitMode = (
@@ -257,6 +297,12 @@ const coerceUtilityEncoding = (
     : undefined;
 };
 
+const coerceJsonPatchMode = (
+  value: unknown,
+): RalphUtilityConfig["jsonPatchMode"] | undefined => {
+  return value === "merge" || value === "replace" ? value : undefined;
+};
+
 const coerceFirstString = (...values: unknown[]): string | undefined => {
   for (const value of values) {
     if (typeof value === "string") {
@@ -288,6 +334,8 @@ export const coerceRalphUtilityConfig = (
   const headers = coerceStringRecord(record.headers);
   const env = coerceStringRecord(record.env);
   const acceptedExitCodes = coerceNumberArray(record.acceptedExitCodes);
+  const maxAttempts =
+    record.maxAttempts === null ? null : coerceFiniteNumber(record.maxAttempts);
   const encoding = coerceUtilityEncoding(record.encoding);
   const adapter = coerceUiAnalyzeAdapter(record.adapter);
   const server = coerceUiAnalyzeServer(record.server);
@@ -295,6 +343,7 @@ export const coerceRalphUtilityConfig = (
   const checks = coerceUiAnalyzeChecks(record.checks);
   const waitUntil = coerceUiAnalyzeWaitUntil(record.waitUntil);
   const mcpArguments = coerceRalphMcpArguments(record.mcpArguments);
+  const jsonPatchMode = coerceJsonPatchMode(record.jsonPatchMode);
   const rootPath = coerceFirstString(
     record.rootPath,
     record.root,
@@ -303,6 +352,7 @@ export const coerceRalphUtilityConfig = (
   );
   const pattern = coerceFirstString(record.pattern);
   const glob = coerceFirstString(record.glob, record.patterns, record.globs);
+  const strategy = normalizeRalphScopeSelectionStrategy(record.strategy);
 
   return {
     type,
@@ -317,8 +367,8 @@ export const coerceRalphUtilityConfig = (
     ...(typeof record.backoffMultiplier === "number"
       ? { backoffMultiplier: record.backoffMultiplier }
       : {}),
-    ...(typeof record.maxAttempts === "number" || record.maxAttempts === null
-      ? { maxAttempts: record.maxAttempts }
+    ...(maxAttempts !== undefined || maxAttempts === null
+      ? { maxAttempts }
       : {}),
     ...(condition ? { condition } : {}),
     ...(typeof record.url === "string" ? { url: record.url } : {}),
@@ -328,7 +378,14 @@ export const coerceRalphUtilityConfig = (
     ...(typeof record.outputPath === "string"
       ? { outputPath: record.outputPath }
       : {}),
+    ...(typeof record.markdownPath === "string"
+      ? { markdownPath: record.markdownPath }
+      : {}),
     ...(typeof record.path === "string" ? { path: record.path } : {}),
+    ...(typeof record.registryPath === "string"
+      ? { registryPath: record.registryPath }
+      : {}),
+    ...(typeof record.jsonPath === "string" ? { jsonPath: record.jsonPath } : {}),
     ...(rootPath ? { rootPath } : {}),
     ...(typeof record.content === "string" ? { content: record.content } : {}),
     ...(typeof record.append === "boolean" ? { append: record.append } : {}),
@@ -337,6 +394,32 @@ export const coerceRalphUtilityConfig = (
     ...(glob ? { glob } : {}),
     ...(typeof record.maxResults === "number"
       ? { maxResults: record.maxResults }
+      : {}),
+    ...(typeof record.maxDepth === "number"
+      ? { maxDepth: record.maxDepth }
+      : {}),
+    ...(typeof record.excludePaths === "string"
+      ? { excludePaths: record.excludePaths }
+      : {}),
+    ...(typeof record.flowAlias === "string"
+      ? { flowAlias: record.flowAlias }
+      : {}),
+    ...(strategy ? { strategy } : {}),
+    ...(typeof record.scopeId === "string" ? { scopeId: record.scopeId } : {}),
+    ...(typeof record.taskId === "string" ? { taskId: record.taskId } : {}),
+    ...(typeof record.status === "string" ? { status: record.status } : {}),
+    ...(typeof record.result === "string" ? { result: record.result } : {}),
+    ...(typeof record.includeMarkdown === "boolean"
+      ? { includeMarkdown: record.includeMarkdown }
+      : {}),
+    ...(typeof record.forceNew === "boolean" ? { forceNew: record.forceNew } : {}),
+    ...(typeof record.reset === "boolean" ? { reset: record.reset } : {}),
+    ...(jsonPatchMode ? { jsonPatchMode } : {}),
+    ...(typeof record.counterName === "string"
+      ? { counterName: record.counterName }
+      : {}),
+    ...(typeof record.counterKey === "string"
+      ? { counterKey: record.counterKey }
       : {}),
     ...(typeof record.command === "string" ? { command: record.command } : {}),
     ...(typeof record.cwd === "string" ? { cwd: record.cwd } : {}),
@@ -375,7 +458,11 @@ export const coerceRalphUtilityConfig = (
     ...(typeof record.expression === "string"
       ? { expression: record.expression }
       : {}),
+    ...(typeof record.prompt === "string" ? { prompt: record.prompt } : {}),
     ...(Object.hasOwn(record, "schema") ? { schema: record.schema } : {}),
+    ...(typeof record.structuredOutput === "boolean"
+      ? { structuredOutput: record.structuredOutput }
+      : {}),
     ...(typeof record.message === "string" ? { message: record.message } : {}),
     ...(typeof record.ignoreErrors === "boolean"
       ? { ignoreErrors: record.ignoreErrors }

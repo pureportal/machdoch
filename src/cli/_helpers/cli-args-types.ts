@@ -74,7 +74,10 @@ export type McpCliAction =
   | "oauth-finish"
   | "call-tool"
   | "read-resource"
-  | "get-prompt";
+  | "get-prompt"
+  | "usage"
+  | "lifecycle-hook"
+  | "cleanup";
 
 export type InstructionCliAction =
   | "list"
@@ -182,6 +185,11 @@ export interface McpCliOptions {
   target?: string;
   argumentsJson?: string;
   includeDisabled?: boolean;
+  agent?: string;
+  phase?: string;
+  unusedDays?: number;
+  neverUsedDays?: number;
+  apply?: boolean;
 }
 
 export interface InstructionCliOptions {

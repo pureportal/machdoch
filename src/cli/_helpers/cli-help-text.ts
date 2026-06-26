@@ -46,6 +46,9 @@ Usage:
   machdoch mcp call-tool <server-id> <tool-name> [--arguments-json <json>] [--json]
   machdoch mcp read-resource <server-id> <uri> [--json]
   machdoch mcp get-prompt <server-id> <prompt-name> [--arguments-json <json>] [--json]
+  machdoch mcp usage [--json]
+  machdoch mcp lifecycle-hook [--agent <provider>] [--phase <phase>] [--json]
+  machdoch mcp cleanup [--unused-days <n>] [--never-used-days <n>] [--apply] [--json]
   machdoch scheduler list [--json]
   machdoch scheduler create (--cron <expr>|--trigger <kind:event>) --prompt <text> [--timezone <iana>] [--json]
   machdoch scheduler create (--cron <expr>|--trigger <kind:event>) --scheduler-target ralph-flow --scheduled-ralph-flow <id> [--json]
@@ -168,6 +171,11 @@ Options:
   --trace                 Show the detailed JSONL trace for \`ralph log\`.
   --include-disabled      Include disabled preset and configured MCP servers in \`mcp servers\`.
   --arguments-json <json> JSON object arguments for \`mcp call-tool\` or \`mcp get-prompt\`.
+  --agent <provider>      MCP lifecycle hook source: codex-cli, claude-cli, copilot-cli, openai-api, or anthropic-api.
+  --phase <phase>         MCP lifecycle hook phase: invoked, cache-hit, remote-started, succeeded, or failed.
+  --unused-days <n>       Days since last managed MCP use before \`mcp cleanup\` marks it stale.
+  --never-used-days <n>   Days after creation before an unused managed MCP is stale.
+  --apply                 Apply a non-destructive \`mcp cleanup\` plan by marking stale candidates.
   --context-pack <json>   Add a scheduled context-pack snapshot as JSON. Repeat for multiple packs.
   --macro <name|prompt>   Add a saved macro reference or prompt invocation. Repeat for multiple macros.
   --missed-run-policy <skip|enqueue-latest|enqueue-all>

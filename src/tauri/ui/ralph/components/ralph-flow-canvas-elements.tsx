@@ -9,7 +9,7 @@ import {
   type NodeProps,
   type NodeTypes,
 } from "@xyflow/react";
-import { AlertTriangle, FileText, LayoutGrid } from "lucide-react";
+import { AlertTriangle, FileText, LayoutGrid, LockKeyhole } from "lucide-react";
 import type { JSX } from "react";
 
 import type { RalphAnnotationTone } from "../../../../core/ralph.js";
@@ -74,6 +74,41 @@ const RALPH_SELECTED_RESIZER_LINE_CLASS_NAME = "!border-cyan-100/90";
 const RALPH_SELECTED_RESIZER_HANDLE_CLASS_NAME =
   "!h-2.5 !w-2.5 !border-cyan-100 !bg-slate-950 !shadow-[0_0_12px_rgba(34,211,238,0.75)]";
 
+const RalphNodeLockBadge = ({
+  data,
+}: {
+  data: RalphNodeData;
+}): JSX.Element | null => {
+  const isDirectlyLocked = data.block.locked ?? false;
+
+  if (!isDirectlyLocked && !data.lockedByGroupId) {
+    return null;
+  }
+
+  const label = isDirectlyLocked
+    ? "Locked"
+    : `Locked by parent group ${data.lockedByGroupId}`;
+
+  return (
+    <div
+      role="img"
+      aria-label={label}
+      title={label}
+      className={cn(
+        "pointer-events-none absolute top-2 right-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border shadow-lg shadow-black/35",
+        isDirectlyLocked
+          ? "border-cyan-200/70 bg-cyan-950/90 text-cyan-100"
+          : "border-dashed border-amber-200/65 bg-slate-950/90 text-amber-100",
+      )}
+    >
+      <LockKeyhole className="h-3.5 w-3.5" />
+      {!isDirectlyLocked ? (
+        <LayoutGrid className="absolute -right-1 -bottom-1 h-3 w-3 rounded-full border border-slate-950 bg-slate-950 p-0.5 text-amber-200" />
+      ) : null}
+    </div>
+  );
+};
+
 const RalphNoteNode = ({
   data,
   selected,
@@ -97,15 +132,29 @@ const RalphNoteNode = ({
         isSelected && RALPH_SELECTED_NODE_CLASS_NAME,
       )}
     >
+      <RalphNodeLockBadge data={data} />
       <NodeResizer
-        isVisible={isSelected}
+        isVisible={isSelected && !block.locked && !data.lockedByGroupId}
         minWidth={RALPH_NOTE_MIN_SIZE.width}
         minHeight={RALPH_NOTE_MIN_SIZE.height}
         lineClassName={RALPH_SELECTED_RESIZER_LINE_CLASS_NAME}
         handleClassName={RALPH_SELECTED_RESIZER_HANDLE_CLASS_NAME}
+        onResizeEnd={(_, params) => {
+          data.onResizeEnd?.(
+            block.id,
+            {
+              width: Math.round(params.width),
+              height: Math.round(params.height),
+            },
+            {
+              x: Math.round(params.x),
+              y: Math.round(params.y),
+            },
+          );
+        }}
       />
       <div className={cn("h-1 shrink-0", getAnnotationAccentClassName(block.tone))} />
-      <div className="flex min-w-0 items-center justify-between gap-2 px-3 py-2">
+      <div className="flex min-w-0 items-center justify-between gap-2 px-3 py-2 pr-10">
         <div className="flex min-w-0 items-center gap-2">
           <FileText className="h-3.5 w-3.5 shrink-0 text-white/70" />
           <span className="truncate text-xs font-semibold">{block.title}</span>
@@ -164,15 +213,29 @@ const RalphGroupNode = ({
         isSelected && RALPH_SELECTED_NODE_CLASS_NAME,
       )}
     >
+      <RalphNodeLockBadge data={data} />
       <NodeResizer
-        isVisible={isSelected && !block.locked}
+        isVisible={isSelected && !block.locked && !data.lockedByGroupId}
         minWidth={RALPH_GROUP_MIN_SIZE.width}
         minHeight={block.collapsed ? RALPH_GROUP_COLLAPSED_HEIGHT : RALPH_GROUP_MIN_SIZE.height}
         lineClassName={RALPH_SELECTED_RESIZER_LINE_CLASS_NAME}
         handleClassName={RALPH_SELECTED_RESIZER_HANDLE_CLASS_NAME}
+        onResizeEnd={(_, params) => {
+          data.onResizeEnd?.(
+            block.id,
+            {
+              width: Math.round(params.width),
+              height: Math.round(params.height),
+            },
+            {
+              x: Math.round(params.x),
+              y: Math.round(params.y),
+            },
+          );
+        }}
       />
       <div className={cn("absolute inset-y-0 left-0 w-1 rounded-l-lg", getAnnotationAccentClassName(block.tone))} />
-      <div className="flex min-w-0 items-center justify-between gap-3 rounded-t-lg border-b border-white/10 bg-black/20 px-3 py-2">
+      <div className="flex min-w-0 items-center justify-between gap-3 rounded-t-lg border-b border-white/10 bg-black/20 px-3 py-2 pr-10">
         <div className="flex min-w-0 items-center gap-2">
           <LayoutGrid className="h-3.5 w-3.5 shrink-0 text-white/65" />
           <span className="truncate text-xs font-semibold">{block.title}</span>
@@ -212,7 +275,7 @@ const RalphBlockNode = ({
   return (
     <div
       className={cn(
-        "rounded-lg border px-3 py-3 shadow-lg shadow-black/25",
+        "relative rounded-lg border px-3 py-3 shadow-lg shadow-black/25",
         data.block.type === "UTILITY" ? "w-72" : "w-64",
         visual.nodeClassName,
         data.active &&
@@ -220,13 +283,14 @@ const RalphBlockNode = ({
         isSelected && RALPH_SELECTED_NODE_CLASS_NAME,
       )}
     >
+      <RalphNodeLockBadge data={data} />
       <Handle
         type="target"
         position={Position.Left}
         className="!h-2.5 !w-2.5 !border-slate-950 !bg-slate-300"
         style={{ left: 0, transform: "translateY(-50%)" }}
       />
-      <div className="flex min-w-0 items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center justify-between gap-3 pr-8">
         <div className="flex min-w-0 items-center gap-2">
           <Icon className={cn("h-4 w-4 shrink-0", visual.badgeClassName)} />
           <span className="truncate text-sm font-semibold">{data.block.title}</span>

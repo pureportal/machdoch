@@ -5,12 +5,19 @@ import type {
   RalphFlow,
   RalphFlowBlock,
   RalphPosition,
+  RalphSize,
 } from "../../../../core/ralph.js";
 import type { LocalIssue } from "./validate-flow-locally.helper";
 import {
   getBlockOutputs,
   isVisualRalphCanvasBlock,
 } from "./get-block-outputs.helper";
+
+export type RalphNodeResizeEndHandler = (
+  blockId: string,
+  size: RalphSize,
+  position: RalphPosition,
+) => void;
 
 export interface RalphNodeData {
   block: RalphFlowBlock;
@@ -20,6 +27,8 @@ export interface RalphNodeData {
   selected: boolean;
   derivedChildIds: string[];
   hiddenByCollapsedGroup: boolean;
+  lockedByGroupId: string | null;
+  onResizeEnd?: RalphNodeResizeEndHandler;
 }
 
 export type RalphCanvasNode = Node<RalphNodeData, "ralphBlock">;
@@ -45,6 +54,7 @@ export const RALPH_GROUP_COLLAPSED_HEIGHT = 72;
 export const RALPH_CANVAS_X_GAP = 420;
 export const RALPH_CANVAS_Y_GAP = 160;
 export const RALPH_BLOCK_FALLBACK_HEIGHT = 150;
+export const RALPH_CANVAS_STACK_OFFSET = 28;
 
 const RALPH_CANVAS_COLUMNS = 2;
 const RALPH_CANVAS_X_START = 80;
@@ -52,6 +62,7 @@ const RALPH_CANVAS_Y_START = 120;
 const RALPH_STANDARD_BLOCK_WIDTH = 256;
 const RALPH_UTILITY_BLOCK_WIDTH = 288;
 const RALPH_CLEAN_LAYOUT_RESERVED_GAP = 96;
+const RALPH_CANVAS_MAX_STACK_ATTEMPTS = 1000;
 
 export const getDefaultCanvasPosition = (
   index: number,
@@ -91,6 +102,63 @@ export const getCanvasBlockPosition = (
   block: RalphFlowBlock,
   index: number,
 ): RalphPosition => block.position ?? getDefaultCanvasPosition(index);
+
+const getRoundedCanvasPosition = (position: RalphPosition): RalphPosition => ({
+  x: Math.round(position.x),
+  y: Math.round(position.y),
+});
+
+const getCanvasPositionKey = (position: RalphPosition): string => {
+  const rounded = getRoundedCanvasPosition(position);
+
+  return `${rounded.x}:${rounded.y}`;
+};
+
+export const getDisplacedCanvasPosition = (
+  flow: RalphFlow,
+  position: RalphPosition,
+  options: {
+    ignoredBlockIds?: ReadonlySet<string>;
+    reservedPositions?: Iterable<RalphPosition>;
+    offset?: number;
+  } = {},
+): RalphPosition => {
+  const occupiedPositions = new Set<string>();
+  const ignoredBlockIds = options.ignoredBlockIds ?? new Set<string>();
+  const displacement =
+    typeof options.offset === "number" &&
+    Number.isFinite(options.offset) &&
+    options.offset > 0
+      ? options.offset
+      : RALPH_CANVAS_STACK_OFFSET;
+
+  for (const [index, block] of flow.blocks.entries()) {
+    if (ignoredBlockIds.has(block.id)) {
+      continue;
+    }
+
+    occupiedPositions.add(getCanvasPositionKey(getCanvasBlockPosition(block, index)));
+  }
+
+  for (const reservedPosition of options.reservedPositions ?? []) {
+    occupiedPositions.add(getCanvasPositionKey(reservedPosition));
+  }
+
+  let candidate = getRoundedCanvasPosition(position);
+
+  for (let attempt = 0; attempt < RALPH_CANVAS_MAX_STACK_ATTEMPTS; attempt += 1) {
+    if (!occupiedPositions.has(getCanvasPositionKey(candidate))) {
+      return candidate;
+    }
+
+    candidate = {
+      x: candidate.x + displacement,
+      y: candidate.y + displacement,
+    };
+  }
+
+  return candidate;
+};
 
 export const getCanvasBlockBounds = (
   block: RalphFlowBlock,
@@ -321,6 +389,67 @@ export const collectCollapsedGroupHiddenBlockIds = (
   return hiddenBlockIds;
 };
 
+export const createLockedParentGroupIdByBlockId = (
+  flow: RalphFlow,
+): Map<string, string> => {
+  const childrenByGroupId = createDerivedGroupChildrenById(flow);
+  const blocksById = new Map(flow.blocks.map((block) => [block.id, block]));
+  const lockedParentGroupIdByBlockId = new Map<string, string>();
+
+  const visitGroup = (
+    groupId: string,
+    inheritedLockedGroupId: string | null,
+    visitingGroupIds: ReadonlySet<string>,
+  ): void => {
+    if (visitingGroupIds.has(groupId)) {
+      return;
+    }
+
+    const group = blocksById.get(groupId);
+
+    if (group?.type !== "GROUP") {
+      return;
+    }
+
+    const nextVisitingGroupIds = new Set(visitingGroupIds);
+    nextVisitingGroupIds.add(groupId);
+    const lockedGroupId = group.locked ? group.id : inheritedLockedGroupId;
+
+    for (const childId of childrenByGroupId.get(group.id) ?? []) {
+      if (lockedGroupId && !lockedParentGroupIdByBlockId.has(childId)) {
+        lockedParentGroupIdByBlockId.set(childId, lockedGroupId);
+      }
+
+      const child = blocksById.get(childId);
+
+      if (child?.type === "GROUP") {
+        visitGroup(child.id, lockedGroupId, nextVisitingGroupIds);
+      }
+    }
+  };
+
+  for (const block of flow.blocks) {
+    if (block.type === "GROUP") {
+      visitGroup(block.id, null, new Set<string>());
+    }
+  }
+
+  return lockedParentGroupIdByBlockId;
+};
+
+export const createLockedCanvasBlockIdSet = (flow: RalphFlow): Set<string> => {
+  const lockedParentGroupIdByBlockId = createLockedParentGroupIdByBlockId(flow);
+  const lockedBlockIds = new Set(lockedParentGroupIdByBlockId.keys());
+
+  for (const block of flow.blocks) {
+    if (block.locked) {
+      lockedBlockIds.add(block.id);
+    }
+  }
+
+  return lockedBlockIds;
+};
+
 export const normalizeDerivedGroupMembership = (flow: RalphFlow): RalphFlow => {
   const childrenByGroupId = createDerivedGroupChildrenById(flow);
   let changed = false;
@@ -344,6 +473,7 @@ export const normalizeDerivedGroupMembership = (flow: RalphFlow): RalphFlow => {
 
 export const forceRalphFlowLayout = (flow: RalphFlow): RalphFlow => {
   const flowWithDerivedGroups = normalizeDerivedGroupMembership(flow);
+  const lockedBlockIds = createLockedCanvasBlockIdSet(flowWithDerivedGroups);
   const childIdsByGroupId = new Map<string, string[]>();
 
   for (const block of flowWithDerivedGroups.blocks) {
@@ -377,6 +507,7 @@ export const forceRalphFlowLayout = (flow: RalphFlow): RalphFlow => {
         (block) =>
           block.type !== "NOTE" &&
           block.type !== "GROUP" &&
+          !lockedBlockIds.has(block.id) &&
           !groupedBlockIds.has(block.id),
       )
       .map((block) => block.id),
@@ -426,12 +557,14 @@ export const flowToNodes = (
   issues: LocalIssue[],
   selectedBlockId: string | null,
   activeBlockId: string | null,
+  onNodeResizeEnd?: RalphNodeResizeEndHandler,
 ): RalphCanvasNode[] => {
   const childrenByGroupId = createDerivedGroupChildrenById(flow);
   const hiddenBlockIds = collectCollapsedGroupHiddenBlockIds(
     flow,
     childrenByGroupId,
   );
+  const lockedParentGroupIdByBlockId = createLockedParentGroupIdByBlockId(flow);
 
   return flow.blocks.map((block, index) => {
     const size = block.size;
@@ -440,6 +573,8 @@ export const flowToNodes = (
       size && isCollapsedGroup
         ? { width: size.width, height: RALPH_GROUP_COLLAPSED_HEIGHT }
         : size;
+    const lockedByGroupId = lockedParentGroupIdByBlockId.get(block.id) ?? null;
+    const isLocked = Boolean(block.locked || lockedByGroupId);
 
     return {
       id: block.id,
@@ -449,7 +584,7 @@ export const flowToNodes = (
         ? { style: { width: renderSize.width, height: renderSize.height } }
         : {}),
       ...(block.type === "GROUP" ? { zIndex: -1 } : {}),
-      ...(block.type === "GROUP" && block.locked ? { draggable: false } : {}),
+      ...(isLocked ? { draggable: false } : {}),
       ...(hiddenBlockIds.has(block.id) ? { hidden: true } : {}),
       data: {
         block,
@@ -459,6 +594,8 @@ export const flowToNodes = (
         selected: block.id === selectedBlockId,
         derivedChildIds: childrenByGroupId.get(block.id) ?? [],
         hiddenByCollapsedGroup: hiddenBlockIds.has(block.id),
+        lockedByGroupId,
+        ...(onNodeResizeEnd ? { onResizeEnd: onNodeResizeEnd } : {}),
       },
     };
   });

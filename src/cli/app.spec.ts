@@ -464,6 +464,58 @@ describe("parseCliArgs", () => {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toThrow("--include-disabled is only valid for `machdoch mcp servers`.");
+
+    expect(
+      parseCliArgs(
+        [
+          "mcp",
+          "lifecycle-hook",
+          "--agent",
+          "claude-cli",
+          "--phase",
+          "succeeded",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "mcp",
+      mcp: {
+        action: "lifecycle-hook",
+        agent: "claude-cli",
+        phase: "succeeded",
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
+      parseCliArgs(
+        ["mcp", "cleanup", "--unused-days", "45", "--never-used-days", "7", "--apply"],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "mcp",
+      mcp: {
+        action: "cleanup",
+        unusedDays: 45,
+        neverUsedDays: 7,
+        apply: true,
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(() =>
+      parseCliArgs(["mcp", "usage", "--apply"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("--apply is only valid for `machdoch mcp cleanup`.");
   });
 
   it("parses instruction management commands", () => {

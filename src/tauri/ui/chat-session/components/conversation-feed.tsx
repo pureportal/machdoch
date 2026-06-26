@@ -1,5 +1,7 @@
 import {
   Bot,
+  Copy,
+  Download,
   Play,
   RotateCcw,
   Save,
@@ -8,7 +10,14 @@ import {
   Volume2,
   WandSparkles,
 } from "lucide-react";
-import type { JSX, RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type JSX,
+  type MouseEvent,
+  type RefObject,
+} from "react";
 import type {
   ChatSessionContextAttachment,
   ChatSessionMessage,
@@ -49,6 +58,17 @@ export interface ConversationFeedProps {
 }
 
 const RECOVERED_TASK_CRASH_PREFIX = "**Task crashed.**";
+const MESSAGE_CONTEXT_MENU_WIDTH = 196;
+const MESSAGE_CONTEXT_MENU_HEIGHT = 108;
+const MESSAGE_CONTEXT_MENU_MARGIN = 8;
+
+interface MessageContextMenuState {
+  role: ChatSessionMessage["role"];
+  content: string;
+  fileName: string;
+  left: number;
+  top: number;
+}
 
 const isRecoveredTaskCrashMessage = (message: ChatSessionMessage): boolean => {
   return (
@@ -56,6 +76,95 @@ const isRecoveredTaskCrashMessage = (message: ChatSessionMessage): boolean => {
     !message.source &&
     message.content.startsWith(RECOVERED_TASK_CRASH_PREFIX)
   );
+};
+
+const clampMenuCoordinate = (
+  coordinate: number,
+  menuSize: number,
+  viewportSize: number,
+): number => {
+  const maxCoordinate = Math.max(
+    MESSAGE_CONTEXT_MENU_MARGIN,
+    viewportSize - menuSize - MESSAGE_CONTEXT_MENU_MARGIN,
+  );
+
+  return Math.min(Math.max(coordinate, MESSAGE_CONTEXT_MENU_MARGIN), maxCoordinate);
+};
+
+const createMessageContextMenuPosition = (
+  event: MouseEvent<HTMLElement>,
+): { left: number; top: number } => {
+  if (typeof window === "undefined") {
+    return {
+      left: event.clientX,
+      top: event.clientY,
+    };
+  }
+
+  return {
+    left: clampMenuCoordinate(
+      event.clientX,
+      MESSAGE_CONTEXT_MENU_WIDTH,
+      window.innerWidth,
+    ),
+    top: clampMenuCoordinate(
+      event.clientY,
+      MESSAGE_CONTEXT_MENU_HEIGHT,
+      window.innerHeight,
+    ),
+  };
+};
+
+const sanitizeMessageFileNamePart = (value: string): string => {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+};
+
+const createMessageMarkdownFileName = (message: ChatSessionMessage): string => {
+  const roleLabel = message.role === "agent" ? "assistant" : "user";
+  const createdAtLabel =
+    typeof message.createdAt === "number" && Number.isFinite(message.createdAt)
+      ? new Date(message.createdAt).toISOString().replace(/[:.]/g, "-")
+      : null;
+  const fallbackLabel = sanitizeMessageFileNamePart(message.id) || "message";
+
+  return `machdoch-${roleLabel}-message-${createdAtLabel ?? fallbackLabel}.md`;
+};
+
+const copyMarkdownToClipboard = async (content: string): Promise<void> => {
+  if (!navigator.clipboard?.writeText) {
+    throw new Error("Clipboard write access is unavailable.");
+  }
+
+  await navigator.clipboard.writeText(content);
+};
+
+const saveMarkdownDownload = (content: string, fileName: string): void => {
+  if (typeof document === "undefined") {
+    throw new Error("Document downloads are unavailable.");
+  }
+
+  const blob = new Blob([content], {
+    type: "text/markdown;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  try {
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.rel = "noopener";
+    anchor.style.display = "none";
+    document.body.append(anchor);
+    anchor.click();
+  } finally {
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
 };
 
 export const ConversationFeed = ({
@@ -69,6 +178,94 @@ export const ConversationFeed = ({
   onOpenAttachment,
   voicePlayback,
 }: ConversationFeedProps): JSX.Element => {
+  const [messageContextMenu, setMessageContextMenu] =
+    useState<MessageContextMenuState | null>(null);
+
+  useEffect(() => {
+    if (!messageContextMenu) {
+      return;
+    }
+
+    const closeMessageContextMenu = (): void => {
+      setMessageContextMenu(null);
+    };
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        closeMessageContextMenu();
+      }
+    };
+
+    document.addEventListener("pointerdown", closeMessageContextMenu);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", closeMessageContextMenu);
+    window.addEventListener("scroll", closeMessageContextMenu, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", closeMessageContextMenu);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", closeMessageContextMenu);
+      window.removeEventListener("scroll", closeMessageContextMenu, true);
+    };
+  }, [messageContextMenu]);
+
+  const openMessageContextMenu = useCallback(
+    (
+      event: MouseEvent<HTMLDivElement>,
+      message: ChatSessionMessage,
+      content: string,
+    ): void => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (content.length === 0) {
+        setMessageContextMenu(null);
+        return;
+      }
+
+      const position = createMessageContextMenuPosition(event);
+
+      setMessageContextMenu({
+        role: message.role,
+        content,
+        fileName: createMessageMarkdownFileName(message),
+        ...position,
+      });
+    },
+    [],
+  );
+
+  const copyMessageMarkdown = useCallback(async (): Promise<void> => {
+    const activeMenu = messageContextMenu;
+
+    if (!activeMenu) {
+      return;
+    }
+
+    setMessageContextMenu(null);
+
+    try {
+      await copyMarkdownToClipboard(activeMenu.content);
+    } catch (error) {
+      console.error("Failed to copy message Markdown:", error);
+    }
+  }, [messageContextMenu]);
+
+  const saveMessageMarkdown = useCallback((): void => {
+    const activeMenu = messageContextMenu;
+
+    if (!activeMenu) {
+      return;
+    }
+
+    setMessageContextMenu(null);
+
+    try {
+      saveMarkdownDownload(activeMenu.content, activeMenu.fileName);
+    } catch (error) {
+      console.error("Failed to save message Markdown:", error);
+    }
+  }, [messageContextMenu]);
+
   if (visibleMessages.length === 0) {
     return (
       <div className="app-conversation-empty mx-auto flex min-h-full max-w-2xl flex-col items-center justify-center py-16">
@@ -185,6 +382,9 @@ export const ConversationFeed = ({
                       canSaveMessageAsContextPack &&
                         "app-user-message-bubble-with-action pr-12",
                     )}
+                    onContextMenu={(event) =>
+                      openMessageContextMenu(event, message, renderedContent)
+                    }
                   >
                     {canSaveMessageAsContextPack ? (
                       <Button
@@ -295,6 +495,48 @@ export const ConversationFeed = ({
           </div>
         );
       })}
+      {messageContextMenu ? (
+        <div
+          role="menu"
+          aria-label="Message actions"
+          className="app-message-context-menu fixed z-[140] w-[196px] rounded-lg border border-slate-700 bg-slate-950 p-1.5 text-slate-100 shadow-2xl shadow-black/45"
+          style={{
+            left: messageContextMenu.left,
+            top: messageContextMenu.top,
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        >
+          <div className="min-w-0 px-2 pb-1 pt-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <span className="block truncate">
+              {messageContextMenu.role === "agent" ? "Assistant" : "User"} message
+            </span>
+          </div>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => void copyMessageMarkdown()}
+            className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
+          >
+            <Copy className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+            <span className="min-w-0 flex-1 truncate">Copy Markdown</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={saveMessageMarkdown}
+            className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
+          >
+            <Download className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+            <span className="min-w-0 flex-1 truncate">Save Message</span>
+          </button>
+        </div>
+      ) : null}
       <div ref={bottomRef} className="h-2 shrink-0" />
     </div>
   );

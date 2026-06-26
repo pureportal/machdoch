@@ -9,6 +9,7 @@ import {
   OpenAIResponsesAdapter,
   createOpenAIReasoningConfig,
   createOpenAIResponseToolSelection,
+  createOpenAIStructuredOutputTextConfig,
   createOpenAIUserInput,
 } from "./openai-adapter.js";
 
@@ -74,6 +75,33 @@ describe("OpenAI Responses conformance", () => {
         ],
       },
     ]);
+  });
+
+  it("serializes structured output requests for the Responses API", () => {
+    expect(
+      createOpenAIStructuredOutputTextConfig({
+        name: "Ralph Prompt JSON!",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: { decision: { type: "string" } },
+          required: ["decision"],
+        },
+      }),
+    ).toEqual({
+      text: {
+        format: {
+          type: "json_schema",
+          name: "Ralph_Prompt_JSON",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: { decision: { type: "string" } },
+            required: ["decision"],
+          },
+        },
+      },
+    });
   });
 
   it("sends start and continuation turns using Responses request ids", async () => {

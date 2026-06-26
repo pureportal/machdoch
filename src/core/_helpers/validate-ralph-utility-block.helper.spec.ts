@@ -43,10 +43,34 @@ describe("validateRalphUtilityBlock", () => {
         url: "https://example.com/status",
         condition: { style: "json-path", path: "$.ready", operator: "truthy" },
       },
+      {
+        type: "CONDITION",
+        condition: { style: "json-path", path: "$.ready", operator: "truthy" },
+      },
       { type: "RUN_COMMAND", command: "pnpm test" },
       { type: "RUN_CHECK", command: "pnpm typecheck" },
       { type: "READ_FILE", path: "src/core/ralph.ts" },
       { type: "WRITE_FILE", path: "tmp/result.txt", content: "" },
+      { type: "READ_JSON", path: "tmp/state.json" },
+      { type: "WRITE_JSON", path: "tmp/state.json" },
+      { type: "PATCH_JSON", path: "tmp/state.json", jsonPatchMode: "merge" },
+      { type: "APPEND_JSONL", path: "tmp/events.jsonl" },
+      { type: "READ_JSONL", path: "tmp/events.jsonl" },
+      { type: "QUERY_JSONL", path: "tmp/events.jsonl" },
+      { type: "FILE_EXISTS", path: "src/core/ralph.ts" },
+      { type: "DELETE_FILE", path: "tmp/result.txt" },
+      { type: "MOVE_FILE", path: "tmp/result.txt", outputPath: "tmp/archive/result.txt" },
+      { type: "ARCHIVE_FILE", path: "tmp/result.txt" },
+      { type: "LOOP_COUNTER", maxAttempts: 10 },
+      { type: "PROMPT_JSON", prompt: "Return JSON.", schema: null },
+      { type: "VALIDATOR_JSON", prompt: "Return decision JSON." },
+      { type: "SELECT_JSON_TASK", path: "tmp/tasks.json" },
+      { type: "MARK_JSON_TASK", path: "tmp/tasks.json" },
+      { type: "CHANGE_SCOPE_GUARD" },
+      { type: "SCAN_SCOPE_EVIDENCE", rootPath: "." },
+      { type: "UPDATE_SCOPE_REGISTRY", flowAlias: "security-review-fix-loop" },
+      { type: "SELECT_SCOPE", strategy: "round-robin" },
+      { type: "MARK_SCOPE_RESULT" },
       { type: "SEARCH_FILES", glob: "**/*.ts" },
       {
         type: "UI_ANALYZE",
@@ -62,6 +86,10 @@ describe("validateRalphUtilityBlock", () => {
       { type: "TRANSFORM_JSON", expression: "input" },
       { type: "VALIDATE_JSON", schema: null },
       { type: "GIT_STATUS" },
+      { type: "GIT_SNAPSHOT" },
+      { type: "GIT_DIFF_SUMMARY" },
+      { type: "DETECT_PROJECT_COMMANDS" },
+      { type: "FINAL_REPORT" },
       { type: "NOTIFY" },
     ];
 
@@ -95,6 +123,10 @@ describe("validateRalphUtilityBlock", () => {
         ],
       },
       {
+        utility: { type: "CONDITION" },
+        expectedCodes: ["utility-condition-required"],
+      },
+      {
         utility: { type: "RUN_COMMAND", command: " " },
         expectedCodes: ["utility-command-required"],
       },
@@ -104,6 +136,58 @@ describe("validateRalphUtilityBlock", () => {
           "utility-path-required",
           "utility-content-required",
         ],
+      },
+      {
+        utility: { type: "FILE_EXISTS", path: "" },
+        expectedCodes: ["utility-path-required"],
+      },
+      {
+        utility: { type: "DELETE_FILE", path: "" },
+        expectedCodes: ["utility-path-required"],
+      },
+      {
+        utility: { type: "READ_JSON", path: "" },
+        expectedCodes: ["utility-path-required"],
+      },
+      {
+        utility: { type: "WRITE_JSON", path: "" },
+        expectedCodes: ["utility-path-required"],
+      },
+      {
+        utility: { type: "PATCH_JSON", path: "" },
+        expectedCodes: ["utility-path-required"],
+      },
+      {
+        utility: { type: "APPEND_JSONL", path: "" },
+        expectedCodes: ["utility-path-required"],
+      },
+      {
+        utility: { type: "READ_JSONL", path: "" },
+        expectedCodes: ["utility-path-required"],
+      },
+      {
+        utility: { type: "QUERY_JSONL", path: "" },
+        expectedCodes: ["utility-path-required"],
+      },
+      {
+        utility: { type: "SELECT_JSON_TASK", path: "" },
+        expectedCodes: ["utility-path-required"],
+      },
+      {
+        utility: { type: "MARK_JSON_TASK", path: "" },
+        expectedCodes: ["utility-path-required"],
+      },
+      {
+        utility: { type: "MOVE_FILE", path: "a.txt" },
+        expectedCodes: ["utility-output-path-required"],
+      },
+      {
+        utility: { type: "PROMPT_JSON" },
+        expectedCodes: ["utility-prompt-required"],
+      },
+      {
+        utility: { type: "VALIDATOR_JSON" },
+        expectedCodes: ["utility-prompt-required"],
       },
       {
         utility: { type: "SEARCH_FILES" },

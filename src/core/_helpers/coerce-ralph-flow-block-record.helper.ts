@@ -361,6 +361,10 @@ export const coerceRalphFlowBlockRecord = (
     base.size = size;
   }
 
+  if (typeof record.locked === "boolean") {
+    base.locked = record.locked;
+  }
+
   if (parentGroupId) {
     base.parentGroupId = parentGroupId;
   }
@@ -518,7 +522,6 @@ export const coerceRalphFlowBlockRecord = (
         ...(typeof record.collapsed === "boolean"
           ? { collapsed: record.collapsed }
           : {}),
-        ...(typeof record.locked === "boolean" ? { locked: record.locked } : {}),
         ...(typeof record.moveChildren === "boolean"
           ? { moveChildren: record.moveChildren }
           : {}),

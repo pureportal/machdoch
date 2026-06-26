@@ -18,6 +18,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Terminal,
+  Trash2,
   Variable,
   Wrench,
   type LucideIcon,
@@ -165,6 +166,14 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
         miniMapColor: "#22d3ee",
         badgeLabel: "POLL",
       };
+    case "CONDITION":
+      return {
+        icon: GitBranch,
+        nodeClassName: "border-fuchsia-400/60 bg-fuchsia-950 text-fuchsia-50",
+        badgeClassName: "text-fuchsia-200",
+        miniMapColor: "#e879f9",
+        badgeLabel: "CONDITION",
+      };
     case "RUN_COMMAND":
       return {
         icon: Terminal,
@@ -188,6 +197,143 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
         badgeClassName: "text-orange-200",
         miniMapColor: "#fb923c",
         badgeLabel: "WRITE",
+      };
+    case "READ_JSON":
+      return {
+        icon: FileJson,
+        nodeClassName: "border-cyan-400/60 bg-cyan-950 text-cyan-50",
+        badgeClassName: "text-cyan-200",
+        miniMapColor: "#22d3ee",
+        badgeLabel: "READ JSON",
+      };
+    case "READ_JSONL":
+    case "QUERY_JSONL":
+      return {
+        icon: FileJson,
+        nodeClassName: "border-cyan-400/60 bg-cyan-950 text-cyan-50",
+        badgeClassName: "text-cyan-200",
+        miniMapColor: "#22d3ee",
+        badgeLabel: type === "QUERY_JSONL" ? "QUERY JSONL" : "READ JSONL",
+      };
+    case "WRITE_JSON":
+    case "PATCH_JSON":
+    case "APPEND_JSONL":
+      return {
+        icon: FileJson,
+        nodeClassName: "border-emerald-400/60 bg-emerald-950 text-emerald-50",
+        badgeClassName: "text-emerald-200",
+        miniMapColor: "#34d399",
+        badgeLabel:
+          type === "PATCH_JSON"
+            ? "PATCH JSON"
+            : type === "APPEND_JSONL"
+              ? "JSONL"
+              : "WRITE JSON",
+      };
+    case "FILE_EXISTS":
+      return {
+        icon: FileText,
+        nodeClassName: "border-indigo-400/60 bg-indigo-950 text-indigo-50",
+        badgeClassName: "text-indigo-200",
+        miniMapColor: "#818cf8",
+        badgeLabel: "EXISTS",
+      };
+    case "DELETE_FILE":
+      return {
+        icon: Trash2,
+        nodeClassName: "border-red-400/60 bg-red-950 text-red-50",
+        badgeClassName: "text-red-200",
+        miniMapColor: "#f87171",
+        badgeLabel: "DELETE",
+      };
+    case "MOVE_FILE":
+    case "ARCHIVE_FILE":
+      return {
+        icon: FileText,
+        nodeClassName: "border-amber-400/60 bg-amber-950 text-amber-50",
+        badgeClassName: "text-amber-200",
+        miniMapColor: "#f59e0b",
+        badgeLabel: type === "ARCHIVE_FILE" ? "ARCHIVE" : "MOVE",
+      };
+    case "LOOP_COUNTER":
+      return {
+        icon: RefreshCw,
+        nodeClassName: "border-indigo-400/60 bg-indigo-950 text-indigo-50",
+        badgeClassName: "text-indigo-200",
+        miniMapColor: "#818cf8",
+        badgeLabel: "COUNTER",
+      };
+    case "PROMPT_JSON":
+      return {
+        icon: Braces,
+        nodeClassName: "border-violet-400/60 bg-violet-950 text-violet-50",
+        badgeClassName: "text-violet-200",
+        miniMapColor: "#a78bfa",
+        badgeLabel: "AI JSON",
+      };
+    case "VALIDATOR_JSON":
+      return {
+        icon: ShieldCheck,
+        nodeClassName: "border-lime-400/60 bg-lime-950 text-lime-50",
+        badgeClassName: "text-lime-200",
+        miniMapColor: "#7a9a61",
+        badgeLabel: "JSON VALID",
+      };
+    case "SELECT_JSON_TASK":
+      return {
+        icon: ClipboardCheck,
+        nodeClassName: "border-cyan-400/60 bg-cyan-950 text-cyan-50",
+        badgeClassName: "text-cyan-200",
+        miniMapColor: "#22d3ee",
+        badgeLabel: "TASK PICK",
+      };
+    case "MARK_JSON_TASK":
+      return {
+        icon: ClipboardCheck,
+        nodeClassName: "border-lime-400/60 bg-lime-950 text-lime-50",
+        badgeClassName: "text-lime-200",
+        miniMapColor: "#7a9a61",
+        badgeLabel: "TASK MARK",
+      };
+    case "CHANGE_SCOPE_GUARD":
+      return {
+        icon: ShieldCheck,
+        nodeClassName: "border-rose-400/60 bg-rose-950 text-rose-50",
+        badgeClassName: "text-rose-200",
+        miniMapColor: "#fb7185",
+        badgeLabel: "SCOPE GUARD",
+      };
+    case "SCAN_SCOPE_EVIDENCE":
+      return {
+        icon: FileSearch,
+        nodeClassName: "border-sky-400/60 bg-sky-950 text-sky-50",
+        badgeClassName: "text-sky-200",
+        miniMapColor: "#38bdf8",
+        badgeLabel: "SCOPE SCAN",
+      };
+    case "UPDATE_SCOPE_REGISTRY":
+      return {
+        icon: FileJson,
+        nodeClassName: "border-emerald-400/60 bg-emerald-950 text-emerald-50",
+        badgeClassName: "text-emerald-200",
+        miniMapColor: "#34d399",
+        badgeLabel: "SCOPE JSON",
+      };
+    case "SELECT_SCOPE":
+      return {
+        icon: GitBranch,
+        nodeClassName: "border-cyan-400/60 bg-cyan-950 text-cyan-50",
+        badgeClassName: "text-cyan-200",
+        miniMapColor: "#22d3ee",
+        badgeLabel: "SCOPE PICK",
+      };
+    case "MARK_SCOPE_RESULT":
+      return {
+        icon: ClipboardCheck,
+        nodeClassName: "border-lime-400/60 bg-lime-950 text-lime-50",
+        badgeClassName: "text-lime-200",
+        miniMapColor: "#7a9a61",
+        badgeLabel: "SCOPE MARK",
       };
     case "SEARCH_FILES":
       return {
@@ -221,6 +367,23 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
         miniMapColor: "#f59e0b",
         badgeLabel: "GIT",
       };
+    case "GIT_SNAPSHOT":
+    case "GIT_DIFF_SUMMARY":
+      return {
+        icon: GitBranch,
+        nodeClassName: "border-amber-400/60 bg-amber-950 text-amber-50",
+        badgeClassName: "text-amber-200",
+        miniMapColor: "#f59e0b",
+        badgeLabel: type === "GIT_SNAPSHOT" ? "GIT SNAP" : "GIT DIFF",
+      };
+    case "DETECT_PROJECT_COMMANDS":
+      return {
+        icon: Terminal,
+        nodeClassName: "border-zinc-400/60 bg-zinc-900 text-zinc-50",
+        badgeClassName: "text-zinc-200",
+        miniMapColor: "#a1a1aa",
+        badgeLabel: "COMMANDS",
+      };
     case "SET_VARIABLE":
       return {
         icon: Variable,
@@ -244,6 +407,14 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
         badgeClassName: "text-green-200",
         miniMapColor: "#4ade80",
         badgeLabel: "SCHEMA",
+      };
+    case "FINAL_REPORT":
+      return {
+        icon: ClipboardCheck,
+        nodeClassName: "border-teal-400/60 bg-teal-950 text-teal-50",
+        badgeClassName: "text-teal-200",
+        miniMapColor: "#14b8a6",
+        badgeLabel: "REPORT",
       };
     case "NOTIFY":
       return {

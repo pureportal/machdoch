@@ -719,6 +719,7 @@ const runExecutorCycle = async (
   overrideAdapter: AgentModelAdapter | undefined,
   additionalToolDefinitions: ModelDrivenExecutionParams["additionalToolDefinitions"],
   systemPromptSections: ModelDrivenExecutionParams["systemPromptSections"],
+  structuredOutput: ModelDrivenExecutionParams["structuredOutput"],
   continuationRequest: ExecutorContinuationRequest | undefined,
   signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
@@ -843,6 +844,7 @@ const runExecutorCycle = async (
       ),
       ...(imageInputs && imageInputs.length > 0 ? { imageInputs } : {}),
       tools: toolSpecs,
+      ...(structuredOutput ? { structuredOutput } : {}),
       ...(signal ? { signal } : {}),
       ...(onStateChange
         ? { onStreamEvent: modelStreamProgress.handleEvent }
@@ -1615,6 +1617,7 @@ const runModelDrivenLoop = async (
   monitorAdapter: AgentModelAdapter | undefined,
   additionalToolDefinitions: ModelDrivenExecutionParams["additionalToolDefinitions"],
   systemPromptSections: ModelDrivenExecutionParams["systemPromptSections"],
+  structuredOutput: ModelDrivenExecutionParams["structuredOutput"],
   signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
   onActionOutput: TaskActionOutputHandler | undefined,
@@ -1630,6 +1633,7 @@ const runModelDrivenLoop = async (
     executorAdapter,
     additionalToolDefinitions,
     systemPromptSections,
+    structuredOutput,
     undefined,
     signal,
     onStateChange,
@@ -1717,6 +1721,7 @@ const runModelDrivenLoop = async (
       executorAdapter,
       additionalToolDefinitions,
       systemPromptSections,
+      structuredOutput,
       {
         continuationIndex: autopilotReport.continuationCount,
         rationale: decision.rationale,
@@ -1786,6 +1791,7 @@ export const maybeExecuteModelDrivenTask = async (
       params.monitorModelAdapter,
       params.additionalToolDefinitions,
       params.systemPromptSections,
+      params.structuredOutput,
       params.signal,
       params.onStateChange,
       params.onActionOutput,

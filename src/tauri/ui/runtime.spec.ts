@@ -27,6 +27,7 @@ import {
   loadMcpConfigDocument,
   loadProviderModelCatalog,
   openAttachedPath,
+  openRalphFlowInExplorer,
   openRemoteControlUrl,
   createRalphFlow,
   deleteRalphFlow,
@@ -826,6 +827,20 @@ describe("desktop runtime fullscreen detection", () => {
       request: {
         workspaceRoot: "C:\\Project",
         arguments: ["run-detail", "run-1", "--scope", "workspace"],
+      },
+    });
+  });
+
+  it("opens Ralph flows through the desktop Ralph opener", async () => {
+    invokeMock.mockResolvedValueOnce(undefined);
+
+    await openRalphFlowInExplorer(" C:\\Project ", " existing-flow ", "workspace");
+
+    expect(invokeMock).toHaveBeenCalledWith("open_ralph_flow_in_explorer", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        flow: "existing-flow",
+        scope: "workspace",
       },
     });
   });

@@ -286,6 +286,12 @@ export type AgentModelStreamEventHandler = (
   event: AgentModelStreamEvent,
 ) => void;
 
+export interface AgentModelStructuredOutput {
+  name: string;
+  schema: unknown;
+  strict?: boolean;
+}
+
 export interface AgentModelStartParams {
   model: string;
   reasoning?: ReasoningMode;
@@ -293,6 +299,7 @@ export interface AgentModelStartParams {
   userPrompt: string;
   imageInputs?: AgentModelImageInput[];
   tools: AgentModelToolSpec[];
+  structuredOutput?: AgentModelStructuredOutput;
   signal?: AbortSignal | undefined;
   onStreamEvent?: AgentModelStreamEventHandler;
 }
@@ -508,6 +515,7 @@ export interface TaskExecutionOptions {
   monitorModelAdapter?: AgentModelAdapter;
   additionalToolDefinitions?: AgentToolDefinition[];
   systemPromptSections?: string[];
+  structuredOutput?: AgentModelStructuredOutput;
   instructionAudience?: InstructionTargetAudience;
   conversationContext?: TaskConversationContext;
   imageInputs?: AgentModelImageInput[];

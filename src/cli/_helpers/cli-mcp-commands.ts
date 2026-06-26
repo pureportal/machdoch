@@ -4,6 +4,11 @@ import {
   loadMcpDiscoveryCacheSync,
 } from "../../core/mcp/config.js";
 import { mcpClientManager } from "../../core/mcp/client.js";
+import {
+  printMcpLifecycleCleanup,
+  printMcpLifecycleUsage,
+  recordMcpLifecycleHook,
+} from "./cli-mcp-lifecycle-commands.js";
 import type {
   McpDiscoveryChangeSet,
   McpDiscoveredPrompt,
@@ -288,6 +293,18 @@ export const printMcpSummary = async (
         }
 
         printCacheLines(config, args.workspaceRoot);
+        return;
+      }
+      case "usage": {
+        await printMcpLifecycleUsage(args);
+        return;
+      }
+      case "lifecycle-hook": {
+        await recordMcpLifecycleHook(args, options);
+        return;
+      }
+      case "cleanup": {
+        await printMcpLifecycleCleanup(args, options);
         return;
       }
       case "discover":

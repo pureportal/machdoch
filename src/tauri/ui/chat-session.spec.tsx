@@ -1657,6 +1657,136 @@ describe("ChatSession component", () => {
     expect(onStopSpeaking).not.toHaveBeenCalled();
   });
 
+  it("copies raw message Markdown from the message context menu", async () => {
+    const messageMarkdown = "**Important.**\n\n- Keep the Markdown";
+    const writeText = vi.fn().mockResolvedValue(undefined);
+
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    render(
+      <ConversationFeed
+        visibleMessages={[
+          {
+            id: "copy-agent-message",
+            role: "agent",
+            content: messageMarkdown,
+          },
+        ]}
+        bottomRef={{ current: null }}
+        onRetryTask={() => {}}
+        onContinueTask={() => {}}
+        onOpenWorkspaceFile={() => {}}
+        voicePlayback={{
+          supported: false,
+          speakingMessageId: null,
+          onSpeakMessage: () => {},
+          onStopSpeaking: () => {},
+        }}
+      />,
+    );
+
+    const messageBubble = screen
+      .getByText("Important.")
+      .closest(".app-message-bubble");
+
+    expect(messageBubble).not.toBeNull();
+
+    fireEvent.contextMenu(messageBubble as Element, {
+      clientX: 96,
+      clientY: 128,
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Copy Markdown/i }));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(messageMarkdown);
+    });
+    expect(screen.queryByRole("menu", { name: "Message actions" })).toBeNull();
+  });
+
+  it("saves a message as a Markdown download from the message context menu", async () => {
+    const messageMarkdown = "Save this message\n\n```ts\nconst ok = true;\n```";
+    const createObjectUrl = vi.fn(() => "blob:machdoch-message");
+    const revokeObjectUrl = vi.fn();
+    const originalCreateObjectUrl = URL.createObjectURL;
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+
+    Object.defineProperty(URL, "createObjectURL", {
+      value: createObjectUrl,
+      configurable: true,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      value: revokeObjectUrl,
+      configurable: true,
+    });
+
+    try {
+      const { container } = render(
+        <ConversationFeed
+          visibleMessages={[
+            {
+              id: "save-user-message",
+              role: "user",
+              content: messageMarkdown,
+            },
+          ]}
+          bottomRef={{ current: null }}
+          onRetryTask={() => {}}
+          onContinueTask={() => {}}
+          onOpenWorkspaceFile={() => {}}
+          voicePlayback={{
+            supported: false,
+            speakingMessageId: null,
+            onSpeakMessage: () => {},
+            onStopSpeaking: () => {},
+          }}
+        />,
+      );
+
+      const messageBubble = container.querySelector(".app-message-bubble");
+
+      expect(messageBubble).not.toBeNull();
+
+      fireEvent.contextMenu(messageBubble as Element, {
+        clientX: 96,
+        clientY: 128,
+      });
+      fireEvent.click(screen.getByRole("menuitem", { name: /Save Message/i }));
+
+      expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
+      const savedBlob = createObjectUrl.mock.calls[0]?.[0];
+
+      expect(savedBlob).toBeInstanceOf(Blob);
+      await expect((savedBlob as Blob).text()).resolves.toBe(messageMarkdown);
+      expect(clickSpy).toHaveBeenCalled();
+      expect(revokeObjectUrl).toHaveBeenCalledWith("blob:machdoch-message");
+      expect(screen.queryByRole("menu", { name: "Message actions" })).toBeNull();
+    } finally {
+      if (originalCreateObjectUrl) {
+        Object.defineProperty(URL, "createObjectURL", {
+          value: originalCreateObjectUrl,
+          configurable: true,
+        });
+      } else {
+        Reflect.deleteProperty(URL, "createObjectURL");
+      }
+
+      if (originalRevokeObjectUrl) {
+        Object.defineProperty(URL, "revokeObjectURL", {
+          value: originalRevokeObjectUrl,
+          configurable: true,
+        });
+      } else {
+        Reflect.deleteProperty(URL, "revokeObjectURL");
+      }
+    }
+  });
+
   it("keeps long user messages constrained to the feed width", () => {
     const longMessage = [
       "Disable the requirement to insert my password on every boot!",

@@ -144,6 +144,14 @@ pub struct RalphCommandRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OpenRalphFlowPathRequest {
+    workspace_root: String,
+    flow: String,
+    scope: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct McpCommandRequest {
     workspace_root: String,
     arguments: Vec<String>,
@@ -959,6 +967,18 @@ fn parse_ralph_command_response(stdout: &str) -> Result<Value, String> {
     })
 }
 
+fn normalize_ralph_flow_scope(scope: Option<&str>) -> Result<Option<String>, String> {
+    let normalized_scope = scope.map(str::trim).filter(|value| !value.is_empty());
+
+    match normalized_scope {
+        Some("workspace" | "user") => Ok(normalized_scope.map(str::to_string)),
+        Some(value) => Err(format!(
+            "Expected Ralph flow scope to be `workspace` or `user`, got `{value}`."
+        )),
+        None => Ok(None),
+    }
+}
+
 fn parse_mcp_command_response(stdout: &str) -> Result<Value, String> {
     let trimmed_stdout = stdout.trim();
 
@@ -1676,6 +1696,52 @@ fn open_path_in_system_shell(path: &Path) -> Result<(), String> {
     Err("Opening workspace paths is not supported on this platform.".to_string())
 }
 
+fn resolve_ralph_flow_path_for_open(
+    app_handle: tauri::AppHandle,
+    window_label: String,
+    request: OpenRalphFlowPathRequest,
+) -> Result<PathBuf, String> {
+    let normalized_flow = request.flow.trim();
+
+    if normalized_flow.is_empty() {
+        return Err("Expected a Ralph flow id or alias to open.".to_string());
+    }
+
+    let normalized_scope = normalize_ralph_flow_scope(request.scope.as_deref())?;
+    let mut arguments = vec!["show".to_string(), normalized_flow.to_string()];
+
+    if let Some(scope) = normalized_scope {
+        arguments.push("--scope".to_string());
+        arguments.push(scope);
+    }
+
+    let command_response = execute_ralph_command(
+        app_handle,
+        window_label,
+        RalphCommandRequest {
+            workspace_root: request.workspace_root,
+            arguments,
+            task_id: None,
+        },
+        Arc::new(AtomicBool::new(false)),
+    )?;
+    let resolved_path = command_response
+        .get("path")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .ok_or_else(|| "The Ralph CLI response did not include a flow path.".to_string())?;
+    let candidate_path = PathBuf::from(resolved_path);
+
+    if !candidate_path.is_absolute() {
+        return Err("The Ralph CLI returned a non-absolute flow path.".to_string());
+    }
+
+    candidate_path
+        .canonicalize()
+        .map_err(|error| format!("Unable to resolve Ralph flow path `{resolved_path}`: {error}"))
+}
+
 #[tauri::command]
 pub async fn cancel_desktop_task(
     state: tauri::State<'_, DesktopTaskCancelMap>,
@@ -1783,6 +1849,22 @@ pub async fn open_workspace_path(
     })
     .await
     .map_err(|error| format!("The workspace path opener stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn open_ralph_flow_in_explorer(
+    app_handle: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    request: OpenRalphFlowPathRequest,
+) -> Result<(), String> {
+    let window_label = window.label().to_string();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved_path = resolve_ralph_flow_path_for_open(app_handle, window_label, request)?;
+        open_path_in_system_shell(&resolved_path)
+    })
+    .await
+    .map_err(|error| format!("The Ralph flow opener stopped unexpectedly. {error}"))?
 }
 
 #[tauri::command]

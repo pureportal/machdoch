@@ -66,6 +66,11 @@ import {
   compareMcpDiscoveries,
   enrichMcpDiscoveryMetadata,
 } from "./discovery-metadata.js";
+import {
+  recordMcpUsageEventSafely,
+  type McpLifecycleOperation,
+  type McpLifecyclePhase,
+} from "./lifecycle.js";
 import { mcpRunCacheManager } from "./run-cache.js";
 import type {
   McpAuthConfig,
@@ -174,6 +179,62 @@ const copyProcessEnv = (): Record<string, string> => {
       typeof value === "string" ? [[key, value] as const] : [],
     ),
   );
+};
+
+const recordNativeMcpUsage = async (
+  workspaceRoot: string,
+  server: Pick<McpEffectiveServerConfig, "id" | "transport">,
+  operation: McpLifecycleOperation,
+  phase: McpLifecyclePhase,
+  target?: string,
+): Promise<void> => {
+  await recordMcpUsageEventSafely({
+    workspaceRoot,
+    agent: "machdoch",
+    serverId: server.id,
+    sourceServerId: server.id,
+    operation,
+    phase,
+    ...(target ? { target } : {}),
+    transportType: server.transport.type,
+  });
+};
+
+const runTrackedNativeMcpRemoteOperation = async <T>(
+  workspaceRoot: string,
+  server: Pick<McpEffectiveServerConfig, "id" | "transport">,
+  operation: McpLifecycleOperation,
+  target: string,
+  execute: () => Promise<T>,
+): Promise<T> => {
+  await recordNativeMcpUsage(
+    workspaceRoot,
+    server,
+    operation,
+    "remote-started",
+    target,
+  );
+
+  try {
+    const result = await execute();
+    await recordNativeMcpUsage(
+      workspaceRoot,
+      server,
+      operation,
+      "succeeded",
+      target,
+    );
+    return result;
+  } catch (error) {
+    await recordNativeMcpUsage(
+      workspaceRoot,
+      server,
+      operation,
+      "failed",
+      target,
+    );
+    throw error;
+  }
 };
 
 const resolveEnvironmentValue = (
@@ -1807,6 +1868,8 @@ export class McpClientManager {
       throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
     }
 
+    await recordNativeMcpUsage(workspaceRoot, server, "tool", "invoked", toolName);
+
     const cachePolicy = resolveOperationCachePolicy(options, server, "tool", true);
     const cacheLookup = mcpRunCacheManager.get<CallToolResult>({
       workspaceRoot,
@@ -1818,6 +1881,13 @@ export class McpClientManager {
     });
 
     if (cacheLookup.hit && cacheLookup.entry) {
+      await recordNativeMcpUsage(
+        workspaceRoot,
+        server,
+        "tool",
+        "cache-hit",
+        toolName,
+      );
       return cacheLookup.entry.value;
     }
 
@@ -1835,33 +1905,40 @@ export class McpClientManager {
       );
     }
 
-    const result = await this.withConnection(workspaceRoot, server, async ({ client }) => {
-      if (requiresTaskStream) {
-        return collectTaskToolResult(client, server, toolName, args, options);
-      }
+    const result = await runTrackedNativeMcpRemoteOperation(
+      workspaceRoot,
+      server,
+      "tool",
+      toolName,
+      async () =>
+        this.withConnection(workspaceRoot, server, async ({ client }) => {
+          if (requiresTaskStream) {
+            return collectTaskToolResult(client, server, toolName, args, options);
+          }
 
-      try {
-        const result = await client.callTool(
-          {
-            name: toolName,
-            arguments: args,
-            _meta: {
-              progressToken: randomUUID(),
-            },
-          },
-          undefined,
-          createRequestOptions(server, options),
-        );
+          try {
+            const toolResult = await client.callTool(
+              {
+                name: toolName,
+                arguments: args,
+                _meta: {
+                  progressToken: randomUUID(),
+                },
+              },
+              undefined,
+              createRequestOptions(server, options),
+            );
 
-        return result as CallToolResult;
-      } catch (error) {
-        if (server.tasks !== "disabled" && isTaskRequiredToolError(error)) {
-          return collectTaskToolResult(client, server, toolName, args, options);
-        }
+            return toolResult as CallToolResult;
+          } catch (error) {
+            if (server.tasks !== "disabled" && isTaskRequiredToolError(error)) {
+              return collectTaskToolResult(client, server, toolName, args, options);
+            }
 
-        throw error;
-      }
-    });
+            throw error;
+          }
+        }),
+    );
 
     if (cachePolicy && shouldCacheToolResult(result)) {
       mcpRunCacheManager.set(
@@ -1897,15 +1974,24 @@ export class McpClientManager {
       throw new Error(`MCP tasks are disabled for server \`${serverId}\`.`);
     }
 
-    return this.withConnection(
+    await recordNativeMcpUsage(workspaceRoot, server, "task", "invoked", "list");
+
+    return runTrackedNativeMcpRemoteOperation(
       workspaceRoot,
       server,
-      ({ client }) =>
-        client.experimental.tasks.listTasks(
-          cursor,
-          createRequestOptions(server, options),
+      "task",
+      "list",
+      () =>
+        this.withConnection(
+          workspaceRoot,
+          server,
+          ({ client }) =>
+            client.experimental.tasks.listTasks(
+              cursor,
+              createRequestOptions(server, options),
+            ),
+          { retryAfterConnectionFailure: true },
         ),
-      { retryAfterConnectionFailure: true },
     );
   }
 
@@ -1926,15 +2012,24 @@ export class McpClientManager {
       throw new Error(`MCP tasks are disabled for server \`${serverId}\`.`);
     }
 
-    return this.withConnection(
+    await recordNativeMcpUsage(workspaceRoot, server, "task", "invoked", "get");
+
+    return runTrackedNativeMcpRemoteOperation(
       workspaceRoot,
       server,
-      ({ client }) =>
-        client.experimental.tasks.getTask(
-          taskId,
-          createRequestOptions(server, options),
+      "task",
+      "get",
+      () =>
+        this.withConnection(
+          workspaceRoot,
+          server,
+          ({ client }) =>
+            client.experimental.tasks.getTask(
+              taskId,
+              createRequestOptions(server, options),
+            ),
+          { retryAfterConnectionFailure: true },
         ),
-      { retryAfterConnectionFailure: true },
     );
   }
 
@@ -1955,16 +2050,25 @@ export class McpClientManager {
       throw new Error(`MCP tasks are disabled for server \`${serverId}\`.`);
     }
 
-    return this.withConnection(
+    await recordNativeMcpUsage(workspaceRoot, server, "task", "invoked", "result");
+
+    return runTrackedNativeMcpRemoteOperation(
       workspaceRoot,
       server,
-      ({ client }) =>
-        client.experimental.tasks.getTaskResult(
-          taskId,
-          GetTaskPayloadResultSchema,
-          createRequestOptions(server, options),
+      "task",
+      "result",
+      () =>
+        this.withConnection(
+          workspaceRoot,
+          server,
+          ({ client }) =>
+            client.experimental.tasks.getTaskResult(
+              taskId,
+              GetTaskPayloadResultSchema,
+              createRequestOptions(server, options),
+            ),
+          { retryAfterConnectionFailure: true },
         ),
-      { retryAfterConnectionFailure: true },
     );
   }
 
@@ -1985,11 +2089,20 @@ export class McpClientManager {
       throw new Error(`MCP tasks are disabled for server \`${serverId}\`.`);
     }
 
-    return this.withConnection(workspaceRoot, server, ({ client }) =>
-      client.experimental.tasks.cancelTask(
-        taskId,
-        createRequestOptions(server, options),
-      ),
+    await recordNativeMcpUsage(workspaceRoot, server, "task", "invoked", "cancel");
+
+    return runTrackedNativeMcpRemoteOperation(
+      workspaceRoot,
+      server,
+      "task",
+      "cancel",
+      () =>
+        this.withConnection(workspaceRoot, server, ({ client }) =>
+          client.experimental.tasks.cancelTask(
+            taskId,
+            createRequestOptions(server, options),
+          ),
+        ),
     );
   }
 
@@ -2006,6 +2119,8 @@ export class McpClientManager {
       throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
     }
 
+    await recordNativeMcpUsage(workspaceRoot, server, "resource", "invoked", uri);
+
     const cachePolicy = resolveOperationCachePolicy(options, server, "resource");
     const cacheLookup = mcpRunCacheManager.get<ReadResourceResult>({
       workspaceRoot,
@@ -2016,15 +2131,29 @@ export class McpClientManager {
     });
 
     if (cacheLookup.hit && cacheLookup.entry) {
+      await recordNativeMcpUsage(
+        workspaceRoot,
+        server,
+        "resource",
+        "cache-hit",
+        uri,
+      );
       return cacheLookup.entry.value;
     }
 
-    const result = await this.withConnection(
+    const result = await runTrackedNativeMcpRemoteOperation(
       workspaceRoot,
       server,
-      ({ client }) =>
-        client.readResource({ uri }, createRequestOptions(server, options)),
-      { retryAfterConnectionFailure: true },
+      "resource",
+      uri,
+      () =>
+        this.withConnection(
+          workspaceRoot,
+          server,
+          ({ client }) =>
+            client.readResource({ uri }, createRequestOptions(server, options)),
+          { retryAfterConnectionFailure: true },
+        ),
     );
 
     if (cachePolicy) {
@@ -2057,6 +2186,14 @@ export class McpClientManager {
       throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
     }
 
+    await recordNativeMcpUsage(
+      workspaceRoot,
+      server,
+      "prompt",
+      "invoked",
+      promptName,
+    );
+
     const cachePolicy = resolveOperationCachePolicy(options, server, "prompt");
     const cacheLookup = mcpRunCacheManager.get<GetPromptResult>({
       workspaceRoot,
@@ -2068,21 +2205,35 @@ export class McpClientManager {
     });
 
     if (cacheLookup.hit && cacheLookup.entry) {
+      await recordNativeMcpUsage(
+        workspaceRoot,
+        server,
+        "prompt",
+        "cache-hit",
+        promptName,
+      );
       return cacheLookup.entry.value;
     }
 
-    const result = await this.withConnection(
+    const result = await runTrackedNativeMcpRemoteOperation(
       workspaceRoot,
       server,
-      ({ client }) =>
-        client.getPrompt(
-          {
-            name: promptName,
-            arguments: args,
-          },
-          createRequestOptions(server, options),
+      "prompt",
+      promptName,
+      () =>
+        this.withConnection(
+          workspaceRoot,
+          server,
+          ({ client }) =>
+            client.getPrompt(
+              {
+                name: promptName,
+                arguments: args,
+              },
+              createRequestOptions(server, options),
+            ),
+          { retryAfterConnectionFailure: true },
         ),
-      { retryAfterConnectionFailure: true },
     );
 
     if (cachePolicy) {

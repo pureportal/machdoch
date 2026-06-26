@@ -475,7 +475,7 @@ describe("SettingsDialog", () => {
                   },
                 },
                 auth: {
-                  type: "none",
+                  type: "oauth",
                 },
                 exposure: {
                   mode: "hybrid",
@@ -504,8 +504,8 @@ describe("SettingsDialog", () => {
 
     expect(screen.queryByLabelText("MCP JSON config")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Preset" }));
-    fireEvent.click(screen.getByRole("button", { name: "GitHub Remote" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add preset" }));
+    fireEvent.click(screen.getByRole("button", { name: /GitHub Remote/u }));
     expect(onPresetInsert).toHaveBeenCalledWith("github-remote");
 
     fireEvent.change(screen.getByLabelText("Title"), {
@@ -524,32 +524,137 @@ describe("SettingsDialog", () => {
       ],
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalled();
 
-    fireEvent.change(screen.getByLabelText("MCP action server id"), {
-      target: { value: "github" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Capabilities" }));
     fireEvent.click(screen.getByRole("button", { name: "Discover" }));
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    fireEvent.click(screen.getByRole("button", { name: "Cache" }));
-    expect(onDiscoverServer).toHaveBeenCalledWith("github");
-    expect(onRefreshDiscoveryCache).toHaveBeenCalledWith("github");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh cache" }));
+    fireEvent.click(screen.getByRole("button", { name: "List cache" }));
+    expect(onDiscoverServer).toHaveBeenCalledWith("serper");
+    expect(onRefreshDiscoveryCache).toHaveBeenCalledWith("serper");
     expect(onListDiscoveryCache).toHaveBeenCalled();
 
+    fireEvent.click(screen.getByRole("button", { name: "Auth" }));
     fireEvent.change(screen.getByLabelText("MCP OAuth callback URL or code"), {
       target: { value: "http://127.0.0.1:43110/oauth/callback?code=def" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "OAuth" }));
-    fireEvent.click(screen.getByRole("button", { name: "Finish" }));
-    expect(onOAuthServerIdChange).toHaveBeenCalledWith("github");
+    fireEvent.click(screen.getByRole("button", { name: "Start OAuth" }));
+    fireEvent.click(screen.getByRole("button", { name: "Finish OAuth" }));
     expect(onOAuthCallbackChange).toHaveBeenCalledWith(
       "http://127.0.0.1:43110/oauth/callback?code=def",
     );
-    expect(onStartOAuth).toHaveBeenCalledWith("github");
+    expect(onStartOAuth).toHaveBeenCalledWith("serper");
     expect(onFinishOAuth).toHaveBeenCalledWith(
-      "github",
+      "serper",
       "http://127.0.0.1:43110/oauth/callback?code=def",
     );
+  });
+
+  it("adds a custom MCP server only after required setup is complete", () => {
+    const onDraftChange = vi.fn();
+    const props = createSettingsDialogProps({
+      settingsSection: "mcp",
+      mcpSetup: {
+        ...createSettingsDialogProps().mcpSetup,
+        onDraftChange,
+      },
+    });
+
+    renderSettingsDialog(props);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add custom" }));
+
+    const addButton = screen.getByRole("button", { name: "Add server" });
+    expect(addButton).toHaveProperty("disabled", true);
+
+    fireEvent.change(screen.getByLabelText("Command"), {
+      target: { value: "npx" },
+    });
+    fireEvent.click(addButton);
+
+    expect(onDraftChange).toHaveBeenCalled();
+    expect(
+      JSON.parse(
+        onDraftChange.mock.calls.at(-1)?.[0] as string,
+      ) as Record<string, unknown>,
+    ).toMatchObject({
+      servers: [
+        {
+          id: "mcp-server",
+          title: "MCP Server",
+          enabled: true,
+          transport: {
+            type: "stdio",
+            command: "npx",
+          },
+        },
+      ],
+    });
+  });
+
+  it("validates MCP server setup and summarizes discovery output", () => {
+    const onSave = vi.fn();
+    const props = createSettingsDialogProps({
+      settingsSection: "mcp",
+      mcpSetup: {
+        ...createSettingsDialogProps().mcpSetup,
+        draft: JSON.stringify(
+          {
+            schemaVersion: 1,
+            servers: [
+              {
+                id: "broken",
+                title: "Broken Server",
+                enabled: true,
+                transport: {
+                  type: "stdio",
+                  command: "",
+                },
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+        discoveryOutput: JSON.stringify(
+          {
+            workspaceRoot: "C:\\Project",
+            discovery: {
+              serverId: "broken",
+              transportType: "stdio",
+              protocolVersion: "2025-03-26",
+              discoveredAt: "2026-06-25T00:00:00.000Z",
+              tools: [{ name: "tool-a" }, { name: "tool-b" }],
+              resources: [{ uri: "file://resource" }],
+              resourceTemplates: [],
+              prompts: [{ name: "prompt-a" }],
+            },
+            cachePath: "C:\\Project\\.machdoch\\mcp\\discovery-cache.json",
+          },
+          null,
+          2,
+        ),
+        onSave,
+      },
+    });
+
+    renderSettingsDialog(props);
+
+    expect(
+      screen.getAllByText("Stdio transport requires a command."),
+    ).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Save changes" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Capabilities" }));
+    expect(screen.getByText("Tools")).toBeDefined();
+    expect(screen.getByText("2")).toBeDefined();
+    expect(screen.getByText("Resources")).toBeDefined();
+    expect(screen.getAllByText("1")).toHaveLength(2);
+    expect(screen.getByText("Prompts")).toBeDefined();
+    expect(screen.getAllByText(/2025-03-26/u).length).toBeGreaterThanOrEqual(1);
   });
 });

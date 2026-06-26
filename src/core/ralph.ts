@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { appendFile, lstat, mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import {
   FLOW_FILE_EXTENSION,
@@ -74,6 +74,22 @@ import {
   parseRalphUtilityJsonValue,
   readRalphUtilityValuePath,
 } from "./_helpers/evaluate-ralph-utility-condition.helper.js";
+import {
+  createDefaultRalphScopeRegistryPath,
+  createRalphScopeRegistryMarkdownPath,
+  discoverRalphScopeEvidence,
+  formatRalphScopeRegistryMarkdown,
+  isResolvedPathInside,
+  markRalphScopeRegistryResult,
+  normalizeRalphScopeSelectionStrategy,
+  parseRalphScopeEvidence,
+  parseRalphScopeExcludePaths,
+  readRalphScopeRegistryFile,
+  selectRalphScopeFromRegistry,
+  updateRalphScopeRegistryFromEvidence,
+  writeRalphScopeRegistryFile,
+  type RalphScopeSelectionStrategy,
+} from "./_helpers/ralph-scope-registry.helper.js";
 import { resolveRalphRetryDecision } from "./_helpers/resolve-ralph-retry-decision.helper.js";
 import {
   discoverRalphFlowVariables,
@@ -145,6 +161,7 @@ import type {
   TaskExecutionOptions,
   TaskConversationContext,
   TaskActionOutput,
+  TaskExecutionProgress,
   TaskExecutionProgressHandler,
   TaskExecutionResult,
 } from "./types.js";
@@ -163,6 +180,9 @@ type PlaywrightConsoleMessage = import("playwright-core").ConsoleMessage;
 type PlaywrightBrowserChannel = (typeof RALPH_UI_BROWSER_CHANNELS)[number];
 
 export const MAX_RALPH_SIMPLE_LOG_CHARS = 4_000;
+const MAX_RALPH_BLOCK_PROGRESS_EVENTS = 160;
+const MAX_RALPH_BLOCK_PROGRESS_CHARS = 8_000;
+const RALPH_BLOCK_PROGRESS_TRUNCATION_MARKER = `\n[Ralph block progress truncated at ${MAX_RALPH_BLOCK_PROGRESS_CHARS} characters.]`;
 
 const DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES = 1_000_000;
 const DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS = 120_000;
@@ -236,6 +256,7 @@ export type RalphBlockType = (typeof RALPH_BLOCK_TYPES)[number];
 export type RalphUtilityType = (typeof RALPH_UTILITY_TYPES)[number];
 export type RalphVariableType = (typeof RALPH_VARIABLE_TYPES)[number];
 export type { RalphFlowScope, RalphRunLogPaths } from "./_helpers/create-ralph-storage-paths.helper.js";
+export type { RalphScopeSelectionStrategy } from "./_helpers/ralph-scope-registry.helper.js";
 export type RalphValidatorDecision = "DONE" | "CONTINUE" | "RETRY" | "ERROR";
 export type RalphExecutionOutput = "SUCCESS" | "ERROR" | RalphValidatorDecision | string;
 export type RalphInputFieldType =
@@ -440,14 +461,17 @@ export interface RalphUtilityConfig {
   runAt?: string;
   intervalSeconds?: number;
   backoffMultiplier?: number;
-  maxAttempts?: number | null;
+  maxAttempts?: number | null | string;
   condition?: RalphUtilityCondition;
   url?: string;
   method?: string;
   headers?: Record<string, string>;
   body?: string;
   outputPath?: string;
+  markdownPath?: string;
   path?: string;
+  registryPath?: string;
+  jsonPath?: string;
   rootPath?: string;
   content?: string;
   append?: boolean;
@@ -455,6 +479,20 @@ export interface RalphUtilityConfig {
   pattern?: string;
   glob?: string;
   maxResults?: number;
+  maxDepth?: number;
+  excludePaths?: string;
+  flowAlias?: string;
+  strategy?: RalphScopeSelectionStrategy | string;
+  scopeId?: string;
+  taskId?: string;
+  status?: string;
+  result?: string;
+  includeMarkdown?: boolean;
+  forceNew?: boolean;
+  reset?: boolean;
+  jsonPatchMode?: "merge" | "replace";
+  counterName?: string;
+  counterKey?: string;
   command?: string;
   cwd?: string;
   env?: Record<string, string>;
@@ -476,7 +514,9 @@ export interface RalphUtilityConfig {
   value?: string;
   input?: string;
   expression?: string;
+  prompt?: string;
   schema?: unknown;
+  structuredOutput?: boolean;
   message?: string;
   ignoreErrors?: boolean;
 }
@@ -504,6 +544,7 @@ export interface RalphBaseBlock {
   title: string;
   position?: RalphPosition;
   size?: RalphSize;
+  locked?: boolean;
   parentGroupId?: string;
   settings?: RalphBlockSettings;
   groupBoundary?: boolean;
@@ -601,7 +642,6 @@ export interface RalphGroupBlock extends RalphBaseBlock {
   description?: string;
   childBlockIds: string[];
   collapsed?: boolean;
-  locked?: boolean;
   moveChildren?: boolean;
   maxDepth?: number;
   layoutMode?: "freeform" | "stack" | "swimlane";
@@ -727,10 +767,25 @@ export interface RalphBlockExecutionResult {
   status: "completed" | "error" | "skipped";
   attempt: number;
   result?: TaskExecutionResult;
+  progress?: RalphRunRecordBlockProgressEvent[];
   data?: unknown;
   summary: string;
   markdown?: string;
   error?: string;
+}
+
+export interface RalphRunRecordBlockProgressEvent {
+  timestamp: string;
+  kind: "model-stream" | "timeline" | "action-output" | "message";
+  label: string;
+  streamKind?: NonNullable<TaskExecutionProgress["modelStream"]>["kind"];
+  phase?: NonNullable<TaskExecutionProgress["timelineEvent"]>["phase"];
+  tone?: NonNullable<TaskExecutionProgress["timelineEvent"]>["tone"];
+  complete?: boolean;
+  toolName?: string;
+  stream?: TaskActionOutput["stream"];
+  content?: string;
+  detail?: string;
 }
 
 export type RalphRunEvent =
@@ -893,6 +948,11 @@ export interface RalphRunRecordBlock {
   attempt: number;
   task?: string;
   executionStatus?: TaskExecutionResult["status"];
+  reason?: string;
+  executedTools?: TaskExecutionResult["executedTools"];
+  outputSections?: TaskExecutionResult["outputSections"];
+  response?: TaskExecutionResult["response"];
+  progress?: RalphRunRecordBlockProgressEvent[];
   data?: unknown;
   summary: string;
   markdown?: string;
@@ -2148,13 +2208,160 @@ const createDecisionTask = (
   ].join("\n");
 };
 
+interface RalphBlockTaskExecutionOptions extends TaskExecutionOptions {
+  ralphProgressEvents: RalphRunRecordBlockProgressEvent[];
+}
+
+const createRalphProgressMetadata = (
+  block: RalphFlowBlock,
+): NonNullable<
+  NonNullable<TaskExecutionProgress["timelineEvent"]>["metadata"]
+> => ({
+  ralphBlockId: block.id,
+  ralphBlockTitle: block.title,
+  ralphBlockType: block.type,
+  ralphActiveBlockId: block.id,
+  ralphActiveBlockTitle: block.title,
+});
+
+const withRalphProgressBlockMetadata = (
+  progress: TaskExecutionProgress,
+  block: RalphFlowBlock | undefined,
+): TaskExecutionProgress => {
+  if (!block) {
+    return progress;
+  }
+
+  const blockMetadata = createRalphProgressMetadata(block);
+
+  return {
+    ...progress,
+    timelineEvent: progress.timelineEvent
+      ? {
+          ...progress.timelineEvent,
+          metadata: {
+            ...blockMetadata,
+            ...(progress.timelineEvent.metadata ?? {}),
+          },
+        }
+      : {
+          kind: "state",
+          phase: "streaming",
+          label: progress.message,
+          tone: "info",
+          metadata: blockMetadata,
+        },
+  };
+};
+
+const createRalphBlockProgressEvent = (
+  progress: TaskExecutionProgress,
+): RalphRunRecordBlockProgressEvent | undefined => {
+  const timestamp = new Date().toISOString();
+
+  if (progress.modelStream) {
+    return {
+      timestamp,
+      kind: "model-stream",
+      label: progress.modelStream.label,
+      streamKind: progress.modelStream.kind,
+      content: truncateRalphBlockProgressText(progress.modelStream.content),
+      ...(progress.modelStream.complete !== undefined
+        ? { complete: progress.modelStream.complete }
+        : {}),
+    };
+  }
+
+  if (progress.actionOutput) {
+    return {
+      timestamp,
+      kind: "action-output",
+      label: `${progress.actionOutput.toolName} ${progress.actionOutput.stream}`,
+      toolName: progress.actionOutput.toolName,
+      stream: progress.actionOutput.stream,
+      content: truncateRalphBlockProgressText(progress.actionOutput.chunk),
+    };
+  }
+
+  if (progress.timelineEvent) {
+    return {
+      timestamp,
+      kind: "timeline",
+      label: progress.timelineEvent.label,
+      phase: progress.timelineEvent.phase,
+      ...(progress.timelineEvent.tone ? { tone: progress.timelineEvent.tone } : {}),
+      ...(progress.timelineEvent.toolName
+        ? { toolName: progress.timelineEvent.toolName }
+        : {}),
+      ...(progress.timelineEvent.detail
+        ? {
+            detail: truncateRalphBlockProgressText(progress.timelineEvent.detail),
+          }
+        : {}),
+    };
+  }
+
+  if (!progress.message.trim()) {
+    return undefined;
+  }
+
+  return {
+    timestamp,
+    kind: "message",
+    label: progress.message,
+    detail: truncateRalphBlockProgressText(progress.message),
+  };
+};
+
+const appendRalphBlockProgressEvent = (
+  progressEvents: RalphRunRecordBlockProgressEvent[],
+  event: RalphRunRecordBlockProgressEvent | undefined,
+): void => {
+  if (!event) {
+    return;
+  }
+
+  progressEvents.push(event);
+
+  if (progressEvents.length > MAX_RALPH_BLOCK_PROGRESS_EVENTS) {
+    progressEvents.splice(
+      0,
+      progressEvents.length - MAX_RALPH_BLOCK_PROGRESS_EVENTS,
+    );
+  }
+};
+
+const appendRalphBlockProgressEvents = (
+  progressEvents: RalphRunRecordBlockProgressEvent[],
+  events: readonly RalphRunRecordBlockProgressEvent[],
+): void => {
+  for (const event of events) {
+    appendRalphBlockProgressEvent(progressEvents, event);
+  }
+};
+
+const truncateRalphBlockProgressText = (value: string): string => {
+  return value.length > MAX_RALPH_BLOCK_PROGRESS_CHARS
+    ? `${value.slice(0, MAX_RALPH_BLOCK_PROGRESS_CHARS)}${RALPH_BLOCK_PROGRESS_TRUNCATION_MARKER}`
+    : value;
+};
+
+const withRalphBlockProgress = (
+  result: RalphBlockExecutionResult,
+  progressEvents: readonly RalphRunRecordBlockProgressEvent[],
+): RalphBlockExecutionResult => {
+  return progressEvents.length > 0
+    ? { ...result, progress: [...progressEvents] }
+    : result;
+};
+
 const createExecutionOptions = async (
   options: RalphExecutionOptionsSource,
   config: RuntimeConfig,
   context?: RalphResultContext,
   block?: RalphFlowBlock,
   conversationContext?: TaskConversationContext,
-): Promise<TaskExecutionOptions> => {
+): Promise<RalphBlockTaskExecutionOptions> => {
   const runId = context?.runId ?? options.runId;
   const fallbackContext: RalphResultContext = {
     runId: runId ?? "ralph-unscoped",
@@ -2172,12 +2379,21 @@ const createExecutionOptions = async (
       : [];
   const logger = options.logger;
   const baseOnStateChange = options.onStateChange;
+  const progressEvents: RalphRunRecordBlockProgressEvent[] = [];
   const onStateChange: TaskExecutionProgressHandler | undefined =
     baseOnStateChange || logger
       ? async (progress) => {
+          const enrichedProgress = withRalphProgressBlockMetadata(
+            progress,
+            block,
+          );
+          appendRalphBlockProgressEvent(
+            progressEvents,
+            block ? createRalphBlockProgressEvent(enrichedProgress) : undefined,
+          );
           logger?.trace({
             kind: "progress",
-            message: progress.message,
+            message: enrichedProgress.message,
             ...(block
               ? {
                   blockId: block.id,
@@ -2187,9 +2403,9 @@ const createExecutionOptions = async (
               : {}),
             provider: config.provider,
             model: config.model,
-            details: progress,
+            details: enrichedProgress,
           });
-          await baseOnStateChange?.(progress);
+          await baseOnStateChange?.(enrichedProgress);
         }
       : undefined;
   const onActionOutput: TaskExecutionOptions["onActionOutput"] =
@@ -2214,7 +2430,7 @@ const createExecutionOptions = async (
           model: config.model,
           details: safeOutput,
         });
-        void baseOnStateChange?.({
+        const progress: TaskExecutionProgress = withRalphProgressBlockMetadata({
           task: "Ralph agent output",
           mode: config.mode,
           state: "executing",
@@ -2233,7 +2449,13 @@ const createExecutionOptions = async (
             toolName: safeOutput.toolName,
             stream: safeOutput.stream,
           },
-        });
+        }, block);
+
+        appendRalphBlockProgressEvent(
+          progressEvents,
+          block ? createRalphBlockProgressEvent(progress) : undefined,
+        );
+        void baseOnStateChange?.(progress);
       }
     : undefined;
 
@@ -2247,6 +2469,7 @@ const createExecutionOptions = async (
       ? { maxDurationMs: block.settings.timeoutSeconds * 1000 }
       : {}),
     ...(imageInputs.length > 0 ? { imageInputs } : {}),
+    ralphProgressEvents: progressEvents,
   };
 };
 
@@ -2345,6 +2568,7 @@ const executePromptBlock = async (
   const blockConfig = createBlockConfig(config, block);
   const maxIterations = block.settings?.maxIterations ?? 1;
   let result: TaskExecutionResult | undefined;
+  const blockProgressEvents: RalphRunRecordBlockProgressEvent[] = [];
   const conversationContext: TaskConversationContext = {
     ...(options.conversationContext ?? { history: [] }),
     history: [...(options.conversationContext?.history ?? [])],
@@ -2353,8 +2577,9 @@ const executePromptBlock = async (
   for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
     const task = createPromptTask(flow, block, context);
     logBlockInput(options.logger, flow, block, blockConfig, task, iteration);
+    let executionOptions: RalphBlockTaskExecutionOptions | undefined;
     try {
-      const executionOptions = await createExecutionOptions(
+      executionOptions = await createExecutionOptions(
         options,
         blockConfig,
         context,
@@ -2367,9 +2592,23 @@ const executePromptBlock = async (
         conversationContext,
       });
     } catch (error) {
-      return createRalphBlockExecutionErrorResult(block, error, iteration);
+      if (executionOptions) {
+        appendRalphBlockProgressEvents(
+          blockProgressEvents,
+          executionOptions.ralphProgressEvents,
+        );
+      }
+
+      return withRalphBlockProgress(
+        createRalphBlockExecutionErrorResult(block, error, iteration),
+        blockProgressEvents,
+      );
     }
 
+    appendRalphBlockProgressEvents(
+      blockProgressEvents,
+      executionOptions.ralphProgressEvents,
+    );
     conversationContext.history.push({ role: "user", content: task });
     conversationContext.history.push({
       role: "assistant",
@@ -2377,11 +2616,17 @@ const executePromptBlock = async (
     });
 
     if (result.status !== "executed") {
-      return createRalphPromptExecutionResult(block, result, iteration);
+      return withRalphBlockProgress(
+        createRalphPromptExecutionResult(block, result, iteration),
+        blockProgressEvents,
+      );
     }
   }
 
-  return createRalphPromptExecutionResult(block, result, maxIterations);
+  return withRalphBlockProgress(
+    createRalphPromptExecutionResult(block, result, maxIterations),
+    blockProgressEvents,
+  );
 };
 
 const executeValidatorBlock = async (
@@ -2396,25 +2641,33 @@ const executeValidatorBlock = async (
   let result: TaskExecutionResult;
   const task = createValidatorTask(flow, block, context);
   logBlockInput(options.logger, flow, block, blockConfig, task);
+  let executionOptions: RalphBlockTaskExecutionOptions | undefined;
 
   try {
+    executionOptions = await createExecutionOptions(
+      options,
+      blockConfig,
+      context,
+      block,
+      options.conversationContext,
+    );
     result = await executeTask(
       task,
       blockConfig,
       customizations,
-      await createExecutionOptions(
-        options,
-        blockConfig,
-        context,
-        block,
-        options.conversationContext,
-      ),
+      executionOptions,
     );
   } catch (error) {
-    return createRalphBlockExecutionErrorResult(block, error);
+    return withRalphBlockProgress(
+      createRalphBlockExecutionErrorResult(block, error),
+      executionOptions?.ralphProgressEvents ?? [],
+    );
   }
 
-  return createRalphValidatorExecutionResult(block, result);
+  return withRalphBlockProgress(
+    createRalphValidatorExecutionResult(block, result),
+    executionOptions.ralphProgressEvents,
+  );
 };
 
 const executeDecisionBlock = async (
@@ -2429,25 +2682,33 @@ const executeDecisionBlock = async (
   let result: TaskExecutionResult;
   const task = createDecisionTask(flow, block, context);
   logBlockInput(options.logger, flow, block, blockConfig, task);
+  let executionOptions: RalphBlockTaskExecutionOptions | undefined;
 
   try {
+    executionOptions = await createExecutionOptions(
+      options,
+      blockConfig,
+      context,
+      block,
+      options.conversationContext,
+    );
     result = await executeTask(
       task,
       blockConfig,
       customizations,
-      await createExecutionOptions(
-        options,
-        blockConfig,
-        context,
-        block,
-        options.conversationContext,
-      ),
+      executionOptions,
     );
   } catch (error) {
-    return createRalphBlockExecutionErrorResult(block, error);
+    return withRalphBlockProgress(
+      createRalphBlockExecutionErrorResult(block, error),
+      executionOptions?.ralphProgressEvents ?? [],
+    );
   }
 
-  return createRalphDecisionExecutionResult(block, result);
+  return withRalphBlockProgress(
+    createRalphDecisionExecutionResult(block, result),
+    executionOptions.ralphProgressEvents,
+  );
 };
 
 const executeInputBlock = (
@@ -2677,27 +2938,35 @@ const executeInterviewBlock = async (
   logBlockInput(options.logger, flow, block, blockConfig, task, state.turn + 1);
 
   let result: TaskExecutionResult;
+  let executionOptions: RalphBlockTaskExecutionOptions | undefined;
   try {
+    executionOptions = await createExecutionOptions(
+      options,
+      blockConfig,
+      context,
+      block,
+      options.conversationContext,
+    );
     result = await executeTask(
       task,
       blockConfig,
       customizations,
-      await createExecutionOptions(
-        options,
-        blockConfig,
-        context,
-        block,
-        options.conversationContext,
-      ),
+      executionOptions,
     );
   } catch (error) {
-    return createRalphBlockExecutionErrorResult(block, error);
+    return withRalphBlockProgress(
+      createRalphBlockExecutionErrorResult(block, error),
+      executionOptions?.ralphProgressEvents ?? [],
+    );
   }
 
   if (result.status !== "executed") {
-    return createRalphBlockExecutionErrorResult(
-      block,
-      new Error(getResultMarkdown(result) || "Interview AI question generation failed."),
+    return withRalphBlockProgress(
+      createRalphBlockExecutionErrorResult(
+        block,
+        new Error(getResultMarkdown(result) || "Interview AI question generation failed."),
+      ),
+      executionOptions.ralphProgressEvents,
     );
   }
 
@@ -2708,7 +2977,10 @@ const executeInterviewBlock = async (
       block,
     );
   } catch (error) {
-    return createRalphBlockExecutionErrorResult(block, error);
+    return withRalphBlockProgress(
+      createRalphBlockExecutionErrorResult(block, error),
+      executionOptions.ralphProgressEvents,
+    );
   }
 
   if (generation.complete) {
@@ -2719,19 +2991,22 @@ const executeInterviewBlock = async (
         : `${block.title} completed without additional questions.`);
     context.variables[getRalphInterviewOutputVariableName(block)] = summary;
 
-    return {
-      blockId: block.id,
-      output: "DONE",
-      status: "completed",
-      attempt: 1,
-      result,
-      summary: `${block.title} interview complete.`,
-      data: {
-        summary,
-        transcript: state.transcript,
+    return withRalphBlockProgress(
+      {
+        blockId: block.id,
+        output: "DONE",
+        status: "completed",
+        attempt: 1,
+        result,
+        summary: `${block.title} interview complete.`,
+        data: {
+          summary,
+          transcript: state.transcript,
+        },
+        markdown: summary,
       },
-      markdown: summary,
-    };
+      executionOptions.ralphProgressEvents,
+    );
   }
 
   if (generation.fields.length === 0) {
@@ -2894,6 +3169,32 @@ const resolveUtilityPath = (
   const candidate = path?.trim() || workspaceRoot;
 
   return isAbsolute(candidate) ? candidate : resolve(workspaceRoot, candidate);
+};
+
+const isResolvedPathInsideWorkspace = (
+  path: string,
+  workspaceRoot: string,
+): boolean => {
+  const workspacePath = resolve(workspaceRoot);
+  const relativePath = relative(workspacePath, resolve(path));
+
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !isAbsolute(relativePath))
+  );
+};
+
+const resolveWorkspaceContainedUtilityPath = (
+  path: string | undefined,
+  workspaceRoot: string,
+): string => {
+  const resolvedPath = resolveUtilityPath(path, workspaceRoot);
+
+  if (!isResolvedPathInsideWorkspace(resolvedPath, workspaceRoot)) {
+    throw new Error("Utility path must stay inside the workspace.");
+  }
+
+  return resolvedPath;
 };
 
 const delayWithBackoff = async (
@@ -3137,11 +3438,17 @@ const executePollUtilityBlock = async (
 
   let attempt = 1;
   let lastData: unknown;
+  const maxAttempts =
+    typeof utility.maxAttempts === "number"
+      ? utility.maxAttempts
+      : utility.maxAttempts === null
+        ? null
+        : undefined;
 
   while (
-    utility.maxAttempts === null ||
-    utility.maxAttempts === undefined ||
-    attempt <= utility.maxAttempts
+    maxAttempts === null ||
+    maxAttempts === undefined ||
+    attempt <= maxAttempts
   ) {
     try {
       const data = await executeUtilityHttpRequest(
@@ -3179,7 +3486,7 @@ const executePollUtilityBlock = async (
   return createUtilityResult(
     block,
     "TIMEOUT",
-    `${block.title} did not match after ${utility.maxAttempts} attempt(s).`,
+    `${block.title} did not match after ${maxAttempts} attempt(s).`,
     lastData,
   );
 };
@@ -3279,6 +3586,39 @@ const executeCommandUtilityBlock = async (
   }
 };
 
+const isFileNotFoundError = (error: unknown): boolean => {
+  return isRecord(error) && error.code === "ENOENT";
+};
+
+const executeConditionUtilityBlock = (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  context: RalphResultContext,
+): RalphBlockExecutionResult => {
+  const condition = utility.condition;
+
+  if (!condition) {
+    return createUtilityResult(block, "ERROR", "Condition utility requires condition.");
+  }
+
+  try {
+    const matched = evaluateRalphUtilityCondition(condition, context);
+    const output = matched ? "MATCH" : "NO_MATCH";
+
+    return createUtilityResult(
+      block,
+      output,
+      matched
+        ? `${block.title} condition matched.`
+        : `${block.title} condition did not match.`,
+      { matched },
+      "completed",
+    );
+  } catch (error) {
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
 const executeReadFileUtilityBlock = async (
   block: RalphUtilityBlock,
   utility: RalphUtilityConfig,
@@ -3317,6 +3657,1374 @@ const executeWriteFileUtilityBlock = async (
       bytes: Buffer.byteLength(content),
       append: utility.append === true,
     });
+  } catch (error) {
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const parseStrictJsonText = (text: string): unknown => {
+  return JSON.parse(text) as unknown;
+};
+
+const readJsonFile = async (path: string): Promise<unknown> => {
+  return parseStrictJsonText(await readFile(path, "utf8"));
+};
+
+const stringifyJson = (value: unknown): string => {
+  return `${JSON.stringify(value, null, 2)}\n`;
+};
+
+const getWritableJsonInput = (
+  utility: RalphUtilityConfig,
+  context: RalphResultContext,
+): unknown => {
+  if (utility.input !== undefined) {
+    return parseStrictJsonText(utility.input);
+  }
+
+  if (utility.content !== undefined) {
+    return parseStrictJsonText(utility.content);
+  }
+
+  return context.lastResult?.data ?? {};
+};
+
+const validateUtilityJsonValue = (
+  value: unknown,
+  schema: unknown,
+): JsonSchemaValidationResult => {
+  return schema === undefined
+    ? { valid: true, errors: [] }
+    : validateJsonAgainstSchema(value, schema);
+};
+
+const writeUtilityJsonOutput = async (
+  path: string,
+  value: unknown,
+): Promise<void> => {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, stringifyJson(value), "utf8");
+};
+
+const deepMergeJson = (base: unknown, patch: unknown): unknown => {
+  if (!isRecord(base) || !isRecord(patch)) {
+    return patch;
+  }
+
+  const merged: Record<string, unknown> = { ...base };
+
+  for (const [key, value] of Object.entries(patch)) {
+    merged[key] = Object.hasOwn(base, key)
+      ? deepMergeJson(base[key], value)
+      : value;
+  }
+
+  return merged;
+};
+
+const executeReadJsonUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+): Promise<RalphBlockExecutionResult> => {
+  const rawPath = utility.path?.trim();
+
+  if (!rawPath) {
+    return createUtilityResult(block, "ERROR", "Read JSON utility requires path.");
+  }
+
+  const path = resolveUtilityPath(rawPath, config.workspaceRoot);
+
+  try {
+    const json = await readJsonFile(path);
+    const validation = validateUtilityJsonValue(json, utility.schema);
+
+    return createUtilityResult(
+      block,
+      validation.valid ? "SUCCESS" : "INVALID",
+      validation.valid
+        ? `${block.title} read JSON from ${path}.`
+        : `${block.title} read invalid JSON schema data from ${path}.`,
+      { path, json, validation },
+      validation.valid ? "completed" : "error",
+    );
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return createUtilityResult(
+        block,
+        "NOT_FOUND",
+        `${block.title} did not find ${path}.`,
+        { path },
+        "completed",
+      );
+    }
+
+    if (error instanceof SyntaxError) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} could not parse JSON at ${path}.`,
+        { path, error: error.message },
+      );
+    }
+
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const executeWriteJsonUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+): Promise<RalphBlockExecutionResult> => {
+  const rawPath = utility.path?.trim();
+
+  if (!rawPath) {
+    return createUtilityResult(block, "ERROR", "Write JSON utility requires path.");
+  }
+
+  try {
+    const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+    const json = getWritableJsonInput(utility, context);
+    const validation = validateUtilityJsonValue(json, utility.schema);
+
+    if (!validation.valid) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} JSON did not match schema.`,
+        { path, json, validation },
+      );
+    }
+
+    await writeUtilityJsonOutput(path, json);
+
+    return createUtilityResult(block, "SUCCESS", `${block.title} wrote ${path}.`, {
+      path,
+      json,
+      validation,
+    });
+  } catch (error) {
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const executePatchJsonUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+): Promise<RalphBlockExecutionResult> => {
+  const rawPath = utility.path?.trim();
+
+  if (!rawPath) {
+    return createUtilityResult(block, "ERROR", "Patch JSON utility requires path.");
+  }
+
+  const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+
+  try {
+    const current = await readJsonFile(path);
+    const patch = getWritableJsonInput(utility, context);
+    const json =
+      utility.jsonPatchMode === "replace" ? patch : deepMergeJson(current, patch);
+    const validation = validateUtilityJsonValue(json, utility.schema);
+
+    if (!validation.valid) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} patched JSON did not match schema.`,
+        { path, current, patch, json, validation },
+      );
+    }
+
+    await writeUtilityJsonOutput(path, json);
+
+    return createUtilityResult(block, "SUCCESS", `${block.title} patched ${path}.`, {
+      path,
+      mode: utility.jsonPatchMode ?? "merge",
+      patch,
+      json,
+      validation,
+    });
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return createUtilityResult(
+        block,
+        "NOT_FOUND",
+        `${block.title} did not find ${path}.`,
+        { path },
+        "completed",
+      );
+    }
+
+    if (error instanceof SyntaxError) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} could not parse JSON at ${path}.`,
+        { path, error: error.message },
+      );
+    }
+
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const executeAppendJsonlUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+): Promise<RalphBlockExecutionResult> => {
+  const rawPath = utility.path?.trim();
+
+  if (!rawPath) {
+    return createUtilityResult(block, "ERROR", "Append JSONL utility requires path.");
+  }
+
+  try {
+    const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+    const json = getWritableJsonInput(utility, context);
+    const validation = validateUtilityJsonValue(json, utility.schema);
+
+    if (!validation.valid) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} JSONL entry did not match schema.`,
+        { path, json, validation },
+      );
+    }
+
+    await mkdir(dirname(path), { recursive: true });
+    await appendFile(path, `${JSON.stringify(json)}\n`, "utf8");
+
+    return createUtilityResult(block, "SUCCESS", `${block.title} appended ${path}.`, {
+      path,
+      json,
+      validation,
+    });
+  } catch (error) {
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+interface JsonlEntry {
+  line: number;
+  value: unknown;
+}
+
+const readJsonlEntries = async (
+  path: string,
+): Promise<{ entries: JsonlEntry[]; invalid: Array<{ line: number; error: string }> }> => {
+  const content = await readFile(path, "utf8");
+  const entries: JsonlEntry[] = [];
+  const invalid: Array<{ line: number; error: string }> = [];
+
+  content.split(/\r?\n/u).forEach((line, index) => {
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      return;
+    }
+
+    try {
+      entries.push({ line: index + 1, value: parseStrictJsonText(trimmed) });
+    } catch (error) {
+      invalid.push({
+        line: index + 1,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  return { entries, invalid };
+};
+
+const validateJsonlEntries = (
+  entries: readonly JsonlEntry[],
+  schema: unknown,
+): JsonSchemaValidationResult => {
+  const errors = entries.flatMap((entry) =>
+    validateUtilityJsonValue(entry.value, schema).errors.map(
+      (error) => `line ${entry.line}: ${error}`,
+    ),
+  );
+
+  return { valid: errors.length === 0, errors };
+};
+
+const executeReadJsonlUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+): Promise<RalphBlockExecutionResult> => {
+  const rawPath = utility.path?.trim();
+
+  if (!rawPath) {
+    return createUtilityResult(block, "ERROR", "Read JSONL utility requires path.");
+  }
+
+  const path = resolveUtilityPath(rawPath, config.workspaceRoot);
+
+  try {
+    const { entries, invalid } = await readJsonlEntries(path);
+
+    if (invalid.length > 0) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} found invalid JSONL at ${path}.`,
+        { path, invalid },
+      );
+    }
+
+    const validation = validateJsonlEntries(entries, utility.schema);
+    if (!validation.valid) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} read JSONL entries that failed schema validation.`,
+        { path, validation },
+      );
+    }
+
+    const limit =
+      typeof utility.maxResults === "number" && utility.maxResults >= 0
+        ? utility.maxResults
+        : entries.length;
+    const selectedEntries = entries.slice(0, limit);
+    const output = selectedEntries.length > 0 ? "SUCCESS" : "EMPTY";
+
+    return createUtilityResult(
+      block,
+      output,
+      selectedEntries.length > 0
+        ? `${block.title} read ${selectedEntries.length} JSONL entr${selectedEntries.length === 1 ? "y" : "ies"}.`
+        : `${block.title} found no JSONL entries.`,
+      {
+        path,
+        count: selectedEntries.length,
+        totalCount: entries.length,
+        entries: selectedEntries.map((entry) => entry.value),
+        lineNumbers: selectedEntries.map((entry) => entry.line),
+        validation,
+      },
+      "completed",
+    );
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return createUtilityResult(
+        block,
+        "NOT_FOUND",
+        `${block.title} did not find ${path}.`,
+        { path },
+        "completed",
+      );
+    }
+
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const executeQueryJsonlUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+): Promise<RalphBlockExecutionResult> => {
+  const rawPath = utility.path?.trim();
+
+  if (!rawPath) {
+    return createUtilityResult(block, "ERROR", "Query JSONL utility requires path.");
+  }
+
+  const path = resolveUtilityPath(rawPath, config.workspaceRoot);
+
+  try {
+    const { entries, invalid } = await readJsonlEntries(path);
+
+    if (invalid.length > 0) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} found invalid JSONL at ${path}.`,
+        { path, invalid },
+      );
+    }
+
+    const validation = validateJsonlEntries(entries, utility.schema);
+    if (!validation.valid) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} read JSONL entries that failed schema validation.`,
+        { path, validation },
+      );
+    }
+
+    const matchedEntries = utility.condition
+      ? entries.filter((entry) =>
+          evaluateRalphUtilityCondition(utility.condition!, context, entry.value),
+        )
+      : entries;
+    const limit =
+      typeof utility.maxResults === "number" && utility.maxResults >= 0
+        ? utility.maxResults
+        : matchedEntries.length;
+    const selectedEntries = matchedEntries.slice(0, limit);
+    const output = selectedEntries.length > 0 ? "SUCCESS" : "EMPTY";
+
+    return createUtilityResult(
+      block,
+      output,
+      selectedEntries.length > 0
+        ? `${block.title} matched ${selectedEntries.length} JSONL entr${selectedEntries.length === 1 ? "y" : "ies"}.`
+        : `${block.title} matched no JSONL entries.`,
+      {
+        path,
+        count: selectedEntries.length,
+        totalCount: entries.length,
+        entries: selectedEntries.map((entry) => entry.value),
+        lineNumbers: selectedEntries.map((entry) => entry.line),
+        validation,
+      },
+      "completed",
+    );
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return createUtilityResult(
+        block,
+        "NOT_FOUND",
+        `${block.title} did not find ${path}.`,
+        { path },
+        "completed",
+      );
+    }
+
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const readMutableJsonPath = (
+  value: unknown,
+  path: string | undefined,
+): unknown => {
+  return readRalphUtilityValuePath(value, path?.trim() || "tasks");
+};
+
+const getJsonTaskArray = (
+  json: unknown,
+  jsonPath: string | undefined,
+): { tasks: Record<string, unknown>[]; normalizedPath: string } | undefined => {
+  const normalizedPath = jsonPath?.trim() || "tasks";
+  const value =
+    normalizedPath === "$" || normalizedPath === "."
+      ? json
+      : readMutableJsonPath(json, normalizedPath);
+
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const tasks = value.filter(isRecord);
+
+  return tasks.length === value.length ? { tasks, normalizedPath } : undefined;
+};
+
+const getJsonTaskStatus = (task: Record<string, unknown>): string => {
+  return typeof task.status === "string" ? task.status.toLowerCase() : "todo";
+};
+
+const isSelectableJsonTask = (task: Record<string, unknown>): boolean => {
+  return !["done", "completed", "skipped", "cancelled", "blocked"].includes(
+    getJsonTaskStatus(task),
+  );
+};
+
+const selectJsonTaskCandidate = (
+  tasks: Record<string, unknown>[],
+  strategy: string | undefined,
+): { task: Record<string, unknown>; index: number } | undefined => {
+  const candidates = tasks
+    .map((task, index) => ({ task, index }))
+    .filter((candidate) => isSelectableJsonTask(candidate.task));
+
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  switch (strategy) {
+    case "random":
+    case "random-seeded":
+      return candidates[Math.floor(Math.random() * candidates.length)];
+    case "end-to-start":
+      return candidates[candidates.length - 1];
+    case "priority":
+      return [...candidates].sort(
+        (left, right) =>
+          Number(right.task.priority ?? 0) - Number(left.task.priority ?? 0),
+      )[0];
+    case "least-recent":
+    case "least-validated":
+      return [...candidates].sort((left, right) =>
+        String(left.task.updatedAt ?? left.task.selectedAt ?? "").localeCompare(
+          String(right.task.updatedAt ?? right.task.selectedAt ?? ""),
+        ),
+      )[0];
+    case "risk-first": {
+      const riskScore = (task: Record<string, unknown>): number => {
+        switch (task.risk) {
+          case "high":
+            return 3;
+          case "medium":
+            return 2;
+          case "low":
+            return 1;
+          default:
+            return 0;
+        }
+      };
+
+      return [...candidates].sort(
+        (left, right) => riskScore(right.task) - riskScore(left.task),
+      )[0];
+    }
+    case "start-to-end":
+    case "round-robin":
+    default:
+      return candidates[0];
+  }
+};
+
+const executeSelectJsonTaskUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+): Promise<RalphBlockExecutionResult> => {
+  const rawPath = utility.path?.trim();
+
+  if (!rawPath) {
+    return createUtilityResult(block, "ERROR", "Select JSON task utility requires path.");
+  }
+
+  const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+
+  try {
+    const json = await readJsonFile(path);
+    const validation = validateUtilityJsonValue(json, utility.schema);
+
+    if (!validation.valid) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} JSON did not match schema.`,
+        { path, validation },
+      );
+    }
+
+    const taskArray = getJsonTaskArray(json, utility.jsonPath);
+
+    if (!taskArray) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} could not find a task array at ${utility.jsonPath ?? "tasks"}.`,
+        { path, jsonPath: utility.jsonPath ?? "tasks" },
+      );
+    }
+
+    const selected = selectJsonTaskCandidate(taskArray.tasks, utility.strategy);
+
+    if (!selected) {
+      return createUtilityResult(
+        block,
+        "EMPTY",
+        `${block.title} found no selectable task.`,
+        { path, jsonPath: taskArray.normalizedPath, tasks: taskArray.tasks },
+        "completed",
+      );
+    }
+
+    const now = new Date().toISOString();
+    const currentAttempts =
+      typeof selected.task.attempts === "number" ? selected.task.attempts : 0;
+
+    selected.task.status =
+      getJsonTaskStatus(selected.task) === "in_progress"
+        ? selected.task.status
+        : "in_progress";
+    selected.task.selectedAt = now;
+    selected.task.updatedAt = now;
+    selected.task.attempts = currentAttempts + 1;
+
+    await writeUtilityJsonOutput(path, json);
+
+    return createUtilityResult(
+      block,
+      "SELECTED",
+      `${block.title} selected ${String(selected.task.id ?? selected.index)}.`,
+      {
+        path,
+        jsonPath: taskArray.normalizedPath,
+        task: selected.task,
+        index: selected.index,
+        remainingCount: taskArray.tasks.filter(isSelectableJsonTask).length,
+        json,
+      },
+      "completed",
+    );
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return createUtilityResult(
+        block,
+        "NOT_FOUND",
+        `${block.title} did not find ${path}.`,
+        { path },
+        "completed",
+      );
+    }
+
+    if (error instanceof SyntaxError) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} could not parse JSON at ${path}.`,
+        { path, error: error.message },
+      );
+    }
+
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const getJsonTaskIdFromInput = (
+  utility: RalphUtilityConfig,
+  context: RalphResultContext,
+): string | undefined => {
+  if (utility.taskId?.trim()) {
+    return utility.taskId.trim();
+  }
+
+  const input =
+    utility.input !== undefined
+      ? parseRalphUtilityJsonValue(utility.input)
+      : context.lastResult?.data;
+  const task = isRecord(input) && isRecord(input.task) ? input.task : undefined;
+  const id = task?.id ?? (isRecord(input) ? input.taskId ?? input.id : undefined);
+
+  return typeof id === "string" && id.trim() ? id.trim() : undefined;
+};
+
+const executeMarkJsonTaskUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+): Promise<RalphBlockExecutionResult> => {
+  const rawPath = utility.path?.trim();
+
+  if (!rawPath) {
+    return createUtilityResult(block, "ERROR", "Mark JSON task utility requires path.");
+  }
+
+  const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+
+  try {
+    const json = await readJsonFile(path);
+    const validation = validateUtilityJsonValue(json, utility.schema);
+
+    if (!validation.valid) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} JSON did not match schema.`,
+        { path, validation },
+      );
+    }
+
+    const taskArray = getJsonTaskArray(json, utility.jsonPath);
+
+    if (!taskArray) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} could not find a task array at ${utility.jsonPath ?? "tasks"}.`,
+        { path, jsonPath: utility.jsonPath ?? "tasks" },
+      );
+    }
+
+    const taskId = getJsonTaskIdFromInput(utility, context);
+    const candidate = taskId
+      ? taskArray.tasks.find((task) => task.id === taskId)
+      : taskArray.tasks.find((task) => getJsonTaskStatus(task) === "in_progress");
+
+    if (!candidate) {
+      return createUtilityResult(
+        block,
+        "NOT_FOUND",
+        `${block.title} found no matching task.`,
+        { path, jsonPath: taskArray.normalizedPath, taskId },
+        "completed",
+      );
+    }
+
+    const now = new Date().toISOString();
+    const status = utility.status ?? utility.result ?? "done";
+
+    candidate.status = status;
+    candidate.updatedAt = now;
+    if (["done", "completed"].includes(status.toLowerCase())) {
+      candidate.completedAt = now;
+    }
+    candidate.lastResult = {
+      blockId: context.lastResult?.blockId,
+      output: context.lastResult?.output,
+      summary: context.lastResult?.summary,
+    };
+
+    await writeUtilityJsonOutput(path, json);
+
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} marked ${String(candidate.id ?? "task")} as ${status}.`,
+      {
+        path,
+        jsonPath: taskArray.normalizedPath,
+        task: candidate,
+        taskId: candidate.id,
+        status,
+        json,
+      },
+    );
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return createUtilityResult(
+        block,
+        "NOT_FOUND",
+        `${block.title} did not find ${path}.`,
+        { path },
+        "completed",
+      );
+    }
+
+    if (error instanceof SyntaxError) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} could not parse JSON at ${path}.`,
+        { path, error: error.message },
+      );
+    }
+
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const executeFileExistsUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+): Promise<RalphBlockExecutionResult> => {
+  const rawPath = utility.path?.trim();
+
+  if (!rawPath) {
+    return createUtilityResult(block, "ERROR", "File exists utility requires path.");
+  }
+
+  const path = resolveUtilityPath(rawPath, config.workspaceRoot);
+
+  try {
+    const fileStat = await stat(path);
+    const kind = fileStat.isDirectory()
+      ? "directory"
+      : fileStat.isFile()
+        ? "file"
+        : "other";
+
+    return createUtilityResult(
+      block,
+      "EXISTS",
+      `${block.title} found ${path}.`,
+      {
+        path,
+        kind,
+        size: fileStat.size,
+        modifiedAt: fileStat.mtime.toISOString(),
+      },
+      "completed",
+    );
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return createUtilityResult(
+        block,
+        "MISSING",
+        `${block.title} did not find ${path}.`,
+        { path },
+        "completed",
+      );
+    }
+
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const executeDeleteFileUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+): Promise<RalphBlockExecutionResult> => {
+  const rawPath = utility.path?.trim();
+
+  if (!rawPath) {
+    return createUtilityResult(block, "ERROR", "Delete file utility requires path.");
+  }
+
+  try {
+    const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+    const fileStat = await lstat(path);
+
+    if (fileStat.isDirectory()) {
+      return createUtilityResult(
+        block,
+        "ERROR",
+        `${block.title} requires a file path, but ${path} is a directory.`,
+      );
+    }
+
+    await unlink(path);
+
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} deleted ${path}.`,
+      { path },
+    );
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      const path = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+
+      return createUtilityResult(
+        block,
+        "NOT_FOUND",
+        `${block.title} did not find ${path}.`,
+        { path },
+        "completed",
+      );
+    }
+
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const executeMoveFileUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+): Promise<RalphBlockExecutionResult> => {
+  const rawPath = utility.path?.trim();
+  const rawOutputPath = utility.outputPath?.trim();
+
+  if (!rawPath || !rawOutputPath) {
+    return createUtilityResult(
+      block,
+      "ERROR",
+      "Move file utility requires path and outputPath.",
+    );
+  }
+
+  const from = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+  const to = resolveWorkspaceContainedUtilityPath(rawOutputPath, config.workspaceRoot);
+
+  try {
+    const fileStat = await lstat(from);
+
+    if (fileStat.isDirectory()) {
+      return createUtilityResult(
+        block,
+        "ERROR",
+        `${block.title} requires a file path, but ${from} is a directory.`,
+      );
+    }
+
+    await mkdir(dirname(to), { recursive: true });
+    await rename(from, to);
+
+    return createUtilityResult(block, "SUCCESS", `${block.title} moved ${from}.`, {
+      from,
+      to,
+    });
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return createUtilityResult(
+        block,
+        "NOT_FOUND",
+        `${block.title} did not find ${from}.`,
+        { from, to },
+        "completed",
+      );
+    }
+
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const createArchiveFilePath = (
+  sourcePath: string,
+  utility: RalphUtilityConfig,
+  workspaceRoot: string,
+): string => {
+  const rawOutputPath = utility.outputPath?.trim();
+
+  if (rawOutputPath) {
+    return resolveWorkspaceContainedUtilityPath(rawOutputPath, workspaceRoot);
+  }
+
+  const archiveRoot = resolveWorkspaceContainedUtilityPath(
+    utility.rootPath?.trim() || ".machdoch/ralph/archive",
+    workspaceRoot,
+  );
+  const parsedName = basename(sourcePath);
+  const extension = extname(parsedName);
+  const stem = extension ? parsedName.slice(0, -extension.length) : parsedName;
+  const timestamp = new Date().toISOString().replace(/[:.]/gu, "-");
+
+  return join(archiveRoot, `${stem}-${timestamp}${extension}`);
+};
+
+const executeArchiveFileUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+): Promise<RalphBlockExecutionResult> => {
+  const rawPath = utility.path?.trim();
+
+  if (!rawPath) {
+    return createUtilityResult(block, "ERROR", "Archive file utility requires path.");
+  }
+
+  const from = resolveWorkspaceContainedUtilityPath(rawPath, config.workspaceRoot);
+  const to = createArchiveFilePath(from, utility, config.workspaceRoot);
+
+  try {
+    const fileStat = await lstat(from);
+
+    if (fileStat.isDirectory()) {
+      return createUtilityResult(
+        block,
+        "ERROR",
+        `${block.title} requires a file path, but ${from} is a directory.`,
+      );
+    }
+
+    await mkdir(dirname(to), { recursive: true });
+    await rename(from, to);
+
+    return createUtilityResult(block, "SUCCESS", `${block.title} archived ${from}.`, {
+      from,
+      to,
+    });
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return createUtilityResult(
+        block,
+        "NOT_FOUND",
+        `${block.title} did not find ${from}.`,
+        { from, to },
+        "completed",
+      );
+    }
+
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+interface RalphCounterFile {
+  counters?: Record<string, Record<string, RalphCounterState>>;
+}
+
+interface RalphCounterState {
+  count: number;
+  updatedAt: string;
+}
+
+const readCounterFile = async (path: string): Promise<RalphCounterFile> => {
+  try {
+    const value = await readJsonFile(path);
+
+    return isRecord(value) ? (value as RalphCounterFile) : {};
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return {};
+    }
+
+    throw error;
+  }
+};
+
+const executeLoopCounterUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+): Promise<RalphBlockExecutionResult> => {
+  const path = resolveWorkspaceContainedUtilityPath(
+    utility.path?.trim() || ".machdoch/ralph/counters.json",
+    config.workspaceRoot,
+  );
+  const counterName = utility.counterName?.trim() || block.id;
+  const counterKey = utility.counterKey?.trim() || context.runId;
+
+  try {
+    const file = await readCounterFile(path);
+    const counters = isRecord(file.counters) ? { ...file.counters } : {};
+    const group = isRecord(counters[counterName])
+      ? { ...counters[counterName] }
+      : {};
+    const currentState = isRecord(group[counterKey])
+      ? group[counterKey]
+      : undefined;
+    const currentCount =
+      typeof currentState?.count === "number" && Number.isFinite(currentState.count)
+        ? currentState.count
+        : 0;
+    const count = utility.reset ? 0 : currentCount + 1;
+    const limit =
+      typeof utility.maxAttempts === "number" ? utility.maxAttempts : null;
+
+    group[counterKey] = {
+      count,
+      updatedAt: new Date().toISOString(),
+    };
+    counters[counterName] = group;
+    await writeUtilityJsonOutput(path, { counters });
+
+    const limitReached = limit !== null && count > limit;
+
+    return createUtilityResult(
+      block,
+      limitReached ? "LIMIT_REACHED" : "CONTINUE",
+      limitReached
+        ? `${block.title} reached loop limit ${limit}.`
+        : `${block.title} counted ${count}.`,
+      {
+        path,
+        counterName,
+        counterKey,
+        count,
+        limit,
+        reset: utility.reset === true,
+      },
+      "completed",
+    );
+  } catch (error) {
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const getScopeRegistryFlowAlias = (utility: RalphUtilityConfig): string => {
+  return utility.flowAlias?.trim() || "ralph-flow";
+};
+
+const getScopeRegistryStrategy = (
+  utility: RalphUtilityConfig,
+): RalphScopeSelectionStrategy => {
+  return normalizeRalphScopeSelectionStrategy(utility.strategy) ?? "round-robin";
+};
+
+const resolveScopeRegistryUtilityPath = (
+  utility: RalphUtilityConfig,
+  workspaceRoot: string,
+): string => {
+  const flowAlias = getScopeRegistryFlowAlias(utility);
+  const path =
+    utility.registryPath?.trim() ||
+    utility.path?.trim() ||
+    createDefaultRalphScopeRegistryPath(flowAlias);
+
+  return resolveWorkspaceContainedUtilityPath(path, workspaceRoot);
+};
+
+const resolveScopeScanRootPath = (
+  utility: RalphUtilityConfig,
+  workspaceRoot: string,
+): string => {
+  const path = resolveUtilityPath(utility.rootPath?.trim() || ".", workspaceRoot);
+
+  if (!isResolvedPathInside(path, workspaceRoot)) {
+    throw new Error("Scope scan root must stay inside the workspace.");
+  }
+
+  const relativePath = relative(resolve(workspaceRoot), path);
+
+  return relativePath ? relativePath.replace(/\\/gu, "/") : ".";
+};
+
+const getScopeEvidenceInput = (
+  utility: RalphUtilityConfig,
+  context: RalphResultContext,
+) => {
+  const input =
+    utility.input !== undefined
+      ? parseRalphUtilityJsonValue(utility.input)
+      : context.lastResult?.data;
+  const evidence = parseRalphScopeEvidence(input);
+
+  if (evidence) {
+    return evidence;
+  }
+
+  if (isRecord(input)) {
+    return parseRalphScopeEvidence(input.evidence);
+  }
+
+  return undefined;
+};
+
+const maybeWriteScopeRegistryMarkdown = async (
+  utility: RalphUtilityConfig,
+  registryPath: string,
+  registry: Awaited<ReturnType<typeof readRalphScopeRegistryFile>>,
+  workspaceRoot: string,
+): Promise<string | undefined> => {
+  if (!utility.includeMarkdown && !utility.outputPath?.trim()) {
+    return undefined;
+  }
+
+  const markdownPath = resolveWorkspaceContainedUtilityPath(
+    utility.outputPath?.trim() || createRalphScopeRegistryMarkdownPath(registryPath),
+    workspaceRoot,
+  );
+
+  await mkdir(dirname(markdownPath), { recursive: true });
+  await writeFile(markdownPath, formatRalphScopeRegistryMarkdown(registry), "utf8");
+
+  return markdownPath;
+};
+
+const executeScanScopeEvidenceUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+): Promise<RalphBlockExecutionResult> => {
+  try {
+    const rootPath = resolveScopeScanRootPath(utility, config.workspaceRoot);
+    const scanOptions: Parameters<typeof discoverRalphScopeEvidence>[1] = {
+      rootPath,
+      excludePaths: parseRalphScopeExcludePaths(utility.excludePaths),
+    };
+
+    if (utility.maxDepth !== undefined) {
+      scanOptions.maxDepth = utility.maxDepth;
+    }
+
+    if (utility.maxResults !== undefined) {
+      scanOptions.maxResults = utility.maxResults;
+    }
+
+    const evidence = await discoverRalphScopeEvidence(
+      config.workspaceRoot,
+      scanOptions,
+    );
+    const output = evidence.scopes.length > 0 ? "SUCCESS" : "EMPTY";
+
+    return createUtilityResult(
+      block,
+      output,
+      `${block.title} discovered ${evidence.scopes.length} scope(s).`,
+      evidence,
+      output === "SUCCESS" ? "completed" : "completed",
+    );
+  } catch (error) {
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const executeUpdateScopeRegistryUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+): Promise<RalphBlockExecutionResult> => {
+  try {
+    const evidence = getScopeEvidenceInput(utility, context);
+    if (!evidence || evidence.scopes.length === 0) {
+      return createUtilityResult(
+        block,
+        "EMPTY",
+        `${block.title} did not receive scope evidence.`,
+        { evidence },
+        "completed",
+      );
+    }
+
+    const flowAlias = getScopeRegistryFlowAlias(utility);
+    const strategy = getScopeRegistryStrategy(utility);
+    const registryPath = resolveScopeRegistryUtilityPath(
+      utility,
+      config.workspaceRoot,
+    );
+    const existingRegistry = await readRalphScopeRegistryFile(registryPath, {
+      flowAlias,
+      strategy,
+    });
+    const update = updateRalphScopeRegistryFromEvidence(
+      existingRegistry,
+      evidence,
+      { flowAlias, strategy },
+    );
+
+    await writeRalphScopeRegistryFile(registryPath, update.registry);
+    const markdownPath = await maybeWriteScopeRegistryMarkdown(
+      utility,
+      registryPath,
+      update.registry,
+      config.workspaceRoot,
+    );
+
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} wrote ${update.registry.scopes.filter((scope) => scope.status === "active").length} active scope(s).`,
+      {
+        registryPath,
+        ...(markdownPath ? { markdownPath } : {}),
+        added: update.added,
+        updated: update.updated,
+        removed: update.removed,
+        registry: update.registry,
+      },
+    );
+  } catch (error) {
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const executeSelectScopeUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+): Promise<RalphBlockExecutionResult> => {
+  try {
+    const flowAlias = getScopeRegistryFlowAlias(utility);
+    const strategy = getScopeRegistryStrategy(utility);
+    const registryPath = resolveScopeRegistryUtilityPath(
+      utility,
+      config.workspaceRoot,
+    );
+    const registry = await readRalphScopeRegistryFile(registryPath, {
+      flowAlias,
+      strategy,
+    });
+    const selectionOptions: Parameters<typeof selectRalphScopeFromRegistry>[1] = {
+      strategy,
+    };
+
+    if (utility.forceNew !== undefined) {
+      selectionOptions.forceNew = utility.forceNew;
+    }
+
+    const selection = selectRalphScopeFromRegistry(registry, selectionOptions);
+
+    await writeRalphScopeRegistryFile(registryPath, selection.registry);
+
+    if (!selection.scope) {
+      return createUtilityResult(
+        block,
+        "EMPTY",
+        `${block.title} did not find an active scope.`,
+        { registryPath, registry: selection.registry },
+        "completed",
+      );
+    }
+
+    return createUtilityResult(
+      block,
+      "SELECTED",
+      `${block.title} selected ${selection.scope.id}.`,
+      {
+        registryPath,
+        scope: selection.scope,
+        strategy,
+        reusedCurrentScope: selection.reusedCurrentScope,
+        cycleStarted: selection.cycleStarted,
+        cycle: selection.registry.selection.cycle,
+      },
+      "completed",
+    );
+  } catch (error) {
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const executeMarkScopeResultUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+): Promise<RalphBlockExecutionResult> => {
+  try {
+    const flowAlias = getScopeRegistryFlowAlias(utility);
+    const strategy = getScopeRegistryStrategy(utility);
+    const registryPath = resolveScopeRegistryUtilityPath(
+      utility,
+      config.workspaceRoot,
+    );
+    const registry = await readRalphScopeRegistryFile(registryPath, {
+      flowAlias,
+      strategy,
+    });
+    const markOptions: Parameters<typeof markRalphScopeRegistryResult>[1] = {};
+
+    if (utility.scopeId !== undefined) {
+      markOptions.scopeId = utility.scopeId;
+    }
+
+    const outcome = utility.result ?? context.lastResult?.output;
+    if (outcome !== undefined) {
+      markOptions.outcome = outcome;
+    }
+
+    if (context.lastResult?.summary !== undefined) {
+      markOptions.summary = context.lastResult.summary;
+    }
+
+    const result = markRalphScopeRegistryResult(registry, markOptions);
+
+    if (!result.scope) {
+      return createUtilityResult(
+        block,
+        "NOT_FOUND",
+        `${block.title} did not find the current scope.`,
+        { registryPath, registry },
+        "completed",
+      );
+    }
+
+    await writeRalphScopeRegistryFile(registryPath, result.registry);
+    const markdownPath = await maybeWriteScopeRegistryMarkdown(
+      utility,
+      registryPath,
+      result.registry,
+      config.workspaceRoot,
+    );
+
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      `${block.title} marked ${result.scope.id}.`,
+      {
+        registryPath,
+        ...(markdownPath ? { markdownPath } : {}),
+        scope: result.scope,
+        cycleCompleted: result.cycleCompleted,
+        registry: result.registry,
+      },
+    );
   } catch (error) {
     return createRalphBlockExecutionErrorResult(block, error);
   }
@@ -4100,6 +5808,24 @@ const executeUiAnalyzeUtilityBlock = async (
   return executeUiAnalyzeBrowserUtilityBlock(block, utility, config, options);
 };
 
+const runGitCommand = async (
+  args: string[],
+  cwd: string,
+  utility: RalphUtilityConfig,
+  signal?: AbortSignal,
+): Promise<string> => {
+  const result = await executeLocalCommand("git", args, {
+    cwd,
+    timeoutMs: getUtilityTimeoutMs(utility, DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS),
+    maxBufferBytes:
+      utility.maxOutputBytes ?? DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
+    acceptedExitCodes: [0],
+    ...(signal ? { signal } : {}),
+  });
+
+  return result.stdout.trim();
+};
+
 const executeGitStatusUtilityBlock = async (
   block: RalphUtilityBlock,
   utility: RalphUtilityConfig,
@@ -4118,6 +5844,535 @@ const executeGitStatusUtilityBlock = async (
     false,
     signal,
   );
+};
+
+const maybeWriteJsonArtifact = async (
+  path: string | undefined,
+  workspaceRoot: string,
+  value: unknown,
+): Promise<string | undefined> => {
+  if (!path?.trim()) {
+    return undefined;
+  }
+
+  const resolvedPath = resolveWorkspaceContainedUtilityPath(path, workspaceRoot);
+  await writeUtilityJsonOutput(resolvedPath, value);
+
+  return resolvedPath;
+};
+
+const executeGitSnapshotUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  signal?: AbortSignal,
+): Promise<RalphBlockExecutionResult> => {
+  const cwd = normalizeLocalCommandCwd(
+    resolveUtilityPath(utility.cwd, config.workspaceRoot),
+  );
+
+  try {
+    const [root, head, statusText, diffStat, diffNames, stagedDiffNames] =
+      await Promise.all([
+        runGitCommand(["rev-parse", "--show-toplevel"], cwd, utility, signal),
+        runGitCommand(["rev-parse", "--short", "HEAD"], cwd, utility, signal),
+        runGitCommand(["status", "--short"], cwd, utility, signal),
+        runGitCommand(["diff", "--stat"], cwd, utility, signal),
+        runGitCommand(["diff", "--name-only"], cwd, utility, signal),
+        runGitCommand(["diff", "--cached", "--name-only"], cwd, utility, signal),
+      ]);
+    const data = {
+      cwd,
+      root,
+      head,
+      capturedAt: new Date().toISOString(),
+      status: statusText,
+      changedFiles: statusText
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter(Boolean),
+      diffStat,
+      diffFiles: diffNames.split(/\r?\n/u).filter(Boolean),
+      stagedDiffFiles: stagedDiffNames.split(/\r?\n/u).filter(Boolean),
+    };
+    const outputPath = await maybeWriteJsonArtifact(
+      utility.outputPath,
+      config.workspaceRoot,
+      data,
+    );
+
+    return createUtilityResult(block, "SUCCESS", `${block.title} captured git snapshot.`, {
+      ...data,
+      ...(outputPath ? { outputPath } : {}),
+    });
+  } catch (error) {
+    return createUtilityResult(
+      block,
+      "ERROR",
+      formatLocalCommandError(`${block.title} failed.`, error),
+    );
+  }
+};
+
+const executeGitDiffSummaryUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  signal?: AbortSignal,
+): Promise<RalphBlockExecutionResult> => {
+  const cwd = normalizeLocalCommandCwd(
+    resolveUtilityPath(utility.cwd, config.workspaceRoot),
+  );
+
+  try {
+    const [statusText, diffStat, diffNames, stagedDiffStat, stagedDiffNames] =
+      await Promise.all([
+        runGitCommand(["status", "--short"], cwd, utility, signal),
+        runGitCommand(["diff", "--stat"], cwd, utility, signal),
+        runGitCommand(["diff", "--name-only"], cwd, utility, signal),
+        runGitCommand(["diff", "--cached", "--stat"], cwd, utility, signal),
+        runGitCommand(["diff", "--cached", "--name-only"], cwd, utility, signal),
+      ]);
+    const data = {
+      cwd,
+      capturedAt: new Date().toISOString(),
+      status: statusText,
+      diffStat,
+      stagedDiffStat,
+      diffFiles: diffNames.split(/\r?\n/u).filter(Boolean),
+      stagedDiffFiles: stagedDiffNames.split(/\r?\n/u).filter(Boolean),
+    };
+    const hasChanges =
+      statusText.trim().length > 0 ||
+      diffStat.trim().length > 0 ||
+      stagedDiffStat.trim().length > 0;
+    const outputPath = await maybeWriteJsonArtifact(
+      utility.outputPath,
+      config.workspaceRoot,
+      data,
+    );
+
+    return createUtilityResult(
+      block,
+      hasChanges ? "SUCCESS" : "EMPTY",
+      hasChanges
+        ? `${block.title} summarized git changes.`
+        : `${block.title} found no git changes.`,
+      { ...data, ...(outputPath ? { outputPath } : {}) },
+      "completed",
+    );
+  } catch (error) {
+    return createUtilityResult(
+      block,
+      "ERROR",
+      formatLocalCommandError(`${block.title} failed.`, error),
+    );
+  }
+};
+
+const parseGitStatusChangedFiles = (statusText: string): string[] => {
+  return statusText
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.slice(3).trim())
+    .map((path) => path.split(" -> ").at(-1)?.trim() ?? path)
+    .filter(Boolean);
+};
+
+const normalizeWorkspaceRelativePath = (
+  path: string,
+  workspaceRoot: string,
+): string => {
+  const relativePath = isAbsolute(path)
+    ? relative(resolve(workspaceRoot), resolve(path))
+    : path;
+
+  return relativePath.replace(/\\/gu, "/").replace(/^\.\/+/u, "");
+};
+
+const extractScopeGuardInput = (
+  utility: RalphUtilityConfig,
+  context: RalphResultContext,
+): unknown => {
+  if (utility.input !== undefined) {
+    return parseRalphUtilityJsonValue(utility.input);
+  }
+
+  return context.lastResult?.data;
+};
+
+const extractStringListField = (
+  value: unknown,
+  field: string,
+): string[] => {
+  if (!isRecord(value) || !Array.isArray(value[field])) {
+    return [];
+  }
+
+  return value[field].filter(
+    (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+  );
+};
+
+const extractScopeGuardRules = (
+  input: unknown,
+): { paths: string[]; globs: string[] } => {
+  const source = isRecord(input) && isRecord(input.scope) ? input.scope : input;
+
+  return {
+    paths: [
+      ...extractStringListField(source, "paths"),
+      ...extractStringListField(source, "allowedPaths"),
+    ],
+    globs: [
+      ...extractStringListField(source, "globs"),
+      ...extractStringListField(source, "allowedGlobs"),
+    ],
+  };
+};
+
+const doesPathMatchScopeGuard = (
+  filePath: string,
+  allowedPaths: readonly string[],
+  allowedGlobs: readonly string[],
+): boolean => {
+  if (allowedPaths.includes(".") || allowedPaths.includes("./")) {
+    return true;
+  }
+
+  const pathMatched = allowedPaths.some((allowedPath) => {
+    const normalized = allowedPath.replace(/\\/gu, "/").replace(/\/+$/u, "");
+
+    return (
+      filePath === normalized ||
+      filePath.startsWith(`${normalized}/`) ||
+      normalized.includes("*") && globToRegExp(normalized).test(filePath)
+    );
+  });
+
+  if (pathMatched) {
+    return true;
+  }
+
+  return allowedGlobs.some((glob) => globToRegExp(glob).test(filePath));
+};
+
+const executeChangeScopeGuardUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+  signal?: AbortSignal,
+): Promise<RalphBlockExecutionResult> => {
+  const cwd = normalizeLocalCommandCwd(
+    resolveUtilityPath(utility.cwd, config.workspaceRoot),
+  );
+
+  try {
+    const [statusText, diffNames, stagedDiffNames] = await Promise.all([
+      runGitCommand(["status", "--short"], cwd, utility, signal),
+      runGitCommand(["diff", "--name-only"], cwd, utility, signal),
+      runGitCommand(["diff", "--cached", "--name-only"], cwd, utility, signal),
+    ]);
+    const changedFiles = [
+      ...parseGitStatusChangedFiles(statusText),
+      ...diffNames.split(/\r?\n/u),
+      ...stagedDiffNames.split(/\r?\n/u),
+    ]
+      .map((path) => path.trim())
+      .filter(Boolean)
+      .map((path) => normalizeWorkspaceRelativePath(path, config.workspaceRoot))
+      .filter((path, index, all) => all.indexOf(path) === index);
+
+    if (changedFiles.length === 0) {
+      return createUtilityResult(
+        block,
+        "EMPTY",
+        `${block.title} found no changed files.`,
+        { cwd, changedFiles },
+        "completed",
+      );
+    }
+
+    const rules = extractScopeGuardRules(extractScopeGuardInput(utility, context));
+
+    if (rules.paths.length === 0 && rules.globs.length === 0) {
+      return createUtilityResult(
+        block,
+        "IN_SCOPE",
+        `${block.title} found no configured scope restrictions.`,
+        { cwd, changedFiles, allowedPaths: [], allowedGlobs: [] },
+        "completed",
+      );
+    }
+
+    const outOfScopeFiles = changedFiles.filter(
+      (filePath) =>
+        !doesPathMatchScopeGuard(filePath, rules.paths, rules.globs),
+    );
+    const output = outOfScopeFiles.length > 0 ? "OUT_OF_SCOPE" : "IN_SCOPE";
+
+    return createUtilityResult(
+      block,
+      output,
+      outOfScopeFiles.length > 0
+        ? `${block.title} found ${outOfScopeFiles.length} out-of-scope file(s).`
+        : `${block.title} confirmed changed files stay in scope.`,
+      {
+        cwd,
+        changedFiles,
+        outOfScopeFiles,
+        allowedPaths: rules.paths,
+        allowedGlobs: rules.globs,
+      },
+      output === "IN_SCOPE" ? "completed" : "error",
+    );
+  } catch (error) {
+    return createUtilityResult(
+      block,
+      "ERROR",
+      formatLocalCommandError(`${block.title} failed.`, error),
+    );
+  }
+};
+
+const getPackageManagerCommand = (
+  rootPath: string,
+  packageJson: Record<string, unknown>,
+): string => {
+  const packageManager = typeof packageJson.packageManager === "string"
+    ? packageJson.packageManager.split("@")[0]
+    : undefined;
+
+  if (packageManager) {
+    return packageManager;
+  }
+
+  if (existsSync(join(rootPath, "pnpm-lock.yaml"))) {
+    return "pnpm";
+  }
+
+  if (existsSync(join(rootPath, "yarn.lock"))) {
+    return "yarn";
+  }
+
+  if (existsSync(join(rootPath, "package-lock.json"))) {
+    return "npm";
+  }
+
+  return "npm";
+};
+
+const createPackageScriptCommand = (
+  packageManager: string,
+  scriptName: string,
+): string => {
+  return packageManager === "npm"
+    ? `npm run ${scriptName}`
+    : `${packageManager} ${scriptName}`;
+};
+
+const executeDetectProjectCommandsUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+): Promise<RalphBlockExecutionResult> => {
+  const rootPath = resolveUtilityPath(
+    utility.rootPath?.trim() || utility.cwd,
+    config.workspaceRoot,
+  );
+
+  try {
+    const manifests: string[] = [];
+    const commands: Array<{
+      kind: "typecheck" | "lint" | "test" | "build" | "format";
+      command: string;
+      source: string;
+      confidence: "high" | "medium";
+    }> = [];
+    const packageJsonPath = join(rootPath, "package.json");
+
+    if (existsSync(packageJsonPath)) {
+      const packageJson = await readJsonFile(packageJsonPath);
+      if (isRecord(packageJson)) {
+        manifests.push("package.json");
+        const scripts = isRecord(packageJson.scripts) ? packageJson.scripts : {};
+        const packageManager = getPackageManagerCommand(rootPath, packageJson);
+
+        for (const [kind, candidates] of [
+          ["typecheck", ["typecheck", "check:types", "tsc"]],
+          ["lint", ["lint", "check:lint"]],
+          ["test", ["test", "test:run", "unit"]],
+          ["build", ["build"]],
+          ["format", ["format:check", "prettier:check"]],
+        ] as const) {
+          const scriptName = candidates.find(
+            (candidate) => typeof scripts[candidate] === "string",
+          );
+
+          if (scriptName) {
+            commands.push({
+              kind,
+              command: createPackageScriptCommand(packageManager, scriptName),
+              source: `package.json#scripts.${scriptName}`,
+              confidence: "high",
+            });
+          }
+        }
+      }
+    }
+
+    if (existsSync(join(rootPath, "Cargo.toml"))) {
+      manifests.push("Cargo.toml");
+      commands.push(
+        { kind: "build", command: "cargo build", source: "Cargo.toml", confidence: "high" },
+        { kind: "test", command: "cargo test", source: "Cargo.toml", confidence: "high" },
+      );
+    }
+
+    if (existsSync(join(rootPath, "pyproject.toml"))) {
+      manifests.push("pyproject.toml");
+      commands.push({
+        kind: "test",
+        command: "python -m pytest",
+        source: "pyproject.toml",
+        confidence: "medium",
+      });
+    }
+
+    if (existsSync(join(rootPath, "go.mod"))) {
+      manifests.push("go.mod");
+      commands.push(
+        { kind: "test", command: "go test ./...", source: "go.mod", confidence: "high" },
+        { kind: "build", command: "go build ./...", source: "go.mod", confidence: "high" },
+      );
+    }
+
+    const verificationCommand = commands
+      .filter((entry) =>
+        entry.kind === "typecheck" ||
+        entry.kind === "lint" ||
+        entry.kind === "test"
+      )
+      .map((entry) => entry.command)
+      .filter((command, index, all) => all.indexOf(command) === index)
+      .join(" && ");
+    const data = {
+      rootPath,
+      manifests,
+      commands,
+      verificationCommand,
+      detectedAt: new Date().toISOString(),
+    };
+    const outputPath = await maybeWriteJsonArtifact(
+      utility.outputPath,
+      config.workspaceRoot,
+      data,
+    );
+
+    return createUtilityResult(
+      block,
+      manifests.length > 0 || commands.length > 0 ? "SUCCESS" : "EMPTY",
+      `${block.title} detected ${commands.length} command(s).`,
+      { ...data, ...(outputPath ? { outputPath } : {}) },
+      "completed",
+    );
+  } catch (error) {
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
+};
+
+const createFinalReportMarkdown = (
+  flow: RalphFlow,
+  block: RalphUtilityBlock,
+  report: Record<string, unknown>,
+): string => {
+  const blockResults = Array.isArray(report.blockResults)
+    ? report.blockResults
+    : [];
+  const lines = [
+    `# ${flow.name} Final Report`,
+    "",
+    `- Block: ${block.title} (${block.id})`,
+    `- Run: ${String(report.runId ?? "")}`,
+    `- Generated: ${String(report.generatedAt ?? "")}`,
+    "",
+    "## Last Result",
+    "",
+    "```json",
+    JSON.stringify(report.lastResult ?? null, null, 2),
+    "```",
+    "",
+    "## Block Results",
+    "",
+    ...blockResults.map((entry) => {
+      if (!isRecord(entry)) {
+        return "- Unknown block result";
+      }
+
+      return `- ${String(entry.blockId ?? "unknown")}: ${String(entry.output ?? "")} - ${String(entry.summary ?? "")}`;
+    }),
+    "",
+  ];
+
+  return `${lines.join("\n")}\n`;
+};
+
+const executeFinalReportUtilityBlock = async (
+  flow: RalphFlow,
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+): Promise<RalphBlockExecutionResult> => {
+  try {
+    const blockResults = Array.from(context.resultsByBlock.values()).map((result) => ({
+      blockId: result.blockId,
+      output: result.output,
+      status: result.status,
+      summary: result.summary,
+      error: result.error,
+    }));
+    const report = {
+      flowId: flow.id,
+      flowName: flow.name,
+      runId: context.runId,
+      generatedAt: new Date().toISOString(),
+      variables: context.variables,
+      lastResult: context.lastResult,
+      blockResults,
+      runLog: context.runLog,
+    };
+    const jsonPath = await maybeWriteJsonArtifact(
+      utility.path,
+      config.workspaceRoot,
+      report,
+    );
+    const markdownPath = utility.markdownPath ?? utility.outputPath;
+    let resolvedMarkdownPath: string | undefined;
+
+    if (markdownPath?.trim()) {
+      resolvedMarkdownPath = resolveWorkspaceContainedUtilityPath(
+        markdownPath,
+        config.workspaceRoot,
+      );
+      await mkdir(dirname(resolvedMarkdownPath), { recursive: true });
+      await writeFile(
+        resolvedMarkdownPath,
+        createFinalReportMarkdown(flow, block, report),
+        "utf8",
+      );
+    }
+
+    return createUtilityResult(block, "SUCCESS", `${block.title} wrote report.`, {
+      ...report,
+      ...(jsonPath ? { jsonPath } : {}),
+      ...(resolvedMarkdownPath ? { markdownPath: resolvedMarkdownPath } : {}),
+    });
+  } catch (error) {
+    return createRalphBlockExecutionErrorResult(block, error);
+  }
 };
 
 const executeSetVariableUtilityBlock = (
@@ -4261,9 +6516,306 @@ const executeValidateJsonUtilityBlock = (
   }
 };
 
+const parseJsonFromText = (text: string): unknown => {
+  const trimmed = text.trim();
+
+  if (!trimmed) {
+    throw new SyntaxError("No JSON content found.");
+  }
+
+  try {
+    return parseStrictJsonText(trimmed);
+  } catch {
+    // Continue with fenced and embedded JSON extraction.
+  }
+
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/iu);
+  if (fencedMatch?.[1]) {
+    return parseStrictJsonText(fencedMatch[1].trim());
+  }
+
+  const starts = [trimmed.indexOf("{"), trimmed.indexOf("[")]
+    .filter((index) => index >= 0)
+    .sort((left, right) => left - right);
+
+  for (const start of starts) {
+    const candidates = [trimmed.lastIndexOf("}"), trimmed.lastIndexOf("]")]
+      .filter((end) => end > start)
+      .sort((left, right) => right - left);
+
+    for (const end of candidates) {
+      try {
+        return parseStrictJsonText(trimmed.slice(start, end + 1));
+      } catch {
+        // Try the next candidate boundary.
+      }
+    }
+  }
+
+  throw new SyntaxError("Could not extract JSON from model response.");
+};
+
+const createPromptJsonTask = (
+  flow: RalphFlow,
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  context: RalphResultContext,
+  repairFeedback: string | undefined,
+): string => {
+  const schemaText = utility.schema === undefined
+    ? "No schema was configured. Return a single valid JSON value."
+    : JSON.stringify(utility.schema, null, 2);
+  const prompt = utility.prompt ?? utility.message ?? utility.input ?? "";
+
+  return [
+    `Ralph flow: ${flow.name}`,
+    `Structured JSON utility block: ${block.title} (${block.id})`,
+    "",
+    "Return only one JSON value. Do not include markdown, code fences, comments, or prose.",
+    "The JSON must satisfy this schema when one is configured:",
+    schemaText,
+    ...(repairFeedback ? ["", "Previous JSON validation failed:", repairFeedback] : []),
+    "",
+    resolveTemplateText(prompt, context),
+  ].join("\n");
+};
+
+const executePromptJsonUtilityBlock = async (
+  flow: RalphFlow,
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  customizations: CustomizationDiscoveryResult,
+  context: RalphResultContext,
+  options: RalphRunOptions,
+): Promise<RalphBlockExecutionResult> => {
+  const prompt = utility.prompt ?? utility.message ?? utility.input ?? "";
+
+  if (!prompt.trim()) {
+    return createUtilityResult(block, "ERROR", "Prompt JSON utility requires prompt.");
+  }
+
+  const maxAttempts =
+    utility.maxAttempts === null
+      ? 1
+      : typeof utility.maxAttempts === "number"
+        ? utility.maxAttempts
+        : 2;
+  let lastText = "";
+  let lastValidation: JsonSchemaValidationResult | undefined;
+  let repairFeedback: string | undefined;
+  const progressEvents: RalphRunRecordBlockProgressEvent[] = [];
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const task = createPromptJsonTask(
+      flow,
+      block,
+      utility,
+      context,
+      repairFeedback,
+    );
+    const executionOptions = await createExecutionOptions(
+      options,
+      config,
+      context,
+      block,
+      options.conversationContext,
+    );
+    const taskExecutionOptions =
+      utility.schema === undefined || utility.structuredOutput === false
+        ? executionOptions
+        : {
+            ...executionOptions,
+            structuredOutput: {
+              name: `ralph_${block.id}`,
+              schema: utility.schema,
+              strict: true,
+            },
+          };
+
+    logBlockInput(options.logger, flow, block, config, task, attempt);
+
+    try {
+      const result = await executeTask(
+        task,
+        config,
+        customizations,
+        taskExecutionOptions,
+      );
+      appendRalphBlockProgressEvents(
+        progressEvents,
+        taskExecutionOptions.ralphProgressEvents,
+      );
+      lastText = getResultMarkdown(result);
+
+      if (result.status !== "executed") {
+        return withRalphBlockProgress(
+          createUtilityResult(
+            block,
+            "ERROR",
+            result.summary || `${block.title} did not execute.`,
+            { result },
+          ),
+          progressEvents,
+        );
+      }
+
+      const json = parseJsonFromText(lastText);
+      const validation = validateUtilityJsonValue(json, utility.schema);
+      lastValidation = validation;
+
+      if (!validation.valid) {
+        repairFeedback = validation.errors.join("\n");
+        continue;
+      }
+
+      const outputPath = await maybeWriteJsonArtifact(
+        utility.outputPath,
+        config.workspaceRoot,
+        json,
+      );
+
+      return withRalphBlockProgress(
+        createUtilityResult(block, "SUCCESS", `${block.title} produced JSON.`, {
+          output: json,
+          validation,
+          attempts: attempt,
+          ...(outputPath ? { outputPath } : {}),
+        }),
+        progressEvents,
+      );
+    } catch (error) {
+      appendRalphBlockProgressEvents(
+        progressEvents,
+        taskExecutionOptions.ralphProgressEvents,
+      );
+
+      if (attempt >= maxAttempts) {
+        return withRalphBlockProgress(
+          createRalphBlockExecutionErrorResult(block, error, attempt),
+          progressEvents,
+        );
+      }
+
+      repairFeedback = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  return withRalphBlockProgress(
+    createUtilityResult(
+      block,
+      "INVALID",
+      `${block.title} did not produce schema-valid JSON.`,
+      {
+        raw: lastText,
+        validation: lastValidation ?? { valid: false, errors: ["No JSON parsed."] },
+      },
+    ),
+    progressEvents,
+  );
+};
+
+const RALPH_VALIDATOR_JSON_SCHEMA = {
+  type: "object",
+  required: ["decision", "confidence", "summary", "evidence", "remainingWork"],
+  properties: {
+    decision: {
+      type: "string",
+      enum: ["DONE", "CONTINUE", "RETRY", "ERROR"],
+    },
+    confidence: { type: "string" },
+    summary: { type: "string" },
+    evidence: { type: "array", items: { type: "string" } },
+    remainingWork: { type: "array", items: { type: "string" } },
+  },
+};
+
+const isRalphValidatorJsonDecision = (
+  value: unknown,
+): value is RalphValidatorDecision => {
+  return (
+    value === "DONE" ||
+    value === "CONTINUE" ||
+    value === "RETRY" ||
+    value === "ERROR"
+  );
+};
+
+const executeValidatorJsonUtilityBlock = async (
+  flow: RalphFlow,
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  customizations: CustomizationDiscoveryResult,
+  context: RalphResultContext,
+  options: RalphRunOptions,
+): Promise<RalphBlockExecutionResult> => {
+  const promptResult = await executePromptJsonUtilityBlock(
+    flow,
+    block,
+    {
+      ...utility,
+      type: "PROMPT_JSON",
+      schema: utility.schema ?? RALPH_VALIDATOR_JSON_SCHEMA,
+      structuredOutput: utility.structuredOutput ?? true,
+    },
+    config,
+    customizations,
+    context,
+    options,
+  );
+
+  if (promptResult.output !== "SUCCESS") {
+    return {
+      ...promptResult,
+      output: promptResult.output === "ERROR" ? "ERROR" : "INVALID",
+      status: promptResult.output === "ERROR" ? "error" : "error",
+    };
+  }
+
+  const data = isRecord(promptResult.data) ? promptResult.data : {};
+  const output = isRecord(data.output) ? data.output : {};
+  const decision = typeof output.decision === "string"
+    ? output.decision.toUpperCase()
+    : undefined;
+
+  if (!isRalphValidatorJsonDecision(decision)) {
+    return withRalphBlockProgress(
+      createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} did not return a valid validator decision.`,
+        { output },
+      ),
+      promptResult.progress ?? [],
+    );
+  }
+
+  return withRalphBlockProgress(
+    createUtilityResult(
+      block,
+      decision,
+      typeof output.summary === "string"
+        ? output.summary
+        : `${block.title} returned ${decision}.`,
+      {
+        output,
+        decision,
+        confidence: output.confidence,
+        evidence: output.evidence,
+        remainingWork: output.remainingWork,
+      },
+      decision === "ERROR" ? "error" : "completed",
+    ),
+    promptResult.progress ?? [],
+  );
+};
+
 const executeUtilityBlock = async (
+  flow: RalphFlow,
   block: RalphUtilityBlock,
   config: RuntimeConfig,
+  customizations: CustomizationDiscoveryResult,
   context: RalphResultContext,
   options: RalphRunOptions,
 ): Promise<RalphBlockExecutionResult> => {
@@ -4300,6 +6852,8 @@ const executeUtilityBlock = async (
       return executeFetchUtilityBlock(block, utility, context, blockConfig, options);
     case "POLL":
       return executePollUtilityBlock(block, utility, context, blockConfig, options);
+    case "CONDITION":
+      return executeConditionUtilityBlock(block, utility, context);
     case "RUN_COMMAND":
       return executeCommandUtilityBlock(block, utility, blockConfig, false, options.signal);
     case "RUN_CHECK":
@@ -4310,16 +6864,101 @@ const executeUtilityBlock = async (
       return executeReadFileUtilityBlock(block, utility, blockConfig);
     case "WRITE_FILE":
       return executeWriteFileUtilityBlock(block, utility, blockConfig);
+    case "READ_JSON":
+      return executeReadJsonUtilityBlock(block, utility, blockConfig);
+    case "WRITE_JSON":
+      return executeWriteJsonUtilityBlock(block, utility, blockConfig, context);
+    case "PATCH_JSON":
+      return executePatchJsonUtilityBlock(block, utility, blockConfig, context);
+    case "APPEND_JSONL":
+      return executeAppendJsonlUtilityBlock(block, utility, blockConfig, context);
+    case "READ_JSONL":
+      return executeReadJsonlUtilityBlock(block, utility, blockConfig);
+    case "QUERY_JSONL":
+      return executeQueryJsonlUtilityBlock(block, utility, blockConfig, context);
+    case "FILE_EXISTS":
+      return executeFileExistsUtilityBlock(block, utility, blockConfig);
+    case "DELETE_FILE":
+      return executeDeleteFileUtilityBlock(block, utility, blockConfig);
+    case "MOVE_FILE":
+      return executeMoveFileUtilityBlock(block, utility, blockConfig);
+    case "ARCHIVE_FILE":
+      return executeArchiveFileUtilityBlock(block, utility, blockConfig);
+    case "LOOP_COUNTER":
+      return executeLoopCounterUtilityBlock(block, utility, blockConfig, context);
+    case "PROMPT_JSON":
+      return executePromptJsonUtilityBlock(
+        flow,
+        block,
+        utility,
+        blockConfig,
+        customizations,
+        context,
+        options,
+      );
+    case "VALIDATOR_JSON":
+      return executeValidatorJsonUtilityBlock(
+        flow,
+        block,
+        utility,
+        blockConfig,
+        customizations,
+        context,
+        options,
+      );
+    case "SELECT_JSON_TASK":
+      return executeSelectJsonTaskUtilityBlock(block, utility, blockConfig);
+    case "MARK_JSON_TASK":
+      return executeMarkJsonTaskUtilityBlock(block, utility, blockConfig, context);
+    case "CHANGE_SCOPE_GUARD":
+      return executeChangeScopeGuardUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        context,
+        options.signal,
+      );
+    case "SCAN_SCOPE_EVIDENCE":
+      return executeScanScopeEvidenceUtilityBlock(block, utility, blockConfig);
+    case "UPDATE_SCOPE_REGISTRY":
+      return executeUpdateScopeRegistryUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        context,
+      );
+    case "SELECT_SCOPE":
+      return executeSelectScopeUtilityBlock(block, utility, blockConfig);
+    case "MARK_SCOPE_RESULT":
+      return executeMarkScopeResultUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        context,
+      );
     case "SEARCH_FILES":
       return executeSearchFilesUtilityBlock(block, utility, blockConfig, options.signal);
     case "GIT_STATUS":
       return executeGitStatusUtilityBlock(block, utility, blockConfig, options.signal);
+    case "GIT_SNAPSHOT":
+      return executeGitSnapshotUtilityBlock(block, utility, blockConfig, options.signal);
+    case "GIT_DIFF_SUMMARY":
+      return executeGitDiffSummaryUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        options.signal,
+      );
+    case "DETECT_PROJECT_COMMANDS":
+      return executeDetectProjectCommandsUtilityBlock(block, utility, blockConfig);
     case "SET_VARIABLE":
       return executeSetVariableUtilityBlock(block, utility, context);
     case "TRANSFORM_JSON":
       return executeTransformJsonUtilityBlock(block, utility, context);
     case "VALIDATE_JSON":
       return executeValidateJsonUtilityBlock(block, utility, context);
+    case "FINAL_REPORT":
+      return executeFinalReportUtilityBlock(flow, block, utility, blockConfig, context);
     case "NOTIFY":
       return createUtilityResult(block, "SUCCESS", utility.message ?? block.title, {
         message: utility.message ?? block.title,
@@ -4594,7 +7233,7 @@ const executeBlock = async (
     case "INTERVIEW":
       return executeInterviewBlock(flow, block, config, customizations, context, options);
     case "UTILITY":
-      return executeUtilityBlock(block, config, context, options);
+      return executeUtilityBlock(flow, block, config, customizations, context, options);
     case "MCP_TOOL":
       return executeMcpToolBlock(block, config, context, options);
     case "MCP_RESOURCE":

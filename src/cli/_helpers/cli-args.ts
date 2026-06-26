@@ -186,6 +186,11 @@ export const parseCliArgs = (
         "service-start-event-dedupe-key"?: string;
         "arguments-json"?: string;
         "include-disabled"?: boolean;
+        agent?: string;
+        phase?: string;
+        "unused-days"?: string;
+        "never-used-days"?: string;
+        apply?: boolean;
         scope?: string;
         path?: string;
         "apply-to"?: string[];
@@ -305,6 +310,11 @@ export const parseCliArgs = (
         "service-start-event-dedupe-key": { type: "string" },
         "arguments-json": { type: "string" },
         "include-disabled": { type: "boolean" },
+        agent: { type: "string" },
+        phase: { type: "string" },
+        "unused-days": { type: "string" },
+        "never-used-days": { type: "string" },
+        apply: { type: "boolean" },
         scope: { type: "string" },
         path: { type: "string" },
         "apply-to": { type: "string", multiple: true },
@@ -532,6 +542,11 @@ export const parseCliArgs = (
   );
   const rawMcpArgumentsJson = normalizeOptionalString(values?.["arguments-json"]);
   const includeDisabledMcp = values?.["include-disabled"] === true;
+  const rawMcpAgent = normalizeOptionalString(values?.agent);
+  const rawMcpPhase = normalizeOptionalString(values?.phase);
+  const rawMcpUnusedDays = normalizeOptionalString(values?.["unused-days"]);
+  const rawMcpNeverUsedDays = normalizeOptionalString(values?.["never-used-days"]);
+  const applyMcpCleanup = values?.apply === true;
   const rawInstructionScope = normalizeOptionalString(values?.scope);
   const rawInstructionPath = normalizeOptionalString(values?.path);
   const rawInstructionApplyTo = values?.["apply-to"]
@@ -994,6 +1009,35 @@ export const parseCliArgs = (
       fail("--include-disabled is only valid for `machdoch mcp servers`.");
     }
 
+    if (rawMcpAgent && action !== "lifecycle-hook") {
+      fail("--agent is only valid for `machdoch mcp lifecycle-hook`.");
+    }
+
+    if (rawMcpPhase && action !== "lifecycle-hook") {
+      fail("--phase is only valid for `machdoch mcp lifecycle-hook`.");
+    }
+
+    if (rawMcpUnusedDays && action !== "cleanup") {
+      fail("--unused-days is only valid for `machdoch mcp cleanup`.");
+    }
+
+    if (rawMcpNeverUsedDays && action !== "cleanup") {
+      fail("--never-used-days is only valid for `machdoch mcp cleanup`.");
+    }
+
+    if (applyMcpCleanup && action !== "cleanup") {
+      fail("--apply is only valid for `machdoch mcp cleanup`.");
+    }
+
+    const unusedDays =
+      action === "cleanup"
+        ? parseOptionalPositiveInteger(rawMcpUnusedDays, "--unused-days")
+        : undefined;
+    const neverUsedDays =
+      action === "cleanup"
+        ? parseOptionalPositiveInteger(rawMcpNeverUsedDays, "--never-used-days")
+        : undefined;
+
     return createParsedArgs(
       {
         ...sharedOptions,
@@ -1006,6 +1050,11 @@ export const parseCliArgs = (
           ...(target ? { target } : {}),
           ...(rawMcpArgumentsJson ? { argumentsJson: rawMcpArgumentsJson } : {}),
           ...(includeDisabledMcp ? { includeDisabled: true } : {}),
+          ...(rawMcpAgent ? { agent: rawMcpAgent } : {}),
+          ...(rawMcpPhase ? { phase: rawMcpPhase } : {}),
+          ...(unusedDays !== undefined ? { unusedDays } : {}),
+          ...(neverUsedDays !== undefined ? { neverUsedDays } : {}),
+          ...(applyMcpCleanup ? { apply: true } : {}),
         },
       },
     );

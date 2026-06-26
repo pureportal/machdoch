@@ -7,9 +7,10 @@ import {
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, type JSX } from "react";
+import { useCallback, useEffect, useState, type JSX } from "react";
 import {
   hideMainWindowToTray,
+  isMainWindowOpen,
   quitMachdoch,
   revealMainWindow,
 } from "./assistant-surface";
@@ -65,6 +66,8 @@ const TrayMenuActionButton = ({
 };
 
 export const TrayMenuShell = (): JSX.Element => {
+  const [mainWindowOpen, setMainWindowOpen] = useState(() => !isTauri());
+
   const hideTrayMenu = useCallback(async (): Promise<void> => {
     if (!isTauri()) {
       return;
@@ -81,13 +84,17 @@ export const TrayMenuShell = (): JSX.Element => {
       tone: "slate",
       onSelect: revealMainWindow,
     },
-    {
-      id: "hide-to-tray",
-      label: "Hide to tray",
-      icon: Minus,
-      tone: "slate",
-      onSelect: hideMainWindowToTray,
-    },
+    ...(mainWindowOpen
+      ? [
+          {
+            id: "hide-to-tray",
+            label: "Hide to tray",
+            icon: Minus,
+            tone: "slate",
+            onSelect: hideMainWindowToTray,
+          } satisfies TrayMenuAction,
+        ]
+      : []),
     {
       id: "quit",
       label: "Quit machdoch",
@@ -119,6 +126,20 @@ export const TrayMenuShell = (): JSX.Element => {
     let unsubscribe: (() => void) | undefined;
     let hideTimeoutId: number | undefined;
 
+    const refreshMainWindowOpenState = (): void => {
+      void isMainWindowOpen()
+        .then((isOpen) => {
+          if (disposed) {
+            return;
+          }
+
+          setMainWindowOpen(isOpen);
+        })
+        .catch((error) => {
+          console.error("Failed to refresh tray menu window state", error);
+        });
+    };
+
     const clearPendingHide = (): void => {
       if (hideTimeoutId === undefined) {
         return;
@@ -128,11 +149,14 @@ export const TrayMenuShell = (): JSX.Element => {
       hideTimeoutId = undefined;
     };
 
+    refreshMainWindowOpenState();
+
     void currentWindow
       .onFocusChanged((event) => {
         clearPendingHide();
 
         if (event.payload) {
+          refreshMainWindowOpenState();
           return;
         }
 

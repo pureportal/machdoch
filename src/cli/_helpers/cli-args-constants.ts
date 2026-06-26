@@ -75,6 +75,9 @@ export const MCP_ACTIONS: ReadonlySet<McpCliAction> = new Set([
   "call-tool",
   "read-resource",
   "get-prompt",
+  "usage",
+  "lifecycle-hook",
+  "cleanup",
 ]);
 export const MCP_ACTIONS_REQUIRING_SERVER: ReadonlySet<McpCliAction> = new Set([
   "discover",

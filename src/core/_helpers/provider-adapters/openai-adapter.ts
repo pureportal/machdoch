@@ -75,6 +75,35 @@ export const createOpenAIReasoningConfig = (
   };
 };
 
+const normalizeOpenAIStructuredOutputName = (name: string): string => {
+  const normalized = name
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/gu, "_")
+    .replace(/^_+|_+$/gu, "")
+    .slice(0, 64);
+
+  return normalized || "structured_output";
+};
+
+export const createOpenAIStructuredOutputTextConfig = (
+  structuredOutput: AgentModelStartParams["structuredOutput"],
+): { text?: Record<string, unknown> } => {
+  if (!structuredOutput) {
+    return {};
+  }
+
+  return {
+    text: {
+      format: {
+        type: "json_schema",
+        name: normalizeOpenAIStructuredOutputName(structuredOutput.name),
+        schema: structuredOutput.schema,
+        strict: structuredOutput.strict !== false,
+      },
+    },
+  };
+};
+
 export const createOpenAIUserInput = (
   params: Pick<AgentModelStartParams, "imageInputs" | "userPrompt">,
 ) => {
@@ -162,6 +191,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
           input: createOpenAIUserInput(params),
           tools: createOpenAITools(params.tools),
           ...createOpenAIReasoningConfig(params.model, params.reasoning),
+          ...createOpenAIStructuredOutputTextConfig(params.structuredOutput),
           ...createOpenAIResponseToolSelection(),
         };
 
@@ -221,6 +251,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
             startParams.model,
             startParams.reasoning,
           ),
+          ...createOpenAIStructuredOutputTextConfig(startParams.structuredOutput),
           ...createOpenAIResponseToolSelection(),
         };
 

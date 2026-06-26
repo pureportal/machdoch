@@ -96,8 +96,14 @@ export const getUtilityNodePreview = (
           `every ${formatSeconds(utility.intervalSeconds ?? 30)}`,
           utility.maxAttempts === null || utility.maxAttempts === undefined
             ? "endless"
-            : `${utility.maxAttempts} attempts`,
+          : `${utility.maxAttempts} attempts`,
         ],
+      };
+    case "CONDITION":
+      return {
+        primary: "Route by condition",
+        secondary: formatUtilityConditionSummary(utility.condition),
+        chips: ["MATCH", "NO_MATCH", "ERROR"],
       };
     case "RUN_COMMAND":
       return {
@@ -145,6 +151,152 @@ export const getUtilityNodePreview = (
         secondary: compactPreviewText(utility.content, "Content not set"),
         chips: utility.encoding ? [utility.encoding] : [],
       };
+    case "READ_JSON":
+      return {
+        primary: `Read JSON ${compactPreviewText(utility.path, "file path not set")}`,
+        secondary:
+          utility.schema === undefined ? "No schema validation" : "Schema configured",
+        chips: ["SUCCESS", "NOT_FOUND", "INVALID"],
+      };
+    case "READ_JSONL":
+    case "QUERY_JSONL":
+      return {
+        primary: `${utility.type === "QUERY_JSONL" ? "Query" : "Read"} JSONL ${compactPreviewText(utility.path, "file path not set")}`,
+        secondary:
+          utility.type === "QUERY_JSONL"
+            ? formatUtilityConditionSummary(utility.condition)
+            : utility.schema === undefined
+              ? "No schema validation"
+              : "Schema configured",
+        chips: [
+          "SUCCESS",
+          "EMPTY",
+          utility.maxResults ? `max ${utility.maxResults}` : "all",
+        ],
+      };
+    case "WRITE_JSON":
+    case "PATCH_JSON":
+    case "APPEND_JSONL":
+      return {
+        primary: `${utility.type === "PATCH_JSON" ? "Patch" : utility.type === "APPEND_JSONL" ? "Append" : "Write"} ${compactPreviewText(
+          utility.path,
+          "file path not set",
+        )}`,
+        secondary:
+          utility.input ?? utility.content
+            ? compactPreviewText(utility.input ?? utility.content, "JSON input")
+            : "Uses previous result data",
+        chips: [
+          ...(utility.type === "PATCH_JSON"
+            ? [utility.jsonPatchMode ?? "merge"]
+            : []),
+          utility.schema === undefined ? "no schema" : "schema",
+        ],
+      };
+    case "FILE_EXISTS":
+      return {
+        primary: `Check ${compactPreviewText(utility.path, "file path not set")}`,
+        secondary: "Routes by whether the path exists.",
+        chips: ["EXISTS", "MISSING", "ERROR"],
+      };
+    case "DELETE_FILE":
+      return {
+        primary: `Delete ${compactPreviewText(utility.path, "file path not set")}`,
+        secondary: "Deletes a workspace-contained file.",
+        chips: ["SUCCESS", "NOT_FOUND", "ERROR"],
+      };
+    case "MOVE_FILE":
+      return {
+        primary: `Move ${compactPreviewText(utility.path, "file path not set")}`,
+        secondary: `To ${compactPreviewText(utility.outputPath, "output path not set")}`,
+        chips: ["SUCCESS", "NOT_FOUND", "ERROR"],
+      };
+    case "ARCHIVE_FILE":
+      return {
+        primary: `Archive ${compactPreviewText(utility.path, "file path not set")}`,
+        secondary: utility.outputPath
+          ? `To ${utility.outputPath}`
+          : `Root: ${compactPreviewText(utility.rootPath, ".machdoch/ralph/archive")}`,
+        chips: ["SUCCESS", "NOT_FOUND", "ERROR"],
+      };
+    case "LOOP_COUNTER":
+      return {
+        primary: `Counter ${compactPreviewText(utility.counterName, "loop")}`,
+        secondary: `State: ${compactPreviewText(utility.path, ".machdoch/ralph/counters.json")}`,
+        chips: [
+          `limit ${utility.maxAttempts ?? "none"}`,
+          utility.reset ? "reset" : "increment",
+        ],
+      };
+    case "PROMPT_JSON":
+      return {
+        primary: "Prompt for schema JSON",
+        secondary: compactPreviewText(utility.prompt, "Prompt not set"),
+        chips: [
+          utility.schema === undefined ? "no schema" : "schema",
+          `tries ${utility.maxAttempts ?? 2}`,
+        ],
+      };
+    case "VALIDATOR_JSON":
+      return {
+        primary: "Validate with schema JSON",
+        secondary: compactPreviewText(utility.prompt, "Prompt not set"),
+        chips: ["DONE", "CONTINUE", "RETRY", "ERROR"],
+      };
+    case "SELECT_JSON_TASK":
+      return {
+        primary: `Select task from ${compactPreviewText(utility.path, "file path not set")}`,
+        secondary: `Path: ${compactPreviewText(utility.jsonPath, "tasks")}`,
+        chips: [utility.strategy ?? "start-to-end", "SELECTED", "EMPTY"],
+      };
+    case "MARK_JSON_TASK":
+      return {
+        primary: `Mark task in ${compactPreviewText(utility.path, "file path not set")}`,
+        secondary: compactPreviewText(
+          utility.taskId,
+          "Uses selected/in-progress task",
+        ),
+        chips: [utility.status ?? utility.result ?? "done"],
+      };
+    case "SCAN_SCOPE_EVIDENCE":
+      return {
+        primary: `Scan scopes under ${compactPreviewText(utility.rootPath, ".")}`,
+        secondary: compactPreviewText(
+          utility.excludePaths,
+          "Uses default repository excludes.",
+        ),
+        chips: [
+          `depth ${utility.maxDepth ?? 4}`,
+          `max ${utility.maxResults ?? 200}`,
+        ],
+      };
+    case "UPDATE_SCOPE_REGISTRY":
+      return {
+        primary: `Update ${compactPreviewText(utility.registryPath ?? utility.path, "default registry")}`,
+        secondary: `Flow: ${compactPreviewText(utility.flowAlias, "ralph-flow")}`,
+        chips: [utility.strategy ?? "round-robin", "JSON"],
+      };
+    case "SELECT_SCOPE":
+      return {
+        primary: `Select scope from ${compactPreviewText(utility.registryPath ?? utility.path, "default registry")}`,
+        secondary: `Strategy: ${utility.strategy ?? "round-robin"}`,
+        chips: ["SELECTED", "EMPTY", "ERROR"],
+      };
+    case "MARK_SCOPE_RESULT":
+      return {
+        primary: `Mark ${compactPreviewText(utility.scopeId, "current scope")}`,
+        secondary: compactPreviewText(utility.result, "Uses previous output"),
+        chips: ["SUCCESS", "NOT_FOUND", "ERROR"],
+      };
+    case "CHANGE_SCOPE_GUARD":
+      return {
+        primary: "Guard changed files against scope",
+        secondary: compactPreviewText(
+          utility.input,
+          "Uses previous result or selected scope",
+        ),
+        chips: ["IN_SCOPE", "OUT_OF_SCOPE", "EMPTY"],
+      };
     case "SEARCH_FILES":
       return {
         primary: utility.glob
@@ -158,6 +310,24 @@ export const getUtilityNodePreview = (
         primary: "git status --short",
         secondary: `Repository: ${compactPreviewText(utility.cwd, ".")}`,
         chips: [],
+      };
+    case "GIT_SNAPSHOT":
+      return {
+        primary: "Capture git snapshot",
+        secondary: `Repository: ${compactPreviewText(utility.cwd, ".")}`,
+        chips: utility.outputPath ? [utility.outputPath] : [],
+      };
+    case "GIT_DIFF_SUMMARY":
+      return {
+        primary: "Summarize git diff",
+        secondary: `Repository: ${compactPreviewText(utility.cwd, ".")}`,
+        chips: utility.outputPath ? [utility.outputPath] : [],
+      };
+    case "DETECT_PROJECT_COMMANDS":
+      return {
+        primary: `Detect commands in ${compactPreviewText(utility.rootPath ?? utility.cwd, ".")}`,
+        secondary: "Infers package/test/build validation commands.",
+        chips: utility.outputPath ? [utility.outputPath] : [],
       };
     case "SET_VARIABLE":
       return {
@@ -177,6 +347,18 @@ export const getUtilityNodePreview = (
         secondary:
           utility.schema === undefined ? "Schema not set" : "Schema configured",
         chips: utility.input ? [`input ${utility.input}`] : [],
+      };
+    case "FINAL_REPORT":
+      return {
+        primary: "Write final run report",
+        secondary: compactPreviewText(
+          utility.path ?? utility.outputPath,
+          "No artifact path set",
+        ),
+        chips: [
+          ...(utility.path ? ["JSON"] : []),
+          ...(utility.outputPath ?? utility.markdownPath ? ["Markdown"] : []),
+        ],
       };
     case "NOTIFY":
       return {

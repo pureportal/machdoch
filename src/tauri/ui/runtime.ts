@@ -4142,6 +4142,35 @@ export const deleteRalphFlow = async (
   );
 };
 
+export const openRalphFlowInExplorer = async (
+  workspaceRoot: string | null | undefined,
+  name: string,
+  scope?: RalphFlowScope,
+): Promise<void> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  const normalizedName = name.trim();
+
+  if (!normalizedName) {
+    throw new Error("Expected a Ralph flow id or alias.");
+  }
+
+  if (!canInvokeTauriCommands()) {
+    return;
+  }
+
+  try {
+    await tauriCore.invoke("open_ralph_flow_in_explorer", {
+      request: {
+        workspaceRoot: normalizedWorkspaceRoot ?? "",
+        flow: normalizedName,
+        ...(scope ? { scope } : {}),
+      },
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
 export const restoreRalphFlowRevision = async (
   workspaceRoot: string | null | undefined,
   input: RalphRestoreFlowRevisionInput,

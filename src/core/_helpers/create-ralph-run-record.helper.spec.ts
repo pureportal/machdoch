@@ -100,7 +100,38 @@ describe("createRalphRunRecord", () => {
           result: createExecutionResult({
             task: longText,
             status: "executed",
+            reason: longText,
+            executedTools: ["shell"],
+            outputSections: [
+              {
+                title: longText,
+                lines: [longText],
+                audience: "internal",
+                tone: "info",
+              },
+            ],
+            response: {
+              markdown: longText,
+              highlights: [longText],
+              relatedFiles: [
+                {
+                  path: longText,
+                  description: longText,
+                },
+              ],
+              verification: [longText],
+              followUps: [longText],
+            },
           }),
+          progress: [
+            {
+              timestamp: "2026-06-18T10:00:01.000Z",
+              kind: "model-stream",
+              label: "Model reasoning",
+              streamKind: "reasoning",
+              content: longText,
+            },
+          ],
         }),
       ],
       validation: {
@@ -172,6 +203,27 @@ describe("createRalphRunRecord", () => {
     expect(record.blockResults[0]?.task).toHaveLength(
       MAX_RALPH_RESULT_CHARS + TRUNCATION_MARKER.length,
     );
+    expect(record.blockResults[0]?.reason).toHaveLength(
+      MAX_RALPH_RESULT_CHARS + TRUNCATION_MARKER.length,
+    );
+    expect(record.blockResults[0]?.executedTools).toEqual(["shell"]);
+    expect(record.blockResults[0]?.outputSections?.[0]?.title).toHaveLength(
+      MAX_RALPH_RESULT_CHARS + TRUNCATION_MARKER.length,
+    );
+    expect(record.blockResults[0]?.outputSections?.[0]?.lines[0]).toHaveLength(
+      MAX_RALPH_RESULT_CHARS + TRUNCATION_MARKER.length,
+    );
+    expect(record.blockResults[0]?.response?.markdown).toHaveLength(
+      MAX_RALPH_RESULT_CHARS + TRUNCATION_MARKER.length,
+    );
+    expect(record.blockResults[0]?.progress?.[0]).toMatchObject({
+      kind: "model-stream",
+      label: "Model reasoning",
+      streamKind: "reasoning",
+    });
+    expect(record.blockResults[0]?.progress?.[0]?.content).toHaveLength(
+      MAX_RALPH_RESULT_CHARS + TRUNCATION_MARKER.length,
+    );
     expect(record.blockResults[0]?.data).toEqual({
       value: `${longText.slice(0, MAX_RALPH_RESULT_CHARS)}${TRUNCATION_MARKER}`,
     });
@@ -202,12 +254,18 @@ describe("createRalphRunRecord", () => {
 
 describe("createRalphRunRecordBlock", () => {
   it("omits undefined, empty, and unavailable optional fields", () => {
+    const resultWithoutResponse = createExecutionResult({
+      task: "",
+      status: "blocked",
+    });
+    delete resultWithoutResponse.response;
+
     const block = createRalphRunRecordBlock(
       createBlockResult({
         data: undefined,
         error: "",
         markdown: "",
-        result: createExecutionResult({ task: "", status: "blocked" }),
+        result: resultWithoutResponse,
       }),
     );
 

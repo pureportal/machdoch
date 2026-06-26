@@ -1,5 +1,6 @@
 import type {
   AgentModelAdapter,
+  AgentModelStructuredOutput,
   ResolvedTaskContext,
   TaskConversationContext,
   AgentModelImageInput,
@@ -119,6 +120,7 @@ export interface ModelDrivenExecutionParams {
   monitorModelAdapter?: AgentModelAdapter;
   additionalToolDefinitions?: AgentToolDefinition[];
   systemPromptSections?: string[];
+  structuredOutput?: AgentModelStructuredOutput;
   onStateChange?: TaskExecutionProgressHandler;
   onActionOutput?: TaskActionOutputHandler;
   runId?: string;

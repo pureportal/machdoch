@@ -6,6 +6,7 @@ import type {
 import {
   RALPH_BLOCK_FALLBACK_HEIGHT,
   RALPH_CANVAS_X_GAP,
+  RALPH_CANVAS_STACK_OFFSET,
   RALPH_CANVAS_Y_GAP,
   RALPH_GROUP_COLLAPSED_HEIGHT,
   RALPH_GROUP_DEFAULT_SIZE,
@@ -21,6 +22,7 @@ import {
   getCanvasBlockBounds,
   getCanvasBlockSize,
   getDefaultCanvasPosition,
+  getDisplacedCanvasPosition,
   getSelectableRouteTargets,
   isPointInsideBounds,
   normalizeDerivedGroupMembership,
@@ -160,6 +162,40 @@ describe("Ralph canvas layout helpers", () => {
     ).toEqual({ x: 10, y: 10 });
   });
 
+  it("displaces exact duplicate canvas positions as a visual stack", () => {
+    const flow = createFlow({
+      blocks: [
+        promptBlock({ id: "first", position: { x: 100, y: 120 } }),
+        promptBlock({
+          id: "second",
+          position: {
+            x: 100 + RALPH_CANVAS_STACK_OFFSET,
+            y: 120 + RALPH_CANVAS_STACK_OFFSET,
+          },
+        }),
+      ],
+      edges: [],
+    });
+
+    expect(getDisplacedCanvasPosition(flow, { x: 100, y: 120 })).toEqual({
+      x: 100 + RALPH_CANVAS_STACK_OFFSET * 2,
+      y: 120 + RALPH_CANVAS_STACK_OFFSET * 2,
+    });
+    expect(getDisplacedCanvasPosition(flow, { x: 101, y: 120 })).toEqual({
+      x: 101,
+      y: 120,
+    });
+    expect(
+      getDisplacedCanvasPosition(flow, { x: 100, y: 120 }, {
+        ignoredBlockIds: new Set(["first", "second"]),
+        reservedPositions: [{ x: 100, y: 120 }],
+      }),
+    ).toEqual({
+      x: 100 + RALPH_CANVAS_STACK_OFFSET,
+      y: 120 + RALPH_CANVAS_STACK_OFFSET,
+    });
+  });
+
   it("derives group children from explicit membership, parent ids, and placed geometry", () => {
     const flow = createFlow({
       blocks: [
@@ -286,6 +322,59 @@ describe("Ralph canvas layout helpers", () => {
     });
   });
 
+  it("attaches an optional node resize-end handler to canvas nodes", () => {
+    const onResizeEnd = (): void => {};
+    const nodes = flowToNodes(
+      createFlow({ blocks: [noteBlock()], edges: [] }),
+      [],
+      null,
+      null,
+      onResizeEnd,
+    );
+
+    expect(nodes[0]?.data.onResizeEnd).toBe(onResizeEnd);
+  });
+
+  it("marks directly locked nodes and descendants of locked groups as non-draggable", () => {
+    const flow = createFlow({
+      blocks: [
+        groupBlock({
+          locked: true,
+          childBlockIds: ["prompt"],
+          position: { x: 0, y: 0 },
+          size: { width: 300, height: 240 },
+        }),
+        promptBlock({ parentGroupId: "group" }),
+        noteBlock({
+          id: "locked-note",
+          locked: true,
+          position: { x: 1200, y: 1200 },
+        }),
+      ],
+      edges: [],
+    });
+    const nodes = flowToNodes(flow, [], null, null);
+
+    expect(nodes.find((node) => node.id === "group")).toMatchObject({
+      draggable: false,
+      data: {
+        block: expect.objectContaining({ locked: true }),
+        lockedByGroupId: null,
+      },
+    });
+    expect(nodes.find((node) => node.id === "prompt")).toMatchObject({
+      draggable: false,
+      data: { lockedByGroupId: "group" },
+    });
+    expect(nodes.find((node) => node.id === "locked-note")).toMatchObject({
+      draggable: false,
+      data: {
+        block: expect.objectContaining({ locked: true }),
+        lockedByGroupId: null,
+      },
+    });
+  });
+
   it("converts flows to canvas edges with route styling and hidden collapsed-group edges", () => {
     const flow = createFlow({
       blocks: [
@@ -345,9 +434,15 @@ describe("Ralph canvas layout helpers", () => {
     const note = noteBlock({
       position: { x: 0, y: 0 },
     });
+    const lockedPrompt = promptBlock({
+      id: "locked-prompt",
+      locked: true,
+      position: { x: 40, y: 320 },
+    });
     const flow = createFlow({
       blocks: [
         note,
+        lockedPrompt,
         { id: "start", type: "START", title: "Start" },
         promptBlock({ id: "prompt" }),
         { id: "end", type: "END", title: "End", status: "success" },
@@ -369,11 +464,18 @@ describe("Ralph canvas layout helpers", () => {
     });
     const arranged = forceRalphFlowLayout(flow);
     const noteAfterLayout = arranged.blocks.find((block) => block.id === "note");
+    const lockedPromptAfterLayout = arranged.blocks.find(
+      (block) => block.id === "locked-prompt",
+    );
     const arrangedExecutableBlocks = arranged.blocks.filter(
-      (block) => block.type !== "NOTE" && block.type !== "GROUP",
+      (block) =>
+        block.type !== "NOTE" &&
+        block.type !== "GROUP" &&
+        block.id !== "locked-prompt",
     );
 
     expect(noteAfterLayout).toEqual(note);
+    expect(lockedPromptAfterLayout).toEqual(lockedPrompt);
     expect(
       arrangedExecutableBlocks.every((block) => block.position !== undefined),
     ).toBe(true);

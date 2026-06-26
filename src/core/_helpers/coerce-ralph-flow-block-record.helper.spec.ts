@@ -9,6 +9,7 @@ describe("coerceRalphFlowBlockRecord", () => {
       prompt: "Do work.",
       position: { x: 10, y: 20 },
       size: { width: 320, height: 180 },
+      locked: true,
       parentGroupId: "group",
       groupBoundary: true,
       settings: {
@@ -34,6 +35,7 @@ describe("coerceRalphFlowBlockRecord", () => {
       prompt: "Do work.",
       position: { x: 10, y: 20 },
       size: { width: 320, height: 180 },
+      locked: true,
       parentGroupId: "group",
       groupBoundary: true,
       settings: {

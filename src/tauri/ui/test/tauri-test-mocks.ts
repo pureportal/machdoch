@@ -69,6 +69,7 @@ const createWindowHandle = (label: string) => ({
   emitTo: vi.fn().mockResolvedValue(undefined),
   hide: vi.fn().mockResolvedValue(undefined),
   isMaximized: vi.fn().mockResolvedValue(false),
+  isMinimized: vi.fn().mockResolvedValue(false),
   isVisible: vi.fn().mockResolvedValue(true),
   listen: listenMock,
   maximize: vi.fn().mockResolvedValue(undefined),

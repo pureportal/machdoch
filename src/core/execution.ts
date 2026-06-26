@@ -329,6 +329,9 @@ const runTaskExecutionStateMachine = async (
             ...(options.systemPromptSections
               ? { systemPromptSections: options.systemPromptSections }
               : {}),
+            ...(options.structuredOutput
+              ? { structuredOutput: options.structuredOutput }
+              : {}),
             ...(options.onStateChange
               ? { onStateChange: options.onStateChange }
               : {}),

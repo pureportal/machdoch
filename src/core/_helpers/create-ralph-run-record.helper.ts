@@ -4,12 +4,17 @@ import {
 import type {
   RalphBlockExecutionResult,
   RalphFlow,
+  RalphRunRecordBlockProgressEvent,
   RalphRunLogPaths,
   RalphRunRecord,
   RalphRunRecordBlock,
   RalphRunResult,
   RalphRunSummary,
 } from "../ralph.js";
+import type {
+  TaskExecutionNarrative,
+  TaskExecutionSection,
+} from "../types.js";
 
 const MAX_RALPH_RUN_RECORD_DEPTH = 4;
 const MAX_RALPH_RUN_RECORD_COLLECTION_ENTRIES = 100;
@@ -24,6 +29,18 @@ const capRunRecordText = (value: string | undefined): string | undefined => {
   }
 
   return truncateRalphResultText(value);
+};
+
+const capRunRecordTextArray = (
+  values: readonly string[] | undefined,
+): string[] | undefined => {
+  if (!values || values.length === 0) {
+    return undefined;
+  }
+
+  return values
+    .slice(0, MAX_RALPH_RUN_RECORD_COLLECTION_ENTRIES)
+    .map((value) => truncateRalphResultText(value));
 };
 
 export const capRalphRunRecordValue = (
@@ -66,12 +83,90 @@ export const capRalphRunRecordValue = (
   return undefined;
 };
 
+const capRalphRunRecordOutputSections = (
+  sections: TaskExecutionSection[] | undefined,
+): TaskExecutionSection[] | undefined => {
+  if (!sections || sections.length === 0) {
+    return undefined;
+  }
+
+  return sections
+    .slice(0, MAX_RALPH_RUN_RECORD_COLLECTION_ENTRIES)
+    .map((section) => ({
+      title: truncateRalphResultText(section.title),
+      lines: section.lines
+        .slice(0, MAX_RALPH_RUN_RECORD_COLLECTION_ENTRIES)
+        .map((line) => truncateRalphResultText(line)),
+      ...(section.audience ? { audience: section.audience } : {}),
+      ...(section.tone ? { tone: section.tone } : {}),
+    }));
+};
+
+const capRalphRunRecordResponse = (
+  response: TaskExecutionNarrative | undefined,
+): TaskExecutionNarrative | undefined => {
+  if (!response) {
+    return undefined;
+  }
+
+  return {
+    markdown: truncateRalphResultText(response.markdown),
+    highlights: capRunRecordTextArray(response.highlights) ?? [],
+    relatedFiles: response.relatedFiles
+      .slice(0, MAX_RALPH_RUN_RECORD_COLLECTION_ENTRIES)
+      .map((file) => ({
+        path: truncateRalphResultText(file.path),
+        description: truncateRalphResultText(file.description),
+      })),
+    verification: capRunRecordTextArray(response.verification) ?? [],
+    followUps: capRunRecordTextArray(response.followUps) ?? [],
+  };
+};
+
+const capRalphRunRecordProgressEvents = (
+  progress: RalphRunRecordBlockProgressEvent[] | undefined,
+): RalphRunRecordBlockProgressEvent[] | undefined => {
+  if (!progress || progress.length === 0) {
+    return undefined;
+  }
+
+  return progress
+    .slice(-MAX_RALPH_RUN_RECORD_COLLECTION_ENTRIES)
+    .map((event) => ({
+      timestamp: event.timestamp,
+      kind: event.kind,
+      label: truncateRalphResultText(event.label),
+      ...(event.streamKind ? { streamKind: event.streamKind } : {}),
+      ...(event.phase ? { phase: event.phase } : {}),
+      ...(event.tone ? { tone: event.tone } : {}),
+      ...(event.complete !== undefined ? { complete: event.complete } : {}),
+      ...(event.toolName
+        ? { toolName: truncateRalphResultText(event.toolName) }
+        : {}),
+      ...(event.stream ? { stream: event.stream } : {}),
+      ...(event.content
+        ? { content: truncateRalphResultText(event.content) }
+        : {}),
+      ...(event.detail ? { detail: truncateRalphResultText(event.detail) } : {}),
+    }));
+};
+
 export const createRalphRunRecordBlock = (
   blockResult: RalphBlockExecutionResult,
 ): RalphRunRecordBlock => {
   const task = capRunRecordText(blockResult.result?.task);
+  const reason = capRunRecordText(blockResult.result?.reason);
   const markdown = capRunRecordText(blockResult.markdown);
   const error = capRunRecordText(blockResult.error);
+  const executedTools = blockResult.result?.executedTools.length
+    ? blockResult.result.executedTools
+        .slice(0, MAX_RALPH_RUN_RECORD_COLLECTION_ENTRIES)
+    : undefined;
+  const outputSections = capRalphRunRecordOutputSections(
+    blockResult.result?.outputSections,
+  );
+  const response = capRalphRunRecordResponse(blockResult.result?.response);
+  const progress = capRalphRunRecordProgressEvents(blockResult.progress);
 
   return {
     blockId: blockResult.blockId,
@@ -82,6 +177,11 @@ export const createRalphRunRecordBlock = (
     ...(blockResult.result?.status
       ? { executionStatus: blockResult.result.status }
       : {}),
+    ...(reason ? { reason } : {}),
+    ...(executedTools ? { executedTools } : {}),
+    ...(outputSections ? { outputSections } : {}),
+    ...(response ? { response } : {}),
+    ...(progress ? { progress } : {}),
     summary: truncateRalphResultText(blockResult.summary),
     ...(blockResult.data !== undefined
       ? { data: capRalphRunRecordValue(blockResult.data) }

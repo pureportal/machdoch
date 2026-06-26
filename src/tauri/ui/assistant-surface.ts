@@ -351,6 +351,30 @@ export const revealMainWindow = async (): Promise<void> => {
   }
 };
 
+export const isMainWindowOpen = async (): Promise<boolean> => {
+  if (!isTauri()) {
+    return true;
+  }
+
+  const mainWindow = await getWindowByLabel(MAIN_WINDOW_LABEL);
+
+  if (!mainWindow) {
+    return false;
+  }
+
+  try {
+    const [visible, minimized] = await Promise.all([
+      mainWindow.isVisible(),
+      mainWindow.isMinimized(),
+    ]);
+
+    return visible || minimized;
+  } catch (error) {
+    console.error("Failed to inspect the main window visibility", error);
+    return false;
+  }
+};
+
 export const hideMainWindowToTray = async (): Promise<void> => {
   if (!isTauri()) {
     return;

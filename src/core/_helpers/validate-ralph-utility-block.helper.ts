@@ -175,10 +175,21 @@ export const validateRalphUtilityBlock = (
     );
   }
 
+  const maxAttempts =
+    typeof utility.maxAttempts === "string"
+      ? utility.maxAttempts.trim()
+        ? Number(utility.maxAttempts)
+        : undefined
+      : utility.maxAttempts;
+  const maxAttemptsIsPlaceholder =
+    typeof utility.maxAttempts === "string" &&
+    hasRalphPlaceholders(utility.maxAttempts);
+
   if (
-    utility.maxAttempts !== undefined &&
-    utility.maxAttempts !== null &&
-    (!Number.isInteger(utility.maxAttempts) || utility.maxAttempts < 1)
+    !maxAttemptsIsPlaceholder &&
+    maxAttempts !== undefined &&
+    maxAttempts !== null &&
+    (!Number.isInteger(maxAttempts) || maxAttempts < 1)
   ) {
     addUtilityIssue(
       errors,
@@ -257,6 +268,16 @@ export const validateRalphUtilityBlock = (
         );
       }
       break;
+    case "CONDITION":
+      if (!utility.condition) {
+        addUtilityIssue(
+          errors,
+          "utility-condition-required",
+          `${blockLabel} requires a condition.`,
+          { blockId: block.id },
+        );
+      }
+      break;
     case "RUN_COMMAND":
     case "RUN_CHECK":
       if (!utility.command?.trim()) {
@@ -270,6 +291,18 @@ export const validateRalphUtilityBlock = (
       break;
     case "READ_FILE":
     case "WRITE_FILE":
+    case "READ_JSON":
+    case "WRITE_JSON":
+    case "PATCH_JSON":
+    case "APPEND_JSONL":
+    case "READ_JSONL":
+    case "QUERY_JSONL":
+    case "SELECT_JSON_TASK":
+    case "MARK_JSON_TASK":
+    case "FILE_EXISTS":
+    case "DELETE_FILE":
+    case "MOVE_FILE":
+    case "ARCHIVE_FILE":
       if (!utility.path?.trim()) {
         addUtilityIssue(
           errors,
@@ -287,6 +320,39 @@ export const validateRalphUtilityBlock = (
           { blockId: block.id },
         );
       }
+
+      if (utility.type === "MOVE_FILE" && !utility.outputPath?.trim()) {
+        addUtilityIssue(
+          errors,
+          "utility-output-path-required",
+          `${blockLabel} requires outputPath.`,
+          { blockId: block.id },
+        );
+      }
+      break;
+    case "LOOP_COUNTER":
+      break;
+    case "PROMPT_JSON":
+    case "VALIDATOR_JSON":
+      if (
+        !utility.prompt?.trim() &&
+        !utility.message?.trim() &&
+        !utility.input?.trim()
+      ) {
+        addUtilityIssue(
+          errors,
+          "utility-prompt-required",
+          `${blockLabel} requires prompt.`,
+          { blockId: block.id },
+        );
+      }
+      break;
+    case "CHANGE_SCOPE_GUARD":
+      break;
+    case "SCAN_SCOPE_EVIDENCE":
+    case "UPDATE_SCOPE_REGISTRY":
+    case "SELECT_SCOPE":
+    case "MARK_SCOPE_RESULT":
       break;
     case "SEARCH_FILES":
       if (!utility.pattern?.trim() && !utility.glob?.trim()) {
@@ -332,6 +398,10 @@ export const validateRalphUtilityBlock = (
       }
       break;
     case "GIT_STATUS":
+    case "GIT_SNAPSHOT":
+    case "GIT_DIFF_SUMMARY":
+    case "DETECT_PROJECT_COMMANDS":
+    case "FINAL_REPORT":
     case "NOTIFY":
       break;
   }
