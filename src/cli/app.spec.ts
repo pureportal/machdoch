@@ -516,6 +516,22 @@ describe("parseCliArgs", () => {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toThrow("--apply is only valid for `machdoch mcp cleanup`.");
+
+    expect(() =>
+      parseCliArgs(["run", "--apply", "review", "README.md"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow(
+      "--arguments-json, --include-disabled, --agent, --phase, --unused-days, --never-used-days, and --apply are only valid for `machdoch mcp`.",
+    );
+
+    expect(() =>
+      parseCliArgs(["run", "--arguments-json", "{}", "review", "README.md"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow(
+      "--arguments-json, --include-disabled, --agent, --phase, --unused-days, --never-used-days, and --apply are only valid for `machdoch mcp`.",
+    );
   });
 
   it("parses instruction management commands", () => {

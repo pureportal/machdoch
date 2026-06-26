@@ -422,8 +422,9 @@ const summarizeFlow = (flow: RalphFlow): Record<string, unknown> => {
   };
 };
 
-const summarizeRun = (result: RalphRunResult): Record<string, unknown> => {
+export const summarizeRun = (result: RalphRunResult): Record<string, unknown> => {
   return {
+    runId: result.runId ?? null,
     flow: result.flow,
     status: result.status,
     summary: result.summary,
