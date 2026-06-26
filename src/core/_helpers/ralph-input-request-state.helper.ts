@@ -6,7 +6,7 @@ import {
 import type {
   RalphBlockExecutionResult,
   RalphFlowBlock,
-  RalphInputBlock,
+  RalphAskUserBlock,
   RalphInputField,
   RalphInputFieldType,
   RalphInputRequest,
@@ -121,7 +121,7 @@ const resolveInputFieldForRequest = <Context extends RalphInputContext>(
 };
 
 export const createInputRequest = <Context extends RalphInputContext>(
-  block: RalphInputBlock | RalphInterviewBlock,
+  block: RalphAskUserBlock | RalphInterviewBlock,
   context: Context,
   fields: RalphInputField[],
   resolveTemplateText: RalphTemplateResolver<Context>,

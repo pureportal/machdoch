@@ -171,11 +171,11 @@ export const validateFlowLocally = (
       });
     }
 
-    if (block.type === "INPUT") {
-      if (block.fields.length === 0) {
+    if (block.type === "ASK_USER") {
+      if (block.fields.length === 0 && block.mode !== "confirmOnly") {
         issues.push({
           level: "error",
-          message: `${block.title} needs at least one input field.`,
+          message: `${block.title} needs at least one field unless mode is Confirm Only.`,
           blockId: block.id,
         });
       }

@@ -27,7 +27,7 @@ export const getPromptLikeText = (block: RalphFlowBlock): string => {
     case "DECISION":
     case "INTERVIEW":
       return block.prompt;
-    case "INPUT":
+    case "ASK_USER":
       return block.prompt ?? "";
     case "START":
     case "PACK":
@@ -426,11 +426,18 @@ export const getBlockNodePreview = (block: RalphFlowBlock): RalphNodePreview => 
     };
   }
 
-  if (block.type === "INPUT") {
+  if (block.type === "ASK_USER") {
+    const mode = block.mode ?? "missingOnly";
+
     return {
-      primary: compactPreviewText(block.prompt, "Collect human input"),
+      primary: compactPreviewText(block.prompt, "Ask user"),
       secondary: `${block.fields.length} field${block.fields.length === 1 ? "" : "s"}`,
       chips: [
+        mode === "missingOnly"
+          ? "missing only"
+          : mode === "alwaysAsk"
+            ? "always ask"
+            : "confirm only",
         "SUCCESS",
         "CANCELLED",
         "TIMEOUT",

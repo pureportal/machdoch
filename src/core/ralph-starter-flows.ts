@@ -1,3 +1,4 @@
+import { discoverRalphFlowVariables } from "./_helpers/ralph-placeholders.helper.js";
 import type { RalphFlow } from "./ralph.js";
 import { autonomousFeatureGenerationLoopStarterFlow } from "./ralph-starter-flows/autonomous-feature-generation-loop.js";
 import { featureImplementationChecklistLoopStarterFlow } from "./ralph-starter-flows/feature-implementation-checklist-loop.js";
@@ -65,7 +66,7 @@ export const createRalphStarterFlowSummary = (
     tags: [...starterFlow.tags],
     blockCount: starterFlow.flow.blocks.length,
     edgeCount: starterFlow.flow.edges.length,
-    variableCount: starterFlow.flow.variables?.length ?? 0,
+    variableCount: discoverRalphFlowVariables(starterFlow.flow).length,
   };
 };
 

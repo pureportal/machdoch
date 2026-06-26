@@ -14,16 +14,16 @@ import {
 import type {
   RalphBlockExecutionResult,
   RalphFlowBlock,
-  RalphInputBlock,
+  RalphAskUserBlock,
   RalphInputField,
   RalphInputRequest,
   RalphRunCheckpoint,
   RalphRunOptions,
 } from "../ralph.ts";
 
-const createInputBlock = (): RalphInputBlock => ({
+const createInputBlock = (): RalphAskUserBlock => ({
   id: "input",
-  type: "INPUT",
+  type: "ASK_USER",
   title: "Collect Input",
   position: { x: 0, y: 0 },
   fields: [],
@@ -33,7 +33,7 @@ const createPendingInput = (overrides: Partial<RalphInputRequest> = {}): RalphIn
   id: "request-1",
   runId: "run-1",
   blockId: "input",
-  blockType: "INPUT",
+  blockType: "ASK_USER",
   title: "Collect Input",
   createdAt: "2026-06-20T10:00:00.000Z",
   fields: [],
@@ -97,7 +97,7 @@ describe("ralph input request state helpers", () => {
     expect(request).toMatchObject({
       runId: "run-1",
       blockId: "input",
-      blockType: "INPUT",
+      blockType: "ASK_USER",
       title: "Collect Input",
       prompt: "Prompt docs",
       submitLabel: "Send",

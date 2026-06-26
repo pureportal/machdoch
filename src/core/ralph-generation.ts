@@ -334,11 +334,12 @@ const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
       "Do not use PACK blocks unless workspace context lists available pack ids.",
     ],
   },
-  INPUT: {
-    type: "INPUT",
-    role: "Human input form that pauses the run until the user submits typed answers.",
+  ASK_USER: {
+    type: "ASK_USER",
+    role: "Human input or approval checkpoint that can pause the run until the user submits typed answers.",
     requiredFields: ["id", "type", "title", "fields"],
     optionalFields: [
+      "mode",
       "prompt",
       "submitLabel",
       "cancelLabel",
@@ -350,7 +351,9 @@ const RALPH_GENERATION_BLOCK_CONTRACTS: Record<
     ],
     outputs: ["SUCCESS", "CANCELLED", "TIMEOUT", "ERROR"],
     generationNotes: [
-      "Use INPUT blocks for known human-provided values such as text, numbers, booleans, choices, paths, files, and images.",
+      "Use ASK_USER blocks for mid-run human-provided values such as text, numbers, booleans, choices, paths, files, and images.",
+      "Set mode to missingOnly when the block should auto-continue if required values already exist; this is the default.",
+      "Set mode to alwaysAsk for a deliberate human checkpoint, or confirmOnly for a simple approval/continue prompt.",
       "Each field needs id, label, type, and should set skippable when the answer is optional.",
       "Use variableName when downstream prompts need a stable placeholder name for a field value.",
     ],

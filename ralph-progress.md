@@ -1371,7 +1371,7 @@ Date: 2026-06-19
 - Removed the stale `questionsPerTurn` assignment from `executeInterviewBlock` in `src/core/ralph.ts`.
 - Tightened `machdoch ralph resume` checkpoint and pending-input guards in `src/cli/_helpers/cli-ralph-commands.ts` so strict optional property checks can prove the values are present before use.
 - Removed unused Ralph editor input-field scaffold symbols, then restored the pending-input state/runtime wiring required by the already-rendered run-panel controls.
-- Confirmed Ralph layout and generation contract handling includes the current `INPUT` and `INTERVIEW` block types.
+- Confirmed Ralph layout and generation contract handling includes the current `ASK_USER` and `INTERVIEW` block types.
 
 ### Verification Performed
 
@@ -1797,7 +1797,7 @@ Date: 2026-06-19
   - Ralph editor can load run history, open structured run details, and keep active-run button state scoped to the selected flow.
 - Continued shrinking `src/tauri/ui/ralph/ralph-flow-editor.tsx` by importing Ralph editor helper modules for layout, attachments, formatting, block visuals, node previews, scope normalization, flow summaries, blank-flow creation, validation, and AI prompt history.
 - Core Ralph runtime now tracks input-required, input-submitted, and input-cancelled events, supports `waiting-for-input` runs, stores checkpoints, and resumes from submitted input responses.
-- Ralph flow parsing, validation, generation, layout, block-output derivation, placeholders, run records, and run specs were updated for the new INPUT and INTERVIEW block behavior.
+- Ralph flow parsing, validation, generation, layout, block-output derivation, placeholders, run records, and run specs were updated for the new ASK_USER and INTERVIEW block behavior.
 
 ### Files Created, Moved, Split, or Renamed
 

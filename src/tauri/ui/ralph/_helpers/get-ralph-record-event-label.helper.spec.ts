@@ -5,7 +5,7 @@ const inputRequest = {
   id: "request-1",
   runId: "run-1",
   blockId: "input-1",
-  blockType: "INPUT",
+  blockType: "ASK_USER",
   title: "Need approval",
   fields: [],
   createdAt: "2026-06-19T10:00:00.000Z",

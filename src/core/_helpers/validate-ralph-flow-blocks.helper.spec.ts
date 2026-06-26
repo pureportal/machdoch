@@ -80,6 +80,25 @@ describe("validateRalphFlowBlocks", () => {
     expect(validation.startBlocks).toHaveLength(2);
   });
 
+  it("allows confirm-only ask-user blocks without fields", () => {
+    const validation = validateBlocks(
+      createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "confirm",
+            type: "ASK_USER",
+            title: "Confirm",
+            mode: "confirmOnly",
+            fields: [],
+          },
+        ],
+      }),
+    );
+
+    expect(codes(validation.errors)).not.toContain("input-fields-required");
+  });
+
   it("validates block id, title, size, prompt, and decision label requirements", () => {
     const validation = validateBlocks(
       createFlow({

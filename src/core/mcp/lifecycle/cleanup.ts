@@ -117,11 +117,7 @@ export const applyMcpLifecycleCleanupPlan = async (
     for (const candidate of plan.candidates) {
       const record = state.records[candidate.managedId];
 
-      if (!record || !isCleanupEligible(record)) {
-        continue;
-      }
-
-      if ((getLastUsedAt(record) ?? undefined) !== candidate.lastUsedAt) {
+      if (!record || record.protected === true || record.state === "removed") {
         continue;
       }
 

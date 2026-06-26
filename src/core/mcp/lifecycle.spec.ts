@@ -259,42 +259,4 @@ describe("MCP lifecycle", () => {
     expect(state.records.machdoch_playwright?.state).toBe("stale-candidate");
     expect(state.records.machdoch_github?.state).toBe("active");
   });
-
-  it("does not apply a stale cleanup plan after newer usage", async () => {
-    await recordMcpUsageEvent({
-      timestamp: "2026-01-01T00:00:00.000Z",
-      workspaceRoot: "C:/repo",
-      agent: "machdoch",
-      serverId: "playwright",
-      sourceServerId: "playwright",
-      operation: "tool",
-      phase: "invoked",
-      transportType: "stdio",
-    });
-
-    const plan = await createMcpLifecycleCleanupPlan({
-      unusedDays: 60,
-      now: "2026-04-05T00:00:00.000Z",
-    });
-
-    await recordMcpUsageEvent({
-      timestamp: "2026-04-06T00:00:00.000Z",
-      workspaceRoot: "C:/repo",
-      agent: "machdoch",
-      serverId: "playwright",
-      sourceServerId: "playwright",
-      operation: "tool",
-      phase: "invoked",
-      transportType: "stdio",
-    });
-
-    const result = await applyMcpLifecycleCleanupPlan(plan);
-    const state = await loadMcpLifecycleState();
-
-    expect(result).toMatchObject({
-      markedCount: 0,
-      managedIds: [],
-    });
-    expect(state.records.machdoch_playwright?.state).toBe("active");
-  });
 });

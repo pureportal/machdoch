@@ -55,11 +55,12 @@ describe("coerceRalphFlowBlockRecord", () => {
     });
   });
 
-  it("coerces input field defaults, options, validation, and timeout boundaries", () => {
+  it("coerces ask-user field defaults, options, validation, mode, and timeout boundaries", () => {
     const block = coerceRalphFlowBlockRecord({
       id: "input",
-      type: "INPUT",
+      type: "ASK_USER",
       title: "Input",
+      mode: "alwaysAsk",
       prompt: "Choose values.",
       timeoutSeconds: null,
       fields: [
@@ -90,8 +91,9 @@ describe("coerceRalphFlowBlockRecord", () => {
 
     expect(block).toMatchObject({
       id: "input",
-      type: "INPUT",
+      type: "ASK_USER",
       title: "Input",
+      mode: "alwaysAsk",
       prompt: "Choose values.",
       timeoutSeconds: null,
       fields: [

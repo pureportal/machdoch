@@ -79,13 +79,13 @@ export const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
         miniMapColor: "#fbbf24",
         badgeLabel: "PACK",
       };
-    case "INPUT":
+    case "ASK_USER":
       return {
         icon: ClipboardCheck,
         nodeClassName: "border-teal-400/55 bg-teal-950 text-teal-50",
         badgeClassName: "text-teal-300",
         miniMapColor: "#2dd4bf",
-        badgeLabel: "INPUT",
+        badgeLabel: "ASK USER",
       };
     case "INTERVIEW":
       return {

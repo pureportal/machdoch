@@ -21,6 +21,7 @@ import {
   loadProviderModelCatalog,
   openRalphFlowInExplorer,
   resolveDroppedPaths,
+  resumeRalphRun,
   restoreRalphFlowRevision,
   runRalphFlow,
   saveRalphFlow,
@@ -48,6 +49,7 @@ vi.mock("../runtime", () => ({
   loadProviderModelCatalog: vi.fn(),
   openRalphFlowInExplorer: vi.fn(),
   resolveDroppedPaths: vi.fn(),
+  resumeRalphRun: vi.fn(),
   restoreRalphFlowRevision: vi.fn(),
   runRalphFlow: vi.fn(),
   saveRalphFlow: vi.fn(),
@@ -158,6 +160,7 @@ describe("RalphFlowEditor", () => {
     vi.mocked(loadProviderModelCatalog).mockReset();
     vi.mocked(openRalphFlowInExplorer).mockReset();
     vi.mocked(resolveDroppedPaths).mockReset();
+    vi.mocked(resumeRalphRun).mockReset();
     vi.mocked(restoreRalphFlowRevision).mockReset();
     vi.mocked(runRalphFlow).mockReset();
     vi.mocked(saveRalphFlow).mockReset();
@@ -295,9 +298,9 @@ describe("RalphFlowEditor", () => {
 
 
     expect(await screen.findByText("Ralph Flow Editor")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Add PROMPT block" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Add VALIDATOR block" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Add END block" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add Prompt block" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add Validate block" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add End block" })).toBeTruthy();
     expect(screen.getByText("Flow Settings")).toBeTruthy();
     expect(screen.getByText("Validation")).toBeTruthy();
     expect(screen.getByText("AI Flow Changes")).toBeTruthy();
@@ -801,7 +804,7 @@ describe("RalphFlowEditor", () => {
     expect(screen.getByRole("menuitem", { name: "End [END]" })).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: "Self (Start [START])" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Add PROMPT block" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Prompt block" }));
     fireEvent.pointerDown(screen.getByLabelText("SUCCESS route target"), {
       button: 0,
       ctrlKey: false,
@@ -853,7 +856,7 @@ describe("RalphFlowEditor", () => {
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
     fireEvent.click(await screen.findByRole("button", { name: "New" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Add UTILITY block" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add Utility block" }));
 
     expect(await screen.findByLabelText("Utility type")).toBeTruthy();
     expect((screen.getByLabelText("Block title") as HTMLInputElement).value).toBe(
@@ -896,11 +899,11 @@ describe("RalphFlowEditor", () => {
     });
   });
 
-  it("adds fields to INPUT blocks from the inspector", async () => {
+  it("adds fields to ASK_USER blocks from the inspector", async () => {
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
     fireEvent.click(await screen.findByRole("button", { name: "New" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Add INPUT block" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add Ask User block" }));
 
     expect(await screen.findByText("Fields")).toBeTruthy();
     expect(screen.getByLabelText("Input field 1 id")).toBeTruthy();
@@ -917,10 +920,10 @@ describe("RalphFlowEditor", () => {
     });
 
     const savedFlow = vi.mocked(saveRalphFlow).mock.calls[0]?.[1].flow;
-    const inputBlock = savedFlow?.blocks.find((block) => block.type === "INPUT");
+    const inputBlock = savedFlow?.blocks.find((block) => block.type === "ASK_USER");
 
     expect(inputBlock).toMatchObject({
-      type: "INPUT",
+      type: "ASK_USER",
       fields: expect.arrayContaining([
         expect.objectContaining({ id: "details" }),
         expect.objectContaining({
@@ -937,8 +940,8 @@ describe("RalphFlowEditor", () => {
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
     fireEvent.click(await screen.findByRole("button", { name: "New" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Add PROMPT block" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add VALIDATOR block" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add Prompt block" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Validate block" }));
 
     fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0] as HTMLElement);
 
@@ -960,7 +963,7 @@ describe("RalphFlowEditor", () => {
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
     fireEvent.click(await screen.findByRole("button", { name: "New" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Add NOTE block" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add Note block" }));
 
     fireEvent.change(await screen.findByLabelText("Note text"), {
       target: { value: "- [ ] Capture screenshot evidence" },
@@ -979,7 +982,7 @@ describe("RalphFlowEditor", () => {
     fireEvent.contextMenu(notePreview as HTMLElement);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Lock node" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Add GROUP block" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Group block" }));
     fireEvent.change(await screen.findByLabelText("Group description"), {
       target: { value: "Verification phase and evidence collection." },
     });
@@ -1330,7 +1333,7 @@ describe("RalphFlowEditor", () => {
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
     fireEvent.click(await screen.findByRole("button", { name: "New" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Add UTILITY block" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add Utility block" }));
     fireEvent.change(await screen.findByLabelText("Utility type"), {
       target: { value: "UI_ANALYZE" },
     });
@@ -1421,15 +1424,15 @@ describe("RalphFlowEditor", () => {
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
     fireEvent.click(await screen.findByRole("button", { name: "New" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Add PROMPT block" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Add VALIDATOR block" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add Prompt block" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add Validate block" }));
 
     fireEvent.change(await screen.findByLabelText("Validation scope"), {
       target: { value: "selectedBlocks" },
     });
     fireEvent.click(await screen.findByText("Prompt 1 [PROMPT]"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Add END block" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add End block" }));
     fireEvent.change(await screen.findByLabelText("End status"), {
       target: { value: "review" },
     });
@@ -1790,7 +1793,7 @@ describe("RalphFlowEditor", () => {
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
     fireEvent.click(await screen.findByRole("button", { name: "New" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Add PROMPT block" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add Prompt block" }));
 
     const providerButton = await screen.findByRole("button", {
       name: "Block provider",
@@ -1831,7 +1834,7 @@ describe("RalphFlowEditor", () => {
     });
 
     fireEvent.click(await screen.findByRole("button", { name: "New" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Add PROMPT block" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add Prompt block" }));
 
     fireEvent.pointerDown(
       await screen.findByRole("button", { name: "Block provider" }),
@@ -1864,7 +1867,7 @@ describe("RalphFlowEditor", () => {
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
     fireEvent.click(await screen.findByRole("button", { name: "New" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Add PROMPT block" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add Prompt block" }));
     fireEvent.pointerDown(
       await screen.findByRole("button", { name: "Add block attachment" }),
       {
@@ -2179,7 +2182,7 @@ describe("RalphFlowEditor", () => {
     expect(runButton).toBeTruthy();
     fireEvent.click(runButton as HTMLElement);
 
-    expect(await screen.findByText("Background Ralph runs")).toBeTruthy();
+    expect(await screen.findByText("Active runs")).toBeTruthy();
     expect(await screen.findByLabelText("Flow status: Running")).toBeTruthy();
     view.unmount();
 
@@ -2207,6 +2210,58 @@ describe("RalphFlowEditor", () => {
         blockResults: [],
       },
     });
+  });
+
+  it("focuses an active selected flow run instead of starting a duplicate", async () => {
+    const flow = createRunnableFlow();
+
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: flow.id,
+          name: flow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+          blockCount: 2,
+          edgeCount: 1,
+          variableCount: 0,
+          valid: true,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+      flow,
+    });
+    vi.mocked(runRalphFlow).mockImplementation(
+      () =>
+        new Promise(() => {
+          // Keep the run active while duplicate-click behavior is inspected.
+        }),
+    );
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    await screen.findByText("Ready to run.");
+
+    const firstRunButton = screen
+      .getAllByRole("button", { name: "Run Ralph flow" })
+      .find((button) => !button.hasAttribute("disabled"));
+    expect(firstRunButton).toBeTruthy();
+    fireEvent.click(firstRunButton as HTMLElement);
+
+    await waitFor(() => {
+      expect(runRalphFlow).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByText("View active run")).toBeTruthy();
+
+    const viewActiveRunButton = screen
+      .getAllByRole("button", { name: "Run Ralph flow" })
+      .find((button) => button.textContent?.includes("View active run"));
+    expect(viewActiveRunButton).toBeTruthy();
+    fireEvent.click(viewActiveRunButton as HTMLElement);
+
+    expect(runRalphFlow).toHaveBeenCalledTimes(1);
   });
 
   it("shows the currently active Ralph block while a run is in progress", async () => {
@@ -2355,6 +2410,172 @@ describe("RalphFlowEditor", () => {
     await waitFor(() => {
       expect(loadActiveDesktopTasks).toHaveBeenCalled();
     });
+    expect(await screen.findByLabelText("Flow status: Running")).toBeTruthy();
+  });
+
+  it("recovers already running Ralph resume task ids into the flow list", async () => {
+    const flow = createRunnableFlow();
+    vi.mocked(loadActiveDesktopTasks).mockResolvedValue([
+      {
+        id: "ralph-background-flow-1700000000000-abc123",
+        kind: "ralph",
+        workspaceRoot: "C:\\Project",
+        arguments: ["resume", "2026-06-26T12-00-00-000Z"],
+        startedAt: 1_700_000_000_000,
+      },
+    ]);
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: flow.id,
+          name: flow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+          blockCount: 2,
+          edgeCount: 1,
+          variableCount: 0,
+          valid: true,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+      flow,
+    });
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    await waitFor(() => {
+      expect(loadActiveDesktopTasks).toHaveBeenCalled();
+    });
+    expect(await screen.findByLabelText("Flow status: Running")).toBeTruthy();
+  });
+
+  it("shows pending input resume submissions as active Ralph runs", async () => {
+    const flow = createRunnableFlow();
+    const inputFlow: RalphFlow = {
+      ...flow,
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "configure",
+          type: "ASK_USER",
+          title: "Configure Template",
+          prompt: "Configure the run.",
+          submitLabel: "Start refactor loop",
+          fields: [
+            {
+              id: "details",
+              label: "Details",
+              type: "text",
+              defaultValue: "Proceed",
+            },
+          ],
+        },
+        { id: "end", type: "END", title: "End", status: "success" },
+      ],
+      edges: [
+        {
+          id: "start-to-configure",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "configure",
+        },
+        {
+          id: "configure-to-end",
+          from: "configure",
+          fromOutput: "SUCCESS",
+          to: "end",
+        },
+      ],
+    };
+
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: flow.id,
+          name: flow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+          blockCount: 3,
+          edgeCount: 2,
+          variableCount: 0,
+          valid: true,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+      flow: inputFlow,
+    });
+    vi.mocked(runRalphFlow).mockResolvedValue({
+      run: {
+        runId: "2026-06-26T12-00-00-000Z",
+        flow: flow.id,
+        status: "waiting-for-input",
+        summary: "Configure Template is waiting for input.",
+        missingVariables: [],
+        unknownVariables: [],
+        validation: {
+          valid: true,
+          errors: [],
+          warnings: [],
+          errorIssues: [],
+          warningIssues: [],
+          variables: [],
+        },
+        events: [],
+        blockResults: [],
+        pendingInput: {
+          id: "configure-request",
+          runId: "2026-06-26T12-00-00-000Z",
+          blockId: "configure",
+          blockType: "ASK_USER",
+          title: "Configure Template",
+          fields: [],
+          submitLabel: "Start refactor loop",
+          createdAt: "2026-06-26T12:00:00.000Z",
+        },
+      },
+    });
+    vi.mocked(resumeRalphRun).mockImplementation(
+      () =>
+        new Promise(() => {
+          // Keep the resume task active while the live-run UI is inspected.
+        }),
+    );
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    let runButton: HTMLElement | undefined;
+    await waitFor(() => {
+      runButton = screen
+        .getAllByRole("button", { name: "Run Ralph flow" })
+        .find((button) => !button.hasAttribute("disabled"));
+      expect(runButton).toBeTruthy();
+    });
+    fireEvent.click(runButton as HTMLElement);
+
+    const submitButton = await screen.findByRole("button", {
+      name: /Start refactor loop/i,
+    });
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(resumeRalphRun).toHaveBeenCalledWith(
+        expect.stringContaining("Project"),
+        expect.objectContaining({
+          runId: "2026-06-26T12-00-00-000Z",
+          taskId: expect.stringMatching(/^ralph-background-flow-\d+-[a-z0-9]+$/u),
+        }),
+      );
+    });
+    expect(
+      screen.queryByRole("button", { name: /Start refactor loop/i }),
+    ).toBeNull();
+    expect(
+      await screen.findByText("Input response submitted. Continuation is running."),
+    ).toBeTruthy();
     expect(await screen.findByLabelText("Flow status: Running")).toBeTruthy();
   });
 
@@ -2650,6 +2871,55 @@ describe("RalphFlowEditor", () => {
     expect(await screen.findByText("src/core")).toBeTruthy();
     expect(await screen.findByText("Model reasoning")).toBeTruthy();
     expect(await screen.findByText("Reviewing the start node context.")).toBeTruthy();
+  });
+
+  it("renders waiting-for-input run history entries", async () => {
+    const flow = createRunnableFlow();
+
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: flow.id,
+          name: flow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+          blockCount: 2,
+          edgeCount: 1,
+          variableCount: 0,
+          valid: true,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+      flow,
+    });
+    vi.mocked(listRalphRuns).mockResolvedValue({
+      runs: [
+        {
+          id: "run-waiting",
+          path: "C:\\Project\\.machdoch\\ralph\\runs\\run-waiting\\run.json",
+          createdAt: "2026-06-26T12:00:00.000Z",
+          flowId: flow.id,
+          flowName: flow.name,
+          status: "waiting-for-input",
+          summary: "Configure Template is waiting for input.",
+          blockCount: 1,
+          eventCount: 2,
+        },
+      ],
+    });
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Run" })[0] as HTMLElement);
+    await screen.findByText("Ready to run.");
+    fireEvent.click(await screen.findByRole("button", { name: "History" }));
+
+    expect(await screen.findByText("Waiting for input")).toBeTruthy();
+    expect(
+      await screen.findByText("Configure Template is waiting for input."),
+    ).toBeTruthy();
   });
 
   it("stops an active Ralph run through the desktop cancel bridge", async () => {

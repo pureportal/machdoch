@@ -103,6 +103,7 @@ import {
   truncateRalphResultText as truncateResultText,
 } from "./_helpers/parse-ralph-decision.helper.js";
 import {
+  getRalphInputFieldVariableNames,
   normalizeRalphInputResponseValues,
 } from "./_helpers/normalize-ralph-input-response-values.helper.js";
 import {
@@ -223,7 +224,7 @@ export const RALPH_BLOCK_TYPES = [
   "VALIDATOR",
   "DECISION",
   "PACK",
-  "INPUT",
+  "ASK_USER",
   "INTERVIEW",
   "UTILITY",
   "MCP_TOOL",
@@ -273,6 +274,7 @@ export type RalphInputFieldType =
   | "image"
   | "images";
 export type RalphInputValue = string | number | boolean | string[] | null;
+export type RalphAskUserMode = "missingOnly" | "alwaysAsk" | "confirmOnly";
 
 export {
   MAX_RALPH_RESULT_CHARS,
@@ -577,8 +579,9 @@ export interface RalphPackBlock extends RalphBaseBlock {
   propagationMode?: "nextBlockOnly" | "untilOverridden";
 }
 
-export interface RalphInputBlock extends RalphBaseBlock {
-  type: "INPUT";
+export interface RalphAskUserBlock extends RalphBaseBlock {
+  type: "ASK_USER";
+  mode?: RalphAskUserMode;
   prompt?: string;
   fields: RalphInputField[];
   submitLabel?: string;
@@ -659,7 +662,7 @@ export type RalphFlowBlock =
   | RalphValidatorBlock
   | RalphDecisionBlock
   | RalphPackBlock
-  | RalphInputBlock
+  | RalphAskUserBlock
   | RalphInterviewBlock
   | RalphUtilityBlock
   | RalphMcpToolBlock
@@ -2711,13 +2714,92 @@ const executeDecisionBlock = async (
   );
 };
 
-const executeInputBlock = (
-  block: RalphInputBlock,
+const parseContextVariableAsInputValue = (
+  field: RalphInputField,
+  value: string | undefined,
+): RalphInputValue | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (
+    field.type === "multiselect" ||
+    field.type === "files" ||
+    field.type === "images"
+  ) {
+    const trimmedValue = value.trim();
+
+    if (trimmedValue.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmedValue) as unknown;
+
+        if (Array.isArray(parsed)) {
+          return parsed.filter((entry): entry is string => typeof entry === "string");
+        }
+      } catch {
+        return value;
+      }
+    }
+  }
+
+  return value;
+};
+
+const getInputFieldContextValue = (
+  field: RalphInputField,
+  context: RalphResultContext,
+): RalphInputValue | undefined => {
+  for (const variableName of getRalphInputFieldVariableNames(field)) {
+    if (Object.hasOwn(context.variables, variableName)) {
+      return parseContextVariableAsInputValue(field, context.variables[variableName]);
+    }
+  }
+
+  return undefined;
+};
+
+const createKnownInputValues = (
+  fields: RalphInputField[],
+  context: RalphResultContext,
+): Record<string, RalphInputValue> => {
+  return Object.fromEntries(
+    fields.map((field) => [
+      field.id,
+      getInputFieldContextValue(field, context) ?? field.defaultValue ?? null,
+    ]),
+  );
+};
+
+const applyNormalizedInputValuesToContext = (
+  context: RalphResultContext,
+  fields: RalphInputField[],
+  values: Record<string, RalphInputValue>,
+): void => {
+  applyInputValuesToContext(context, fields, values);
+};
+
+const createAskUserRequest = (
+  block: RalphAskUserBlock,
+  context: RalphResultContext,
+): RalphInputRequest => {
+  return createInputRequest(block, context, block.fields, resolveTemplateText, {
+    ...(block.prompt ? { prompt: block.prompt } : {}),
+    ...(block.submitLabel ? { submitLabel: block.submitLabel } : {}),
+    ...(block.cancelLabel ? { cancelLabel: block.cancelLabel } : {}),
+    ...(block.timeoutSeconds !== undefined
+      ? { timeoutSeconds: block.timeoutSeconds }
+      : {}),
+  });
+};
+
+const executeAskUserBlock = (
+  block: RalphAskUserBlock,
   context: RalphResultContext,
   options: RalphRunOptions,
 ): RalphExecutionStepResult => {
   const pendingInput = getPendingInputForBlock(block, options);
   const response = getMatchingInputResponse(block, options);
+  const mode = block.mode ?? "missingOnly";
 
   if (pendingInput && !response) {
     return {
@@ -2728,14 +2810,37 @@ const executeInputBlock = (
   }
 
   if (!response) {
-    const request = createInputRequest(block, context, block.fields, resolveTemplateText, {
-      ...(block.prompt ? { prompt: block.prompt } : {}),
-      ...(block.submitLabel ? { submitLabel: block.submitLabel } : {}),
-      ...(block.cancelLabel ? { cancelLabel: block.cancelLabel } : {}),
-      ...(block.timeoutSeconds !== undefined
-        ? { timeoutSeconds: block.timeoutSeconds }
-        : {}),
-    });
+    const request = createAskUserRequest(block, context);
+
+    if (mode === "missingOnly") {
+      const knownValues = createKnownInputValues(request.fields, context);
+      const normalized = normalizeRalphInputResponseValues(
+        request.fields,
+        knownValues,
+      );
+
+      if (normalized.errors.length === 0) {
+        applyNormalizedInputValuesToContext(
+          context,
+          request.fields,
+          normalized.values,
+        );
+
+        return {
+          blockId: block.id,
+          output: "SUCCESS",
+          status: "completed",
+          attempt: 1,
+          summary: `${block.title} already has the required input.`,
+          data: {
+            mode,
+            values: normalized.values,
+            skipped: normalized.skipped,
+          },
+          markdown: `\`\`\`json\n${JSON.stringify(normalized.values, null, 2)}\n\`\`\``,
+        };
+      }
+    }
 
     return {
       kind: "input-wait",
@@ -2797,7 +2902,7 @@ const executeInputBlock = (
     };
   }
 
-  applyInputValuesToContext(context, pendingInput.fields, normalized.values);
+  applyNormalizedInputValuesToContext(context, pendingInput.fields, normalized.values);
 
   return {
     blockId: block.id,
@@ -7228,8 +7333,8 @@ const executeBlock = async (
         attempt: 1,
         summary: `Applied pack block ${block.title}.`,
       };
-    case "INPUT":
-      return executeInputBlock(block, context, options);
+    case "ASK_USER":
+      return executeAskUserBlock(block, context, options);
     case "INTERVIEW":
       return executeInterviewBlock(flow, block, config, customizations, context, options);
     case "UTILITY":

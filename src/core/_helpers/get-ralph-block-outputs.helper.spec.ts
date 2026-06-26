@@ -130,6 +130,15 @@ describe("getRalphBlockOutputs", () => {
       ["DONE", "CONTINUE", "RETRY", "ERROR"],
     ],
     [
+      {
+        id: "ask-user",
+        type: "ASK_USER",
+        title: "Ask User",
+        fields: [],
+      },
+      ["SUCCESS", "CANCELLED", "TIMEOUT", "ERROR"],
+    ],
+    [
       { id: "note", type: "NOTE", title: "Note", text: "" },
       [],
     ],

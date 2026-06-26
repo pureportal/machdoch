@@ -25,7 +25,7 @@ const createRunResult = (
     id: "request-1",
     runId: "run-1",
     blockId: "input",
-    blockType: "INPUT",
+    blockType: "ASK_USER",
     title: "Configure Template",
     fields: [],
     createdAt: "2026-06-26T00:00:00.000Z",

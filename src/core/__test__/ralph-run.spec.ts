@@ -85,14 +85,14 @@ describe("runRalphFlow", () => {
     );
   });
 
-  it("pauses for input blocks and resumes with submitted values", async () => {
+  it("pauses for ask-user blocks and resumes with submitted values", async () => {
     const flow = createFlow({
       variables: [{ name: "details", type: "text", required: false, default: "" }],
       blocks: [
         { id: "start", type: "START", title: "Start" },
         {
           id: "collect",
-          type: "INPUT",
+          type: "ASK_USER",
           title: "Collect Details",
           prompt: "Define the request.",
           fields: [
@@ -147,6 +147,119 @@ describe("runRalphFlow", () => {
         }),
       ]),
     );
+  });
+
+  it("auto-continues ask-user blocks when required values are already available", async () => {
+    const result = await runRalphFlow(
+      createFlow({
+        variables: [
+          {
+            name: "details",
+            type: "text",
+            required: false,
+            default: "Export button with CSV output.",
+          },
+        ],
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "collect",
+            type: "ASK_USER",
+            title: "Collect Details",
+            mode: "missingOnly",
+            fields: [
+              {
+                id: "details",
+                label: "Details",
+                type: "textarea",
+                required: true,
+                variableName: "details",
+              },
+            ],
+          },
+          { id: "success", type: "END", title: "Done" },
+        ],
+        edges: [
+          { id: "start-to-collect", from: "start", fromOutput: "SUCCESS", to: "collect" },
+          { id: "collect-to-success", from: "collect", fromOutput: "SUCCESS", to: "success" },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+      { runId: "ralph-input-run", maxTransitions: 10 },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.pendingInput).toBeUndefined();
+    expect(result.blockResults).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          blockId: "collect",
+          output: "SUCCESS",
+          summary: "Collect Details already has the required input.",
+          data: expect.objectContaining({
+            mode: "missingOnly",
+            values: {
+              details: "Export button with CSV output.",
+            },
+          }),
+        }),
+      ]),
+    );
+    expect(executeTask).not.toHaveBeenCalled();
+  });
+
+  it("pauses always-ask blocks even when required values are already available", async () => {
+    const result = await runRalphFlow(
+      createFlow({
+        variables: [
+          {
+            name: "details",
+            type: "text",
+            required: false,
+            default: "Export button with CSV output.",
+          },
+        ],
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "collect",
+            type: "ASK_USER",
+            title: "Collect Details",
+            mode: "alwaysAsk",
+            fields: [
+              {
+                id: "details",
+                label: "Details",
+                type: "textarea",
+                required: true,
+                variableName: "details",
+              },
+            ],
+          },
+          { id: "success", type: "END", title: "Done" },
+        ],
+        edges: [
+          { id: "start-to-collect", from: "start", fromOutput: "SUCCESS", to: "collect" },
+          { id: "collect-to-success", from: "collect", fromOutput: "SUCCESS", to: "success" },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+      { runId: "ralph-always-ask-run", maxTransitions: 10 },
+    );
+
+    expect(result.status).toBe("waiting-for-input");
+    expect(result.pendingInput).toMatchObject({
+      blockId: "collect",
+      fields: [expect.objectContaining({ id: "details" })],
+    });
+    expect(
+      result.blockResults.some(
+        (blockResult) =>
+          blockResult.blockId === "collect" && blockResult.output === "SUCCESS",
+      ),
+    ).toBe(false);
   });
 
   it("uses flow settings.maxTransitions as the default execution cap", async () => {

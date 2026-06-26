@@ -1,3 +1,4 @@
+import { discoverRalphFlowVariables } from "../../../../core/_helpers/ralph-placeholders.helper.js";
 import type {
   RalphFlow,
   RalphFlowScope,
@@ -75,7 +76,7 @@ export const flowToSummary = (
       : {}),
     blockCount: flow.blocks.length,
     edgeCount: flow.edges.length,
-    variableCount: flow.variables?.length ?? 0,
+    variableCount: discoverRalphFlowVariables(flow).length,
   };
 };
 

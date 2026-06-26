@@ -949,21 +949,6 @@ export const parseCliArgs = (
   const [first, ...rest] = positionals;
 
   if (
-    first !== "mcp" &&
-    (rawMcpArgumentsJson ||
-      includeDisabledMcp ||
-      rawMcpAgent ||
-      rawMcpPhase ||
-      rawMcpUnusedDays ||
-      rawMcpNeverUsedDays ||
-      applyMcpCleanup)
-  ) {
-    fail(
-      "--arguments-json, --include-disabled, --agent, --phase, --unused-days, --never-used-days, and --apply are only valid for `machdoch mcp`.",
-    );
-  }
-
-  if (
     first !== "instructions" &&
     (rawInstructionRalphFlow || rawInstructionRalphFlowScope)
   ) {

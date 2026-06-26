@@ -93,7 +93,7 @@ const getDefaultInterviewVariableName = (blockId: string): string => {
 };
 
 const getProducedVariables = (block: RalphFlowBlock): RalphFlowVariable[] => {
-  if (block.type === "INPUT") {
+  if (block.type === "ASK_USER") {
     return block.fields.flatMap((field) =>
       getInputFieldVariableNames(field).map((name) => ({
         name,
@@ -232,7 +232,7 @@ export const getRalphPromptLikeTexts = (block: RalphFlowBlock): string[] => {
     case "DECISION":
     case "INTERVIEW":
       return [block.prompt];
-    case "INPUT":
+    case "ASK_USER":
       return [
         block.prompt ?? "",
         ...block.fields.flatMap((field) => [

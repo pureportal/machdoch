@@ -86,7 +86,7 @@ export const getRalphBlockOutputs = (block: RalphFlowBlock): RalphExecutionOutpu
     case "MCP_RESOURCE":
     case "MCP_PROMPT":
       return ["SUCCESS", "ERROR"];
-    case "INPUT":
+    case "ASK_USER":
       return ["SUCCESS", "CANCELLED", "TIMEOUT", "ERROR"];
     case "INTERVIEW":
       return ["DONE", "INCOMPLETE", "CANCELLED", "ERROR"];

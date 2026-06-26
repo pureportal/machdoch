@@ -40,7 +40,7 @@ export const getRalphLayoutNodeWidth = (block: RalphFlowBlock): number => {
     case "VALIDATOR":
     case "DECISION":
     case "PACK":
-    case "INPUT":
+    case "ASK_USER":
     case "INTERVIEW":
     case "MCP_TOOL":
     case "MCP_RESOURCE":
@@ -65,7 +65,7 @@ export const getRalphLayoutNodeHeight = (block: RalphFlowBlock): number => {
     case "VALIDATOR":
     case "DECISION":
     case "PACK":
-    case "INPUT":
+    case "ASK_USER":
     case "INTERVIEW":
     case "UTILITY":
     case "MCP_TOOL":

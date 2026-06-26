@@ -4,6 +4,7 @@ import { coerceMcpConfigOverride } from "../mcp/config.js";
 import { isReasoningMode } from "../runtime-contract.generated.js";
 import type {
   RalphAnnotationTone,
+  RalphAskUserMode,
   RalphBaseBlock,
   RalphBlockSettings,
   RalphBlockType,
@@ -22,7 +23,7 @@ import type {
 import type { ModelProvider } from "../runtime-contract.generated.js";
 
 const RALPH_FLOW_BLOCK_TYPES = [
-  "START", "PROMPT", "VALIDATOR", "DECISION", "PACK", "INPUT", "INTERVIEW", "UTILITY",
+  "START", "PROMPT", "VALIDATOR", "DECISION", "PACK", "ASK_USER", "INTERVIEW", "UTILITY",
   "MCP_TOOL", "MCP_RESOURCE", "MCP_PROMPT", "NOTE", "GROUP", "END",
 ] as const satisfies readonly RalphBlockType[];
 
@@ -145,6 +146,12 @@ const coerceInputFields = (value: unknown): RalphInputField[] => {
       },
     ];
   });
+};
+
+const coerceAskUserMode = (value: unknown): RalphAskUserMode | undefined => {
+  return value === "alwaysAsk" || value === "confirmOnly" || value === "missingOnly"
+    ? value
+    : undefined;
 };
 
 const coerceStringAlias = (
@@ -412,10 +419,13 @@ export const coerceRalphFlowBlockRecord = (
             ? "untilOverridden"
             : "nextBlockOnly",
       };
-    case "INPUT":
+    case "ASK_USER": {
+      const mode = coerceAskUserMode(record.mode);
+
       return {
         ...base,
         type,
+        ...(mode ? { mode } : {}),
         ...(typeof record.prompt === "string" ? { prompt: record.prompt } : {}),
         fields: coerceInputFields(record.fields),
         ...(typeof record.submitLabel === "string"
@@ -428,6 +438,7 @@ export const coerceRalphFlowBlockRecord = (
           ? { timeoutSeconds: record.timeoutSeconds }
           : {}),
       };
+    }
     case "INTERVIEW":
       return {
         ...base,

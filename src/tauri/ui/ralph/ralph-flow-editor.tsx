@@ -81,7 +81,9 @@ import type {
   RalphGenerationEvent,
   RalphGenerationInterviewSession,
 } from "../../../core/ralph-generation.js";
+import { discoverRalphFlowVariables } from "../../../core/_helpers/ralph-placeholders.helper.js";
 import type {
+  RalphAskUserMode,
   RalphAttachmentReference,
   RalphBlockSettings,
   RalphBlockType,
@@ -380,6 +382,9 @@ interface RalphFlowListMenu {
 const STARTER_RALPH_FLOW_SUMMARIES = STARTER_RALPH_FLOWS.map(
   createRalphStarterFlowSummary,
 );
+const ACTIVE_RUN_LIST_LIMIT = 6;
+const LIVE_VARIABLE_PREVIEW_LIMIT = 6;
+const LIVE_EXPANDED_NODE_PREVIEW_LIMIT = 3;
 
 interface ActiveRalphRun {
   id: string;
@@ -612,7 +617,7 @@ const BLOCK_ACTIONS: Array<{
   { type: "VALIDATOR", label: "Validate" },
   { type: "DECISION", label: "Decision" },
   { type: "PACK", label: "Pack" },
-  { type: "INPUT", label: "Input" },
+  { type: "ASK_USER", label: "Ask User" },
   { type: "INTERVIEW", label: "Interview" },
   { type: "UTILITY", label: "Utility" },
   { type: "NOTE", label: "Note" },
@@ -636,6 +641,28 @@ const INPUT_FIELD_TYPE_OPTIONS: Array<{
   { value: "files", label: "Files" },
   { value: "image", label: "Image" },
   { value: "images", label: "Images" },
+];
+
+const ASK_USER_MODE_OPTIONS: Array<{
+  value: RalphAskUserMode;
+  label: string;
+  help: string;
+}> = [
+  {
+    value: "missingOnly",
+    label: "Missing Only",
+    help: "Continue automatically when required values are already available.",
+  },
+  {
+    value: "alwaysAsk",
+    label: "Always Ask",
+    help: "Pause every time this block is reached.",
+  },
+  {
+    value: "confirmOnly",
+    label: "Confirm Only",
+    help: "Pause for a continue/cancel decision without requiring fields.",
+  },
 ];
 
 const MCP_BLOCK_ACTIONS: Array<{
@@ -1512,6 +1539,13 @@ const getRunStatusPresentation = (
         icon: AlertTriangle,
         className: "text-amber-200",
         chipClassName: "border-amber-400/30 bg-amber-500/10 text-amber-100",
+      };
+    case "waiting-for-input":
+      return {
+        label: "Waiting for input",
+        icon: MessageSquare,
+        className: "text-teal-200",
+        chipClassName: "border-teal-400/30 bg-teal-500/10 text-teal-100",
       };
     case "crashed":
       return {
@@ -2510,7 +2544,7 @@ const updatePromptLikeText = (
     case "DECISION":
     case "INTERVIEW":
       return { ...block, prompt };
-    case "INPUT":
+    case "ASK_USER":
       return { ...block, prompt };
     case "NOTE":
       return { ...block, text: prompt };
@@ -2580,12 +2614,13 @@ const createBlock = (
         propagationMode: "untilOverridden",
         settings,
       };
-    case "INPUT":
+    case "ASK_USER":
       return {
         id,
         type,
-        title: "Input",
+        title: "Ask User",
         position,
+        mode: "missingOnly",
         prompt: "Collect the values needed before continuing.",
         fields: [
           {
@@ -3664,6 +3699,7 @@ export const RalphFlowEditor = ({
     return runsByFlowKey;
   }, [activeRuns]);
   const selectedFlowActiveRuns = activeRunsByFlowKey.get(selectedFlowKey) ?? [];
+  const selectedFlowPrimaryActiveRun = selectedFlowActiveRuns[0] ?? null;
   const selectedFlowActiveRunCount = selectedFlowActiveRuns.length;
   const selectedActiveRun = useMemo(
     () => activeRuns.find((run) => run.id === selectedRunId) ?? null,
@@ -3780,6 +3816,10 @@ export const RalphFlowEditor = ({
     () => getFlowLayoutKey(draftFlow),
     [draftFlow],
   );
+  const setupVariables = useMemo(
+    () => (draftFlow ? discoverRalphFlowVariables(draftFlow) : []),
+    [draftFlow],
+  );
   const edges = useMemo(
     () =>
       draftFlow ? flowToEdges(draftFlow, selectedEdgeId, selectedBlockId) : [],
@@ -3790,18 +3830,18 @@ export const RalphFlowEditor = ({
       return [];
     }
 
-    return (draftFlow.variables ?? [])
+    return setupVariables
       .filter((variable) => variable.required)
       .filter((variable) => !getRalphVariableValue(variable, variableValues).trim())
       .map((variable) => variable.name);
-  }, [draftFlow, variableValues]);
+  }, [setupVariables, variableValues]);
   const setupVariableErrors = useMemo(() => {
     if (!draftFlow) {
       return {};
     }
 
-    return validateRalphFlowVariableValues(draftFlow.variables ?? [], variableValues);
-  }, [draftFlow, variableValues]);
+    return validateRalphFlowVariableValues(setupVariables, variableValues);
+  }, [draftFlow, setupVariables, variableValues]);
   const setupVariableErrorNames = useMemo(
     () => Object.keys(setupVariableErrors),
     [setupVariableErrors],
@@ -3811,8 +3851,18 @@ export const RalphFlowEditor = ({
   const warningCount = issues.length - errorCount;
   const showMiniMap = editorMode === "design" && canvasNodes.length >= 4;
   const activeRunCount = activeRuns.length;
-  const runButtonLabel =
-    selectedFlowActiveRunCount > 0 ? "Run again" : "Run";
+  const pendingInputSupersededByActiveRun = Boolean(
+    pendingInput && selectedFlowActiveRunCount > 0,
+  );
+  const visiblePendingInput =
+    pendingInput && !inputSubmitting && !pendingInputSupersededByActiveRun
+      ? pendingInput
+      : null;
+  const pendingInputContinuationInProgress = Boolean(
+    pendingInput && (inputSubmitting || pendingInputSupersededByActiveRun),
+  );
+  const visibleLastRun = pendingInputContinuationInProgress ? null : lastRun;
+  const runButtonLabel = selectedFlowPrimaryActiveRun ? "View active run" : "Run";
   const flowHasStart = Boolean(
     draftFlow?.blocks.some((block) => block.type === "START"),
   );
@@ -3839,6 +3889,7 @@ export const RalphFlowEditor = ({
     !hasBlockingIssues &&
     requiredMissingVariables.length === 0 &&
     setupVariableErrorNames.length === 0;
+  const canRunAction = Boolean(selectedFlowPrimaryActiveRun) || canRunFlow;
   const flowTitle = draftFlow?.name ?? selectedSummary?.name ?? "Ralph Flow";
   const normalizedFlowAliasDraft = createFlowAlias(flowAliasDraft);
   const canUseCurrentFlowForAi = Boolean(draftFlow);
@@ -3944,6 +3995,9 @@ export const RalphFlowEditor = ({
     warningCount > 0
       ? `Ready to run with ${warningCount} warning${warningCount === 1 ? "" : "s"}.`
       : "Ready to run.";
+  const runActionMessage = selectedFlowPrimaryActiveRun
+    ? "Active run is already running."
+    : runBlockedReason ?? runReadyMessage;
   const flowListColumnWidth = flowListOpen ? "15rem" : "2.75rem";
   const editorGridTemplateColumns = showInspectorPanel
     ? `${flowListColumnWidth} minmax(0,1fr) ${inspectorWidth}px`
@@ -4373,7 +4427,11 @@ export const RalphFlowEditor = ({
     }
 
     const activeRalphRunTasks = activeRalphTasks
-      .filter((task) => getRalphTaskAction(task) === "run")
+      .filter((task) => {
+        const action = getRalphTaskAction(task);
+
+        return action === "run" || action === "resume";
+      })
       .map((task) => {
         const flowReference = getRalphTaskFlowReference(task);
         const scope = getRalphTaskFlowScope(task);
@@ -4647,7 +4705,9 @@ export const RalphFlowEditor = ({
         replaceDraftFlow(result.flow, selectedScope);
         replaceSavedSnapshot(getFlowSnapshot(result.flow));
         setSelectedBlockId(result.flow.blocks[0]?.id ?? null);
-        setVariableValues(createDefaultRalphVariableValues(result.flow.variables ?? []));
+        setVariableValues(
+          createDefaultRalphVariableValues(discoverRalphFlowVariables(result.flow)),
+        );
         setLastRun(null);
       })
       .catch((error) => {
@@ -4793,12 +4853,12 @@ export const RalphFlowEditor = ({
   const updateSelectedInputFields = (
     updater: (fields: RalphInputField[]) => RalphInputField[],
   ): void => {
-    if (!selectedBlock || selectedBlock.type !== "INPUT") {
+    if (!selectedBlock || selectedBlock.type !== "ASK_USER") {
       return;
     }
 
     updateBlock(selectedBlock.id, (block) =>
-      block.type === "INPUT"
+      block.type === "ASK_USER"
         ? {
             ...block,
             fields: updater(block.fields),
@@ -5176,7 +5236,9 @@ export const RalphFlowEditor = ({
       current === generatedFlow.id && unsavedFlowScope === scope ? null : current,
     );
     setSelectedBlockId(generatedFlow.blocks[0]?.id ?? null);
-    setVariableValues(createDefaultRalphVariableValues(generatedFlow.variables ?? []));
+    setVariableValues(
+      createDefaultRalphVariableValues(discoverRalphFlowVariables(generatedFlow)),
+    );
     setEditorMode("design");
     setMessage(null);
   };
@@ -5382,7 +5444,11 @@ export const RalphFlowEditor = ({
               : current,
           );
           setSelectedBlockId(result.flow.blocks[0]?.id ?? null);
-          setVariableValues(createDefaultRalphVariableValues(result.flow.variables ?? []));
+          setVariableValues(
+            createDefaultRalphVariableValues(
+              discoverRalphFlowVariables(result.flow),
+            ),
+          );
         }
         setRevisions([]);
       }
@@ -5656,7 +5722,9 @@ export const RalphFlowEditor = ({
           ? null
           : current,
       );
-      setVariableValues(createDefaultRalphVariableValues(result.flow.variables ?? []));
+      setVariableValues(
+        createDefaultRalphVariableValues(discoverRalphFlowVariables(result.flow)),
+      );
       setMessage(formatMessage(result));
       setFlows((current) =>
         upsertFlowSummary(
@@ -5775,7 +5843,9 @@ export const RalphFlowEditor = ({
       setStarterImportScope(targetScope);
       setUnsavedFlowId(null);
       setSelectedBlockId(result.flow.blocks[0]?.id ?? null);
-      setVariableValues(createDefaultRalphVariableValues(result.flow.variables ?? []));
+      setVariableValues(
+        createDefaultRalphVariableValues(discoverRalphFlowVariables(result.flow)),
+      );
       setRevisions([]);
       setLastRun(null);
       setFlows((current) =>
@@ -5847,6 +5917,22 @@ export const RalphFlowEditor = ({
         getFlowSelectionKey(flow.id, getFlowSummaryScope(flow)),
       ) ?? []
     );
+  };
+
+  const focusActiveRun = (
+    run: ActiveRalphRun,
+    nextMessage?: string,
+  ): void => {
+    setSelectedRunId(run.id);
+    setSelectedRunDetail(null);
+    setRunDetailError(null);
+    setSelectedRunLog(null);
+    setEditorMode("run");
+    setRunPanelTab("live");
+
+    if (nextMessage) {
+      setMessage(nextMessage);
+    }
   };
 
   const isGenerationTargetingFlow = (flow: RalphFlowSummary): boolean => {
@@ -6171,7 +6257,9 @@ export const RalphFlowEditor = ({
       replaceSelectedId(result.flow.id, selectedScopeAtStart);
       setUnsavedFlowId(null);
       setSelectedBlockId(result.flow.blocks[0]?.id ?? null);
-      setVariableValues(createDefaultRalphVariableValues(result.flow.variables ?? []));
+      setVariableValues(
+        createDefaultRalphVariableValues(discoverRalphFlowVariables(result.flow)),
+      );
       setLastRun(null);
       setMessage(
         result.validation.errors.length > 0
@@ -6437,7 +6525,45 @@ export const RalphFlowEditor = ({
       return;
     }
 
+    const resumeFlowId = draftFlowRef.current?.id ?? selectedId ?? lastRun.flow;
+    const resumeFlowName =
+      draftFlowRef.current?.name || selectedSummary?.name || resumeFlowId;
+    const resumeTaskId = createRalphRunTaskId(resumeFlowId);
+    const resumeStartedAt = Date.now();
+    const resumeVariableValues = Object.fromEntries(
+      Object.entries({
+        ...(lastRun.checkpoint?.variables ?? {}),
+        ...variableValues,
+      })
+        .map(([name, value]) => [name.trim(), value] as const)
+        .filter(([name]) => Boolean(name)),
+    );
+
+    setActiveRuns((current) => [
+      {
+        id: resumeTaskId,
+        flowId: resumeFlowId,
+        scope: selectedScope,
+        flowName: resumeFlowName,
+        startedAt: resumeStartedAt,
+        status: "running",
+        mode: runMode,
+        provider: runProvider,
+        model: runModel,
+        ...(runProfile ? { profile: runProfile } : {}),
+        ...(runReasoning ? { reasoning: runReasoning } : {}),
+        ...(defaultMaxTransitions
+          ? { maxTransitions: defaultMaxTransitions }
+          : {}),
+        variableValues: resumeVariableValues,
+        events: [],
+        blockDetails: {},
+      },
+      ...current.filter((run) => run.id !== resumeTaskId),
+    ]);
     setInputSubmitting(true);
+    setEditorMode("run");
+    setRunPanelTab("live");
     setMessage(
       action === "cancel"
         ? `Cancelling input for ${pendingInput.title}.`
@@ -6448,7 +6574,7 @@ export const RalphFlowEditor = ({
       const result = await resumeRalphRun(workspaceRoot, {
         runId: lastRun.runId,
         scope: selectedScope,
-        taskId: createRalphRunTaskId(`${lastRun.runId}-resume`),
+        taskId: resumeTaskId,
         mode: runMode,
         provider: runProvider,
         model: runModel,
@@ -6479,6 +6605,9 @@ export const RalphFlowEditor = ({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
+      setActiveRuns((current) =>
+        current.filter((run) => run.id !== resumeTaskId),
+      );
       setInputSubmitting(false);
     }
   };
@@ -6723,6 +6852,14 @@ export const RalphFlowEditor = ({
   };
 
   const runFlow = async (): Promise<void> => {
+    if (selectedFlowPrimaryActiveRun) {
+      focusActiveRun(
+        selectedFlowPrimaryActiveRun,
+        `Ralph run \`${selectedFlowPrimaryActiveRun.flowName}\` is already running.`,
+      );
+      return;
+    }
+
     if (!workspaceRoot || !selectedId || !draftFlow) {
       return;
     }
@@ -7742,7 +7879,7 @@ export const RalphFlowEditor = ({
 
       if (hasModifier && key === "enter") {
         event.preventDefault();
-        if (canRunFlow) {
+        if (canRunAction) {
           void runFlow();
         }
         return;
@@ -7768,7 +7905,7 @@ export const RalphFlowEditor = ({
       window.removeEventListener("keydown", handleEditorShortcut);
     };
   }, [
-    canRunFlow,
+    canRunAction,
     canSaveFlow,
     canvasMenu,
     flowListMenu,
@@ -10677,8 +10814,8 @@ export const RalphFlowEditor = ({
                             <Button
                               type="button"
                               variant="ghost"
-                              aria-label={`Add ${action.type} block`}
-                              title={`Add ${action.type} block`}
+                              aria-label={`Add ${action.label} block`}
+                              title={`Add ${action.label} block`}
                               disabled={action.type === "START" && flowHasStart}
                               onClick={() => addBlock(action.type)}
                               className="h-8 w-8 rounded-lg p-0 text-slate-300 hover:bg-slate-900 hover:text-white disabled:text-slate-700"
@@ -11198,7 +11335,7 @@ export const RalphFlowEditor = ({
                     {selectedBlock.type === "PROMPT" ||
                     selectedBlock.type === "VALIDATOR" ||
                     selectedBlock.type === "DECISION" ||
-                    selectedBlock.type === "INPUT" ||
+                    selectedBlock.type === "ASK_USER" ||
                     selectedBlock.type === "INTERVIEW" ? (
                       <RalphInspectorField
                         label="Prompt"
@@ -11238,8 +11375,40 @@ export const RalphFlowEditor = ({
                       </RalphInspectorField>
                     ) : null}
 
-                    {selectedBlock.type === "INPUT" ? (
+                    {selectedBlock.type === "ASK_USER" ? (
                       <div className="grid gap-3 rounded-lg bg-slate-900/25 p-3 text-sm text-slate-100 ring-1 ring-slate-800/60">
+                        <RalphInspectorField
+                          label="Mode"
+                          help={
+                            ASK_USER_MODE_OPTIONS.find(
+                              (option) =>
+                                option.value ===
+                                (selectedBlock.mode ?? "missingOnly"),
+                            )?.help
+                          }
+                        >
+                          <select
+                            value={selectedBlock.mode ?? "missingOnly"}
+                            aria-label="Ask user mode"
+                            onChange={(event) =>
+                              updateBlock(selectedBlock.id, (block) =>
+                                block.type === "ASK_USER"
+                                  ? {
+                                      ...block,
+                                      mode: event.target.value as RalphAskUserMode,
+                                    }
+                                  : block,
+                              )
+                            }
+                            className="h-9 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100"
+                          >
+                            {ASK_USER_MODE_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </RalphInspectorField>
                         <div className="flex min-w-0 items-center justify-between gap-3">
                           <span className="font-semibold">Fields</span>
                           <Button
@@ -11266,7 +11435,10 @@ export const RalphFlowEditor = ({
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  disabled={selectedBlock.fields.length <= 1}
+                                  disabled={
+                                    selectedBlock.fields.length <=
+                                    (selectedBlock.mode === "confirmOnly" ? 0 : 1)
+                                  }
                                   aria-label={`Remove input field ${index + 1}`}
                                   onClick={() =>
                                     updateSelectedInputFields((fields) =>
@@ -11420,7 +11592,7 @@ export const RalphFlowEditor = ({
                               placeholder="Continue"
                               onChange={(event) =>
                                 updateBlock(selectedBlock.id, (block) =>
-                                  block.type === "INPUT"
+                                  block.type === "ASK_USER"
                                     ? { ...block, submitLabel: event.target.value }
                                     : block,
                                 )
@@ -11435,7 +11607,7 @@ export const RalphFlowEditor = ({
                               placeholder="Cancel"
                               onChange={(event) =>
                                 updateBlock(selectedBlock.id, (block) =>
-                                  block.type === "INPUT"
+                                  block.type === "ASK_USER"
                                     ? { ...block, cancelLabel: event.target.value }
                                     : block,
                                 )
@@ -12671,9 +12843,9 @@ export const RalphFlowEditor = ({
                           <div className="text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
                             Variables
                           </div>
-                          {(draftFlow.variables ?? []).length > 0 ? (
+                          {setupVariables.length > 0 ? (
                             <div className="grid gap-1">
-                              {(draftFlow.variables ?? []).map((variable) => (
+                              {setupVariables.map((variable) => (
                                 <div
                                   key={variable.name}
                                   className="flex min-w-0 items-center justify-between gap-2 border-b border-slate-800/70 py-1.5 text-xs last:border-b-0"
@@ -12800,14 +12972,18 @@ export const RalphFlowEditor = ({
                     <div
                       className={cn(
                         "truncate font-medium",
-                        dirty
+                        selectedFlowPrimaryActiveRun
+                          ? "text-sky-100"
+                          : dirty
                           ? "text-amber-100"
                           : hasBlockingIssues
                             ? "text-rose-100"
                             : "text-slate-400",
                       )}
                     >
-                      {dirty
+                      {selectedFlowPrimaryActiveRun
+                        ? "Running"
+                        : dirty
                         ? "Unsaved changes"
                         : hasBlockingIssues
                           ? `${errorCount} validation error${errorCount === 1 ? "" : "s"}`
@@ -12840,13 +13016,17 @@ export const RalphFlowEditor = ({
                     <Button
                       type="button"
                       variant="outline"
-                      disabled={!canRunFlow}
+                      disabled={!canRunAction}
                       aria-label="Run Ralph flow"
                       onClick={() => void runFlow()}
                       className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
                     >
-                      <Play className="h-3.5 w-3.5" />
-                      Run
+                      {selectedFlowPrimaryActiveRun ? (
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Play className="h-3.5 w-3.5" />
+                      )}
+                      {runButtonLabel}
                     </Button>
                   </div>
                 </div>
@@ -12927,7 +13107,7 @@ export const RalphFlowEditor = ({
                       <Button
                         type="button"
                         variant="outline"
-                        disabled={!canRunFlow}
+                        disabled={!canRunAction}
                         aria-label="Run Ralph flow"
                         onClick={(event) => {
                           event.stopPropagation();
@@ -12935,7 +13115,11 @@ export const RalphFlowEditor = ({
                         }}
                         className="h-7 rounded-lg border-slate-700 bg-slate-900 px-2 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
                       >
-                        <Play className="h-3.5 w-3.5" />
+                        {selectedFlowPrimaryActiveRun ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Play className="h-3.5 w-3.5" />
+                        )}
                         {runButtonLabel}
                       </Button>
                     )}
@@ -12943,10 +13127,14 @@ export const RalphFlowEditor = ({
                   <span
                     className={cn(
                       "truncate text-xs",
-                      runBlockedReason ? "text-amber-200" : "text-slate-500",
+                      selectedFlowPrimaryActiveRun
+                        ? "text-sky-200"
+                        : runBlockedReason
+                          ? "text-amber-200"
+                          : "text-slate-500",
                     )}
                   >
-                    {runBlockedReason ?? runReadyMessage}
+                    {runActionMessage}
                   </span>
                 </div>
               </section>
@@ -13377,7 +13565,7 @@ export const RalphFlowEditor = ({
                     <Button
                       type="button"
                       variant="outline"
-                      disabled={!canRunFlow}
+                      disabled={!canRunAction}
                       aria-label="Run Ralph flow"
                       onClick={(event) => {
                         event.stopPropagation();
@@ -13386,6 +13574,8 @@ export const RalphFlowEditor = ({
                       className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
                     >
                       {loading ? (
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                      ) : selectedFlowPrimaryActiveRun ? (
                         <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                       ) : (
                         <Play className="h-3.5 w-3.5" />
@@ -13420,21 +13610,42 @@ export const RalphFlowEditor = ({
                       ))}
                     </div>
 
-                    {pendingInput ? (
+                    {pendingInputContinuationInProgress ? (
+                      <div
+                        role="status"
+                        className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-sky-400/30 bg-sky-500/10 p-3 text-sm text-sky-100"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" />
+                          <span className="min-w-0 truncate">
+                            Input response submitted. Continuation is running.
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setRunPanelTab("live")}
+                          className="shrink-0 text-xs font-semibold text-sky-100 hover:text-white"
+                        >
+                          View live
+                        </button>
+                      </div>
+                    ) : null}
+
+                    {visiblePendingInput ? (
                       <div className="grid gap-3 rounded-lg border border-teal-400/30 bg-teal-950/20 p-3">
                         <div className="flex min-w-0 items-start justify-between gap-3">
                           <div className="grid min-w-0 gap-1">
                             <div className="text-sm font-semibold text-teal-50">
-                              {pendingInput.title}
+                              {visiblePendingInput.title}
                             </div>
-                            {pendingInput.prompt ? (
+                            {visiblePendingInput.prompt ? (
                               <div className="text-xs leading-5 text-teal-100/80">
-                                {pendingInput.prompt}
+                                {visiblePendingInput.prompt}
                               </div>
                             ) : null}
-                            {pendingInput.interview ? (
+                            {visiblePendingInput.interview ? (
                               <div className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-teal-200/75">
-                                Interview turn {pendingInput.interview.turn} / {pendingInput.interview.maxTurns}
+                                Interview turn {visiblePendingInput.interview.turn} / {visiblePendingInput.interview.maxTurns}
                               </div>
                             ) : null}
                           </div>
@@ -13443,7 +13654,7 @@ export const RalphFlowEditor = ({
                           </span>
                         </div>
                         <div className="grid gap-3">
-                          {pendingInput.fields.map((field) => (
+                          {visiblePendingInput.fields.map((field) => (
                             <label
                               key={field.id}
                               className="grid gap-1.5 text-sm text-slate-100"
@@ -13484,7 +13695,7 @@ export const RalphFlowEditor = ({
                             onClick={() => void submitPendingInput("cancel")}
                             className="h-8 rounded-lg border-slate-700 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-900 hover:text-white"
                           >
-                            {pendingInput.cancelLabel ?? "Cancel"}
+                            {visiblePendingInput.cancelLabel ?? "Cancel"}
                           </Button>
                           <Button
                             type="button"
@@ -13497,7 +13708,7 @@ export const RalphFlowEditor = ({
                             ) : (
                               <Check className="h-3.5 w-3.5" />
                             )}
-                            {pendingInput.submitLabel ?? "Continue"}
+                            {visiblePendingInput.submitLabel ?? "Continue"}
                           </Button>
                         </div>
                       </div>
@@ -13508,12 +13719,16 @@ export const RalphFlowEditor = ({
                         <div
                           className={cn(
                             "text-sm",
-                            runBlockedReason ? "text-amber-100" : "text-lime-100",
+                            selectedFlowPrimaryActiveRun
+                              ? "text-sky-100"
+                              : runBlockedReason
+                                ? "text-amber-100"
+                                : "text-lime-100",
                           )}
                         >
                           <div className="flex min-w-0 items-center justify-between gap-3">
                             <span className="min-w-0 break-words">
-                              {runBlockedReason ?? runReadyMessage}
+                              {runActionMessage}
                             </span>
                             {runBlockedReason === "Save flow before running." &&
                             canSaveFlow ? (
@@ -13551,7 +13766,7 @@ export const RalphFlowEditor = ({
                               Variables
                             </span>
                             <span className="truncate text-xs text-slate-200">
-                              {(draftFlow?.variables ?? []).length} total
+                              {setupVariables.length} total
                               {requiredMissingVariables.length > 0
                                 ? `, ${requiredMissingVariables.length} missing`
                                 : ""}
@@ -13571,9 +13786,9 @@ export const RalphFlowEditor = ({
                           </div>
                         </div>
 
-                        {draftFlow && (draftFlow.variables ?? []).length > 0 ? (
+                        {draftFlow && setupVariables.length > 0 ? (
                           <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
-                            {(draftFlow.variables ?? []).map((variable) => {
+                            {setupVariables.map((variable) => {
                               const variableError = setupVariableErrors[variable.name];
                               const variableErrorId = variableError
                                 ? createSetupVariableErrorId(variable.name)
@@ -13657,12 +13872,12 @@ export const RalphFlowEditor = ({
                             <div className="grid gap-2">
                               <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-slate-500">
                                 <span className="font-medium text-slate-400">
-                                  Background Ralph runs
+                                  Active runs
                                 </span>
                                 <span>{activeRuns.length}</span>
                               </div>
                               <div className="grid gap-2">
-                                {activeRuns.map((activeRun) => {
+                                {activeRuns.slice(0, ACTIVE_RUN_LIST_LIMIT).map((activeRun) => {
                                   const status = getRunStatusPresentation(
                                     activeRun.status,
                                   );
@@ -13673,11 +13888,7 @@ export const RalphFlowEditor = ({
                                     <button
                                       key={activeRun.id}
                                       type="button"
-                                      onClick={() => {
-                                        setSelectedRunId(activeRun.id);
-                                        setSelectedRunDetail(null);
-                                        setRunDetailError(null);
-                                      }}
+                                      onClick={() => focusActiveRun(activeRun)}
                                       className={cn(
                                         "grid min-w-0 gap-2 rounded border p-2 text-left transition-colors",
                                         isSelected
@@ -13730,6 +13941,11 @@ export const RalphFlowEditor = ({
                                     </button>
                                   );
                                 })}
+                                {activeRuns.length > ACTIVE_RUN_LIST_LIMIT ? (
+                                  <div className="rounded border border-slate-800 bg-slate-950/70 px-2 py-1.5 text-xs text-slate-500">
+                                    {activeRuns.length - ACTIVE_RUN_LIST_LIMIT} more active run{activeRuns.length - ACTIVE_RUN_LIST_LIMIT === 1 ? "" : "s"} hidden. Open History after they finish.
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
 
@@ -13814,10 +14030,25 @@ export const RalphFlowEditor = ({
                                   </div>
                                 </div>
 
-                                {Object.keys(liveRunForPanel.variableValues).length > 0 ? (
-                                  <div className="grid gap-1">
-                                    {Object.entries(liveRunForPanel.variableValues).map(
-                                      ([name, value]) => (
+                                {(() => {
+                                  const variableEntries = Object.entries(
+                                    liveRunForPanel.variableValues,
+                                  );
+
+                                  if (variableEntries.length === 0) {
+                                    return null;
+                                  }
+
+                                  const visibleVariableEntries = variableEntries.slice(
+                                    0,
+                                    LIVE_VARIABLE_PREVIEW_LIMIT,
+                                  );
+                                  const hiddenVariableCount =
+                                    variableEntries.length - visibleVariableEntries.length;
+
+                                  return (
+                                    <div className="grid gap-1">
+                                      {visibleVariableEntries.map(([name, value]) => (
                                         <div
                                           key={name}
                                           className="grid grid-cols-[10rem_minmax(0,1fr)] gap-2 rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs"
@@ -13829,10 +14060,22 @@ export const RalphFlowEditor = ({
                                             {value || "(empty)"}
                                           </span>
                                         </div>
-                                      ),
-                                    )}
-                                  </div>
-                                ) : null}
+                                      ))}
+                                      {hiddenVariableCount > 0 ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedRunId(liveRunForPanel.id);
+                                            setRunPanelTab("details");
+                                          }}
+                                          className="justify-self-start text-xs font-medium text-sky-200 hover:text-white"
+                                        >
+                                          View {hiddenVariableCount} more variable{hiddenVariableCount === 1 ? "" : "s"} in Details
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })()}
 
                                 <div className="grid gap-2">
                                   <div className="flex items-center justify-between gap-2 text-xs font-medium text-slate-400">
@@ -13872,28 +14115,51 @@ export const RalphFlowEditor = ({
                                   )}
                                 </div>
 
-                                <div className="grid gap-2">
-                                  <div className="flex items-center justify-between gap-2 text-xs font-medium text-slate-400">
-                                    <span>Expanded nodes</span>
-                                    <span>{getSortedActiveBlockDetails(liveRunForPanel).length}</span>
-                                  </div>
-                                  {getSortedActiveBlockDetails(liveRunForPanel).length > 0 ? (
+                                {(() => {
+                                  const blockDetails =
+                                    getSortedActiveBlockDetails(liveRunForPanel);
+                                  const visibleBlockDetails = blockDetails.slice(
+                                    0,
+                                    LIVE_EXPANDED_NODE_PREVIEW_LIMIT,
+                                  );
+                                  const hiddenBlockCount =
+                                    blockDetails.length - visibleBlockDetails.length;
+
+                                  return (
                                     <div className="grid gap-2">
-                                      {getSortedActiveBlockDetails(liveRunForPanel).map(
-                                        (detail) => (
-                                          <ActiveRalphBlockDetailCard
-                                            key={detail.blockId}
-                                            detail={detail}
-                                          />
-                                        ),
+                                      <div className="flex items-center justify-between gap-2 text-xs font-medium text-slate-400">
+                                        <span>Expanded nodes</span>
+                                        <span>{blockDetails.length}</span>
+                                      </div>
+                                      {blockDetails.length > 0 ? (
+                                        <div className="grid gap-2">
+                                          {visibleBlockDetails.map((detail) => (
+                                            <ActiveRalphBlockDetailCard
+                                              key={detail.blockId}
+                                              detail={detail}
+                                            />
+                                          ))}
+                                          {hiddenBlockCount > 0 ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setSelectedRunId(liveRunForPanel.id);
+                                                setRunPanelTab("details");
+                                              }}
+                                              className="justify-self-start text-xs font-medium text-sky-200 hover:text-white"
+                                            >
+                                              View {hiddenBlockCount} more node{hiddenBlockCount === 1 ? "" : "s"} in Details
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                      ) : (
+                                        <div className="text-xs text-slate-500">
+                                          No node internals captured yet.
+                                        </div>
                                       )}
                                     </div>
-                                  ) : (
-                                    <div className="text-xs text-slate-500">
-                                      No node internals captured yet.
-                                    </div>
-                                  )}
-                                </div>
+                                  );
+                                })()}
                               </div>
                             ) : null}
                           </div>
@@ -13903,16 +14169,16 @@ export const RalphFlowEditor = ({
                           </div>
                         )}
 
-                        {lastRun ? (
+                        {visibleLastRun ? (
                           <div className="grid gap-2 border-t border-slate-800 pt-3">
                             <div className="text-sm font-medium text-slate-100">
-                              Last result: {lastRun.status}
+                              Last result: {visibleLastRun.status}
                             </div>
                             <p className="break-words text-sm text-slate-400">
-                              {lastRun.summary}
+                              {visibleLastRun.summary}
                             </p>
                             <div className="grid gap-1 md:grid-cols-2">
-                              {lastRun.events.slice(-10).map((event, index) => (
+                              {visibleLastRun.events.slice(-10).map((event, index) => (
                                 <div
                                   key={`${event.type}-${index}`}
                                   className="truncate text-xs text-slate-500"

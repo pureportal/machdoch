@@ -279,12 +279,12 @@ export const validateRalphFlowBlocks = ({
       });
     }
 
-    if (block.type === "INPUT") {
-      if (block.fields.length === 0) {
+    if (block.type === "ASK_USER") {
+      if (block.fields.length === 0 && block.mode !== "confirmOnly") {
         addRalphValidationIssue(
           errors,
           "input-fields-required",
-          `${blockLabel} input block requires at least one field.`,
+          `${blockLabel} ask-user block requires at least one field unless mode is confirmOnly.`,
           { blockId: block.id },
         );
       }

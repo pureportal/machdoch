@@ -6,9 +6,9 @@ import {
   getRalphStarterFlow,
 } from "./ralph-starter-flows.js";
 import {
+  discoverRalphFlowVariables,
   validateRalphFlow,
   type RalphFlowBlock,
-  type RalphInputBlock,
 } from "./ralph.js";
 
 describe("Ralph starter flows", () => {
@@ -24,7 +24,9 @@ describe("Ralph starter flows", () => {
       expect(summary.defaultAlias).toBe(starterFlow.defaultAlias);
       expect(summary.blockCount).toBeGreaterThan(0);
       expect(summary.edgeCount).toBeGreaterThan(0);
-      expect(summary.variableCount).toBe(starterFlow.flow.variables?.length ?? 0);
+      expect(summary.variableCount).toBe(
+        discoverRalphFlowVariables(starterFlow.flow).length,
+      );
     }
   });
 
@@ -71,38 +73,32 @@ describe("Ralph starter flows", () => {
     expect(endBlocks[0]?.id).toBe("blocked");
   });
 
-  it("exposes user-configurable starter flows without human approval gates", () => {
-    for (const starterFlow of STARTER_RALPH_FLOWS) {
-      const isAutonomousFeatureLoop =
-        starterFlow.id === "autonomous-feature-generation-loop";
-      const configureBlock = starterFlow.flow.blocks.find(
-        (block): block is RalphInputBlock =>
-          block.id === "configure-template" && block.type === "INPUT",
-      );
+  it("starts bundled templates autonomously without ask-user gates", () => {
+    const expectedStartTargets: Record<string, string> = {
+      "autonomous-feature-generation-loop": "find-active-goal",
+      "full-feature-implementation": "detect-project-commands",
+      "autonomous-refactoring-flow": "scan-scopes",
+      "security-fix-loop": "research-decision",
+    };
 
-      if (isAutonomousFeatureLoop) {
-        expect(configureBlock).toBeUndefined();
-        expect(starterFlow.flow.blocks.some((block) => block.type === "INTERVIEW"))
-          .toBe(false);
-        expect(starterFlow.flow.edges).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              from: "start",
-              to: "find-active-goal",
-            }),
-          ]),
-        );
-      } else {
-        expect(configureBlock).toBeTruthy();
-        expect(starterFlow.flow.edges).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              from: "start",
-              to: "configure-template",
-            }),
-          ]),
-        );
-      }
+    for (const starterFlow of STARTER_RALPH_FLOWS) {
+      expect(
+        starterFlow.flow.blocks.some((block) => block.type === "ASK_USER"),
+      ).toBe(false);
+      expect(
+        starterFlow.flow.blocks.some((block) => block.id === "configure-template"),
+      ).toBe(false);
+      expect(JSON.stringify(starterFlow.flow.edges)).not.toContain(
+        "configure-template",
+      );
+      expect(starterFlow.flow.edges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            from: "start",
+            to: expectedStartTargets[starterFlow.id],
+          }),
+        ]),
+      );
 
       for (const variable of starterFlow.flow.variables ?? []) {
         expect(variable.name).toMatch(/^[a-z][A-Za-z0-9]*$/u);
@@ -126,21 +122,8 @@ describe("Ralph starter flows", () => {
     const featureRequest = featureFlow?.variables?.find(
       (variable) => variable.name === "featureRequest",
     );
-    const featureConfigure = featureFlow?.blocks.find(
-      (block): block is RalphInputBlock =>
-        block.id === "configure-template" && block.type === "INPUT",
-    );
 
     expect(featureRequest).toMatchObject({ required: true, default: "" });
-    expect(featureConfigure?.fields).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "featureRequest",
-          required: true,
-          variableName: "featureRequest",
-        }),
-      ]),
-    );
     expect(featureFlow?.blocks.some((block) => block.type === "INTERVIEW"))
       .toBe(true);
   });
