@@ -11,7 +11,7 @@ use std::{
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri_plugin_autostart::ManagerExt as _;
 
 use crate::runtime_contract_generated::{
@@ -186,216 +186,17 @@ pub struct RuntimeReviewModelConfig {
     provider: Option<String>,
     model: Option<String>,
 }
+mod settings;
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UserWebSearchSettings {
-    active_provider: String,
-    api_keys: HashMap<String, String>,
-    provider_availability: Vec<WebSearchProviderAvailability>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UserVoiceSettings {
-    active_provider: String,
-    provider_availability: Vec<AudioProviderAvailability>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UserSpeechToTextSettings {
-    active_provider: String,
-    input_device_id: Option<String>,
-    provider_availability: Vec<AudioProviderAvailability>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UserMemorySettings {
-    global_enabled: bool,
-    entries: Vec<UserMemoryEntry>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McpConfigDocument {
-    scope: String,
-    path: String,
-    exists: bool,
-    raw: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UserReviewModelSettings {
-    mode: String,
-    provider: Option<String>,
-    model: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UserAgentLimitsSettings {
-    infinite: bool,
-    executor_turns: u32,
-    autopilot_executor_iterations: u32,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UserDesktopSettings {
-    pub(crate) autostart_enabled: bool,
-    pub(crate) autostart_minimized: bool,
-    pub(crate) autostart_to_tray: bool,
-    pub(crate) always_run_as_administrator: bool,
-    pub(crate) assistant_bubble_enabled: bool,
-    pub(crate) assistant_bubble_hide_when_fullscreen: bool,
-    pub(crate) assistant_bubble_temporarily_hide_seconds: u32,
-    pub(crate) ai_context_max_messages: u32,
-    pub(crate) inactive_session_archive_days: u32,
-    pub(crate) archived_session_retention_days: u32,
-    pub(crate) quick_voice_enabled: bool,
-    pub(crate) quick_voice_shortcut: String,
-    pub(crate) quick_voice_silence_seconds: f64,
-    pub(crate) quick_voice_max_messages: u32,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct UserDesktopLaunchPreferences {
-    pub(crate) autostart_minimized: bool,
-    pub(crate) autostart_to_tray: bool,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct WorkspaceConfigFile {
-    default_profile: Option<String>,
-    default_mode: Option<String>,
-    provider: Option<String>,
-    model: Option<String>,
-    reasoning: Option<String>,
-    offline: Option<bool>,
-    agent_limits: Option<UserAgentLimitsConfigFile>,
-    compatibility: Option<WorkspaceCompatibilityConfig>,
-    #[serde(default)]
-    profiles: HashMap<String, WorkspaceProfileConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct WorkspaceProfileConfig {
-    description: Option<String>,
-    mode: Option<String>,
-    provider: Option<String>,
-    model: Option<String>,
-    reasoning: Option<String>,
-    offline: Option<bool>,
-    agent_limits: Option<UserAgentLimitsConfigFile>,
-    compatibility: Option<WorkspaceCompatibilityConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct WorkspaceCompatibilityConfig {
-    discover_github_customizations: Option<bool>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct UserConfigFile {
-    #[serde(default)]
-    api_keys: HashMap<String, String>,
-    #[serde(default)]
-    agent_cli_paths: HashMap<String, String>,
-    #[serde(default)]
-    web_search: UserWebSearchConfigFile,
-    #[serde(default)]
-    voice: UserVoiceConfigFile,
-    #[serde(default)]
-    speech_to_text: UserSpeechToTextConfigFile,
-    #[serde(default)]
-    desktop: UserDesktopConfigFile,
-    #[serde(default)]
-    agent_limits: UserAgentLimitsConfigFile,
-    #[serde(default)]
-    memory: UserMemoryConfigFile,
-    #[serde(default)]
-    review_model: UserReviewModelConfigFile,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct UserWebSearchConfigFile {
-    active_provider: Option<String>,
-    #[serde(default)]
-    api_keys: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct UserVoiceConfigFile {
-    active_provider: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct UserSpeechToTextConfigFile {
-    active_provider: Option<String>,
-    input_device_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct UserDesktopConfigFile {
-    autostart_minimized: Option<bool>,
-    autostart_to_tray: Option<bool>,
-    always_run_as_administrator: Option<bool>,
-    assistant_bubble_enabled: Option<bool>,
-    assistant_bubble_hide_when_fullscreen: Option<bool>,
-    assistant_bubble_temporarily_hide_seconds: Option<u32>,
-    ai_context_max_messages: Option<u32>,
-    inactive_session_archive_days: Option<u32>,
-    archived_session_retention_days: Option<u32>,
-    quick_voice_enabled: Option<bool>,
-    quick_voice_shortcut: Option<String>,
-    quick_voice_silence_seconds: Option<f64>,
-    quick_voice_max_messages: Option<u32>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct UserAgentLimitsConfigFile {
-    infinite: Option<bool>,
-    executor_turns: Option<u32>,
-    autopilot_executor_iterations: Option<u32>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct UserMemoryConfigFile {
-    global_enabled: Option<bool>,
-    #[serde(default)]
-    entries: Vec<UserMemoryEntry>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct UserReviewModelConfigFile {
-    mode: Option<String>,
-    provider: Option<String>,
-    model: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UserMemoryEntry {
-    id: String,
-    scope: String,
-    content: String,
-    created_at: u64,
-    updated_at: u64,
-}
+pub use settings::{
+    McpConfigDocument, UserAgentLimitsSettings, UserDesktopSettings, UserMemorySettings,
+    UserReviewModelSettings, UserSpeechToTextSettings, UserVoiceSettings, UserWebSearchSettings,
+};
+pub(crate) use settings::UserDesktopLaunchPreferences;
+use settings::{
+    UserAgentLimitsConfigFile, UserConfigFile, UserMemoryEntry, UserReviewModelConfigFile,
+    WorkspaceConfigFile, WorkspaceProfileConfig,
+};
 
 pub(crate) fn normalize_optional_string(value: Option<&str>) -> Option<String> {
     let trimmed = value?.trim();
