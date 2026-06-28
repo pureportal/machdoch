@@ -7,6 +7,12 @@ use serde_json::json;
 
 use crate::runtime_snapshot::normalize_optional_string;
 
+mod google_response;
+
+use google_response::{
+    extract_google_audio, extract_google_transcript, GoogleGenerateContentResponse,
+};
+
 const OPENAI_TTS_ENDPOINT: &str = "https://api.openai.com/v1/audio/speech";
 const OPENAI_TTS_MODEL: &str = "gpt-4o-mini-tts";
 const OPENAI_TTS_VOICE: &str = "cedar";
@@ -23,9 +29,6 @@ const GOOGLE_TTS_ENDPOINT: &str =
 const GOOGLE_STT_ENDPOINT: &str =
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent";
 const GOOGLE_TTS_VOICE: &str = "Kore";
-const GOOGLE_PCM_SAMPLE_RATE_HZ: u32 = 24_000;
-const GOOGLE_PCM_CHANNELS: u16 = 1;
-const GOOGLE_PCM_BITS_PER_SAMPLE: u16 = 16;
 const GOOGLE_TTS_RETRY_COUNT: usize = 2;
 const GOOGLE_STT_SYSTEM_INSTRUCTION: &str = "You are a speech-to-text transcription service for a desktop AI assistant. Return only the spoken transcript as plain text. Preserve punctuation, filenames, CLI flags, code symbols, and product names when they are clear. If no intelligible speech is present, return an empty transcript. Do not summarize, explain, or add speaker labels.";
 const GOOGLE_MAX_INLINE_AUDIO_BYTES: usize = 20 * 1024 * 1024;
@@ -61,46 +64,6 @@ struct ApiErrorBody {
 struct OpenAiTranscriptionResponse {
     text: String,
     language: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GoogleGenerateContentResponse {
-    candidates: Option<Vec<GoogleCandidate>>,
-    prompt_feedback: Option<GooglePromptFeedback>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GooglePromptFeedback {
-    block_reason: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GoogleCandidate {
-    content: Option<GoogleContent>,
-    finish_reason: Option<String>,
-    finish_message: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GoogleContent {
-    parts: Vec<GooglePart>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GooglePart {
-    inline_data: Option<GoogleInlineData>,
-    text: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GoogleInlineData {
-    mime_type: Option<String>,
-    data: String,
 }
 
 fn normalize_text(value: &str) -> Result<String, String> {
@@ -228,32 +191,6 @@ fn create_google_transcription_prompt(language_code: Option<&str>) -> String {
         .to_string()
 }
 
-fn create_wav_from_pcm_mono_16bit_24khz(pcm_bytes: &[u8]) -> Vec<u8> {
-    let data_len = pcm_bytes.len() as u32;
-    let byte_rate = GOOGLE_PCM_SAMPLE_RATE_HZ
-        * GOOGLE_PCM_CHANNELS as u32
-        * (GOOGLE_PCM_BITS_PER_SAMPLE as u32 / 8);
-    let block_align = GOOGLE_PCM_CHANNELS * (GOOGLE_PCM_BITS_PER_SAMPLE / 8);
-    let chunk_size = 36 + data_len;
-
-    let mut wav = Vec::with_capacity(44 + pcm_bytes.len());
-    wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&chunk_size.to_le_bytes());
-    wav.extend_from_slice(b"WAVE");
-    wav.extend_from_slice(b"fmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes());
-    wav.extend_from_slice(&GOOGLE_PCM_CHANNELS.to_le_bytes());
-    wav.extend_from_slice(&GOOGLE_PCM_SAMPLE_RATE_HZ.to_le_bytes());
-    wav.extend_from_slice(&byte_rate.to_le_bytes());
-    wav.extend_from_slice(&block_align.to_le_bytes());
-    wav.extend_from_slice(&GOOGLE_PCM_BITS_PER_SAMPLE.to_le_bytes());
-    wav.extend_from_slice(b"data");
-    wav.extend_from_slice(&data_len.to_le_bytes());
-    wav.extend_from_slice(pcm_bytes);
-    wav
-}
-
 fn build_http_client() -> Result<Client, String> {
     Client::builder()
         .timeout(Duration::from_secs(45))
@@ -330,109 +267,6 @@ async fn synthesize_openai(
         mime_type: "audio/wav".to_string(),
         audio_base64: BASE64_STANDARD.encode(audio_bytes),
     })
-}
-
-fn extract_google_audio(
-    response: GoogleGenerateContentResponse,
-) -> Result<(String, Vec<u8>), String> {
-    if let Some(prompt_feedback) = response.prompt_feedback {
-        if let Some(block_reason) = prompt_feedback.block_reason {
-            return Err(format!(
-                "Google Gemini speech request was blocked: {block_reason}."
-            ));
-        }
-    }
-
-    let Some(candidate) = response
-        .candidates
-        .and_then(|candidates| candidates.into_iter().next())
-    else {
-        return Err("Google Gemini returned no speech candidates.".to_string());
-    };
-
-    if let Some(finish_reason) = candidate.finish_reason.as_deref() {
-        match finish_reason {
-            "SAFETY" | "PROHIBITED_CONTENT" => {
-                return Err(candidate.finish_message.unwrap_or_else(|| {
-                    format!("Google Gemini speech request ended with {finish_reason}.")
-                }));
-            }
-            _ => {}
-        }
-    }
-
-    let Some(content) = candidate.content else {
-        return Err("Google Gemini returned no audio content.".to_string());
-    };
-
-    let Some(inline_data) = content.parts.into_iter().find_map(|part| part.inline_data) else {
-        return Err("Google Gemini returned a response without inline audio data.".to_string());
-    };
-
-    let mime_type = inline_data
-        .mime_type
-        .unwrap_or_else(|| "audio/pcm".to_string());
-    let decoded = BASE64_STANDARD
-        .decode(inline_data.data)
-        .map_err(|error| format!("Failed to decode Google Gemini audio: {error}"))?;
-
-    if mime_type.contains("wav") {
-        return Ok(("audio/wav".to_string(), decoded));
-    }
-
-    Ok((
-        "audio/wav".to_string(),
-        create_wav_from_pcm_mono_16bit_24khz(&decoded),
-    ))
-}
-
-fn extract_google_transcript(response: GoogleGenerateContentResponse) -> Result<String, String> {
-    if let Some(prompt_feedback) = response.prompt_feedback {
-        if let Some(block_reason) = prompt_feedback.block_reason {
-            return Err(format!(
-                "Google Gemini speech-to-text request was blocked: {block_reason}."
-            ));
-        }
-    }
-
-    let Some(candidate) = response
-        .candidates
-        .and_then(|candidates| candidates.into_iter().next())
-    else {
-        return Err("Google Gemini returned no transcription candidates.".to_string());
-    };
-
-    if let Some(finish_reason) = candidate.finish_reason.as_deref() {
-        match finish_reason {
-            "SAFETY" | "PROHIBITED_CONTENT" => {
-                return Err(candidate.finish_message.unwrap_or_else(|| {
-                    format!("Google Gemini speech-to-text request ended with {finish_reason}.")
-                }));
-            }
-            _ => {}
-        }
-    }
-
-    let Some(content) = candidate.content else {
-        return Err("Google Gemini returned no transcription content.".to_string());
-    };
-
-    let transcript = content
-        .parts
-        .into_iter()
-        .filter_map(|part| part.text)
-        .map(|text| text.trim().to_string())
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_string();
-
-    if transcript.is_empty() {
-        return Err("Google Gemini returned an empty transcript.".to_string());
-    }
-
-    Ok(transcript)
 }
 
 async fn synthesize_google(
