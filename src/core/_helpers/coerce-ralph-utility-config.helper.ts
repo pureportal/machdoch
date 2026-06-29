@@ -422,6 +422,9 @@ export const coerceRalphUtilityConfig = (
       ? { counterKey: record.counterKey }
       : {}),
     ...(typeof record.command === "string" ? { command: record.command } : {}),
+    ...(typeof record.fallbackCommand === "string"
+      ? { fallbackCommand: record.fallbackCommand }
+      : {}),
     ...(typeof record.cwd === "string" ? { cwd: record.cwd } : {}),
     ...(env ? { env } : {}),
     ...(adapter ? { adapter } : {}),
@@ -455,6 +458,7 @@ export const coerceRalphUtilityConfig = (
       : {}),
     ...(typeof record.value === "string" ? { value: record.value } : {}),
     ...(typeof record.input === "string" ? { input: record.input } : {}),
+    ...(typeof record.baseline === "string" ? { baseline: record.baseline } : {}),
     ...(typeof record.expression === "string"
       ? { expression: record.expression }
       : {}),

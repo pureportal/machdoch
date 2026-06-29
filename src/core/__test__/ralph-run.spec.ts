@@ -1337,6 +1337,7 @@ describe("runRalphFlow", () => {
         "export const value = 1;\n",
         "utf8",
       );
+      await writeFile(join(workspace, "RALPH_REFACTOR_NOTES.md"), "before\n", "utf8");
       await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
 
       expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
@@ -1359,6 +1360,7 @@ describe("runRalphFlow", () => {
         "export const value = 2;\n",
         "utf8",
       );
+      await writeFile(join(workspace, "RALPH_REFACTOR_NOTES.md"), "after\n", "utf8");
       await writeFile(join(workspace, "docs", "note.md"), "after\n", "utf8");
 
       const result = await runRalphFlow(
@@ -1373,8 +1375,11 @@ describe("runRalphFlow", () => {
                 type: "CHANGE_SCOPE_GUARD",
                 cwd: ".",
                 input: JSON.stringify({
-                  paths: ["src"],
-                  globs: ["src/**/*.ts"],
+                  scope: {
+                    paths: ["src"],
+                    globs: ["src/**/*.ts"],
+                  },
+                  allowedPaths: ["RALPH_REFACTOR_NOTES.md"],
                 }),
               },
             },
@@ -1398,6 +1403,202 @@ describe("runRalphFlow", () => {
             output: "OUT_OF_SCOPE",
             data: expect.objectContaining({
               outOfScopeFiles: expect.arrayContaining(["docs/note.md"]),
+            }),
+          }),
+        ]),
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps unstaged tracked files in allowed scope", async () => {
+    const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
+
+    if (gitAvailable.status !== 0) {
+      return;
+    }
+
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-guard-tracked-"));
+
+    try {
+      await mkdir(join(workspace, "src"), { recursive: true });
+      await writeFile(
+        join(workspace, "src", "feature.ts"),
+        "export const value = 1;\n",
+        "utf8",
+      );
+      await writeFile(join(workspace, "RALPH_REFACTOR_NOTES.md"), "before\n", "utf8");
+
+      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+      expect(
+        spawnSync("git", ["config", "user.email", "test@example.com"], {
+          cwd: workspace,
+        }).status,
+      ).toBe(0);
+      expect(
+        spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
+          .status,
+      ).toBe(0);
+      expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(0);
+      expect(
+        spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace }).status,
+      ).toBe(0);
+
+      await writeFile(
+        join(workspace, "src", "feature.ts"),
+        "export const value = 2;\n",
+        "utf8",
+      );
+      await writeFile(join(workspace, "RALPH_REFACTOR_NOTES.md"), "after\n", "utf8");
+
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "scope-guard",
+              type: "UTILITY",
+              title: "Scope Guard",
+              utility: {
+                type: "CHANGE_SCOPE_GUARD",
+                cwd: ".",
+                input: JSON.stringify({
+                  scope: {
+                    paths: ["src"],
+                    globs: ["src/**/*.ts"],
+                  },
+                  allowedPaths: ["RALPH_REFACTOR_NOTES.md"],
+                }),
+              },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            { id: "start-to-guard", from: "start", fromOutput: "SUCCESS", to: "scope-guard" },
+            { id: "guard-to-success", from: "scope-guard", fromOutput: "IN_SCOPE", to: "success" },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10 },
+      );
+
+      expect(result.status).toBe("completed");
+      expect(result.blockResults).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            blockId: "scope-guard",
+            output: "IN_SCOPE",
+            data: expect.objectContaining({
+              changedFiles: ["RALPH_REFACTOR_NOTES.md", "src/feature.ts"],
+              guardedFiles: ["RALPH_REFACTOR_NOTES.md", "src/feature.ts"],
+              outOfScopeFiles: [],
+            }),
+          }),
+        ]),
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores files already dirty in the scope guard baseline", async () => {
+    const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
+
+    if (gitAvailable.status !== 0) {
+      return;
+    }
+
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-guard-baseline-"));
+
+    try {
+      await mkdir(join(workspace, "src"), { recursive: true });
+      await mkdir(join(workspace, "docs"), { recursive: true });
+      await writeFile(
+        join(workspace, "src", "feature.ts"),
+        "export const value = 1;\n",
+        "utf8",
+      );
+      await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
+
+      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+      expect(
+        spawnSync("git", ["config", "user.email", "test@example.com"], {
+          cwd: workspace,
+        }).status,
+      ).toBe(0);
+      expect(
+        spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
+          .status,
+      ).toBe(0);
+      expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(0);
+      expect(
+        spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace }).status,
+      ).toBe(0);
+
+      await writeFile(join(workspace, "docs", "note.md"), "dirty before run\n", "utf8");
+
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "snapshot",
+              type: "UTILITY",
+              title: "Snapshot",
+              utility: {
+                type: "GIT_SNAPSHOT",
+                cwd: ".",
+              },
+            },
+            {
+              id: "write",
+              type: "UTILITY",
+              title: "Write Src",
+              utility: {
+                type: "WRITE_FILE",
+                path: "src/feature.ts",
+                content: "export const value = 2;\n",
+              },
+            },
+            {
+              id: "scope-guard",
+              type: "UTILITY",
+              title: "Scope Guard",
+              utility: {
+                type: "CHANGE_SCOPE_GUARD",
+                cwd: ".",
+                input: JSON.stringify({ paths: ["src"] }),
+                baseline: "{{result:snapshot}}",
+              },
+            },
+            { id: "success", type: "END", title: "Success" },
+            { id: "blocked", type: "END", title: "Blocked" },
+          ],
+          edges: [
+            { id: "start-to-snapshot", from: "start", fromOutput: "SUCCESS", to: "snapshot" },
+            { id: "snapshot-to-write", from: "snapshot", fromOutput: "SUCCESS", to: "write" },
+            { id: "write-to-guard", from: "write", fromOutput: "SUCCESS", to: "scope-guard" },
+            { id: "guard-to-success", from: "scope-guard", fromOutput: "IN_SCOPE", to: "success" },
+            { id: "guard-to-blocked", from: "scope-guard", fromOutput: "OUT_OF_SCOPE", to: "blocked" },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10 },
+      );
+
+      expect(result.status).toBe("completed");
+      expect(result.blockResults).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            blockId: "scope-guard",
+            output: "IN_SCOPE",
+            data: expect.objectContaining({
+              baselineFiles: ["docs/note.md"],
+              guardedFiles: ["src/feature.ts"],
+              outOfScopeFiles: [],
             }),
           }),
         ]),
@@ -1846,6 +2047,59 @@ describe("runRalphFlow", () => {
       const checkData = result.blockResults.find((entry) => entry.blockId === "check")
         ?.data as { exitCode?: number } | undefined;
       expect(checkData?.exitCode).not.toBe(0);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("runs RUN_CHECK fallback command when the primary command resolves blank", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-check-fallback-"));
+
+    try {
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "check",
+              type: "UTILITY",
+              title: "Check",
+              utility: {
+                type: "RUN_CHECK",
+                command: "{{verificationCommand:text=}}",
+                fallbackCommand: "node -e \"process.stdout.write('fallback-check')\"",
+              },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            { id: "start-to-check", from: "start", fromOutput: "SUCCESS", to: "check" },
+            {
+              id: "check-to-success",
+              from: "check",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10 },
+      );
+
+      expect(result.status).toBe("completed");
+      expect(result.blockResults).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            blockId: "check",
+            output: "SUCCESS",
+            data: expect.objectContaining({
+              command: expect.stringContaining("fallback-check"),
+              stdout: "fallback-check",
+            }),
+          }),
+        ]),
+      );
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

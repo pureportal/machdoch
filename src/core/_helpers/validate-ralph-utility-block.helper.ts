@@ -280,7 +280,7 @@ export const validateRalphUtilityBlock = (
       break;
     case "RUN_COMMAND":
     case "RUN_CHECK":
-      if (!utility.command?.trim()) {
+      if (!utility.command?.trim() && !utility.fallbackCommand?.trim()) {
         addUtilityIssue(
           errors,
           "utility-command-required",

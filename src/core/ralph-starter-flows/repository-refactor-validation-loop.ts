@@ -217,7 +217,8 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "CONDITION",
         condition: {
           style: "javascript",
-          expression: "Boolean(variables.validationCommand?.trim())",
+          expression:
+            "Boolean(variables.validationCommand?.trim() || context.resultsByBlock?.['detect-project-commands']?.data?.verificationCommand?.trim())",
         },
       },
     },
@@ -230,6 +231,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "RUN_CHECK",
         command: "{{validationCommand:text=}}",
+        fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
       },
     },
     {
@@ -282,7 +284,9 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "CHANGE_SCOPE_GUARD",
         cwd: ".",
-        input: "{{data:select-scope:scope}}",
+        input:
+          "{\"scope\": {{data:select-scope:scope}}, \"allowedPaths\": [\"{{notesFile:path=RALPH_REFACTOR_NOTES.md}}\"]}",
+        baseline: "{{result:git-snapshot-before}}",
       },
     },
     {

@@ -10,8 +10,6 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
@@ -23,6 +21,18 @@ use serde_json::{json, Map, Value};
 use tauri::Emitter;
 
 use crate::runtime_snapshot::{normalize_optional_string, resolve_workspace_root_path};
+
+mod attachments;
+mod paths;
+
+use attachments::{
+    remember_attachment_path_grant, remember_dropped_path_grants,
+    save_clipboard_image_attachment_sync,
+};
+use paths::{
+    format_path_for_ui, resolve_attached_path, resolve_dropped_paths_sync,
+    resolve_workspace_relative_path,
+};
 
 const DESKTOP_TASK_PROGRESS_EVENT: &str = "desktop-task-progress";
 const CLI_STRUCTURED_PROGRESS_PREFIX: &str = "machdoch-progress: ";
@@ -410,274 +420,6 @@ fn rewrite_ralph_payload_arguments(
     }
 
     Ok((rewritten, payload_paths))
-}
-
-fn format_path_for_ui(path: &Path) -> String {
-    path.display().to_string()
-}
-
-fn classify_dropped_path(raw_path: &str) -> Option<DroppedPathEntry> {
-    let normalized_path = raw_path.trim();
-
-    if normalized_path.is_empty() {
-        return None;
-    }
-
-    let candidate_path = PathBuf::from(normalized_path);
-    let display_path = candidate_path
-        .canonicalize()
-        .unwrap_or_else(|_| candidate_path.clone());
-    let metadata = fs::metadata(&display_path).or_else(|_| fs::metadata(&candidate_path));
-    let kind = metadata
-        .as_ref()
-        .map(|metadata| {
-            if metadata.is_dir() {
-                "directory"
-            } else if metadata.is_file() {
-                "file"
-            } else {
-                "other"
-            }
-        })
-        .unwrap_or("other")
-        .to_string();
-    let name = display_path
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .filter(|name| !name.trim().is_empty())
-        .unwrap_or_else(|| format_path_for_ui(&display_path));
-    let parent = display_path.parent().map(format_path_for_ui);
-
-    Some(DroppedPathEntry {
-        path: format_path_for_ui(&display_path),
-        kind,
-        name,
-        parent,
-    })
-}
-
-fn resolve_dropped_paths_sync(paths: Vec<String>) -> DroppedPathsResolution {
-    let mut seen_paths = HashSet::new();
-    let mut entries = Vec::new();
-
-    for path in paths {
-        let Some(entry) = classify_dropped_path(&path) else {
-            continue;
-        };
-        let dedupe_key = entry.path.to_lowercase();
-
-        if !seen_paths.insert(dedupe_key) {
-            continue;
-        }
-
-        entries.push(entry);
-    }
-
-    let workspace_root = entries
-        .iter()
-        .find(|entry| entry.kind == "directory")
-        .map(|entry| entry.path.clone())
-        .or_else(|| entries.iter().find_map(|entry| entry.parent.clone()));
-
-    DroppedPathsResolution {
-        entries,
-        workspace_root,
-    }
-}
-
-fn remember_attachment_path_grant(
-    grants: &AttachmentPathGrantMap,
-    path: &str,
-) -> Result<(), String> {
-    let normalized_path = path.trim();
-
-    if normalized_path.is_empty() {
-        return Ok(());
-    }
-
-    let candidate_path = PathBuf::from(normalized_path);
-
-    if !candidate_path.is_absolute() {
-        return Ok(());
-    }
-
-    let resolved_path = candidate_path
-        .canonicalize()
-        .map_err(|error| format!("Unable to resolve trusted attachment path `{path}`: {error}"))?;
-    let metadata = fs::metadata(&resolved_path).map_err(|error| {
-        format!(
-            "Unable to inspect trusted attachment path `{}`: {error}",
-            resolved_path.display()
-        )
-    })?;
-
-    if !metadata.is_file() && !metadata.is_dir() {
-        return Ok(());
-    }
-
-    let mut granted_paths = grants
-        .0
-        .lock()
-        .map_err(|_| "Unable to update trusted attachment paths.".to_string())?;
-
-    if granted_paths.len() >= MAX_ATTACHMENT_PATH_GRANTS {
-        if let Some(path_to_remove) = granted_paths.iter().next().cloned() {
-            granted_paths.remove(&path_to_remove);
-        }
-    }
-
-    granted_paths.insert(resolved_path);
-
-    Ok(())
-}
-
-fn remember_dropped_path_grants(
-    grants: &AttachmentPathGrantMap,
-    resolution: &DroppedPathsResolution,
-) -> Result<(), String> {
-    for entry in &resolution.entries {
-        remember_attachment_path_grant(grants, &entry.path)?;
-    }
-
-    Ok(())
-}
-
-fn attachment_path_is_granted(
-    grants: &AttachmentPathGrantMap,
-    path: &Path,
-) -> Result<bool, String> {
-    let granted_paths = grants
-        .0
-        .lock()
-        .map_err(|_| "Unable to inspect trusted attachment paths.".to_string())?;
-
-    Ok(granted_paths.contains(path))
-}
-
-fn clipboard_image_extension(media_type: &str) -> Option<&'static str> {
-    match media_type.trim().to_ascii_lowercase().as_str() {
-        "image/gif" => Some("gif"),
-        "image/heic" => Some("heic"),
-        "image/heif" => Some("heif"),
-        "image/jpeg" => Some("jpg"),
-        "image/png" => Some("png"),
-        "image/webp" => Some("webp"),
-        _ => None,
-    }
-}
-
-fn sanitize_clipboard_image_file_stem(file_name: Option<&str>) -> String {
-    let raw_stem = file_name
-        .and_then(|name| Path::new(name).file_stem())
-        .map(|stem| stem.to_string_lossy().to_string())
-        .unwrap_or_else(|| "clipboard-image".to_string());
-    let sanitized: String = raw_stem
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
-                character
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    let normalized = sanitized.trim_matches(&['-', '.'][..]).trim();
-
-    if normalized.is_empty() {
-        "clipboard-image".to_string()
-    } else {
-        normalized.to_string()
-    }
-}
-
-fn base64_decoded_len_upper_bound(value: &str) -> usize {
-    let normalized = value.trim();
-    let full_chunks = normalized.len() / 4;
-    let remainder = normalized.len() % 4;
-    let remainder_bytes = match remainder {
-        0 => 0,
-        2 => 1,
-        3 => 2,
-        _ => 3,
-    };
-    let padding = normalized
-        .as_bytes()
-        .iter()
-        .rev()
-        .take_while(|byte| **byte == b'=')
-        .count()
-        .min(2);
-
-    full_chunks
-        .saturating_mul(3)
-        .saturating_add(remainder_bytes)
-        .saturating_sub(padding)
-}
-
-fn clipboard_image_attachment_directory() -> PathBuf {
-    env::temp_dir().join("machdoch").join("clipboard-images")
-}
-
-fn save_clipboard_image_attachment_sync(
-    request: ClipboardImageAttachmentRequest,
-) -> Result<String, String> {
-    let extension = clipboard_image_extension(&request.media_type).ok_or_else(|| {
-        format!(
-            "Unsupported clipboard image media type `{}`.",
-            request.media_type.trim()
-        )
-    })?;
-    let encoded_image = request.data_base64.trim();
-
-    if base64_decoded_len_upper_bound(encoded_image) > MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES {
-        return Err(format!(
-            "Clipboard image data is too large. Maximum supported size is {} MiB.",
-            MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES / (1024 * 1024)
-        ));
-    }
-
-    let image_bytes = BASE64_STANDARD
-        .decode(encoded_image)
-        .map_err(|error| format!("Failed to decode clipboard image data: {error}"))?;
-
-    if image_bytes.is_empty() {
-        return Err("Clipboard image data was empty.".to_string());
-    }
-
-    if image_bytes.len() > MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES {
-        return Err(format!(
-            "Clipboard image data is too large. Maximum supported size is {} MiB.",
-            MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES / (1024 * 1024)
-        ));
-    }
-
-    let output_directory = clipboard_image_attachment_directory();
-    fs::create_dir_all(&output_directory).map_err(|error| {
-        format!(
-            "Failed to create clipboard image directory {}: {error}",
-            output_directory.display()
-        )
-    })?;
-
-    let timestamp_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or(0);
-    let file_stem = sanitize_clipboard_image_file_stem(request.file_name.as_deref());
-    let output_path = output_directory.join(format!(
-        "{file_stem}-{timestamp_ms}-{}.{}",
-        std::process::id(),
-        extension
-    ));
-
-    fs::write(&output_path, image_bytes).map_err(|error| {
-        format!(
-            "Failed to save clipboard image attachment {}: {error}",
-            output_path.display()
-        )
-    })?;
-
-    Ok(format_path_for_ui(&output_path))
 }
 
 fn enrich_ui_control_conversation_context(
@@ -1536,96 +1278,6 @@ fn execute_desktop_task(
     let response = parse_desktop_task_response(&stdout_text);
 
     response
-}
-
-fn resolve_workspace_relative_path(
-    workspace_root: &str,
-    relative_path: &str,
-) -> Result<PathBuf, String> {
-    let normalized_relative_path = relative_path.trim();
-
-    if normalized_relative_path.is_empty() {
-        return Err("Expected a workspace-relative path to open.".to_string());
-    }
-
-    let workspace_path = resolve_workspace_root_path(workspace_root)?;
-
-    let candidate_relative_path = PathBuf::from(normalized_relative_path);
-
-    if candidate_relative_path.is_absolute() {
-        return Err("Expected a workspace-relative path, not an absolute path.".to_string());
-    }
-
-    let resolved_path = workspace_path
-        .join(&candidate_relative_path)
-        .canonicalize()
-        .map_err(|error| {
-            format!("Unable to resolve `{normalized_relative_path}` inside the workspace: {error}")
-        })?;
-
-    if !resolved_path.starts_with(&workspace_path) {
-        return Err("Refused to open a path outside the active workspace.".to_string());
-    }
-
-    Ok(resolved_path)
-}
-
-fn resolve_attached_path(
-    grants: &AttachmentPathGrantMap,
-    workspace_root: Option<&str>,
-    path: &str,
-) -> Result<PathBuf, String> {
-    let normalized_path = path.trim();
-
-    if normalized_path.is_empty() {
-        return Err("Expected an attached file path to open.".to_string());
-    }
-
-    let candidate_path = PathBuf::from(normalized_path);
-
-    if !candidate_path.is_absolute() {
-        return Err("Expected an absolute attached file path.".to_string());
-    }
-
-    let resolved_path = candidate_path
-        .canonicalize()
-        .map_err(|error| format!("Unable to resolve attached path `{normalized_path}`: {error}"))?;
-    let resolved_metadata = fs::metadata(&resolved_path).map_err(|error| {
-        format!(
-            "Unable to inspect attached path `{}`: {error}",
-            resolved_path.display()
-        )
-    })?;
-
-    if !resolved_metadata.is_file() && !resolved_metadata.is_dir() {
-        return Err("Expected the attached path to be a file or directory.".to_string());
-    }
-
-    if !attachment_path_is_granted(grants, &resolved_path)? {
-        return Err(
-            "Refused to open an attachment path that was not selected or created by this app session."
-                .to_string(),
-        );
-    }
-
-    if let Some(normalized_workspace_root) = workspace_root
-        .map(str::trim)
-        .filter(|candidate| !candidate.is_empty())
-    {
-        let workspace_path = resolve_workspace_root_path(normalized_workspace_root)?;
-
-        if resolved_path.starts_with(&workspace_path) {
-            return Ok(resolved_path);
-        }
-    }
-
-    if let Ok(clipboard_directory) = clipboard_image_attachment_directory().canonicalize() {
-        if resolved_path.starts_with(&clipboard_directory) {
-            return Ok(resolved_path);
-        }
-    }
-
-    Err("Refused to open an attached path outside the active workspace or trusted temporary attachments.".to_string())
 }
 
 fn spawn_detached_command(command: &mut Command, error_prefix: &str) -> Result<(), String> {

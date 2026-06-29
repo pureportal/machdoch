@@ -1110,7 +1110,7 @@ const createDefaultUtilityConfig = (
     case "RUN_COMMAND":
       return { type, command: "npm test", timeoutSeconds: 120 };
     case "RUN_CHECK":
-      return { type, command: "npm run typecheck", timeoutSeconds: 120 };
+      return { type, command: "npm run typecheck", fallbackCommand: "", timeoutSeconds: 120 };
     case "UI_ANALYZE":
       return {
         type,
@@ -1213,6 +1213,7 @@ const createDefaultUtilityConfig = (
         type,
         cwd: ".",
         input: "{{data:select-scope:scope}}",
+        baseline: "{{result:git-snapshot-before}}",
       };
     case "SCAN_SCOPE_EVIDENCE":
       return {
@@ -8903,6 +8904,33 @@ export const RalphFlowEditor = ({
                 className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
               />
             </RalphInspectorField>
+            <RalphInspectorField
+              label="Fallback command"
+              help="Used when command resolves to blank. Supports {{variables}}."
+              action={renderExpandFieldButton("Expand", () =>
+                openExpandedEditor({
+                  title: "Fallback command",
+                  description:
+                    "Edit the fallback shell command in a larger workspace. Variables are inserted literally.",
+                  ariaLabel: "Expanded utility fallback command",
+                  mode: "code",
+                  value: selectedUtility.fallbackCommand ?? "",
+                  supportsVariables: true,
+                  onApply: (fallbackCommand) =>
+                    updateSelectedUtility({ fallbackCommand }),
+                }),
+              )}
+            >
+              <Textarea
+                value={selectedUtility.fallbackCommand ?? ""}
+                aria-label="Utility fallback command"
+                placeholder="{{data:detect-project-commands:verificationCommand}}"
+                onChange={(event) =>
+                  updateSelectedUtility({ fallbackCommand: event.target.value })
+                }
+                className="min-h-16 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+              />
+            </RalphInspectorField>
             <div className={cn("grid gap-2", inspectorTwoColumnClass)}>
               <RalphInspectorField label="Working directory" help="Leave blank to use the workspace root.">
                 <Input
@@ -9649,6 +9677,17 @@ export const RalphFlowEditor = ({
                 placeholder="{{data:select-scope:scope}}"
                 onChange={(event) =>
                   updateSelectedUtility({ input: event.target.value })
+                }
+                className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
+              />
+            </RalphInspectorField>
+            <RalphInspectorField label="Git baseline JSON" help="Optional GIT_SNAPSHOT result whose dirty files should be ignored.">
+              <Textarea
+                value={selectedUtility.baseline ?? ""}
+                aria-label="Scope guard baseline"
+                placeholder="{{result:git-snapshot-before}}"
+                onChange={(event) =>
+                  updateSelectedUtility({ baseline: event.target.value })
                 }
                 className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
               />

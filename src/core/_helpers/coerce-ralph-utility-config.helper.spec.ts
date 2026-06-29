@@ -84,9 +84,11 @@ describe("coerceRalphUtilityConfig", () => {
         prompt: "Return JSON.",
         structuredOutput: false,
         command: "pnpm test",
+        fallbackCommand: "pnpm typecheck",
         cwd: "",
         timeoutSeconds: 0,
         maxOutputBytes: 1,
+        baseline: "{{result:git-snapshot-before}}",
         ignoreErrors: false,
       }),
     ).toEqual({
@@ -116,9 +118,11 @@ describe("coerceRalphUtilityConfig", () => {
       prompt: "Return JSON.",
       structuredOutput: false,
       command: "pnpm test",
+      fallbackCommand: "pnpm typecheck",
       cwd: "",
       timeoutSeconds: 0,
       maxOutputBytes: 1,
+      baseline: "{{result:git-snapshot-before}}",
       ignoreErrors: false,
     });
   });

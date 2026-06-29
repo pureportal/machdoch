@@ -496,6 +496,7 @@ export interface RalphUtilityConfig {
   counterName?: string;
   counterKey?: string;
   command?: string;
+  fallbackCommand?: string;
   cwd?: string;
   env?: Record<string, string>;
   adapter?: RalphUiAnalyzeAdapter;
@@ -515,6 +516,7 @@ export interface RalphUtilityConfig {
   variableName?: string;
   value?: string;
   input?: string;
+  baseline?: string;
   expression?: string;
   prompt?: string;
   schema?: unknown;
@@ -3637,7 +3639,7 @@ const executeCommandUtilityBlock = async (
   checkMode: boolean,
   signal?: AbortSignal,
 ): Promise<RalphBlockExecutionResult> => {
-  const command = utility.command?.trim();
+  const command = utility.command?.trim() || utility.fallbackCommand?.trim();
 
   if (!command) {
     return createUtilityResult(block, "ERROR", "Command utility requires command.");
@@ -6078,9 +6080,22 @@ const executeGitDiffSummaryUtilityBlock = async (
 const parseGitStatusChangedFiles = (statusText: string): string[] => {
   return statusText
     .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.slice(3).trim())
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const fullStatusMatch = line.match(/^[ MADRCU?!]{2}\s+([\s\S]+)$/u);
+      if (fullStatusMatch) {
+        return fullStatusMatch[1]?.trim() ?? "";
+      }
+
+      const trimmedLeadingLine = line.trimStart();
+      const singleStatusMatch = trimmedLeadingLine.match(/^[MADRCU?!]\s+([\s\S]+)$/u);
+      if (singleStatusMatch) {
+        return singleStatusMatch[1]?.trim() ?? "";
+      }
+
+      return line.trim();
+    })
     .map((path) => path.split(" -> ").at(-1)?.trim() ?? path)
     .filter(Boolean);
 };
@@ -6124,17 +6139,67 @@ const extractScopeGuardRules = (
   input: unknown,
 ): { paths: string[]; globs: string[] } => {
   const source = isRecord(input) && isRecord(input.scope) ? input.scope : input;
+  const extraSource = isRecord(input) && isRecord(input.scope) ? input : undefined;
 
   return {
     paths: [
       ...extractStringListField(source, "paths"),
       ...extractStringListField(source, "allowedPaths"),
+      ...extractStringListField(extraSource, "allowedPaths"),
     ],
     globs: [
       ...extractStringListField(source, "globs"),
       ...extractStringListField(source, "allowedGlobs"),
+      ...extractStringListField(extraSource, "allowedGlobs"),
     ],
   };
+};
+
+const normalizeScopeGuardChangedFiles = (
+  files: readonly string[],
+  workspaceRoot: string,
+): string[] => {
+  return files
+    .map((path) => path.trim())
+    .filter(Boolean)
+    .map((path) => normalizeWorkspaceRelativePath(path, workspaceRoot))
+    .filter((path, index, all) => all.indexOf(path) === index);
+};
+
+const extractGitSummaryChangedFiles = (
+  value: unknown,
+  workspaceRoot: string,
+): string[] => {
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  const statusFiles =
+    typeof value.status === "string" ? parseGitStatusChangedFiles(value.status) : [];
+  const changedFiles = extractStringListField(value, "changedFiles").flatMap(
+    (entry) => parseGitStatusChangedFiles(entry),
+  );
+  const diffFiles = extractStringListField(value, "diffFiles");
+  const stagedDiffFiles = extractStringListField(value, "stagedDiffFiles");
+
+  return normalizeScopeGuardChangedFiles(
+    [...statusFiles, ...changedFiles, ...diffFiles, ...stagedDiffFiles],
+    workspaceRoot,
+  );
+};
+
+const extractScopeGuardBaselineFiles = (
+  utility: RalphUtilityConfig,
+  workspaceRoot: string,
+): string[] => {
+  if (utility.baseline === undefined) {
+    return [];
+  }
+
+  return extractGitSummaryChangedFiles(
+    parseRalphUtilityJsonValue(utility.baseline),
+    workspaceRoot,
+  );
 };
 
 const doesPathMatchScopeGuard = (
@@ -6180,15 +6245,11 @@ const executeChangeScopeGuardUtilityBlock = async (
       runGitCommand(["diff", "--name-only"], cwd, utility, signal),
       runGitCommand(["diff", "--cached", "--name-only"], cwd, utility, signal),
     ]);
-    const changedFiles = [
+    const changedFiles = normalizeScopeGuardChangedFiles([
       ...parseGitStatusChangedFiles(statusText),
       ...diffNames.split(/\r?\n/u),
       ...stagedDiffNames.split(/\r?\n/u),
-    ]
-      .map((path) => path.trim())
-      .filter(Boolean)
-      .map((path) => normalizeWorkspaceRelativePath(path, config.workspaceRoot))
-      .filter((path, index, all) => all.indexOf(path) === index);
+    ], config.workspaceRoot);
 
     if (changedFiles.length === 0) {
       return createUtilityResult(
@@ -6200,6 +6261,28 @@ const executeChangeScopeGuardUtilityBlock = async (
       );
     }
 
+    const baselineFiles = extractScopeGuardBaselineFiles(utility, config.workspaceRoot);
+    const baselineFileSet = new Set(baselineFiles);
+    const guardedFiles =
+      baselineFileSet.size > 0
+        ? changedFiles.filter((filePath) => !baselineFileSet.has(filePath))
+        : changedFiles;
+
+    if (guardedFiles.length === 0) {
+      return createUtilityResult(
+        block,
+        "EMPTY",
+        `${block.title} found no changed files beyond the configured baseline.`,
+        {
+          cwd,
+          changedFiles,
+          guardedFiles,
+          baselineFiles,
+        },
+        "completed",
+      );
+    }
+
     const rules = extractScopeGuardRules(extractScopeGuardInput(utility, context));
 
     if (rules.paths.length === 0 && rules.globs.length === 0) {
@@ -6207,12 +6290,12 @@ const executeChangeScopeGuardUtilityBlock = async (
         block,
         "IN_SCOPE",
         `${block.title} found no configured scope restrictions.`,
-        { cwd, changedFiles, allowedPaths: [], allowedGlobs: [] },
+        { cwd, changedFiles, guardedFiles, baselineFiles, allowedPaths: [], allowedGlobs: [] },
         "completed",
       );
     }
 
-    const outOfScopeFiles = changedFiles.filter(
+    const outOfScopeFiles = guardedFiles.filter(
       (filePath) =>
         !doesPathMatchScopeGuard(filePath, rules.paths, rules.globs),
     );
@@ -6227,6 +6310,8 @@ const executeChangeScopeGuardUtilityBlock = async (
       {
         cwd,
         changedFiles,
+        guardedFiles,
+        baselineFiles,
         outOfScopeFiles,
         allowedPaths: rules.paths,
         allowedGlobs: rules.globs,

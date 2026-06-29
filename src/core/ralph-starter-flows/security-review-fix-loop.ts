@@ -300,7 +300,8 @@ const securityFixLoopFlow: RalphFlow = {
         type: "CONDITION",
         condition: {
           style: "javascript",
-          expression: "Boolean(variables.verificationCommand?.trim())",
+          expression:
+            "Boolean(variables.verificationCommand?.trim() || context.resultsByBlock?.['detect-project-commands']?.data?.verificationCommand?.trim())",
         },
       },
     },
@@ -313,6 +314,7 @@ const securityFixLoopFlow: RalphFlow = {
       utility: {
         type: "RUN_CHECK",
         command: "{{verificationCommand:text=}}",
+        fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
       },
     },
     {
@@ -349,7 +351,9 @@ const securityFixLoopFlow: RalphFlow = {
       utility: {
         type: "CHANGE_SCOPE_GUARD",
         cwd: ".",
-        input: "{{data:select-scope:scope}}",
+        input:
+          "{\"scope\": {{data:select-scope:scope}}, \"allowedPaths\": [\"{{historyFile:path=RALPH_SECURITY_HISTORY.md}}\"]}",
+        baseline: "{{result:git-snapshot-before}}",
       },
     },
     {

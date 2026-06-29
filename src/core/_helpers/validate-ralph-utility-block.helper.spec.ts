@@ -49,6 +49,7 @@ describe("validateRalphUtilityBlock", () => {
       },
       { type: "RUN_COMMAND", command: "pnpm test" },
       { type: "RUN_CHECK", command: "pnpm typecheck" },
+      { type: "RUN_CHECK", fallbackCommand: "pnpm typecheck" },
       { type: "READ_FILE", path: "src/core/ralph.ts" },
       { type: "WRITE_FILE", path: "tmp/result.txt", content: "" },
       { type: "READ_JSON", path: "tmp/state.json" },

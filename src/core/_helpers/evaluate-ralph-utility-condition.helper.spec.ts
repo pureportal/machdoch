@@ -172,6 +172,29 @@ describe("evaluateRalphUtilityCondition", () => {
     ).toBe(true);
   });
 
+  it("exposes prior block results to javascript expressions by block id", () => {
+    expect(
+      evaluateRalphUtilityCondition(
+        {
+          style: "javascript",
+          expression:
+            "Boolean(context.resultsByBlock?.['detect-project-commands']?.data?.verificationCommand?.trim())",
+        },
+        createContext({
+          resultsByBlock: new Map([
+            [
+              "detect-project-commands",
+              createResult({
+                blockId: "detect-project-commands",
+                data: { verificationCommand: "pnpm typecheck" },
+              }),
+            ],
+          ]),
+        }),
+      ),
+    ).toBe(true);
+  });
+
   it("defaults missing javascript expressions to false", () => {
     expect(
       evaluateRalphUtilityCondition(

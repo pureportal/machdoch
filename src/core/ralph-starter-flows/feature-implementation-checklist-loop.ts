@@ -257,7 +257,8 @@ const fullFeatureImplementationFlow: RalphFlow = {
         type: "CONDITION",
         condition: {
           style: "javascript",
-          expression: "Boolean(variables.verificationCommand?.trim())",
+          expression:
+            "Boolean(variables.verificationCommand?.trim() || context.resultsByBlock?.['detect-project-commands']?.data?.verificationCommand?.trim())",
         },
       },
     },
@@ -270,6 +271,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "RUN_CHECK",
         command: "{{verificationCommand:text=}}",
+        fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
       },
     },
     {

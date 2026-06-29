@@ -8,6 +8,7 @@ export interface RalphUtilityConditionContext {
   lastResult?: RalphBlockExecutionResult;
   runLog: string[];
   variables: Record<string, string>;
+  resultsByBlock?: Map<string, RalphBlockExecutionResult>;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -142,11 +143,16 @@ const createRalphUtilityConditionScope = (
   context: RalphUtilityConditionContext,
   result?: unknown,
 ): Record<string, unknown> => {
+  const resultsByBlock = context.resultsByBlock
+    ? Object.fromEntries(context.resultsByBlock.entries())
+    : undefined;
+
   return {
     variables: context.variables,
     lastResult: context.lastResult,
     lastData: context.lastResult?.data,
     runLog: context.runLog,
+    ...(resultsByBlock ? { resultsByBlock } : {}),
     ...(isRecord(result) ? result : { result }),
   };
 };
