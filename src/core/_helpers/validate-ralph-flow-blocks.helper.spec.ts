@@ -64,6 +64,27 @@ describe("validateRalphFlowBlocks", () => {
     expect(validation.startBlocks).toEqual([]);
   });
 
+  it("rejects non-positive prompt-like block timeout settings", () => {
+    const validation = validateBlocks(
+      createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "fix-tsc",
+            type: "PROMPT",
+            title: "Fix TSC",
+            prompt: "Fix TypeScript errors.",
+            settings: {
+              timeoutSeconds: 0,
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(codes(validation.errors)).toContain("settings-timeout-invalid");
+  });
+
   it("reports duplicate START blocks and duplicate block ids", () => {
     const validation = validateBlocks(
       createFlow({

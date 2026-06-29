@@ -87,6 +87,15 @@ describe("Ralph starter flows", () => {
     const runValidation = flow?.blocks.find(
       (block) => block.id === "run-validation-checks",
     );
+    const refactorPass = flow?.blocks.find(
+      (block) => block.id === "refactor-pass",
+    );
+    const fixValidationFailures = flow?.blocks.find(
+      (block) => block.id === "fix-validation-failures",
+    );
+    const finalRefactorScan = flow?.blocks.find(
+      (block) => block.id === "final-refactor-scan",
+    );
     const scopeGuard = flow?.blocks.find(
       (block) => block.id === "change-scope-guard",
     );
@@ -114,6 +123,25 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "RUN_CHECK",
         fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        timeoutSeconds: 1800,
+      },
+    });
+    expect(refactorPass).toMatchObject({
+      type: "PROMPT",
+      settings: {
+        timeoutSeconds: 3600,
+      },
+    });
+    expect(fixValidationFailures).toMatchObject({
+      type: "PROMPT",
+      settings: {
+        timeoutSeconds: 3600,
+      },
+    });
+    expect(finalRefactorScan).toMatchObject({
+      type: "VALIDATOR",
+      settings: {
+        timeoutSeconds: 3600,
       },
     });
     expect(scopeGuard).toMatchObject({

@@ -2485,7 +2485,9 @@ const createExecutionOptions = async (
     ...(onStateChange ? { onStateChange } : {}),
     ...(onActionOutput ? { onActionOutput } : {}),
     ...(conversationContext ? { conversationContext } : {}),
-    ...(block?.settings?.timeoutSeconds
+    ...(typeof block?.settings?.timeoutSeconds === "number" &&
+    Number.isFinite(block.settings.timeoutSeconds) &&
+    block.settings.timeoutSeconds > 0
       ? { maxDurationMs: block.settings.timeoutSeconds * 1000 }
       : {}),
     ...(imageInputs.length > 0 ? { imageInputs } : {}),

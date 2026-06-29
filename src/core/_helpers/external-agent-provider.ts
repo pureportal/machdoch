@@ -1,4 +1,4 @@
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { extname } from "node:path";
 import { loadWorkspaceEnv } from "../env.js";
 import {
@@ -42,6 +42,7 @@ interface ExternalAgentExecutionParams extends ModelDrivenExecutionParams {
 }
 
 const MAX_DIAGNOSTIC_CHARS = 12_000;
+const EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS = 5_000;
 const ANSI_ESCAPE_PATTERN =
   // eslint-disable-next-line no-control-regex
   /\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/gu;
@@ -310,9 +311,17 @@ const shouldUseShellForExecutable = (executable: string): boolean => {
   return extension === ".cmd" || extension === ".bat";
 };
 
+const unrefTimer = (handle: ReturnType<typeof setTimeout>): void => {
+  const candidate = handle as ReturnType<typeof setTimeout> & {
+    unref?: () => void;
+  };
+
+  candidate.unref?.();
+};
+
 const terminateExternalAgentProcessTree = (child: ChildProcess): void => {
   if (process.platform === "win32" && typeof child.pid === "number") {
-    const result = spawnSync(
+    const killer = spawn(
       "taskkill",
       ["/PID", String(child.pid), "/T", "/F"],
       {
@@ -320,10 +329,21 @@ const terminateExternalAgentProcessTree = (child: ChildProcess): void => {
         windowsHide: true,
       },
     );
+    const timeoutHandle = setTimeout(() => {
+      killer.kill();
+      child.kill();
+    }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS);
 
-    if (!result.error && result.status === 0) {
-      return;
-    }
+    unrefTimer(timeoutHandle);
+    killer.once("close", () => {
+      clearTimeout(timeoutHandle);
+    });
+    killer.once("error", () => {
+      clearTimeout(timeoutHandle);
+      child.kill();
+    });
+
+    return;
   }
 
   child.kill();
@@ -567,8 +587,8 @@ const runExternalAgentCommand = async (
     };
 
     function handleAbort(): void {
-      terminateExternalAgentProcessTree(child);
       rejectOnce(signal ? createAbortError(signal) : new Error("Execution cancelled."));
+      terminateExternalAgentProcessTree(child);
     }
 
     child.stdout?.setEncoding("utf8");

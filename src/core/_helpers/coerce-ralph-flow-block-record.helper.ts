@@ -293,7 +293,9 @@ const coerceSettings = (value: unknown): RalphBlockSettings | undefined => {
       ? value.reasoning
       : undefined;
   const timeoutSeconds =
-    typeof value.timeoutSeconds === "number" ? value.timeoutSeconds : undefined;
+    typeof value.timeoutSeconds === "number" || value.timeoutSeconds === null
+      ? value.timeoutSeconds
+      : undefined;
   const temperature =
     typeof value.temperature === "number" ? value.temperature : undefined;
   const maxIterations =

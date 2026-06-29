@@ -1,6 +1,9 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
 
+const RALPH_REFACTOR_AGENT_TIMEOUT_SECONDS = 60 * 60;
+const RALPH_REFACTOR_VALIDATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
+
 const autonomousRefactoringFlow: RalphFlow = {
   schemaVersion: 1,
   id: "starter-autonomous-refactoring-flow",
@@ -202,6 +205,7 @@ const autonomousRefactoringFlow: RalphFlow = {
         attachments: [],
         packs: [],
         maxIterations: 2,
+        timeoutSeconds: RALPH_REFACTOR_AGENT_TIMEOUT_SECONDS,
       },
       type: "PROMPT",
       prompt:
@@ -245,6 +249,7 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "RUN_CHECK",
         command: "{{validationCommand:text=}}",
         fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        timeoutSeconds: RALPH_REFACTOR_VALIDATION_COMMAND_TIMEOUT_SECONDS,
       },
     },
     {
@@ -258,6 +263,7 @@ const autonomousRefactoringFlow: RalphFlow = {
         attachments: [],
         packs: [],
         maxIterations: 1,
+        timeoutSeconds: RALPH_REFACTOR_AGENT_TIMEOUT_SECONDS,
       },
       type: "PROMPT",
       prompt:
@@ -281,6 +287,9 @@ const autonomousRefactoringFlow: RalphFlow = {
       position: { x: 3400, y: -150 },
       size: { width: 300, height: 238 },
       type: "VALIDATOR",
+      settings: {
+        timeoutSeconds: RALPH_REFACTOR_AGENT_TIMEOUT_SECONDS,
+      },
       prompt:
         "Perform a final scan for selected JSON scope {{result:select-scope}} using conventions {{data:detect-conventions:output}}, refactor plan {{data:audit-against-policy:output}}, validation result {{result:run-validation-checks}}, git diff {{result:git-diff-summary}}, and latest changes. Verify the configured objective, naming policy, max file line policy, helper placement policy, tests, public API policy, exclusions, selected paths/globs, and notes file {{notesFile:path=RALPH_REFACTOR_NOTES.md}}. If this selected scope is complete, end with RALPH_DECISION: DONE. If unresolved issues remain, end with RALPH_DECISION: CONTINUE; the flow counter enforces maxRefactorPasses={{maxRefactorPasses:number=5}}. If validation failed due to own changes, end with RALPH_DECISION: RETRY. If blocked, end with RALPH_DECISION: ERROR.",
       validationScope: {

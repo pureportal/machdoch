@@ -31,9 +31,12 @@ import {
   type RalphInputResponse,
   type RalphInputValue,
   type RalphRunEvent,
+  type RalphRunCheckpoint,
   type RalphRunLogPaths,
+  type RalphRunLogger,
   type RalphRunRecord,
   type RalphRunResult,
+  type RalphValidationResult,
 } from "../../core/ralph.js";
 import {
   RalphWatchService,
@@ -43,10 +46,16 @@ import {
   upsertRalphWatch,
   type RalphWatchInput,
 } from "../../core/ralph-watches.js";
-import type { TaskExecutionProgress, TaskExecutionResult } from "../../core/types.js";
+import type {
+  CustomizationDiscoveryResult,
+  TaskExecutionProgress,
+  TaskExecutionResult,
+} from "../../core/types.js";
+import type { RuntimeConfig } from "../../core/runtime-contract.generated.js";
 import { createSchedulerExecutor } from "./cli-scheduler-commands.js";
 import { createDiscoveryOptions } from "./cli-output.js";
 import {
+  attachCancellationHandlers,
   createVerboseProgressReporter,
   printExecutionSummary,
   writeStderrLine,
@@ -422,6 +431,44 @@ const summarizeFlow = (flow: RalphFlow): Record<string, unknown> => {
   };
 };
 
+const getErrorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : String(error);
+};
+
+export const createInterruptedRalphRunResult = (
+  flow: RalphFlow,
+  validation: RalphValidationResult,
+  options: {
+    runId: string;
+    startedAt: string;
+    reason: string;
+  },
+): RalphRunResult => {
+  const finishedAt = new Date().toISOString();
+  const summary = `Ralph flow \`${flow.name}\` was interrupted: ${options.reason}`;
+
+  return {
+    runId: options.runId,
+    startedAt: options.startedAt,
+    finishedAt,
+    flow: flow.id,
+    status: "crashed",
+    summary,
+    events: [
+      {
+        type: "crash",
+        blockId: "run",
+        output: "ERROR",
+        reason: summary,
+      },
+    ],
+    blockResults: [],
+    missingVariables: [],
+    unknownVariables: [],
+    validation,
+  };
+};
+
 export const summarizeRun = (result: RalphRunResult): Record<string, unknown> => {
   return {
     runId: result.runId ?? null,
@@ -448,6 +495,98 @@ export const summarizeRun = (result: RalphRunResult): Record<string, unknown> =>
         : null,
     })),
   };
+};
+
+interface RunRalphFlowForCliOptions {
+  json: boolean;
+  flow: RalphFlow;
+  config: RuntimeConfig;
+  customizations: CustomizationDiscoveryResult;
+  variableValues: Record<string, string>;
+  logger: RalphRunLogger;
+  checkpoint?: RalphRunCheckpoint;
+  inputResponse?: RalphInputResponse;
+  maxTransitions?: number;
+}
+
+const runRalphFlowForCli = async ({
+  json,
+  flow,
+  config,
+  customizations,
+  variableValues,
+  logger,
+  checkpoint,
+  inputResponse,
+  maxTransitions,
+}: RunRalphFlowForCliOptions): Promise<RalphRunResult> => {
+  const controller = new AbortController();
+  const startedAt = new Date().toISOString();
+  const detachCancellationHandlers = attachCancellationHandlers(
+    {
+      cancel: (reason?: string): void => {
+        if (!controller.signal.aborted) {
+          controller.abort(reason ?? "Ralph run cancelled by user.");
+        }
+      },
+    },
+    { json },
+  );
+
+  try {
+    return await runRalphFlow(flow, config, customizations, {
+      variableValues,
+      runId: logger.runId,
+      logger,
+      signal: controller.signal,
+      ...(checkpoint ? { checkpoint } : {}),
+      ...(inputResponse ? { inputResponse } : {}),
+      ...(maxTransitions !== undefined ? { maxTransitions } : {}),
+      ...(json
+        ? {
+            onEvent: createRalphEventProgressReporter(flow, config.mode),
+          }
+        : {}),
+    });
+  } catch (error) {
+    const reason = getErrorMessage(error);
+    const result = createInterruptedRalphRunResult(
+      flow,
+      validateRalphFlow(flow, {
+        config,
+        variableValues,
+      }),
+      {
+        runId: logger.runId,
+        startedAt,
+        reason,
+      },
+    );
+
+    logger.simple({
+      kind: "crash",
+      message: result.summary,
+      flowId: flow.id,
+      flowName: flow.name,
+      blockId: "run",
+      output: "ERROR",
+    });
+    logger.trace({
+      kind: "crash",
+      message: result.summary,
+      flowId: flow.id,
+      details: {
+        reason,
+      },
+    });
+    await logger.flush();
+
+    process.exitCode = controller.signal.aborted ? 130 : 1;
+
+    return result;
+  } finally {
+    detachCancellationHandlers();
+  }
 };
 
 const getRalphEventBlockId = (event: RalphRunEvent): string | undefined => {
@@ -1231,17 +1370,15 @@ export const printRalphSummary = async (
         variableValues,
         scope,
       });
-      const result = await runRalphFlow(flow, config, customizations, {
+      const result = await runRalphFlowForCli({
+        json: args.json,
+        flow,
+        config,
+        customizations,
         variableValues,
-        runId: logger.runId,
         logger,
         ...(options.maxTransitions !== undefined
           ? { maxTransitions: options.maxTransitions }
-          : {}),
-        ...(args.json
-          ? {
-              onEvent: createRalphEventProgressReporter(flow, config.mode),
-            }
           : {}),
       });
       const runRecord = await writeRalphRunRecord(args.workspaceRoot, flow, result, {
@@ -1345,19 +1482,17 @@ export const printRalphSummary = async (
         append: true,
         scope,
       });
-      const result = await runRalphFlow(flow, config, customizations, {
+      const result = await runRalphFlowForCli({
+        json: args.json,
+        flow,
+        config,
+        customizations,
         variableValues: record.variableValues,
-        runId: logger.runId,
         logger,
         ...(checkpoint ? { checkpoint } : {}),
         ...(inputResponse ? { inputResponse } : {}),
         ...(options.maxTransitions !== undefined
           ? { maxTransitions: options.maxTransitions }
-          : {}),
-        ...(args.json
-          ? {
-              onEvent: createRalphEventProgressReporter(flow, config.mode),
-            }
           : {}),
       });
       const runRecord = await writeRalphRunRecord(args.workspaceRoot, flow, result, {

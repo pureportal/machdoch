@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { RalphRunResult } from "../../core/ralph.js";
-import { summarizeRun } from "./cli-ralph-commands.js";
+import type { RalphFlow, RalphRunResult } from "../../core/ralph.js";
+import {
+  createInterruptedRalphRunResult,
+  summarizeRun,
+} from "./cli-ralph-commands.js";
 
 const createRunResult = (
   overrides: Partial<RalphRunResult> = {},
@@ -43,5 +46,44 @@ describe("summarizeRun", () => {
         id: "request-1",
       }),
     });
+  });
+});
+
+describe("createInterruptedRalphRunResult", () => {
+  it("creates a persisted crashed run shape for unexpected CLI interruptions", () => {
+    const flow: RalphFlow = {
+      schemaVersion: 1,
+      id: "flow-1",
+      name: "Refactor Flow",
+      blocks: [{ id: "start", type: "START", title: "Start" }],
+      edges: [],
+    };
+    const result = createInterruptedRalphRunResult(
+      flow,
+      createRunResult().validation,
+      {
+        runId: "run-1",
+        startedAt: "2026-06-29T21:22:53.000Z",
+        reason: "Execution stopped after exceeding the safety timeout.",
+      },
+    );
+
+    expect(result).toMatchObject({
+      runId: "run-1",
+      startedAt: "2026-06-29T21:22:53.000Z",
+      flow: "flow-1",
+      status: "crashed",
+      summary: expect.stringContaining("safety timeout"),
+      events: [
+        {
+          type: "crash",
+          blockId: "run",
+          output: "ERROR",
+          reason: expect.stringContaining("safety timeout"),
+        },
+      ],
+      blockResults: [],
+    });
+    expect(result.finishedAt).toEqual(expect.any(String));
   });
 });

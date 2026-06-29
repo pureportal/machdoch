@@ -85,6 +85,60 @@ describe("runRalphFlow", () => {
     );
   });
 
+  it("passes positive prompt timeout settings into task execution options", async () => {
+    vi.mocked(executeTask)
+      .mockResolvedValueOnce(
+        createExecutionResult({
+          summary: "Fixed TSC.",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createExecutionResult({
+          summary: "Valid.",
+          response: {
+            markdown: "Checks pass.\nRALPH_DECISION: DONE",
+            highlights: [],
+            relatedFiles: [],
+            verification: [],
+            followUps: [],
+          },
+        }),
+      );
+
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "fix-tsc",
+          type: "PROMPT",
+          title: "Fix TSC",
+          prompt: "Fix TypeScript errors.",
+          settings: {
+            timeoutSeconds: 45,
+          },
+        },
+        {
+          id: "validate",
+          type: "VALIDATOR",
+          title: "Validate",
+          prompt: "Validate the result. End with RALPH_DECISION.",
+        },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+    });
+
+    await runRalphFlow(flow, runtimeConfig, customizations, {
+      maxTransitions: 10,
+      runId: "ralph-run-timeout",
+    });
+
+    expect(vi.mocked(executeTask).mock.calls[0]?.[3]).toEqual(
+      expect.objectContaining({
+        maxDurationMs: 45_000,
+      }),
+    );
+  });
+
   it("pauses for ask-user blocks and resumes with submitted values", async () => {
     const flow = createFlow({
       variables: [{ name: "details", type: "text", required: false, default: "" }],

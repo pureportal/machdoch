@@ -507,6 +507,20 @@ export const validateRalphFlowBlocks = ({
       );
     }
 
+    const timeoutSeconds = block.settings?.timeoutSeconds;
+    if (
+      timeoutSeconds !== undefined &&
+      timeoutSeconds !== null &&
+      (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0)
+    ) {
+      addRalphValidationIssue(
+        errors,
+        "settings-timeout-invalid",
+        `${blockLabel} settings.timeoutSeconds must be null or > 0.`,
+        { blockId: block.id },
+      );
+    }
+
     const retry = block.settings?.retry;
     if (
       retry?.mode === "finite" &&

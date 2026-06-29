@@ -15,6 +15,7 @@ import type {
 import type { RuntimeConfig } from "../runtime-contract.generated.ts";
 
 interface MockChildProcess extends EventEmitter {
+  pid: number;
   stdin: PassThrough;
   stdout: PassThrough;
   stderr: PassThrough;
@@ -35,6 +36,7 @@ vi.mock("node:child_process", () => ({
   spawn: vi.fn((executable: string, args: string[], options: Record<string, unknown>) => {
     const child = new EventEmitter() as MockChildProcess;
 
+    child.pid = 10_000 + spawnCalls.length;
     child.stdin = new PassThrough();
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
@@ -379,6 +381,36 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(result?.status).toBe("blocked");
     expect(result?.reason).toContain("authentication failed");
+  });
+
+  it("rejects promptly and starts process cleanup when codex exec is aborted", async () => {
+    const workspaceRoot = await createWorkspace();
+    const controller = new AbortController();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask({
+      ...createParams(workspaceRoot),
+      signal: controller.signal,
+    });
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+
+    controller.abort("Execution stopped after exceeding the safety timeout of 25ms.");
+
+    await expect(resultPromise).rejects.toThrow(
+      "Execution stopped after exceeding the safety timeout of 25ms.",
+    );
+
+    if (process.platform === "win32") {
+      expect(spawnCalls[1]).toMatchObject({
+        executable: "taskkill",
+        args: ["/PID", String(call?.child.pid), "/T", "/F"],
+      });
+    } else {
+      expect(call?.child.kill).toHaveBeenCalled();
+    }
   });
 
   it("summarizes codex quota failures without echoing the delegated prompt", async () => {
