@@ -31,7 +31,7 @@ jobs:
       publish_on_success: ${{ steps.release.outputs.publish_on_success }}
       delete_on_failure: ${{ steps.release.outputs.delete_on_failure }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -241,13 +241,13 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22.13
           cache: pnpm

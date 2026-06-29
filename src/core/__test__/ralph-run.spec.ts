@@ -1464,7 +1464,7 @@ describe("runRalphFlow", () => {
         { maxTransitions: 10 },
       );
 
-      expect(result.status).toBe("completed");
+      expect(result.status).toBe("blocked");
       expect(result.blockResults).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -1472,6 +1472,112 @@ describe("runRalphFlow", () => {
             output: "OUT_OF_SCOPE",
             data: expect.objectContaining({
               outOfScopeFiles: expect.arrayContaining(["docs/note.md"]),
+            }),
+          }),
+        ]),
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the latest prior git snapshot as an implicit scope guard baseline", async () => {
+    const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
+
+    if (gitAvailable.status !== 0) {
+      return;
+    }
+
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-guard-implicit-baseline-"));
+
+    try {
+      await mkdir(join(workspace, "src"), { recursive: true });
+      await mkdir(join(workspace, "docs"), { recursive: true });
+      await writeFile(
+        join(workspace, "src", "feature.ts"),
+        "export const value = 1;\n",
+        "utf8",
+      );
+      await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
+
+      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+      expect(
+        spawnSync("git", ["config", "user.email", "test@example.com"], {
+          cwd: workspace,
+        }).status,
+      ).toBe(0);
+      expect(
+        spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
+          .status,
+      ).toBe(0);
+      expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(0);
+      expect(
+        spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace }).status,
+      ).toBe(0);
+
+      await writeFile(join(workspace, "docs", "note.md"), "dirty before run\n", "utf8");
+
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "git-snapshot-before",
+              type: "UTILITY",
+              title: "Git Snapshot",
+              utility: {
+                type: "GIT_SNAPSHOT",
+                cwd: ".",
+              },
+            },
+            {
+              id: "write",
+              type: "UTILITY",
+              title: "Write Src",
+              utility: {
+                type: "WRITE_FILE",
+                path: "src/feature.ts",
+                content: "export const value = 2;\n",
+              },
+            },
+            {
+              id: "scope-guard",
+              type: "UTILITY",
+              title: "Scope Guard",
+              utility: {
+                type: "CHANGE_SCOPE_GUARD",
+                cwd: ".",
+                input: JSON.stringify({ paths: ["src"] }),
+              },
+            },
+            { id: "success", type: "END", title: "Success" },
+            { id: "blocked", type: "END", title: "Blocked", status: "failed" },
+          ],
+          edges: [
+            { id: "start-to-snapshot", from: "start", fromOutput: "SUCCESS", to: "git-snapshot-before" },
+            { id: "snapshot-to-write", from: "git-snapshot-before", fromOutput: "SUCCESS", to: "write" },
+            { id: "write-to-guard", from: "write", fromOutput: "SUCCESS", to: "scope-guard" },
+            { id: "guard-to-success", from: "scope-guard", fromOutput: "IN_SCOPE", to: "success" },
+            { id: "guard-to-blocked", from: "scope-guard", fromOutput: "OUT_OF_SCOPE", to: "blocked" },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10 },
+      );
+
+      expect(result.status).toBe("completed");
+      expect(result.blockResults).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            blockId: "scope-guard",
+            output: "IN_SCOPE",
+            data: expect.objectContaining({
+              baselineSource: "implicit",
+              baselineBlockId: "git-snapshot-before",
+              ignoredBaselineFiles: ["docs/note.md"],
+              guardedFiles: ["src/feature.ts"],
+              outOfScopeFiles: [],
             }),
           }),
         ]),

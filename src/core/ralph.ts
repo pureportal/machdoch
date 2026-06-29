@@ -6211,18 +6211,72 @@ const extractGitSummaryFiles = (
   }));
 };
 
-const extractScopeGuardBaselineFiles = (
-  utility: RalphUtilityConfig,
-  workspaceRoot: string,
-): RalphGitChangedFileSnapshot[] => {
-  if (utility.baseline === undefined) {
-    return [];
+interface ScopeGuardBaseline {
+  files: RalphGitChangedFileSnapshot[];
+  source: "configured" | "implicit";
+  blockId?: string;
+}
+
+const isGitSnapshotBaselineCandidate = (
+  result: RalphBlockExecutionResult,
+): boolean => {
+  if (!isRecord(result.data)) {
+    return false;
   }
 
-  return extractGitSummaryFiles(
-    parseRalphUtilityJsonValue(utility.baseline),
-    workspaceRoot,
+  const outputPath =
+    typeof result.data.outputPath === "string"
+      ? result.data.outputPath.toLowerCase()
+      : "";
+
+  return (
+    Array.isArray(result.data.files) &&
+    typeof result.data.capturedAt === "string" &&
+    (
+      result.blockId.toLowerCase().includes("snapshot") ||
+      outputPath.includes("snapshot")
+    )
   );
+};
+
+const extractImplicitScopeGuardBaseline = (
+  context: RalphResultContext,
+  workspaceRoot: string,
+): ScopeGuardBaseline | undefined => {
+  const results = Array.from(context.resultsByBlock.values()).reverse();
+
+  for (const result of results) {
+    if (!isGitSnapshotBaselineCandidate(result)) {
+      continue;
+    }
+
+    const files = extractGitSummaryFiles(result.data, workspaceRoot);
+
+    if (files.length > 0) {
+      return { files, source: "implicit", blockId: result.blockId };
+    }
+  }
+
+  return undefined;
+};
+
+const extractScopeGuardBaseline = (
+  utility: RalphUtilityConfig,
+  workspaceRoot: string,
+  context: RalphResultContext,
+): ScopeGuardBaseline | undefined => {
+  if (utility.baseline !== undefined) {
+    const files = extractGitSummaryFiles(
+      parseRalphUtilityJsonValue(utility.baseline),
+      workspaceRoot,
+    );
+
+    if (files.length > 0) {
+      return { files, source: "configured" };
+    }
+  }
+
+  return extractImplicitScopeGuardBaseline(context, workspaceRoot);
 };
 
 const doesPathMatchScopeGuard = (
@@ -6283,10 +6337,12 @@ const executeChangeScopeGuardUtilityBlock = async (
       );
     }
 
-    const baselineFileEntries = extractScopeGuardBaselineFiles(
+    const baseline = extractScopeGuardBaseline(
       utility,
       config.workspaceRoot,
+      context,
     );
+    const baselineFileEntries = baseline?.files ?? [];
     const baselineFileMap = new Map(
       baselineFileEntries.map((file) => [file.path, file]),
     );
@@ -6320,6 +6376,8 @@ const executeChangeScopeGuardUtilityBlock = async (
           changedFiles,
           guardedFiles,
           baselineFiles,
+          ...(baseline ? { baselineSource: baseline.source } : {}),
+          ...(baseline?.blockId ? { baselineBlockId: baseline.blockId } : {}),
           ignoredBaselineFiles,
           changedSinceBaselineFiles,
           files: changedFileEntries,
@@ -6340,6 +6398,8 @@ const executeChangeScopeGuardUtilityBlock = async (
           changedFiles,
           guardedFiles,
           baselineFiles,
+          ...(baseline ? { baselineSource: baseline.source } : {}),
+          ...(baseline?.blockId ? { baselineBlockId: baseline.blockId } : {}),
           ignoredBaselineFiles,
           changedSinceBaselineFiles,
           files: changedFileEntries,
@@ -6374,6 +6434,8 @@ const executeChangeScopeGuardUtilityBlock = async (
         changedFiles,
         guardedFiles,
         baselineFiles,
+        ...(baseline ? { baselineSource: baseline.source } : {}),
+        ...(baseline?.blockId ? { baselineBlockId: baseline.blockId } : {}),
         ignoredBaselineFiles,
         changedSinceBaselineFiles,
         outOfScopeFiles,
@@ -7563,6 +7625,15 @@ const updateResultContext = (
 };
 
 const getRunStatusForEndBlock = (block: RalphEndBlock): RalphRunStatus => {
+  const normalizedEndIdentity = `${block.id} ${block.title}`.toLowerCase();
+
+  if (
+    (block.status === undefined || block.status === "success") &&
+    /\b(blocked|failed|failure|error)\b/u.test(normalizedEndIdentity)
+  ) {
+    return "blocked";
+  }
+
   switch (block.status) {
     case "failed":
     case "review":

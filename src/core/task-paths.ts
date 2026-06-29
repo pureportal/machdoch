@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { createTokenSet, tokenSetHasAny } from "./text.js";
 
@@ -181,15 +181,46 @@ const isPathInsideWorkspace = (
   );
 };
 
+const pathExistsOrIsLink = (path: string): boolean => {
+  if (existsSync(path)) {
+    return true;
+  }
+
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const resolveExistingPath = (path: string): string => {
+  try {
+    return realpathSync.native(path);
+  } catch (error) {
+    const stats = lstatSync(path);
+
+    if (!stats.isSymbolicLink()) {
+      throw error;
+    }
+
+    const linkTarget = resolve(dirname(path), readlinkSync(path));
+
+    return pathExistsOrIsLink(linkTarget)
+      ? realpathSync.native(linkTarget)
+      : linkTarget;
+  }
+};
+
 const resolvePathWithinExistingTree = (absolutePath: string): string => {
-  if (existsSync(absolutePath)) {
-    return realpathSync.native(absolutePath);
+  if (pathExistsOrIsLink(absolutePath)) {
+    return resolveExistingPath(absolutePath);
   }
 
   const missingSegments: string[] = [];
   let currentPath = absolutePath;
 
-  while (!existsSync(currentPath)) {
+  while (!pathExistsOrIsLink(currentPath)) {
     const parentPath = dirname(currentPath);
 
     if (parentPath === currentPath) {
@@ -200,7 +231,7 @@ const resolvePathWithinExistingTree = (absolutePath: string): string => {
     currentPath = parentPath;
   }
 
-  const resolvedBasePath = realpathSync.native(currentPath);
+  const resolvedBasePath = resolveExistingPath(currentPath);
 
   return missingSegments.reduce(
     (path, segment) => resolve(path, segment),

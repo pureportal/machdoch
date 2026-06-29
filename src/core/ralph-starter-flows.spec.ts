@@ -75,6 +75,47 @@ describe("Ralph starter flows", () => {
     expect(endBlocks[0]?.id).toBe("blocked");
   });
 
+  it("ships the refactor starter with validation fallback and scoped guard baseline", () => {
+    const starterFlow = getRalphStarterFlow("autonomous-refactoring-flow");
+    const flow = starterFlow?.flow;
+    const validationDecision = flow?.blocks.find(
+      (block) => block.id === "validation-decision",
+    );
+    const runValidation = flow?.blocks.find(
+      (block) => block.id === "run-validation-checks",
+    );
+    const scopeGuard = flow?.blocks.find(
+      (block) => block.id === "change-scope-guard",
+    );
+    const blocked = flow?.blocks.find((block) => block.id === "blocked");
+
+    expect(starterFlow?.version).toBeGreaterThanOrEqual(3);
+    expect(validationDecision).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        condition: {
+          expression: expect.stringContaining("detect-project-commands"),
+        },
+      },
+    });
+    expect(runValidation).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "RUN_CHECK",
+        fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+      },
+    });
+    expect(scopeGuard).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "CHANGE_SCOPE_GUARD",
+        baseline: "{{result:git-snapshot-before}}",
+        input: expect.stringContaining("allowedPaths"),
+      },
+    });
+    expect(blocked).toMatchObject({ type: "END", status: "failed" });
+  });
+
   it("starts bundled templates autonomously without ask-user gates", () => {
     const expectedStartTargets: Record<string, string> = {
       "autonomous-feature-generation-loop": "find-active-goal",
