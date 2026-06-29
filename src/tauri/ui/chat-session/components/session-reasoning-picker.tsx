@@ -143,7 +143,7 @@ export const SessionReasoningPicker = ({
                 ) : null}
               </div>
               <p className="mt-1 text-xs leading-5 text-slate-400">
-                {`Currently ${REASONING_META[displayDefaultReasoning].label}. Use workspace config, profile, or environment default.`}
+                {`Currently ${REASONING_META[displayDefaultReasoning].label}. Use workspace config or environment default.`}
               </p>
             </div>
           </button>

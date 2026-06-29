@@ -17,7 +17,6 @@ Usage:
   machdoch config [--json]
   machdoch config set <setting> <value> [--json]
   machdoch tools [--json]
-  machdoch profiles [--json]
   machdoch instructions list|validate [--scope <user|workspace|compatibility|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--json]
   machdoch instructions show <name-or-path> [--scope <user|workspace|compatibility|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--json]
   machdoch instructions create [name] --prompt <text> [--scope <user|workspace|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--apply-to <glob>] [--json]
@@ -89,7 +88,6 @@ Options:
                           Load conversation history and memory context from a JSON file.
   --context <path>        Add a file or folder path as task context. Repeat for multiple paths.
   --image <path>          Attach an image for a vision-capable model to read. Repeat for multiple images.
-  --profile <name>        Use a named profile from .machdoch/config.json.
   --cwd <path>            Use a different workspace root.
   --cron <expr>           Scheduler cron expression for \`scheduler create\`.
   --trigger <kind:event>  Add an event trigger for \`scheduler create\`, for example workspace-file:workspace-file.created. Repeat for multiple triggers.

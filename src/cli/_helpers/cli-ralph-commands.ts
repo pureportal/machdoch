@@ -1206,7 +1206,6 @@ export const printRalphSummary = async (
       const config = await loadRuntimeConfig(
         args.workspaceRoot,
         "machdoch",
-        args.profile,
         args.model,
         args.runtimeProvider,
         args.agentLimits,
@@ -1324,7 +1323,6 @@ export const printRalphSummary = async (
       const config = await loadRuntimeConfig(
         args.workspaceRoot,
         "machdoch",
-        args.profile,
         args.model,
         args.runtimeProvider,
         args.agentLimits,
@@ -1420,7 +1418,6 @@ export const printRalphSummary = async (
       const config = await loadRuntimeConfig(
         args.workspaceRoot,
         "machdoch",
-        args.profile,
         args.model,
         args.runtimeProvider,
         args.agentLimits,
@@ -1506,7 +1503,6 @@ export const printRalphSummary = async (
       const config = await loadRuntimeConfig(
         args.workspaceRoot,
         "machdoch",
-        args.profile,
         args.model,
         args.runtimeProvider,
         args.agentLimits,

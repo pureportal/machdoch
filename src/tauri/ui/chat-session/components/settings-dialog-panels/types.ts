@@ -71,7 +71,6 @@ export interface WorkspaceSettingsControls {
   effectiveReasoning: ReasoningMode;
   reasoningProvider?: RuntimeProvider;
   reasoningModel?: string;
-  activeProfile?: string;
   saving: boolean;
   message: SettingsStatusMessage | null;
   onDefaultModeChange: (mode: RunMode) => Promise<void> | void;

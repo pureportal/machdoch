@@ -27,8 +27,6 @@ describe("parseCliArgs", () => {
           "gpt-4.5",
           "--mode",
           "machdoch",
-          "--profile",
-          "offline",
           "--json",
           "--verbose",
           "run",
@@ -44,7 +42,6 @@ describe("parseCliArgs", () => {
       task: "show README.md",
       model: "gpt-4.5",
       mode: "machdoch",
-      profile: "offline",
       json: true,
       verbose: true,
       workspaceRoot: "C:/repo",
@@ -53,12 +50,12 @@ describe("parseCliArgs", () => {
 
   it("treats unknown leading positionals as the initial interactive chat task", () => {
     expect(
-      parseCliArgs(["show", "profiles", "-v"], {
+      parseCliArgs(["show", "status", "-v"], {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toEqual({
       command: "chat",
-      task: "show profiles",
+      task: "show status",
       json: false,
       verbose: true,
       workspaceRoot: "C:/workspace",

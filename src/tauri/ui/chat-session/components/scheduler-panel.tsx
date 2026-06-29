@@ -129,7 +129,6 @@ interface SchedulerFormState {
   maxCatchUpRuns: string;
   mode: "" | "ask" | "machdoch";
   reasoning: SchedulerReasoningFormValue;
-  profile: string;
   provider: "" | "openai" | "anthropic" | "google";
   model: string;
 }
@@ -184,7 +183,6 @@ const createDefaultFormState = (): SchedulerFormState => ({
   maxCatchUpRuns: "100",
   mode: "",
   reasoning: "",
-  profile: "",
   provider: "",
   model: "",
 });
@@ -825,7 +823,6 @@ export const SchedulerPanel = ({
       macros: splitLines(form.macros),
       ...(form.mode ? { mode: form.mode } : {}),
       ...(reasoningValue ? { reasoning: reasoningValue } : {}),
-      ...(form.profile.trim() ? { profile: form.profile.trim() } : {}),
       ...(form.provider ? { provider: form.provider } : {}),
       ...(form.model.trim() ? { model: form.model.trim() } : {}),
     };
@@ -1906,17 +1903,6 @@ export const SchedulerPanel = ({
                         </option>
                       ))}
                     </select>
-                  </label>
-                  <label className="grid gap-1 text-[11px] font-medium text-slate-500">
-                    <span>Profile</span>
-                    <Input
-                      value={form.profile}
-                      onChange={(event) =>
-                        updateForm({ profile: event.target.value })
-                      }
-                      className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
-                      placeholder="Workspace default"
-                    />
                   </label>
                   <label className="grid gap-1 text-[11px] font-medium text-slate-500">
                     <span>Model</span>

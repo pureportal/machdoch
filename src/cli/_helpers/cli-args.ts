@@ -107,7 +107,6 @@ export const parseCliArgs = (
         "conversation-context-file"?: string;
         context?: string[];
         image?: string[];
-        profile?: string;
         cwd?: string;
         name?: string;
         cron?: string;
@@ -232,7 +231,6 @@ export const parseCliArgs = (
         "conversation-context-file": { type: "string" },
         context: { type: "string", multiple: true },
         image: { type: "string", multiple: true },
-        profile: { type: "string" },
         cwd: { type: "string" },
         name: { type: "string" },
         cron: { type: "string" },
@@ -370,7 +368,6 @@ export const parseCliArgs = (
   );
   const rawContextPaths = normalizeContextPaths(values?.context);
   const rawImagePaths = normalizeImagePaths(values?.image);
-  const rawProfile = normalizeOptionalString(values?.profile);
   const rawSchedulerName = normalizeOptionalString(values?.name);
   const rawSchedulerCron = normalizeOptionalString(values?.cron);
   const rawSchedulerTriggers = values?.trigger
@@ -577,10 +574,6 @@ export const parseCliArgs = (
 
   if (rawMode && !VALID_MODES.has(rawMode as RunMode)) {
     fail(`Expected --mode to be followed by ${VALID_MODE_DESCRIPTION}.`);
-  }
-
-  if (values?.profile !== undefined && !rawProfile) {
-    fail("Expected --profile to be followed by a profile name.");
   }
 
   if (values?.scope !== undefined && !rawInstructionScope) {
@@ -809,7 +802,6 @@ export const parseCliArgs = (
       rawModel ||
       rawDefaultModel ||
       rawReasoning ||
-      rawProfile ||
       rawRuntimeProvider ||
       rawMode ||
       quickRunRequested ||
@@ -846,7 +838,6 @@ export const parseCliArgs = (
     verbose,
     workspaceRoot,
     ...(resolvedMode ? { mode: resolvedMode as RunMode } : {}),
-    ...(rawProfile ? { profile: rawProfile } : {}),
     ...(rawRuntimeProvider
       ? {
           runtimeProvider: rawRuntimeProvider as Exclude<
@@ -875,7 +866,6 @@ export const parseCliArgs = (
       rawModel ||
       rawDefaultModel ||
       rawReasoning ||
-      rawProfile ||
       rawRuntimeProvider ||
       rawMode ||
       quickRunRequested ||
@@ -1603,7 +1593,6 @@ export const parseCliArgs = (
   if (
     first === "inspect" ||
     first === "tools" ||
-    first === "profiles" ||
     first === "help"
   ) {
     if (quickRunRequested) {
@@ -1653,7 +1642,6 @@ export const parseCliArgs = (
       rawModel ||
       rawDefaultModel ||
       rawReasoning ||
-      rawProfile ||
       rawRuntimeProvider ||
       rawMode ||
       sessionMemoryEnabled !== undefined ||

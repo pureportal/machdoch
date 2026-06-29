@@ -44,7 +44,6 @@ export const COMMANDS_WITHOUT_POSITIONALS: ReadonlySet<CommandName> = new Set([
   "inspect",
   "config",
   "tools",
-  "profiles",
   "help",
 ]);
 export const SCHEDULER_ACTIONS: ReadonlySet<SchedulerCliAction> = new Set([

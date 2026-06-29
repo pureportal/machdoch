@@ -109,19 +109,6 @@
       "type": "string",
       "enum": ["base", "dedicated"]
     },
-    "RuntimeProfileSummary": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name"],
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string"
-        }
-      }
-    },
     "WorkspaceCompatibilityConfig": {
       "type": "object",
       "additionalProperties": false,
@@ -169,44 +156,10 @@
         }
       }
     },
-    "WorkspaceProfileConfig": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "mode": {
-          "$ref": "#/$defs/RunMode"
-        },
-        "provider": {
-          "$ref": "#/$defs/ConfiguredModelProvider"
-        },
-        "model": {
-          "type": "string",
-          "minLength": 1
-        },
-        "reasoning": {
-          "$ref": "#/$defs/ReasoningMode"
-        },
-        "offline": {
-          "type": "boolean"
-        },
-        "agentLimits": {
-          "$ref": "#/$defs/RuntimeAgentLimitOverrides"
-        },
-        "compatibility": {
-          "$ref": "#/$defs/WorkspaceCompatibilityConfig"
-        }
-      }
-    },
     "WorkspaceConfigFile": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "defaultProfile": {
-          "type": "string"
-        },
         "defaultMode": {
           "$ref": "#/$defs/RunMode"
         },
@@ -228,12 +181,6 @@
         },
         "compatibility": {
           "$ref": "#/$defs/WorkspaceCompatibilityConfig"
-        },
-        "profiles": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/WorkspaceProfileConfig"
-          }
         }
       }
     },
@@ -706,7 +653,6 @@
       "additionalProperties": false,
       "required": [
         "workspaceRoot",
-        "availableProfiles",
         "mode",
         "provider",
         "model",
@@ -726,15 +672,6 @@
         },
         "userConfigPath": {
           "type": "string"
-        },
-        "activeProfile": {
-          "type": "string"
-        },
-        "availableProfiles": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/RuntimeProfileSummary"
-          }
         },
         "mode": {
           "$ref": "#/$defs/RunMode"
@@ -776,7 +713,6 @@
       "additionalProperties": false,
       "required": [
         "workspaceRoot",
-        "availableProfiles",
         "defaultMode",
         "defaultReasoning",
         "mode",
@@ -796,15 +732,6 @@
         },
         "workspaceConfigPath": {
           "type": "string"
-        },
-        "activeProfile": {
-          "type": "string"
-        },
-        "availableProfiles": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/RuntimeProfileSummary"
-          }
         },
         "defaultMode": {
           "$ref": "#/$defs/RunMode"
@@ -867,7 +794,6 @@
       "MACHDOCH_MODEL",
       "MACHDOCH_REASONING",
       "MACHDOCH_OFFLINE",
-      "MACHDOCH_PROFILE",
       "MACHDOCH_WEB_SEARCH_PROVIDER",
       "MACHDOCH_EXECUTOR_TURNS",
       "MACHDOCH_AUTOPILOT_ITERATIONS",

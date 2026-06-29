@@ -42,7 +42,6 @@ interface RawDesktopSession {
   pinnedAt?: number;
   specialSession?: string;
   workspace?: string | null;
-  profile?: string;
   provider?: string;
   model?: string;
   mode?: string;
@@ -173,7 +172,6 @@ const toRawDesktopSession = (value: unknown): RawDesktopSession | undefined => {
   const specialSession = normalizeString(value.specialSession);
   const workspace =
     value.workspace === null ? null : normalizeString(value.workspace);
-  const profile = normalizeString(value.profile);
   const provider = normalizeString(value.provider);
   const model = normalizeString(value.model);
   const mode = normalizeString(value.mode);
@@ -193,7 +191,6 @@ const toRawDesktopSession = (value: unknown): RawDesktopSession | undefined => {
     ...(pinnedAt !== undefined ? { pinnedAt } : {}),
     ...(specialSession ? { specialSession } : {}),
     ...(workspace !== undefined ? { workspace } : {}),
-    ...(profile ? { profile } : {}),
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
     ...(mode ? { mode } : {}),

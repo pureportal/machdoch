@@ -11,7 +11,6 @@ const createRuntimeSnapshot = (
 ): RuntimeSnapshot => {
   return {
     workspaceRoot: "c:/Development/machdoch",
-    availableProfiles: [],
     mode: "ask",
     provider: "openai",
     model: "gpt-5.5",

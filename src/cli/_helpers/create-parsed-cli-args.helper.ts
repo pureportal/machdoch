@@ -5,7 +5,6 @@ export const createParsedArgs = (
   base: Omit<
     ParsedCliArgs,
     | "mode"
-    | "profile"
     | "task"
     | "ralph"
     | "scheduler"
@@ -29,7 +28,6 @@ export const createParsedArgs = (
   >,
   options?: {
     mode?: RunMode;
-    profile?: string;
     provider?: UserApiProvider;
     runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
     key?: string;
@@ -55,7 +53,6 @@ export const createParsedArgs = (
   return {
     ...base,
     ...(options?.mode ? { mode: options.mode } : {}),
-    ...(options?.profile ? { profile: options.profile } : {}),
     ...(options?.provider ? { provider: options.provider } : {}),
     ...(options?.runtimeProvider
       ? { runtimeProvider: options.runtimeProvider }
@@ -98,7 +95,6 @@ export const createSharedParsedOptions = (options: {
   verbose: boolean;
   workspaceRoot: string;
   mode?: RunMode;
-  profile?: string;
   runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
   model?: string;
   defaultModel?: string;
@@ -115,7 +111,6 @@ export const createSharedParsedOptions = (options: {
     verbose: options.verbose,
     workspaceRoot: options.workspaceRoot,
     ...(options.mode ? { mode: options.mode } : {}),
-    ...(options.profile ? { profile: options.profile } : {}),
     ...(options.runtimeProvider
       ? { runtimeProvider: options.runtimeProvider }
       : {}),

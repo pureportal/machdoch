@@ -86,10 +86,8 @@ const renderRalphFlowEditor = (
         runMode="machdoch"
         generationProvider="openai"
         generationModel="gpt-5.5"
-        generationProfile="workspace"
         runProvider="openai"
         runModel="gpt-5.5"
-        runProfile="workspace"
         {...props}
       />
     </TooltipProvider>,
@@ -112,10 +110,8 @@ const renderControlledRalphFlowEditor = (
           runMode="machdoch"
           generationProvider="openai"
           generationModel="gpt-5.5"
-          generationProfile="workspace"
           runProvider="openai"
           runModel="gpt-5.5"
-          runProfile="workspace"
           flowLibraryMode={flowLibraryMode}
           onFlowLibraryModeChange={setFlowLibraryMode}
         />

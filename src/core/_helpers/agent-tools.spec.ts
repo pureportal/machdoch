@@ -22,7 +22,6 @@ const createRuntimeConfig = (
 ): RuntimeConfig => {
   return {
     workspaceRoot: "c:/Development/machdoch",
-    availableProfiles: [],
     mode: "ask",
     provider: "unconfigured",
     model: "gpt-5.5",

@@ -1,5 +1,6 @@
 import { discoverRalphFlowVariables } from "./_helpers/ralph-placeholders.helper.js";
 import type { RalphFlow } from "./ralph.js";
+import { autonomousCodeImprovementLoopStarterFlow } from "./ralph-starter-flows/autonomous-code-improvement-loop.js";
 import { autonomousFeatureGenerationLoopStarterFlow } from "./ralph-starter-flows/autonomous-feature-generation-loop.js";
 import { featureImplementationChecklistLoopStarterFlow } from "./ralph-starter-flows/feature-implementation-checklist-loop.js";
 import { repositoryRefactorValidationLoopStarterFlow } from "./ralph-starter-flows/repository-refactor-validation-loop.js";
@@ -9,7 +10,8 @@ export type RalphStarterFlowId =
   | "security-fix-loop"
   | "autonomous-refactoring-flow"
   | "full-feature-implementation"
-  | "autonomous-feature-generation-loop";
+  | "autonomous-feature-generation-loop"
+  | "autonomous-code-improvement-loop";
 
 export interface RalphStarterFlow {
   id: RalphStarterFlowId;
@@ -44,6 +46,7 @@ export const STARTER_RALPH_FLOWS = [
   repositoryRefactorValidationLoopStarterFlow,
   featureImplementationChecklistLoopStarterFlow,
   autonomousFeatureGenerationLoopStarterFlow,
+  autonomousCodeImprovementLoopStarterFlow,
 ] as const satisfies readonly RalphStarterFlow[];
 
 const cloneRalphFlow = (flow: RalphFlow): RalphFlow => {

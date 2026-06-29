@@ -234,11 +234,6 @@ export const isVoiceAiProvider = (
 ): value is VoiceAiProvider =>
   isRuntimeContractValue(VALID_AUDIO_AI_PROVIDERS, value);
 
-export interface RuntimeProfileSummary {
-  name: string;
-  description?: string;
-}
-
 export interface WorkspaceCompatibilityConfig {
   discoverGithubCustomizations?: boolean;
 }
@@ -254,19 +249,7 @@ export interface RuntimeAgentLimits {
   autopilotExecutorIterations: number | null;
 }
 
-export interface WorkspaceProfileConfig {
-  description?: string;
-  mode?: RunMode;
-  provider?: ConfiguredModelProvider;
-  model?: string;
-  reasoning?: ReasoningMode;
-  offline?: boolean;
-  agentLimits?: RuntimeAgentLimitOverrides;
-  compatibility?: WorkspaceCompatibilityConfig;
-}
-
 export interface WorkspaceConfigFile {
-  defaultProfile?: string;
   defaultMode?: RunMode;
   provider?: ConfiguredModelProvider;
   model?: string;
@@ -274,7 +257,6 @@ export interface WorkspaceConfigFile {
   offline?: boolean;
   agentLimits?: RuntimeAgentLimitOverrides;
   compatibility?: WorkspaceCompatibilityConfig;
-  profiles?: Record<string, WorkspaceProfileConfig>;
 }
 
 export interface ProviderAvailability {
@@ -324,8 +306,6 @@ export interface RuntimeConfig {
   workspaceRoot: string;
   workspaceConfigPath?: string;
   userConfigPath?: string;
-  activeProfile?: string;
-  availableProfiles: RuntimeProfileSummary[];
   mode: RunMode;
   provider: ModelProvider;
   model: string;

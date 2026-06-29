@@ -13,7 +13,7 @@ import {
 
 describe("Ralph starter flows", () => {
   it("bundles valid starter flows with useful summaries", () => {
-    expect(STARTER_RALPH_FLOWS).toHaveLength(4);
+    expect(STARTER_RALPH_FLOWS).toHaveLength(5);
 
     for (const starterFlow of STARTER_RALPH_FLOWS) {
       const validation = validateRalphFlow(starterFlow.flow);
@@ -116,9 +116,88 @@ describe("Ralph starter flows", () => {
     expect(blocked).toMatchObject({ type: "END", status: "failed" });
   });
 
+  it("includes an autonomous code improvement loop with evidence-backed stop behavior", () => {
+    const starterFlow = getRalphStarterFlow(
+      "autonomous-code-improvement-loop",
+    );
+    const flow = starterFlow?.flow;
+    const chooseImprovement = flow?.blocks.find(
+      (block) => block.id === "choose-improvement",
+    );
+    const actionableDecision = flow?.blocks.find(
+      (block) => block.id === "has-actionable-improvement",
+    );
+    const independentReview = flow?.blocks.find(
+      (block) => block.id === "independent-review",
+    );
+    const validateImprovement = flow?.blocks.find(
+      (block) => block.id === "validate-improvement",
+    );
+
+    expect(starterFlow).toMatchObject({
+      defaultAlias: "autonomous-code-improvement-loop",
+      category: "Code Quality",
+    });
+    expect(flow).toMatchObject({
+      name: "Autonomous Code Improvement Loop",
+    });
+    expect(chooseImprovement).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "PROMPT_JSON",
+        prompt: expect.stringContaining("Return decision IMPLEMENT only"),
+      },
+    });
+    expect(chooseImprovement).toMatchObject({
+      utility: {
+        prompt: expect.stringContaining("Do not dig for weak work"),
+      },
+    });
+    expect(actionableDecision).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          expression: expect.stringContaining(
+            'lastData?.output?.decision === "IMPLEMENT"',
+          ),
+        },
+      },
+    });
+    expect(independentReview).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "PROMPT_JSON",
+        prompt: expect.stringContaining("security regressions"),
+      },
+    });
+    expect(validateImprovement).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "VALIDATOR_JSON",
+        prompt: expect.stringContaining("any behavior change is intentional"),
+      },
+    });
+    expect(flow?.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "has-actionable-improvement",
+          fromOutput: "NO_MATCH",
+          to: "mark-scope-result",
+        }),
+        expect.objectContaining({
+          from: "archive-active-improvement",
+          fromOutput: "SUCCESS",
+          to: "read-completed-improvements",
+        }),
+      ]),
+    );
+  });
+
   it("starts bundled templates autonomously without ask-user gates", () => {
     const expectedStartTargets: Record<string, string> = {
       "autonomous-feature-generation-loop": "find-active-goal",
+      "autonomous-code-improvement-loop": "scan-scopes",
       "full-feature-implementation": "detect-project-commands",
       "autonomous-refactoring-flow": "scan-scopes",
       "security-fix-loop": "research-decision",

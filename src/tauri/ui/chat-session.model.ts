@@ -71,7 +71,6 @@ export interface ChatSessionRecord {
   pinnedAt?: number;
   specialSession?: ChatSessionSpecialKind;
   workspace: string | null;
-  profile?: string;
   provider: RuntimeProvider;
   model: string;
   mode?: RunMode;
@@ -141,7 +140,6 @@ export interface ShellPersistedState {
   voice: ShellVoiceSettings;
   lastSelectedProvider: RuntimeProvider;
   lastSelectedModelByProvider: Partial<Record<RuntimeProvider, string>>;
-  lastSelectedProfile?: string;
   lastSelectedMode?: RunMode;
   lastSelectedReasoning?: ReasoningMode;
   lastRecoveredLaunchId?: string;
@@ -789,7 +787,6 @@ export const createSession = (
       : {}),
     ...(specialSession ? { specialSession } : {}),
     workspace: overrides.workspace ?? null,
-    ...(overrides.profile ? { profile: overrides.profile } : {}),
     provider,
     model: overrides.model ?? getDefaultModelForProvider(provider),
     ...(mode ? { mode } : {}),
@@ -1436,9 +1433,6 @@ const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord =
     ...session,
     provider,
     ...(specialSession ? { specialSession } : {}),
-    ...(typeof session.profile === "string" && session.profile.trim().length > 0
-      ? { profile: session.profile }
-      : {}),
     ...(mode ? { mode } : {}),
     ...(reasoning ? { reasoning } : {}),
     model:
@@ -1544,11 +1538,6 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
     }
   }
 
-  const lastSelectedProfile =
-    typeof candidate.lastSelectedProfile === "string" &&
-    candidate.lastSelectedProfile.trim().length > 0
-      ? candidate.lastSelectedProfile
-      : undefined;
   const lastSelectedMode = normalizeOptionalStoredRunMode(
     candidate.lastSelectedMode,
   );
@@ -1598,7 +1587,6 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
       ...fallback.lastSelectedModelByProvider,
       ...lastSelectedModelByProvider,
     },
-    ...(lastSelectedProfile ? { lastSelectedProfile } : {}),
     ...(lastSelectedMode ? { lastSelectedMode } : {}),
     ...(lastSelectedReasoning ? { lastSelectedReasoning } : {}),
     ...(lastRecoveredLaunchId ? { lastRecoveredLaunchId } : {}),
@@ -2082,7 +2070,6 @@ const createRetentionReplacementSession = (
     ...(state.lastSelectedReasoning
       ? { reasoning: state.lastSelectedReasoning }
       : {}),
-    ...(state.lastSelectedProfile ? { profile: state.lastSelectedProfile } : {}),
     model:
       state.lastSelectedModelByProvider[provider] ??
       getDefaultModelForProvider(provider),

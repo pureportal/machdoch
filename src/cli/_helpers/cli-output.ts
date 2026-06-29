@@ -4,7 +4,6 @@ import type {
   TaskExecutionProgress,
   TaskExecutionState,
 } from "../../core/types.js";
-import type { RuntimeProfileSummary } from "../../core/runtime-contract.generated.js";
 
 const createStateProgressLine = (
   progress: TaskExecutionProgress,
@@ -60,15 +59,6 @@ export const formatExecutionProgressLines = (
   }
 
   return lines;
-};
-
-export const formatProfileLine = (
-  profile: RuntimeProfileSummary,
-  activeProfile: string | undefined,
-): string => {
-  const activeMarker = activeProfile === profile.name ? " (active)" : "";
-
-  return `  - ${profile.name}${activeMarker}${profile.description ? `: ${profile.description}` : ""}`;
 };
 
 export const createDiscoveryOptions = (

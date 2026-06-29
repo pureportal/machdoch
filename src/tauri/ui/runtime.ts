@@ -63,7 +63,6 @@ import type {
   AudioProviderAvailability as SharedAudioProviderAvailability,
   RuntimeAgentLimits as SharedRuntimeAgentLimits,
   RuntimeCompatibilityConfig as SharedRuntimeCompatibilityConfig,
-  RuntimeProfileSummary as SharedRuntimeProfileSummary,
   RuntimeSnapshot as SharedRuntimeSnapshot,
   ReasoningMode as SharedReasoningMode,
   RuntimeWebSearchConfig as SharedRuntimeWebSearchConfig,
@@ -293,8 +292,6 @@ export interface TranscribedSpeechText {
   detectedLanguage?: string;
 }
 
-export type RuntimeProfileSummary = SharedRuntimeProfileSummary;
-
 export type RuntimeCompatibilityConfig = SharedRuntimeCompatibilityConfig;
 
 export type RuntimeAgentLimits = SharedRuntimeAgentLimits;
@@ -383,7 +380,6 @@ export type RemoteControlCommandKind =
   | "set-session-model"
   | "set-session-mode"
   | "set-session-reasoning"
-  | "set-session-profile"
   | "set-session-memory"
   | "set-global-memory"
   | "set-ui-control"
@@ -413,7 +409,6 @@ export interface RemoteControlCommandEvent {
   model?: string;
   mode?: string;
   reasoning?: string;
-  profile?: string;
   workspace?: string;
   enabled?: boolean;
   attachmentId?: string;
@@ -437,7 +432,6 @@ export interface RemoteShellSessionSnapshot {
   title: string;
   status: string;
   workspace?: string;
-  profile?: string;
   provider: string;
   model: string;
   mode?: string;
@@ -542,7 +536,6 @@ export interface RemoteShellRuntimeSnapshot {
   providerStatuses: RemoteShellProviderStatusSnapshot[];
   mode?: string;
   reasoning?: string;
-  profile?: string;
   uiControl?: RemoteShellRuntimeCapabilitySnapshot;
   webSearch?: RemoteShellRuntimeCapabilitySnapshot;
 }
@@ -844,7 +837,6 @@ export interface SchedulerCreateJobInput {
   historyLimit?: number;
   maxCatchUpRuns?: number;
   mode?: RuntimeSnapshot["mode"];
-  profile?: string;
   provider?: RuntimeProvider;
   model?: string;
   reasoning?: RuntimeSnapshot["reasoning"];
@@ -965,7 +957,6 @@ export interface RalphCreateFlowInput {
   target?: "flow" | "prompt-block" | "refactor";
   generationMode?: "do-it" | "interview";
   mode?: RunMode;
-  profile?: string;
   provider?: RuntimeProvider;
   model?: string;
   reasoning?: RuntimeSnapshot["reasoning"];
@@ -999,7 +990,6 @@ export interface RalphGenerationInterviewInput {
   answers?: Record<string, RalphInputValue>;
   answerComments?: Record<string, string>;
   mode?: RunMode;
-  profile?: string;
   provider?: RuntimeProvider;
   model?: string;
   reasoning?: RuntimeSnapshot["reasoning"];
@@ -1048,7 +1038,6 @@ export interface RalphRunFlowInput {
   scope?: RalphFlowScope;
   params?: Record<string, string>;
   mode?: RunMode;
-  profile?: string;
   provider?: RuntimeProvider;
   model?: string;
   reasoning?: RuntimeSnapshot["reasoning"];
@@ -1069,7 +1058,6 @@ export interface RalphResumeRunInput {
   retryCurrent?: boolean;
   scope?: RalphFlowScope;
   mode?: RunMode;
-  profile?: string;
   provider?: RuntimeProvider;
   model?: string;
   reasoning?: RuntimeSnapshot["reasoning"];
@@ -1119,7 +1107,6 @@ const REMOTE_CONTROL_COMMAND_KINDS = [
   "set-session-model",
   "set-session-mode",
   "set-session-reasoning",
-  "set-session-profile",
   "set-session-memory",
   "set-global-memory",
   "set-ui-control",
@@ -1492,7 +1479,6 @@ const isRemoteControlCommandEvent = (
     (value.kind !== "set-session-reasoning" ||
       value.reasoning === undefined ||
       isRuntimeReasoningMode(value.reasoning)) &&
-    (value.profile === undefined || typeof value.profile === "string") &&
     (value.workspace === undefined || typeof value.workspace === "string") &&
     (value.enabled === undefined || typeof value.enabled === "boolean") &&
     (value.attachmentId === undefined ||
@@ -3221,10 +3207,8 @@ export const transcribeUserSpeechAudio = async (options: {
 
 export const loadWorkspaceRuntimeSnapshot = async (
   workspaceRoot: string | null | undefined,
-  profile?: string | null,
 ): Promise<RuntimeSnapshot | null> => {
   const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
-  const normalizedProfile = profile?.trim();
 
   if (!canInvokeTauriCommands()) {
     return null;
@@ -3233,7 +3217,6 @@ export const loadWorkspaceRuntimeSnapshot = async (
   try {
     return await tauriCore.invoke<RuntimeSnapshot>("get_runtime_snapshot", {
       workspaceRoot: normalizedWorkspaceRoot ?? "",
-      ...(normalizedProfile ? { profile: normalizedProfile } : {}),
     });
   } catch (error) {
     console.error("Failed to load runtime snapshot", error);
@@ -3789,7 +3772,6 @@ const createRalphRunArguments = (
 
   appendSchedulerOption(argumentsList, "--scope", input.scope);
   appendSchedulerOption(argumentsList, "--mode", input.mode);
-  appendSchedulerOption(argumentsList, "--profile", normalizeSchedulerCliString(input.profile));
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
   appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
   appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
@@ -3834,7 +3816,6 @@ const createRalphResumeArguments = (
 
   appendSchedulerOption(argumentsList, "--scope", input.scope);
   appendSchedulerOption(argumentsList, "--mode", input.mode);
-  appendSchedulerOption(argumentsList, "--profile", normalizeSchedulerCliString(input.profile));
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
   appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
   appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
@@ -3856,7 +3837,6 @@ const createRalphCreateArguments = (
 
   appendSchedulerOption(argumentsList, "--scope", input.scope);
   appendSchedulerOption(argumentsList, "--mode", input.mode);
-  appendSchedulerOption(argumentsList, "--profile", normalizeSchedulerCliString(input.profile));
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
   appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
   appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
@@ -3885,7 +3865,6 @@ const createRalphGenerationInterviewArguments = (
 
   appendSchedulerOption(argumentsList, "--scope", input.scope);
   appendSchedulerOption(argumentsList, "--mode", input.mode);
-  appendSchedulerOption(argumentsList, "--profile", normalizeSchedulerCliString(input.profile));
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
   appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
   appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
@@ -4521,7 +4500,6 @@ const createSchedulerCreateArguments = (
   appendSchedulerOption(argumentsList, "--history-limit", input.historyLimit);
   appendSchedulerOption(argumentsList, "--max-catch-up-runs", input.maxCatchUpRuns);
   appendSchedulerOption(argumentsList, "--mode", input.mode);
-  appendSchedulerOption(argumentsList, "--profile", normalizeSchedulerCliString(input.profile));
   appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
   appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
   appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
@@ -4709,7 +4687,6 @@ export const runDesktopTask = async (
     imagePaths?: string[];
     mode?: RuntimeSnapshot["mode"];
     model?: string;
-    profile?: string;
     provider?: RuntimeProvider;
     reasoning?: RuntimeSnapshot["reasoning"];
     taskId?: string;
@@ -4727,7 +4704,6 @@ export const runDesktopTask = async (
     .map((imagePath) => imagePath.trim())
     .filter((imagePath) => imagePath.length > 0);
   const normalizedMode = context.mode;
-  const normalizedProfile = context.profile?.trim();
   const normalizedProvider = context.provider;
   const normalizedReasoning = context.reasoning;
   const normalizedTaskId = context.taskId?.trim();
@@ -4749,7 +4725,6 @@ export const runDesktopTask = async (
         workspaceRoot: normalizedWorkspaceRoot ?? "",
         task: normalizedTask,
         ...(normalizedMode ? { mode: normalizedMode } : {}),
-        ...(normalizedProfile ? { profile: normalizedProfile } : {}),
         ...(normalizedTaskId ? { taskId: normalizedTaskId } : {}),
         ...(normalizedProvider ? { provider: normalizedProvider } : {}),
         ...(normalizedModel ? { model: normalizedModel } : {}),

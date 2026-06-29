@@ -31,9 +31,7 @@ const VOICE_ACTIVITY_FRAME_COUNT = 2;
 
 export const QuickVoiceShell = (): JSX.Element => {
   useAppearanceSettings();
-  const controller = useChatSessionController({
-    enableSessionAutoProfile: false,
-  });
+  const controller = useChatSessionController();
   const submitQuickVoiceCommand = controller.submitQuickVoiceCommand;
   const speechToTextSettings = useMemo<UserSpeechToTextSettings>(() => {
     return {

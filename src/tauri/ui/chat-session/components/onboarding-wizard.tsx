@@ -26,7 +26,6 @@ import {
 import {
   loadProviderModelCatalog,
   USER_API_KEY_PROVIDER_ORDER,
-  type RuntimeSnapshot,
   type UserApiKeyProvider,
   type UserDesktopSettings,
 } from "../../runtime";
@@ -60,7 +59,6 @@ export interface OnboardingWizardProps {
   activeSession: ChatSessionRecord;
   chooserProviders: RuntimeProvider[];
   hasAnyProvider: boolean;
-  runtimeSnapshot: RuntimeSnapshot | null;
   isUiControlAvailable: boolean;
   uiControlDescription: string;
   providerSetup: ProviderSetupControls;
@@ -70,7 +68,6 @@ export interface OnboardingWizardProps {
   onSessionModelSelection: (provider: RuntimeProvider, model: string) => void;
   onSessionModeSelection: (mode: RunMode | null) => void;
   onUiControlEnabledChange: (enabled: boolean) => void;
-  onSessionProfileSelection: (profile: string | null) => Promise<void>;
   onFinish: () => void;
   onSkip: () => void;
 }
@@ -122,7 +119,6 @@ export const OnboardingWizard = ({
   activeSession,
   chooserProviders,
   hasAnyProvider,
-  runtimeSnapshot,
   isUiControlAvailable,
   uiControlDescription,
   providerSetup,
@@ -132,7 +128,6 @@ export const OnboardingWizard = ({
   onSessionModelSelection,
   onSessionModeSelection,
   onUiControlEnabledChange,
-  onSessionProfileSelection,
   onFinish,
   onSkip,
 }: OnboardingWizardProps): JSX.Element => {
@@ -185,7 +180,6 @@ export const OnboardingWizard = ({
   const workspaceLabel = activeSession.workspace
     ? getWorkspaceLabel(activeSession.workspace)
     : "No workspace";
-  const activeProfile = activeSession.profile ?? "";
   const activeStepIndex = ONBOARDING_STEPS.findIndex(
     (step) => step.id === activeStep,
   );
@@ -328,46 +322,6 @@ export const OnboardingWizard = ({
         </div>
       </div>
 
-      {runtimeSnapshot?.availableProfiles.length ? (
-        <div className="grid gap-2">
-          <p className="text-sm font-semibold text-white">Workspace profile</p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              aria-pressed={activeProfile === ""}
-              onClick={() => {
-                void onSessionProfileSelection(null);
-              }}
-              className={cn(
-                "h-8 rounded-full border px-3 text-xs font-semibold",
-                activeProfile === ""
-                  ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
-                  : "border-slate-800 bg-slate-900 text-slate-400",
-              )}
-            >
-              Auto
-            </button>
-            {runtimeSnapshot.availableProfiles.map((profile) => (
-              <button
-                key={profile.name}
-                type="button"
-                aria-pressed={activeProfile === profile.name}
-                onClick={() => {
-                  void onSessionProfileSelection(profile.name);
-                }}
-                className={cn(
-                  "h-8 rounded-full border px-3 text-xs font-semibold",
-                  activeProfile === profile.name
-                    ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
-                    : "border-slate-800 bg-slate-900 text-slate-400",
-                )}
-              >
-                {profile.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 

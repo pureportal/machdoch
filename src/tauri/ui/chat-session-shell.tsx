@@ -244,7 +244,6 @@ export const ChatSession = (): JSX.Element => {
               activeSession={controller.composer.activeSession}
               chooserProviders={controller.composer.chooserProviders}
               hasAnyProvider={controller.hasAnyProvider}
-              runtimeSnapshot={controller.header.runtimeSnapshot}
               isUiControlAvailable={controller.composer.isUiControlAvailable}
               uiControlDescription={controller.composer.uiControlDescription}
               providerSetup={controller.settingsDialog.providerSetup}
@@ -259,9 +258,6 @@ export const ChatSession = (): JSX.Element => {
               }
               onUiControlEnabledChange={
                 controller.composer.onUiControlEnabledChange
-              }
-              onSessionProfileSelection={
-                controller.header.onSessionProfileSelection
               }
               onFinish={() => {
                 void closeOnboarding(false);

@@ -50,9 +50,6 @@ export const useSessionLifecycle = (options: {
         const session = createSession({
           workspace: defaultNewSessionWorkspace,
           provider,
-          ...(state.shellState.lastSelectedProfile
-            ? { profile: state.shellState.lastSelectedProfile }
-            : {}),
           ...(state.shellState.lastSelectedMode
             ? { mode: state.shellState.lastSelectedMode }
             : {}),
@@ -91,9 +88,6 @@ export const useSessionLifecycle = (options: {
             const replacement = createSession({
               workspace: defaultNewSessionWorkspace,
               provider: prev.lastSelectedProvider,
-              ...(prev.lastSelectedProfile
-                ? { profile: prev.lastSelectedProfile }
-                : {}),
               ...(prev.lastSelectedMode ? { mode: prev.lastSelectedMode } : {}),
               ...(prev.lastSelectedReasoning
                 ? { reasoning: prev.lastSelectedReasoning }

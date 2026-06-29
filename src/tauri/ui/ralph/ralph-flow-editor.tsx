@@ -305,11 +305,9 @@ export interface RalphFlowEditorProps {
   runMode: RunMode;
   generationProvider: RuntimeProvider;
   generationModel: string;
-  generationProfile?: string;
   generationReasoning?: ReasoningMode;
   runProvider: RuntimeProvider;
   runModel: string;
-  runProfile?: string;
   runReasoning?: ReasoningMode;
   defaultMaxTransitions?: number;
   providerOptions?: readonly RuntimeProvider[];
@@ -396,7 +394,6 @@ interface ActiveRalphRun {
   mode: RunMode;
   provider: RuntimeProvider;
   model: string;
-  profile?: string;
   reasoning?: ReasoningMode;
   maxTransitions?: number;
   variableValues: Record<string, string>;
@@ -2861,6 +2858,7 @@ const STARTER_RALPH_FLOW_EMOJIS = {
   "autonomous-refactoring-flow": "🧹",
   "full-feature-implementation": "🚀",
   "autonomous-feature-generation-loop": "✨",
+  "autonomous-code-improvement-loop": "🛠️",
 } as const satisfies Record<RalphStarterFlowSummary["id"], string>;
 
 const getStarterFlowEmoji = (
@@ -2897,11 +2895,9 @@ export const RalphFlowEditor = ({
   runMode,
   generationProvider,
   generationModel,
-  generationProfile,
   generationReasoning,
   runProvider,
   runModel,
-  runProfile,
   runReasoning,
   defaultMaxTransitions,
   providerOptions = DEFAULT_RUNTIME_PROVIDER_OPTIONS,
@@ -4524,7 +4520,6 @@ export const RalphFlowEditor = ({
           mode: runMode,
           provider: runProvider,
           model: runModel,
-          ...(runProfile ? { profile: runProfile } : {}),
           ...(runReasoning ? { reasoning: runReasoning } : {}),
           ...(defaultMaxTransitions
             ? { maxTransitions: defaultMaxTransitions }
@@ -4638,7 +4633,6 @@ export const RalphFlowEditor = ({
     defaultMaxTransitions,
     runMode,
     runModel,
-    runProfile,
     runProvider,
     runReasoning,
     selectedScope,
@@ -5380,7 +5374,6 @@ export const RalphFlowEditor = ({
         mode: runMode,
         provider: generationProvider,
         model: generationModel,
-        ...(generationProfile ? { profile: generationProfile } : {}),
         ...(generationReasoning ? { reasoning: generationReasoning } : {}),
         name: context.targetFlowName,
         ...(context.existingFlow ? { existingFlow: context.existingFlow } : {}),
@@ -5643,7 +5636,6 @@ export const RalphFlowEditor = ({
         mode: runMode,
         provider: generationProvider,
         model: generationModel,
-        ...(generationProfile ? { profile: generationProfile } : {}),
         ...(generationReasoning ? { reasoning: generationReasoning } : {}),
         ...(context.existingFlow ? { existingFlow: context.existingFlow } : {}),
         target: context.target,
@@ -6581,7 +6573,6 @@ export const RalphFlowEditor = ({
         mode: runMode,
         provider: runProvider,
         model: runModel,
-        ...(runProfile ? { profile: runProfile } : {}),
         ...(runReasoning ? { reasoning: runReasoning } : {}),
         ...(defaultMaxTransitions
           ? { maxTransitions: defaultMaxTransitions }
@@ -6609,7 +6600,6 @@ export const RalphFlowEditor = ({
         mode: runMode,
         provider: runProvider,
         model: runModel,
-        ...(runProfile ? { profile: runProfile } : {}),
         ...(runReasoning ? { reasoning: runReasoning } : {}),
         ...(defaultMaxTransitions
           ? { maxTransitions: defaultMaxTransitions }
@@ -6679,7 +6669,6 @@ export const RalphFlowEditor = ({
         mode: runMode,
         provider: runProvider,
         model: runModel,
-        ...(runProfile ? { profile: runProfile } : {}),
         ...(runReasoning ? { reasoning: runReasoning } : {}),
         ...(defaultMaxTransitions
           ? { maxTransitions: defaultMaxTransitions }
@@ -6703,7 +6692,6 @@ export const RalphFlowEditor = ({
         mode: runMode,
         provider: runProvider,
         model: runModel,
-        ...(runProfile ? { profile: runProfile } : {}),
         ...(runReasoning ? { reasoning: runReasoning } : {}),
         ...(defaultMaxTransitions
           ? { maxTransitions: defaultMaxTransitions }
@@ -7026,7 +7014,6 @@ export const RalphFlowEditor = ({
         mode: runMode,
         provider: runProvider,
         model: runModel,
-        ...(runProfile ? { profile: runProfile } : {}),
         ...(runReasoning ? { reasoning: runReasoning } : {}),
         ...(defaultMaxTransitions
           ? { maxTransitions: defaultMaxTransitions }
@@ -7051,7 +7038,6 @@ export const RalphFlowEditor = ({
           mode: runMode,
           provider: runProvider,
           model: runModel,
-          ...(runProfile ? { profile: runProfile } : {}),
           ...(runReasoning ? { reasoning: runReasoning } : {}),
           ...(defaultMaxTransitions
             ? { maxTransitions: defaultMaxTransitions }

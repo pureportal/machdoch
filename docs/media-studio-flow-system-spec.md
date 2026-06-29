@@ -2458,14 +2458,14 @@ machdoch media providers refresh
 machdoch media providers capabilities <provider-id>
 machdoch media providers lifecycle <provider-id> <model-id>
 machdoch media provenance inspect <asset-id>
-machdoch media provenance attach <asset-id> --profile <profile-id>
+machdoch media provenance attach <asset-id> --export-preset <preset-id>
 machdoch media watermark detect <asset-id>
 machdoch media training datasets validate <dataset-id>
 machdoch media training run <dataset-id> --base-model <model-id>
 machdoch media storyboard generate <script-file>
 machdoch media storyboard retake <run-id> <shot-id> --edit "<instruction>"
 machdoch media optimize plan <model-id> --task <task>
-machdoch media optimize build <model-id> --profile <profile-id>
+machdoch media optimize build <model-id> --optimization-id <optimization-id>
 machdoch media optimize validate <asset-id> --baseline <asset-id>
 ```
 

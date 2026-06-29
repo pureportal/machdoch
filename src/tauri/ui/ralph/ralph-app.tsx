@@ -763,21 +763,7 @@ export const RalphApp = ({
         </div>
 
         {showAdvanced ? (
-          <div className="grid gap-2 border-t border-slate-800 pt-3 md:grid-cols-3 xl:grid-cols-5">
-            <label className="grid gap-1 text-sm text-slate-200">
-              <span className="font-medium">Generation profile</span>
-              <Input
-                value={settings.generationProfile ?? ""}
-                aria-label="Ralph generation profile"
-                placeholder="Default"
-                onChange={(event) =>
-                  updateSettings({
-                    generationProfile: event.target.value.trim() || undefined,
-                  })
-                }
-                className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
-              />
-            </label>
+          <div className="grid gap-2 border-t border-slate-800 pt-3 md:grid-cols-2 xl:grid-cols-3">
             <label className="grid gap-1 text-sm text-slate-200">
               <span className="font-medium">Generation reasoning</span>
               <select
@@ -796,20 +782,6 @@ export const RalphApp = ({
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="grid gap-1 text-sm text-slate-200">
-              <span className="font-medium">Run profile</span>
-              <Input
-                value={settings.runProfile ?? ""}
-                aria-label="Ralph run profile"
-                placeholder="Default"
-                onChange={(event) =>
-                  updateSettings({
-                    runProfile: event.target.value.trim() || undefined,
-                  })
-                }
-                className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
-              />
             </label>
             <label className="grid gap-1 text-sm text-slate-200">
               <span className="font-medium">Run reasoning</span>
@@ -863,11 +835,9 @@ export const RalphApp = ({
           runMode="machdoch"
           generationProvider={settings.generationProvider}
           generationModel={settings.generationModel}
-          generationProfile={settings.generationProfile}
           generationReasoning={generationReasoning}
           runProvider={settings.runProvider}
           runModel={settings.runModel}
-          runProfile={settings.runProfile}
           runReasoning={runReasoning}
           defaultMaxTransitions={settings.defaultMaxTransitions}
           providerOptions={providerChoices}

@@ -324,7 +324,6 @@ export const printTaskPreview = async (
   const config = await loadRuntimeConfig(
     args.workspaceRoot,
     args.mode,
-    args.profile,
     args.model,
     args.runtimeProvider,
     args.agentLimits,
@@ -583,7 +582,6 @@ export const runInteractiveChat = async (
   const config = await loadRuntimeConfig(
     args.workspaceRoot,
     args.mode,
-    args.profile,
     args.model,
     args.runtimeProvider,
     args.agentLimits,
@@ -597,11 +595,8 @@ export const runInteractiveChat = async (
     memorySettings.globalEnabled,
   );
 
-  const profileSuffix = config.activeProfile
-    ? `, profile ${config.activeProfile}`
-    : "";
   writeStdoutLine(
-    `machdoch chat (${config.mode}, ${config.model}, reasoning ${config.reasoning}${profileSuffix})`,
+    `machdoch chat (${config.mode}, ${config.model}, reasoning ${config.reasoning})`,
   );
   for (const line of createCliStartupSummaryLines(config, shellSummary)) {
     writeStdoutLine(line);

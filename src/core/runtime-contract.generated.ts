@@ -54,7 +54,7 @@ export const DEFAULT_MODEL_BY_PROVIDER = {
   "copilot-cli": "auto"
 } as const satisfies Record<ConfiguredModelProvider, string>;
 
-export const RUNTIME_ENV_KEYS = ["MACHDOCH_MODE", "MACHDOCH_MODEL", "MACHDOCH_REASONING", "MACHDOCH_OFFLINE", "MACHDOCH_PROFILE", "MACHDOCH_WEB_SEARCH_PROVIDER", "MACHDOCH_EXECUTOR_TURNS", "MACHDOCH_AUTOPILOT_ITERATIONS", "MACHDOCH_INFINITE", "MACHDOCH_CODEX_CLI_PATH", "MACHDOCH_CLAUDE_CLI_PATH", "MACHDOCH_COPILOT_CLI_PATH"] as const;
+export const RUNTIME_ENV_KEYS = ["MACHDOCH_MODE", "MACHDOCH_MODEL", "MACHDOCH_REASONING", "MACHDOCH_OFFLINE", "MACHDOCH_WEB_SEARCH_PROVIDER", "MACHDOCH_EXECUTOR_TURNS", "MACHDOCH_AUTOPILOT_ITERATIONS", "MACHDOCH_INFINITE", "MACHDOCH_CODEX_CLI_PATH", "MACHDOCH_CLAUDE_CLI_PATH", "MACHDOCH_COPILOT_CLI_PATH"] as const;
 export const PROVIDER_ENV_KEY_BY_PROVIDER = {
   "openai": "OPENAI_API_KEY",
   "anthropic": "ANTHROPIC_API_KEY",
@@ -178,11 +178,6 @@ export const isVoiceAiProvider = (
 ): value is VoiceAiProvider =>
   isRuntimeContractValue(VALID_AUDIO_AI_PROVIDERS, value);
 
-export interface RuntimeProfileSummary {
-  name: string;
-  description?: string;
-}
-
 export interface WorkspaceCompatibilityConfig {
   discoverGithubCustomizations?: boolean;
 }
@@ -198,19 +193,7 @@ export interface RuntimeAgentLimits {
   autopilotExecutorIterations: number | null;
 }
 
-export interface WorkspaceProfileConfig {
-  description?: string;
-  mode?: RunMode;
-  provider?: ConfiguredModelProvider;
-  model?: string;
-  reasoning?: ReasoningMode;
-  offline?: boolean;
-  agentLimits?: RuntimeAgentLimitOverrides;
-  compatibility?: WorkspaceCompatibilityConfig;
-}
-
 export interface WorkspaceConfigFile {
-  defaultProfile?: string;
   defaultMode?: RunMode;
   provider?: ConfiguredModelProvider;
   model?: string;
@@ -218,7 +201,6 @@ export interface WorkspaceConfigFile {
   offline?: boolean;
   agentLimits?: RuntimeAgentLimitOverrides;
   compatibility?: WorkspaceCompatibilityConfig;
-  profiles?: Record<string, WorkspaceProfileConfig>;
 }
 
 export interface ProviderAvailability {
@@ -268,8 +250,6 @@ export interface RuntimeConfig {
   workspaceRoot: string;
   workspaceConfigPath?: string;
   userConfigPath?: string;
-  activeProfile?: string;
-  availableProfiles: RuntimeProfileSummary[];
   mode: RunMode;
   provider: ModelProvider;
   model: string;

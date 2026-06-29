@@ -29,7 +29,6 @@ const getDefaultModeDetail = ({
 };
 
 const getEffectiveModeNotice = ({
-  activeProfile,
   defaultMode,
   effectiveMode,
 }: WorkspaceSettingsControls): string | null => {
@@ -39,15 +38,10 @@ const getEffectiveModeNotice = ({
 
   const effectiveLabel = RUN_MODE_META[effectiveMode].label;
 
-  if (activeProfile) {
-    return `Effective mode is currently ${effectiveLabel} because profile "${activeProfile}" overrides the workspace default.`;
-  }
-
   return `Effective mode is currently ${effectiveLabel} because an environment override is active.`;
 };
 
 const getEffectiveReasoningNotice = ({
-  activeProfile,
   defaultReasoning,
   effectiveReasoning,
   reasoningProvider,
@@ -69,10 +63,6 @@ const getEffectiveReasoningNotice = ({
   }
 
   const effectiveLabel = REASONING_LABELS[displayEffectiveReasoning];
-
-  if (activeProfile) {
-    return `Effective reasoning is currently ${effectiveLabel} because profile "${activeProfile}" overrides the workspace default.`;
-  }
 
   return `Effective reasoning is currently ${effectiveLabel} because an environment override is active.`;
 };

@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    env as std_env, fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use serde::Serialize;
 use tauri_plugin_autostart::ManagerExt as _;
@@ -18,10 +14,9 @@ use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_AUTOSTART_MINIMIZED, DEFAULT_DESKTOP_SETTING_AUTOSTART_TO_TRAY,
     DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_ENABLED, DEFAULT_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES,
-    DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, DEFAULT_MODEL_BY_PROVIDER,
-    DEFAULT_MODEL_PROVIDER, PROVIDER_ENV_KEYS, REASONING_MODES, USER_API_PROVIDERS,
-    USER_AUDIO_AI_PROVIDERS, USER_WEB_SEARCH_PROVIDERS, VALID_AUDIO_AI_PROVIDERS,
-    VALID_MODEL_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS, WEB_SEARCH_ENV_KEYS,
+    DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, PROVIDER_ENV_KEYS, REASONING_MODES,
+    USER_API_PROVIDERS, USER_AUDIO_AI_PROVIDERS, USER_WEB_SEARCH_PROVIDERS, VALID_MODEL_PROVIDERS,
+    VALID_WEB_SEARCH_PROVIDERS, WEB_SEARCH_ENV_KEYS,
 };
 use crate::ui_control::UiControlAvailability;
 
@@ -30,8 +25,6 @@ use crate::ui_control::UiControlAvailability;
 pub struct RuntimeSnapshot {
     workspace_root: String,
     workspace_config_path: Option<String>,
-    active_profile: Option<String>,
-    available_profiles: Vec<RuntimeProfileSummary>,
     default_mode: String,
     default_reasoning: String,
     mode: String,
@@ -58,13 +51,6 @@ pub struct RuntimeCompatibilityConfig {
 pub struct RuntimeAgentLimits {
     executor_turns: Option<u32>,
     autopilot_executor_iterations: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RuntimeProfileSummary {
-    name: String,
-    description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -146,14 +132,21 @@ pub struct RuntimeReviewModelConfig {
     provider: Option<String>,
     model: Option<String>,
 }
+mod collect;
 mod env;
 mod mcp_config;
 mod model_catalog;
 mod settings;
 mod user_config;
+mod workspace;
 
+use collect::{
+    collect_runtime_snapshot, get_audio_provider_availability, get_provider_availability,
+    get_web_search_provider_availability, resolve_audio_active_provider,
+    resolve_web_search_active_provider,
+};
+use env::has_configured_value;
 pub(crate) use env::load_global_env;
-use env::{has_configured_value, load_workspace_env, resolve_agent_cli_binary};
 use mcp_config::{
     get_user_mcp_config_path, get_workspace_mcp_config_path, load_mcp_config_document,
     save_mcp_config_document,
@@ -162,19 +155,20 @@ use model_catalog::{create_provider_model_http_client, fetch_provider_model_cata
 pub(crate) use settings::UserDesktopLaunchPreferences;
 use settings::{
     clamp_ai_context_message_limit, clamp_archived_session_retention_days,
-    clamp_assistant_bubble_hide_seconds, clamp_autopilot_iteration_limit,
-    clamp_executor_turn_limit, clamp_inactive_session_archive_days,
+    clamp_assistant_bubble_hide_seconds, clamp_inactive_session_archive_days,
     clamp_quick_voice_message_limit, clamp_quick_voice_silence_seconds, create_timestamp_millis,
     normalize_user_agent_limits_settings, normalize_user_agent_limits_settings_input,
     normalize_user_desktop_settings_input, normalize_user_memory_entries,
     normalize_user_review_model_settings, normalize_user_review_model_settings_input,
-    resolve_quick_voice_shortcut, UserConfigFile, WorkspaceConfigFile, WorkspaceProfileConfig,
+    resolve_quick_voice_shortcut,
 };
 pub use settings::{
     McpConfigDocument, UserAgentLimitsSettings, UserDesktopSettings, UserMemorySettings,
     UserReviewModelSettings, UserSpeechToTextSettings, UserVoiceSettings, UserWebSearchSettings,
 };
 use user_config::{load_user_config_file, write_user_config_file};
+pub(crate) use workspace::{get_user_config_directory, resolve_workspace_root_path};
+use workspace::{save_workspace_default_mode_value, save_workspace_reasoning_mode_value};
 
 pub(crate) fn normalize_optional_string(value: Option<&str>) -> Option<String> {
     let trimmed = value?.trim();
@@ -184,72 +178,6 @@ pub(crate) fn normalize_optional_string(value: Option<&str>) -> Option<String> {
     }
 
     Some(trimmed.to_string())
-}
-
-fn resolve_runtime_agent_limits(
-    user_config: &UserConfigFile,
-    workspace_config: &WorkspaceConfigFile,
-    profile: Option<&WorkspaceProfileConfig>,
-    env: &HashMap<String, String>,
-) -> RuntimeAgentLimits {
-    let user_settings = normalize_user_agent_limits_settings(&user_config.agent_limits);
-    let configured_limits = profile
-        .and_then(|entry| entry.agent_limits.as_ref())
-        .or(workspace_config.agent_limits.as_ref());
-    let mut infinite = user_settings.infinite;
-    let mut executor_turns = user_settings.executor_turns;
-    let mut autopilot_executor_iterations = user_settings.autopilot_executor_iterations;
-
-    if let Some(configured_limits) = configured_limits {
-        if let Some(configured_infinite) = configured_limits.infinite {
-            infinite = configured_infinite;
-        }
-
-        if let Some(configured_executor_turns) = configured_limits.executor_turns {
-            infinite = false;
-            executor_turns = clamp_executor_turn_limit(configured_executor_turns);
-        }
-
-        if let Some(configured_autopilot_iterations) =
-            configured_limits.autopilot_executor_iterations
-        {
-            infinite = false;
-            autopilot_executor_iterations =
-                clamp_autopilot_iteration_limit(configured_autopilot_iterations);
-        }
-    }
-
-    if matches!(
-        env.get("MACHDOCH_INFINITE").map(String::as_str),
-        Some("true" | "1")
-    ) {
-        infinite = true;
-    }
-
-    if let Some(value) = env
-        .get("MACHDOCH_EXECUTOR_TURNS")
-        .and_then(|value| value.trim().parse::<u32>().ok())
-    {
-        infinite = false;
-        executor_turns = clamp_executor_turn_limit(value);
-    }
-
-    if let Some(value) = env
-        .get("MACHDOCH_AUTOPILOT_ITERATIONS")
-        .and_then(|value| value.trim().parse::<u32>().ok())
-    {
-        infinite = false;
-        autopilot_executor_iterations = clamp_autopilot_iteration_limit(value);
-    }
-
-    RuntimeAgentLimits {
-        executor_turns: if infinite { None } else { Some(executor_turns) },
-        autopilot_executor_iterations: if infinite {
-            None
-        } else {
-            Some(autopilot_executor_iterations)
-        },
-    }
 }
 
 fn strip_wrapping_quotes(value: &str) -> String {
@@ -265,107 +193,6 @@ fn strip_wrapping_quotes(value: &str) -> String {
     }
 
     trimmed.to_string()
-}
-
-pub(crate) fn get_user_config_directory() -> Result<PathBuf, String> {
-    if let Some(override_directory) =
-        normalize_optional_string(std_env::var("MACHDOCH_USER_CONFIG_DIR").ok().as_deref())
-    {
-        return Ok(PathBuf::from(override_directory));
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let base_directory = std_env::var("APPDATA")
-            .ok()
-            .map(PathBuf::from)
-            .or_else(|| {
-                std_env::var("USERPROFILE")
-                    .ok()
-                    .map(|path| PathBuf::from(path).join("AppData").join("Roaming"))
-            })
-            .ok_or_else(|| {
-                "Unable to determine the Windows roaming config directory.".to_string()
-            })?;
-
-        Ok(base_directory.join("machdoch"))
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let home_directory = std_env::var("HOME")
-            .ok()
-            .map(PathBuf::from)
-            .ok_or_else(|| "Unable to determine the macOS home directory.".to_string())?;
-
-        return Ok(home_directory
-            .join("Library")
-            .join("Application Support")
-            .join("machdoch"));
-    }
-
-    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-    {
-        let base_directory = std_env::var("XDG_CONFIG_HOME")
-            .ok()
-            .map(PathBuf::from)
-            .or_else(|| {
-                std_env::var("HOME")
-                    .ok()
-                    .map(|path| PathBuf::from(path).join(".config"))
-            })
-            .ok_or_else(|| "Unable to determine the XDG config directory.".to_string())?;
-
-        Ok(base_directory.join("machdoch"))
-    }
-}
-
-pub(crate) fn get_default_workspace_root() -> Result<PathBuf, String> {
-    #[cfg(target_os = "windows")]
-    {
-        std_env::var("USERPROFILE")
-            .ok()
-            .map(PathBuf::from)
-            .or_else(|| {
-                let drive = normalize_optional_string(std_env::var("HOMEDRIVE").ok().as_deref())?;
-                let path = normalize_optional_string(std_env::var("HOMEPATH").ok().as_deref())?;
-
-                Some(PathBuf::from(format!("{drive}{path}")))
-            })
-            .or_else(|| std_env::var("HOME").ok().map(PathBuf::from))
-            .ok_or_else(|| {
-                "Unable to determine the Windows home directory for the default workspace."
-                    .to_string()
-            })
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        std_env::var("HOME").ok().map(PathBuf::from).ok_or_else(|| {
-            "Unable to determine the home directory for the default workspace.".to_string()
-        })
-    }
-}
-
-pub(crate) fn resolve_workspace_root_path(workspace_root: &str) -> Result<PathBuf, String> {
-    let candidate_workspace_path = normalize_optional_string(Some(workspace_root))
-        .map(PathBuf::from)
-        .map(Ok)
-        .unwrap_or_else(get_default_workspace_root)?;
-
-    if !candidate_workspace_path.exists() || !candidate_workspace_path.is_dir() {
-        return Err(format!(
-            "Workspace `{}` does not exist or is not a directory.",
-            candidate_workspace_path.display()
-        ));
-    }
-
-    candidate_workspace_path.canonicalize().map_err(|error| {
-        format!(
-            "Unable to resolve workspace `{}`: {error}",
-            candidate_workspace_path.display()
-        )
-    })
 }
 
 fn is_user_api_provider(value: &str) -> bool {
@@ -390,10 +217,6 @@ fn is_valid_model_provider(value: &str) -> bool {
 
 fn is_valid_web_search_provider(value: &str) -> bool {
     VALID_WEB_SEARCH_PROVIDERS.contains(&value)
-}
-
-fn is_valid_audio_ai_provider(value: &str) -> bool {
-    VALID_AUDIO_AI_PROVIDERS.contains(&value)
 }
 
 fn load_user_api_keys() -> Result<HashMap<String, String>, String> {
@@ -496,225 +319,6 @@ fn merge_user_web_search_api_keys_into_env(
     Ok(())
 }
 
-fn load_workspace_config(
-    workspace_root: &Path,
-) -> Result<(WorkspaceConfigFile, Option<String>), String> {
-    let config_path = workspace_root.join(".machdoch").join("config.json");
-
-    if !config_path.exists() {
-        return Ok((WorkspaceConfigFile::default(), None));
-    }
-
-    let raw = fs::read_to_string(&config_path)
-        .map_err(|error| format!("Failed to read {}: {error}", config_path.display()))?;
-    let parsed = serde_json::from_str::<WorkspaceConfigFile>(&raw)
-        .map_err(|error| format!("Failed to parse {}: {error}", config_path.display()))?;
-
-    Ok((parsed, Some(config_path.display().to_string())))
-}
-
-fn load_workspace_config_json(
-    config_path: &Path,
-) -> Result<serde_json::Map<String, serde_json::Value>, String> {
-    if !config_path.exists() {
-        return Ok(serde_json::Map::new());
-    }
-
-    let raw = fs::read_to_string(config_path)
-        .map_err(|error| format!("Failed to read {}: {error}", config_path.display()))?;
-    let parsed = serde_json::from_str::<serde_json::Value>(&raw)
-        .map_err(|error| format!("Failed to parse {}: {error}", config_path.display()))?;
-
-    match parsed {
-        serde_json::Value::Object(config) => Ok(config),
-        _ => Err(format!(
-            "Expected workspace config {} to be a JSON object.",
-            config_path.display()
-        )),
-    }
-}
-
-fn write_workspace_config_json(
-    config_path: &Path,
-    config: &serde_json::Map<String, serde_json::Value>,
-) -> Result<(), String> {
-    if let Some(config_directory) = config_path.parent() {
-        fs::create_dir_all(config_directory)
-            .map_err(|error| format!("Failed to create {}: {error}", config_directory.display()))?;
-    }
-
-    let serialized = serde_json::to_string_pretty(&serde_json::Value::Object(config.clone()))
-        .map_err(|error| format!("Failed to serialize workspace config: {error}"))?;
-
-    fs::write(config_path, format!("{serialized}\n"))
-        .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))
-}
-
-fn save_workspace_default_mode_value(workspace_root: &str, mode: &str) -> Result<PathBuf, String> {
-    let normalized_mode = normalize_optional_string(Some(mode))
-        .ok_or_else(|| "Expected workspace mode to be one of ask or machdoch.".to_string())?;
-
-    if !is_valid_mode(Some(normalized_mode.as_str())) {
-        return Err("Expected workspace mode to be one of ask or machdoch.".to_string());
-    }
-
-    let workspace_path = resolve_workspace_root_path(workspace_root)?;
-    let config_path = workspace_path.join(".machdoch").join("config.json");
-    let mut config = load_workspace_config_json(&config_path)?;
-
-    config.insert(
-        "defaultMode".to_string(),
-        serde_json::Value::String(normalized_mode),
-    );
-    write_workspace_config_json(&config_path, &config)?;
-
-    Ok(config_path)
-}
-
-fn save_workspace_reasoning_mode_value(
-    workspace_root: &str,
-    reasoning: &str,
-) -> Result<PathBuf, String> {
-    let normalized_reasoning = normalize_optional_string(Some(reasoning)).ok_or_else(|| {
-        "Expected workspace reasoning to be one of default, none, minimal, low, medium, high, xhigh, or max.".to_string()
-    })?;
-
-    if !is_valid_reasoning_mode(Some(normalized_reasoning.as_str())) {
-        return Err(
-            "Expected workspace reasoning to be one of default, none, minimal, low, medium, high, xhigh, or max."
-                .to_string(),
-        );
-    }
-
-    let workspace_path = resolve_workspace_root_path(workspace_root)?;
-    let config_path = workspace_path.join(".machdoch").join("config.json");
-    let mut config = load_workspace_config_json(&config_path)?;
-
-    config.insert(
-        "reasoning".to_string(),
-        serde_json::Value::String(normalized_reasoning),
-    );
-    write_workspace_config_json(&config_path, &config)?;
-
-    Ok(config_path)
-}
-
-fn get_provider_availability(env: &HashMap<String, String>) -> Vec<ProviderAvailability> {
-    let mut availability = PROVIDER_ENV_KEYS
-        .iter()
-        .map(|(provider, env_key)| ProviderAvailability {
-            provider: provider.to_string(),
-            configured: has_configured_value(env.get(*env_key).map(String::as_str)),
-        })
-        .collect::<Vec<_>>();
-
-    availability.extend(
-        AGENT_CLI_PROVIDERS
-            .iter()
-            .map(|provider| ProviderAvailability {
-                provider: provider.to_string(),
-                configured: resolve_agent_cli_binary(provider, env).is_some(),
-            }),
-    );
-
-    availability
-}
-
-fn get_web_search_provider_availability(
-    env: &HashMap<String, String>,
-) -> Vec<WebSearchProviderAvailability> {
-    WEB_SEARCH_ENV_KEYS
-        .iter()
-        .map(|(provider, env_key)| WebSearchProviderAvailability {
-            provider: provider.to_string(),
-            configured: has_configured_value(env.get(*env_key).map(String::as_str)),
-        })
-        .collect()
-}
-
-fn get_audio_provider_availability(
-    env: &HashMap<String, String>,
-) -> Vec<AudioProviderAvailability> {
-    USER_AUDIO_AI_PROVIDERS
-        .iter()
-        .filter_map(|provider| {
-            let env_key = PROVIDER_ENV_KEYS
-                .iter()
-                .find_map(|(entry_provider, env_key)| {
-                    if entry_provider == provider {
-                        Some(*env_key)
-                    } else {
-                        None
-                    }
-                })?;
-
-            Some(AudioProviderAvailability {
-                provider: provider.to_string(),
-                configured: has_configured_value(env.get(env_key).map(String::as_str)),
-            })
-        })
-        .collect()
-}
-
-fn resolve_audio_active_provider(configured_provider: Option<&str>) -> String {
-    normalize_optional_string(configured_provider)
-        .filter(|provider| is_valid_audio_ai_provider(provider))
-        .unwrap_or_else(|| "none".to_string())
-}
-
-fn resolve_provider(
-    configured_provider: Option<&str>,
-    availability: &[ProviderAvailability],
-) -> String {
-    if let Some(provider) = normalize_optional_string(configured_provider) {
-        if is_valid_model_provider(&provider) {
-            return provider;
-        }
-    }
-
-    availability
-        .iter()
-        .find(|entry| entry.configured)
-        .map(|entry| entry.provider.clone())
-        .unwrap_or_else(|| "unconfigured".to_string())
-}
-
-fn default_model_for_provider(provider: &str) -> &'static str {
-    let normalized_provider = if provider == "unconfigured" {
-        DEFAULT_MODEL_PROVIDER
-    } else {
-        provider
-    };
-
-    DEFAULT_MODEL_BY_PROVIDER
-        .iter()
-        .find_map(|(entry_provider, model)| {
-            if *entry_provider == normalized_provider {
-                Some(*model)
-            } else {
-                None
-            }
-        })
-        .unwrap_or(DEFAULT_MODEL_BY_PROVIDER[0].1)
-}
-
-fn resolve_web_search_active_provider(
-    configured_provider: Option<&str>,
-    env: &HashMap<String, String>,
-) -> String {
-    if let Some(provider) = normalize_optional_string(
-        env.get("MACHDOCH_WEB_SEARCH_PROVIDER")
-            .map(String::as_str)
-            .or(configured_provider),
-    ) {
-        if is_valid_web_search_provider(&provider) {
-            return provider;
-        }
-    }
-
-    "none".to_string()
-}
-
 fn is_valid_mode(value: Option<&str>) -> bool {
     value
         .map(str::trim)
@@ -725,61 +329,6 @@ fn is_valid_reasoning_mode(value: Option<&str>) -> bool {
     value
         .map(str::trim)
         .is_some_and(|value| REASONING_MODES.contains(&value))
-}
-
-fn get_available_profiles(
-    profiles: &HashMap<String, WorkspaceProfileConfig>,
-) -> Vec<RuntimeProfileSummary> {
-    let mut summaries = profiles
-        .iter()
-        .map(|(name, profile)| RuntimeProfileSummary {
-            name: name.clone(),
-            description: normalize_optional_string(profile.description.as_deref()),
-        })
-        .collect::<Vec<_>>();
-
-    summaries.sort_by(|left, right| left.name.cmp(&right.name));
-    summaries
-}
-
-fn resolve_profile<'a>(
-    config: &'a WorkspaceConfigFile,
-    env: &HashMap<String, String>,
-    override_profile: Option<&str>,
-) -> Result<(Option<String>, Option<&'a WorkspaceProfileConfig>), String> {
-    let requested_profile = normalize_optional_string(
-        override_profile
-            .or(env.get("MACHDOCH_PROFILE").map(String::as_str))
-            .or(config.default_profile.as_deref()),
-    );
-
-    let Some(requested_profile) = requested_profile else {
-        return Ok((None, None));
-    };
-
-    let Some(profile) = config.profiles.get(&requested_profile) else {
-        return Err(format!(
-            "Profile `{requested_profile}` was not found in .machdoch/config.json."
-        ));
-    };
-
-    Ok((Some(requested_profile), Some(profile)))
-}
-
-fn resolve_compatibility(
-    config: &WorkspaceConfigFile,
-    profile: Option<&WorkspaceProfileConfig>,
-) -> RuntimeCompatibilityConfig {
-    RuntimeCompatibilityConfig {
-        discover_github_customizations: profile
-            .and_then(|entry| entry.compatibility.as_ref())
-            .and_then(|entry| entry.discover_github_customizations)
-            .or(config
-                .compatibility
-                .as_ref()
-                .and_then(|entry| entry.discover_github_customizations))
-            .unwrap_or(false),
-    }
 }
 
 fn save_user_api_key(provider: &str, api_key: &str) -> Result<PathBuf, String> {
@@ -1387,124 +936,6 @@ pub async fn save_workspace_reasoning_mode(
 }
 
 #[tauri::command]
-pub async fn get_runtime_snapshot(
-    workspace_root: String,
-    profile: Option<String>,
-) -> Result<RuntimeSnapshot, String> {
-    let workspace_path = resolve_workspace_root_path(&workspace_root)?;
-    let resolved_workspace_root = workspace_path.display().to_string();
-
-    let env = load_workspace_env(&workspace_path)?;
-    let (config, workspace_config_path) = load_workspace_config(&workspace_path)?;
-    let (user_config, _) = load_user_config_file()?;
-    let (active_profile, profile) = resolve_profile(&config, &env, profile.as_deref())?;
-    let provider_availability = get_provider_availability(&env);
-    let web_search_provider_availability = get_web_search_provider_availability(&env);
-    let web_search_active_provider =
-        resolve_web_search_active_provider(user_config.web_search.active_provider.as_deref(), &env);
-
-    let default_mode = if is_valid_mode(config.default_mode.as_deref()) {
-        config
-            .default_mode
-            .as_deref()
-            .unwrap_or("machdoch")
-            .trim()
-            .to_string()
-    } else {
-        "machdoch".to_string()
-    };
-    let default_reasoning = if is_valid_reasoning_mode(config.reasoning.as_deref()) {
-        config
-            .reasoning
-            .as_deref()
-            .unwrap_or("default")
-            .trim()
-            .to_string()
-    } else {
-        "default".to_string()
-    };
-    let mode = if is_valid_mode(env.get("MACHDOCH_MODE").map(String::as_str)) {
-        env.get("MACHDOCH_MODE")
-            .map(String::as_str)
-            .unwrap_or("machdoch")
-            .trim()
-            .to_string()
-    } else if is_valid_mode(profile.and_then(|entry| entry.mode.as_deref())) {
-        profile
-            .and_then(|entry| entry.mode.as_deref())
-            .unwrap_or("machdoch")
-            .trim()
-            .to_string()
-    } else {
-        default_mode.clone()
-    };
-
-    let provider = resolve_provider(
-        profile
-            .and_then(|entry| entry.provider.as_deref())
-            .or(config.provider.as_deref()),
-        &provider_availability,
-    );
-
-    let model = normalize_optional_string(
-        profile
-            .and_then(|entry| entry.model.as_deref())
-            .or(config.model.as_deref())
-            .or(env.get("MACHDOCH_MODEL").map(String::as_str)),
-    )
-    .unwrap_or_else(|| default_model_for_provider(&provider).to_string());
-
-    let reasoning = if is_valid_reasoning_mode(env.get("MACHDOCH_REASONING").map(String::as_str)) {
-        env.get("MACHDOCH_REASONING")
-            .map(String::as_str)
-            .unwrap_or("default")
-            .trim()
-            .to_string()
-    } else if is_valid_reasoning_mode(profile.and_then(|entry| entry.reasoning.as_deref())) {
-        profile
-            .and_then(|entry| entry.reasoning.as_deref())
-            .unwrap_or("default")
-            .trim()
-            .to_string()
-    } else if is_valid_reasoning_mode(config.reasoning.as_deref()) {
-        default_reasoning.clone()
-    } else {
-        "default".to_string()
-    };
-
-    let offline = matches!(
-        env.get("MACHDOCH_OFFLINE").map(String::as_str),
-        Some("true")
-    ) || profile
-        .and_then(|entry| entry.offline)
-        .or(config.offline)
-        .unwrap_or(false);
-    let review_model = normalize_user_review_model_settings(&user_config.review_model);
-
-    Ok(RuntimeSnapshot {
-        workspace_root: resolved_workspace_root,
-        workspace_config_path,
-        active_profile,
-        available_profiles: get_available_profiles(&config.profiles),
-        default_mode,
-        default_reasoning,
-        mode,
-        provider,
-        model,
-        reasoning,
-        offline,
-        agent_limits: resolve_runtime_agent_limits(&user_config, &config, profile, &env),
-        compatibility: resolve_compatibility(&config, profile),
-        provider_availability,
-        web_search: RuntimeWebSearchConfig {
-            active_provider: web_search_active_provider,
-            provider_availability: web_search_provider_availability,
-        },
-        review_model: RuntimeReviewModelConfig {
-            mode: review_model.mode,
-            provider: review_model.provider,
-            model: review_model.model,
-        },
-        ui_control: crate::ui_control::detect_ui_control_availability(),
-    })
+pub async fn get_runtime_snapshot(workspace_root: String) -> Result<RuntimeSnapshot, String> {
+    collect_runtime_snapshot(&workspace_root)
 }

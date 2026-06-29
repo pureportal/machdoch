@@ -86,7 +86,7 @@ export const SessionModePicker = ({
                 ) : null}
               </div>
               <p className="mt-1 text-xs leading-5 text-slate-400">
-                {`Currently ${RUN_MODE_META[defaultRunMode].label}. Use your workspace profile, config, or environment default.`}
+                {`Currently ${RUN_MODE_META[defaultRunMode].label}. Use your workspace config or environment default.`}
               </p>
             </div>
           </button>

@@ -124,9 +124,9 @@ Use dedicated config files for readability:
 .machdoch/mcp.json
 ```
 
-User config contains global/default MCP server definitions, credentials, local command paths, profiles, direct tool selections, and user-level metadata cache.
+User config contains global/default MCP server definitions, credentials, local command paths, packs, direct tool selections, and user-level metadata cache.
 
-Workspace config contains project-specific enablement, overrides, server aliases, profile selection, tool restrictions, and workspace metadata cache.
+Workspace config contains project-specific enablement, overrides, server aliases, pack selection, tool restrictions, and workspace metadata cache.
 
 Precedence:
 
@@ -172,7 +172,7 @@ If user and workspace config define the same server id with incompatible transpo
       "enabled": false
     }
   },
-  "profiles": {
+  "packs": {
     "research": {
       "enabledServers": ["serper-main"],
       "pinnedTools": ["serper-main.search", "serper-main.scrape"]
@@ -247,7 +247,7 @@ If user and workspace config define the same server id with incompatible transpo
 ```json
 {
   "schemaVersion": 1,
-  "activeProfile": "github-maintainer",
+  "activePack": "github-maintainer",
   "servers": {
     "github-main": {
       "policy": {
@@ -498,7 +498,7 @@ Support sampling because some advanced MCP servers can request model calls from 
 
 Behavior:
 
-- Gated per server/profile/run.
+- Gated per server/pack/run.
 - Uses machdoch's existing provider adapters.
 - Supports optional tool-enabled sampling when configured.
 - Enforces `maxDepth`, timeout, and output caps.
@@ -657,7 +657,7 @@ Example:
   "settings": {
     "mcp": {
       "enabled": true,
-      "profile": "github-maintainer",
+      "pack": "github-maintainer",
       "enabledServers": ["github-main", "serper-main"],
       "aliases": {
         "github.default": "github-main",
@@ -792,7 +792,7 @@ Warnings:
 
 Ralph run records should include:
 
-- enabled MCP profile
+- enabled MCP pack
 - resolved aliases
 - server ids
 - transport type
@@ -853,7 +853,7 @@ The user can skip testing/discovery, but direct tools require cached metadata.
 
 Add compact MCP selector:
 
-- active profile
+- active pack
 - enabled servers
 - pinned direct tools
 - meta-tool availability
@@ -994,7 +994,7 @@ Presets:
 2. Add config loader and merger.
    - Load `~/.machdoch/mcp.json`.
    - Load `.machdoch/mcp.json`.
-   - Merge with profile/chat/Ralph overrides.
+   - Merge with pack/chat/Ralph overrides.
    - Validate conflicts and replacement rules.
 
 3. Add preset templates.

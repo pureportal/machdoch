@@ -147,7 +147,6 @@ export const useSessionTaskSubmission = (options: {
       };
       const sessionId = sessionSnapshot.id;
       const sessionWorkspace = sessionSnapshot.workspace;
-      const sessionProfile = sessionSnapshot.profile;
       const sessionMode = submitOptions.modeOverride ?? sessionSnapshot.mode;
       const taskConversationContext = createConversationContextFromSession(
         sessionSnapshot,
@@ -159,7 +158,6 @@ export const useSessionTaskSubmission = (options: {
         conversationContext: taskConversationContext,
         ...(imagePaths.length > 0 ? { imagePaths } : {}),
         model: sessionSnapshot.model,
-        ...(sessionProfile ? { profile: sessionProfile } : {}),
         provider: sessionSnapshot.provider,
         ...(sessionSnapshot.reasoning
           ? { reasoning: sessionSnapshot.reasoning }
@@ -239,12 +237,6 @@ export const useSessionTaskSubmission = (options: {
             promptHistory: nextPromptHistory.promptHistory,
             promptContextHistory: nextPromptHistory.promptContextHistory,
           };
-
-          if (sessionSnapshot.profile) {
-            nextSession.profile = sessionSnapshot.profile;
-          } else {
-            delete nextSession.profile;
-          }
 
           if (sessionSnapshot.mode) {
             nextSession.mode = sessionSnapshot.mode;
@@ -360,7 +352,7 @@ export const useSessionTaskSubmission = (options: {
 
           if (wroteGlobalMemory) {
             void options.runtime
-              .refreshWorkspaceRuntimeSnapshot(sessionWorkspace, sessionProfile)
+              .refreshWorkspaceRuntimeSnapshot(sessionWorkspace)
               .then(() => loadUserMemorySettings())
               .then(options.runtime.applyLoadedUserMemorySettings)
               .catch((error) => {

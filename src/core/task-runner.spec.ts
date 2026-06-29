@@ -35,7 +35,6 @@ const createConfig = (
     reviewModel: {
       mode: "base",
     },
-    availableProfiles: [],
   };
 };
 
@@ -309,12 +308,14 @@ describe("previewTaskRun", () => {
     });
 
     const preview = previewTaskRun(
-      "/release-review feature=profiles",
+      "/release-review feature=permissions",
       createConfig(),
       customizations,
     );
 
-    expect(preview.invokedPrompt?.inputValues).toEqual({ feature: "profiles" });
+    expect(preview.invokedPrompt?.inputValues).toEqual({
+      feature: "permissions",
+    });
     expect(preview.invokedPrompt?.missingInputs).toEqual(["checklist"]);
     expect(
       preview.warnings.some((warning) =>

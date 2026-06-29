@@ -32,11 +32,9 @@ import type {
   RuntimeAgentLimitOverrides,
   RunMode,
   RuntimeConfig,
-  RuntimeProfileSummary,
   WebSearchProvider,
   WebSearchProviderAvailability,
   WorkspaceConfigFile,
-  WorkspaceProfileConfig,
 } from "./runtime-contract.generated.js";
 
 const WORKSPACE_CONFIG_DIRECTORY = ".machdoch";
@@ -191,85 +189,6 @@ export const saveWorkspaceOffline = async (
 };
 
 /**
- * Converts raw profile config entries into sorted profile summaries.
- */
-const getAvailableProfiles = (
-  profiles: WorkspaceConfigFile["profiles"],
-): RuntimeProfileSummary[] => {
-  return Object.entries(profiles ?? {})
-    .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
-    .map(([name, profile]) => ({
-      name,
-      ...(profile.description ? { description: profile.description } : {}),
-    }));
-};
-
-/**
- * Resolves the active profile from CLI overrides, environment, or defaults.
- */
-const resolveProfile = (
-  config: WorkspaceConfigFile,
-  env: Record<string, string>,
-  overrideProfile?: string,
-): { activeProfile?: string; profile?: WorkspaceProfileConfig } => {
-  const requestedProfile =
-    normalizeOptionalString(overrideProfile) ??
-    normalizeOptionalString(env.MACHDOCH_PROFILE) ??
-    normalizeOptionalString(config.defaultProfile);
-
-  if (!requestedProfile) {
-    return {};
-  }
-
-  const profile = config.profiles?.[requestedProfile];
-
-  if (!profile) {
-    throw new Error(
-      `Profile \`${requestedProfile}\` was not found in .machdoch/config.json.`,
-    );
-  }
-
-  return {
-    activeProfile: requestedProfile,
-    profile,
-  };
-};
-
-/**
- * Applies a selected profile's overrides onto the base workspace config.
- */
-const mergeProfileIntoConfig = (
-  config: WorkspaceConfigFile,
-  profile?: WorkspaceProfileConfig,
-): WorkspaceConfigFile => {
-  if (!profile) {
-    return config;
-  }
-
-  const compatibility = {
-    ...(config.compatibility ?? {}),
-    ...(profile.compatibility ?? {}),
-  };
-  const agentLimits = {
-    ...(config.agentLimits ?? {}),
-    ...(profile.agentLimits ?? {}),
-  };
-
-  return {
-    ...config,
-    ...(profile.mode ? { defaultMode: profile.mode } : {}),
-    ...(profile.provider ? { provider: profile.provider } : {}),
-    ...(profile.model ? { model: profile.model } : {}),
-    ...(profile.reasoning ? { reasoning: profile.reasoning } : {}),
-    ...(typeof profile.offline === "boolean"
-      ? { offline: profile.offline }
-      : {}),
-    ...(Object.keys(agentLimits).length > 0 ? { agentLimits } : {}),
-    ...(Object.keys(compatibility).length > 0 ? { compatibility } : {}),
-  };
-};
-
-/**
  * Builds provider availability flags from the loaded environment values.
  */
 const getProviderAvailability = (
@@ -384,13 +303,11 @@ const getDefaultModelForRuntimeProvider = (provider: ModelProvider): string => {
 
 /**
  * Loads the effective runtime configuration for a workspace, including
- * environment variables, workspace config, profile overrides, and provider
- * availability.
+ * environment variables, workspace config, and provider availability.
  */
 export const loadRuntimeConfig = async (
   workspaceRoot: string,
   overrideMode?: RunMode,
-  overrideProfile?: string,
   overrideModel?: string,
   overrideProvider?: Exclude<ModelProvider, "unconfigured">,
   overrideAgentLimits?: RuntimeAgentLimitOverrides,
@@ -401,46 +318,40 @@ export const loadRuntimeConfig = async (
   const userAgentLimitsSettings = await loadUserAgentLimitsSettings();
   const userReviewModelSettings = await loadUserReviewModelSettings();
   const { config, path } = await loadWorkspaceConfigFile(workspaceRoot);
-  const availableProfiles = getAvailableProfiles(config.profiles);
-  const { activeProfile, profile } = resolveProfile(
-    config,
-    env,
-    overrideProfile,
-  );
-  const effectiveConfig = mergeProfileIntoConfig(config, profile);
   const providerAvailability = getProviderAvailability(env);
   const webSearchProviderAvailability = getWebSearchProviderAvailability(env);
   const modeFromEnv = isRunMode(env.MACHDOCH_MODE)
     ? env.MACHDOCH_MODE
     : undefined;
-  const configuredMode = isRunMode(effectiveConfig.defaultMode)
-    ? effectiveConfig.defaultMode
+  const configuredMode = isRunMode(config.defaultMode)
+    ? config.defaultMode
     : undefined;
-  const mode =
-    overrideMode ?? modeFromEnv ?? configuredMode ?? "machdoch";
+  const mode = overrideMode ?? modeFromEnv ?? configuredMode ?? "machdoch";
   const reasoningFromEnv = isReasoningMode(env.MACHDOCH_REASONING)
     ? env.MACHDOCH_REASONING
     : undefined;
-  const configuredReasoning = isReasoningMode(effectiveConfig.reasoning)
-    ? effectiveConfig.reasoning
+  const configuredReasoning = isReasoningMode(config.reasoning)
+    ? config.reasoning
     : undefined;
   const reasoning =
-    overrideReasoning ?? reasoningFromEnv ?? configuredReasoning ?? "default";
-  const provider = resolveProvider(
-    overrideProvider ?? effectiveConfig.provider,
-    providerAvailability,
-  );
+    overrideReasoning ??
+    reasoningFromEnv ??
+    configuredReasoning ??
+    "default";
+  const provider = resolveProvider(overrideProvider ?? config.provider, providerAvailability);
   const model =
     normalizeOptionalString(overrideModel) ??
-    effectiveConfig.model ??
+    config.model ??
     env.MACHDOCH_MODEL ??
     getDefaultModelForRuntimeProvider(provider);
   const offline =
-    env.MACHDOCH_OFFLINE === "true" ? true : (effectiveConfig.offline ?? false);
+    env.MACHDOCH_OFFLINE === "true"
+      ? true
+      : (config.offline ?? false);
   const agentLimits = normalizeAgentLimitOverrides(
     overrideAgentLimits ??
       parseAgentLimitsFromEnv(env) ??
-      effectiveConfig.agentLimits,
+      config.agentLimits,
     normalizeAgentLimitOverrides(userAgentLimitsSettings),
   );
 
@@ -448,8 +359,6 @@ export const loadRuntimeConfig = async (
     workspaceRoot,
     ...(path ? { workspaceConfigPath: path } : {}),
     userConfigPath: getUserConfigPath(),
-    ...(activeProfile ? { activeProfile } : {}),
-    availableProfiles,
     mode,
     provider,
     model,
@@ -458,7 +367,7 @@ export const loadRuntimeConfig = async (
     agentLimits,
     compatibility: {
       discoverGithubCustomizations:
-        effectiveConfig.compatibility?.discoverGithubCustomizations ?? false,
+        config.compatibility?.discoverGithubCustomizations ?? false,
     },
     providerAvailability,
     webSearch: {

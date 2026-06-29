@@ -226,7 +226,7 @@ export const createSessionSubtitle = (session: ChatSessionRecord): string => {
   return `${providerLabel} · ${workspaceLabel}`;
 };
 
-type RemovableSessionProperty = "archivedAt" | "mode" | "profile";
+type RemovableSessionProperty = "archivedAt" | "mode";
 
 const removeSessionProperty = (
   session: ChatSessionRecord,
@@ -249,12 +249,6 @@ export const removeSessionModeOverride = (
   session: ChatSessionRecord,
 ): ChatSessionRecord => {
   return removeSessionProperty(session, "mode");
-};
-
-export const removeSessionProfileOverride = (
-  session: ChatSessionRecord,
-): ChatSessionRecord => {
-  return removeSessionProperty(session, "profile");
 };
 
 const isRunMode = (value: unknown): value is RunMode => {

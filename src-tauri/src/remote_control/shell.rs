@@ -36,7 +36,6 @@ pub(super) struct RemoteShellSession {
     pub(super) title: String,
     pub(super) status: String,
     pub(super) workspace: Option<String>,
-    pub(super) profile: Option<String>,
     pub(super) provider: String,
     pub(super) model: String,
     pub(super) mode: Option<String>,
@@ -147,7 +146,6 @@ pub(super) struct RemoteShellRuntime {
     pub(super) has_any_provider: bool,
     pub(super) provider_statuses: Vec<RemoteShellProviderStatus>,
     pub(super) mode: Option<String>,
-    pub(super) profile: Option<String>,
     pub(super) ui_control: Option<RemoteShellRuntimeCapability>,
     pub(super) web_search: Option<RemoteShellRuntimeCapability>,
 }

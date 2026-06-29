@@ -415,7 +415,6 @@ const createJobInput = async (
           contextPacks: (options.contextPacks ?? []).map(parseContextPackSnapshot),
           macros: (options.macros ?? []).map(parseMacroReference),
           ...(args.mode ? { mode: args.mode } : {}),
-          ...(args.profile ? { profile: args.profile } : {}),
           ...(args.runtimeProvider ? { provider: args.runtimeProvider } : {}),
           ...(args.model ? { model: args.model } : {}),
           ...(args.reasoning ? { reasoning: args.reasoning } : {}),
@@ -800,7 +799,6 @@ const executeScheduledRalphFlow = async (
   const config = await loadRuntimeConfig(
     request.workspaceRoot,
     "machdoch",
-    request.profile,
     request.model,
     request.provider,
     undefined,
@@ -864,7 +862,6 @@ export const createSchedulerExecutor = (): ScheduledTaskExecutor => ({
     const config = await loadRuntimeConfig(
       request.workspaceRoot,
       request.mode,
-      request.profile,
       request.model,
       request.provider,
       undefined,

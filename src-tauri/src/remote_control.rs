@@ -1,10 +1,8 @@
 use std::{
     collections::{HashMap, VecDeque},
     convert::Infallible,
-    fs,
-    io::{BufRead, BufReader, Read, Write},
+    io::Write,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket},
-    path::{Path, PathBuf},
     process::Command,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -30,31 +28,46 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use qrcode::{render::svg, QrCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager};
 use tokio::net::TcpListener as TokioTcpListener;
 
 use crate::desktop_task::{request_desktop_task_cancel, DesktopTaskCancelMap};
-use crate::runtime_snapshot::get_user_config_directory;
 
+mod auth;
+mod config;
+mod http;
 mod mission_control_html;
 mod mission_control_script_events;
 mod mission_control_script_render;
 mod sanitize;
+mod session;
 mod shell;
 
+#[cfg(test)]
+use auth::constant_time_eq;
+#[cfg(test)]
+use auth::hash_remote_control_token;
+use auth::{
+    create_session_cookie, header_to_str, headers_are_authorized,
+    headers_have_current_pairing_token, request_has_current_pairing_token, request_is_authorized,
+    state_changing_headers_allowed, state_changing_request_is_allowed,
+};
+use config::{
+    ensure_remote_control_port_available, load_remote_control_config_file,
+    validate_remote_control_port, write_remote_control_config_file,
+};
+use http::{
+    read_http_request, write_headers, write_html_response, write_json_response, HttpRequest,
+};
 use mission_control_html::mission_control_html;
 use sanitize::sanitize_shell_snapshot;
+use session::create_remote_web_session_token;
 pub use shell::RemoteShellSnapshot;
 
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
 const REMOTE_CONTROL_COMMAND_EVENT: &str = "remote-control-command";
-#[allow(dead_code)]
-const MAX_HTTP_BODY_BYTES: usize = 64 * 1024;
 const MAX_SESSIONS: usize = 128;
 const MAX_LOG_ENTRIES: usize = 160;
 const MAX_TIMELINE_ENTRIES: usize = 80;
@@ -105,9 +118,9 @@ struct RemoteControlInner {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RemoteControlConfigFile {
-    #[serde(default = "default_remote_control_config_version")]
+    #[serde(default = "config::default_remote_control_config_version")]
     version: u32,
-    #[serde(default = "default_remote_control_port")]
+    #[serde(default = "config::default_remote_control_port")]
     port: u16,
     #[serde(default)]
     enabled: bool,
@@ -247,8 +260,6 @@ pub struct RemoteControlCommandEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    profile: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     workspace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     enabled: Option<bool>,
@@ -295,7 +306,6 @@ struct RemoteCommandRequest {
     provider: Option<String>,
     model: Option<String>,
     mode: Option<String>,
-    profile: Option<String>,
     workspace: Option<String>,
     enabled: Option<bool>,
     attachment_id: Option<String>,
@@ -303,14 +313,6 @@ struct RemoteCommandRequest {
     message_id: Option<String>,
     job_id: Option<String>,
     run_id: Option<String>,
-}
-
-#[allow(dead_code)]
-struct HttpRequest {
-    method: String,
-    path: String,
-    headers: HashMap<String, String>,
-    body: Vec<u8>,
 }
 
 impl Default for RemoteControlState {
@@ -613,54 +615,7 @@ impl RemoteControlState {
     fn create_web_session(&self, user_agent: Option<&str>) -> Result<String, String> {
         self.ensure_config_loaded()?;
 
-        let session_token = create_secure_token()?;
-        let next_pairing_token = create_secure_token()?;
-        let now = now_millis();
-        let mut inner = self
-            .shared
-            .inner
-            .lock()
-            .map_err(|_| "Unable to create a Mission Control web session.".to_string())?;
-
-        prune_expired_paired_devices_locked(&mut inner.config, now);
-
-        if inner.config.paired_devices.len() >= MAX_PAIRED_DEVICES {
-            if let Some(stale_device_id) = inner
-                .config
-                .paired_devices
-                .iter()
-                .min_by_key(|device| device.last_seen_at)
-                .map(|device| device.id.clone())
-            {
-                inner
-                    .config
-                    .paired_devices
-                    .retain(|device| device.id != stale_device_id);
-            }
-        }
-
-        inner.config.paired_devices.push(RemoteControlPairedDevice {
-            id: create_device_id(),
-            name: create_device_name(user_agent),
-            token_hash: hash_remote_control_token(&session_token),
-            created_at: now,
-            last_seen_at: now,
-            expires_at: now.saturating_add(WEB_SESSION_TTL_MS),
-            user_agent: user_agent
-                .map(|value| truncate_chars(value.trim(), 240))
-                .filter(|value| !value.is_empty()),
-        });
-        inner.config.version = REMOTE_CONTROL_CONFIG_VERSION;
-
-        if let Some(server) = inner.server.as_mut() {
-            refresh_server_pairing_url(server, next_pairing_token)?;
-        }
-
-        write_remote_control_config_file(&inner.config)?;
-        inner.event_id = inner.event_id.saturating_add(1);
-        self.shared.updates.notify_all();
-
-        Ok(session_token)
+        create_remote_web_session_token(&self.shared, user_agent)
     }
 
     fn display_url(&self) -> Result<String, String> {
@@ -1131,80 +1086,6 @@ fn add_secure_html_headers(headers: &mut HeaderMap) {
     );
 }
 
-fn header_to_str<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
-    headers.get(name).and_then(|value| value.to_str().ok())
-}
-
-fn headers_have_bearer_token(headers: &HeaderMap, token: &str) -> bool {
-    header_to_str(headers, "authorization")
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(|value| constant_time_eq(value.as_bytes(), token.as_bytes()))
-        .unwrap_or(false)
-}
-
-fn headers_have_current_pairing_token(
-    headers: &HeaderMap,
-    shared: &Arc<RemoteControlShared>,
-) -> bool {
-    let Ok(inner) = shared.inner.lock() else {
-        return false;
-    };
-
-    let Some(server) = inner.server.as_ref() else {
-        return false;
-    };
-
-    headers_have_bearer_token(headers, &server.token)
-}
-
-fn headers_have_web_session(headers: &HeaderMap, shared: &Arc<RemoteControlShared>) -> bool {
-    let Some(session_token) =
-        cookie_value_from_header(header_to_str(headers, "cookie"), WEB_SESSION_COOKIE_NAME)
-    else {
-        return false;
-    };
-
-    let Ok(mut inner) = shared.inner.lock() else {
-        return false;
-    };
-
-    let session_hash = hash_remote_control_token(&session_token);
-    let now = now_millis();
-
-    if let Some(device) = inner.config.paired_devices.iter_mut().find(|device| {
-        device.expires_at > now
-            && constant_time_eq(device.token_hash.as_bytes(), session_hash.as_bytes())
-    }) {
-        device.last_seen_at = now;
-        return true;
-    }
-
-    false
-}
-
-fn headers_are_authorized(headers: &HeaderMap, shared: &Arc<RemoteControlShared>) -> bool {
-    headers_have_web_session(headers, shared)
-}
-
-fn state_changing_headers_allowed(headers: &HeaderMap) -> bool {
-    if header_to_str(headers, "x-machdoch-remote") != Some("1") {
-        return false;
-    }
-
-    if header_to_str(headers, "sec-fetch-site") == Some("cross-site") {
-        return false;
-    }
-
-    let Some(origin) = header_to_str(headers, "origin") else {
-        return true;
-    };
-    let Some(host) = header_to_str(headers, "host") else {
-        return false;
-    };
-
-    origin == format!("http://{host}")
-}
-
 #[allow(dead_code)]
 fn handle_connection(
     mut stream: TcpStream,
@@ -1475,7 +1356,6 @@ fn normalize_command(request: RemoteCommandRequest) -> Result<RemoteControlComma
             | "update-draft"
             | "set-session-model"
             | "set-session-mode"
-            | "set-session-profile"
             | "set-session-memory"
             | "set-global-memory"
             | "set-ui-control"
@@ -1530,7 +1410,6 @@ fn normalize_command(request: RemoteCommandRequest) -> Result<RemoteControlComma
             | "update-draft"
             | "set-session-model"
             | "set-session-mode"
-            | "set-session-profile"
             | "set-session-memory"
             | "set-global-memory"
             | "set-ui-control"
@@ -1604,12 +1483,6 @@ fn normalize_command(request: RemoteCommandRequest) -> Result<RemoteControlComma
     if kind == "set-session-mode" && !matches!(mode.as_deref(), Some("ask" | "machdoch")) {
         return Err("Session mode must be ask or machdoch.".to_string());
     }
-    let profile = request
-        .profile
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| truncate_chars(value, MAX_REMOTE_SHORT_TEXT_CHARS));
     let workspace = request
         .workspace
         .as_deref()
@@ -1703,7 +1576,6 @@ fn normalize_command(request: RemoteCommandRequest) -> Result<RemoteControlComma
         provider,
         model,
         mode,
-        profile,
         workspace,
         enabled: request.enabled,
         attachment_id,
@@ -1713,326 +1585,6 @@ fn normalize_command(request: RemoteCommandRequest) -> Result<RemoteControlComma
         run_id,
         created_at: now_millis(),
     })
-}
-
-#[allow(dead_code)]
-fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
-    let mut reader = BufReader::new(stream);
-    let mut request_line = String::new();
-
-    if reader
-        .read_line(&mut request_line)
-        .map_err(|error| format!("Unable to read HTTP request: {error}"))?
-        == 0
-    {
-        return Err("Empty HTTP request.".to_string());
-    }
-
-    let mut parts = request_line.split_whitespace();
-    let method = parts
-        .next()
-        .ok_or_else(|| "HTTP request method is missing.".to_string())?
-        .to_string();
-    let target = parts
-        .next()
-        .ok_or_else(|| "HTTP request target is missing.".to_string())?
-        .to_string();
-
-    let path = split_target(&target);
-    let mut headers = HashMap::new();
-
-    loop {
-        let mut header_line = String::new();
-        let bytes_read = reader
-            .read_line(&mut header_line)
-            .map_err(|error| format!("Unable to read HTTP headers: {error}"))?;
-
-        if bytes_read == 0 || header_line == "\r\n" || header_line == "\n" {
-            break;
-        }
-
-        if let Some((key, value)) = header_line.split_once(':') {
-            headers.insert(
-                key.trim().to_ascii_lowercase(),
-                value.trim().trim_end_matches('\r').to_string(),
-            );
-        }
-    }
-
-    let content_length = headers
-        .get("content-length")
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(0);
-
-    if content_length > MAX_HTTP_BODY_BYTES {
-        return Err("Mission Control request body is too large.".to_string());
-    }
-
-    let mut body = vec![0; content_length];
-
-    if content_length > 0 {
-        reader
-            .read_exact(&mut body)
-            .map_err(|error| format!("Unable to read HTTP body: {error}"))?;
-    }
-
-    Ok(HttpRequest {
-        method,
-        path,
-        headers,
-        body,
-    })
-}
-
-#[allow(dead_code)]
-fn split_target(target: &str) -> String {
-    let path_and_query = target.split('#').next().unwrap_or(target);
-
-    if let Some((path, _)) = path_and_query.split_once('?') {
-        return path.to_string();
-    }
-
-    path_and_query.to_string()
-}
-
-#[allow(dead_code)]
-fn request_has_bearer_token(request: &HttpRequest, token: &str) -> bool {
-    request
-        .headers
-        .get("authorization")
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(|value| constant_time_eq(value.as_bytes(), token.as_bytes()))
-        .unwrap_or(false)
-}
-
-#[allow(dead_code)]
-fn request_has_current_pairing_token(
-    request: &HttpRequest,
-    shared: &Arc<RemoteControlShared>,
-) -> bool {
-    let Ok(inner) = shared.inner.lock() else {
-        return false;
-    };
-
-    let Some(server) = inner.server.as_ref() else {
-        return false;
-    };
-
-    request_has_bearer_token(request, &server.token)
-}
-
-#[allow(dead_code)]
-fn request_has_web_session(request: &HttpRequest, shared: &Arc<RemoteControlShared>) -> bool {
-    let Some(session_token) = cookie_value(request, WEB_SESSION_COOKIE_NAME) else {
-        return false;
-    };
-
-    let Ok(inner) = shared.inner.lock() else {
-        return false;
-    };
-
-    let session_hash = hash_remote_control_token(&session_token);
-    let now = now_millis();
-
-    inner.config.paired_devices.iter().any(|device| {
-        device.expires_at > now
-            && constant_time_eq(device.token_hash.as_bytes(), session_hash.as_bytes())
-    })
-}
-
-#[allow(dead_code)]
-fn request_is_authorized(request: &HttpRequest, shared: &Arc<RemoteControlShared>) -> bool {
-    request_has_web_session(request, shared)
-}
-
-#[allow(dead_code)]
-fn state_changing_request_is_allowed(request: &HttpRequest) -> bool {
-    if request
-        .headers
-        .get("x-machdoch-remote")
-        .map(|value| value == "1")
-        .unwrap_or(false)
-        == false
-    {
-        return false;
-    }
-
-    if request
-        .headers
-        .get("sec-fetch-site")
-        .map(|value| value == "cross-site")
-        .unwrap_or(false)
-    {
-        return false;
-    }
-
-    let Some(origin) = request.headers.get("origin") else {
-        return true;
-    };
-    let Some(host) = request.headers.get("host") else {
-        return false;
-    };
-
-    origin == &format!("http://{host}")
-}
-
-#[allow(dead_code)]
-fn cookie_value(request: &HttpRequest, name: &str) -> Option<String> {
-    cookie_value_from_header(request.headers.get("cookie").map(String::as_str), name)
-}
-
-fn cookie_value_from_header(cookie_header: Option<&str>, name: &str) -> Option<String> {
-    cookie_header?.split(';').find_map(|part| {
-        let (key, value) = part.trim().split_once('=')?;
-
-        if key.trim() != name {
-            return None;
-        }
-
-        Some(value.trim().to_string())
-    })
-}
-
-fn default_remote_control_config_version() -> u32 {
-    REMOTE_CONTROL_CONFIG_VERSION
-}
-
-fn default_remote_control_port() -> u16 {
-    DEFAULT_REMOTE_CONTROL_PORT
-}
-
-fn validate_remote_control_port(port: u16) -> Result<u16, String> {
-    if port < MIN_REMOTE_CONTROL_PORT {
-        return Err(format!(
-            "Mission Control port must be between {MIN_REMOTE_CONTROL_PORT} and 65535."
-        ));
-    }
-
-    Ok(port)
-}
-
-fn ensure_remote_control_port_available(port: u16) -> Result<(), String> {
-    TcpListener::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, port)))
-        .map(|_| ())
-        .map_err(|error| format!("Mission Control port {port} is not available: {error}"))
-}
-
-fn remote_control_config_path() -> Result<PathBuf, String> {
-    Ok(get_user_config_directory()?.join(REMOTE_CONTROL_CONFIG_FILE_NAME))
-}
-
-fn load_remote_control_config_file() -> Result<RemoteControlConfigFile, String> {
-    let config_path = remote_control_config_path()?;
-
-    if !config_path.exists() {
-        return Ok(RemoteControlConfigFile::default());
-    }
-
-    let raw = fs::read_to_string(&config_path)
-        .map_err(|error| format!("Failed to read {}: {error}", config_path.display()))?;
-    let parsed = serde_json::from_str::<RemoteControlConfigFile>(&raw)
-        .map_err(|error| format!("Failed to parse {}: {error}", config_path.display()))?;
-
-    Ok(normalize_remote_control_config(parsed))
-}
-
-fn normalize_remote_control_config(mut config: RemoteControlConfigFile) -> RemoteControlConfigFile {
-    config.version = REMOTE_CONTROL_CONFIG_VERSION;
-
-    if validate_remote_control_port(config.port).is_err() {
-        config.port = DEFAULT_REMOTE_CONTROL_PORT;
-    }
-
-    let now = now_millis();
-    config.paired_devices.retain(|device| {
-        !device.id.trim().is_empty()
-            && !device.token_hash.trim().is_empty()
-            && device.expires_at > now
-    });
-    config
-        .paired_devices
-        .sort_by(|left, right| right.last_seen_at.cmp(&left.last_seen_at));
-    config.paired_devices.truncate(MAX_PAIRED_DEVICES);
-
-    config
-}
-
-fn write_remote_control_config_file(config: &RemoteControlConfigFile) -> Result<(), String> {
-    let config_path = remote_control_config_path()?;
-
-    if let Some(config_directory) = config_path.parent() {
-        fs::create_dir_all(config_directory)
-            .map_err(|error| format!("Failed to create {}: {error}", config_directory.display()))?;
-        secure_remote_control_config_directory(config_directory)?;
-    }
-
-    let serialized = serde_json::to_string_pretty(config)
-        .map_err(|error| format!("Failed to serialize Mission Control settings: {error}"))?;
-    fs::write(&config_path, format!("{serialized}\n"))
-        .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))?;
-    secure_remote_control_config_file(&config_path)
-}
-
-fn secure_remote_control_config_directory(path: &Path) -> Result<(), String> {
-    #[cfg(not(unix))]
-    let _ = path;
-
-    #[cfg(unix)]
-    {
-        let mut permissions = fs::metadata(path)
-            .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?
-            .permissions();
-        permissions.set_mode(0o700);
-        fs::set_permissions(path, permissions)
-            .map_err(|error| format!("Failed to secure {}: {error}", path.display()))?;
-    }
-
-    Ok(())
-}
-
-fn secure_remote_control_config_file(path: &Path) -> Result<(), String> {
-    #[cfg(not(unix))]
-    let _ = path;
-
-    #[cfg(unix)]
-    {
-        let mut permissions = fs::metadata(path)
-            .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?
-            .permissions();
-        permissions.set_mode(0o600);
-        fs::set_permissions(path, permissions)
-            .map_err(|error| format!("Failed to secure {}: {error}", path.display()))?;
-    }
-
-    Ok(())
-}
-
-fn prune_expired_paired_devices_locked(config: &mut RemoteControlConfigFile, now: u64) {
-    config
-        .paired_devices
-        .retain(|device| device.expires_at > now);
-}
-
-fn hash_remote_control_token(token: &str) -> String {
-    URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes()))
-}
-
-fn create_device_id() -> String {
-    let mut bytes = [0_u8; 12];
-
-    if getrandom::fill(&mut bytes).is_ok() {
-        return URL_SAFE_NO_PAD.encode(bytes);
-    }
-
-    format!("device-{}", now_millis())
-}
-
-fn create_device_name(user_agent: Option<&str>) -> String {
-    user_agent
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| truncate_chars(value, 80))
-        .unwrap_or_else(|| "Remote browser".to_string())
 }
 
 fn refresh_server_pairing_url(
@@ -2052,13 +1604,6 @@ fn refresh_server_pairing_url(
     server.qr_svg = qr_svg;
 
     Ok(())
-}
-
-fn create_session_cookie(session_token: &str) -> String {
-    format!(
-        "{WEB_SESSION_COOKIE_NAME}={session_token}; Path=/api; Max-Age={}; HttpOnly; SameSite=Strict",
-        WEB_SESSION_TTL_MS / 1_000
-    )
 }
 
 fn open_url_in_system_browser(url: &str) -> Result<(), String> {
@@ -2099,83 +1644,6 @@ fn open_url_in_system_browser(url: &str) -> Result<(), String> {
 
     #[allow(unreachable_code)]
     Err("Opening Mission Control is not supported on this platform.".to_string())
-}
-
-#[allow(dead_code)]
-fn write_html_response(stream: &mut TcpStream, body: String) -> std::io::Result<()> {
-    write_response(
-        stream,
-        200,
-        body.into_bytes(),
-        &[
-            ("Content-Type", "text/html; charset=utf-8"),
-            ("Cache-Control", "no-store"),
-            (
-                "Content-Security-Policy",
-                "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-            ),
-            ("Referrer-Policy", "no-referrer"),
-        ],
-    )
-}
-
-#[allow(dead_code)]
-fn write_json_response(
-    stream: &mut TcpStream,
-    status: u16,
-    body: Value,
-    extra_headers: &[(&str, &str)],
-) -> std::io::Result<()> {
-    let bytes = serde_json::to_vec(&body).unwrap_or_else(|_| b"{\"error\":\"json\"}".to_vec());
-    let mut headers = vec![
-        ("Content-Type", "application/json; charset=utf-8"),
-        ("Cache-Control", "no-store"),
-    ];
-    headers.extend_from_slice(extra_headers);
-    write_response(stream, status, bytes, &headers)
-}
-
-#[allow(dead_code)]
-fn write_response(
-    stream: &mut TcpStream,
-    status: u16,
-    body: Vec<u8>,
-    headers: &[(&str, &str)],
-) -> std::io::Result<()> {
-    write_headers(stream, status, headers, Some(body.len()))?;
-    stream.write_all(&body)
-}
-
-#[allow(dead_code)]
-fn write_headers(
-    stream: &mut TcpStream,
-    status: u16,
-    headers: &[(&str, &str)],
-    content_length: Option<usize>,
-) -> std::io::Result<()> {
-    let reason = match status {
-        200 => "OK",
-        202 => "Accepted",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        403 => "Forbidden",
-        404 => "Not Found",
-        413 => "Payload Too Large",
-        500 => "Internal Server Error",
-        _ => "OK",
-    };
-    write!(stream, "HTTP/1.1 {status} {reason}\r\n")?;
-
-    for (key, value) in headers {
-        write!(stream, "{key}: {value}\r\n")?;
-    }
-
-    if let Some(content_length) = content_length {
-        write!(stream, "Content-Length: {content_length}\r\n")?;
-        write!(stream, "Connection: close\r\n")?;
-    }
-
-    write!(stream, "\r\n")
 }
 
 fn create_status_locked(inner: &RemoteControlInner) -> RemoteControlStatus {
@@ -2344,19 +1812,6 @@ fn now_millis() -> u64 {
         .unwrap_or(u64::MAX)
 }
 
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    let max_len = left.len().max(right.len());
-    let mut diff = left.len() ^ right.len();
-
-    for index in 0..max_len {
-        let left_byte = left.get(index).copied().unwrap_or(0);
-        let right_byte = right.get(index).copied().unwrap_or(0);
-        diff |= usize::from(left_byte ^ right_byte);
-    }
-
-    diff == 0
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -2381,7 +1836,6 @@ mod tests {
             provider: None,
             model: None,
             mode: None,
-            profile: None,
             workspace: None,
             enabled: None,
             attachment_id: None,

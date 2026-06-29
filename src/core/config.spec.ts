@@ -12,7 +12,6 @@ const ISOLATED_ENV_KEYS = [
   "MACHDOCH_MODE",
   "MACHDOCH_MODEL",
   "MACHDOCH_OFFLINE",
-  "MACHDOCH_PROFILE",
   "MACHDOCH_USER_CONFIG_DIR",
   "MACHDOCH_EXECUTOR_TURNS",
   "MACHDOCH_AUTOPILOT_ITERATIONS",
@@ -79,12 +78,10 @@ describe("loadRuntimeConfig", () => {
 
     const config = await loadRuntimeConfig(workspaceRoot);
 
-    expect(config.activeProfile).toBeUndefined();
     expect(config.workspaceConfigPath).toBeUndefined();
     expect(config.userConfigPath).toBe(
       join(workspaceRoot, ".user-config", "user-config.json"),
     );
-    expect(config.availableProfiles).toEqual([]);
     expect(config.mode).toBe("machdoch");
     expect(config.provider).toBe("unconfigured");
     expect(config.model).toBe("gpt-5.5");
@@ -115,23 +112,10 @@ describe("loadRuntimeConfig", () => {
       join(workspaceRoot, ".machdoch", "config.json"),
       JSON.stringify(
         {
-          defaultProfile: "ask-review",
           defaultMode: "ask",
           provider: "openai",
           model: "config-model",
           offline: true,
-          profiles: {
-            "ask-review": {
-              description: "Review changes conservatively",
-              mode: "ask",
-            },
-            local: {
-              description: "Prefer a local backend",
-              provider: "google",
-              model: "gemini-2.5-flash",
-              offline: false,
-            },
-          },
         },
         null,
         2,
@@ -140,17 +124,6 @@ describe("loadRuntimeConfig", () => {
 
     const config = await loadRuntimeConfig(workspaceRoot, "machdoch");
 
-    expect(config.activeProfile).toBe("ask-review");
-    expect(config.availableProfiles).toEqual([
-      {
-        name: "ask-review",
-        description: "Review changes conservatively",
-      },
-      {
-        name: "local",
-        description: "Prefer a local backend",
-      },
-    ]);
     expect(config.mode).toBe("machdoch");
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("config-model");
@@ -158,42 +131,6 @@ describe("loadRuntimeConfig", () => {
     expect(config.workspaceConfigPath).toBe(
       join(workspaceRoot, ".machdoch", "config.json"),
     );
-  });
-
-  it("supports explicit profile overrides and profile-specific provider/model settings", async () => {
-    isolateEnvironment();
-    const workspaceRoot = await createWorkspace();
-
-    await mkdir(join(workspaceRoot, ".machdoch"), { recursive: true });
-    await writeFile(
-      join(workspaceRoot, ".machdoch", "config.json"),
-      JSON.stringify(
-        {
-          defaultMode: "ask",
-          provider: "openai",
-          model: "base-model",
-          profiles: {
-            local: {
-              description: "Local backend profile",
-              mode: "machdoch",
-              provider: "google",
-              model: "gemini-2.5-flash",
-              offline: true,
-            },
-          },
-        },
-        null,
-        2,
-      ),
-    );
-
-    const config = await loadRuntimeConfig(workspaceRoot, undefined, "local");
-
-    expect(config.activeProfile).toBe("local");
-    expect(config.mode).toBe("machdoch");
-    expect(config.provider).toBe("google");
-    expect(config.model).toBe("gemini-2.5-flash");
-    expect(config.offline).toBe(true);
   });
 
   it("uses environment values for mode, model, offline, and provider discovery when config does not set them", async () => {
@@ -266,7 +203,6 @@ describe("loadRuntimeConfig", () => {
       workspaceRoot,
       undefined,
       undefined,
-      undefined,
       "claude-cli",
     );
 
@@ -280,7 +216,6 @@ describe("loadRuntimeConfig", () => {
 
     config = await loadRuntimeConfig(
       workspaceRoot,
-      undefined,
       undefined,
       undefined,
       "copilot-cli",
@@ -306,7 +241,6 @@ describe("loadRuntimeConfig", () => {
 
     const config = await loadRuntimeConfig(
       workspaceRoot,
-      undefined,
       undefined,
       undefined,
       "copilot-cli",
@@ -376,7 +310,6 @@ describe("loadRuntimeConfig", () => {
           undefined,
           undefined,
           undefined,
-          undefined,
           {
             executorTurns: 256,
             autopilotExecutorIterations: 32,
@@ -414,31 +347,6 @@ describe("loadRuntimeConfig", () => {
       provider: "openai",
       model: "gpt-5.5-mini",
     });
-  });
-
-  it("throws a helpful error for unknown profile names", async () => {
-    isolateEnvironment();
-    const workspaceRoot = await createWorkspace();
-
-    await mkdir(join(workspaceRoot, ".machdoch"), { recursive: true });
-    await writeFile(
-      join(workspaceRoot, ".machdoch", "config.json"),
-      JSON.stringify(
-        {
-          profiles: {
-            existing: {
-              description: "Existing profile",
-            },
-          },
-        },
-        null,
-        2,
-      ),
-    );
-
-    await expect(
-      loadRuntimeConfig(workspaceRoot, undefined, "missing"),
-    ).rejects.toThrow("Profile `missing` was not found");
   });
 
   it("persists the workspace default model into .machdoch/config.json", async () => {

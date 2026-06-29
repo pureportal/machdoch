@@ -12,7 +12,6 @@ const createRuntimeSnapshot = (
   overrides: Partial<RuntimeSnapshot> = {},
 ): RuntimeSnapshot => ({
   workspaceRoot: "C:\\Project",
-  availableProfiles: [],
   mode: "ask",
   provider: "openai",
   model: "gpt-5.5",
@@ -52,7 +51,6 @@ describe("useChatSessionRuntime", () => {
       .mockResolvedValueOnce(
         createRuntimeSnapshot({
           workspaceRoot: "C:\\Project",
-          activeProfile: "workspace",
           mode: "ask",
           model: "gpt-5.5",
         }),
@@ -61,7 +59,6 @@ describe("useChatSessionRuntime", () => {
 
     const { result } = renderHook(() =>
       useChatSessionRuntime({
-        activeSessionProfile: "workspace",
         activeSessionProvider: "openai",
         activeSessionWorkspace: "C:\\Project",
         catalogOpen: false,
@@ -73,10 +70,7 @@ describe("useChatSessionRuntime", () => {
     });
 
     await act(async () => {
-      await result.current.refreshWorkspaceRuntimeSnapshot(
-        "C:\\Project",
-        "workspace",
-      );
+      await result.current.refreshWorkspaceRuntimeSnapshot("C:\\Project");
     });
 
     expect(result.current.runtimeSnapshot?.mode).toBe("ask");
@@ -88,7 +82,6 @@ describe("useChatSessionRuntime", () => {
       .mockResolvedValueOnce(
         createRuntimeSnapshot({
           workspaceRoot: "C:\\Project",
-          activeProfile: "workspace",
           mode: "ask",
         }),
       )
@@ -96,7 +89,6 @@ describe("useChatSessionRuntime", () => {
 
     const { result } = renderHook(() =>
       useChatSessionRuntime({
-        activeSessionProfile: "workspace",
         activeSessionProvider: "openai",
         activeSessionWorkspace: "C:\\Project",
         catalogOpen: false,
@@ -108,10 +100,7 @@ describe("useChatSessionRuntime", () => {
     });
 
     await act(async () => {
-      await result.current.refreshWorkspaceRuntimeSnapshot(
-        "D:\\Other",
-        "workspace",
-      );
+      await result.current.refreshWorkspaceRuntimeSnapshot("D:\\Other");
     });
 
     expect(result.current.runtimeSnapshot).toBeNull();

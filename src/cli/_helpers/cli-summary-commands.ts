@@ -46,7 +46,6 @@ import { writeStdoutLine } from "./cli-io.js";
 import {
   createDiscoveryOptions,
   createUserConfigSummaryLines,
-  formatProfileLine,
 } from "./cli-output.js";
 
 interface ConfigSetResult {
@@ -558,7 +557,6 @@ export const printConfigSummary = async (
   const config = await loadRuntimeConfig(
     args.workspaceRoot,
     args.mode,
-    args.profile,
     args.model,
     args.runtimeProvider,
     args.agentLimits,
@@ -588,7 +586,6 @@ export const printConfigSummary = async (
   for (const line of createUserConfigSummaryLines(config.userConfigPath)) {
     writeStdoutLine(line);
   }
-  writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
   writeStdoutLine(`mode: ${config.mode}`);
   writeStdoutLine(`provider: ${config.provider}`);
   writeStdoutLine(`model: ${config.model}`);
@@ -605,12 +602,6 @@ export const printConfigSummary = async (
   writeStdoutLine(
     `global memory: ${memorySettings.globalEnabled ? "enabled" : "disabled"} (${memorySettings.entries.length} saved fact${memorySettings.entries.length === 1 ? "" : "s"})`,
   );
-  if (config.availableProfiles.length > 0) {
-    writeStdoutLine("profiles:");
-    for (const profile of config.availableProfiles) {
-      writeStdoutLine(formatProfileLine(profile, config.activeProfile));
-    }
-  }
   writeStdoutLine("provider availability:");
 
   for (const entry of config.providerAvailability) {
@@ -626,7 +617,6 @@ export const printCustomizationSummary = async (
   const config = await loadRuntimeConfig(
     args.workspaceRoot,
     args.mode,
-    args.profile,
     args.model,
     args.runtimeProvider,
     args.agentLimits,
@@ -643,7 +633,6 @@ export const printCustomizationSummary = async (
   }
 
   writeStdoutLine(`workspace: ${customizations.workspaceRoot}`);
-  writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
   writeStdoutLine(
     `github compatibility: ${config.compatibility.discoverGithubCustomizations ? "enabled" : "disabled"}`,
   );
@@ -665,7 +654,6 @@ export const printToolSummary = async (args: ParsedCliArgs): Promise<void> => {
   const config = await loadRuntimeConfig(
     args.workspaceRoot,
     args.mode,
-    args.profile,
     args.model,
     args.runtimeProvider,
     args.agentLimits,
@@ -712,7 +700,6 @@ export const printToolSummary = async (args: ParsedCliArgs): Promise<void> => {
   }
 
   writeStdoutLine(`workspace: ${config.workspaceRoot}`);
-  writeStdoutLine(`profile: ${config.activeProfile ?? "none"}`);
   writeStdoutLine(`mode: ${config.mode}`);
   writeStdoutLine(
     `function-call surface: ${
@@ -737,48 +724,6 @@ export const printToolSummary = async (args: ParsedCliArgs): Promise<void> => {
         );
       }
     }
-  }
-};
-
-export const printProfileSummary = async (
-  args: ParsedCliArgs,
-): Promise<void> => {
-  const config = await loadRuntimeConfig(
-    args.workspaceRoot,
-    args.mode,
-    args.profile,
-    args.model,
-    args.runtimeProvider,
-    args.agentLimits,
-    args.reasoning,
-  );
-
-  if (args.json) {
-    writeStdoutLine(
-      JSON.stringify(
-        {
-          workspaceRoot: config.workspaceRoot,
-          activeProfile: config.activeProfile ?? null,
-          availableProfiles: config.availableProfiles,
-        },
-        null,
-        2,
-      ),
-    );
-    return;
-  }
-
-  writeStdoutLine(`workspace: ${config.workspaceRoot}`);
-  writeStdoutLine(`active profile: ${config.activeProfile ?? "none"}`);
-
-  if (config.availableProfiles.length === 0) {
-    writeStdoutLine("profiles: none configured");
-    return;
-  }
-
-  writeStdoutLine("profiles:");
-  for (const profile of config.availableProfiles) {
-    writeStdoutLine(formatProfileLine(profile, config.activeProfile));
   }
 };
 

@@ -179,7 +179,6 @@ const loadInstructionRegistry = async (args: ParsedCliArgs) => {
   const config = await loadRuntimeConfig(
     args.workspaceRoot,
     args.mode,
-    args.profile,
     args.model,
     args.runtimeProvider,
     args.agentLimits,

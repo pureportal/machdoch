@@ -314,18 +314,6 @@ const mergeShellStateForPersistence = (
       : localState.lastSelectedModelByProvider,
   };
 
-  if (localState.lastSelectedProfile !== baseState.lastSelectedProfile) {
-    if (localState.lastSelectedProfile) {
-      mergedState.lastSelectedProfile = localState.lastSelectedProfile;
-    } else {
-      delete mergedState.lastSelectedProfile;
-    }
-  } else if (latestState.lastSelectedProfile) {
-    mergedState.lastSelectedProfile = latestState.lastSelectedProfile;
-  } else {
-    delete mergedState.lastSelectedProfile;
-  }
-
   if (localState.lastSelectedMode !== baseState.lastSelectedMode) {
     if (localState.lastSelectedMode) {
       mergedState.lastSelectedMode = localState.lastSelectedMode;

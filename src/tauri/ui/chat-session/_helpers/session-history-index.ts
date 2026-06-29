@@ -220,7 +220,6 @@ export const createSessionHistoryIndex = (
       projectLabel,
       session.provider,
       session.model,
-      session.profile ?? "",
       session.draft,
       ...session.tags,
       ...session.messages.flatMap(getMessageSearchParts),

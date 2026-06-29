@@ -31,7 +31,6 @@ afterEach(() => {
 
 const createRuntimeConfig = (): RuntimeConfig => ({
   workspaceRoot: "c:/Development/machdoch",
-  availableProfiles: [],
   mode: "machdoch",
   provider: "unconfigured",
   model: "gpt-5.5",

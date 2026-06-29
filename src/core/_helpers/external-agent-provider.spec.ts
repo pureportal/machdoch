@@ -123,7 +123,6 @@ const createConfig = (
   model: overrides.model ?? "gpt-5.5",
   reasoning: overrides.reasoning ?? "default",
   offline: false,
-  availableProfiles: [],
   compatibility: {
     discoverGithubCustomizations: false,
   },

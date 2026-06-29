@@ -300,8 +300,6 @@ export const createRuntimeConfigSection = (
     lines: [
       `workspace: ${config.workspaceRoot}`,
       `workspace config file: ${config.workspaceConfigPath ?? "not present"}`,
-      `active profile: ${config.activeProfile ?? "none"}`,
-      `named profiles: ${config.availableProfiles.length}`,
       `mode: ${config.mode}`,
       `provider: ${config.provider}`,
       `model: ${config.model}`,
@@ -324,33 +322,6 @@ export const createProviderAvailabilitySection = (
       (entry) =>
         `${entry.provider}: ${entry.configured ? "configured" : "not configured"}`,
     ),
-  };
-};
-
-export const createProfilesSection = (
-  config: RuntimeConfig,
-): TaskExecutionSection => {
-  if (config.availableProfiles.length === 0) {
-    return {
-      title: "Profiles",
-      lines: [
-        `active profile: ${config.activeProfile ?? "none"}`,
-        "No named profiles are configured.",
-      ],
-    };
-  }
-
-  return {
-    title: "Profiles",
-    lines: [
-      `active profile: ${config.activeProfile ?? "none"}`,
-      ...config.availableProfiles.map((profile) => {
-        const activeSuffix =
-          config.activeProfile === profile.name ? " (active)" : "";
-
-        return `${profile.name}${activeSuffix}${profile.description ? `: ${profile.description}` : ""}`;
-      }),
-    ],
   };
 };
 
@@ -567,7 +538,6 @@ export const createWorkspaceInspectionSections = async (
       title: "Workspace context",
       lines: [
         `root: ${config.workspaceRoot}`,
-        `active profile: ${config.activeProfile ?? "none"}`,
         `mode: ${config.mode}`,
         `provider: ${config.provider}`,
         `model: ${config.model}`,

@@ -78,7 +78,6 @@ export interface UseChatSessionRuntimeOptions {
   catalogOpen: boolean;
   activeSessionProvider: RuntimeProvider;
   activeSessionWorkspace: string | null;
-  activeSessionProfile?: string;
 }
 
 export interface ChatSessionRuntimeController {
@@ -134,7 +133,6 @@ export interface ChatSessionRuntimeController {
   >;
   refreshWorkspaceRuntimeSnapshot: (
     workspaceRoot: string | null,
-    profile?: string | null,
   ) => Promise<RuntimeSnapshot | null>;
   handleProviderSetupProviderChange: (provider: UserApiKeyProvider) => void;
   handleProviderSetupPortalOpen: (provider: UserApiKeyProvider) => Promise<void>;
@@ -307,14 +305,12 @@ const getReasoningModeLabel = (
 
 const createRuntimeSnapshotRequestKey = (
   workspaceRoot: string | null,
-  profile?: string | null,
 ): string => {
   const normalizedWorkspace = workspaceRoot
     ? workspaceRoot.trim().replace(/\\/gu, "/").toLowerCase()
     : "";
-  const normalizedProfile = profile?.trim() ?? "";
 
-  return `${normalizedWorkspace}\n${normalizedProfile}`;
+  return normalizedWorkspace;
 };
 
 const getFirstMcpServerIdFromRawConfig = (raw: string): string | null => {
@@ -534,13 +530,9 @@ export const useChatSessionRuntime = (
   const refreshWorkspaceRuntimeSnapshot = useCallback(
     async (
       workspaceRoot: string | null,
-      profile?: string | null,
     ): Promise<RuntimeSnapshot | null> => {
       const requestId = runtimeSnapshotRequestIdRef.current + 1;
-      const requestKey = createRuntimeSnapshotRequestKey(
-        workspaceRoot,
-        profile,
-      );
+      const requestKey = createRuntimeSnapshotRequestKey(workspaceRoot);
       runtimeSnapshotRequestIdRef.current = requestId;
       const isCurrentRequest = (): boolean => {
         return runtimeSnapshotRequestIdRef.current === requestId;
@@ -557,10 +549,7 @@ export const useChatSessionRuntime = (
       setRuntimeError(null);
 
       try {
-        const snapshot = await loadWorkspaceRuntimeSnapshot(
-          workspaceRoot,
-          profile,
-        );
+        const snapshot = await loadWorkspaceRuntimeSnapshot(workspaceRoot);
 
         if (!isCurrentRequest()) {
           return snapshot;
@@ -1103,10 +1092,7 @@ export const useChatSessionRuntime = (
   useEffect(() => {
     let cancelled = false;
 
-    void refreshWorkspaceRuntimeSnapshot(
-      options.activeSessionWorkspace,
-      options.activeSessionProfile,
-    ).catch(
+    void refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace).catch(
       (error) => {
         if (!cancelled) {
           console.error("Failed to refresh runtime snapshot", error);
@@ -1118,7 +1104,6 @@ export const useChatSessionRuntime = (
       cancelled = true;
     };
   }, [
-    options.activeSessionProfile,
     options.activeSessionWorkspace,
     refreshWorkspaceRuntimeSnapshot,
   ]);
@@ -1213,10 +1198,7 @@ export const useChatSessionRuntime = (
         text: `${getProviderLabel(providerSetupProvider)} API key saved.`,
       });
 
-      await refreshWorkspaceRuntimeSnapshot(
-        options.activeSessionWorkspace,
-        options.activeSessionProfile,
-      );
+      await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
       const [voiceSettings, speechToTextSettings] = await Promise.all([
         loadUserVoiceSettings(),
         loadUserSpeechToTextSettings(),
@@ -1241,7 +1223,6 @@ export const useChatSessionRuntime = (
   }, [
     applyLoadedUserVoiceSettings,
     applyLoadedUserSpeechToTextSettings,
-    options.activeSessionProfile,
     options.activeSessionWorkspace,
     providerSetupKey,
     providerSetupProvider,
@@ -1387,10 +1368,7 @@ export const useChatSessionRuntime = (
               : `${getWebSearchProviderLabel(provider)} is now the active web-search provider.`,
         });
 
-        await refreshWorkspaceRuntimeSnapshot(
-          options.activeSessionWorkspace,
-          options.activeSessionProfile,
-        );
+        await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
       } catch (error) {
         setWebSearchSetupMessage({
           tone: "error",
@@ -1405,8 +1383,7 @@ export const useChatSessionRuntime = (
     },
     [
       applyLoadedWebSearchSettings,
-      options.activeSessionProfile,
-      options.activeSessionWorkspace,
+        options.activeSessionWorkspace,
       refreshWorkspaceRuntimeSnapshot,
     ],
   );
@@ -1441,10 +1418,7 @@ export const useChatSessionRuntime = (
         text: `${getWebSearchProviderLabel(webSearchSetupProvider)} API key saved.`,
       });
 
-      await refreshWorkspaceRuntimeSnapshot(
-        options.activeSessionWorkspace,
-        options.activeSessionProfile,
-      );
+      await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
 
       return true;
     } catch (error) {
@@ -1462,7 +1436,6 @@ export const useChatSessionRuntime = (
     }
   }, [
     applyLoadedWebSearchSettings,
-    options.activeSessionProfile,
     options.activeSessionWorkspace,
     refreshWorkspaceRuntimeSnapshot,
     webSearchSetupKey,
@@ -1520,10 +1493,7 @@ export const useChatSessionRuntime = (
           text: getAgentLimitsSettingsSavedMessage(nextSettings),
         });
 
-        await refreshWorkspaceRuntimeSnapshot(
-          options.activeSessionWorkspace,
-          options.activeSessionProfile,
-        );
+        await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
       } catch (error) {
         setAgentLimitsSetupMessage({
           tone: "error",
@@ -1538,8 +1508,7 @@ export const useChatSessionRuntime = (
     },
     [
       applyLoadedUserAgentLimitsSettings,
-      options.activeSessionProfile,
-      options.activeSessionWorkspace,
+        options.activeSessionWorkspace,
       refreshWorkspaceRuntimeSnapshot,
     ],
   );
@@ -1558,10 +1527,7 @@ export const useChatSessionRuntime = (
           text: getReviewModelSettingsSavedMessage(nextSettings),
         });
 
-        await refreshWorkspaceRuntimeSnapshot(
-          options.activeSessionWorkspace,
-          options.activeSessionProfile,
-        );
+        await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
       } catch (error) {
         setAgentLimitsSetupMessage({
           tone: "error",
@@ -1576,8 +1542,7 @@ export const useChatSessionRuntime = (
     },
     [
       applyLoadedUserReviewModelSettings,
-      options.activeSessionProfile,
-      options.activeSessionWorkspace,
+        options.activeSessionWorkspace,
       refreshWorkspaceRuntimeSnapshot,
     ],
   );
@@ -1610,10 +1575,7 @@ export const useChatSessionRuntime = (
           );
         }
 
-        await refreshWorkspaceRuntimeSnapshot(
-          options.activeSessionWorkspace,
-          options.activeSessionProfile,
-        );
+        await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
 
         setWorkspaceSetupMessage({
           tone: "success",
@@ -1632,7 +1594,6 @@ export const useChatSessionRuntime = (
       }
     },
     [
-      options.activeSessionProfile,
       options.activeSessionWorkspace,
       refreshWorkspaceRuntimeSnapshot,
     ],
@@ -1668,10 +1629,7 @@ export const useChatSessionRuntime = (
           );
         }
 
-        await refreshWorkspaceRuntimeSnapshot(
-          options.activeSessionWorkspace,
-          options.activeSessionProfile,
-        );
+        await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
 
         setWorkspaceSetupMessage({
           tone: "success",
@@ -1690,7 +1648,6 @@ export const useChatSessionRuntime = (
       }
     },
     [
-      options.activeSessionProfile,
       options.activeSessionWorkspace,
       refreshWorkspaceRuntimeSnapshot,
     ],

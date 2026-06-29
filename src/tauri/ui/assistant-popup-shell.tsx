@@ -245,7 +245,6 @@ const QuickTaskComposer = ({
 
 export const AssistantPopupShell = (): JSX.Element => {
   const controller = useChatSessionController({
-    enableSessionAutoProfile: false,
     fileDropTarget: "quick-task",
   });
 

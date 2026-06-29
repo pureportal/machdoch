@@ -73,7 +73,6 @@ fn sanitize_shell_session(mut session: RemoteShellSession) -> Option<RemoteShell
     }
     session.status = sanitize_text(session.status, MAX_REMOTE_SHORT_TEXT_CHARS);
     session.workspace = sanitize_optional_text(session.workspace, MAX_REMOTE_TEXT_CHARS);
-    session.profile = sanitize_optional_text(session.profile, MAX_REMOTE_SHORT_TEXT_CHARS);
     session.provider = sanitize_text(session.provider, MAX_REMOTE_SHORT_TEXT_CHARS);
     session.model = sanitize_text(session.model, MAX_REMOTE_SHORT_TEXT_CHARS);
     session.mode = sanitize_optional_text(session.mode, MAX_REMOTE_SHORT_TEXT_CHARS);
@@ -218,7 +217,6 @@ fn sanitize_shell_runtime(mut runtime: RemoteShellRuntime) -> RemoteShellRuntime
         .take(12)
         .collect();
     runtime.mode = sanitize_optional_text(runtime.mode, MAX_REMOTE_SHORT_TEXT_CHARS);
-    runtime.profile = sanitize_optional_text(runtime.profile, MAX_REMOTE_SHORT_TEXT_CHARS);
     runtime.ui_control = runtime.ui_control.map(sanitize_shell_runtime_capability);
     runtime.web_search = runtime.web_search.map(sanitize_shell_runtime_capability);
     runtime

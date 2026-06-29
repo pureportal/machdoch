@@ -4,7 +4,6 @@ import {
   printConfigSummary,
   printCustomizationSummary,
   printDefaultModelSummary,
-  printProfileSummary,
   printSetApiSummary,
   printSetConfigSummary,
   printSetGlobalMemorySummary,
@@ -61,10 +60,6 @@ export const runCli = async (argv: string[]): Promise<void> => {
     }
     case "tools": {
       await printToolSummary(args);
-      return;
-    }
-    case "profiles": {
-      await printProfileSummary(args);
       return;
     }
     case "ralph": {

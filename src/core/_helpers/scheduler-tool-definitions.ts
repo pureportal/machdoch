@@ -511,10 +511,6 @@ const schedulerTargetSchema = {
     enum: RUN_MODES,
     description: "Optional runtime mode override for scheduled executions.",
   },
-  profile: {
-    type: "string",
-    description: "Optional runtime profile override.",
-  },
   provider: {
     type: "string",
     enum: MODEL_PROVIDERS,
@@ -1193,7 +1189,6 @@ const createTargetInput = (
   );
   const mode = parseRunMode(record);
   const provider = parseProvider(record);
-  const profile = coerceString(record, "profile");
   const model = coerceString(record, "model");
 
   return {
@@ -1204,7 +1199,6 @@ const createTargetInput = (
     contextPacks: contextPacks ?? [],
     macros: macros ?? [],
     ...(mode ? { mode } : {}),
-    ...(profile ? { profile } : {}),
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
   };
@@ -1233,7 +1227,6 @@ const createUpdateTargetInput = (
   );
   const mode = parseRunMode(record);
   const provider = parseProvider(record);
-  const profile = coerceString(record, "profile");
   const model = coerceString(record, "model");
 
   if (prompt !== undefined) {
@@ -1262,10 +1255,6 @@ const createUpdateTargetInput = (
 
   if (provider !== undefined) {
     target.provider = provider;
-  }
-
-  if (profile !== undefined) {
-    target.profile = profile;
   }
 
   if (model !== undefined) {

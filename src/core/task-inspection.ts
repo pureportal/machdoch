@@ -4,7 +4,6 @@ export type ReadOnlyInspectionTarget =
   | "workspace"
   | "runtime-config"
   | "tools"
-  | "profiles"
   | "instructions"
   | "prompts"
   | "skills"
@@ -65,7 +64,6 @@ const TOOL_TARGET_TOKENS = new Set([
   "tools",
 ]);
 
-const PROFILE_TARGET_TOKENS = new Set(["profile", "profiles"]);
 const INSTRUCTION_TARGET_TOKENS = new Set(["instruction", "instructions"]);
 const PROMPT_TARGET_TOKENS = new Set(["prompt", "prompts"]);
 const SKILL_TARGET_TOKENS = new Set(["skill", "skills"]);
@@ -88,7 +86,6 @@ const CUSTOMIZATION_TARGET_MATCHERS = [
 >;
 
 const PRIORITIZED_TARGET_MATCHERS = [
-  ["profiles", PROFILE_TARGET_TOKENS],
   ["tools", TOOL_TARGET_TOKENS],
   ["runtime-config", CONFIG_TARGET_TOKENS],
   ["workspace", WORKSPACE_TARGET_TOKENS],

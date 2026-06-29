@@ -45,12 +45,11 @@ pub const USER_AUDIO_AI_PROVIDERS: [&str; 2] = ["openai", "google"];
 pub const VALID_WEB_SEARCH_PROVIDERS: [&str; 4] = ["none", "perplexity", "tavily", "serper"];
 pub const VALID_AUDIO_AI_PROVIDERS: [&str; 3] = ["none", "openai", "google"];
 pub const USER_REVIEW_MODEL_MODES: [&str; 2] = ["base", "dedicated"];
-pub const RUNTIME_ENV_KEYS: [&str; 12] = [
+pub const RUNTIME_ENV_KEYS: [&str; 11] = [
     "MACHDOCH_MODE",
     "MACHDOCH_MODEL",
     "MACHDOCH_REASONING",
     "MACHDOCH_OFFLINE",
-    "MACHDOCH_PROFILE",
     "MACHDOCH_WEB_SEARCH_PROVIDER",
     "MACHDOCH_EXECUTOR_TURNS",
     "MACHDOCH_AUTOPILOT_ITERATIONS",

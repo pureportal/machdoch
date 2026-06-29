@@ -102,7 +102,7 @@ On Linux, the desktop GUI requires `DISPLAY` or `WAYLAND_DISPLAY`. Without a gra
 | Scope | File or source | Use it for |
 | --- | --- | --- |
 | User/global | `user-config.json` | Provider keys, web-search keys, voice, speech-to-text, desktop behavior, global memory, default agent loop limits. |
-| Workspace | `.machdoch/config.json` | Workspace defaults, profiles, provider/model/mode defaults, offline behavior, workspace loop limits, compatibility discovery. |
+| Workspace | `.machdoch/config.json` | Workspace defaults, provider/model/mode defaults, offline behavior, workspace loop limits, compatibility discovery. |
 | Environment | `.env` in the workspace and process env | API keys and runtime overrides for automation or temporary runs. |
 
 User config locations:
@@ -117,12 +117,11 @@ Use `MACHDOCH_USER_CONFIG_DIR` to override the user config directory. When runni
 
 | Setting | Highest to lowest priority |
 | --- | --- |
-| Profile | `--profile` or GUI profile selection, then `MACHDOCH_PROFILE`, then `defaultProfile` |
-| Mode | CLI/GUI session override, then `MACHDOCH_MODE`, then profile `mode`, then `defaultMode`, then `machdoch` |
-| Provider | CLI/GUI provider override, then profile `provider`, then workspace `provider`, then first configured provider, then `unconfigured` |
-| Model | CLI/GUI model override, then profile/workspace `model`, then `MACHDOCH_MODEL`, then provider default |
-| Offline | `MACHDOCH_OFFLINE=true`, then profile/workspace `offline`, then `false` |
-| Agent limits | CLI runtime flags, then env overrides, then profile/workspace `agentLimits`, then user/global limits, then built-in defaults |
+| Mode | CLI/GUI session override, then `MACHDOCH_MODE`, then `defaultMode`, then `machdoch` |
+| Provider | CLI/GUI provider override, then workspace `provider`, then first configured provider, then `unconfigured` |
+| Model | CLI/GUI model override, then workspace `model`, then `MACHDOCH_MODEL`, then provider default |
+| Offline | `MACHDOCH_OFFLINE=true`, then workspace `offline`, then `false` |
+| Agent limits | CLI runtime flags, then env overrides, then workspace `agentLimits`, then user/global limits, then built-in defaults |
 | Web search provider | `MACHDOCH_WEB_SEARCH_PROVIDER`, then user/global web-search provider |
 
 Provider defaults:
@@ -139,7 +138,6 @@ Create `.machdoch/config.json` in a workspace:
 
 ```json
 {
-  "defaultProfile": "workspace",
   "defaultMode": "machdoch",
   "provider": "openai",
   "model": "gpt-5.5",
@@ -151,18 +149,6 @@ Create `.machdoch/config.json` in a workspace:
   },
   "compatibility": {
     "discoverGithubCustomizations": false
-  },
-  "profiles": {
-    "workspace": {
-      "description": "Default workspace profile.",
-      "mode": "machdoch"
-    },
-    "ask-review": {
-      "description": "Read-only review profile.",
-      "mode": "ask",
-      "provider": "anthropic",
-      "model": "claude-sonnet-4-6"
-    }
   }
 }
 ```
@@ -171,7 +157,6 @@ Workspace config keys:
 
 | Key | Values |
 | --- | --- |
-| `defaultProfile` | Name from `profiles` |
 | `defaultMode` | `ask`, `machdoch` |
 | `provider` | `openai`, `anthropic`, `google` |
 | `model` | Provider model id |
@@ -180,13 +165,6 @@ Workspace config keys:
 | `agentLimits.executorTurns` | Integer `1` to `1000` |
 | `agentLimits.autopilotExecutorIterations` | Integer `1` to `100` |
 | `compatibility.discoverGithubCustomizations` | `true`, `false` |
-| `profiles.<name>.description` | Free text |
-| `profiles.<name>.mode` | `ask`, `machdoch` |
-| `profiles.<name>.provider` | `openai`, `anthropic`, `google` |
-| `profiles.<name>.model` | Provider model id |
-| `profiles.<name>.offline` | `true`, `false` |
-| `profiles.<name>.agentLimits` | Same shape as workspace `agentLimits` |
-| `profiles.<name>.compatibility` | Same shape as workspace `compatibility` |
 
 Quick workspace writes:
 
@@ -286,7 +264,6 @@ Environment values can come from the process or a workspace `.env` file. Process
 | `SERPER_API_KEY` | Serper web-search key |
 | `MACHDOCH_MODE` | Default task mode: `ask` or `machdoch` |
 | `MACHDOCH_MODEL` | Default model id override |
-| `MACHDOCH_PROFILE` | Default workspace profile override |
 | `MACHDOCH_OFFLINE` | Set to `true` to force offline behavior |
 | `MACHDOCH_WEB_SEARCH_PROVIDER` | `none`, `perplexity`, `tavily`, or `serper` |
 | `MACHDOCH_EXECUTOR_TURNS` | Executor turn limit |
@@ -302,7 +279,6 @@ Environment values can come from the process or a workspace `.env` file. Process
 | Task text | `machdoch run <task>` or `--quick --task <task>` | Type at `machdoch>` or start with `machdoch "task"` | Composer text |
 | Workspace | `--cwd <path>` | `--cwd <path>` | Workspace picker, dropped files/folders, or session workspace |
 | Mode | `--mode ask\|machdoch` | `--mode ...`; `/paste ask` or `/paste machdoch` for one pasted task | Mode picker: workspace default, Ask, or Machdoch |
-| Profile | `--profile <name>` | `--profile <name>` | Workspace profile picker |
 | Provider | `--runtime-provider openai\|anthropic\|google` | Same | Model picker provider |
 | Model | `--model <name>` | Same | Model picker model |
 | Files/folders as context | Repeat `--context <path>` | Start chat with `--context <path>` | Attach files/folders or drag/drop |
@@ -340,14 +316,12 @@ Commands:
 | `machdoch config set <setting> <value>` | Persist a user or workspace setting |
 | `machdoch inspect` | List discovered workspace customizations |
 | `machdoch tools` | List tool areas and model-facing function calls |
-| `machdoch profiles` | List workspace profiles |
 
 Flags:
 
 | Flag | Values | Applies to |
 | --- | --- | --- |
 | `--mode` | `ask`, `machdoch` | Run/chat |
-| `--profile` | Workspace profile name | Run/chat/config summaries |
 | `--runtime-provider` | `openai`, `anthropic`, `google` | Run/chat/config summaries |
 | `--model` | Provider model id | Run/chat/config summaries |
 | `--cwd` | Path | All commands |
@@ -361,7 +335,7 @@ Flags:
 | `--executor-turns` | Positive integer | Run/chat |
 | `--autopilot-iterations` | Positive integer | Run/chat |
 | `--infinite` | Boolean flag | Run/chat |
-| `--json` | Boolean flag | `run`, `config`, `config set`, `inspect`, `tools`, `profiles`, `--set-api`, `--default-model`, `--set-global-memory` |
+| `--json` | Boolean flag | `run`, `config`, `config set`, `inspect`, `tools`, `--set-api`, `--default-model`, `--set-global-memory` |
 | `--verbose`, `-v` | Boolean flag | Run/chat task progress; structured progress with `--json` |
 | `--set-api` | Boolean flag | Provider key write |
 | `--provider` | `openai`, `anthropic`, `google` | Only with `--set-api` |
@@ -385,14 +359,14 @@ Interactive chat commands:
 The desktop app adds:
 
 - Session history with rename, delete, pin, tags, archive, and branch controls.
-- Workspace, profile, provider, model, and mode controls per session.
+- Workspace, provider, model, and mode controls per session.
 - Context attachments for files, folders, and images.
 - Per-session memory, global memory, and desktop UI-control toggles.
 - Settings panels for Providers, Web search, Agent, Appearance, Voice, Memory, and Desktop.
 - Quick Voice with global shortcut and optional spoken replies.
 - Assistant bubble, popup, tray behavior, sign-in startup behavior, and optional Windows administrator launch.
 
-Desktop task runs are executed through the shared CLI one-shot path. The GUI forwards the selected workspace, task, mode, profile, provider, model, session history/context, and image attachments to the CLI bridge.
+Desktop task runs are executed through the shared CLI one-shot path. The GUI forwards the selected workspace, task, mode, provider, model, session history/context, and image attachments to the CLI bridge.
 
 On Windows, **Settings > Desktop > Always run as administrator** stores a user preference. Packaged app launches request elevation through the normal UAC prompt. Dev builds do not relaunch unless `MACHDOCH_ENABLE_ADMIN_RELAUNCH_IN_DEV=true` is set.
 
@@ -505,16 +479,9 @@ List tool areas and model-facing function calls:
 machdoch tools
 ```
 
-List profiles:
-
-```bash
-machdoch profiles
-```
-
 Common checks:
 
 - Provider appears unconfigured: check `machdoch config`, user config path, `.env`, and process environment.
-- Profile does not load: check `.machdoch/config.json` and `machdoch profiles`.
 - Web search is hidden: set `web-search.provider` and configure the matching API key.
 - Browser automation fails: install Edge or Chrome.
 - Images are rejected: select a vision-capable model or remove image attachments.

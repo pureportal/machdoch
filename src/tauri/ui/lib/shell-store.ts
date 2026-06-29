@@ -66,12 +66,10 @@ export interface RalphSettings {
   flowLibraryMode: RalphFlowLibraryMode;
   generationProvider: RuntimeProvider;
   generationModel: string;
-  generationProfile?: string;
   generationReasoning?: ReasoningMode;
   generationPromptHistory?: string[];
   runProvider: RuntimeProvider;
   runModel: string;
-  runProfile?: string;
   runReasoning?: ReasoningMode;
   defaultMaxTransitions?: number;
 }
@@ -284,9 +282,6 @@ const normalizeRalphSettings = (value: unknown): RalphSettings => {
       value.generationModel,
       generationProvider,
     ),
-    ...(normalizeOptionalString(value.generationProfile)
-      ? { generationProfile: normalizeOptionalString(value.generationProfile) }
-      : {}),
     ...(isReasoningMode(value.generationReasoning)
       ? { generationReasoning: value.generationReasoning }
       : {}),
@@ -296,9 +291,6 @@ const normalizeRalphSettings = (value: unknown): RalphSettings => {
     ),
     runProvider,
     runModel: normalizeRalphModel(value.runModel, runProvider),
-    ...(normalizeOptionalString(value.runProfile)
-      ? { runProfile: normalizeOptionalString(value.runProfile) }
-      : {}),
     ...(isReasoningMode(value.runReasoning)
       ? { runReasoning: value.runReasoning }
       : {}),

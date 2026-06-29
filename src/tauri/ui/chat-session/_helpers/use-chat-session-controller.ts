@@ -92,7 +92,6 @@ import {
 import {
   getEffectiveSessionMode,
   removeSessionModeOverride,
-  removeSessionProfileOverride,
   RUN_MODE_META,
 } from "./session-shell";
 import {
@@ -116,7 +115,6 @@ import type { SettingsStatusMessage } from "../components/settings-dialog-panels
 
 export interface UseChatSessionControllerOptions {
   isolateActiveSession?: boolean;
-  enableSessionAutoProfile?: boolean;
   fileDropTarget?: FileDropTarget;
 }
 
@@ -150,7 +148,6 @@ const getClipboardImageMediaType = (
 export const useChatSessionController = (
   options: UseChatSessionControllerOptions = {},
 ) => {
-  const enableSessionAutoProfile = options.enableSessionAutoProfile !== false;
   const state = useChatSessionShellState({
     isolateActiveSession: options.isolateActiveSession,
   });
@@ -163,7 +160,6 @@ export const useChatSessionController = (
   const runtime = useChatSessionRuntime({
     catalogOpen: state.catalogOpen,
     activeSessionProvider: state.activeSession.provider,
-    activeSessionProfile: state.activeSession.profile,
     activeSessionWorkspace: state.activeSession.workspace,
   });
   const voice = useChatSessionVoice({
@@ -804,125 +800,6 @@ export const useChatSessionController = (
     });
   };
 
-  const handleSessionProfileSelection = useCallback(
-    async (profile: string | null): Promise<void> => {
-      const nextSnapshot = await runtime.refreshWorkspaceRuntimeSnapshot(
-        state.activeSession.workspace,
-        profile,
-      );
-
-      if (profile && !nextSnapshot) {
-        return;
-      }
-
-      state.applyShellState((prev) => {
-        const activeSession = prev.sessions.find(
-          (session) => session.id === state.activeSessionId,
-        );
-
-        if (!activeSession) {
-          return prev;
-        }
-
-        const nextProvider =
-          nextSnapshot?.provider && nextSnapshot.provider !== "unconfigured"
-            ? nextSnapshot.provider
-            : activeSession.provider;
-        const nextModel = nextSnapshot?.model ?? activeSession.model;
-        const nextUpdatedAt = Date.now();
-        const nextSessions = prev.sessions.map((session) => {
-          if (session.id !== state.activeSessionId) {
-            return session;
-          }
-
-          const profileScopedSession = profile
-            ? {
-                ...session,
-                profile,
-                updatedAt: nextUpdatedAt,
-              }
-            : {
-                ...removeSessionProfileOverride(session),
-                updatedAt: nextUpdatedAt,
-              };
-          const nextSession = removeSessionModeOverride(profileScopedSession);
-
-          return {
-            ...nextSession,
-            provider: nextProvider,
-            model: nextModel,
-          };
-        });
-        const nextState: ShellPersistedState = {
-          ...prev,
-          lastSelectedProvider: nextProvider,
-          lastSelectedModelByProvider: {
-            ...prev.lastSelectedModelByProvider,
-            [nextProvider]: nextModel,
-          },
-          sessions: nextSessions,
-        };
-
-        if (profile) {
-          nextState.lastSelectedProfile = profile;
-        } else {
-          delete nextState.lastSelectedProfile;
-        }
-
-        delete nextState.lastSelectedMode;
-
-        return nextState;
-      });
-    },
-    [
-      runtime.refreshWorkspaceRuntimeSnapshot,
-      state.activeSessionId,
-      state.activeSession.workspace,
-      state.applyShellState,
-    ],
-  );
-
-  useEffect(() => {
-    if (!enableSessionAutoProfile) {
-      return;
-    }
-
-    if (!state.activeSession.workspace || state.activeSession.profile) {
-      return;
-    }
-
-    if (state.shellState.lastSelectedProfile) {
-      return;
-    }
-
-    const runtimeSnapshot = runtime.runtimeSnapshot;
-
-    if (!runtimeSnapshot) {
-      return;
-    }
-
-    const autoProfile =
-      runtimeSnapshot.activeProfile?.trim() ||
-      (runtimeSnapshot.availableProfiles.length === 1
-        ? runtimeSnapshot.availableProfiles[0]?.name.trim()
-        : undefined);
-
-    if (!autoProfile) {
-      return;
-    }
-
-    void handleSessionProfileSelection(autoProfile).catch((error) => {
-      console.error("Failed to auto-apply runtime profile", error);
-    });
-  }, [
-    enableSessionAutoProfile,
-    handleSessionProfileSelection,
-    runtime.runtimeSnapshot,
-    state.activeSession.profile,
-    state.activeSession.workspace,
-    state.shellState.lastSelectedProfile,
-  ]);
-
   const handleOpenWorkspaceFile = (relativePath: string): void => {
     void openWorkspacePath(state.activeSession.workspace, relativePath).catch(
       (error) => {
@@ -999,9 +876,6 @@ export const useChatSessionController = (
           workspace: state.activeSession.workspace,
           provider: state.activeSession.provider,
           model: state.activeSession.model,
-          ...(state.activeSession.profile
-            ? { profile: state.activeSession.profile }
-            : {}),
           ...(state.activeSession.mode ? { mode: state.activeSession.mode } : {}),
           ...(state.activeSession.reasoning
             ? { reasoning: state.activeSession.reasoning }
@@ -1020,15 +894,8 @@ export const useChatSessionController = (
         updatedAt: Date.now(),
       };
 
-      const profile = baseSession.profile ?? state.activeSession.profile;
       const mode = baseSession.mode ?? state.activeSession.mode;
       const reasoning = baseSession.reasoning ?? state.activeSession.reasoning;
-
-      if (profile) {
-        nextSession.profile = profile;
-      } else {
-        delete nextSession.profile;
-      }
 
       if (mode) {
         nextSession.mode = mode;
@@ -1050,7 +917,6 @@ export const useChatSessionController = (
     [
       state.activeSession.mode,
       state.activeSession.model,
-      state.activeSession.profile,
       state.activeSession.provider,
       state.activeSession.reasoning,
       state.activeSession.uiControlEnabled,
@@ -1953,30 +1819,6 @@ export const useChatSessionController = (
     [state.applyShellState],
   );
 
-  const handleRemoteSetSessionProfile = useCallback(
-    (sessionId: string, profile: string | null): void => {
-      state.applyShellState((prev) => ({
-        ...prev,
-        ...(profile ? { lastSelectedProfile: profile } : {}),
-        sessions: prev.sessions.map((session) => {
-          if (session.id !== sessionId) {
-            return session;
-          }
-
-          const nextSession = profile
-            ? { ...session, profile }
-            : removeSessionProfileOverride(session);
-
-          return {
-            ...nextSession,
-            updatedAt: Date.now(),
-          };
-        }),
-      }));
-    },
-    [state.applyShellState],
-  );
-
   const handleRemoteSetSessionFlag = useCallback(
     (
       sessionId: string,
@@ -2171,7 +2013,6 @@ export const useChatSessionController = (
     onSetSessionModel: handleRemoteSetSessionModel,
     onSetSessionMode: handleRemoteSetSessionMode,
     onSetSessionReasoning: handleRemoteSetSessionReasoning,
-    onSetSessionProfile: handleRemoteSetSessionProfile,
     onSetSessionMemory: (sessionId: string, enabled: boolean) =>
       handleRemoteSetSessionFlag(sessionId, "sessionMemoryEnabled", enabled),
     onSetGlobalMemory: (sessionId: string, enabled: boolean) =>
@@ -2414,7 +2255,6 @@ export const useChatSessionController = (
       runtimeSnapshot: runtime.runtimeSnapshot,
       runtimeLoading: runtime.runtimeLoading,
       runtimeError: runtime.runtimeError,
-      onSessionProfileSelection: handleSessionProfileSelection,
       onTagCommit: lifecycleActions.commitSessionTags,
       onTogglePinnedSession: () =>
         lifecycleActions.togglePinnedSession(state.activeSession.id),
@@ -2586,9 +2426,6 @@ export const useChatSessionController = (
         effectiveReasoning,
         reasoningProvider: state.activeSession.provider,
         reasoningModel: state.activeSession.model,
-        ...(runtime.runtimeSnapshot?.activeProfile
-          ? { activeProfile: runtime.runtimeSnapshot.activeProfile }
-          : {}),
         saving: runtime.workspaceSetupSaving,
         message: runtime.workspaceSetupMessage,
         onDefaultModeChange: runtime.handleWorkspaceDefaultModeSave,

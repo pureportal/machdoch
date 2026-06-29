@@ -11,7 +11,6 @@ describe("resolveReadOnlyInspectionTarget", () => {
       "runtime-config",
     );
     expect(resolveReadOnlyInspectionTarget("show tools")).toBe("tools");
-    expect(resolveReadOnlyInspectionTarget("show profiles")).toBe("profiles");
   });
 
   it("prefers a generic customization inspection when multiple customization types are requested", () => {
@@ -29,7 +28,7 @@ describe("resolveReadOnlyInspectionTarget", () => {
 
   it("avoids deterministic matching when the task also includes mutating work", () => {
     expect(
-      resolveReadOnlyInspectionTarget("inspect config and update profiles"),
+      resolveReadOnlyInspectionTarget("inspect config and update settings"),
     ).toBeUndefined();
     expect(
       resolveReadOnlyInspectionTarget(

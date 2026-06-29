@@ -97,7 +97,7 @@ describe("inferSuggestedTools", () => {
   });
 
   it("prefers filesystem-only suggestions for deterministic read-only inspection tasks", () => {
-    expect(inferSuggestedTools("show profiles")).toEqual(["filesystem"]);
+    expect(inferSuggestedTools("show tools")).toEqual(["filesystem"]);
     expect(inferSuggestedTools("inspect config")).toEqual(["filesystem"]);
     expect(inferSuggestedTools("list prompts")).toEqual(["filesystem"]);
     expect(

@@ -105,7 +105,6 @@ export const createUtilityFlow = (
 
 export const runtimeConfig: RuntimeConfig = {
   workspaceRoot: "C:/workspace",
-  availableProfiles: [],
   mode: "machdoch",
   provider: "openai",
   model: "gpt-5.5",

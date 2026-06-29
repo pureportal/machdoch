@@ -24,7 +24,6 @@ export type CommandName =
   | "instructions"
   | "config"
   | "tools"
-  | "profiles"
   | "set-default-model"
   | "help";
 
@@ -220,7 +219,6 @@ export interface ParsedCliArgs {
   mcp?: McpCliOptions;
   instructions?: InstructionCliOptions;
   mode?: RunMode;
-  profile?: string;
   provider?: UserApiProvider;
   runtimeProvider?: Exclude<ModelProvider, "unconfigured">;
   key?: string;

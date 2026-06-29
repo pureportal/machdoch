@@ -247,7 +247,6 @@ const createSessionSnapshot = (
     title: getSessionTitle(session),
     status: getSessionOverviewStatus(session),
     ...(session.workspace ? { workspace: session.workspace } : {}),
-    ...(session.profile ? { profile: session.profile } : {}),
     provider: session.provider,
     model: session.model,
     ...(session.mode ? { mode: session.mode } : {}),
@@ -496,7 +495,6 @@ export const useRemoteMissionControl = (options: {
     sessionId: string,
     reasoning: RuntimeSnapshot["reasoning"] | null,
   ) => void;
-  onSetSessionProfile: (sessionId: string, profile: string | null) => void;
   onSetSessionMemory: (sessionId: string, enabled: boolean) => void;
   onSetGlobalMemory: (sessionId: string, enabled: boolean) => void;
   onSetUiControl: (sessionId: string, enabled: boolean) => void;
@@ -702,9 +700,6 @@ export const useRemoteMissionControl = (options: {
         ...(options.runtimeSnapshot?.mode ? { mode: options.runtimeSnapshot.mode } : {}),
         ...(options.runtimeSnapshot?.reasoning
           ? { reasoning: options.runtimeSnapshot.reasoning }
-          : {}),
-        ...(options.runtimeSnapshot?.activeProfile
-          ? { profile: options.runtimeSnapshot.activeProfile }
           : {}),
         ...(uiControl
           ? {
@@ -997,13 +992,6 @@ export const useRemoteMissionControl = (options: {
                 ? command.reasoning
                 : null,
             );
-          }
-          break;
-        }
-
-        case "set-session-profile": {
-          if (command.sessionId) {
-            options.onSetSessionProfile(command.sessionId, command.profile ?? null);
           }
           break;
         }

@@ -47,8 +47,6 @@ const createConfig = (
 ): RuntimeConfig => {
   return {
     workspaceRoot,
-    activeProfile: "workspace",
-    availableProfiles: [{ name: "workspace", description: "Default profile" }],
     mode,
     provider: "unconfigured",
     model: "gpt-5.5",
@@ -226,36 +224,6 @@ describe("executeTask", () => {
     );
   });
 
-  it("executes a safe profile inspection for named profiles", async () => {
-    const workspaceRoot = await createWorkspace();
-
-    const result = await executeTask(
-      "show profiles",
-      {
-        ...createConfig(workspaceRoot, "ask"),
-        activeProfile: "workspace",
-        availableProfiles: [
-          { name: "workspace", description: "Default profile" },
-          { name: "offline", description: "Offline development" },
-        ],
-      },
-      emptyCustomizations(workspaceRoot),
-    );
-
-    expect(result.status).toBe("executed");
-    expect(result.summary).toContain("available runtime profiles");
-    expect(result.outputSections.map((section) => section.title)).toEqual([
-      "Task context",
-      "Profiles",
-    ]);
-    expect(result.outputSections[1]?.lines).toContain(
-      "workspace (active): Default profile",
-    );
-    expect(result.outputSections[1]?.lines).toContain(
-      "offline: Offline development",
-    );
-  });
-
   it("executes a safe tool surface inspection", async () => {
     const workspaceRoot = await createWorkspace();
 
@@ -428,7 +396,7 @@ describe("executeTask", () => {
     const workspaceRoot = await createWorkspace();
 
     const result = await executeTask(
-      "inspect config and update profiles",
+      "inspect config and update settings",
       createConfig(workspaceRoot, "ask"),
       emptyCustomizations(workspaceRoot),
     );

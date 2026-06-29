@@ -307,7 +307,6 @@ export interface ScheduledJobTarget {
   macros: ScheduledMacroReference[];
   ralphFlow?: ScheduledRalphFlowTarget;
   mode?: RunMode;
-  profile?: string;
   provider?: Exclude<ModelProvider, "unconfigured">;
   model?: string;
   reasoning?: ReasoningMode;
@@ -323,7 +322,6 @@ export interface ScheduledJobTargetInput {
   macros?: ScheduledMacroReference[];
   ralphFlow?: Partial<ScheduledRalphFlowTarget> & { id: string };
   mode?: RunMode;
-  profile?: string;
   provider?: Exclude<ModelProvider, "unconfigured">;
   model?: string;
   reasoning?: ReasoningMode;
@@ -507,7 +505,6 @@ export interface ScheduledTaskExecutionRequest {
   imagePaths: string[];
   ralphFlow?: ScheduledRalphFlowTarget;
   mode?: RunMode;
-  profile?: string;
   provider?: Exclude<ModelProvider, "unconfigured">;
   model?: string;
   reasoning?: ReasoningMode;
@@ -1385,7 +1382,6 @@ const normalizeTarget = (target: ScheduledJobTargetInput): ScheduledJobTarget =>
     macros,
     ...(ralphFlow ? { ralphFlow } : {}),
     ...(target.mode ? { mode: target.mode } : {}),
-    ...(target.profile ? { profile: target.profile } : {}),
     ...(target.provider ? { provider: target.provider } : {}),
     ...(target.model ? { model: target.model } : {}),
     ...(target.reasoning ? { reasoning: target.reasoning } : {}),
@@ -1599,7 +1595,6 @@ const parsePromptScheduleInput = async (
   const missedRunPolicy = isMissedRunPolicyValue(missedRunPolicyText)
     ? missedRunPolicyText
     : undefined;
-  const profile = getSchedulerFrontmatterString(document.attributes, "schedule-profile");
   const model = getSchedulerFrontmatterString(document.attributes, "schedule-model");
   const missedRunGraceMs = getSchedulerFrontmatterNumber(
     document.attributes,
@@ -1670,7 +1665,6 @@ const parsePromptScheduleInput = async (
         "schedule-image",
       ),
       ...(isRunModeValue(modeText) ? { mode: modeText } : {}),
-      ...(profile ? { profile } : {}),
       ...(isConfiguredProviderValue(providerText)
         ? { provider: providerText }
         : {}),
@@ -2399,9 +2393,6 @@ export class DurableSmartScheduler {
           : {}),
         ...(input.target?.mode ?? existingJob.target.mode
           ? { mode: input.target?.mode ?? existingJob.target.mode }
-          : {}),
-        ...(input.target?.profile ?? existingJob.target.profile
-          ? { profile: input.target?.profile ?? existingJob.target.profile }
           : {}),
         ...(input.target?.provider ?? existingJob.target.provider
           ? { provider: input.target?.provider ?? existingJob.target.provider }
@@ -3229,7 +3220,6 @@ export class DurableSmartScheduler {
       imagePaths: job.target.imagePaths,
       ...(job.target.ralphFlow ? { ralphFlow: job.target.ralphFlow } : {}),
       ...(job.target.mode ? { mode: job.target.mode } : {}),
-      ...(job.target.profile ? { profile: job.target.profile } : {}),
       ...(job.target.provider ? { provider: job.target.provider } : {}),
       ...(job.target.model ? { model: job.target.model } : {}),
       ...(job.target.reasoning ? { reasoning: job.target.reasoning } : {}),

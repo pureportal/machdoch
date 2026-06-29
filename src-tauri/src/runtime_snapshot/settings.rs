@@ -113,23 +113,7 @@ pub(crate) struct UserDesktopLaunchPreferences {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct WorkspaceConfigFile {
-    pub(super) default_profile: Option<String>,
     pub(super) default_mode: Option<String>,
-    pub(super) provider: Option<String>,
-    pub(super) model: Option<String>,
-    pub(super) reasoning: Option<String>,
-    pub(super) offline: Option<bool>,
-    pub(super) agent_limits: Option<UserAgentLimitsConfigFile>,
-    pub(super) compatibility: Option<WorkspaceCompatibilityConfig>,
-    #[serde(default)]
-    pub(super) profiles: HashMap<String, WorkspaceProfileConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct WorkspaceProfileConfig {
-    pub(super) description: Option<String>,
-    pub(super) mode: Option<String>,
     pub(super) provider: Option<String>,
     pub(super) model: Option<String>,
     pub(super) reasoning: Option<String>,

@@ -19,7 +19,6 @@ import {
   createFileTargetSection,
   createInitialFileContent,
   createInstructionFilesSection,
-  createProfilesSection,
   createPromptFilesSection,
   createProviderAvailabilitySection,
   createRuntimeConfigSection,
@@ -41,9 +40,6 @@ export const getInspectionLabel = (
     }
     case "tools": {
       return "tool surface inspection";
-    }
-    case "profiles": {
-      return "profile inspection";
     }
     case "instructions": {
       return "instruction inspection";
@@ -295,18 +291,6 @@ export const executeInspectionTarget = async (
           "Executed a safe, read-only inspection of the registered tools and available function-call surface.",
         executedTools: ["filesystem"],
         outputSections: [...contextSections, createToolSurfaceSection(config)],
-      });
-    }
-
-    case "profiles": {
-      return createExecutionResult({
-        task,
-        mode: config.mode,
-        status: "executed",
-        summary:
-          "Executed a safe, read-only inspection of the available runtime profiles.",
-        executedTools: ["filesystem"],
-        outputSections: [...contextSections, createProfilesSection(config)],
       });
     }
 

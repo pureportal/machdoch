@@ -39,8 +39,6 @@ const createConfig = (
 ): RuntimeConfig => {
   return {
     workspaceRoot,
-    activeProfile: "workspace",
-    availableProfiles: [{ name: "workspace", description: "Default profile" }],
     mode: "machdoch",
     provider: "unconfigured",
     model: "gpt-5.5",
