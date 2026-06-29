@@ -38,6 +38,11 @@ export const openUrlMock = vi.fn().mockResolvedValue(undefined);
 export const desktopEventListeners = new Map<string, DesktopEventHandler>();
 export const windowDragDropListeners = new Set<WindowEventHandler<DragDropEvent>>();
 export const windowFocusChangedListeners = new Set<WindowEventHandler<boolean>>();
+export const windowMovedListeners = new Set<WindowEventHandler<PhysicalPosition>>();
+export const windowResizedListeners = new Set<WindowEventHandler<PhysicalSize>>();
+export const windowScaleChangedListeners = new Set<
+  WindowEventHandler<{ scaleFactor: number; size: PhysicalSize }>
+>();
 export const listenMock = vi.fn(
   async (eventName: string, handler: DesktopEventHandler) => {
     desktopEventListeners.set(eventName, handler);
@@ -68,12 +73,20 @@ const createWindowHandle = (label: string) => ({
   emit: vi.fn().mockResolvedValue(undefined),
   emitTo: vi.fn().mockResolvedValue(undefined),
   hide: vi.fn().mockResolvedValue(undefined),
+  innerSize: vi.fn().mockResolvedValue(new PhysicalSize(0, 0)),
   isMaximized: vi.fn().mockResolvedValue(false),
   isMinimized: vi.fn().mockResolvedValue(false),
   isVisible: vi.fn().mockResolvedValue(true),
   listen: listenMock,
   maximize: vi.fn().mockResolvedValue(undefined),
   minimize: vi.fn().mockResolvedValue(undefined),
+  onMoved: vi.fn(async (handler: WindowEventHandler<PhysicalPosition>) => {
+    windowMovedListeners.add(handler);
+
+    return () => {
+      windowMovedListeners.delete(handler);
+    };
+  }),
   onDragDropEvent: vi.fn(
     async (handler: WindowEventHandler<DragDropEvent>) => {
       windowDragDropListeners.add(handler);
@@ -90,6 +103,23 @@ const createWindowHandle = (label: string) => ({
       windowFocusChangedListeners.delete(handler);
     };
   }),
+  onResized: vi.fn(async (handler: WindowEventHandler<PhysicalSize>) => {
+    windowResizedListeners.add(handler);
+
+    return () => {
+      windowResizedListeners.delete(handler);
+    };
+  }),
+  onScaleChanged: vi.fn(
+    async (handler: WindowEventHandler<{ scaleFactor: number; size: PhysicalSize }>) => {
+      windowScaleChangedListeners.add(handler);
+
+      return () => {
+        windowScaleChangedListeners.delete(handler);
+      };
+    },
+  ),
+  outerPosition: vi.fn().mockResolvedValue(new PhysicalPosition(0, 0)),
   setFocus: vi.fn().mockResolvedValue(undefined),
   setPosition: vi.fn().mockResolvedValue(undefined),
   setSize: vi.fn().mockResolvedValue(undefined),
@@ -113,10 +143,14 @@ export class Window {
 export const getCurrentWindow = vi.fn(() => currentWindowMock);
 
 export const cursorPosition = vi.fn(async () => new PhysicalPosition(0, 0));
+export const availableMonitors = vi.fn(async (): Promise<MonitorMock[]> => []);
 export const currentMonitor = vi.fn(
   async (): Promise<MonitorMock | null> => null,
 );
 export const monitorFromPoint = vi.fn(
+  async (): Promise<MonitorMock | null> => null,
+);
+export const primaryMonitor = vi.fn(
   async (): Promise<MonitorMock | null> => null,
 );
 

@@ -1,5 +1,8 @@
 import { getMcpPreset, listMcpPresets, MCP_PRESETS } from "./presets.ts";
 
+const DEFAULT_MCP_OAUTH_REDIRECT_URL =
+  "http://127.0.0.1:43110/oauth/callback";
+
 describe("getMcpPreset", () => {
   it("returns a known preset by id", () => {
     expect(getMcpPreset("github-remote")).toMatchObject({
@@ -47,6 +50,140 @@ describe("getMcpPreset", () => {
           type: "stdio",
           command: "npx",
           args: ["-y", "chrome-devtools-mcp@latest", "--isolated"],
+        },
+      },
+    });
+  });
+
+  it("defines curated hosted MCP presets with current upstream transports", () => {
+    expect(listMcpPresets().map((preset) => preset.id)).toEqual(
+      expect.arrayContaining([
+        "context7-docs",
+        "firecrawl-web",
+        "linear-remote",
+        "figma-remote",
+        "notion-remote",
+        "sentry-remote",
+        "supabase-remote",
+        "gitlab-remote",
+      ]),
+    );
+
+    expect(getMcpPreset("context7-docs")).toMatchObject({
+      server: {
+        id: "context7",
+        transport: {
+          type: "streamable-http",
+          url: "https://mcp.context7.com/mcp",
+        },
+        auth: {
+          type: "headers",
+          envHeaders: {
+            CONTEXT7_API_KEY: "CONTEXT7_API_KEY",
+          },
+        },
+      },
+    });
+    expect(getMcpPreset("firecrawl-web")).toMatchObject({
+      server: {
+        id: "firecrawl",
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "firecrawl-mcp@latest"],
+          env: {
+            FIRECRAWL_API_KEY: "${env:FIRECRAWL_API_KEY}",
+          },
+        },
+      },
+    });
+    expect(getMcpPreset("linear-remote")).toMatchObject({
+      server: {
+        id: "linear",
+        transport: {
+          type: "streamable-http",
+          url: "https://mcp.linear.app/mcp",
+          legacySseFallback: true,
+        },
+        auth: {
+          type: "oauth",
+          redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+          scopes: ["read", "write"],
+        },
+      },
+    });
+    expect(getMcpPreset("figma-remote")).toMatchObject({
+      server: {
+        id: "figma",
+        transport: {
+          type: "streamable-http",
+          url: "https://mcp.figma.com/mcp",
+        },
+        auth: {
+          type: "oauth",
+          redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+          scopes: ["mcp:connect"],
+        },
+      },
+    });
+    expect(getMcpPreset("notion-remote")).toMatchObject({
+      server: {
+        id: "notion",
+        transport: {
+          type: "streamable-http",
+          url: "https://mcp.notion.com/mcp",
+          legacySseFallback: true,
+        },
+        auth: {
+          type: "oauth",
+          redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+        },
+      },
+    });
+    expect(getMcpPreset("sentry-remote")).toMatchObject({
+      server: {
+        id: "sentry",
+        transport: {
+          type: "streamable-http",
+          url: "https://mcp.sentry.dev/mcp",
+        },
+        auth: {
+          type: "oauth",
+          redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+          scopes: ["org:read", "project:write", "team:write", "event:write"],
+        },
+      },
+    });
+    expect(getMcpPreset("supabase-remote")).toMatchObject({
+      server: {
+        id: "supabase",
+        transport: {
+          type: "streamable-http",
+          url: "https://mcp.supabase.com/mcp",
+        },
+        auth: {
+          type: "oauth",
+          redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+          scopes: expect.arrayContaining([
+            "organizations:read",
+            "projects:read",
+            "database:read",
+            "database:write",
+          ]),
+        },
+      },
+    });
+    expect(getMcpPreset("gitlab-remote")).toMatchObject({
+      server: {
+        id: "gitlab",
+        transport: {
+          type: "streamable-http",
+          url: "https://gitlab.com/api/v4/mcp",
+        },
+        auth: {
+          type: "oauth",
+          redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+          scopes: ["mcp"],
         },
       },
     });

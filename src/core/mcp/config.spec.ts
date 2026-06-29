@@ -162,6 +162,28 @@ describe("loadMcpConfig", () => {
     });
   });
 
+  it("creates editable enabled OAuth servers from hosted presets", () => {
+    expect(createMcpConfigFromPreset("linear-remote")).toMatchObject({
+      id: "linear",
+      enabled: true,
+      preset: "linear-remote",
+      transport: {
+        type: "streamable-http",
+        url: "https://mcp.linear.app/mcp",
+        legacySseFallback: true,
+      },
+      auth: {
+        type: "oauth",
+        redirectUrl: "http://127.0.0.1:43110/oauth/callback",
+        scopes: ["read", "write"],
+      },
+      exposure: {
+        mode: "hybrid",
+        directTools: true,
+      },
+    });
+  });
+
   it("creates an editable enabled Tauri MCP development server from its preset", () => {
     expect(createMcpConfigFromPreset("tauri-mcp-server")).toMatchObject({
       id: "tauri",

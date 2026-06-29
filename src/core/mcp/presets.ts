@@ -1,6 +1,9 @@
 import type { McpPresetDefinition } from "./types.js";
 import { cloneMcpPreset } from "./_helpers/clone-mcp-preset.helper.js";
 
+const DEFAULT_MCP_OAUTH_REDIRECT_URL =
+  "http://127.0.0.1:43110/oauth/callback";
+
 export const MCP_PRESETS: readonly McpPresetDefinition[] = [
   {
     id: "serper-search",
@@ -36,6 +39,279 @@ export const MCP_PRESETS: readonly McpPresetDefinition[] = [
         ttlMs: 900_000,
         forceRefresh: false,
       },
+    },
+  },
+  {
+    id: "context7-docs",
+    title: "Context7 Docs",
+    description:
+      "Up-to-date library documentation and code examples from Context7.",
+    server: {
+      id: "context7",
+      title: "Context7 Docs",
+      description:
+        "Context7 remote MCP server. Optionally set CONTEXT7_API_KEY for higher limits and private repositories.",
+      enabled: false,
+      preset: "context7-docs",
+      transport: {
+        type: "streamable-http",
+        url: "https://mcp.context7.com/mcp",
+      },
+      auth: {
+        type: "headers",
+        envHeaders: {
+          CONTEXT7_API_KEY: "CONTEXT7_API_KEY",
+        },
+      },
+      exposure: {
+        mode: "hybrid",
+        directTools: true,
+      },
+      securityProfile: "weak",
+      timeoutMs: 60_000,
+      maxTotalTimeoutMs: 180_000,
+      maxResponseChars: 60_000,
+      cache: {
+        enabled: true,
+        ttlMs: 900_000,
+        forceRefresh: false,
+      },
+    },
+  },
+  {
+    id: "firecrawl-web",
+    title: "Firecrawl Web",
+    description:
+      "Web search, scraping, crawling, and structured extraction through Firecrawl.",
+    server: {
+      id: "firecrawl",
+      title: "Firecrawl Web",
+      description:
+        "Official Firecrawl MCP server. Requires FIRECRAWL_API_KEY.",
+      enabled: false,
+      preset: "firecrawl-web",
+      transport: {
+        type: "stdio",
+        command: "npx",
+        args: ["-y", "firecrawl-mcp@latest"],
+        env: {
+          FIRECRAWL_API_KEY: "${env:FIRECRAWL_API_KEY}",
+        },
+        stderr: "pipe",
+      },
+      exposure: {
+        mode: "hybrid",
+        directTools: true,
+      },
+      securityProfile: "weak",
+      timeoutMs: 60_000,
+      maxTotalTimeoutMs: 300_000,
+      maxResponseChars: 80_000,
+      cache: {
+        enabled: true,
+        ttlMs: 900_000,
+        forceRefresh: false,
+      },
+    },
+  },
+  {
+    id: "linear-remote",
+    title: "Linear Remote",
+    description:
+      "Linear project management, issue tracking, and team workflow tools.",
+    server: {
+      id: "linear",
+      title: "Linear Remote",
+      description:
+        "Official hosted Linear MCP endpoint with OAuth authorization.",
+      enabled: false,
+      preset: "linear-remote",
+      transport: {
+        type: "streamable-http",
+        url: "https://mcp.linear.app/mcp",
+        legacySseFallback: true,
+      },
+      auth: {
+        type: "oauth",
+        redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+        scopes: ["read", "write"],
+      },
+      exposure: {
+        mode: "hybrid",
+        directTools: true,
+      },
+      securityProfile: "weak",
+      timeoutMs: 60_000,
+      maxTotalTimeoutMs: 240_000,
+      maxResponseChars: 60_000,
+    },
+  },
+  {
+    id: "figma-remote",
+    title: "Figma Remote",
+    description:
+      "Figma design context for implementing and inspecting product UI.",
+    server: {
+      id: "figma",
+      title: "Figma Remote",
+      description:
+        "Official hosted Figma MCP endpoint with OAuth authorization.",
+      enabled: false,
+      preset: "figma-remote",
+      transport: {
+        type: "streamable-http",
+        url: "https://mcp.figma.com/mcp",
+      },
+      auth: {
+        type: "oauth",
+        redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+        scopes: ["mcp:connect"],
+      },
+      exposure: {
+        mode: "hybrid",
+        directTools: true,
+      },
+      securityProfile: "weak",
+      timeoutMs: 60_000,
+      maxTotalTimeoutMs: 240_000,
+      maxResponseChars: 80_000,
+    },
+  },
+  {
+    id: "notion-remote",
+    title: "Notion Remote",
+    description:
+      "Notion workspace pages, databases, and project knowledge through Notion MCP.",
+    server: {
+      id: "notion",
+      title: "Notion Remote",
+      description:
+        "Official hosted Notion MCP endpoint with OAuth authorization.",
+      enabled: false,
+      preset: "notion-remote",
+      transport: {
+        type: "streamable-http",
+        url: "https://mcp.notion.com/mcp",
+        legacySseFallback: true,
+      },
+      auth: {
+        type: "oauth",
+        redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+      },
+      exposure: {
+        mode: "hybrid",
+        directTools: true,
+      },
+      securityProfile: "weak",
+      timeoutMs: 60_000,
+      maxTotalTimeoutMs: 240_000,
+      maxResponseChars: 80_000,
+    },
+  },
+  {
+    id: "sentry-remote",
+    title: "Sentry Remote",
+    description:
+      "Sentry issue, project, event, and debugging context for production diagnostics.",
+    server: {
+      id: "sentry",
+      title: "Sentry Remote",
+      description:
+        "Official hosted Sentry MCP endpoint with OAuth authorization.",
+      enabled: false,
+      preset: "sentry-remote",
+      transport: {
+        type: "streamable-http",
+        url: "https://mcp.sentry.dev/mcp",
+      },
+      auth: {
+        type: "oauth",
+        redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+        scopes: ["org:read", "project:write", "team:write", "event:write"],
+      },
+      exposure: {
+        mode: "hybrid",
+        directTools: true,
+      },
+      securityProfile: "weak",
+      timeoutMs: 60_000,
+      maxTotalTimeoutMs: 240_000,
+      maxResponseChars: 80_000,
+    },
+  },
+  {
+    id: "supabase-remote",
+    title: "Supabase Remote",
+    description:
+      "Supabase project, database, analytics, edge function, and storage context.",
+    server: {
+      id: "supabase",
+      title: "Supabase Remote",
+      description:
+        "Official hosted Supabase MCP endpoint with OAuth authorization.",
+      enabled: false,
+      preset: "supabase-remote",
+      transport: {
+        type: "streamable-http",
+        url: "https://mcp.supabase.com/mcp",
+      },
+      auth: {
+        type: "oauth",
+        redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+        scopes: [
+          "organizations:read",
+          "projects:read",
+          "projects:write",
+          "database:write",
+          "database:read",
+          "analytics:read",
+          "secrets:read",
+          "edge_functions:read",
+          "edge_functions:write",
+          "environment:read",
+          "environment:write",
+          "storage:read",
+        ],
+      },
+      exposure: {
+        mode: "hybrid",
+        directTools: true,
+      },
+      securityProfile: "weak",
+      timeoutMs: 60_000,
+      maxTotalTimeoutMs: 300_000,
+      maxResponseChars: 100_000,
+    },
+  },
+  {
+    id: "gitlab-remote",
+    title: "GitLab Remote",
+    description:
+      "GitLab repository, merge request, issue, and CI context through GitLab MCP.",
+    server: {
+      id: "gitlab",
+      title: "GitLab Remote",
+      description:
+        "Official hosted GitLab MCP endpoint with OAuth authorization.",
+      enabled: false,
+      preset: "gitlab-remote",
+      transport: {
+        type: "streamable-http",
+        url: "https://gitlab.com/api/v4/mcp",
+      },
+      auth: {
+        type: "oauth",
+        redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+        scopes: ["mcp"],
+      },
+      exposure: {
+        mode: "hybrid",
+        directTools: true,
+      },
+      securityProfile: "weak",
+      timeoutMs: 60_000,
+      maxTotalTimeoutMs: 240_000,
+      maxResponseChars: 80_000,
     },
   },
   {

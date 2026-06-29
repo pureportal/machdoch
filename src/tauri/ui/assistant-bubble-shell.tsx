@@ -7,6 +7,7 @@ import {
   hideAssistantPopup,
   isAssistantPopupVisible,
   resolveAssistantSurfaceLayout,
+  resolveMonitorTopologyKey,
   setWindowSize,
   setWindowPosition,
   showQuickVoiceWindow,
@@ -19,6 +20,12 @@ import { useChatSessionShellState } from "./chat-session/_helpers/use-chat-sessi
 import { detectFullscreenWindowOnMonitor } from "./runtime";
 
 const BUBBLE_SYNC_INTERVAL_MS = 2500;
+const BUBBLE_EVENT_SYNC_DEBOUNCE_MS = 100;
+const WINDOW_GEOMETRY_TOLERANCE_PX = 1;
+
+const isNearWindowValue = (actual: number, expected: number): boolean => {
+  return Math.abs(actual - expected) <= WINDOW_GEOMETRY_TOLERANCE_PX;
+};
 
 export const AssistantBubbleShell = () => {
   const state = useChatSessionShellState();
@@ -30,7 +37,7 @@ export const AssistantBubbleShell = () => {
   const lastVisibilityRef = useRef<boolean | null>(null);
   const lastBubbleSizeRef = useRef<string | null>(null);
   const lastBubblePositionRef = useRef<string | null>(null);
-  const lastPopupPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const lastMonitorTopologyKeyRef = useRef<string | null>(null);
   const syncInFlightRef = useRef(false);
   const togglePopupInFlightRef = useRef(false);
 
@@ -58,13 +65,13 @@ export const AssistantBubbleShell = () => {
 
     const currentWindow = getCurrentWindow();
     let disposed = false;
+    let eventSyncTimeoutId: number | null = null;
+    const eventUnlisteners: Array<() => void> = [];
 
     const setBubbleVisibility = async (visible: boolean): Promise<void> => {
       if (lastVisibilityRef.current === visible) {
         return;
       }
-
-      lastVisibilityRef.current = visible;
 
       if (visible) {
         if (!(await currentWindow.isVisible())) {
@@ -72,16 +79,51 @@ export const AssistantBubbleShell = () => {
             await currentWindow.show();
           } catch {
             // ignore transient show failures while syncing
+            return;
           }
         }
 
+        lastVisibilityRef.current = true;
         return;
       }
 
       try {
         await currentWindow.hide();
+        lastVisibilityRef.current = false;
       } catch {
         // ignore no-op hide failures while syncing
+      }
+    };
+
+    const isBubbleSizeCurrent = async (size: {
+      width: number;
+      height: number;
+    }): Promise<boolean> => {
+      try {
+        const currentSize = await currentWindow.innerSize();
+
+        return (
+          isNearWindowValue(currentSize.width, size.width) &&
+          isNearWindowValue(currentSize.height, size.height)
+        );
+      } catch {
+        return false;
+      }
+    };
+
+    const isBubblePositionCurrent = async (position: {
+      x: number;
+      y: number;
+    }): Promise<boolean> => {
+      try {
+        const currentPosition = await currentWindow.outerPosition();
+
+        return (
+          isNearWindowValue(currentPosition.x, position.x) &&
+          isNearWindowValue(currentPosition.y, position.y)
+        );
+      } catch {
+        return false;
       }
     };
 
@@ -96,6 +138,14 @@ export const AssistantBubbleShell = () => {
         if (!desktopSettings.assistantBubbleEnabled) {
           await setBubbleVisibility(false);
           return;
+        }
+
+        const topologyKey = await resolveMonitorTopologyKey();
+        const topologyChanged =
+          topologyKey !== null && topologyKey !== lastMonitorTopologyKeyRef.current;
+
+        if (topologyKey !== null) {
+          lastMonitorTopologyKeyRef.current = topologyKey;
         }
 
         const layout = await resolveAssistantSurfaceLayout();
@@ -113,16 +163,25 @@ export const AssistantBubbleShell = () => {
         const nextSizeKey = `${layout.bubbleSize.width}:${layout.bubbleSize.height}`;
         const nextPositionKey = `${layout.bubblePosition.x}:${layout.bubblePosition.y}`;
 
-        lastPopupPositionRef.current = layout.popupPosition;
+        const shouldSyncSize =
+          topologyChanged ||
+          nextSizeKey !== lastBubbleSizeRef.current ||
+          !(await isBubbleSizeCurrent(layout.bubbleSize));
 
-        if (nextSizeKey !== lastBubbleSizeRef.current) {
+        if (shouldSyncSize && (await setWindowSize(currentWindow, layout.bubbleSize))) {
           lastBubbleSizeRef.current = nextSizeKey;
-          await setWindowSize(currentWindow, layout.bubbleSize);
         }
 
-        if (nextPositionKey !== lastBubblePositionRef.current) {
+        const shouldSyncPosition =
+          topologyChanged ||
+          nextPositionKey !== lastBubblePositionRef.current ||
+          !(await isBubblePositionCurrent(layout.bubblePosition));
+
+        if (
+          shouldSyncPosition &&
+          (await setWindowPosition(currentWindow, layout.bubblePosition))
+        ) {
           lastBubblePositionRef.current = nextPositionKey;
-          await setWindowPosition(currentWindow, layout.bubblePosition);
           await syncAssistantPopupPosition();
         }
 
@@ -138,13 +197,63 @@ export const AssistantBubbleShell = () => {
       });
     };
 
+    const scheduleSyncBubbleWindow = (): void => {
+      if (disposed) {
+        return;
+      }
+
+      if (eventSyncTimeoutId !== null) {
+        window.clearTimeout(eventSyncTimeoutId);
+      }
+
+      eventSyncTimeoutId = window.setTimeout(() => {
+        eventSyncTimeoutId = null;
+        runSyncBubbleWindow();
+      }, BUBBLE_EVENT_SYNC_DEBOUNCE_MS);
+    };
+
     runSyncBubbleWindow();
+    const subscribeToWindowEvents = async (): Promise<void> => {
+      const subscribe = [
+        () => currentWindow.onScaleChanged(scheduleSyncBubbleWindow),
+        () => currentWindow.onMoved(scheduleSyncBubbleWindow),
+        () => currentWindow.onResized(scheduleSyncBubbleWindow),
+      ];
+
+      for (const createUnlistener of subscribe) {
+        let unlisten: (() => void) | undefined;
+
+        try {
+          unlisten = await createUnlistener();
+        } catch (error) {
+          console.error("Failed to subscribe to assistant bubble window events", error);
+          continue;
+        }
+
+        if (disposed) {
+          unlisten();
+        } else {
+          eventUnlisteners.push(unlisten);
+        }
+      }
+    };
+
+    void subscribeToWindowEvents();
+
     const intervalId = window.setInterval(() => {
       runSyncBubbleWindow();
     }, BUBBLE_SYNC_INTERVAL_MS);
 
     return () => {
       disposed = true;
+      if (eventSyncTimeoutId !== null) {
+        window.clearTimeout(eventSyncTimeoutId);
+      }
+
+      for (const unlisten of eventUnlisteners) {
+        unlisten();
+      }
+
       window.clearInterval(intervalId);
     };
   }, [
@@ -190,7 +299,7 @@ export const AssistantBubbleShell = () => {
     }
 
     togglePopupInFlightRef.current = true;
-    void toggleAssistantPopup(lastPopupPositionRef.current ?? undefined)
+    void toggleAssistantPopup()
       .then((nextPopupOpen) => {
         setPopupOpen(nextPopupOpen);
       })

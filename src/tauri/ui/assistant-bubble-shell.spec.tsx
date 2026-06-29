@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createInitialShellState,
@@ -7,14 +7,34 @@ import {
 } from "./chat-session.model";
 import { AssistantBubbleShell } from "./assistant-bubble-shell";
 import {
+  availableMonitors,
   currentWindowMock,
   isTauriMock,
+  type MonitorMock,
   monitorFromPoint,
+  PhysicalPosition,
+  PhysicalSize,
+  windowMovedListeners,
+  windowResizedListeners,
+  windowScaleChangedListeners,
 } from "./test/tauri-test-mocks";
 import type { AppearanceSettings } from "./lib/shell-store";
 
 const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
 const APPEARANCE_STORAGE_KEY = "machdoch.desktop.appearance-state";
+
+const createMonitorMock = (
+  overrides: Partial<MonitorMock> = {},
+): MonitorMock => ({
+  position: { x: 0, y: 0 },
+  size: { width: 1920, height: 1080 },
+  workArea: {
+    position: { x: 0, y: 0 },
+    size: { width: 1920, height: 1040 },
+  },
+  scaleFactor: 1,
+  ...overrides,
+});
 
 const storeShellState = (value: ShellPersistedState): void => {
   window.localStorage.setItem(SHELL_STATE_STORAGE_KEY, JSON.stringify(value));
@@ -40,11 +60,21 @@ describe("AssistantBubbleShell", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     isTauriMock.mockReturnValue(false);
+    availableMonitors.mockResolvedValue([]);
+    monitorFromPoint.mockResolvedValue(null);
+    currentWindowMock.innerSize.mockResolvedValue(new PhysicalSize(0, 0));
+    currentWindowMock.outerPosition.mockResolvedValue(new PhysicalPosition(0, 0));
+    windowMovedListeners.clear();
+    windowResizedListeners.clear();
+    windowScaleChangedListeners.clear();
     window.localStorage.clear();
   });
 
   afterEach(() => {
     cleanup();
+    windowMovedListeners.clear();
+    windowResizedListeners.clear();
+    windowScaleChangedListeners.clear();
     window.localStorage.clear();
   });
 
@@ -105,21 +135,101 @@ describe("AssistantBubbleShell", () => {
 
   it("syncs the transparent bubble window size for shadow padding", async () => {
     isTauriMock.mockReturnValue(true);
-    monitorFromPoint.mockResolvedValue({
-      position: { x: 0, y: 0 },
-      size: { width: 1920, height: 1080 },
-      workArea: {
-        position: { x: 0, y: 0 },
-        size: { width: 1920, height: 1040 },
-      },
-      scaleFactor: 1,
-    });
+    const monitor = createMonitorMock();
+
+    availableMonitors.mockResolvedValue([monitor]);
+    monitorFromPoint.mockResolvedValue(monitor);
 
     render(<AssistantBubbleShell />);
 
     await waitFor(() => {
       expect(currentWindowMock.setSize).toHaveBeenCalledWith(
         expect.objectContaining({ width: 128, height: 104 }),
+      );
+    });
+  });
+
+  it("reapplies the bubble position when the OS moves it during display changes", async () => {
+    isTauriMock.mockReturnValue(true);
+    const monitor = createMonitorMock();
+
+    availableMonitors.mockResolvedValue([monitor]);
+    monitorFromPoint.mockResolvedValue(monitor);
+    currentWindowMock.innerSize.mockResolvedValue(new PhysicalSize(128, 104));
+    currentWindowMock.outerPosition.mockResolvedValue(new PhysicalPosition(1768, 912));
+
+    render(<AssistantBubbleShell />);
+
+    await waitFor(() => {
+      expect(windowMovedListeners.size).toBe(1);
+    });
+    await waitFor(() => {
+      expect(currentWindowMock.setPosition).toHaveBeenCalledWith(
+        expect.objectContaining({ x: 1768, y: 912 }),
+      );
+    });
+
+    currentWindowMock.setPosition.mockClear();
+    currentWindowMock.outerPosition.mockResolvedValue(new PhysicalPosition(140, 96));
+
+    await act(async () => {
+      for (const listener of windowMovedListeners) {
+        listener({ payload: new PhysicalPosition(140, 96) });
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+    });
+
+    await waitFor(() => {
+      expect(currentWindowMock.setPosition).toHaveBeenCalledWith(
+        expect.objectContaining({ x: 1768, y: 912 }),
+      );
+    });
+  });
+
+  it("resyncs physical bubble geometry on scale changes", async () => {
+    isTauriMock.mockReturnValue(true);
+    let monitor = createMonitorMock();
+
+    availableMonitors.mockImplementation(async () => [monitor]);
+    monitorFromPoint.mockImplementation(async () => monitor);
+    currentWindowMock.innerSize.mockResolvedValue(new PhysicalSize(128, 104));
+    currentWindowMock.outerPosition.mockResolvedValue(new PhysicalPosition(1768, 912));
+
+    render(<AssistantBubbleShell />);
+
+    await waitFor(() => {
+      expect(windowScaleChangedListeners.size).toBe(1);
+    });
+    await waitFor(() => {
+      expect(currentWindowMock.setSize).toHaveBeenCalledWith(
+        expect.objectContaining({ width: 128, height: 104 }),
+      );
+    });
+
+    currentWindowMock.setPosition.mockClear();
+    currentWindowMock.setSize.mockClear();
+    monitor = createMonitorMock({ scaleFactor: 1.25 });
+
+    await act(async () => {
+      for (const listener of windowScaleChangedListeners) {
+        listener({
+          payload: {
+            scaleFactor: 1.25,
+            size: new PhysicalSize(160, 130),
+          },
+        });
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+    });
+
+    await waitFor(() => {
+      expect(currentWindowMock.setSize).toHaveBeenCalledWith(
+        expect.objectContaining({ width: 160, height: 130 }),
+      );
+      expect(currentWindowMock.setPosition).toHaveBeenCalledWith(
+        expect.objectContaining({ x: 1730, y: 880 }),
       );
     });
   });

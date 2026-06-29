@@ -1,11 +1,13 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
+  availableMonitors,
   currentMonitor,
   cursorPosition,
   getCurrentWindow,
   monitorFromPoint,
   PhysicalPosition,
   PhysicalSize,
+  primaryMonitor,
   Window,
 } from "@tauri-apps/api/window";
 import {
@@ -67,13 +69,71 @@ const toMonitorBounds = (monitor: NonNullable<MonitorSnapshot>): MonitorBoundsIn
   };
 };
 
+const resolveFirstAvailableMonitor = async (): Promise<MonitorSnapshot> => {
+  try {
+    const monitors = await availableMonitors();
+
+    return monitors[0] ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const resolveTargetMonitor = async (): Promise<MonitorSnapshot> => {
   if (!isTauri()) {
     return null;
   }
 
-  const cursor = await cursorPosition();
-  return (await monitorFromPoint(cursor.x, cursor.y)) ?? (await currentMonitor());
+  try {
+    const cursor = await cursorPosition();
+    const cursorMonitor = await monitorFromPoint(cursor.x, cursor.y);
+
+    if (cursorMonitor) {
+      return cursorMonitor;
+    }
+  } catch {
+    // Cursor/monitor information can be temporarily unavailable while displays change.
+  }
+
+  return (
+    (await currentMonitor().catch(() => null)) ??
+    (await primaryMonitor().catch(() => null)) ??
+    (await resolveFirstAvailableMonitor())
+  );
+};
+
+export const resolveMonitorTopologyKey = async (): Promise<string | null> => {
+  if (!isTauri()) {
+    return null;
+  }
+
+  try {
+    const monitors = await availableMonitors();
+
+    return monitors
+      .map((monitor) => {
+        const scaleFactor =
+          typeof monitor.scaleFactor === "number" && Number.isFinite(monitor.scaleFactor)
+            ? monitor.scaleFactor.toFixed(3)
+            : "1.000";
+
+        return [
+          monitor.position.x,
+          monitor.position.y,
+          monitor.size.width,
+          monitor.size.height,
+          monitor.workArea.position.x,
+          monitor.workArea.position.y,
+          monitor.workArea.size.width,
+          monitor.workArea.size.height,
+          scaleFactor,
+        ].join(":");
+      })
+      .sort()
+      .join("|");
+  } catch {
+    return null;
+  }
 };
 
 export const resolveAssistantSurfaceLayout = async (): Promise<AssistantSurfaceLayout | null> => {
@@ -187,30 +247,34 @@ export const getWindowByLabel = async (label: string): Promise<Window | null> =>
 export const setWindowPosition = async (
   window: Window | null,
   position: { x: number; y: number },
-): Promise<void> => {
+): Promise<boolean> => {
   if (!window) {
-    return;
+    return false;
   }
 
   try {
     await window.setPosition(new PhysicalPosition(position.x, position.y));
+    return true;
   } catch (error) {
     console.error(`Failed to position window \`${window.label}\``, error);
+    return false;
   }
 };
 
 export const setWindowSize = async (
   window: Window | null,
   size: { width: number; height: number },
-): Promise<void> => {
+): Promise<boolean> => {
   if (!window) {
-    return;
+    return false;
   }
 
   try {
     await window.setSize(new PhysicalSize(size.width, size.height));
+    return true;
   } catch (error) {
     console.error(`Failed to size window \`${window.label}\``, error);
+    return false;
   }
 };
 

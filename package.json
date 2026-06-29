@@ -1,6 +1,6 @@
 {
   "name": "machdoch",
-  "version": "0.21.7",
+  "version": "0.21.8",
   "private": true,
   "description": "Local-first OS AI agent for CLI and desktop.",
   "type": "module",
