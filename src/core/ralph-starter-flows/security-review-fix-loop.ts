@@ -476,6 +476,7 @@ const securityFixLoopFlow: RalphFlow = {
 
 export const securityReviewFixLoopStarterFlow = {
   id: "security-fix-loop",
+  version: 2,
   defaultAlias: "security-review-fix-loop",
   category: "Security",
   tags: ["review", "fix", "tests"],

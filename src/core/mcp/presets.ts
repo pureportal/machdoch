@@ -47,7 +47,7 @@ export const MCP_PRESETS: readonly McpPresetDefinition[] = [
       id: "github",
       title: "GitHub Remote",
       description:
-        "Official remote GitHub MCP endpoint. Configure a PAT in GITHUB_PAT or set auth.token directly.",
+        "Official remote GitHub MCP endpoint. Requires GITHUB_PERSONAL_ACCESS_TOKEN or set auth.token directly.",
       enabled: false,
       preset: "github-remote",
       transport: {
@@ -57,7 +57,7 @@ export const MCP_PRESETS: readonly McpPresetDefinition[] = [
       },
       auth: {
         type: "bearer",
-        tokenEnv: "GITHUB_PAT",
+        tokenEnv: "GITHUB_PERSONAL_ACCESS_TOKEN",
       },
       exposure: {
         mode: "hybrid",
@@ -78,7 +78,7 @@ export const MCP_PRESETS: readonly McpPresetDefinition[] = [
       id: "github-local",
       title: "GitHub Local Docker",
       description:
-        "Official GitHub MCP Docker image. Requires Docker and GITHUB_PAT.",
+        "Official GitHub MCP Docker image. Requires Docker and GITHUB_PERSONAL_ACCESS_TOKEN.",
       enabled: false,
       preset: "github-local-docker",
       transport: {
@@ -93,7 +93,7 @@ export const MCP_PRESETS: readonly McpPresetDefinition[] = [
           "ghcr.io/github/github-mcp-server",
         ],
         env: {
-          GITHUB_PERSONAL_ACCESS_TOKEN: "${env:GITHUB_PAT}",
+          GITHUB_PERSONAL_ACCESS_TOKEN: "${env:GITHUB_PERSONAL_ACCESS_TOKEN}",
         },
         stderr: "pipe",
       },
@@ -122,7 +122,7 @@ export const MCP_PRESETS: readonly McpPresetDefinition[] = [
       transport: {
         type: "stdio",
         command: "npx",
-        args: ["-y", "chrome-devtools-mcp@latest"],
+        args: ["-y", "chrome-devtools-mcp@latest", "--isolated"],
         stderr: "pipe",
       },
       exposure: {

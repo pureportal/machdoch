@@ -2,7 +2,8 @@ import { coerceRalphFlowBlockRecord } from "./coerce-ralph-flow-block-record.hel
 import { RALPH_FLOW_SCHEMA_VERSION } from "./create-ralph-validation-result.helper.js";
 import type {
   RalphAnnotationLink, RalphAnnotationLinkKind, RalphFlow, RalphFlowBlock,
-  RalphFlowEdge, RalphFlowSettings, RalphFlowVariable, RalphVariableType,
+  RalphFlowEdge, RalphFlowSettings, RalphFlowSource, RalphFlowVariable,
+  RalphVariableType,
 } from "../ralph.js";
 
 const RALPH_FLOW_VARIABLE_TYPES = [
@@ -67,6 +68,30 @@ const coerceFlowSettings = (value: unknown): RalphFlowSettings | undefined => {
   }
 
   return Object.keys(settings).length > 0 ? settings : undefined;
+};
+
+const coerceFlowSource = (value: unknown): RalphFlowSource | undefined => {
+  if (
+    !isRecord(value) ||
+    value.kind !== "starter" ||
+    typeof value.id !== "string" ||
+    typeof value.version !== "number" ||
+    !Number.isFinite(value.version)
+  ) {
+    return undefined;
+  }
+
+  const importedAt =
+    typeof value.importedAt === "string" && value.importedAt.trim().length > 0
+      ? value.importedAt
+      : undefined;
+
+  return {
+    kind: "starter",
+    id: value.id,
+    version: Math.trunc(value.version),
+    ...(importedAt ? { importedAt } : {}),
+  };
 };
 
 const coerceFlowEdges = (value: unknown): RalphFlowEdge[] => {
@@ -139,6 +164,7 @@ export const parseRalphFlowRecord = (value: unknown): RalphFlow => {
       )
     : [];
   const settings = coerceFlowSettings(value.settings);
+  const source = coerceFlowSource(value.source);
   const annotationLinks = coerceAnnotationLinks(value.annotationLinks);
 
   return {
@@ -151,6 +177,7 @@ export const parseRalphFlowRecord = (value: unknown): RalphFlow => {
       : {}),
     ...(typeof value.createdAt === "string" ? { createdAt: value.createdAt } : {}),
     ...(typeof value.updatedAt === "string" ? { updatedAt: value.updatedAt } : {}),
+    ...(source ? { source } : {}),
     ...(settings ? { settings } : {}),
     variables: coerceFlowVariables(value.variables),
     blocks,

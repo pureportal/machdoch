@@ -171,6 +171,7 @@ export interface RalphCliOptions {
   paramsFile?: string;
   inputJson?: string;
   inputJsonFile?: string;
+  retryCurrent?: boolean;
   maxRounds?: number;
   maxTransitions?: number;
   trace?: boolean;

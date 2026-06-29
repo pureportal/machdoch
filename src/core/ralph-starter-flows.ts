@@ -13,6 +13,7 @@ export type RalphStarterFlowId =
 
 export interface RalphStarterFlow {
   id: RalphStarterFlowId;
+  version: number;
   defaultAlias: string;
   category: string;
   tags: string[];
@@ -21,6 +22,7 @@ export interface RalphStarterFlow {
 
 export interface RalphStarterFlowSummary {
   id: RalphStarterFlowId;
+  version: number;
   defaultAlias: string;
   name: string;
   description: string;
@@ -59,6 +61,7 @@ export const createRalphStarterFlowSummary = (
 ): RalphStarterFlowSummary => {
   return {
     id: starterFlow.id,
+    version: starterFlow.version,
     defaultAlias: starterFlow.defaultAlias,
     name: starterFlow.flow.name,
     description: starterFlow.flow.description ?? "",
@@ -82,5 +85,11 @@ export const createImportedRalphStarterFlow = (
     alias: options.alias,
     createdAt: options.importedAt,
     updatedAt: options.importedAt,
+    source: {
+      kind: "starter",
+      id: starterFlow.id,
+      version: starterFlow.version,
+      importedAt: options.importedAt,
+    },
   };
 };

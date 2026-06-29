@@ -195,7 +195,7 @@ export const createRunCheckpoint = (
   events: RalphRunEvent[],
   errorCounts: Map<string, number>,
   repeatedFailures: Map<string, RalphRepeatedFailureState>,
-  pendingInput: RalphInputRequest,
+  pendingInput?: RalphInputRequest,
 ): RalphRunCheckpoint => {
   return {
     currentBlockId,
@@ -207,7 +207,7 @@ export const createRunCheckpoint = (
     events: [...events],
     errorCounts: Object.fromEntries(errorCounts.entries()),
     repeatedFailures: Object.fromEntries(repeatedFailures.entries()),
-    pendingInput,
+    ...(pendingInput ? { pendingInput } : {}),
     interviewStates: Object.fromEntries(context.interviewStates.entries()),
   };
 };

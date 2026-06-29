@@ -1705,7 +1705,12 @@ describe("RalphFlowEditor", () => {
     expect(screen.getByRole("menuitem", { name: "Copy to workspace" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Move to global" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Move to workspace" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy to global" }));
+    const copyMenuItem = screen.getByRole("menuitem", { name: "Copy to global" });
+
+    await waitFor(() => {
+      expect((copyMenuItem as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(copyMenuItem);
 
     await waitFor(() => {
       expect(showRalphFlow).toHaveBeenCalledWith(
@@ -1768,7 +1773,14 @@ describe("RalphFlowEditor", () => {
     fireEvent.contextMenu(
       await screen.findByRole("button", { name: /Existing Flow/u }),
     );
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Move to global" }));
+    const moveMenuItem = await screen.findByRole("menuitem", {
+      name: "Move to global",
+    });
+
+    await waitFor(() => {
+      expect((moveMenuItem as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(moveMenuItem);
 
     await waitFor(() => {
       expect(saveRalphFlow).toHaveBeenCalledWith(
@@ -2547,13 +2559,12 @@ describe("RalphFlowEditor", () => {
 
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
-    let runButton: HTMLElement | undefined;
-    await waitFor(() => {
-      runButton = screen
-        .getAllByRole("button", { name: "Run Ralph flow" })
-        .find((button) => !button.hasAttribute("disabled"));
-      expect(runButton).toBeTruthy();
-    });
+    await screen.findByText(/Ready to run/u, undefined, { timeout: 5_000 });
+
+    const runButton = screen
+      .getAllByRole("button", { name: "Run Ralph flow" })
+      .find((button) => !button.hasAttribute("disabled"));
+    expect(runButton).toBeTruthy();
     fireEvent.click(runButton as HTMLElement);
 
     const submitButton = await screen.findByRole("button", {

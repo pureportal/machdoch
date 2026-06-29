@@ -19,6 +19,12 @@ describe("parseRalphFlowRecord", () => {
       description: "Improve the code.",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
+      source: {
+        kind: "starter",
+        id: "autonomous-refactoring-flow",
+        version: 2.9,
+        importedAt: "2026-01-01T00:00:00.000Z",
+      },
       settings: { maxTransitions: 10.9 },
       variables: [
         { name: "scope", type: "path", default: "ALL" },
@@ -120,6 +126,12 @@ describe("parseRalphFlowRecord", () => {
       description: "Improve the code.",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
+      source: {
+        kind: "starter",
+        id: "autonomous-refactoring-flow",
+        version: 2,
+        importedAt: "2026-01-01T00:00:00.000Z",
+      },
       settings: { maxTransitions: 10 },
       variables: [
         { name: "scope", type: "path", default: "ALL", required: false },
@@ -200,6 +212,11 @@ describe("parseRalphFlowRecord", () => {
       id: 123,
       name: false,
       settings: { maxTransitions: Number.POSITIVE_INFINITY },
+      source: {
+        kind: "unsupported",
+        id: "autonomous-refactoring-flow",
+        version: "2",
+      },
       variables: [null, { name: 1, type: "path" }],
       blocks: [
         null,

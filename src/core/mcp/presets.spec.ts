@@ -10,6 +10,44 @@ describe("getMcpPreset", () => {
           type: "streamable-http",
           url: "https://api.githubcopilot.com/mcp/",
         },
+        auth: {
+          type: "bearer",
+          tokenEnv: "GITHUB_PERSONAL_ACCESS_TOKEN",
+        },
+      },
+    });
+  });
+
+  it("uses upstream GitHub Docker token environment naming", () => {
+    expect(getMcpPreset("github-local-docker")).toMatchObject({
+      server: {
+        transport: {
+          type: "stdio",
+          command: "docker",
+          args: [
+            "run",
+            "-i",
+            "--rm",
+            "-e",
+            "GITHUB_PERSONAL_ACCESS_TOKEN",
+            "ghcr.io/github/github-mcp-server",
+          ],
+          env: {
+            GITHUB_PERSONAL_ACCESS_TOKEN: "${env:GITHUB_PERSONAL_ACCESS_TOKEN}",
+          },
+        },
+      },
+    });
+  });
+
+  it("uses an isolated Chrome DevTools profile by default", () => {
+    expect(getMcpPreset("chrome-devtools")).toMatchObject({
+      server: {
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "chrome-devtools-mcp@latest", "--isolated"],
+        },
       },
     });
   });

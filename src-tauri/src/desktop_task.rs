@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     env, fs,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
@@ -23,62 +23,37 @@ use tauri::Emitter;
 use crate::runtime_snapshot::{normalize_optional_string, resolve_workspace_root_path};
 
 mod attachments;
+mod diagnostics;
 mod paths;
+mod registry;
 
 use attachments::{
     remember_attachment_path_grant, remember_dropped_path_grants,
     save_clipboard_image_attachment_sync,
 };
+use diagnostics::{format_command_failure, format_timeout_duration};
 use paths::{
     format_path_for_ui, resolve_attached_path, resolve_dropped_paths_sync,
     resolve_workspace_relative_path,
 };
+use registry::{
+    active_task_ids, active_task_summaries, finish_active_task, normalize_task_id,
+    register_active_task, ActiveDesktopTaskRegistration,
+};
+pub use registry::{request_desktop_task_cancel, ActiveDesktopTaskSummary, DesktopTaskCancelMap};
 
 const DESKTOP_TASK_PROGRESS_EVENT: &str = "desktop-task-progress";
 const CLI_STRUCTURED_PROGRESS_PREFIX: &str = "machdoch-progress: ";
 const DESKTOP_TASK_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
 const RALPH_COMMAND_TIMEOUT_MS: u64 = 12 * 60 * 60 * 1_000;
 const DESKTOP_TASK_WAIT_POLL_MS: u64 = 250;
-const MAX_PENDING_CANCEL_IDS: usize = 256;
 const MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES: usize = 20 * 1024 * 1024;
 const MAX_ATTACHMENT_PATH_GRANTS: usize = 1024;
 
 static TEMP_FILE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 #[derive(Default)]
-pub struct DesktopTaskCancelState {
-    active: HashMap<String, ActiveDesktopTask>,
-    pending: HashSet<String>,
-}
-
-pub struct DesktopTaskCancelMap(pub Mutex<DesktopTaskCancelState>);
-
-impl Default for DesktopTaskCancelMap {
-    fn default() -> Self {
-        Self(Mutex::new(DesktopTaskCancelState::default()))
-    }
-}
-
-#[derive(Default)]
 pub struct AttachmentPathGrantMap(pub Mutex<HashSet<PathBuf>>);
-
-struct ActiveDesktopTask {
-    cancel_flag: Arc<AtomicBool>,
-    kind: String,
-    workspace_root: String,
-    arguments: Vec<String>,
-    started_at: u64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ActiveDesktopTaskSummary {
-    id: String,
-    kind: String,
-    workspace_root: String,
-    arguments: Vec<String>,
-    started_at: u64,
-}
 
 #[cfg(target_os = "windows")]
 const DETACHED_PROCESS: u32 = 0x00000008;
@@ -192,50 +167,6 @@ struct DesktopTaskProgressEvent {
     task_id: String,
     progress: Value,
     timestamp: u64,
-}
-
-fn format_command_failure(stderr: &str, stdout: &str) -> String {
-    let stderr_text = sanitize_command_diagnostics(stderr);
-
-    if !stderr_text.is_empty() {
-        return stderr_text;
-    }
-
-    let stdout_text = sanitize_command_diagnostics(stdout);
-
-    if !stdout_text.is_empty() {
-        return stdout_text;
-    }
-
-    "The shared CLI exited without additional diagnostics.".to_string()
-}
-
-fn format_timeout_duration(timeout_ms: u64) -> String {
-    if timeout_ms % (60 * 60 * 1_000) == 0 {
-        let hours = timeout_ms / (60 * 60 * 1_000);
-        return format!("{hours} hour{}", if hours == 1 { "" } else { "s" });
-    }
-
-    if timeout_ms % (60 * 1_000) == 0 {
-        let minutes = timeout_ms / (60 * 1_000);
-        return format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" });
-    }
-
-    let seconds = timeout_ms / 1_000;
-    format!("{seconds} second{}", if seconds == 1 { "" } else { "s" })
-}
-
-fn sanitize_command_diagnostics(value: &str) -> String {
-    value
-        .lines()
-        .map(str::trim)
-        .filter(|line| {
-            !line.is_empty()
-                && *line != "Debugger attached."
-                && *line != "Waiting for the debugger to disconnect..."
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 fn build_cli_args(options: CliCommandOptions<'_>) -> Vec<String> {
@@ -525,41 +456,6 @@ fn emit_progress_event(
             timestamp,
         },
     );
-}
-
-fn normalize_task_id(task_id: Option<&str>) -> Option<String> {
-    task_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
-fn remember_pending_cancel(cancel_state: &mut DesktopTaskCancelState, task_id: &str) {
-    if task_id.trim().is_empty() || cancel_state.pending.contains(task_id) {
-        return;
-    }
-
-    if cancel_state.pending.len() >= MAX_PENDING_CANCEL_IDS {
-        if let Some(stale_task_id) = cancel_state.pending.iter().next().cloned() {
-            cancel_state.pending.remove(&stale_task_id);
-        }
-    }
-
-    cancel_state.pending.insert(task_id.to_string());
-}
-
-pub fn request_desktop_task_cancel(state: &DesktopTaskCancelMap, task_id: &str) {
-    let Some(task_id) = normalize_task_id(Some(task_id)) else {
-        return;
-    };
-
-    if let Ok(mut cancel_state) = state.0.lock() {
-        if let Some(active_task) = cancel_state.active.get(task_id.as_str()) {
-            active_task.cancel_flag.store(true, Ordering::SeqCst);
-        } else {
-            remember_pending_cancel(&mut cancel_state, task_id.as_str());
-        }
-    }
 }
 
 fn emit_progress_from_stderr_line(
@@ -1407,40 +1303,14 @@ pub async fn cancel_desktop_task(
 pub async fn get_active_desktop_task_ids(
     state: tauri::State<'_, DesktopTaskCancelMap>,
 ) -> Result<Vec<String>, String> {
-    let cancel_state = state.0.lock().map_err(|_| {
-        "Unable to inspect active desktop tasks because the task registry lock is unavailable."
-            .to_string()
-    })?;
-    let mut task_ids = cancel_state.active.keys().cloned().collect::<Vec<_>>();
-
-    task_ids.sort();
-
-    Ok(task_ids)
+    active_task_ids(&state)
 }
 
 #[tauri::command]
 pub async fn get_active_desktop_tasks(
     state: tauri::State<'_, DesktopTaskCancelMap>,
 ) -> Result<Vec<ActiveDesktopTaskSummary>, String> {
-    let cancel_state = state.0.lock().map_err(|_| {
-        "Unable to inspect active desktop tasks because the task registry lock is unavailable."
-            .to_string()
-    })?;
-    let mut tasks = cancel_state
-        .active
-        .iter()
-        .map(|(id, task)| ActiveDesktopTaskSummary {
-            id: id.clone(),
-            kind: task.kind.clone(),
-            workspace_root: task.workspace_root.clone(),
-            arguments: task.arguments.clone(),
-            started_at: task.started_at,
-        })
-        .collect::<Vec<_>>();
-
-    tasks.sort_by(|left, right| left.id.cmp(&right.id));
-
-    Ok(tasks)
+    active_task_summaries(&state)
 }
 
 #[tauri::command]
@@ -1456,22 +1326,17 @@ pub async fn run_desktop_task(
     request.task_id = task_id.clone();
 
     if let Some(id) = &task_id {
-        if let Ok(mut cancel_state) = state.0.lock() {
-            if cancel_state.pending.remove(id) {
-                cancel_flag.store(true, Ordering::SeqCst);
-            }
-
-            cancel_state.active.insert(
-                id.clone(),
-                ActiveDesktopTask {
-                    cancel_flag: cancel_flag.clone(),
-                    kind: "desktop".to_string(),
-                    workspace_root: request.workspace_root.clone(),
-                    arguments: Vec::new(),
-                    started_at: create_progress_timestamp(),
-                },
-            );
-        }
+        register_active_task(
+            &state,
+            ActiveDesktopTaskRegistration {
+                task_id: id.clone(),
+                cancel_flag: cancel_flag.clone(),
+                kind: "desktop".to_string(),
+                workspace_root: request.workspace_root.clone(),
+                arguments: Vec::new(),
+                started_at: create_progress_timestamp(),
+            },
+        );
     }
 
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -1480,12 +1345,7 @@ pub async fn run_desktop_task(
     .await
     .map_err(|error| format!("The desktop task bridge stopped unexpectedly. {error}"));
 
-    if let Some(id) = &task_id {
-        if let Ok(mut cancel_state) = state.0.lock() {
-            cancel_state.active.remove(id);
-            cancel_state.pending.remove(id);
-        }
-    }
+    finish_active_task(&state, task_id.as_deref());
 
     result?
 }
@@ -1584,22 +1444,17 @@ pub async fn run_ralph_command(
     request.task_id = task_id.clone();
 
     if let Some(id) = &task_id {
-        if let Ok(mut cancel_state) = state.0.lock() {
-            if cancel_state.pending.remove(id) {
-                cancel_flag.store(true, Ordering::SeqCst);
-            }
-
-            cancel_state.active.insert(
-                id.clone(),
-                ActiveDesktopTask {
-                    cancel_flag: cancel_flag.clone(),
-                    kind: "ralph".to_string(),
-                    workspace_root: request.workspace_root.clone(),
-                    arguments: request.arguments.clone(),
-                    started_at: create_progress_timestamp(),
-                },
-            );
-        }
+        register_active_task(
+            &state,
+            ActiveDesktopTaskRegistration {
+                task_id: id.clone(),
+                cancel_flag: cancel_flag.clone(),
+                kind: "ralph".to_string(),
+                workspace_root: request.workspace_root.clone(),
+                arguments: request.arguments.clone(),
+                started_at: create_progress_timestamp(),
+            },
+        );
     }
 
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -1608,12 +1463,7 @@ pub async fn run_ralph_command(
     .await
     .map_err(|error| format!("The Ralph command bridge stopped unexpectedly. {error}"));
 
-    if let Some(id) = &task_id {
-        if let Ok(mut cancel_state) = state.0.lock() {
-            cancel_state.active.remove(id);
-            cancel_state.pending.remove(id);
-        }
-    }
+    finish_active_task(&state, task_id.as_deref());
 
     result?
 }
@@ -1645,12 +1495,11 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        build_cli_args, cleanup_temporary_file, format_command_failure, format_timeout_duration,
-        join_cli_output_and_cleanup, remember_attachment_path_grant, remember_pending_cancel,
-        resolve_attached_path, save_clipboard_image_attachment_sync,
-        write_conversation_context_file, AttachmentPathGrantMap, CliCommandOptions,
-        ClipboardImageAttachmentRequest, DesktopTaskCancelState, DESKTOP_TASK_TIMEOUT_MS,
-        MAX_PENDING_CANCEL_IDS, RALPH_COMMAND_TIMEOUT_MS,
+        build_cli_args, cleanup_temporary_file, format_timeout_duration,
+        join_cli_output_and_cleanup, remember_attachment_path_grant, resolve_attached_path,
+        save_clipboard_image_attachment_sync, write_conversation_context_file,
+        AttachmentPathGrantMap, CliCommandOptions, ClipboardImageAttachmentRequest,
+        DESKTOP_TASK_TIMEOUT_MS, RALPH_COMMAND_TIMEOUT_MS,
     };
 
     fn create_test_directory(label: &str) -> PathBuf {
@@ -1715,16 +1564,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             image_paths,
         );
-    }
-
-    #[test]
-    fn command_failure_diagnostics_strip_node_debugger_noise() {
-        let message = format_command_failure(
-            "Debugger attached.\nmachdoch: Ralph flow `ralph-flow` is invalid.\nWaiting for the debugger to disconnect...\n",
-            "",
-        );
-
-        assert_eq!(message, "machdoch: Ralph flow `ralph-flow` is invalid.");
     }
 
     #[test]
@@ -1895,16 +1734,5 @@ mod tests {
         );
 
         let _ = fs::remove_file(saved_path);
-    }
-
-    #[test]
-    fn pending_cancel_ids_are_bounded() {
-        let mut cancel_state = DesktopTaskCancelState::default();
-
-        for index in 0..(MAX_PENDING_CANCEL_IDS + 10) {
-            remember_pending_cancel(&mut cancel_state, &format!("task-{index}"));
-        }
-
-        assert_eq!(cancel_state.pending.len(), MAX_PENDING_CANCEL_IDS);
     }
 }

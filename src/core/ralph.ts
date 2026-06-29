@@ -137,6 +137,11 @@ import {
   formatLocalCommandError,
   normalizeLocalCommandCwd,
 } from "./_helpers/process-execution.js";
+import {
+  collectRalphGitChangeSnapshot,
+  type RalphGitChangeSnapshot,
+  type RalphGitChangedFileSnapshot,
+} from "./_helpers/ralph-git-change-snapshot.helper.js";
 import { executeTask } from "./execution.js";
 import { mcpClientManager } from "./mcp/client.js";
 import {
@@ -697,6 +702,13 @@ export interface RalphFlowSettings {
   maxTransitions?: number;
 }
 
+export interface RalphFlowSource {
+  kind: "starter";
+  id: string;
+  version: number;
+  importedAt?: string;
+}
+
 export interface RalphFlow {
   schemaVersion: typeof RALPH_FLOW_SCHEMA_VERSION;
   id: string;
@@ -705,6 +717,7 @@ export interface RalphFlow {
   description?: string;
   createdAt?: string;
   updatedAt?: string;
+  source?: RalphFlowSource;
   settings?: RalphFlowSettings;
   variables?: RalphFlowVariable[];
   blocks: RalphFlowBlock[];
@@ -719,6 +732,7 @@ export interface RalphFlowSummary {
   scope?: RalphFlowScope;
   path: string;
   description?: string;
+  source?: RalphFlowSource;
   blockCount: number;
   edgeCount: number;
   variableCount: number;
@@ -1315,6 +1329,7 @@ export const listRalphFlows = async (
           ...(includeScope ? { scope } : {}),
           path,
           ...(flow.description ? { description: flow.description } : {}),
+          ...(flow.source ? { source: flow.source } : {}),
           blockCount: flow.blocks.length,
           edgeCount: flow.edges.length,
           variableCount: variables.length,
@@ -5937,24 +5952,6 @@ const executeUiAnalyzeUtilityBlock = async (
   return executeUiAnalyzeBrowserUtilityBlock(block, utility, config, options);
 };
 
-const runGitCommand = async (
-  args: string[],
-  cwd: string,
-  utility: RalphUtilityConfig,
-  signal?: AbortSignal,
-): Promise<string> => {
-  const result = await executeLocalCommand("git", args, {
-    cwd,
-    timeoutMs: getUtilityTimeoutMs(utility, DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS),
-    maxBufferBytes:
-      utility.maxOutputBytes ?? DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
-    acceptedExitCodes: [0],
-    ...(signal ? { signal } : {}),
-  });
-
-  return result.stdout.trim();
-};
-
 const executeGitStatusUtilityBlock = async (
   block: RalphUtilityBlock,
   utility: RalphUtilityConfig,
@@ -5973,6 +5970,22 @@ const executeGitStatusUtilityBlock = async (
     false,
     signal,
   );
+};
+
+const collectUtilityGitChangeSnapshot = async (
+  cwd: string,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  signal?: AbortSignal,
+): Promise<RalphGitChangeSnapshot> => {
+  return collectRalphGitChangeSnapshot({
+    cwd,
+    workspaceRoot: config.workspaceRoot,
+    timeoutMs: getUtilityTimeoutMs(utility, DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS),
+    maxOutputBytes:
+      utility.maxOutputBytes ?? DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
+    ...(signal ? { signal } : {}),
+  });
 };
 
 const maybeWriteJsonArtifact = async (
@@ -6001,29 +6014,7 @@ const executeGitSnapshotUtilityBlock = async (
   );
 
   try {
-    const [root, head, statusText, diffStat, diffNames, stagedDiffNames] =
-      await Promise.all([
-        runGitCommand(["rev-parse", "--show-toplevel"], cwd, utility, signal),
-        runGitCommand(["rev-parse", "--short", "HEAD"], cwd, utility, signal),
-        runGitCommand(["status", "--short"], cwd, utility, signal),
-        runGitCommand(["diff", "--stat"], cwd, utility, signal),
-        runGitCommand(["diff", "--name-only"], cwd, utility, signal),
-        runGitCommand(["diff", "--cached", "--name-only"], cwd, utility, signal),
-      ]);
-    const data = {
-      cwd,
-      root,
-      head,
-      capturedAt: new Date().toISOString(),
-      status: statusText,
-      changedFiles: statusText
-        .split(/\r?\n/u)
-        .map((line) => line.trim())
-        .filter(Boolean),
-      diffStat,
-      diffFiles: diffNames.split(/\r?\n/u).filter(Boolean),
-      stagedDiffFiles: stagedDiffNames.split(/\r?\n/u).filter(Boolean),
-    };
+    const data = await collectUtilityGitChangeSnapshot(cwd, utility, config, signal);
     const outputPath = await maybeWriteJsonArtifact(
       utility.outputPath,
       config.workspaceRoot,
@@ -6054,27 +6045,11 @@ const executeGitDiffSummaryUtilityBlock = async (
   );
 
   try {
-    const [statusText, diffStat, diffNames, stagedDiffStat, stagedDiffNames] =
-      await Promise.all([
-        runGitCommand(["status", "--short"], cwd, utility, signal),
-        runGitCommand(["diff", "--stat"], cwd, utility, signal),
-        runGitCommand(["diff", "--name-only"], cwd, utility, signal),
-        runGitCommand(["diff", "--cached", "--stat"], cwd, utility, signal),
-        runGitCommand(["diff", "--cached", "--name-only"], cwd, utility, signal),
-      ]);
-    const data = {
-      cwd,
-      capturedAt: new Date().toISOString(),
-      status: statusText,
-      diffStat,
-      stagedDiffStat,
-      diffFiles: diffNames.split(/\r?\n/u).filter(Boolean),
-      stagedDiffFiles: stagedDiffNames.split(/\r?\n/u).filter(Boolean),
-    };
+    const data = await collectUtilityGitChangeSnapshot(cwd, utility, config, signal);
     const hasChanges =
-      statusText.trim().length > 0 ||
-      diffStat.trim().length > 0 ||
-      stagedDiffStat.trim().length > 0;
+      data.status.trim().length > 0 ||
+      data.diffStat.trim().length > 0 ||
+      data.stagedDiffStat.trim().length > 0;
     const outputPath = await maybeWriteJsonArtifact(
       utility.outputPath,
       config.workspaceRoot,
@@ -6097,29 +6072,6 @@ const executeGitDiffSummaryUtilityBlock = async (
       formatLocalCommandError(`${block.title} failed.`, error),
     );
   }
-};
-
-const parseGitStatusChangedFiles = (statusText: string): string[] => {
-  return statusText
-    .split(/\r?\n/u)
-    .map((line) => line.trimEnd())
-    .filter((line) => line.trim().length > 0)
-    .map((line) => {
-      const fullStatusMatch = line.match(/^[ MADRCU?!]{2}\s+([\s\S]+)$/u);
-      if (fullStatusMatch) {
-        return fullStatusMatch[1]?.trim() ?? "";
-      }
-
-      const trimmedLeadingLine = line.trimStart();
-      const singleStatusMatch = trimmedLeadingLine.match(/^[MADRCU?!]\s+([\s\S]+)$/u);
-      if (singleStatusMatch) {
-        return singleStatusMatch[1]?.trim() ?? "";
-      }
-
-      return line.trim();
-    })
-    .map((path) => path.split(" -> ").at(-1)?.trim() ?? path)
-    .filter(Boolean);
 };
 
 const normalizeWorkspaceRelativePath = (
@@ -6188,37 +6140,86 @@ const normalizeScopeGuardChangedFiles = (
     .filter((path, index, all) => all.indexOf(path) === index);
 };
 
-const extractGitSummaryChangedFiles = (
+const extractGitSummaryFiles = (
   value: unknown,
   workspaceRoot: string,
-): string[] => {
+): RalphGitChangedFileSnapshot[] => {
   if (!isRecord(value)) {
     return [];
   }
 
-  const statusFiles =
-    typeof value.status === "string" ? parseGitStatusChangedFiles(value.status) : [];
-  const changedFiles = extractStringListField(value, "changedFiles").flatMap(
-    (entry) => parseGitStatusChangedFiles(entry),
-  );
-  const diffFiles = extractStringListField(value, "diffFiles");
-  const stagedDiffFiles = extractStringListField(value, "stagedDiffFiles");
+  if (Array.isArray(value.files)) {
+    return value.files.flatMap((entry): RalphGitChangedFileSnapshot[] => {
+      if (!isRecord(entry) || typeof entry.path !== "string") {
+        return [];
+      }
+
+      const path = normalizeWorkspaceRelativePath(entry.path, workspaceRoot);
+      const status = typeof entry.status === "string" ? entry.status : "??";
+      const indexStatus =
+        typeof entry.indexStatus === "string" ? entry.indexStatus : status[0] ?? "?";
+      const worktreeStatus =
+        typeof entry.worktreeStatus === "string" ? entry.worktreeStatus : status[1] ?? "?";
+      const worktreeHash =
+        typeof entry.worktreeHash === "string" ? entry.worktreeHash : undefined;
+      const indexOid =
+        typeof entry.indexOid === "string" ? entry.indexOid : undefined;
+      const signature =
+        typeof entry.signature === "string"
+          ? entry.signature
+          : [
+              `status=${status}`,
+              `index=${indexOid ?? "missing"}`,
+              `worktree=${worktreeHash ?? "missing"}`,
+            ].join(";");
+
+      return [
+        {
+          path,
+          status,
+          indexStatus,
+          worktreeStatus,
+          staged: Boolean(entry.staged),
+          unstaged: Boolean(entry.unstaged),
+          untracked: Boolean(entry.untracked),
+          deleted: Boolean(entry.deleted),
+          ...(worktreeHash ? { worktreeHash } : {}),
+          ...(indexOid ? { indexOid } : {}),
+          signature,
+        },
+      ];
+    });
+  }
 
   return normalizeScopeGuardChangedFiles(
-    [...statusFiles, ...changedFiles, ...diffFiles, ...stagedDiffFiles],
+    [
+      ...extractStringListField(value, "changedFiles"),
+      ...extractStringListField(value, "diffFiles"),
+      ...extractStringListField(value, "stagedDiffFiles"),
+    ],
     workspaceRoot,
-  );
+  ).map((path) => ({
+    path,
+    status: "??",
+    indexStatus: "?",
+    worktreeStatus: "?",
+    staged: false,
+    unstaged: false,
+    untracked: true,
+    deleted: false,
+    signature: `legacy-path=${path}`,
+  }));
 };
 
 const extractScopeGuardBaselineFiles = (
   utility: RalphUtilityConfig,
   workspaceRoot: string,
-): string[] => {
+): RalphGitChangedFileSnapshot[] => {
   if (utility.baseline === undefined) {
     return [];
   }
 
-  return extractGitSummaryChangedFiles(
+  return extractGitSummaryFiles(
     parseRalphUtilityJsonValue(utility.baseline),
     workspaceRoot,
   );
@@ -6268,16 +6269,9 @@ const executeChangeScopeGuardUtilityBlock = async (
   );
 
   try {
-    const [statusText, diffNames, stagedDiffNames] = await Promise.all([
-      runGitCommand(["status", "--short"], cwd, utility, signal),
-      runGitCommand(["diff", "--name-only"], cwd, utility, signal),
-      runGitCommand(["diff", "--cached", "--name-only"], cwd, utility, signal),
-    ]);
-    const changedFiles = normalizeScopeGuardChangedFiles([
-      ...parseGitStatusChangedFiles(statusText),
-      ...diffNames.split(/\r?\n/u),
-      ...stagedDiffNames.split(/\r?\n/u),
-    ], config.workspaceRoot);
+    const snapshot = await collectUtilityGitChangeSnapshot(cwd, utility, config, signal);
+    const changedFileEntries = snapshot.files;
+    const changedFiles = changedFileEntries.map((file) => file.path);
 
     if (changedFiles.length === 0) {
       return createUtilityResult(
@@ -6289,12 +6283,32 @@ const executeChangeScopeGuardUtilityBlock = async (
       );
     }
 
-    const baselineFiles = extractScopeGuardBaselineFiles(utility, config.workspaceRoot);
-    const baselineFileSet = new Set(baselineFiles);
-    const guardedFiles =
-      baselineFileSet.size > 0
-        ? changedFiles.filter((filePath) => !baselineFileSet.has(filePath))
-        : changedFiles;
+    const baselineFileEntries = extractScopeGuardBaselineFiles(
+      utility,
+      config.workspaceRoot,
+    );
+    const baselineFileMap = new Map(
+      baselineFileEntries.map((file) => [file.path, file]),
+    );
+    const ignoredBaselineFiles: string[] = [];
+    const changedSinceBaselineFiles: string[] = [];
+    const guardedFileEntries = changedFileEntries.filter((file) => {
+      const baselineFile = baselineFileMap.get(file.path);
+
+      if (!baselineFile) {
+        return true;
+      }
+
+      if (baselineFile.signature === file.signature) {
+        ignoredBaselineFiles.push(file.path);
+        return false;
+      }
+
+      changedSinceBaselineFiles.push(file.path);
+      return true;
+    });
+    const guardedFiles = guardedFileEntries.map((file) => file.path);
+    const baselineFiles = baselineFileEntries.map((file) => file.path);
 
     if (guardedFiles.length === 0) {
       return createUtilityResult(
@@ -6306,6 +6320,9 @@ const executeChangeScopeGuardUtilityBlock = async (
           changedFiles,
           guardedFiles,
           baselineFiles,
+          ignoredBaselineFiles,
+          changedSinceBaselineFiles,
+          files: changedFileEntries,
         },
         "completed",
       );
@@ -6318,20 +6335,32 @@ const executeChangeScopeGuardUtilityBlock = async (
         block,
         "IN_SCOPE",
         `${block.title} found no configured scope restrictions.`,
-        { cwd, changedFiles, guardedFiles, baselineFiles, allowedPaths: [], allowedGlobs: [] },
+        {
+          cwd,
+          changedFiles,
+          guardedFiles,
+          baselineFiles,
+          ignoredBaselineFiles,
+          changedSinceBaselineFiles,
+          files: changedFileEntries,
+          allowedPaths: [],
+          allowedGlobs: [],
+        },
         "completed",
       );
     }
 
-    const outOfScopeFiles = guardedFiles.filter(
-      (filePath) =>
-        !doesPathMatchScopeGuard(
-          filePath,
-          rules.paths,
-          rules.globs,
-          config.workspaceRoot,
-        ),
-    );
+    const outOfScopeFiles = guardedFileEntries
+      .filter(
+        (file) =>
+          !doesPathMatchScopeGuard(
+            file.path,
+            rules.paths,
+            rules.globs,
+            config.workspaceRoot,
+          ),
+      )
+      .map((file) => file.path);
     const output = outOfScopeFiles.length > 0 ? "OUT_OF_SCOPE" : "IN_SCOPE";
 
     return createUtilityResult(
@@ -6345,7 +6374,10 @@ const executeChangeScopeGuardUtilityBlock = async (
         changedFiles,
         guardedFiles,
         baselineFiles,
+        ignoredBaselineFiles,
+        changedSinceBaselineFiles,
         outOfScopeFiles,
+        files: changedFileEntries,
         allowedPaths: rules.paths,
         allowedGlobs: rules.globs,
       },
@@ -7540,7 +7572,26 @@ const getRunStatusForEndBlock = (block: RalphEndBlock): RalphRunStatus => {
     case "success":
     case undefined:
       return "completed";
+    default:
+      return "completed";
   }
+};
+
+const RECOVERABLE_RALPH_OUTPUTS = new Set<RalphExecutionOutput>([
+  "ERROR",
+  "FAILED",
+  "INVALID",
+  "OUT_OF_SCOPE",
+  "TIMEOUT",
+  "HTTP_ERROR",
+]);
+
+const isRecoverableRalphBlockResult = (
+  block: RalphFlowBlock,
+  result: RalphBlockExecutionResult,
+): boolean => {
+  return block.type !== "END" &&
+    (result.status === "error" || RECOVERABLE_RALPH_OUTPUTS.has(result.output));
 };
 
 const createBlockedRunResult = (
@@ -7705,6 +7756,7 @@ export const runRalphFlow = async (
     options.repeatedFailureLimit === null
       ? null
       : options.repeatedFailureLimit ?? DEFAULT_RALPH_REPEATED_FAILURE_LIMIT;
+  let lastRecoverableCheckpoint: RalphRunCheckpoint | undefined;
 
   while (currentBlockId) {
     if (options.signal?.aborted) {
@@ -7972,10 +8024,31 @@ export const runRalphFlow = async (
           missingVariables: [],
           unknownVariables: [],
           validation,
+          checkpoint: createRunCheckpoint(
+            block.id,
+            transitions,
+            resultContext,
+            blockResults,
+            events,
+            errorCounts,
+            repeatedFailures,
+          ),
         });
       }
     } else {
       repeatedFailures.delete(block.id);
+    }
+
+    if (isRecoverableRalphBlockResult(block, result)) {
+      lastRecoverableCheckpoint = createRunCheckpoint(
+        block.id,
+        transitions,
+        resultContext,
+        blockResults,
+        events,
+        errorCounts,
+        repeatedFailures,
+      );
     }
 
     if (block.type === "END") {
@@ -7995,6 +8068,9 @@ export const runRalphFlow = async (
         missingVariables: [],
         unknownVariables: [],
         validation,
+        ...(status === "blocked" && lastRecoverableCheckpoint
+          ? { checkpoint: lastRecoverableCheckpoint }
+          : {}),
       });
     }
 

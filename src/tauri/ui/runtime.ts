@@ -1065,7 +1065,8 @@ export interface RalphRunFlowResult {
 
 export interface RalphResumeRunInput {
   runId: string;
-  inputResponse: RalphInputResponse;
+  inputResponse?: RalphInputResponse;
+  retryCurrent?: boolean;
   scope?: RalphFlowScope;
   mode?: RunMode;
   profile?: string;
@@ -3820,9 +3821,16 @@ const createRalphResumeArguments = (
   const argumentsList = [
     "resume",
     normalizedRunId,
-    "--input-json",
-    JSON.stringify(input.inputResponse),
   ];
+
+  if (input.retryCurrent) {
+    argumentsList.push("--retry-current");
+  } else if (input.inputResponse) {
+    argumentsList.push("--input-json");
+    argumentsList.push(JSON.stringify(input.inputResponse));
+  } else {
+    throw new Error("Expected a Ralph input response or retry-current request.");
+  }
 
   appendSchedulerOption(argumentsList, "--scope", input.scope);
   appendSchedulerOption(argumentsList, "--mode", input.mode);

@@ -74,6 +74,7 @@ export const flowToSummary = (
     ...(flow.description !== undefined
       ? { description: flow.description }
       : {}),
+    ...(flow.source !== undefined ? { source: flow.source } : {}),
     blockCount: flow.blocks.length,
     edgeCount: flow.edges.length,
     variableCount: discoverRalphFlowVariables(flow).length,

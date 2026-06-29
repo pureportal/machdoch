@@ -148,14 +148,7 @@ describe("loadMcpConfig", () => {
   });
 
   it("creates editable enabled servers from presets", () => {
-    expect(
-      createMcpConfigFromPreset("github-remote", {
-        auth: {
-          type: "bearer",
-          token: "pat",
-        },
-      }),
-    ).toMatchObject({
+    expect(createMcpConfigFromPreset("github-remote")).toMatchObject({
       id: "github",
       enabled: true,
       transport: {
@@ -164,7 +157,7 @@ describe("loadMcpConfig", () => {
       },
       auth: {
         type: "bearer",
-        token: "pat",
+        tokenEnv: "GITHUB_PERSONAL_ACCESS_TOKEN",
       },
     });
   });

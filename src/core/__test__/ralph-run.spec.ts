@@ -1768,6 +1768,150 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("guards files that changed after the scope guard baseline and can retry the checkpoint", async () => {
+    const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
+
+    if (gitAvailable.status !== 0) {
+      return;
+    }
+
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-guard-drift-"));
+
+    try {
+      await mkdir(join(workspace, "src"), { recursive: true });
+      await mkdir(join(workspace, "docs"), { recursive: true });
+      await writeFile(
+        join(workspace, "src", "feature.ts"),
+        "export const value = 1;\n",
+        "utf8",
+      );
+      await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
+
+      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+      expect(
+        spawnSync("git", ["config", "user.email", "test@example.com"], {
+          cwd: workspace,
+        }).status,
+      ).toBe(0);
+      expect(
+        spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
+          .status,
+      ).toBe(0);
+      expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(0);
+      expect(
+        spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace }).status,
+      ).toBe(0);
+
+      await writeFile(join(workspace, "docs", "note.md"), "dirty before run\n", "utf8");
+
+      const flow = createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "snapshot",
+            type: "UTILITY",
+            title: "Snapshot",
+            utility: {
+              type: "GIT_SNAPSHOT",
+              cwd: ".",
+            },
+          },
+          {
+            id: "write-src",
+            type: "UTILITY",
+            title: "Write Src",
+            utility: {
+              type: "WRITE_FILE",
+              path: "src/feature.ts",
+              content: "export const value = 2;\n",
+            },
+          },
+          {
+            id: "write-docs",
+            type: "UTILITY",
+            title: "Write Docs",
+            utility: {
+              type: "WRITE_FILE",
+              path: "docs/note.md",
+              content: "changed after baseline\n",
+            },
+          },
+          {
+            id: "scope-guard",
+            type: "UTILITY",
+            title: "Scope Guard",
+            utility: {
+              type: "CHANGE_SCOPE_GUARD",
+              cwd: ".",
+              input: JSON.stringify({ paths: ["src"] }),
+              baseline: "{{result:snapshot}}",
+            },
+          },
+          { id: "success", type: "END", title: "Success" },
+          { id: "blocked", type: "END", title: "Blocked", status: "failed" },
+        ],
+        edges: [
+          { id: "start-to-snapshot", from: "start", fromOutput: "SUCCESS", to: "snapshot" },
+          { id: "snapshot-to-write-src", from: "snapshot", fromOutput: "SUCCESS", to: "write-src" },
+          { id: "write-src-to-write-docs", from: "write-src", fromOutput: "SUCCESS", to: "write-docs" },
+          { id: "write-docs-to-guard", from: "write-docs", fromOutput: "SUCCESS", to: "scope-guard" },
+          { id: "guard-to-success", from: "scope-guard", fromOutput: "IN_SCOPE", to: "success" },
+          { id: "guard-to-blocked", from: "scope-guard", fromOutput: "OUT_OF_SCOPE", to: "blocked" },
+        ],
+      });
+
+      const blocked = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10 },
+      );
+
+      expect(blocked.status).toBe("blocked");
+      expect(blocked.checkpoint?.currentBlockId).toBe("scope-guard");
+      expect(blocked.blockResults).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            blockId: "scope-guard",
+            output: "OUT_OF_SCOPE",
+            data: expect.objectContaining({
+              baselineFiles: ["docs/note.md"],
+              changedSinceBaselineFiles: ["docs/note.md"],
+              outOfScopeFiles: ["docs/note.md"],
+            }),
+          }),
+        ]),
+      );
+
+      await writeFile(join(workspace, "docs", "note.md"), "dirty before run\n", "utf8");
+
+      const resumed = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        {
+          maxTransitions: 10,
+          checkpoint: blocked.checkpoint,
+        },
+      );
+      const latestScopeGuardResult = resumed.blockResults
+        .filter((result) => result.blockId === "scope-guard")
+        .at(-1);
+
+      expect(resumed.status).toBe("completed");
+      expect(latestScopeGuardResult).toMatchObject({
+        output: "IN_SCOPE",
+        data: expect.objectContaining({
+          ignoredBaselineFiles: ["docs/note.md"],
+          guardedFiles: ["src/feature.ts"],
+          outOfScopeFiles: [],
+        }),
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("scans, updates, selects, and marks JSON scope registries", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-registry-"));
     const registryPath =

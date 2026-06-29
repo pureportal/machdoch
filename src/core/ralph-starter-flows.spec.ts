@@ -20,6 +20,8 @@ describe("Ralph starter flows", () => {
       const summary = createRalphStarterFlowSummary(starterFlow);
 
       expect(validation.valid).toBe(true);
+      expect(starterFlow.version).toBeGreaterThan(0);
+      expect(summary.version).toBe(starterFlow.version);
       expect(summary.name).toBe(starterFlow.flow.name);
       expect(summary.defaultAlias).toBe(starterFlow.defaultAlias);
       expect(summary.blockCount).toBeGreaterThan(0);
@@ -145,6 +147,12 @@ describe("Ralph starter flows", () => {
       alias: "feature-workflow",
       createdAt: importedAt,
       updatedAt: importedAt,
+      source: {
+        kind: "starter",
+        id: "full-feature-implementation",
+        version: starterFlow!.version,
+        importedAt,
+      },
       name: "Feature Implementation Checklist Loop",
     });
     expect(imported.id).not.toBe(starterFlow!.flow.id);

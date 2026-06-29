@@ -1290,16 +1290,37 @@ export const printRalphSummary = async (
         subject,
         { scope },
       );
-      if (record.status !== "waiting-for-input") {
+      const retryCurrent = options.retryCurrent === true;
+      const checkpoint = record.checkpoint ??
+        fail(
+          retryCurrent
+            ? `Ralph run \`${subject}\` does not have a recoverable checkpoint.`
+            : `Ralph run \`${subject}\` is not waiting for input.`,
+        );
+      const pendingInput = checkpoint.pendingInput;
+
+      if (retryCurrent) {
+        if (record.status === "waiting-for-input") {
+          fail(
+            `Ralph run \`${subject}\` is waiting for input; submit input instead of retrying the current block.`,
+          );
+        }
+
+        if (record.status !== "blocked" && record.status !== "crashed") {
+          fail(`Ralph run \`${subject}\` is not recoverable.`);
+        }
+      } else if (record.status !== "waiting-for-input" || !pendingInput) {
         fail(`Ralph run \`${subject}\` is not waiting for input.`);
       }
 
-      const checkpoint = record.checkpoint ??
-        fail(`Ralph run \`${subject}\` is not waiting for input.`);
-      const pendingInput = checkpoint.pendingInput ??
-        fail(`Ralph run \`${subject}\` is not waiting for input.`);
-
-      const inputResponse = await readRalphInputResponse(args, options, pendingInput);
+      const inputResponse = retryCurrent
+        ? undefined
+        : await readRalphInputResponse(
+            args,
+            options,
+            pendingInput ??
+              fail(`Ralph run \`${subject}\` is not waiting for input.`),
+          );
       const config = await loadRuntimeConfig(
         args.workspaceRoot,
         "machdoch",
@@ -1328,10 +1349,10 @@ export const printRalphSummary = async (
       });
       const result = await runRalphFlow(flow, config, customizations, {
         variableValues: record.variableValues,
-        inputResponse,
         runId: logger.runId,
         logger,
         ...(checkpoint ? { checkpoint } : {}),
+        ...(inputResponse ? { inputResponse } : {}),
         ...(options.maxTransitions !== undefined
           ? { maxTransitions: options.maxTransitions }
           : {}),

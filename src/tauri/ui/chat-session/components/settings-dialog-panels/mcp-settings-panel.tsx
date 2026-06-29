@@ -1293,7 +1293,7 @@ export const McpSettingsPanel = ({
                 <Input
                   value={getString(auth, "tokenEnv")}
                   disabled={disabled}
-                  placeholder="GITHUB_PAT"
+                  placeholder="GITHUB_PERSONAL_ACCESS_TOKEN"
                   onChange={(event) =>
                     updateSelectedRecord("auth", (record) =>
                       setRecordValue(record, "tokenEnv", event.target.value),

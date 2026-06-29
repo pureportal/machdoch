@@ -787,6 +787,41 @@ describe("desktop runtime fullscreen detection", () => {
     });
   });
 
+  it("passes retry-current requests to Ralph resume runs", async () => {
+    invokeMock.mockResolvedValueOnce({
+      run: {
+        flow: "refactor",
+        status: "completed",
+        summary: "Done.",
+        missingVariables: [],
+        unknownVariables: [],
+        events: [],
+        blockResults: [],
+      },
+    });
+
+    await resumeRalphRun("C:\\Project", {
+      runId: "run-1",
+      taskId: "ralph-resume-1",
+      scope: "workspace",
+      retryCurrent: true,
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("run_ralph_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        taskId: "ralph-resume-1",
+        arguments: [
+          "resume",
+          "run-1",
+          "--retry-current",
+          "--scope",
+          "workspace",
+        ],
+      },
+    });
+  });
+
   it("loads structured Ralph run details through the desktop command bridge", async () => {
     invokeMock.mockResolvedValueOnce({
       scope: "workspace",

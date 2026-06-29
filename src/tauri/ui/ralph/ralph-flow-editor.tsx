@@ -587,6 +587,10 @@ const getFlowStatusPresentation = (
     return { icon: AlertTriangle, className: "text-amber-200" };
   }
 
+  if (statusLabel === "Starter update") {
+    return { icon: AlertTriangle, className: "text-amber-200" };
+  }
+
   if (statusLabel === "Errors") {
     return { icon: AlertTriangle, className: "text-red-200" };
   }
@@ -2818,6 +2822,22 @@ const getStarterFlowById = (
   );
 };
 
+const getStarterFlowUpdate = (
+  flow: RalphFlowSummary,
+): { latestVersion: number } | null => {
+  if (flow.source?.kind !== "starter") {
+    return null;
+  }
+
+  const starterFlow = getStarterFlowById(flow.source.id);
+
+  if (!starterFlow || starterFlow.version <= flow.source.version) {
+    return null;
+  }
+
+  return { latestVersion: starterFlow.version };
+};
+
 const createStarterImportId = (
   starterFlow: RalphStarterFlow,
 ): string => {
@@ -3863,6 +3883,16 @@ export const RalphFlowEditor = ({
     pendingInput && (inputSubmitting || pendingInputSupersededByActiveRun),
   );
   const visibleLastRun = pendingInputContinuationInProgress ? null : lastRun;
+  const canRetryRecoverableRun = Boolean(
+    workspaceRoot &&
+      lastRun?.runId &&
+      lastRun.checkpoint &&
+      !pendingInput &&
+      !inputSubmitting &&
+      !pendingInputSupersededByActiveRun &&
+      selectedFlowActiveRunCount === 0 &&
+      (lastRun.status === "blocked" || lastRun.status === "crashed"),
+  );
   const runButtonLabel = selectedFlowPrimaryActiveRun ? "View active run" : "Run";
   const flowHasStart = Boolean(
     draftFlow?.blocks.some((block) => block.type === "START"),
@@ -6589,6 +6619,96 @@ export const RalphFlowEditor = ({
           action,
           ...(action === "submit" ? { values: pendingInputValues } : {}),
         },
+      });
+
+      setLastRun(result.run);
+      setMessage(
+        result.runLogPath
+          ? `${formatRunMessage(result.run)} Run log: ${result.runLogPath}`
+          : formatRunMessage(result.run),
+      );
+      if (result.run.runId) {
+        void openRunDetail(result.run.runId, selectedScope, { selectTab: false });
+      }
+      if (selectedId) {
+        void refreshRunHistory(selectedId, selectedScope);
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setActiveRuns((current) =>
+        current.filter((run) => run.id !== resumeTaskId),
+      );
+      setInputSubmitting(false);
+    }
+  };
+
+  const retryRecoverableRun = async (): Promise<void> => {
+    if (
+      !workspaceRoot ||
+      !lastRun?.runId ||
+      !lastRun.checkpoint ||
+      pendingInput ||
+      (lastRun.status !== "blocked" && lastRun.status !== "crashed")
+    ) {
+      return;
+    }
+
+    const resumeFlowId = draftFlowRef.current?.id ?? selectedId ?? lastRun.flow;
+    const resumeFlowName =
+      draftFlowRef.current?.name || selectedSummary?.name || resumeFlowId;
+    const resumeTaskId = createRalphRunTaskId(resumeFlowId);
+    const resumeStartedAt = Date.now();
+    const resumeVariableValues = Object.fromEntries(
+      Object.entries({
+        ...(lastRun.checkpoint.variables ?? {}),
+        ...variableValues,
+      })
+        .map(([name, value]) => [name.trim(), value] as const)
+        .filter(([name]) => Boolean(name)),
+    );
+
+    setActiveRuns((current) => [
+      {
+        id: resumeTaskId,
+        flowId: resumeFlowId,
+        scope: selectedScope,
+        flowName: resumeFlowName,
+        startedAt: resumeStartedAt,
+        status: "running",
+        mode: runMode,
+        provider: runProvider,
+        model: runModel,
+        ...(runProfile ? { profile: runProfile } : {}),
+        ...(runReasoning ? { reasoning: runReasoning } : {}),
+        ...(defaultMaxTransitions
+          ? { maxTransitions: defaultMaxTransitions }
+          : {}),
+        variableValues: resumeVariableValues,
+        events: [],
+        blockDetails: {},
+      },
+      ...current.filter((run) => run.id !== resumeTaskId),
+    ]);
+    setInputSubmitting(true);
+    setEditorMode("run");
+    setRunPanelTab("live");
+    setMessage(`Retrying ${lastRun.checkpoint.currentBlockId}.`);
+
+    try {
+      const result = await resumeRalphRun(workspaceRoot, {
+        runId: lastRun.runId,
+        scope: selectedScope,
+        taskId: resumeTaskId,
+        mode: runMode,
+        provider: runProvider,
+        model: runModel,
+        ...(runProfile ? { profile: runProfile } : {}),
+        ...(runReasoning ? { reasoning: runReasoning } : {}),
+        ...(defaultMaxTransitions
+          ? { maxTransitions: defaultMaxTransitions }
+          : {}),
+        retryCurrent: true,
       });
 
       setLastRun(result.run);
@@ -10663,11 +10783,15 @@ export const RalphFlowEditor = ({
                         const runStatusLabel = getFlowRunStatusLabel(
                           activeFlowRuns,
                         );
+                        const starterUpdate = getStarterFlowUpdate(flow);
                         const canLoadFlow =
                           Boolean(flow.path) ||
                           (draftFlow?.id === flow.id && selectedScope === flowScope);
                         const statusLabel =
                           runStatusLabel ??
+                          (starterUpdate
+                            ? "Starter update"
+                            : null) ??
                           (isGeneratedSummary
                             ? "Generated"
                             : isDraftSummary
@@ -10728,6 +10852,14 @@ export const RalphFlowEditor = ({
                               <span className="truncate text-[0.68rem] leading-4 text-slate-500">
                                 {formatFlowSubtitle(flow)}
                               </span>
+                              {starterUpdate ? (
+                                <span className="flex min-w-0 items-center gap-1 text-[0.68rem] font-medium leading-4 text-amber-200">
+                                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                                  <span className="min-w-0 truncate">
+                                    Starter v{starterUpdate.latestVersion} available
+                                  </span>
+                                </span>
+                              ) : null}
                             </button>
                           </div>
                         );
@@ -14210,8 +14342,26 @@ export const RalphFlowEditor = ({
 
                         {visibleLastRun ? (
                           <div className="grid gap-2 border-t border-slate-800 pt-3">
-                            <div className="text-sm font-medium text-slate-100">
-                              Last result: {visibleLastRun.status}
+                            <div className="flex min-w-0 items-center justify-between gap-3">
+                              <div className="min-w-0 text-sm font-medium text-slate-100">
+                                Last result: {visibleLastRun.status}
+                              </div>
+                              {canRetryRecoverableRun ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  disabled={inputSubmitting}
+                                  onClick={() => void retryRecoverableRun()}
+                                  className="h-8 shrink-0 rounded-lg border-amber-400/30 bg-amber-500/10 px-3 text-xs text-amber-100 hover:bg-amber-500/15 hover:text-white"
+                                >
+                                  {inputSubmitting ? (
+                                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                  )}
+                                  Retry current block
+                                </Button>
+                              ) : null}
                             </div>
                             <p className="break-words text-sm text-slate-400">
                               {visibleLastRun.summary}

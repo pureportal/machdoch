@@ -618,18 +618,17 @@ const sleepWithSignal = async (
   }
 
   await new Promise<void>((resolve) => {
-    let timeout: ReturnType<typeof setTimeout>;
-    const onAbort = (): void => {
+    function onAbort(): void {
       clearTimeout(timeout);
       signal?.removeEventListener("abort", onAbort);
       resolve();
-    };
-    const onTimeout = (): void => {
+    }
+    function onTimeout(): void {
       signal?.removeEventListener("abort", onAbort);
       resolve();
-    };
+    }
 
-    timeout = setTimeout(onTimeout, durationMs);
+    const timeout = setTimeout(onTimeout, durationMs);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 };
@@ -648,6 +647,20 @@ const isTransientStateReplaceError = (error: unknown): boolean => {
     isErrorWithCode(error, "EBUSY") ||
     isErrorWithCode(error, "EACCES") ||
     isErrorWithCode(error, "EPERM")
+  );
+};
+
+const isSchedulerStateLockContentionError = (
+  error: unknown,
+  lockPath: string,
+): boolean => {
+  if (isErrorWithCode(error, "EEXIST")) {
+    return true;
+  }
+
+  return (
+    (isErrorWithCode(error, "EACCES") || isErrorWithCode(error, "EPERM")) &&
+    existsSync(lockPath)
   );
 };
 
@@ -711,7 +724,7 @@ const acquireSchedulerStateLock = async (
 
       return () => releaseSchedulerStateLock(lockPath, token);
     } catch (error) {
-      if (!isErrorWithCode(error, "EEXIST")) {
+      if (!isSchedulerStateLockContentionError(error, lockPath)) {
         throw error;
       }
 

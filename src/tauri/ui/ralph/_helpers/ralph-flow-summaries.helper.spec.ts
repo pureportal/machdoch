@@ -44,6 +44,12 @@ const createFlow = (overrides: Partial<RalphFlow> = {}): RalphFlow => ({
   alias: "flow-one",
   name: "Flow One",
   description: "Creates a summary",
+  source: {
+    kind: "starter",
+    id: "autonomous-refactoring-flow",
+    version: 2,
+    importedAt: "2026-06-29T00:00:00.000Z",
+  },
   variables: [{ name: "topic", type: "string", required: false }],
   blocks: [
     {
@@ -156,6 +162,12 @@ describe("Ralph flow summary helpers", () => {
       scope: "user",
       path: "flows/flow-one.json",
       description: "Creates a summary",
+      source: {
+        kind: "starter",
+        id: "autonomous-refactoring-flow",
+        version: 2,
+        importedAt: "2026-06-29T00:00:00.000Z",
+      },
       blockCount: 2,
       edgeCount: 1,
       variableCount: 1,

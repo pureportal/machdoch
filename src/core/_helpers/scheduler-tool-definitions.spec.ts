@@ -131,7 +131,7 @@ describe("createSchedulerToolDefinitions", () => {
     });
     expect(updatedJob?.target.prompt).toContain("Every Tuesday");
     expect(updatedJob?.target.prompt).not.toContain("Every scheduled run");
-  }, 10_000);
+  });
 
   it("creates event-only jobs and emits scheduler events through AI tools", async () => {
     const workspaceRoot = await createWorkspace();

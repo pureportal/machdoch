@@ -928,6 +928,22 @@ describe("parseCliArgs", () => {
       verbose: false,
       workspaceRoot: "C:/workspace",
     });
+
+    expect(
+      parseCliArgs(["ralph", "resume", "run-1", "--retry-current"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "ralph",
+      ralph: {
+        action: "resume",
+        subject: "run-1",
+        retryCurrent: true,
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
   });
 
   it("parses scheduler create controls for prompts, packs, queues, and retries", () => {
@@ -1444,6 +1460,28 @@ describe("parseCliArgs", () => {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toThrow("Expected a flow id after `machdoch ralph delete`.");
+
+    expect(() =>
+      parseCliArgs(["ralph", "resume", "run-1"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("`machdoch ralph resume` expects --input-json, --input-json-file, or --retry-current.");
+
+    expect(() =>
+      parseCliArgs(
+        [
+          "ralph",
+          "resume",
+          "run-1",
+          "--retry-current",
+          "--input-json",
+          '{"requestId":"request-1","action":"submit"}',
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toThrow("Use either --retry-current or an input response for `machdoch ralph resume`, not both.");
 
     expect(() =>
       parseCliArgs(["ralph", "create", "template"], {

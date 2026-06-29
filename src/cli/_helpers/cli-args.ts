@@ -151,6 +151,7 @@ export const parseCliArgs = (
         "params-file"?: string;
         "input-json"?: string;
         "input-json-file"?: string;
+        "retry-current"?: boolean;
         "max-rounds"?: string;
         "max-transitions"?: string;
         trace?: boolean;
@@ -275,6 +276,7 @@ export const parseCliArgs = (
         "params-file": { type: "string" },
         "input-json": { type: "string" },
         "input-json-file": { type: "string" },
+        "retry-current": { type: "boolean" },
         "max-rounds": { type: "string" },
         "max-transitions": { type: "string" },
         trace: { type: "boolean" },
@@ -459,6 +461,7 @@ export const parseCliArgs = (
   const rawRalphParamsFile = normalizeOptionalString(values?.["params-file"]);
   const rawRalphInputJson = normalizeOptionalString(values?.["input-json"]);
   const rawRalphInputJsonFile = normalizeOptionalString(values?.["input-json-file"]);
+  const rawRalphRetryCurrent = values?.["retry-current"] === true;
   const rawRalphMaxRounds = normalizeOptionalString(values?.["max-rounds"]);
   const rawRalphMaxTransitions = normalizeOptionalString(values?.["max-transitions"]);
   const rawRalphTrace = values?.trace === true;
@@ -1196,12 +1199,25 @@ export const parseCliArgs = (
       fail("--params-file is only valid for `machdoch ralph run`.");
     }
 
-    if (action === "resume" && !rawRalphInputJson && !rawRalphInputJsonFile) {
-      fail("`machdoch ralph resume` expects --input-json or --input-json-file.");
+    if (
+      action === "resume" &&
+      !rawRalphRetryCurrent &&
+      !rawRalphInputJson &&
+      !rawRalphInputJsonFile
+    ) {
+      fail("`machdoch ralph resume` expects --input-json, --input-json-file, or --retry-current.");
+    }
+
+    if (action === "resume" && rawRalphRetryCurrent && (rawRalphInputJson || rawRalphInputJsonFile)) {
+      fail("Use either --retry-current or an input response for `machdoch ralph resume`, not both.");
     }
 
     if ((action === "resume" || action === "interview") && rawRalphInputJson && rawRalphInputJsonFile) {
       fail(`Use either --input-json or --input-json-file for \`machdoch ralph ${action}\`, not both.`);
+    }
+
+    if (action !== "resume" && rawRalphRetryCurrent) {
+      fail("--retry-current is only valid for `machdoch ralph resume`.");
     }
 
     if (action !== "resume" && action !== "interview" && rawRalphInputJson) {
@@ -1316,6 +1332,7 @@ export const parseCliArgs = (
           ...(rawRalphParamsFile ? { paramsFile: rawRalphParamsFile } : {}),
           ...(rawRalphInputJson ? { inputJson: rawRalphInputJson } : {}),
           ...(rawRalphInputJsonFile ? { inputJsonFile: rawRalphInputJsonFile } : {}),
+          ...(rawRalphRetryCurrent ? { retryCurrent: true } : {}),
           ...(ralphMaxRounds !== undefined ? { maxRounds: ralphMaxRounds } : {}),
           ...(ralphMaxTransitions !== undefined
             ? { maxTransitions: ralphMaxTransitions }

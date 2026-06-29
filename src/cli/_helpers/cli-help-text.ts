@@ -29,7 +29,7 @@ Usage:
   machdoch ralph restore <flow> --revision <revision-id> [--scope <user|workspace>] [--json]
   machdoch ralph save <flow> --flow-json <json> [--scope <user|workspace>] [--json]
   machdoch ralph run <flow> [--scope <user|workspace>] [--param <name=value>] [--json]
-  machdoch ralph resume <run-id> (--input-json <json>|--input-json-file <path>) [--scope <user|workspace>] [--json]
+  machdoch ralph resume <run-id> (--input-json <json>|--input-json-file <path>|--retry-current) [--scope <user|workspace>] [--json]
   machdoch ralph runs [flow] [--scope <user|workspace>] [--json]
   machdoch ralph run-detail <run-id> [--scope <user|workspace>] [--json]
   machdoch ralph log <run-id> [--scope <user|workspace>] [--trace] [--json]
@@ -166,6 +166,7 @@ Options:
   --input-json <json>     Submit answers for \`ralph resume\`. Use either a values object or a full input response.
   --input-json-file <path>
                           Read Ralph resume answers from a JSON file.
+  --retry-current         Resume a recoverable blocked Ralph run by retrying its checkpoint block.
   --max-rounds <n>        Maximum rounds for \`ralph create\`, \`ralph interview\`, or \`instructions generate\`.
   --max-transitions <n>   Stop a Ralph run or resume after this many graph transitions.
   --trace                 Show the detailed JSONL trace for \`ralph log\`.
