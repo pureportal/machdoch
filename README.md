@@ -484,5 +484,6 @@ Common checks:
 - Provider appears unconfigured: check `machdoch config`, user config path, `.env`, and process environment.
 - Web search is hidden: set `web-search.provider` and configure the matching API key.
 - Browser automation fails: install Edge or Chrome.
+- Delegated code flows search slowly or report `rg` is not recognized: install `ripgrep` and make sure `rg` is on the `PATH` visible to `machdoch` before launching the app.
 - Images are rejected: select a vision-capable model or remove image attachments.
 - GUI does not open on Linux: confirm `DISPLAY` or `WAYLAND_DISPLAY` is set.

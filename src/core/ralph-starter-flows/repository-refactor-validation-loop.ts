@@ -208,6 +208,19 @@ const autonomousRefactoringFlow: RalphFlow = {
         "Apply one cohesive refactor pass in selected JSON scope {{result:select-scope}} using structured conventions {{data:detect-conventions:output}}, refactor plan {{data:audit-against-policy:output}}, git baseline {{result:git-snapshot-before}}, and latest validation feedback {{lastResult}}. Follow objective {{refactorObjective:text=Improve maintainability while preserving behavior.}}, naming policy {{fileNamingPolicy:text=Follow existing framework and repository conventions.}}, max lines {{maxFileLines:number=500}}, helper placement {{helperPlacementPolicy:text=Follow existing module-local and shared helper conventions.}}, and test framework {{testFramework:text=auto-detect}}. Do not change public APIs unless allowPublicApiChanges={{allowPublicApiChanges:boolean=false}} and the reason is documented. Keep changes scoped to the selected paths/globs, update imports/exports/tests, and avoid broad formatting sweeps.",
     },
     {
+      id: "count-refactor-pass",
+      title: "Count Refactor Pass",
+      position: { x: 2400, y: -180 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "LOOP_COUNTER",
+        counterName:
+          "repository-refactor-validation-loop.refactor-pass.{{data:select-scope:scope.id}}",
+        maxAttempts: "{{maxRefactorPasses:number=5}}",
+      },
+    },
+    {
       id: "validation-decision",
       title: "Run Validation?",
       position: { x: 2740, y: 0 },
@@ -269,7 +282,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       size: { width: 300, height: 238 },
       type: "VALIDATOR",
       prompt:
-        "Perform a final scan for selected JSON scope {{result:select-scope}} using conventions {{data:detect-conventions:output}}, refactor plan {{data:audit-against-policy:output}}, validation result {{result:run-validation-checks}}, git diff {{result:git-diff-summary}}, and latest changes. Verify the configured objective, naming policy, max file line policy, helper placement policy, tests, public API policy, exclusions, selected paths/globs, and notes file {{notesFile:path=RALPH_REFACTOR_NOTES.md}}. If this selected scope is complete, end with RALPH_DECISION: DONE. If unresolved issues remain and fewer than {{maxRefactorPasses:number=5}} passes have been attempted for this scope, end with RALPH_DECISION: CONTINUE. If validation failed due to own changes, end with RALPH_DECISION: RETRY. If blocked, end with RALPH_DECISION: ERROR.",
+        "Perform a final scan for selected JSON scope {{result:select-scope}} using conventions {{data:detect-conventions:output}}, refactor plan {{data:audit-against-policy:output}}, validation result {{result:run-validation-checks}}, git diff {{result:git-diff-summary}}, and latest changes. Verify the configured objective, naming policy, max file line policy, helper placement policy, tests, public API policy, exclusions, selected paths/globs, and notes file {{notesFile:path=RALPH_REFACTOR_NOTES.md}}. If this selected scope is complete, end with RALPH_DECISION: DONE. If unresolved issues remain, end with RALPH_DECISION: CONTINUE; the flow counter enforces maxRefactorPasses={{maxRefactorPasses:number=5}}. If validation failed due to own changes, end with RALPH_DECISION: RETRY. If blocked, end with RALPH_DECISION: ERROR.",
       validationScope: {
         mode: "sinceLastValidator",
         blockIds: [],
@@ -370,8 +383,11 @@ const autonomousRefactoringFlow: RalphFlow = {
     { id: "audit-to-snapshot", from: "audit-against-policy", fromOutput: "SUCCESS", to: "git-snapshot-before" },
     { id: "audit-invalid", from: "audit-against-policy", fromOutput: "INVALID", to: "blocked" },
     { id: "audit-error", from: "audit-against-policy", fromOutput: "ERROR", to: "blocked" },
-    { id: "snapshot-to-refactor", from: "git-snapshot-before", fromOutput: "SUCCESS", to: "refactor-pass" },
-    { id: "snapshot-error-to-refactor", from: "git-snapshot-before", fromOutput: "ERROR", to: "refactor-pass" },
+    { id: "snapshot-to-count-refactor-pass", from: "git-snapshot-before", fromOutput: "SUCCESS", to: "count-refactor-pass" },
+    { id: "snapshot-error-to-count-refactor-pass", from: "git-snapshot-before", fromOutput: "ERROR", to: "count-refactor-pass" },
+    { id: "count-refactor-pass-continue", from: "count-refactor-pass", fromOutput: "CONTINUE", to: "refactor-pass" },
+    { id: "count-refactor-pass-limit", from: "count-refactor-pass", fromOutput: "LIMIT_REACHED", to: "blocked" },
+    { id: "count-refactor-pass-error", from: "count-refactor-pass", fromOutput: "ERROR", to: "blocked" },
     { id: "refactor-to-validation-decision", from: "refactor-pass", fromOutput: "SUCCESS", to: "validation-decision" },
     { id: "refactor-error", from: "refactor-pass", fromOutput: "ERROR", to: "blocked" },
     { id: "validation-decision-run", from: "validation-decision", fromOutput: "MATCH", to: "run-validation-checks" },
@@ -390,7 +406,7 @@ const autonomousRefactoringFlow: RalphFlow = {
     { id: "scope-guard-out-of-scope", from: "change-scope-guard", fromOutput: "OUT_OF_SCOPE", to: "blocked" },
     { id: "scope-guard-error", from: "change-scope-guard", fromOutput: "ERROR", to: "blocked" },
     { id: "scan-done", from: "final-refactor-scan", fromOutput: "DONE", to: "final-report" },
-    { id: "scan-continue", from: "final-refactor-scan", fromOutput: "CONTINUE", to: "refactor-pass" },
+    { id: "scan-continue", from: "final-refactor-scan", fromOutput: "CONTINUE", to: "count-refactor-pass" },
     { id: "scan-retry", from: "final-refactor-scan", fromOutput: "RETRY", to: "validation-decision" },
     { id: "scan-error", from: "final-refactor-scan", fromOutput: "ERROR", to: "blocked" },
     { id: "report-success-to-mark", from: "final-report", fromOutput: "SUCCESS", to: "mark-scope-result" },

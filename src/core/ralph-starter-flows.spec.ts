@@ -75,9 +75,12 @@ describe("Ralph starter flows", () => {
     expect(endBlocks[0]?.id).toBe("blocked");
   });
 
-  it("ships the refactor starter with validation fallback and scoped guard baseline", () => {
+  it("ships the refactor starter with validation fallback, scoped guard baseline, and pass counter", () => {
     const starterFlow = getRalphStarterFlow("autonomous-refactoring-flow");
     const flow = starterFlow?.flow;
+    const passCounter = flow?.blocks.find(
+      (block) => block.id === "count-refactor-pass",
+    );
     const validationDecision = flow?.blocks.find(
       (block) => block.id === "validation-decision",
     );
@@ -90,6 +93,14 @@ describe("Ralph starter flows", () => {
     const blocked = flow?.blocks.find((block) => block.id === "blocked");
 
     expect(starterFlow?.version).toBeGreaterThanOrEqual(3);
+    expect(passCounter).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "LOOP_COUNTER",
+        counterName: expect.stringContaining("{{data:select-scope:scope.id}}"),
+        maxAttempts: "{{maxRefactorPasses:number=5}}",
+      },
+    });
     expect(validationDecision).toMatchObject({
       type: "UTILITY",
       utility: {
@@ -114,6 +125,39 @@ describe("Ralph starter flows", () => {
       },
     });
     expect(blocked).toMatchObject({ type: "END", status: "failed" });
+    expect(flow?.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "git-snapshot-before",
+          fromOutput: "SUCCESS",
+          to: "count-refactor-pass",
+        }),
+        expect.objectContaining({
+          from: "count-refactor-pass",
+          fromOutput: "CONTINUE",
+          to: "refactor-pass",
+        }),
+        expect.objectContaining({
+          from: "count-refactor-pass",
+          fromOutput: "LIMIT_REACHED",
+          to: "blocked",
+        }),
+        expect.objectContaining({
+          from: "final-refactor-scan",
+          fromOutput: "CONTINUE",
+          to: "count-refactor-pass",
+        }),
+      ]),
+    );
+    expect(flow?.edges).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "final-refactor-scan",
+          fromOutput: "CONTINUE",
+          to: "refactor-pass",
+        }),
+      ]),
+    );
   });
 
   it("includes an autonomous code improvement loop with evidence-backed stop behavior", () => {
