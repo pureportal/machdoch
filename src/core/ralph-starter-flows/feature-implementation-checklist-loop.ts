@@ -358,7 +358,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       position: { x: 1060, y: 240 },
       size: { width: 256, height: 114 },
       type: "END",
-      status: "success",
+      status: "failed",
     },
   ],
   edges: [

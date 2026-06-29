@@ -537,7 +537,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       position: { x: 2760, y: 280 },
       size: { width: 256, height: 114 },
       type: "END",
-      status: "success",
+      status: "failed",
     },
   ],
   edges: [

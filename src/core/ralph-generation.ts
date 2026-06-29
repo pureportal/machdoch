@@ -511,7 +511,7 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
   RUN_COMMAND: {
     type: "RUN_COMMAND",
     role: "Run a configured local command.",
-    requiredFields: ["type", "command"],
+    requiredFields: ["type", "command or fallbackCommand"],
     optionalFields: ["fallbackCommand", "cwd", "env", "timeoutSeconds", "maxOutputBytes"],
     outputs: ["SUCCESS", "ERROR"],
     generationNotes: ["Use only when the flow intentionally needs command execution."],
@@ -756,7 +756,7 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
   RUN_CHECK: {
     type: "RUN_CHECK",
     role: "Run a verification command with accepted exit codes.",
-    requiredFields: ["type", "command"],
+    requiredFields: ["type", "command or fallbackCommand"],
     optionalFields: [
       "fallbackCommand",
       "cwd",

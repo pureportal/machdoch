@@ -347,7 +347,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       position: { x: 2060, y: 300 },
       size: { width: 256, height: 114 },
       type: "END",
-      status: "success",
+      status: "failed",
     },
   ],
   edges: [

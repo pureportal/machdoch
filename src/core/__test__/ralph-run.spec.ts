@@ -494,7 +494,7 @@ describe("runRalphFlow", () => {
       { maxTransitions: 5 },
     );
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("blocked");
     expect(vi.mocked(executeTask)).toHaveBeenCalledTimes(1);
     expect(result.events.some((event) => event.type === "retry")).toBe(false);
     expect(result.events).toEqual(
@@ -552,7 +552,7 @@ describe("runRalphFlow", () => {
       { maxTransitions: 5 },
     );
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("blocked");
     expect(vi.mocked(executeTask)).toHaveBeenCalledTimes(2);
     expect(result.events).toEqual(
       expect.arrayContaining([
@@ -723,6 +723,75 @@ describe("runRalphFlow", () => {
       ]);
       expect(normalizedResults.join("\n")).not.toContain("node_modules");
       expect(normalizedResults.join("\n")).not.toContain(".machdoch");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("matches SEARCH_FILES globs against paths relative to the search root", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-search-glob-"));
+
+    try {
+      await mkdir(join(workspace, "src", "nested"), { recursive: true });
+      await mkdir(join(workspace, "docs"), { recursive: true });
+      await writeFile(join(workspace, "src", "index.ts"), "export {};\n", "utf8");
+      await writeFile(
+        join(workspace, "src", "nested", "view.ts"),
+        "export {};\n",
+        "utf8",
+      );
+      await writeFile(join(workspace, "docs", "guide.ts"), "not source\n", "utf8");
+
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "search",
+              type: "UTILITY",
+              title: "Search",
+              utility: {
+                type: "SEARCH_FILES",
+                rootPath: ".",
+                glob: "src/**/*.ts",
+              },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            {
+              id: "start-to-search",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "search",
+            },
+            {
+              id: "search-to-success",
+              from: "search",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 5 },
+      );
+
+      const searchData = result.blockResults.find((entry) => entry.blockId === "search")
+        ?.data as { results: string[]; count: number } | undefined;
+      const normalizedResults =
+        searchData?.results.map((entry) => entry.replace(/\\/gu, "/")) ?? [];
+
+      expect(result.status).toBe("completed");
+      expect(searchData?.count).toBe(2);
+      expect(normalizedResults).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/\/src\/index\.ts$/u),
+          expect.stringMatching(/\/src\/nested\/view\.ts$/u),
+        ]),
+      );
+      expect(normalizedResults.join("\n")).not.toContain("docs");
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -1503,6 +1572,97 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("normalizes scope guard allowed paths before matching changed files", async () => {
+    const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
+
+    if (gitAvailable.status !== 0) {
+      return;
+    }
+
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-guard-rules-"));
+
+    try {
+      await mkdir(join(workspace, "src"), { recursive: true });
+      await mkdir(join(workspace, "docs"), { recursive: true });
+      await writeFile(
+        join(workspace, "src", "feature.ts"),
+        "export const value = 1;\n",
+        "utf8",
+      );
+      await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
+
+      expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
+      expect(
+        spawnSync("git", ["config", "user.email", "test@example.com"], {
+          cwd: workspace,
+        }).status,
+      ).toBe(0);
+      expect(
+        spawnSync("git", ["config", "user.name", "Test"], { cwd: workspace })
+          .status,
+      ).toBe(0);
+      expect(spawnSync("git", ["add", "."], { cwd: workspace }).status).toBe(0);
+      expect(
+        spawnSync("git", ["commit", "-m", "initial"], { cwd: workspace }).status,
+      ).toBe(0);
+
+      await writeFile(
+        join(workspace, "src", "feature.ts"),
+        "export const value = 2;\n",
+        "utf8",
+      );
+      await writeFile(join(workspace, "docs", "note.md"), "after\n", "utf8");
+
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "scope-guard",
+              type: "UTILITY",
+              title: "Scope Guard",
+              utility: {
+                type: "CHANGE_SCOPE_GUARD",
+                cwd: ".",
+                input: JSON.stringify({
+                  allowedPaths: [join(workspace, "docs")],
+                  allowedGlobs: ["./src/**/*.ts"],
+                }),
+              },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            { id: "start-to-guard", from: "start", fromOutput: "SUCCESS", to: "scope-guard" },
+            { id: "guard-to-success", from: "scope-guard", fromOutput: "IN_SCOPE", to: "success" },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10 },
+      );
+
+      expect(result.status).toBe("completed");
+      expect(result.blockResults).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            blockId: "scope-guard",
+            output: "IN_SCOPE",
+            data: expect.objectContaining({
+              guardedFiles: expect.arrayContaining([
+                "docs/note.md",
+                "src/feature.ts",
+              ]),
+              outOfScopeFiles: [],
+            }),
+          }),
+        ]),
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("ignores files already dirty in the scope guard baseline", async () => {
     const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
 
@@ -1862,7 +2022,7 @@ describe("runRalphFlow", () => {
       { maxTransitions: 5 },
     );
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("blocked");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.blockResults.find((entry) => entry.blockId === "poll"))
       .toMatchObject({
@@ -2700,6 +2860,7 @@ describe("runRalphFlow", () => {
     );
 
     expect(vi.mocked(executeTask)).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe("blocked");
     expect(result.blockResults.find((entry) => entry.blockId === "choose"))
       .toMatchObject({
         output: "ERROR",
@@ -2962,7 +3123,7 @@ describe("runRalphFlow", () => {
       { maxTransitions: 5 },
     );
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("blocked");
     expect(result.blockResults.find((entry) => entry.blockId === "search"))
       .toMatchObject({
         output: "ERROR",

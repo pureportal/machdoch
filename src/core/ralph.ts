@@ -5142,20 +5142,36 @@ const escapeRegExp = (value: string): string => {
 };
 
 const globToRegExp = (glob: string): RegExp => {
-  const pattern = glob
-    .split(/([*?])/u)
-    .map((part) => {
-      if (part === "*") {
-        return ".*";
-      }
+  const normalized = glob.replace(/\\/gu, "/");
+  let pattern = "";
 
-      if (part === "?") {
-        return ".";
-      }
+  for (let index = 0; index < normalized.length; index += 1) {
+    const char = normalized[index];
+    const next = normalized[index + 1];
 
-      return escapeRegExp(part);
-    })
-    .join("");
+    if (char === "*" && next === "*") {
+      if (normalized[index + 2] === "/") {
+        pattern += "(?:.*/)?";
+        index += 2;
+      } else {
+        pattern += ".*";
+        index += 1;
+      }
+      continue;
+    }
+
+    if (char === "*") {
+      pattern += "[^/]*";
+      continue;
+    }
+
+    if (char === "?") {
+      pattern += "[^/]";
+      continue;
+    }
+
+    pattern += escapeRegExp(char ?? "");
+  }
 
   return new RegExp(`^${pattern}$`, "iu");
 };
@@ -5163,6 +5179,7 @@ const globToRegExp = (glob: string): RegExp => {
 const searchFilesRecursive = async (
   rootPath: string,
   options: {
+    basePath: string;
     pattern?: string;
     glob?: RegExp;
     maxResults: number;
@@ -5196,7 +5213,11 @@ const searchFilesRecursive = async (
       options.pattern === undefined ||
       entry.name.toLowerCase().includes(options.pattern.toLowerCase()) ||
       path.toLowerCase().includes(options.pattern.toLowerCase());
-    const matchesGlob = options.glob === undefined || options.glob.test(entry.name);
+    const relativeFilePath = relative(options.basePath, path).replace(/\\/gu, "/");
+    const matchesGlob =
+      options.glob === undefined ||
+      options.glob.test(relativeFilePath) ||
+      options.glob.test(entry.name);
 
     if (entry.isFile() && matchesPattern && matchesGlob) {
       results.push(path);
@@ -5221,6 +5242,7 @@ const executeSearchFilesUtilityBlock = async (
     await searchFilesRecursive(
       rootPath,
       {
+        basePath: rootPath,
         ...(utility.pattern ? { pattern: utility.pattern } : {}),
         ...(utility.glob ? { glob: globToRegExp(utility.glob) } : {}),
         maxResults:
@@ -6206,26 +6228,32 @@ const doesPathMatchScopeGuard = (
   filePath: string,
   allowedPaths: readonly string[],
   allowedGlobs: readonly string[],
+  workspaceRoot: string,
 ): boolean => {
-  if (allowedPaths.includes(".") || allowedPaths.includes("./")) {
+  const normalizedAllowedPaths = allowedPaths.map((allowedPath) =>
+    normalizeWorkspaceRelativePath(allowedPath, workspaceRoot).replace(/\/+$/u, ""),
+  );
+  const normalizedAllowedGlobs = allowedGlobs.map((allowedGlob) =>
+    normalizeWorkspaceRelativePath(allowedGlob, workspaceRoot),
+  );
+
+  if (normalizedAllowedPaths.includes(".") || normalizedAllowedPaths.includes("")) {
     return true;
   }
 
-  const pathMatched = allowedPaths.some((allowedPath) => {
-    const normalized = allowedPath.replace(/\\/gu, "/").replace(/\/+$/u, "");
-
-    return (
+  const pathMatched = normalizedAllowedPaths.some((normalized) =>
+    (
       filePath === normalized ||
       filePath.startsWith(`${normalized}/`) ||
-      normalized.includes("*") && globToRegExp(normalized).test(filePath)
-    );
-  });
+      (normalized.includes("*") && globToRegExp(normalized).test(filePath))
+    )
+  );
 
   if (pathMatched) {
     return true;
   }
 
-  return allowedGlobs.some((glob) => globToRegExp(glob).test(filePath));
+  return normalizedAllowedGlobs.some((glob) => globToRegExp(glob).test(filePath));
 };
 
 const executeChangeScopeGuardUtilityBlock = async (
@@ -6297,7 +6325,12 @@ const executeChangeScopeGuardUtilityBlock = async (
 
     const outOfScopeFiles = guardedFiles.filter(
       (filePath) =>
-        !doesPathMatchScopeGuard(filePath, rules.paths, rules.globs),
+        !doesPathMatchScopeGuard(
+          filePath,
+          rules.paths,
+          rules.globs,
+          config.workspaceRoot,
+        ),
     );
     const output = outOfScopeFiles.length > 0 ? "OUT_OF_SCOPE" : "IN_SCOPE";
 
@@ -7497,6 +7530,19 @@ const updateResultContext = (
   context.runLog.push(`${result.blockId}: ${result.output} - ${result.summary}`);
 };
 
+const getRunStatusForEndBlock = (block: RalphEndBlock): RalphRunStatus => {
+  switch (block.status) {
+    case "failed":
+    case "review":
+      return "blocked";
+    case "cancelled":
+      return "stopped";
+    case "success":
+    case undefined:
+      return "completed";
+  }
+};
+
 const createBlockedRunResult = (
   flow: RalphFlow,
   validation: RalphValidationResult,
@@ -7933,15 +7979,16 @@ export const runRalphFlow = async (
     }
 
     if (block.type === "END") {
+      const status = getRunStatusForEndBlock(block);
       const summary = `Ralph flow \`${flow.name}\` ended at \`${block.id}\`.`;
       await emitRunEvent(
         events,
-        { type: "end", blockId: block.id, status: "completed", summary },
+        { type: "end", blockId: block.id, status, summary },
         options.onEvent,
       );
       return finishRun({
         flow: flow.id,
-        status: "completed",
+        status,
         summary,
         events,
         blockResults,
