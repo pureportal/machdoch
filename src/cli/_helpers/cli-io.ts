@@ -61,10 +61,6 @@ export const createVerboseProgressReporter = (
   let previousSnapshotKey = "";
 
   return (progress): void => {
-    if (isTerminalTaskExecutionState(progress.state)) {
-      return;
-    }
-
     if (options.structured) {
       const snapshotKey = JSON.stringify(
         createStructuredProgressSnapshot(progress),
@@ -76,6 +72,10 @@ export const createVerboseProgressReporter = (
 
       previousSnapshotKey = snapshotKey;
       writeLine(`${STRUCTURED_PROGRESS_PREFIX}${snapshotKey}`);
+      return;
+    }
+
+    if (isTerminalTaskExecutionState(progress.state)) {
       return;
     }
 

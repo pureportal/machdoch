@@ -22,6 +22,7 @@ import {
   SCHEDULER_ACTIONS_REQUIRING_SUBJECT,
   VALID_MODE_DESCRIPTION,
   VALID_MODES,
+  VALID_PROVIDER_DESCRIPTION,
   VALID_PROVIDERS,
   VALID_REASONING_MODE_DESCRIPTION,
   VALID_REASONING_MODES,
@@ -632,7 +633,7 @@ export const parseCliArgs = (
   }
 
   if (values?.provider !== undefined && !rawProvider) {
-    fail("Expected --provider to be followed by openai, anthropic, or google.");
+    fail(`Expected --provider to be followed by ${VALID_PROVIDER_DESCRIPTION}.`);
   }
 
   if (values?.["runtime-provider"] !== undefined && !rawRuntimeProvider) {
@@ -642,7 +643,7 @@ export const parseCliArgs = (
   }
 
   if (rawProvider && !VALID_PROVIDERS.has(rawProvider as UserApiProvider)) {
-    fail("Expected --provider to be followed by openai, anthropic, or google.");
+    fail(`Expected --provider to be followed by ${VALID_PROVIDER_DESCRIPTION}.`);
   }
 
   if (

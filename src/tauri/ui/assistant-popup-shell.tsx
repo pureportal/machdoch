@@ -27,6 +27,7 @@ import { getRenderedMessageContent } from "./chat-session/_helpers/execution-mes
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import { useNewestMessageScroll } from "./chat-session/_helpers/use-newest-message-scroll";
 import { AgentComposer } from "./chat-session/components/agent-composer";
+import { AttachmentImagePreviewDialog } from "./chat-session/components/attachment-image-preview-dialog";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { MessageMarkdown } from "./chat-session/components/message-markdown";
 import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
@@ -237,6 +238,7 @@ const QuickTaskComposer = ({
       onSelectContextFolders={quickTaskComposer.onSelectContextFolders}
       onSelectContextImages={quickTaskComposer.onSelectContextImages}
       onPasteContextImages={quickTaskComposer.onPasteContextImages}
+      onOpenContextAttachment={quickTaskComposer.onOpenContextAttachment}
       onRemoveContextAttachment={quickTaskComposer.onRemoveContextAttachment}
       onClearContextAttachments={quickTaskComposer.onClearContextAttachments}
       onDraftChange={quickTaskComposer.onDraftChange}
@@ -421,6 +423,10 @@ export const AssistantPopupShell = (): JSX.Element => {
           </>
         )}
       </div>
+      <AttachmentImagePreviewDialog
+        preview={controller.attachmentImagePreview.preview}
+        onOpenChange={controller.attachmentImagePreview.onOpenChange}
+      />
     </>
   );
 };

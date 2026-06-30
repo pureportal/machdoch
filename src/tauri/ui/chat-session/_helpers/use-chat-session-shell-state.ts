@@ -36,13 +36,15 @@ import {
 } from "../../runtime";
 import {
   type SessionScopeFilter,
-  type SessionStatusFilter,
+  type SessionStatusFilterSelection,
   type SettingsSection,
 } from "./session-shell";
 import {
+  ALL_SESSION_PROJECTS_FILTER,
   createSessionHistoryIndex,
   filterSessionHistoryIndex,
   type SessionHistoryIndex,
+  type SessionHistoryProjectFacet,
   type SessionHistoryTagFacet,
 } from "./session-history-index";
 import { useNewestMessageScroll } from "./use-newest-message-scroll";
@@ -352,10 +354,12 @@ export interface ChatSessionShellStateController {
   filteredSessions: ChatSessionRecord[];
   hasHydrated: boolean;
   sessionScopeFilter: SessionScopeFilter;
-  sessionStatusFilter: SessionStatusFilter;
+  sessionStatusFilters: SessionStatusFilterSelection;
   sessionSearchQuery: string;
+  sessionProjectFilter: string;
   sessionTagFilters: string[];
   sessionHistoryIndex: SessionHistoryIndex;
+  sessionProjectFacets: SessionHistoryProjectFacet[];
   sessionTagFacets: SessionHistoryTagFacet[];
   catalogOpen: boolean;
   settingsSection: SettingsSection;
@@ -370,8 +374,11 @@ export interface ChatSessionShellStateController {
   setSettingsSection: Dispatch<SetStateAction<SettingsSection>>;
   setActiveSessionId: (sessionId: string) => void;
   setSessionScopeFilter: Dispatch<SetStateAction<SessionScopeFilter>>;
-  setSessionStatusFilter: Dispatch<SetStateAction<SessionStatusFilter>>;
+  setSessionStatusFilters: Dispatch<
+    SetStateAction<SessionStatusFilterSelection>
+  >;
   setSessionSearchQuery: Dispatch<SetStateAction<string>>;
+  setSessionProjectFilter: Dispatch<SetStateAction<string>>;
   setSessionTagFilters: Dispatch<SetStateAction<string[]>>;
   setIsRenamingSession: Dispatch<SetStateAction<boolean>>;
   setRenameValue: Dispatch<SetStateAction<string>>;
@@ -412,9 +419,12 @@ export const useChatSessionShellState = (
   const [hasHydrated, setHasHydrated] = useState(false);
   const [sessionScopeFilter, setSessionScopeFilter] =
     useState<SessionScopeFilter>("open");
-  const [sessionStatusFilter, setSessionStatusFilter] =
-    useState<SessionStatusFilter>("any");
+  const [sessionStatusFilters, setSessionStatusFilters] =
+    useState<SessionStatusFilterSelection>(["any"]);
   const [sessionSearchQuery, setSessionSearchQuery] = useState("");
+  const [sessionProjectFilter, setSessionProjectFilter] = useState(
+    ALL_SESSION_PROJECTS_FILTER,
+  );
   const [sessionTagFilters, setSessionTagFilters] = useState<string[]>([]);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [settingsSection, setSettingsSection] =
@@ -497,15 +507,17 @@ export const useChatSessionShellState = (
   const filteredSessions = useMemo(() => {
     return filterSessionHistoryIndex(sessionHistoryIndex, {
       scope: sessionScopeFilter,
-      status: sessionStatusFilter,
+      status: sessionStatusFilters,
       searchQuery: sessionSearchQuery,
+      projectFilter: sessionProjectFilter,
       tagFilters: sessionTagFilters,
     }).sessions;
   }, [
     sessionHistoryIndex,
+    sessionProjectFilter,
     sessionScopeFilter,
     sessionSearchQuery,
-    sessionStatusFilter,
+    sessionStatusFilters,
     sessionTagFilters,
   ]);
 
@@ -579,6 +591,20 @@ export const useChatSessionShellState = (
       setSessionTagFilters(nextTagFilters);
     }
   }, [sessionHistoryIndex.tags, sessionTagFilters]);
+
+  useEffect(() => {
+    if (sessionProjectFilter === ALL_SESSION_PROJECTS_FILTER) {
+      return;
+    }
+
+    const availableProjects = new Set(
+      sessionHistoryIndex.projects.map((project) => project.id),
+    );
+
+    if (!availableProjects.has(sessionProjectFilter)) {
+      setSessionProjectFilter(ALL_SESSION_PROJECTS_FILTER);
+    }
+  }, [sessionHistoryIndex.projects, sessionProjectFilter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -869,10 +895,12 @@ export const useChatSessionShellState = (
     filteredSessions,
     hasHydrated,
     sessionScopeFilter,
-    sessionStatusFilter,
+    sessionStatusFilters,
     sessionSearchQuery,
+    sessionProjectFilter,
     sessionTagFilters,
     sessionHistoryIndex,
+    sessionProjectFacets: sessionHistoryIndex.projects,
     sessionTagFacets: sessionHistoryIndex.tags,
     catalogOpen,
     settingsSection,
@@ -887,8 +915,9 @@ export const useChatSessionShellState = (
     setSettingsSection,
     setActiveSessionId,
     setSessionScopeFilter,
-    setSessionStatusFilter,
+    setSessionStatusFilters,
     setSessionSearchQuery,
+    setSessionProjectFilter,
     setSessionTagFilters,
     setIsRenamingSession,
     setRenameValue,

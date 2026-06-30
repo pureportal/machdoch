@@ -87,6 +87,7 @@ export interface AgentComposerProps {
   onSelectContextFolders: () => Promise<void>;
   onSelectContextImages: () => Promise<void>;
   onPasteContextImages: (files: File[]) => Promise<void>;
+  onOpenContextAttachment?: (attachment: ChatSessionContextAttachment) => void;
   onRemoveContextAttachment: (attachmentId: string) => void;
   onClearContextAttachments: () => void;
   onDraftChange: (value: string) => void;
@@ -275,6 +276,7 @@ export const AgentComposer = ({
   onSelectContextFolders,
   onSelectContextImages,
   onPasteContextImages,
+  onOpenContextAttachment,
   onRemoveContextAttachment,
   onClearContextAttachments,
   onDraftChange,
@@ -517,6 +519,7 @@ export const AgentComposer = ({
       >
         <ContextAttachmentsList
           attachments={contextAttachments}
+          onOpen={onOpenContextAttachment}
           onRemove={onRemoveContextAttachment}
           onClearAll={onClearContextAttachments}
           compact={styles.attachmentListCompact}
@@ -569,6 +572,7 @@ export const AgentComposer = ({
 
         <ContextAttachmentsList
           attachments={contextAttachments}
+          onOpen={onOpenContextAttachment}
           onRemove={onRemoveContextAttachment}
           onClearAll={onClearContextAttachments}
         />

@@ -7,7 +7,8 @@ use super::{
 use codex_cli::fetch_codex_cli_model_catalog;
 use copilot_cli::fetch_copilot_cli_model_catalog;
 use provider_api::{
-    fetch_anthropic_model_catalog, fetch_google_model_catalog, fetch_openai_model_catalog,
+    fetch_anthropic_model_catalog, fetch_google_model_catalog, fetch_langdock_model_catalog,
+    fetch_openai_model_catalog,
 };
 
 mod codex_cli;
@@ -84,6 +85,21 @@ pub(super) async fn fetch_provider_model_catalog(
                     return provider_model_catalog_unavailable(
                         provider,
                         "GOOGLE_API_KEY is not configured.",
+                    );
+                }
+            }
+        }
+        "langdock" => {
+            let api_key = env.get("LANGDOCK_API_KEY").map(String::as_str);
+            match api_key.filter(|value| has_configured_value(Some(value))) {
+                Some(value) => (
+                    "LANGDOCK_API_KEY",
+                    fetch_langdock_model_catalog(client, value).await,
+                ),
+                None => {
+                    return provider_model_catalog_unavailable(
+                        provider,
+                        "LANGDOCK_API_KEY is not configured.",
                     );
                 }
             }

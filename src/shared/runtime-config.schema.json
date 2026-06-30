@@ -60,6 +60,7 @@
         "openai",
         "anthropic",
         "google",
+        "langdock",
         "codex-cli",
         "claude-cli",
         "copilot-cli"
@@ -71,6 +72,7 @@
         "openai",
         "anthropic",
         "google",
+        "langdock",
         "codex-cli",
         "claude-cli",
         "copilot-cli",
@@ -79,7 +81,7 @@
     },
     "UserApiProvider": {
       "type": "string",
-      "enum": ["openai", "anthropic", "google"]
+      "enum": ["openai", "anthropic", "google", "langdock"]
     },
     "AgentCliProvider": {
       "type": "string",
@@ -292,6 +294,9 @@
           "type": "string"
         },
         "google": {
+          "type": "string"
+        },
+        "langdock": {
           "type": "string"
         }
       }
@@ -785,6 +790,7 @@
       "openai": "gpt-5.5",
       "anthropic": "claude-sonnet-4-6",
       "google": "gemini-3.5-flash",
+      "langdock": "gpt-5",
       "codex-cli": "gpt-5.5",
       "claude-cli": "claude-sonnet-4-6",
       "copilot-cli": "auto"
@@ -800,12 +806,15 @@
       "MACHDOCH_INFINITE",
       "MACHDOCH_CODEX_CLI_PATH",
       "MACHDOCH_CLAUDE_CLI_PATH",
-      "MACHDOCH_COPILOT_CLI_PATH"
+      "MACHDOCH_COPILOT_CLI_PATH",
+      "LANGDOCK_REGION",
+      "LANGDOCK_BASE_URL"
     ],
     "providerEnvKeys": {
       "openai": "OPENAI_API_KEY",
       "anthropic": "ANTHROPIC_API_KEY",
-      "google": "GOOGLE_API_KEY"
+      "google": "GOOGLE_API_KEY",
+      "langdock": "LANGDOCK_API_KEY"
     },
     "agentCliProviderEnvKeys": {
       "codex-cli": "MACHDOCH_CODEX_CLI_PATH",

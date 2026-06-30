@@ -130,7 +130,83 @@ describe("session shell view model helpers", () => {
         "archived",
         "done",
       ).map((session) => session.id),
-    ).toEqual([archivedDoneSession.id]);
+      ).toEqual([archivedDoneSession.id]);
+  });
+
+  it("filters sessions by multiple statuses including unread", () => {
+    const runningSession = createSession({
+      id: "running-session",
+      updatedAt: 30,
+      messages: [
+        {
+          id: "running-user",
+          taskId: "running-task",
+          role: "user",
+          content: "Keep working",
+          createdAt: 30,
+        },
+      ],
+    });
+    const unreadDoneSession = createSession({
+      id: "unread-done-session",
+      updatedAt: 20,
+      lastReadAt: 5,
+      messages: [
+        {
+          id: "unread-user",
+          taskId: "unread-task",
+          role: "user",
+          content: "Finish this",
+          createdAt: 10,
+        },
+        {
+          id: "unread-agent",
+          taskId: "unread-task",
+          role: "agent",
+          content: "Done",
+          createdAt: 20,
+          source: createExecutedMessageSource(),
+        },
+      ],
+    });
+    const readDoneSession = createSession({
+      id: "read-done-session",
+      updatedAt: 15,
+      lastReadAt: 25,
+      messages: [
+        {
+          id: "read-user",
+          taskId: "read-task",
+          role: "user",
+          content: "Finish this too",
+          createdAt: 12,
+        },
+        {
+          id: "read-agent",
+          taskId: "read-task",
+          role: "agent",
+          content: "Done",
+          createdAt: 15,
+          source: createExecutedMessageSource(),
+        },
+      ],
+    });
+    const emptySession = createSession({
+      id: "empty-session",
+      updatedAt: 10,
+    });
+
+    const matchingSessionIds = new Set(
+      filterSessions(
+        [readDoneSession, emptySession, runningSession, unreadDoneSession],
+        "open",
+        ["unread", "running"],
+      ).map((session) => session.id),
+    );
+
+    expect(matchingSessionIds).toEqual(
+      new Set(["running-session", "unread-done-session"]),
+    );
   });
 
   it("indexes session history by text, tags, projects, and pin priority", () => {

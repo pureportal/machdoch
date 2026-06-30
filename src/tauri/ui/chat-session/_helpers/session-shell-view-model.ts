@@ -15,6 +15,7 @@ import {
   getWorkspaceLabel,
   type SessionScopeFilter,
   type SessionStatusFilter,
+  type SessionStatusFilterSelection,
 } from "./session-shell";
 import {
   createSessionHistoryIndex,
@@ -25,7 +26,7 @@ import {
 export const filterSessions = (
   sessions: ChatSessionRecord[],
   sessionScopeFilter: SessionScopeFilter,
-  sessionStatusFilter: SessionStatusFilter,
+  sessionStatusFilters: SessionStatusFilter | SessionStatusFilterSelection,
   historyFilters: Partial<
     Pick<
       SessionHistoryFilterOptions,
@@ -35,7 +36,7 @@ export const filterSessions = (
 ): ChatSessionRecord[] => {
   return filterSessionHistoryIndex(createSessionHistoryIndex(sessions), {
     scope: sessionScopeFilter,
-    status: sessionStatusFilter,
+    status: sessionStatusFilters,
     ...historyFilters,
   }).sessions;
 };

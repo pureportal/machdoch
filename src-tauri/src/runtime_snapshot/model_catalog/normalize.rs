@@ -57,6 +57,10 @@ pub(super) fn unix_seconds_to_utc_date(seconds: u64) -> Option<String> {
     Some(format!("{year:04}-{month:02}-{day:02}"))
 }
 
+pub(super) fn unix_milliseconds_to_utc_date(milliseconds: u64) -> Option<String> {
+    unix_seconds_to_utc_date(milliseconds / 1_000)
+}
+
 pub(super) fn json_bool_from_keys(
     value: Option<&serde_json::Value>,
     keys: &[&str],
@@ -225,6 +229,34 @@ pub(super) fn is_google_runtime_model(model_id: &str) -> bool {
         [_, "flash", "lite", "preview"] => true,
         _ => false,
     }
+}
+
+pub(super) fn is_langdock_runtime_model(model_id: &str) -> bool {
+    let normalized = model_id.to_ascii_lowercase();
+
+    if normalized.contains("deprecated") {
+        return false;
+    }
+
+    ![
+        "audio",
+        "dall",
+        "embed",
+        "embedding",
+        "imagen",
+        "image",
+        "moderation",
+        "realtime",
+        "rerank",
+        "search",
+        "sora",
+        "transcribe",
+        "tts",
+        "veo",
+        "whisper",
+    ]
+    .iter()
+    .any(|excluded| normalized.contains(excluded))
 }
 
 pub(super) fn runtime_model_stage(model_id: &str) -> Option<String> {

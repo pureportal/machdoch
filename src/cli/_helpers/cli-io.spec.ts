@@ -101,6 +101,49 @@ describe("createVerboseProgressReporter", () => {
       JSON.parse(lines[0]?.slice(STRUCTURED_PROGRESS_PREFIX.length) ?? "{}"),
     ).toEqual(progress);
   });
+
+  it("emits terminal states for structured desktop progress", () => {
+    const lines: string[] = [];
+    const progress: TaskExecutionProgress = {
+      task: "show README.md",
+      mode: "ask",
+      state: "completed",
+      message: "Workspace scan complete.",
+      executedTools: ["filesystem"],
+      outputSections: [],
+      cancellable: false,
+    };
+    const reporter = createVerboseProgressReporter((line) => {
+      lines.push(line);
+    }, { structured: true });
+
+    reporter(progress);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.startsWith(STRUCTURED_PROGRESS_PREFIX)).toBe(true);
+    expect(
+      JSON.parse(lines[0]?.slice(STRUCTURED_PROGRESS_PREFIX.length) ?? "{}"),
+    ).toEqual(progress);
+  });
+
+  it("keeps terminal states out of human verbose progress", () => {
+    const lines: string[] = [];
+    const reporter = createVerboseProgressReporter((line) => {
+      lines.push(line);
+    });
+
+    reporter({
+      task: "show README.md",
+      mode: "ask",
+      state: "completed",
+      message: "Workspace scan complete.",
+      executedTools: ["filesystem"],
+      outputSections: [],
+      cancellable: false,
+    });
+
+    expect(lines).toEqual([]);
+  });
 });
 
 describe("createActionFeedbackProgressReporter", () => {

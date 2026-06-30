@@ -39,6 +39,7 @@ export const SUPPORTED_PROVIDER_ORDER: RuntimeProvider[] = [
   "openai",
   "anthropic",
   "google",
+  "langdock",
   "codex-cli",
   "claude-cli",
   "copilot-cli",
@@ -52,6 +53,7 @@ export const PROVIDER_LABELS: Record<RuntimeProvider, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
   google: "Google",
+  langdock: "Langdock",
   "codex-cli": "Codex CLI",
   "claude-cli": "Claude CLI",
   "copilot-cli": "Copilot CLI",
@@ -59,6 +61,7 @@ export const PROVIDER_LABELS: Record<RuntimeProvider, string> = {
 
 const MAX_MODELS_PER_PROVIDER = 8;
 const MAX_CODEX_CLI_MODELS = 12;
+const MAX_LANGDOCK_MODELS = Number.MAX_SAFE_INTEGER;
 
 const OPENAI_RUNTIME_MODEL_PATTERN =
   /^gpt-\d+(?:\.\d+)?(?:-(?:mini|nano))?$/u;
@@ -96,10 +99,29 @@ const GOOGLE_EXCLUDED_MODEL_ID_PARTS = [
   "veo",
 ] as const;
 
+const LANGDOCK_EXCLUDED_MODEL_ID_PARTS = [
+  "audio",
+  "dall",
+  "embed",
+  "embedding",
+  "imagen",
+  "image",
+  "moderation",
+  "realtime",
+  "rerank",
+  "search",
+  "sora",
+  "transcribe",
+  "tts",
+  "veo",
+  "whisper",
+] as const;
+
 const REVIEW_MODEL_PATTERNS: Record<RuntimeProvider, readonly RegExp[]> = {
   openai: [/(?:^|-)mini$/u, /(?:^|-)nano$/u],
   anthropic: [/haiku/u],
   google: [/flash-lite/u, /flash/u],
+  langdock: [/(?:^|-)mini$/u, /(?:^|-)nano$/u, /flash-lite/u, /flash/u, /haiku/u],
   "codex-cli": [/(?:^|-)mini$/u, /(?:^|-)nano$/u],
   "claude-cli": [/haiku/u, /sonnet/u],
   "copilot-cli": [/auto/u],
@@ -200,6 +222,17 @@ const isModernGoogleRuntimeModel = (modelId: string): boolean => {
   );
 };
 
+const isModernLangdockRuntimeModel = (modelId: string): boolean => {
+  const normalized = normalizeModelId(modelId);
+
+  return (
+    normalized.length > 0 &&
+    !LANGDOCK_EXCLUDED_MODEL_ID_PARTS.some((part) =>
+      normalized.includes(part),
+    )
+  );
+};
+
 const isModernRuntimeModel = (
   provider: RuntimeProvider,
   model: RuntimeCatalogModel,
@@ -215,6 +248,8 @@ const isModernRuntimeModel = (
       return isModernAnthropicRuntimeModel(model.id);
     case "google":
       return isModernGoogleRuntimeModel(model.id);
+    case "langdock":
+      return isModernLangdockRuntimeModel(model.id);
     case "codex-cli":
     case "claude-cli":
     case "copilot-cli":
@@ -233,9 +268,15 @@ const toCatalogModel = (model: RuntimeCatalogModel): CatalogModel => {
 };
 
 const getModelLimitForProvider = (provider: RuntimeProvider): number => {
-  return provider === "codex-cli"
-    ? MAX_CODEX_CLI_MODELS
-    : MAX_MODELS_PER_PROVIDER;
+  if (provider === "codex-cli") {
+    return MAX_CODEX_CLI_MODELS;
+  }
+
+  if (provider === "langdock") {
+    return MAX_LANGDOCK_MODELS;
+  }
+
+  return MAX_MODELS_PER_PROVIDER;
 };
 
 const mergeCatalogModels = (

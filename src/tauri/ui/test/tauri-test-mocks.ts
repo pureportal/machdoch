@@ -35,6 +35,10 @@ export const disableInvokeMock = (): void => {
 
 export const openMock = vi.fn().mockResolvedValue("/mocked/tauri/path");
 export const openUrlMock = vi.fn().mockResolvedValue(undefined);
+export const convertFileSrcMock = vi.fn(
+  (filePath: string, protocol = "asset") =>
+    `http://${protocol}.localhost/${encodeURIComponent(filePath)}`,
+);
 export const desktopEventListeners = new Map<string, DesktopEventHandler>();
 export const windowDragDropListeners = new Set<WindowEventHandler<DragDropEvent>>();
 export const windowFocusChangedListeners = new Set<WindowEventHandler<boolean>>();
@@ -158,3 +162,4 @@ export const isTauri = isTauriMock;
 export const listen = listenMock;
 export const open = openMock;
 export const openUrl = openUrlMock;
+export const convertFileSrc = convertFileSrcMock;

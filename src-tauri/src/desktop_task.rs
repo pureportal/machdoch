@@ -236,6 +236,21 @@ pub async fn open_attached_path(
 }
 
 #[tauri::command]
+pub async fn resolve_attached_image_preview_path(
+    state: tauri::State<'_, AttachmentPathGrantMap>,
+    path: String,
+    workspace_root: Option<String>,
+) -> Result<String, String> {
+    let resolved_path = resolve_attached_path(&state, workspace_root.as_deref(), &path)?;
+
+    if !resolved_path.is_file() {
+        return Err("Expected the attached image preview path to be a file.".to_string());
+    }
+
+    Ok(format_path_for_ui(&resolved_path))
+}
+
+#[tauri::command]
 pub async fn resolve_dropped_paths(
     state: tauri::State<'_, AttachmentPathGrantMap>,
     paths: Vec<String>,
@@ -437,21 +452,26 @@ mod tests {
     }
 
     #[test]
-    fn attached_path_resolver_rejects_ungranted_workspace_attachments() {
+    fn attached_path_resolver_allows_workspace_attachments_after_restart() {
         let grants = AttachmentPathGrantMap::default();
         let workspace_path = create_test_directory("workspace");
-        let file_path = workspace_path.join("forged.md");
+        let file_path = workspace_path.join("persisted.md");
 
-        fs::write(&file_path, "forged").expect("test file should be written");
+        fs::write(&file_path, "persisted").expect("test file should be written");
 
-        let error = resolve_attached_path(
+        let resolved_path = resolve_attached_path(
             &grants,
             Some(workspace_path.to_string_lossy().as_ref()),
             file_path.to_string_lossy().as_ref(),
         )
-        .expect_err("ungranted attachment should be rejected");
+        .expect("persisted workspace attachment should resolve after restart");
 
-        assert!(error.contains("not selected or created"));
+        assert_eq!(
+            resolved_path,
+            file_path
+                .canonicalize()
+                .expect("test file should canonicalize")
+        );
 
         let _ = fs::remove_dir_all(workspace_path);
     }
@@ -470,6 +490,29 @@ mod tests {
 
         let resolved_path = resolve_attached_path(&grants, None, &saved_path)
             .expect("saved clipboard image attachment should resolve");
+
+        assert_eq!(
+            resolved_path,
+            PathBuf::from(&saved_path)
+                .canonicalize()
+                .expect("saved clipboard image should canonicalize")
+        );
+
+        let _ = fs::remove_file(saved_path);
+    }
+
+    #[test]
+    fn attached_path_resolver_allows_clipboard_image_attachments_after_restart() {
+        let grants = AttachmentPathGrantMap::default();
+        let saved_path = save_clipboard_image_attachment_sync(ClipboardImageAttachmentRequest {
+            data_base64: base64::engine::general_purpose::STANDARD.encode([0_u8, 1_u8, 2_u8]),
+            media_type: "image/png".to_string(),
+            file_name: Some("restart-clipboard.png".to_string()),
+        })
+        .expect("clipboard image attachment should be saved");
+
+        let resolved_path = resolve_attached_path(&grants, None, &saved_path)
+            .expect("saved clipboard image attachment should resolve without an in-memory grant");
 
         assert_eq!(
             resolved_path,

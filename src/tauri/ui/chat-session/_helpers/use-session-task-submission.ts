@@ -15,12 +15,19 @@ import {
   type ChatSessionMessage,
   type ChatSessionRecord,
 } from "../../chat-session.model";
+import type {
+  TaskExecutionProgress,
+  TaskExecutionResult,
+} from "../../../../core/types.js";
 import {
   loadUserMemorySettings,
   runDesktopTask,
   type RuntimeSnapshot,
 } from "../../runtime";
-import { createInitialThinkingTrace } from "../../task-thinking.model";
+import {
+  appendThinkingProgress,
+  createInitialThinkingTrace,
+} from "../../task-thinking.model";
 import {
   appendContextAttachmentsToTask,
   createPromptHistoryUpdate,
@@ -50,6 +57,29 @@ import type { ChatSessionRuntimeController } from "./use-chat-session-runtime";
 import type { ChatSessionShellStateController } from "./use-chat-session-shell-state";
 import type { ChatSessionVoiceController } from "./use-chat-session-voice";
 import type { UpdateThinkingTrace } from "./use-desktop-task-progress";
+
+const TERMINAL_PROGRESS_STATE_BY_STATUS = {
+  planned: "planned",
+  executed: "completed",
+  blocked: "blocked",
+  cancelled: "cancelled",
+  unsupported: "unsupported",
+} satisfies Record<TaskExecutionResult["status"], TaskExecutionProgress["state"]>;
+
+const createTerminalThinkingProgress = (
+  execution: TaskExecutionResult,
+): TaskExecutionProgress => {
+  return {
+    task: execution.task,
+    mode: execution.mode,
+    state: TERMINAL_PROGRESS_STATE_BY_STATUS[execution.status],
+    message: execution.summary,
+    executedTools: execution.executedTools,
+    outputSections: execution.outputSections,
+    cancellable: false,
+    ...(execution.reason ? { reason: execution.reason } : {}),
+  };
+};
 
 export interface SubmitTaskToSessionOptions {
   sessionSnapshot: ChatSessionRecord;
@@ -332,9 +362,8 @@ export const useSessionTaskSubmission = (options: {
 
       void taskRunPromise
         .then((taskRun) => {
-          options.activeDesktopTasksRef.current.delete(taskId);
-
           if (options.ignoredDesktopTaskIdsRef.current.has(taskId)) {
+            options.activeDesktopTasksRef.current.delete(taskId);
             options.ignoredDesktopTaskIdsRef.current.delete(taskId);
             return;
           }
@@ -375,19 +404,58 @@ export const useSessionTaskSubmission = (options: {
           options.state.scheduleMessage(
             () => {
               if (options.ignoredDesktopTaskIdsRef.current.has(taskId)) {
+                options.activeDesktopTasksRef.current.delete(taskId);
                 options.ignoredDesktopTaskIdsRef.current.delete(taskId);
                 return;
               }
 
-              appendAgentMessage(
-                sessionId,
-                taskId,
-                createExecutionMessageContent(taskRun.execution),
-                {
-                  kind: "execution",
-                  execution: taskRun.execution,
-                },
-              );
+              options.state.updateSessionById(sessionId, (session) => {
+                const timestamp = Date.now();
+                const terminalProgress = createTerminalThinkingProgress(
+                  taskRun.execution,
+                );
+                const nextMessages = session.messages.map((message) => {
+                  if (
+                    message.taskId !== taskId ||
+                    message.role !== "agent" ||
+                    message.source?.kind !== "thinking"
+                  ) {
+                    return message;
+                  }
+
+                  return {
+                    ...message,
+                    source: {
+                      kind: "thinking",
+                      thinking: appendThinkingProgress(
+                        message.source.thinking,
+                        terminalProgress,
+                        timestamp,
+                      ),
+                    },
+                  };
+                });
+
+                return options.applySessionMessageLimit({
+                  ...session,
+                  updatedAt: timestamp,
+                  messages: [
+                    ...nextMessages,
+                    {
+                      id: crypto.randomUUID(),
+                      taskId,
+                      role: "agent",
+                      content: createExecutionMessageContent(taskRun.execution),
+                      createdAt: timestamp,
+                      source: {
+                        kind: "execution",
+                        execution: taskRun.execution,
+                      },
+                    },
+                  ],
+                });
+              });
+              options.activeDesktopTasksRef.current.delete(taskId);
             },
             220,
           );

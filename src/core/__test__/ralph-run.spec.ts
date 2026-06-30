@@ -13,6 +13,10 @@ import {
   runtimeConfig,
 } from "./ralph-test-helpers.js";
 
+const playwrightMock = vi.hoisted(() => ({
+  launch: vi.fn(),
+}));
+
 vi.mock("../execution.js", () => ({
   executeTask: vi.fn(),
 }));
@@ -24,12 +28,20 @@ vi.mock("../mcp/client.js", () => ({
     getPrompt: vi.fn(),
   },
 }));
+
+vi.mock("playwright-core", () => ({
+  chromium: {
+    launch: playwrightMock.launch,
+  },
+}));
+
 describe("runRalphFlow", () => {
   beforeEach(() => {
     vi.mocked(executeTask).mockReset();
     vi.mocked(mcpClientManager.callTool).mockReset();
     vi.mocked(mcpClientManager.readResource).mockReset();
     vi.mocked(mcpClientManager.getPrompt).mockReset();
+    playwrightMock.launch.mockReset();
   });
 
   afterEach(() => {
@@ -1529,7 +1541,9 @@ describe("runRalphFlow", () => {
             output: "IN_SCOPE",
             data: expect.objectContaining({
               enforcement: "advisory",
-              outOfScopeFiles: expect.arrayContaining(["docs/note.md"]),
+              outOfScopeFiles: [],
+              advisoryOutOfScopeFiles: expect.arrayContaining(["docs/note.md"]),
+              unrelatedWorkspaceFiles: expect.arrayContaining(["docs/note.md"]),
             }),
           }),
         ]),
@@ -2804,6 +2818,208 @@ describe("runRalphFlow", () => {
           },
         }),
       });
+  });
+
+  it("collects enriched browser evidence with default UI_ANALYZE viewports", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-ui-browser-"));
+    const evaluateResult = {
+      issues: [
+        {
+          severity: "warning",
+          category: "interaction",
+          message: "Interactive target may be smaller than 44 by 44 CSS pixels.",
+          selector: "button#tiny",
+          evidence: { width: 32, height: 32 },
+        },
+        {
+          severity: "warning",
+          category: "contrast",
+          message: "Text may not meet computed contrast requirements.",
+          selector: "p.status",
+          evidence: { contrastRatio: 2.4, requiredRatio: 4.5 },
+        },
+      ],
+      analysis: {
+        viewport: {
+          width: 390,
+          height: 844,
+          scrollWidth: 420,
+          scrollHeight: 1200,
+          horizontalOverflowPixels: 30,
+        },
+        viewportMeta: {
+          present: true,
+          content: "width=device-width, initial-scale=1",
+          hasDeviceWidth: true,
+          hasInitialScale: true,
+          warnings: [],
+        },
+        structure: {
+          headings: [{ level: 1, text: "Dashboard" }],
+          h1Count: 1,
+          landmarkCounts: {
+            header: 1,
+            nav: 1,
+            main: 1,
+            aside: 0,
+            footer: 0,
+            search: 0,
+          },
+          navigationCount: 1,
+          mainCount: 1,
+          formCount: 0,
+          interactiveCount: 1,
+          imageCount: 0,
+          missingAltImageCount: 0,
+        },
+        textDensity: {
+          characterCount: 14,
+          wordCount: 2,
+          blockCount: 1,
+          denseBlockCount: 0,
+          maxBlockCharacters: 14,
+          denseBlocks: [],
+        },
+        layout: {
+          hasHorizontalOverflow: true,
+          clippedElementCount: 0,
+          clippedElements: [],
+          overflowElementCount: 1,
+          overflowElements: [{ selector: "main", width: 420, height: 900 }],
+          overlapCandidateCount: 0,
+          overlapCandidates: [],
+        },
+        interaction: {
+          smallTargetCount: 1,
+          smallTargets: [{ selector: "button#tiny", width: 32, height: 32 }],
+        },
+        contrast: {
+          checkedTextElementCount: 1,
+          lowContrastCount: 1,
+          lowContrastElements: [
+            {
+              selector: "p.status",
+              contrastRatio: 2.4,
+              requiredRatio: 4.5,
+            },
+          ],
+        },
+      },
+    };
+    const locator = {
+      innerText: vi.fn().mockResolvedValue("Dashboard Ready"),
+      ariaSnapshot: vi.fn().mockResolvedValue("- main: Dashboard"),
+    };
+    const page = {
+      on: vi.fn(),
+      setDefaultTimeout: vi.fn(),
+      goto: vi.fn().mockResolvedValue(undefined),
+      screenshot: vi.fn().mockResolvedValue(undefined),
+      title: vi.fn().mockResolvedValue("Dashboard"),
+      locator: vi.fn().mockReturnValue(locator),
+      evaluate: vi.fn().mockResolvedValue(evaluateResult),
+      url: vi.fn().mockReturnValue("http://127.0.0.1:4173/dashboard"),
+    };
+    const context = {
+      newPage: vi.fn().mockResolvedValue(page),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const browser = {
+      newContext: vi.fn().mockResolvedValue(context),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    playwrightMock.launch.mockResolvedValue(browser);
+
+    try {
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "analyze-ui",
+              type: "UTILITY",
+              title: "Analyze UI",
+              utility: {
+                type: "UI_ANALYZE",
+                adapter: "browser",
+                targetUrl: "http://127.0.0.1:4173/dashboard",
+                server: {
+                  mode: "none",
+                },
+              },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            {
+              id: "start-to-analyze",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "analyze-ui",
+            },
+            {
+              id: "analyze-to-success",
+              from: "analyze-ui",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 5, runId: "ui-browser-defaults" },
+      );
+
+      expect(result.status).toBe("completed");
+      expect(browser.newContext).toHaveBeenCalledTimes(4);
+      expect(browser.newContext).toHaveBeenNthCalledWith(4, {
+        viewport: {
+          width: 320,
+          height: 568,
+        },
+      });
+      expect(page.evaluate).toHaveBeenCalledTimes(4);
+      expect(result.blockResults.find((entry) => entry.blockId === "analyze-ui"))
+        .toMatchObject({
+          output: "SUCCESS",
+          data: expect.objectContaining({
+            adapter: "browser",
+            viewports: expect.arrayContaining([
+              expect.objectContaining({
+                name: "small-mobile",
+                width: 320,
+                height: 568,
+                analysis: expect.objectContaining({
+                  interaction: expect.objectContaining({
+                    smallTargetCount: 1,
+                  }),
+                  layout: expect.objectContaining({
+                    hasHorizontalOverflow: true,
+                  }),
+                }),
+              }),
+            ]),
+            issues: expect.arrayContaining([
+              expect.objectContaining({
+                category: "interaction",
+                selector: "button#tiny",
+                viewport: "small-mobile",
+                evidence: expect.objectContaining({
+                  width: 32,
+                  height: 32,
+                }),
+              }),
+              expect.objectContaining({
+                category: "contrast",
+                selector: "p.status",
+                viewport: "small-mobile",
+              }),
+            ]),
+          }),
+        });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
   });
 
   it("can collect UI evidence through a configured Tauri MCP tool", async () => {

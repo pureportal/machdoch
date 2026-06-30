@@ -791,6 +791,7 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     generationNotes: [
       "Use only when UI/browser/screenshot evidence materially helps the requested flow.",
       "Do not start or restart servers in generated UI_ANALYZE configs unless the user explicitly wants managed server behavior.",
+      "Browser UI_ANALYZE results include per-viewport analysis for viewport meta, structure, text density, layout overflow/clipping/overlap, small interaction targets, and computed contrast samples.",
     ],
   },
   GIT_STATUS: {

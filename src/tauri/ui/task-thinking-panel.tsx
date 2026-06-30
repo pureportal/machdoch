@@ -145,9 +145,14 @@ const createReplayExport = (
   thinking: TaskThinkingTrace,
   timelineEvents: TaskThinkingTimelineEvent[],
 ): string => {
-  const completedAt = thinking.completedAt ?? timelineEvents.at(-1)?.timestamp;
+  const completedAt =
+    thinking.status === "complete" ? thinking.completedAt : undefined;
+  const latestEventAt = timelineEvents.at(-1)?.timestamp;
+  const elapsedAt = completedAt ?? latestEventAt;
   const elapsedMs =
-    completedAt && thinking.startedAt ? completedAt - thinking.startedAt : 0;
+    elapsedAt !== undefined && thinking.startedAt
+      ? elapsedAt - thinking.startedAt
+      : 0;
 
   return JSON.stringify(
     {
@@ -159,7 +164,8 @@ const createReplayExport = (
       run: {
         status: thinking.status,
         startedAt: createIsoTimestamp(thinking.startedAt),
-        completedAt: createIsoTimestamp(completedAt),
+        completedAt: createIsoTimestamp(completedAt) ?? null,
+        lastEventAt: createIsoTimestamp(latestEventAt) ?? null,
         elapsedMs: Math.max(0, elapsedMs),
       },
       usage: thinking.tokenUsage ?? null,

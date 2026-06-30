@@ -1131,7 +1131,9 @@ const createDefaultUtilityConfig = (
         },
         viewports: [
           { name: "desktop", width: 1280, height: 900 },
+          { name: "tablet", width: 768, height: 1024 },
           { name: "mobile", width: 390, height: 844 },
+          { name: "small-mobile", width: 320, height: 568 },
         ],
         timeoutSeconds: 30,
         fullPage: true,
@@ -9257,7 +9259,9 @@ export const RalphFlowEditor = ({
                 defaultValue={formatJsonDraft(
                   selectedUtility.viewports ?? [
                     { name: "desktop", width: 1280, height: 900 },
+                    { name: "tablet", width: 768, height: 1024 },
                     { name: "mobile", width: 390, height: 844 },
+                    { name: "small-mobile", width: 320, height: 568 },
                   ],
                 )}
                 aria-label="UI analysis viewports JSON"

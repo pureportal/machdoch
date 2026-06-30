@@ -59,6 +59,42 @@ export const formatContextAttachmentKind = (
   attachment: ChatSessionContextAttachment,
 ): string => getAttachmentKindLabel(attachment);
 
+const getAttachmentActionLabel = (
+  attachment: ChatSessionContextAttachment,
+): string => {
+  switch (attachment.kind) {
+    case "directory":
+      return `Open folder ${attachment.name}`;
+    case "file":
+      return `Show file ${attachment.name}`;
+    case "image":
+      return `Preview image ${attachment.name}`;
+    case "other":
+    default:
+      return isLinkContextAttachment(attachment)
+        ? `Open link ${attachment.name}`
+        : `Open path ${attachment.name}`;
+  }
+};
+
+const getAttachmentActionTitle = (
+  attachment: ChatSessionContextAttachment,
+): string => {
+  switch (attachment.kind) {
+    case "directory":
+      return `Open folder: ${attachment.path}`;
+    case "file":
+      return `Show file in folder: ${attachment.path}`;
+    case "image":
+      return `Preview image: ${attachment.path}`;
+    case "other":
+    default:
+      return isLinkContextAttachment(attachment)
+        ? `Open link: ${attachment.path}`
+        : `Open path: ${attachment.path}`;
+  }
+};
+
 export interface ContextAttachmentMenuButtonProps {
   onSelectFiles: () => Promise<void>;
   onSelectFolders: () => Promise<void>;
@@ -141,6 +177,7 @@ export const ContextAttachmentMenuButton = ({
 
 export interface ContextAttachmentsListProps {
   attachments: ChatSessionContextAttachment[];
+  onOpen?: (attachment: ChatSessionContextAttachment) => void;
   onRemove: (attachmentId: string) => void;
   onClearAll: () => void;
   compact?: boolean;
@@ -148,6 +185,7 @@ export interface ContextAttachmentsListProps {
 
 export const ContextAttachmentsList = ({
   attachments,
+  onOpen,
   onRemove,
   onClearAll,
   compact = false,
@@ -173,6 +211,21 @@ export const ContextAttachmentsList = ({
         {attachments.map((attachment) => {
           const Icon = getAttachmentIcon(attachment);
           const kindLabel = getAttachmentKindLabel(attachment);
+          const attachmentContent = (
+            <>
+              <Icon
+                className={cn(
+                  "shrink-0 text-sky-300",
+                  attachment.kind === "image" && "text-sky-200",
+                  compact ? "h-3 w-3" : "h-3.5 w-3.5",
+                )}
+              />
+              <span className="min-w-0 max-w-48 truncate">
+                {attachment.name}
+              </span>
+              <span className="shrink-0 text-slate-500">{kindLabel}</span>
+            </>
+          );
 
           return (
             <li
@@ -185,17 +238,21 @@ export const ContextAttachmentsList = ({
               )}
               title={attachment.path}
             >
-              <Icon
-                className={cn(
-                  "shrink-0 text-sky-300",
-                  attachment.kind === "image" && "text-sky-200",
-                  compact ? "h-3 w-3" : "h-3.5 w-3.5",
-                )}
-              />
-              <span className="min-w-0 max-w-48 truncate">
-                {attachment.name}
-              </span>
-              <span className="shrink-0 text-slate-500">{kindLabel}</span>
+              {onOpen ? (
+                <button
+                  type="button"
+                  aria-label={getAttachmentActionLabel(attachment)}
+                  title={getAttachmentActionTitle(attachment)}
+                  onClick={() => onOpen(attachment)}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full text-left hover:text-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40"
+                >
+                  {attachmentContent}
+                </button>
+              ) : (
+                <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                  {attachmentContent}
+                </div>
+              )}
               <button
                 type="button"
                 aria-label={`Remove ${attachment.name}`}
@@ -261,13 +318,15 @@ export const MessageAttachmentsList = ({
         {attachments.map((attachment) => {
           const Icon = getAttachmentIcon(attachment);
           const kindLabel = getAttachmentKindLabel(attachment);
+          const actionLabel = getAttachmentActionLabel(attachment);
+          const actionTitle = getAttachmentActionTitle(attachment);
 
           return (
             <li key={attachment.id} className="max-w-full">
               <button
                 type="button"
-                aria-label={`Open ${attachment.name} preview`}
-                title={`Open preview: ${attachment.path}`}
+                aria-label={actionLabel}
+                title={actionTitle}
                 disabled={!onOpen}
                 onClick={() => onOpen?.(attachment)}
                 className={cn(

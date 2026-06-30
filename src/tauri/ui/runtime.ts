@@ -136,6 +136,7 @@ export const USER_API_KEY_PROVIDER_PORTAL_URLS: Record<
   openai: "https://platform.openai.com/api-keys",
   anthropic: "https://platform.claude.com/settings/keys",
   google: "https://aistudio.google.com/app/apikey",
+  langdock: "https://app.langdock.com",
 };
 
 export const USER_WEB_SEARCH_PROVIDER_ORDER: UserWebSearchApiKeyProvider[] = [
@@ -1244,6 +1245,10 @@ const canListenToDesktopTaskProgress = (): boolean => {
 
 const canInvokeTauriCommands = (): boolean => {
   return tauriCore.isTauri() && typeof tauriCore.invoke === "function";
+};
+
+const canConvertTauriFileSources = (): boolean => {
+  return tauriCore.isTauri() && typeof tauriCore.convertFileSrc === "function";
 };
 
 const canEmitTauriWindowEvents = (): boolean => {
@@ -4813,6 +4818,87 @@ export const openAttachedPath = async (
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
+};
+
+const ATTACHMENT_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:", "ftp:"]);
+
+export const openExternalUrl = async (url: string): Promise<void> => {
+  const normalizedUrl = url.trim();
+
+  if (!normalizedUrl) {
+    throw new Error("Expected a URL to open.");
+  }
+
+  let parsedUrl: URL;
+
+  try {
+    parsedUrl = new URL(normalizedUrl);
+  } catch {
+    throw new Error("Expected a valid URL to open.");
+  }
+
+  if (!ATTACHMENT_LINK_PROTOCOLS.has(parsedUrl.protocol)) {
+    throw new Error("Unsupported attachment link protocol.");
+  }
+
+  if (tauriCore.isTauri()) {
+    try {
+      await openUrl(parsedUrl.href);
+      return;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  if (typeof window !== "undefined" && typeof window.open === "function") {
+    window.open(parsedUrl.href, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  throw new Error("The attachment link could not be opened.");
+};
+
+const convertLocalFileSource = (path: string): string => {
+  if (!canConvertTauriFileSources()) {
+    return path;
+  }
+
+  try {
+    return tauriCore.convertFileSrc(path);
+  } catch (error) {
+    console.error("Failed to create attachment preview source", error);
+    return path;
+  }
+};
+
+export const resolveAttachedImagePreviewSource = async (
+  path: string,
+  workspaceRoot?: string | null,
+): Promise<string> => {
+  const normalizedPath = path.trim();
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+  if (!normalizedPath) {
+    throw new Error("Expected an attached image path.");
+  }
+
+  let resolvedPath = normalizedPath;
+
+  if (canInvokeTauriCommands()) {
+    try {
+      resolvedPath = await tauriCore.invoke<string>(
+        "resolve_attached_image_preview_path",
+        {
+          path: normalizedPath,
+          workspaceRoot: normalizedWorkspaceRoot,
+        },
+      );
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  return convertLocalFileSource(resolvedPath);
 };
 
 export const saveClipboardImageAttachment = async (

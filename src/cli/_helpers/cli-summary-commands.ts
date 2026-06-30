@@ -137,7 +137,7 @@ const isDesktopConfigSetting = (
 };
 
 const SUPPORTED_CONFIG_SET_SETTINGS = [
-  "api.<openai|anthropic|google>.key",
+  "api.<openai|anthropic|google|langdock>.key",
   "agent-cli.<codex-cli|claude-cli|copilot-cli>.path",
   "web-search.provider",
   "web-search.<perplexity|tavily|serper>.key",

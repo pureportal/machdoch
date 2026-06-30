@@ -13,13 +13,13 @@ export type ReasoningMode = (typeof REASONING_MODES)[number];
 export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "mcp", "scheduler", "utilities"] as const;
 export type ToolName = (typeof VALID_TOOLS)[number];
 
-export const VALID_MODEL_PROVIDERS = ["openai", "anthropic", "google", "codex-cli", "claude-cli", "copilot-cli"] as const;
+export const VALID_MODEL_PROVIDERS = ["openai", "anthropic", "google", "langdock", "codex-cli", "claude-cli", "copilot-cli"] as const;
 export type ConfiguredModelProvider = (typeof VALID_MODEL_PROVIDERS)[number];
 
-export const MODEL_PROVIDERS = ["openai", "anthropic", "google", "codex-cli", "claude-cli", "copilot-cli", "unconfigured"] as const;
+export const MODEL_PROVIDERS = ["openai", "anthropic", "google", "langdock", "codex-cli", "claude-cli", "copilot-cli", "unconfigured"] as const;
 export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
 
-export const USER_API_PROVIDERS = ["openai", "anthropic", "google"] as const;
+export const USER_API_PROVIDERS = ["openai", "anthropic", "google", "langdock"] as const;
 export type UserApiProvider = (typeof USER_API_PROVIDERS)[number];
 
 export const AGENT_CLI_PROVIDERS = ["codex-cli", "claude-cli", "copilot-cli"] as const;
@@ -49,16 +49,18 @@ export const DEFAULT_MODEL_BY_PROVIDER = {
   "openai": "gpt-5.5",
   "anthropic": "claude-sonnet-4-6",
   "google": "gemini-3.5-flash",
+  "langdock": "gpt-5",
   "codex-cli": "gpt-5.5",
   "claude-cli": "claude-sonnet-4-6",
   "copilot-cli": "auto"
 } as const satisfies Record<ConfiguredModelProvider, string>;
 
-export const RUNTIME_ENV_KEYS = ["MACHDOCH_MODE", "MACHDOCH_MODEL", "MACHDOCH_REASONING", "MACHDOCH_OFFLINE", "MACHDOCH_WEB_SEARCH_PROVIDER", "MACHDOCH_EXECUTOR_TURNS", "MACHDOCH_AUTOPILOT_ITERATIONS", "MACHDOCH_INFINITE", "MACHDOCH_CODEX_CLI_PATH", "MACHDOCH_CLAUDE_CLI_PATH", "MACHDOCH_COPILOT_CLI_PATH"] as const;
+export const RUNTIME_ENV_KEYS = ["MACHDOCH_MODE", "MACHDOCH_MODEL", "MACHDOCH_REASONING", "MACHDOCH_OFFLINE", "MACHDOCH_WEB_SEARCH_PROVIDER", "MACHDOCH_EXECUTOR_TURNS", "MACHDOCH_AUTOPILOT_ITERATIONS", "MACHDOCH_INFINITE", "MACHDOCH_CODEX_CLI_PATH", "MACHDOCH_CLAUDE_CLI_PATH", "MACHDOCH_COPILOT_CLI_PATH", "LANGDOCK_REGION", "LANGDOCK_BASE_URL"] as const;
 export const PROVIDER_ENV_KEY_BY_PROVIDER = {
   "openai": "OPENAI_API_KEY",
   "anthropic": "ANTHROPIC_API_KEY",
-  "google": "GOOGLE_API_KEY"
+  "google": "GOOGLE_API_KEY",
+  "langdock": "LANGDOCK_API_KEY"
 } as const satisfies Record<UserApiProvider, string>;
 export const AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER = {
   "codex-cli": "MACHDOCH_CODEX_CLI_PATH",

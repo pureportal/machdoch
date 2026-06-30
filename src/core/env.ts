@@ -63,6 +63,7 @@ const WORKSPACE_ENV_FILE_NAME = ".env";
 export type UserWebSearchProvider = Exclude<WebSearchProvider, "none">;
 export type UserAgentCliPaths = SharedUserAgentCliPaths;
 const USER_API_PROVIDERS = SCHEMA_USER_API_PROVIDERS;
+const USER_API_PROVIDER_DESCRIPTION = USER_API_PROVIDERS.join(", ");
 const TRUSTED_AGENT_CLI_ENV_KEYS = new Set<string>(
   Object.values(AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER),
 );
@@ -323,12 +324,8 @@ export const loadWorkspaceEnv = async (
   for (const key of [
     ...Object.keys(env),
     ...RUNTIME_ENV_KEYS,
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "GOOGLE_API_KEY",
-    "PERPLEXITY_API_KEY",
-    "TAVILY_API_KEY",
-    "SERPER_API_KEY",
+    ...Object.values(PROVIDER_ENV_KEY_BY_PROVIDER),
+    ...Object.values(WEB_SEARCH_ENV_KEY_BY_PROVIDER),
   ]) {
     const value = normalizeOptionalString(process.env[key]);
 
@@ -443,7 +440,7 @@ export const saveUserApiKey = async (
 
   if (!normalizedProvider || !isUserApiProvider(normalizedProvider)) {
     throw new Error(
-      "Expected --provider to be one of openai, anthropic, or google.",
+      `Expected --provider to be one of ${USER_API_PROVIDER_DESCRIPTION}.`,
     );
   }
 

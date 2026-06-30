@@ -328,7 +328,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
         prompt:
-          "Validate implementation against JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}, selected task {{data:select-next-task:task}}, feature request, acceptance criteria, research, interview, verification result {{result:run-configured-checks}}, git diff {{result:git-diff-summary}}, and visual review {{result:visual-analysis}} when present. Confirm done tasks are truly implemented, tests are meaningful or justified, optional checks were skipped only because configuration disabled them or required inputs were blank, and resume notes are current. Return JSON decision DONE when all checklist tasks are done and acceptance criteria pass. Return CONTINUE when more work remains. Return RETRY when the last pass needs correction. Return ERROR when blocked. Include confidence, summary, evidence, and remainingWork.",
+          "Validate implementation against JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}, selected task {{data:select-next-task:task}}, feature request, acceptance criteria, research, interview, verification result {{result:run-configured-checks}}, git diff {{result:git-diff-summary}}, and visual review {{result:visual-analysis}} when present. Judge only the active feature, selected task, checklist file, resume notes, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that feature/task unless they directly break verification or acceptance criteria. Confirm done tasks are truly implemented, tests are meaningful or justified, optional checks were skipped only because configuration disabled them or required inputs were blank, and resume notes are current. Return JSON decision DONE when all checklist tasks are done and acceptance criteria pass. Return CONTINUE when more work remains. Return RETRY when the last pass needs correction. Return ERROR when blocked by missing context, unsafe changes in the active feature/task, failing verification that cannot be fixed, or repeated ambiguity. Include confidence, summary, evidence, and remainingWork.",
       },
     },
     {
@@ -426,7 +426,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 2,
+  version: 3,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],

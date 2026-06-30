@@ -1,5 +1,6 @@
 import {
   Archive,
+  BellDot,
   Check,
   CircleDashed,
   Inbox,
@@ -45,7 +46,25 @@ export type SettingsSection =
   | "memory"
   | "desktop";
 export type SessionScopeFilter = "all" | "open" | "archived";
-export type SessionStatusFilter = "any" | SessionOverviewStatus;
+export type SessionConcreteStatusFilter = "unread" | SessionOverviewStatus;
+export type SessionStatusFilter = "any" | SessionConcreteStatusFilter;
+export type SessionStatusFilterSelection = readonly SessionStatusFilter[];
+
+export const isConcreteSessionStatusFilter = (
+  filter: SessionStatusFilter,
+): filter is SessionConcreteStatusFilter => {
+  return filter !== "any";
+};
+
+export const normalizeSessionStatusFilterSelection = (
+  filters: SessionStatusFilter | SessionStatusFilterSelection,
+): SessionStatusFilterSelection => {
+  const selectedFilters = (Array.isArray(filters) ? filters : [filters]).filter(
+    isConcreteSessionStatusFilter,
+  );
+
+  return selectedFilters.length > 0 ? [...new Set(selectedFilters)] : ["any"];
+};
 
 export const SETTINGS_SECTIONS: ReadonlyArray<{
   id: SettingsSection;
@@ -166,6 +185,7 @@ export const SESSION_STATUS_META = {
 
 export const SESSION_STATUS_FILTERS = [
   { id: "any", label: "Any status", icon: ListFilter },
+  { id: "unread", label: "Unread", icon: BellDot },
   {
     id: "empty",
     label: SESSION_STATUS_META.empty.filterLabel,

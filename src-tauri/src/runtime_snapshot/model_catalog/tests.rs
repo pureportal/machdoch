@@ -2,6 +2,7 @@
 mod model_catalog_parser_tests {
     use super::super::{
         codex_cli::parse_codex_cli_model_catalog, copilot_cli::parse_copilot_cli_model_catalog,
+        provider_api::parse_langdock_model_catalog,
     };
 
     #[test]
@@ -59,5 +60,58 @@ mod model_catalog_parser_tests {
         assert!(!model_ids
             .iter()
             .any(|model_id| model_id.contains("github.copilot")));
+    }
+
+    #[test]
+    fn langdock_model_catalog_parser_keeps_account_chat_models() {
+        let raw = r#"
+        {
+            "object": "list",
+            "data": [
+                {
+                    "id": "gpt-5",
+                    "object": "model",
+                    "created": 0,
+                    "region": "eu",
+                    "supportsExtendedThinking": true
+                },
+                {
+                    "id": "gemini-2.5-flash",
+                    "object": "model",
+                    "created": 0,
+                    "region": "global",
+                    "supportsExtendedThinking": false
+                },
+                {
+                    "id": "ollama-llama3.1",
+                    "object": "model",
+                    "created": 0,
+                    "region": "us",
+                    "supportsExtendedThinking": false
+                },
+                {
+                    "id": "text-embedding-3-large",
+                    "object": "model",
+                    "created": 0,
+                    "region": "eu",
+                    "supportsExtendedThinking": false
+                }
+            ]
+        }
+        "#;
+        let models =
+            parse_langdock_model_catalog(raw).expect("Langdock catalog should parse");
+        let model_ids = models
+            .iter()
+            .map(|model| model.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            model_ids,
+            vec!["gemini-2.5-flash", "gpt-5", "ollama-llama3.1"]
+        );
+        assert_eq!(models[1].release_date.as_deref(), Some("1970-01-01"));
+        assert_eq!(models[1].capabilities.reasoning, Some(true));
+        assert!(!model_ids.contains(&"text-embedding-3-large"));
     }
 }

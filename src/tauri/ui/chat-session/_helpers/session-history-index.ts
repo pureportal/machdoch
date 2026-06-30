@@ -3,6 +3,7 @@ import {
   createSession,
   getSessionOverviewStatus,
   getSessionTitle,
+  hasUnreadCompletedSessionResponse,
   isQuickVoiceSession,
   isSessionArchived,
   normalizeShellState,
@@ -13,8 +14,11 @@ import {
 } from "../../chat-session.model";
 import {
   getWorkspaceLabel,
+  isConcreteSessionStatusFilter,
+  normalizeSessionStatusFilterSelection,
   type SessionScopeFilter,
   type SessionStatusFilter,
+  type SessionStatusFilterSelection,
 } from "./session-shell";
 
 export const ALL_SESSION_PROJECTS_FILTER = "__all_projects__";
@@ -52,7 +56,7 @@ export interface SessionHistoryIndex {
 
 export interface SessionHistoryFilterOptions {
   scope: SessionScopeFilter;
-  status: SessionStatusFilter;
+  status: SessionStatusFilter | SessionStatusFilterSelection;
   searchQuery?: string;
   projectFilter?: string;
   tagFilters?: string[];
@@ -95,8 +99,19 @@ const uniqueTokens = (value: string): string[] => {
   return [...new Set(tokenizeSearchQuery(value))];
 };
 
+const normalizeProjectKey = (workspace: string): string => {
+  const trimmedWorkspace = workspace.trim();
+  const normalizedWorkspace = trimmedWorkspace
+    .replace(/\\/gu, "/")
+    .replace(/\/+$/u, "");
+
+  return (normalizedWorkspace || trimmedWorkspace).toLowerCase();
+};
+
 const getProjectId = (workspace: string | null): string => {
-  return workspace?.trim() ? workspace.trim().toLowerCase() : NO_WORKSPACE_PROJECT_KEY;
+  return workspace?.trim()
+    ? normalizeProjectKey(workspace)
+    : NO_WORKSPACE_PROJECT_KEY;
 };
 
 const getProjectLabel = (workspace: string | null): string => {
@@ -206,6 +221,32 @@ const sortProjectFacets = (
   });
 };
 
+const matchesSessionStatusFilters = (
+  session: ChatSessionRecord,
+  filters: SessionStatusFilter | SessionStatusFilterSelection,
+): boolean => {
+  const selectedFilters = normalizeSessionStatusFilterSelection(filters).filter(
+    isConcreteSessionStatusFilter,
+  );
+
+  if (selectedFilters.length === 0) {
+    return true;
+  }
+
+  const sessionStatus = getSessionOverviewStatus(session);
+  const hasUnreadResponse = selectedFilters.includes("unread")
+    ? hasUnreadCompletedSessionResponse(session)
+    : false;
+
+  return selectedFilters.some((filter) => {
+    if (filter === "unread") {
+      return hasUnreadResponse;
+    }
+
+    return sessionStatus === filter;
+  });
+};
+
 export const createSessionHistoryIndex = (
   sessions: ChatSessionRecord[],
 ): SessionHistoryIndex => {
@@ -285,15 +326,16 @@ export const filterSessionHistoryIndex = (
     .flatMap((entry) => {
       const isAlwaysVisibleSession = isQuickVoiceSession(entry.session);
       const archived = isSessionArchived(entry.session);
-      const sessionStatus = getSessionOverviewStatus(entry.session);
       const matchesScope =
         options.scope === "all"
           ? true
           : options.scope === "archived"
             ? archived
             : !archived;
-      const matchesStatus =
-        options.status === "any" ? true : sessionStatus === options.status;
+      const matchesStatus = matchesSessionStatusFilters(
+        entry.session,
+        options.status,
+      );
       const matchesProject = projectFilter ? entry.projectId === projectFilter : true;
       const sessionTagKeys = new Set(
         entry.session.tags.map((tag) => tag.toLowerCase()),

@@ -54,7 +54,9 @@ import {
   generateInstruction,
   listInstructions,
   openAttachedPath,
+  openExternalUrl,
   openWorkspacePath,
+  resolveAttachedImagePreviewSource,
   resolveDroppedPaths,
   saveInstruction,
   saveClipboardImageAttachment,
@@ -81,6 +83,7 @@ import {
   createContextAttachmentsFromTaskBlock,
   createPromptHistoryUpdate,
   getImageAttachmentPaths,
+  isLinkContextAttachment,
   mergeContextAttachments,
   normalizeDialogSelection,
   type AttachmentSelectionKind,
@@ -131,6 +134,13 @@ interface QueuedSessionMessage {
   createdAt: number;
 }
 
+interface AttachmentImagePreviewState {
+  attachment: ChatSessionContextAttachment;
+  source: string | null;
+  loading: boolean;
+  error: string | null;
+}
+
 export interface UseChatSessionControllerOptions {
   isolateActiveSession?: boolean;
   fileDropTarget?: FileDropTarget;
@@ -175,6 +185,8 @@ export const useChatSessionController = (
   const [quickTaskDraft, setQuickTaskDraft] = useState("");
   const [quickTaskContextAttachments, setQuickTaskContextAttachments] =
     useState<ChatSessionContextAttachment[]>([]);
+  const [attachmentImagePreview, setAttachmentImagePreview] =
+    useState<AttachmentImagePreviewState | null>(null);
   const [runningTaskMessageAction, setRunningTaskMessageAction] =
     useState<RunningTaskMessageAction>(DEFAULT_RUNNING_TASK_MESSAGE_ACTION);
   const [runningTaskMessageActionLoaded, setRunningTaskMessageActionLoaded] =
@@ -875,12 +887,81 @@ export const useChatSessionController = (
 
   const handleOpenAttachment = (
     attachment: ChatSessionContextAttachment,
+    workspaceRoot = state.activeSession.workspace,
   ): void => {
-    void openAttachedPath(attachment.path, state.activeSession.workspace).catch(
+    if (attachment.kind === "image") {
+      setAttachmentImagePreview({
+        attachment,
+        source: null,
+        loading: true,
+        error: null,
+      });
+
+      void resolveAttachedImagePreviewSource(
+        attachment.path,
+        workspaceRoot,
+      )
+        .then((source) => {
+          setAttachmentImagePreview((current) => {
+            if (
+              !current ||
+              current.attachment.id !== attachment.id ||
+              current.attachment.path !== attachment.path
+            ) {
+              return current;
+            }
+
+            return {
+              ...current,
+              source,
+              loading: false,
+              error: null,
+            };
+          });
+        })
+        .catch((error) => {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to resolve attached image preview.";
+
+          console.error("Failed to preview attached image", error);
+          setAttachmentImagePreview((current) => {
+            if (
+              !current ||
+              current.attachment.id !== attachment.id ||
+              current.attachment.path !== attachment.path
+            ) {
+              return current;
+            }
+
+            return {
+              ...current,
+              source: null,
+              loading: false,
+              error: message,
+            };
+          });
+        });
+      return;
+    }
+
+    if (isLinkContextAttachment(attachment)) {
+      void openExternalUrl(attachment.path).catch((error) => {
+        console.error("Failed to open attached link", error);
+      });
+      return;
+    }
+
+    void openAttachedPath(attachment.path, workspaceRoot).catch(
       (error) => {
         console.error("Failed to open attached path", error);
       },
     );
+  };
+
+  const handleCloseAttachmentImagePreview = (): void => {
+    setAttachmentImagePreview(null);
   };
 
   const getActiveDesktopTaskIdForSession = useCallback((sessionId: string): string | null => {
@@ -2601,17 +2682,20 @@ export const useChatSessionController = (
       activeSessionId: state.activeSession.id,
       filteredSessions: state.filteredSessions,
       sessionScopeFilter: state.sessionScopeFilter,
-      sessionStatusFilter: state.sessionStatusFilter,
+      sessionStatusFilters: state.sessionStatusFilters,
       sessionSearchQuery: state.sessionSearchQuery,
+      sessionProjectFilter: state.sessionProjectFilter,
       inactiveSessionArchiveDays:
         runtime.userDesktopSettings.inactiveSessionArchiveDays,
       archivedSessionRetentionDays:
         runtime.userDesktopSettings.archivedSessionRetentionDays,
+      sessionProjectFacets: state.sessionProjectFacets,
       sessionTagFacets: state.sessionTagFacets,
       sessionTagFilters: state.sessionTagFilters,
       onSessionScopeFilterChange: state.setSessionScopeFilter,
-      onSessionStatusFilterChange: state.setSessionStatusFilter,
+      onSessionStatusFiltersChange: state.setSessionStatusFilters,
       onSessionSearchQueryChange: state.setSessionSearchQuery,
+      onSessionProjectFilterChange: state.setSessionProjectFilter,
       onSessionTagFilterToggle: lifecycleActions.toggleSessionTagFilter,
       onCreateSession: lifecycleActions.createNewSession,
       onActivateSession: state.setActiveSessionId,
@@ -2678,6 +2762,14 @@ export const useChatSessionController = (
         onStopSpeaking: voice.stopSpeaking,
       },
     },
+    attachmentImagePreview: {
+      preview: attachmentImagePreview,
+      onOpenChange: (open: boolean) => {
+        if (!open) {
+          handleCloseAttachmentImagePreview();
+        }
+      },
+    },
     composer: {
       activeSession: state.activeSession,
       chooserProviders: providerChooserState.chooserProviders,
@@ -2740,6 +2832,7 @@ export const useChatSessionController = (
         handleSelectAttachments("active-session", "images"),
       onPasteContextImages: (files: File[]) =>
         handlePasteContextImages("active-session", files),
+      onOpenContextAttachment: handleOpenAttachment,
       onRemoveContextAttachment: (attachmentId: string) =>
         handleRemoveContextAttachment("active-session", attachmentId),
       onClearContextAttachments: () =>
@@ -2792,6 +2885,11 @@ export const useChatSessionController = (
         handleSelectAttachments("quick-task", "images"),
       onPasteContextImages: (files: File[]) =>
         handlePasteContextImages("quick-task", files),
+      onOpenContextAttachment: (attachment: ChatSessionContextAttachment) =>
+        handleOpenAttachment(
+          attachment,
+          quickTaskSession?.workspace ?? state.activeSession.workspace,
+        ),
       onRemoveContextAttachment: (attachmentId: string) =>
         handleRemoveContextAttachment("quick-task", attachmentId),
       onClearContextAttachments: () =>

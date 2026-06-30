@@ -206,6 +206,20 @@ const getGoogleReasoningModes = (
   return ANTHROPIC_DEFAULT_REASONING_MODES;
 };
 
+const getLangdockReasoningModes = (
+  model: string,
+): readonly ReasoningMode[] => {
+  if (model.startsWith("claude-")) {
+    return getAnthropicReasoningModes(model);
+  }
+
+  if (model.startsWith("gemini-")) {
+    return getGoogleReasoningModes(model);
+  }
+
+  return getOpenAiReasoningModes(model);
+};
+
 export const getReasoningModesForProviderModel = (
   provider: ConfiguredModelProvider | null | undefined,
   model?: string | null,
@@ -224,6 +238,8 @@ export const getReasoningModesForProviderModel = (
       return getAnthropicReasoningModes(normalizedModel);
     case "google":
       return getGoogleReasoningModes(normalizedModel);
+    case "langdock":
+      return getLangdockReasoningModes(normalizedModel);
     case "codex-cli":
       return CODEX_CLI_REASONING_MODES;
     case "copilot-cli":

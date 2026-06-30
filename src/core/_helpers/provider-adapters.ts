@@ -9,7 +9,30 @@ import type {
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import { AnthropicMessagesAdapter } from "./provider-adapters/anthropic-adapter.js";
 import { GeminiChatAdapter } from "./provider-adapters/gemini-adapter.js";
+import { LangdockChatCompletionsAdapter } from "./provider-adapters/langdock-adapter.js";
 import { OpenAIResponsesAdapter } from "./provider-adapters/openai-adapter.js";
+
+const LANGDOCK_DEFAULT_REGION = "eu";
+const LANGDOCK_SUPPORTED_REGIONS = new Set(["eu", "us"]);
+
+const stripTrailingSlashes = (value: string): string =>
+  value.replace(/\/+$/u, "");
+
+const resolveLangdockBaseURL = (env: Record<string, string>): string => {
+  const configuredBaseURL = env.LANGDOCK_BASE_URL;
+
+  if (configuredBaseURL && hasConfiguredValue(configuredBaseURL)) {
+    return stripTrailingSlashes(configuredBaseURL.trim());
+  }
+
+  const region = env.LANGDOCK_REGION?.trim().toLowerCase();
+  const normalizedRegion =
+    region && LANGDOCK_SUPPORTED_REGIONS.has(region)
+      ? region
+      : LANGDOCK_DEFAULT_REGION;
+
+  return `https://api.langdock.com/openai/${normalizedRegion}/v1`;
+};
 
 export const createProviderAdapter = async (
   config: RuntimeConfig,
@@ -63,6 +86,22 @@ export const createProviderAdapter = async (
       return new GeminiChatAdapter(
         new GoogleGenAI({ apiKey }),
         config.model,
+        tools,
+      );
+    }
+
+    case "langdock": {
+      const apiKey = env.LANGDOCK_API_KEY;
+
+      if (!apiKey || !hasConfiguredValue(apiKey)) {
+        return undefined;
+      }
+
+      return new LangdockChatCompletionsAdapter(
+        new OpenAI({
+          apiKey,
+          baseURL: resolveLangdockBaseURL(env),
+        }),
         tools,
       );
     }

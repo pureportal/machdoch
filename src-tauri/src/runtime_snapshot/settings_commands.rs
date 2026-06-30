@@ -23,6 +23,10 @@ fn is_user_api_provider(value: &str) -> bool {
     USER_API_PROVIDERS.contains(&value)
 }
 
+fn user_api_provider_description() -> String {
+    USER_API_PROVIDERS.join(", ")
+}
+
 fn is_agent_cli_provider(value: &str) -> bool {
     AGENT_CLI_PROVIDERS.contains(&value)
 }
@@ -152,13 +156,19 @@ pub(crate) fn merge_user_web_search_api_keys_into_env(
 
 pub(super) fn save_user_api_key(provider: &str, api_key: &str) -> Result<PathBuf, String> {
     let normalized_provider = normalize_optional_string(Some(provider)).ok_or_else(|| {
-        "Expected provider to be one of openai, anthropic, or google.".to_string()
+        format!(
+            "Expected provider to be one of {}.",
+            user_api_provider_description()
+        )
     })?;
     let normalized_api_key = normalize_optional_string(Some(api_key))
         .ok_or_else(|| "Expected a non-empty API key.".to_string())?;
 
     if !is_user_api_provider(&normalized_provider) {
-        return Err("Expected provider to be one of openai, anthropic, or google.".to_string());
+        return Err(format!(
+            "Expected provider to be one of {}.",
+            user_api_provider_description()
+        ));
     }
 
     update_user_config(|config| {

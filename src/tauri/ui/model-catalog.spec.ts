@@ -137,4 +137,44 @@ describe("provider model catalog", () => {
       "gemini-2.5-flash",
     ]);
   });
+
+  it("keeps broad Langdock account-discovered chat models", () => {
+    const snapshot = {
+      generatedAt: 1,
+      providers: [
+        {
+          provider: "langdock",
+          source: "provider-api",
+          available: true,
+          models: [
+            { id: "text-embedding-3-large" },
+            { id: "gpt-5" },
+            { id: "gemini-2.5-flash" },
+            { id: "ollama-llama3.1" },
+            { id: "custom-workspace-model-9" },
+            { id: "claude-sonnet-4-6-20260217" },
+            { id: "langdock-image-generator" },
+            { id: "qwen-coder-32b" },
+            { id: "deepseek-r1" },
+            { id: "mistral-large" },
+            { id: "codestral-latest" },
+          ],
+        },
+      ],
+    } satisfies ProviderModelCatalogSnapshot;
+
+    expect(
+      getCatalogModelsForProvider("langdock", snapshot).map((model) => model.id),
+    ).toEqual([
+      "claude-sonnet-4-6-20260217",
+      "gpt-5",
+      "gemini-2.5-flash",
+      "codestral-latest",
+      "custom-workspace-model-9",
+      "deepseek-r1",
+      "mistral-large",
+      "ollama-llama3.1",
+      "qwen-coder-32b",
+    ]);
+  });
 });

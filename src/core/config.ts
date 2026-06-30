@@ -21,6 +21,7 @@ import {
   PROVIDER_ENV_KEY_BY_PROVIDER,
   isReasoningMode as isRuntimeSchemaReasoningMode,
   USER_API_PROVIDERS,
+  VALID_MODEL_PROVIDERS,
   VALID_WEB_SEARCH_PROVIDERS,
   isConfiguredModelProvider,
   isRunMode as isRuntimeSchemaRunMode,
@@ -39,6 +40,7 @@ import type {
 
 const WORKSPACE_CONFIG_DIRECTORY = ".machdoch";
 const WORKSPACE_CONFIG_FILE_NAME = "config.json";
+const WORKSPACE_PROVIDER_DESCRIPTION = VALID_MODEL_PROVIDERS.join(", ");
 
 /**
  * Returns whether a string matches one of the supported runtime modes.
@@ -138,7 +140,7 @@ export const saveWorkspaceRuntimeProvider = async (
 
   if (!normalizedProvider || !isConfiguredModelProvider(normalizedProvider)) {
     throw new Error(
-      "Expected workspace.provider to be one of openai, anthropic, google, codex-cli, claude-cli, or copilot-cli.",
+      `Expected workspace.provider to be one of ${WORKSPACE_PROVIDER_DESCRIPTION}.`,
     );
   }
 

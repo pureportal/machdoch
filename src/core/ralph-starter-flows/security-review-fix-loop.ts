@@ -336,24 +336,10 @@ const securityFixLoopFlow: RalphFlow = {
       size: { width: 300, height: 238 },
       type: "VALIDATOR",
       prompt:
-        "Validate the latest iteration since the previous validator for selected scope {{result:select-scope}}. Confirm whether the structured review {{result:security-check}} and git diff {{result:git-diff-summary}} show no remaining findings at or above {{severityThreshold:text=high}}, fixes followed schemaChangePolicy={{schemaChangePolicy:text=report-only}}, dependency changes followed allowDependencyChanges={{allowDependencyChanges:boolean=false}}, {{historyFile:path=RALPH_SECURITY_HISTORY.md}} was updated when changes were made, no servers were started or restarted, and verification result {{result:run-verification}} was considered when a command was configured. If this selected scope is done, end with RALPH_DECISION: DONE. If qualifying findings remain and fewer than {{maxFixLoops:number=10}} loops have been attempted for this scope, end with RALPH_DECISION: CONTINUE. If the last fix needs correction or verification rerun, end with RALPH_DECISION: RETRY. If blocked by missing credentials, unsafe schema work, unavailable tooling, or repeated failures, end with RALPH_DECISION: ERROR.",
+        "Validate the latest iteration since the previous validator for selected scope {{result:select-scope}}. Confirm whether the structured review {{result:security-check}} and git diff {{result:git-diff-summary}} show no remaining findings at or above {{severityThreshold:text=high}} in the selected scope, fixes followed schemaChangePolicy={{schemaChangePolicy:text=report-only}}, dependency changes followed allowDependencyChanges={{allowDependencyChanges:boolean=false}}, {{historyFile:path=RALPH_SECURITY_HISTORY.md}} was updated when changes were made, no servers were started or restarted, and verification result {{result:run-verification}} was considered when a command was configured. Ignore unrelated workspace changes outside the selected scope unless they directly break verification of this security fix. If this selected scope is done, end with RALPH_DECISION: DONE. If qualifying findings remain and fewer than {{maxFixLoops:number=10}} loops have been attempted for this scope, end with RALPH_DECISION: CONTINUE. If the last fix needs correction or verification rerun, end with RALPH_DECISION: RETRY. If blocked by missing credentials, unsafe schema work, unavailable tooling, or repeated failures, end with RALPH_DECISION: ERROR.",
       validationScope: {
         mode: "sinceLastValidator",
         blockIds: [],
-      },
-    },
-    {
-      id: "change-scope-guard",
-      title: "Guard Scope Changes",
-      position: { x: 4240, y: -210 },
-      size: { width: 280, height: 170 },
-      type: "UTILITY",
-      utility: {
-        type: "CHANGE_SCOPE_GUARD",
-        cwd: ".",
-        input:
-          "{\"scope\": {{data:select-scope:scope}}, \"allowedPaths\": [\"{{historyFile:path=RALPH_SECURITY_HISTORY.md}}\"]}",
-        baseline: "{{result:git-snapshot-before}}",
       },
     },
     {
@@ -452,13 +438,9 @@ const securityFixLoopFlow: RalphFlow = {
     { id: "verification-success-to-diff", from: "run-verification", fromOutput: "SUCCESS", to: "git-diff-summary" },
     { id: "verification-failed-to-diff", from: "run-verification", fromOutput: "FAILED", to: "git-diff-summary" },
     { id: "verification-error-to-diff", from: "run-verification", fromOutput: "ERROR", to: "git-diff-summary" },
-    { id: "git-diff-success-to-scope-guard", from: "git-diff-summary", fromOutput: "SUCCESS", to: "change-scope-guard" },
+    { id: "git-diff-success-to-verify", from: "git-diff-summary", fromOutput: "SUCCESS", to: "verify-stop-condition" },
     { id: "git-diff-empty-to-verify", from: "git-diff-summary", fromOutput: "EMPTY", to: "verify-stop-condition" },
     { id: "git-diff-error-to-verify", from: "git-diff-summary", fromOutput: "ERROR", to: "verify-stop-condition" },
-    { id: "scope-guard-in-scope", from: "change-scope-guard", fromOutput: "IN_SCOPE", to: "verify-stop-condition" },
-    { id: "scope-guard-empty", from: "change-scope-guard", fromOutput: "EMPTY", to: "verify-stop-condition" },
-    { id: "scope-guard-out-of-scope", from: "change-scope-guard", fromOutput: "OUT_OF_SCOPE", to: "blocked" },
-    { id: "scope-guard-error", from: "change-scope-guard", fromOutput: "ERROR", to: "blocked" },
     { id: "verify-done", from: "verify-stop-condition", fromOutput: "DONE", to: "final-report" },
     { id: "verify-continue", from: "verify-stop-condition", fromOutput: "CONTINUE", to: "select-scope" },
     { id: "verify-retry", from: "verify-stop-condition", fromOutput: "RETRY", to: "verification-decision" },
@@ -476,7 +458,7 @@ const securityFixLoopFlow: RalphFlow = {
 
 export const securityReviewFixLoopStarterFlow = {
   id: "security-fix-loop",
-  version: 2,
+  version: 3,
   defaultAlias: "security-review-fix-loop",
   category: "Security",
   tags: ["review", "fix", "tests"],

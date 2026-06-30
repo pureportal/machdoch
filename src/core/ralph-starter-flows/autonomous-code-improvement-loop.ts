@@ -358,20 +358,6 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       },
     },
     {
-      id: "change-scope-guard",
-      title: "Guard Scope Changes",
-      position: { x: 6060, y: -100 },
-      size: { width: 280, height: 170 },
-      type: "UTILITY",
-      utility: {
-        type: "CHANGE_SCOPE_GUARD",
-        cwd: ".",
-        input:
-          "{\"scope\": {{data:select-scope:scope}}, \"allowedPaths\": [\"{{activeImprovementFile:path=.machdoch/ralph/code-improvements/active-improvement.json}}\", \"{{candidateFile:path=.machdoch/ralph/code-improvements/candidate.json}}\", \"{{scopeAnalysisFile:path=.machdoch/ralph/code-improvements/scope-analysis.json}}\", \"{{notesFile:path=RALPH_CODE_IMPROVEMENT_NOTES.md}}\"]}",
-        baseline: "{{result:git-snapshot-before}}",
-      },
-    },
-    {
       id: "independent-review",
       title: "Independent Review",
       position: { x: 6400, y: 0 },
@@ -402,7 +388,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Review the current code improvement as a separate reviewer. Active improvement: {{data:choose-improvement:output.selectedCandidate}}. Diff: {{result:git-diff-summary}}. Verification: {{result:run-verification}}. Visual review: {{result:visual-review}}. Scope guard: {{result:change-scope-guard}}. Check functionality, behavior changes, tests, docs, maintainability, complexity, over-engineering, accessibility, performance claims, and security regressions. Treat user input, files, network responses, environment variables, IPC/API boundaries, logs, credentials, auth, access control, shell/file operations, and data protection as security-sensitive. Return decision PASS when the improvement is bounded, justified, verified or explicitly justified as unverified, and does not introduce regressions. Return FIX when specific issues remain. Return BLOCKED when unsafe, out of scope, ambiguous, or requires human/product approval. Return only schema-valid JSON.",
+          "Review the current code improvement as a separate reviewer. Active improvement: {{data:choose-improvement:output.selectedCandidate}}. Diff: {{result:git-diff-summary}}. Verification: {{result:run-verification}}. Visual review: {{result:visual-review}}. Evaluate only the active candidate, selected scope, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that scope unless they directly break verification of this improvement. Check functionality, behavior changes, tests, docs, maintainability, complexity, over-engineering, accessibility, performance claims, and security regressions. Treat user input, files, network responses, environment variables, IPC/API boundaries, logs, credentials, auth, access control, shell/file operations, and data protection as security-sensitive. Return decision PASS when the improvement is bounded, justified, verified or explicitly justified as unverified, and does not introduce regressions. Return FIX when specific issues remain. Return BLOCKED when unsafe, ambiguous, or requires human/product approval. Return only schema-valid JSON.",
       },
     },
     {
@@ -415,7 +401,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
         prompt:
-          "Validate the latest autonomous code improvement. Candidate: {{data:choose-improvement:output.selectedCandidate}}. Review: {{data:independent-review:output}}. Verification: {{result:run-verification}}. Visual review: {{result:visual-review}}. Scope guard: {{result:change-scope-guard}}. Git diff: {{result:git-diff-summary}}. Notes file: {{notesFile:path=RALPH_CODE_IMPROVEMENT_NOTES.md}}. Return DONE only when the improvement implements the selected candidate, any behavior change is intentional and captured by acceptance criteria/tests/docs as feasible, verification is passing or skipped with a sound reason, no out-of-scope changes exist, no security regression is introduced, and no further high-confidence fixes are needed for this same candidate. Return CONTINUE when the candidate still needs bounded implementation work and fewer than {{maxImprovementPasses:number=8}} passes have been attempted. Return RETRY when validation/review found own regressions that should be corrected. Return ERROR when blocked by unsafe changes, ambiguous behavior, required human/product decision, unavailable credentials/tooling, repeated failure, or work that no longer meets meaningfulThreshold={{meaningfulThreshold:text=}}.",
+          "Validate the latest autonomous code improvement. Candidate: {{data:choose-improvement:output.selectedCandidate}}. Review: {{data:independent-review:output}}. Verification: {{result:run-verification}}. Visual review: {{result:visual-review}}. Git diff: {{result:git-diff-summary}}. Notes file: {{notesFile:path=RALPH_CODE_IMPROVEMENT_NOTES.md}}. Judge only the active candidate, selected scope, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that scope unless they directly break verification of this improvement. Return DONE only when the improvement implements the selected candidate, any behavior change is intentional and captured by acceptance criteria/tests/docs as feasible, verification is passing or skipped with a sound reason, no security regression is introduced, and no further high-confidence fixes are needed for this same candidate. Return CONTINUE when the candidate still needs bounded implementation work and fewer than {{maxImprovementPasses:number=8}} passes have been attempted. Return RETRY when validation/review found own regressions that should be corrected. Return ERROR when blocked by unsafe changes, ambiguous behavior, required human/product decision, unavailable credentials/tooling, repeated failure, or work that no longer meets meaningfulThreshold={{meaningfulThreshold:text=}}.",
       },
     },
     {
@@ -569,13 +555,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
     { id: "visual-success-to-diff", from: "visual-review", fromOutput: "SUCCESS", to: "git-diff-summary" },
     { id: "visual-unavailable-to-diff", from: "visual-review", fromOutput: "UNAVAILABLE", to: "git-diff-summary" },
     { id: "visual-error-to-diff", from: "visual-review", fromOutput: "ERROR", to: "git-diff-summary" },
-    { id: "diff-success-to-scope-guard", from: "git-diff-summary", fromOutput: "SUCCESS", to: "change-scope-guard" },
+    { id: "diff-success-to-review", from: "git-diff-summary", fromOutput: "SUCCESS", to: "independent-review" },
     { id: "diff-empty-to-review", from: "git-diff-summary", fromOutput: "EMPTY", to: "independent-review" },
     { id: "diff-error-to-review", from: "git-diff-summary", fromOutput: "ERROR", to: "independent-review" },
-    { id: "scope-guard-in-scope", from: "change-scope-guard", fromOutput: "IN_SCOPE", to: "independent-review" },
-    { id: "scope-guard-empty", from: "change-scope-guard", fromOutput: "EMPTY", to: "independent-review" },
-    { id: "scope-guard-out-of-scope", from: "change-scope-guard", fromOutput: "OUT_OF_SCOPE", to: "blocked" },
-    { id: "scope-guard-error", from: "change-scope-guard", fromOutput: "ERROR", to: "blocked" },
     { id: "review-to-validate", from: "independent-review", fromOutput: "SUCCESS", to: "validate-improvement" },
     { id: "review-invalid", from: "independent-review", fromOutput: "INVALID", to: "blocked" },
     { id: "review-error", from: "independent-review", fromOutput: "ERROR", to: "blocked" },
@@ -607,7 +589,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
 
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 1,
+  version: 2,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "behavior-change", "validation"],

@@ -1,19 +1,27 @@
 import {
   Archive,
+  ChevronDown,
   Copy,
   Download,
+  Ellipsis,
+  Folder,
   Pin,
   Plus,
   Search,
   Tag,
   Upload,
+  type LucideIcon,
 } from "lucide-react";
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
   type JSX,
+  type MouseEvent,
+  type ReactPortal,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   canArchiveSession,
   getLatestSessionUserRequestAt,
@@ -35,6 +43,8 @@ import {
 } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import {
+  ALL_SESSION_PROJECTS_FILTER,
+  type SessionHistoryProjectFacet,
   type SessionHistoryTagFacet,
 } from "../_helpers/session-history-index";
 import {
@@ -43,24 +53,236 @@ import {
   SESSION_STATUS_META,
   createSessionSubtitle,
   formatSessionTimestamp,
+  isConcreteSessionStatusFilter,
+  normalizeSessionStatusFilterSelection,
   type SessionScopeFilter,
   type SessionStatusFilter,
+  type SessionStatusFilterSelection,
 } from "../_helpers/session-shell.ts";
+
+const SESSION_CONTEXT_MENU_WIDTH = 192;
+const SESSION_CONTEXT_MENU_HEIGHT = 144;
+const SESSION_CONTEXT_MENU_MARGIN = 8;
+
+interface SessionActionItem {
+  id: "pin" | "duplicate" | "archive";
+  label: string;
+  icon: LucideIcon;
+  iconClassName: string;
+  onSelect: () => void;
+}
+
+interface SessionContextMenuState {
+  sessionId: string;
+  left: number;
+  top: number;
+}
+
+const createSessionProjectOptionLabel = (
+  project: SessionHistoryProjectFacet,
+): string => {
+  return `${project.label} (${project.count})`;
+};
+
+const clampMenuCoordinate = (
+  coordinate: number,
+  menuSize: number,
+  viewportSize: number,
+): number => {
+  const maxCoordinate = Math.max(
+    SESSION_CONTEXT_MENU_MARGIN,
+    viewportSize - menuSize - SESSION_CONTEXT_MENU_MARGIN,
+  );
+
+  return Math.min(Math.max(coordinate, SESSION_CONTEXT_MENU_MARGIN), maxCoordinate);
+};
+
+const createSessionContextMenuPosition = (
+  event: MouseEvent<HTMLElement>,
+): { left: number; top: number } => {
+  if (typeof window === "undefined") {
+    return {
+      left: event.clientX,
+      top: event.clientY,
+    };
+  }
+
+  return {
+    left: clampMenuCoordinate(
+      event.clientX,
+      SESSION_CONTEXT_MENU_WIDTH,
+      window.innerWidth,
+    ),
+    top: clampMenuCoordinate(
+      event.clientY,
+      SESSION_CONTEXT_MENU_HEIGHT,
+      window.innerHeight,
+    ),
+  };
+};
+
+const createSessionDropdownMenuPosition = (
+  trigger: HTMLElement,
+): { left: number; top: number } => {
+  const triggerRect = trigger.getBoundingClientRect();
+  const cardRect =
+    trigger.closest<HTMLElement>(".app-session-card")?.getBoundingClientRect() ??
+    null;
+  const horizontalAnchor =
+    cardRect && (cardRect.width > 0 || cardRect.height > 0)
+      ? cardRect
+      : triggerRect;
+  const left = horizontalAnchor.right - SESSION_CONTEXT_MENU_WIDTH;
+  const preferredTop = triggerRect.bottom + 4;
+  const fallbackTop = triggerRect.top - SESSION_CONTEXT_MENU_HEIGHT - 4;
+
+  if (typeof window === "undefined") {
+    return { left, top: preferredTop };
+  }
+
+  const hasBottomRoom =
+    preferredTop + SESSION_CONTEXT_MENU_HEIGHT + SESSION_CONTEXT_MENU_MARGIN <=
+    window.innerHeight;
+
+  return {
+    left: clampMenuCoordinate(
+      left,
+      SESSION_CONTEXT_MENU_WIDTH,
+      window.innerWidth,
+    ),
+    top: clampMenuCoordinate(
+      hasBottomRoom ? preferredTop : fallbackTop,
+      SESSION_CONTEXT_MENU_HEIGHT,
+      window.innerHeight,
+    ),
+  };
+};
+
+const createSessionActionItems = ({
+  sessionId,
+  isPinned,
+  isQuickSession,
+  showArchiveAction,
+  onArchiveSession,
+  onDuplicateSession,
+  onTogglePinnedSession,
+}: {
+  sessionId: string;
+  isPinned: boolean;
+  isQuickSession: boolean;
+  showArchiveAction: boolean;
+  onArchiveSession: (sessionId: string) => void;
+  onDuplicateSession: (sessionId: string) => void;
+  onTogglePinnedSession: (sessionId: string) => void;
+}): SessionActionItem[] => {
+  if (isQuickSession) {
+    return [];
+  }
+
+  const items: SessionActionItem[] = [
+    {
+      id: "pin",
+      label: isPinned ? "Unpin" : "Pin",
+      icon: Pin,
+      iconClassName: isPinned ? "text-amber-300" : "text-slate-400",
+      onSelect: () => onTogglePinnedSession(sessionId),
+    },
+    {
+      id: "duplicate",
+      label: "Duplicate",
+      icon: Copy,
+      iconClassName: "text-slate-400",
+      onSelect: () => onDuplicateSession(sessionId),
+    },
+  ];
+
+  if (showArchiveAction) {
+    items.push({
+      id: "archive",
+      label: "Archive",
+      icon: Archive,
+      iconClassName: "text-slate-400",
+      onSelect: () => onArchiveSession(sessionId),
+    });
+  }
+
+  return items;
+};
+
+const SessionContextActionMenu = ({
+  actions,
+  left,
+  onClose,
+  title,
+  top,
+}: {
+  actions: SessionActionItem[];
+  left: number;
+  onClose: () => void;
+  title: string;
+  top: number;
+}): JSX.Element | ReactPortal => {
+  const menu = (
+    <div
+      role="menu"
+      aria-label={`Session actions for ${title}`}
+      className="app-session-context-menu fixed z-[140] w-[192px] rounded-lg border border-slate-700 bg-slate-950 p-1.5 text-slate-100 shadow-2xl shadow-black/45"
+      style={{ left, top }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
+      <div className="min-w-0 px-2 pb-1 pt-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+        <span className="block truncate">{title}</span>
+      </div>
+      {actions.map((action) => {
+        const ActionIcon = action.icon;
+
+        return (
+          <button
+            key={action.id}
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              action.onSelect();
+              onClose();
+            }}
+            className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
+          >
+            <ActionIcon
+              className={cn("h-3.5 w-3.5 shrink-0", action.iconClassName)}
+            />
+            <span className="min-w-0 flex-1 truncate">{action.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  return typeof document === "undefined" ? menu : createPortal(menu, document.body);
+};
 
 export interface SessionsSidebarProps {
   totalSessions: number;
   activeSessionId: string;
   filteredSessions: ChatSessionRecord[];
   sessionScopeFilter: SessionScopeFilter;
-  sessionStatusFilter: SessionStatusFilter;
+  sessionStatusFilters: SessionStatusFilterSelection;
   sessionSearchQuery: string;
+  sessionProjectFilter: string;
   inactiveSessionArchiveDays: number;
   archivedSessionRetentionDays: number;
+  sessionProjectFacets: SessionHistoryProjectFacet[];
   sessionTagFacets: SessionHistoryTagFacet[];
   sessionTagFilters: string[];
   onSessionScopeFilterChange: (filter: SessionScopeFilter) => void;
-  onSessionStatusFilterChange: (filter: SessionStatusFilter) => void;
+  onSessionStatusFiltersChange: (filters: SessionStatusFilterSelection) => void;
   onSessionSearchQueryChange: (query: string) => void;
+  onSessionProjectFilterChange: (filter: string) => void;
   onSessionTagFilterToggle: (tag: string) => void;
   onCreateSession: () => void;
   onActivateSession: (sessionId: string) => void;
@@ -76,15 +298,18 @@ export const SessionsSidebar = ({
   activeSessionId,
   filteredSessions,
   sessionScopeFilter,
-  sessionStatusFilter,
+  sessionStatusFilters,
   sessionSearchQuery,
+  sessionProjectFilter,
   inactiveSessionArchiveDays,
   archivedSessionRetentionDays,
+  sessionProjectFacets,
   sessionTagFacets,
   sessionTagFilters,
   onSessionScopeFilterChange,
-  onSessionStatusFilterChange,
+  onSessionStatusFiltersChange,
   onSessionSearchQueryChange,
+  onSessionProjectFilterChange,
   onSessionTagFilterToggle,
   onCreateSession,
   onActivateSession,
@@ -96,10 +321,88 @@ export const SessionsSidebar = ({
 }: SessionsSidebarProps): JSX.Element => {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [retentionNow, setRetentionNow] = useState(() => Date.now());
+  const [sessionContextMenu, setSessionContextMenu] =
+    useState<SessionContextMenuState | null>(null);
   const sessionListCountLabel =
     filteredSessions.length === totalSessions
       ? `${totalSessions} saved session${totalSessions === 1 ? "" : "s"}`
       : `${filteredSessions.length} of ${totalSessions} saved sessions`;
+  const showSessionProjectFilter = sessionProjectFacets.length > 1;
+  const sessionProjectCount = sessionProjectFacets.reduce(
+    (count, project) => count + project.count,
+    0,
+  );
+  const selectedStatusFilters =
+    normalizeSessionStatusFilterSelection(sessionStatusFilters);
+
+  const toggleSessionStatusFilter = useCallback(
+    (filter: SessionStatusFilter): void => {
+      if (filter === "any") {
+        onSessionStatusFiltersChange(["any"]);
+        return;
+      }
+
+      const concreteFilters = selectedStatusFilters.filter(
+        isConcreteSessionStatusFilter,
+      );
+      const nextFilters = concreteFilters.includes(filter)
+        ? concreteFilters.filter((entry) => entry !== filter)
+        : [...concreteFilters, filter];
+
+      onSessionStatusFiltersChange(
+        nextFilters.length > 0 ? nextFilters : ["any"],
+      );
+    },
+    [onSessionStatusFiltersChange, selectedStatusFilters],
+  );
+
+  const closeSessionContextMenu = useCallback((): void => {
+    setSessionContextMenu(null);
+  }, []);
+
+  const openSessionContextMenu = useCallback(
+    (
+      event: MouseEvent<HTMLElement>,
+      session: ChatSessionRecord,
+      actions: SessionActionItem[],
+    ): void => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (actions.length === 0) {
+        setSessionContextMenu(null);
+        return;
+      }
+
+      setSessionContextMenu({
+        sessionId: session.id,
+        ...createSessionContextMenuPosition(event),
+      });
+    },
+    [],
+  );
+
+  const openSessionDropdownMenu = useCallback(
+    (
+      event: MouseEvent<HTMLElement>,
+      session: ChatSessionRecord,
+      actions: SessionActionItem[],
+    ): void => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (actions.length === 0) {
+        setSessionContextMenu(null);
+        return;
+      }
+
+      setSessionContextMenu({
+        sessionId: session.id,
+        ...createSessionDropdownMenuPosition(event.currentTarget),
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -110,6 +413,55 @@ export const SessionsSidebar = ({
       window.clearInterval(intervalId);
     };
   }, []);
+
+  useEffect(() => {
+    if (!sessionContextMenu) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        closeSessionContextMenu();
+      }
+    };
+
+    document.addEventListener("pointerdown", closeSessionContextMenu);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", closeSessionContextMenu);
+    window.addEventListener("scroll", closeSessionContextMenu, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", closeSessionContextMenu);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", closeSessionContextMenu);
+      window.removeEventListener("scroll", closeSessionContextMenu, true);
+    };
+  }, [closeSessionContextMenu, sessionContextMenu]);
+
+  const contextMenuSession = sessionContextMenu
+    ? (filteredSessions.find(
+        (session) => session.id === sessionContextMenu.sessionId,
+      ) ?? null)
+    : null;
+  const contextMenuSessionTitle = contextMenuSession
+    ? getSessionTitle(contextMenuSession)
+    : "";
+  const contextMenuSessionIsQuick = contextMenuSession
+    ? isQuickVoiceSession(contextMenuSession)
+    : false;
+  const contextMenuSessionActions = contextMenuSession
+    ? createSessionActionItems({
+        sessionId: contextMenuSession.id,
+        isPinned:
+          contextMenuSessionIsQuick ||
+          typeof contextMenuSession.pinnedAt === "number",
+        isQuickSession: contextMenuSessionIsQuick,
+        showArchiveAction: canArchiveSession(contextMenuSession),
+        onArchiveSession,
+        onDuplicateSession,
+        onTogglePinnedSession,
+      })
+    : [];
 
   return (
     <aside className="app-sessions-sidebar flex min-h-0 w-84 shrink-0 flex-col border-r border-slate-900 bg-slate-950/50 backdrop-blur-xl">
@@ -195,6 +547,30 @@ export const SessionsSidebar = ({
               />
             </div>
 
+            {showSessionProjectFilter ? (
+              <div className="relative">
+                <Folder className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <select
+                  aria-label="Workspace filter"
+                  value={sessionProjectFilter}
+                  onChange={(event) =>
+                    onSessionProjectFilterChange(event.target.value)
+                  }
+                  className="app-sessions-workspace-filter h-9 w-full appearance-none truncate rounded-xl border border-slate-800 bg-slate-950/80 py-1 pr-8 pl-9 text-sm font-medium text-slate-200 outline-none transition-[border-color,box-shadow] hover:border-slate-700 focus-visible:border-slate-600 focus-visible:ring-1 focus-visible:ring-slate-600/35"
+                >
+                  <option value={ALL_SESSION_PROJECTS_FILTER}>
+                    {`All workspaces (${sessionProjectCount})`}
+                  </option>
+                  {sessionProjectFacets.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {createSessionProjectOptionLabel(project)}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-slate-500" />
+              </div>
+            ) : null}
+
             {sessionTagFacets.length > 0 ? (
               <div className="app-sessions-tag-list flex flex-wrap gap-1.5">
                 {sessionTagFacets.slice(0, 10).map((tag) => {
@@ -243,7 +619,7 @@ export const SessionsSidebar = ({
                         aria-pressed={isSelected}
                         onClick={() => onSessionScopeFilterChange(filter.id)}
                         className={cn(
-                          "app-session-filter-button h-7 w-7 rounded-lg border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
+                          "app-session-filter-button h-7 w-6 rounded-lg border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
                           isSelected &&
                             "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
                         )}
@@ -264,7 +640,7 @@ export const SessionsSidebar = ({
             <div className="flex items-center gap-0.5">
               {SESSION_STATUS_FILTERS.map((filter) => {
                 const FilterIcon = filter.icon;
-                const isSelected = sessionStatusFilter === filter.id;
+                const isSelected = selectedStatusFilters.includes(filter.id);
 
                 return (
                   <Tooltip key={filter.id}>
@@ -275,9 +651,9 @@ export const SessionsSidebar = ({
                         variant="ghost"
                         aria-label={`Status: ${filter.label}`}
                         aria-pressed={isSelected}
-                        onClick={() => onSessionStatusFilterChange(filter.id)}
+                        onClick={() => toggleSessionStatusFilter(filter.id)}
                         className={cn(
-                          "app-session-filter-button h-7 w-7 rounded-lg border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
+                          "app-session-filter-button h-7 w-6 rounded-lg border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
                           isSelected &&
                             "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
                         )}
@@ -323,10 +699,24 @@ export const SessionsSidebar = ({
               );
               const primaryTag = session.tags[0];
               const extraTagCount = Math.max(0, session.tags.length - 1);
+              const sessionTitle = getSessionTitle(session);
+              const sessionActionItems = createSessionActionItems({
+                sessionId: session.id,
+                isPinned,
+                isQuickSession,
+                showArchiveAction,
+                onArchiveSession,
+                onDuplicateSession,
+                onTogglePinnedSession,
+              });
+              const hasSessionActionMenu = sessionActionItems.length > 0;
 
               return (
                 <div
                   key={session.id}
+                  onContextMenu={(event) =>
+                    openSessionContextMenu(event, session, sessionActionItems)
+                  }
                   className={cn(
                     "app-session-card group relative flex min-h-[3.85rem] items-start rounded-xl border px-3 py-2 transition-colors",
                     hasUnreadCompletion && "app-session-card--needs-read",
@@ -339,11 +729,15 @@ export const SessionsSidebar = ({
                 >
                   <button
                     type="button"
-                    aria-label={`Open session ${getSessionTitle(session)}${
+                    aria-label={`Open session ${sessionTitle}${
                       hasUnreadCompletion ? ", new reply ready" : ""
                     }`}
                     onClick={() => onActivateSession(session.id)}
-                    className="app-session-open-button min-w-0 flex-1 pr-[5.75rem] text-left"
+                    className={cn(
+                      "app-session-open-button min-w-0 flex-1 text-left",
+                      hasSessionActionMenu &&
+                        "app-session-open-button--has-actions pr-8",
+                    )}
                   >
                     <div className="flex w-full min-w-0 items-start gap-2">
                       <Tooltip>
@@ -369,13 +763,28 @@ export const SessionsSidebar = ({
                           {isPinned ? (
                             <Pin className="h-3.5 w-3.5 shrink-0 text-amber-300" />
                           ) : null}
+                          {archived ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span
+                                  aria-label="Archived session"
+                                  className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-slate-500"
+                                >
+                                  <Archive className="h-3.5 w-3.5" />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                Archived
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : null}
                           <p
                             className={cn(
                               "app-session-title min-w-0 truncate text-sm font-semibold leading-5 placeholder:text-slate-500",
                               archived ? "text-slate-300" : "text-slate-100",
                             )}
                           >
-                            {getSessionTitle(session)}
+                            {sessionTitle}
                           </p>
                         </div>
                       </div>
@@ -411,7 +820,7 @@ export const SessionsSidebar = ({
                           retentionProgress.phase === "archive"
                             ? "Auto-archive"
                             : "Auto-delete"
-                        } progress for ${getSessionTitle(session)}`}
+                        } progress for ${sessionTitle}`}
                         className="mt-2 h-1 overflow-hidden rounded-full bg-slate-800/80"
                       >
                         <div
@@ -431,101 +840,48 @@ export const SessionsSidebar = ({
                     ) : null}
                   </button>
 
-                  <div
-                    className={cn(
-                      "app-session-card-actions absolute top-2 right-2 flex shrink-0 items-start gap-1 transition-opacity duration-150 ease-out",
-                      isActive || isPinned || archived
-                        ? "opacity-100"
-                        : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-                    )}
-                  >
-                    {!isQuickSession ? (
-                      <div className="app-session-card-action-slot">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              aria-label={`${isPinned ? "Unpin" : "Pin"} ${getSessionTitle(session)}`}
-                              aria-pressed={isPinned}
-                              onClick={() => onTogglePinnedSession(session.id)}
-                              className={cn(
-                                "app-session-card-action-button h-7 w-7 rounded-full border border-slate-800 bg-slate-950/85 text-slate-500 transition-all hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
-                                isPinned &&
-                                  "border-amber-500/30 bg-amber-500/10 text-amber-200",
-                              )}
-                            >
-                              <Pin className="h-3.5 w-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">
-                            {isPinned ? "Unpin" : "Pin"}
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
-                    ) : null}
-
-                    {!isQuickSession ? (
-                      <div className="app-session-card-action-slot">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              aria-label={`Duplicate ${getSessionTitle(session)}`}
-                              onClick={() => onDuplicateSession(session.id)}
-                              className="app-session-card-action-button h-7 w-7 rounded-full border border-slate-800 bg-slate-950/85 text-slate-500 transition-all hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100"
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">Duplicate</TooltipContent>
-                        </Tooltip>
-                      </div>
-                    ) : null}
-
-                    {archived ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div
-                            aria-label="Archived session"
-                            className="app-session-card-action-button flex h-7 w-7 items-center justify-center rounded-full border border-slate-800 bg-slate-950/85 text-slate-500"
-                          >
-                            <Archive className="h-3.5 w-3.5" />
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">Archived</TooltipContent>
-                      </Tooltip>
-                    ) : null}
-
-                    {showArchiveAction ? (
-                      <div className="app-session-card-action-slot">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              aria-label={`Archive ${getSessionTitle(session)}`}
-                              onClick={() => onArchiveSession(session.id)}
-                              className="app-session-card-action-button h-7 w-7 rounded-full border border-slate-800 bg-slate-950/85 text-slate-500 transition-all hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100"
-                            >
-                              <Archive className="h-3.5 w-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">Archive</TooltipContent>
-                        </Tooltip>
-                      </div>
-                    ) : null}
-                  </div>
+                  {hasSessionActionMenu ? (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      aria-label={`Session actions for ${sessionTitle}`}
+                      title="Session actions"
+                      aria-haspopup="menu"
+                      aria-expanded={
+                        sessionContextMenu?.sessionId === session.id
+                          ? "true"
+                          : "false"
+                      }
+                      onClick={(event) =>
+                        openSessionDropdownMenu(
+                          event,
+                          session,
+                          sessionActionItems,
+                        )
+                      }
+                      className="app-session-card-action-button absolute top-2 right-2 h-6 w-6 rounded-full border border-slate-800 bg-slate-950/85 text-slate-500 opacity-0 transition-opacity duration-150 ease-out hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100 group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
+                    >
+                      <Ellipsis className="h-3.5 w-3.5" />
+                    </Button>
+                  ) : null}
                 </div>
               );
             })
           )}
         </div>
       </ScrollArea>
+      {sessionContextMenu &&
+      contextMenuSession &&
+      contextMenuSessionActions.length > 0 ? (
+        <SessionContextActionMenu
+          actions={contextMenuSessionActions}
+          left={sessionContextMenu.left}
+          onClose={closeSessionContextMenu}
+          title={contextMenuSessionTitle}
+          top={sessionContextMenu.top}
+        />
+      ) : null}
     </aside>
   );
 };

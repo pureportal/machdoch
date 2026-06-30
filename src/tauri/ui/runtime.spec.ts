@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   disableInvokeMock,
   enableInvokeMock,
+  convertFileSrcMock,
   invokeMock,
   isTauriMock,
+  openUrlMock,
 } from "./test/tauri-test-mocks";
 import {
   cancelDesktopTask,
@@ -27,6 +29,7 @@ import {
   loadMcpConfigDocument,
   loadProviderModelCatalog,
   openAttachedPath,
+  openExternalUrl,
   openRalphFlowInExplorer,
   openRemoteControlUrl,
   createRalphFlow,
@@ -47,6 +50,7 @@ import {
   saveUserReviewModelSettings,
   saveUserSpeechToTextInputDevice,
   showRalphRunDetail,
+  resolveAttachedImagePreviewSource,
   subscribeToRemoteControlCommands,
 } from "./runtime";
 import {
@@ -936,6 +940,31 @@ describe("desktop runtime fullscreen detection", () => {
       path: "C:\\Docs\\plan.md",
       workspaceRoot: "C:\\Docs",
     });
+  });
+
+  it("resolves attached image preview sources through the Rust command", async () => {
+    invokeMock.mockResolvedValueOnce("C:\\Docs\\screen.png");
+
+    await expect(
+      resolveAttachedImagePreviewSource(" C:\\Docs\\screen.png ", " C:\\Docs "),
+    ).resolves.toBe(
+      "http://asset.localhost/C%3A%5CDocs%5Cscreen.png",
+    );
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      "resolve_attached_image_preview_path",
+      {
+        path: "C:\\Docs\\screen.png",
+        workspaceRoot: "C:\\Docs",
+      },
+    );
+    expect(convertFileSrcMock).toHaveBeenCalledWith("C:\\Docs\\screen.png");
+  });
+
+  it("opens attachment URLs through the Tauri opener", async () => {
+    await openExternalUrl(" https://example.com/docs ");
+
+    expect(openUrlMock).toHaveBeenCalledWith("https://example.com/docs");
   });
 
   it("passes desktop task runs under the Rust command's request parameter", async () => {

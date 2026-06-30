@@ -82,6 +82,7 @@ export interface SessionComposerProps {
   onSelectContextFolders: () => Promise<void>;
   onSelectContextImages: () => Promise<void>;
   onPasteContextImages: (files: File[]) => Promise<void>;
+  onOpenContextAttachment: (attachment: ChatSessionContextAttachment) => void;
   onRemoveContextAttachment: (attachmentId: string) => void;
   onClearContextAttachments: () => void;
   onSaveContextPack: (input: SaveSmartContextPackInput) => void;
@@ -148,6 +149,7 @@ export const SessionComposer = ({
   onSelectContextFolders,
   onSelectContextImages,
   onPasteContextImages,
+  onOpenContextAttachment,
   onRemoveContextAttachment,
   onClearContextAttachments,
   onSaveContextPack,
@@ -328,6 +330,7 @@ export const SessionComposer = ({
       onSelectContextFolders={onSelectContextFolders}
       onSelectContextImages={onSelectContextImages}
       onPasteContextImages={onPasteContextImages}
+      onOpenContextAttachment={onOpenContextAttachment}
       onRemoveContextAttachment={onRemoveContextAttachment}
       onClearContextAttachments={onClearContextAttachments}
       onDraftChange={onDraftChange}

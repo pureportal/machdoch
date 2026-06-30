@@ -1375,7 +1375,7 @@ describe("parseCliArgs", () => {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toThrow(
-      "Expected --provider to be followed by openai, anthropic, or google.",
+      "Expected --provider to be followed by openai, anthropic, google, langdock.",
     );
 
     expect(() =>
@@ -1383,7 +1383,7 @@ describe("parseCliArgs", () => {
         currentWorkingDirectory: "C:/workspace",
       }),
     ).toThrow(
-      "Expected --runtime-provider to be followed by openai, anthropic, google, codex-cli, claude-cli, or copilot-cli.",
+      "Expected --runtime-provider to be followed by openai, anthropic, google, langdock, codex-cli, claude-cli, copilot-cli.",
     );
 
     expect(() =>

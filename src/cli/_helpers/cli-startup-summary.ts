@@ -91,6 +91,7 @@ const PROVIDER_LABELS: Record<RuntimeProvider, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
   google: "Google",
+  langdock: "Langdock",
   "codex-cli": "Codex CLI",
   "claude-cli": "Claude CLI",
   "copilot-cli": "Copilot CLI",

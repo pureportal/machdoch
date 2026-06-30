@@ -147,11 +147,10 @@ pub(super) fn resolve_attached_path(
         return Err("Expected the attached path to be a file or directory.".to_string());
     }
 
-    if !attachment_path_is_granted(grants, &resolved_path)? {
-        return Err(
-            "Refused to open an attachment path that was not selected or created by this app session."
-                .to_string(),
-        );
+    if let Ok(clipboard_directory) = clipboard_image_attachment_directory().canonicalize() {
+        if resolved_path.starts_with(&clipboard_directory) {
+            return Ok(resolved_path);
+        }
     }
 
     if let Some(normalized_workspace_root) = workspace_root
@@ -165,10 +164,11 @@ pub(super) fn resolve_attached_path(
         }
     }
 
-    if let Ok(clipboard_directory) = clipboard_image_attachment_directory().canonicalize() {
-        if resolved_path.starts_with(&clipboard_directory) {
-            return Ok(resolved_path);
-        }
+    if !attachment_path_is_granted(grants, &resolved_path)? {
+        return Err(
+            "Refused to open an attachment path that was not selected or created by this app session."
+                .to_string(),
+        );
     }
 
     Err("Refused to open an attached path outside the active workspace or trusted temporary attachments.".to_string())

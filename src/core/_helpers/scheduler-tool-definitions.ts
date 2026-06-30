@@ -70,7 +70,7 @@ const MISSED_RUN_POLICIES = [
   "enqueue-all",
 ] as const;
 const RUN_MODES = ["ask", "machdoch"] as const;
-const MODEL_PROVIDERS = ["openai", "anthropic", "google"] as const;
+const MODEL_PROVIDERS = ["openai", "anthropic", "google", "langdock"] as const;
 const FILTER_OPERATORS = [
   ">",
   ">=",

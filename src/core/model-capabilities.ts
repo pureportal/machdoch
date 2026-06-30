@@ -77,6 +77,14 @@ const PROVIDER_CAPABILITY_PROFILES: Record<
     imageInputMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
     providerModes: PROVIDER_MODEL_MODES.google,
   },
+  langdock: {
+    provider: "langdock",
+    imageInputMediaTypes: [
+      ...OPENAI_IMAGE_MEDIA_TYPES,
+      ...GOOGLE_IMAGE_MEDIA_TYPES,
+    ],
+    providerModes: PROVIDER_MODEL_MODES.langdock,
+  },
   openai: {
     provider: "openai",
     imageInputMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,

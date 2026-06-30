@@ -10,6 +10,7 @@ export type ProviderModelMode =
   | "external-agent-cli"
   | "gemini-chat"
   | "gemini-function-calling-any"
+  | "openai-chat-completions"
   | "openai-responses";
 
 export type ProviderModelVoiceCapability =
@@ -99,6 +100,7 @@ export const PROVIDER_MODEL_MODES: Record<
   "codex-cli": ["external-agent-cli"],
   "copilot-cli": ["external-agent-cli"],
   google: ["gemini-chat", "gemini-function-calling-any"],
+  langdock: ["openai-chat-completions"],
   openai: ["openai-responses"],
 };
 
@@ -154,6 +156,16 @@ const createGoogleCapabilities = (
     ...overrides,
   });
 
+const createLangdockCapabilities = (
+  overrides: Partial<ProviderModelCapabilityMetadata>,
+): ProviderModelCapabilityMetadata =>
+  createCapabilities("langdock", {
+    imageInput: true,
+    reasoning: true,
+    supportedImageMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
+    ...overrides,
+  });
+
 const createCodexCliCapabilities = (
   overrides: Partial<ProviderModelCapabilityMetadata>,
 ): ProviderModelCapabilityMetadata =>
@@ -200,6 +212,12 @@ export const PROVIDER_CATALOG_METADATA: readonly ProviderCatalogMetadata[] = [
     docsUrl: "https://ai.google.dev/gemini-api/docs/models",
     note:
       "Gemini model metadata is available through the Models API, including generation methods and token limits.",
+  },
+  {
+    provider: "langdock",
+    docsUrl: "https://docs.langdock.com/en/developer/agents-api/agent-models",
+    note:
+      "Langdock model discovery returns the models available to the API key account, including workspace and BYOK model availability.",
   },
   {
     provider: "codex-cli",
@@ -462,6 +480,80 @@ export const PROVIDER_MODEL_METADATA = [
       maxOutputTokens: 65_536,
     }),
     warnings: [],
+    source: "curated-fallback",
+  },
+  {
+    provider: "langdock",
+    id: "gpt-5",
+    label: "GPT-5",
+    lifecycle: "stable",
+    releaseDate: "2025-08-07",
+    description:
+      "Default Langdock OpenAI-compatible model option for coding and agent workflows.",
+    recommendedFor: ["coding", "vision"],
+    capabilities: createLangdockCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Langdock model availability is workspace-specific; use live model discovery to confirm this API key can access the model.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "langdock",
+    id: "gpt-5-mini",
+    label: "GPT-5 mini",
+    lifecycle: "stable",
+    releaseDate: "2025-08-07",
+    description:
+      "Lower-latency Langdock OpenAI-compatible model option shown in the Langdock API examples.",
+    recommendedFor: ["coding", "fast", "cheap", "vision"],
+    capabilities: createLangdockCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Langdock model availability is workspace-specific; use live model discovery to confirm this API key can access the model.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "langdock",
+    id: "gemini-2.5-pro",
+    label: "Gemini 2.5 Pro",
+    lifecycle: "stable",
+    releaseDate: "2025-06-17",
+    description:
+      "Gemini model option when enabled in the Langdock workspace or BYOK account.",
+    recommendedFor: ["coding", "vision"],
+    capabilities: createLangdockCapabilities({
+      supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Langdock model availability is workspace-specific; use live model discovery to confirm this API key can access the model.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "langdock",
+    id: "gemini-2.5-flash",
+    label: "Gemini 2.5 Flash",
+    lifecycle: "stable",
+    releaseDate: "2025-06-17",
+    description:
+      "Fast Gemini model option when enabled in the Langdock workspace or BYOK account.",
+    recommendedFor: ["fast", "cheap", "vision"],
+    capabilities: createLangdockCapabilities({
+      supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Langdock model availability is workspace-specific; use live model discovery to confirm this API key can access the model.",
+    ],
     source: "curated-fallback",
   },
   {

@@ -1009,7 +1009,7 @@ body {
 }
 
 :root[data-density="compact"] .app-session-filter-button {
-    width: 1.55rem !important;
+    width: 1.4rem !important;
     height: 1.55rem !important;
     border-radius: 0.55rem !important;
 }
@@ -1036,17 +1036,10 @@ body {
 
 :root[data-density="compact"] .app-session-open-button {
     min-width: 0;
-    padding-right: 4.85rem !important;
 }
 
-:root[data-density="compact"] .app-session-status-icon {
-    width: 1rem !important;
-    height: 1rem !important;
-}
-
-:root[data-density="compact"] .app-session-status-icon svg {
-    width: 0.625rem !important;
-    height: 0.625rem !important;
+:root[data-density="compact"] .app-session-open-button--has-actions {
+    padding-right: 2rem !important;
 }
 
 :root[data-density="compact"] .app-session-title {
@@ -1075,10 +1068,14 @@ body {
     letter-spacing: 0.04em !important;
 }
 
-:root[data-density="compact"] .app-session-card-actions {
-    gap: 0.2rem !important;
-    top: 0.45rem !important;
-    right: 0.45rem !important;
+:root[data-density="compact"] .app-session-status-icon {
+    width: 1rem !important;
+    height: 1rem !important;
+}
+
+:root[data-density="compact"] .app-session-status-icon svg {
+    width: 0.625rem !important;
+    height: 0.625rem !important;
 }
 
 :root[data-density="compact"] .app-session-card-action-button {

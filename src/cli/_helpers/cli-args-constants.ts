@@ -1,4 +1,8 @@
-import { REASONING_MODES, VALID_MODEL_PROVIDERS } from "../../core/runtime-contract.generated.js";
+import {
+  REASONING_MODES,
+  USER_API_PROVIDERS,
+  VALID_MODEL_PROVIDERS,
+} from "../../core/runtime-contract.generated.js";
 import type { InstructionAudience, InstructionMode } from "../../core/types.js";
 import type { ModelProvider, ReasoningMode, RunMode, UserApiProvider } from "../../core/runtime-contract.generated.js";
 import type {
@@ -19,16 +23,15 @@ export const VALID_MODES: ReadonlySet<RunMode> = new Set([
   "machdoch",
 ]);
 export const VALID_MODE_DESCRIPTION = "ask or machdoch";
-export const VALID_PROVIDERS: ReadonlySet<UserApiProvider> = new Set([
-  "openai",
-  "anthropic",
-  "google",
-]);
+export const VALID_PROVIDERS: ReadonlySet<UserApiProvider> = new Set(
+  USER_API_PROVIDERS,
+);
+export const VALID_PROVIDER_DESCRIPTION = USER_API_PROVIDERS.join(", ");
 export const VALID_RUNTIME_PROVIDERS: ReadonlySet<
   Exclude<ModelProvider, "unconfigured">
 > = new Set(VALID_MODEL_PROVIDERS);
 export const VALID_RUNTIME_PROVIDER_DESCRIPTION =
-  "openai, anthropic, google, codex-cli, claude-cli, or copilot-cli";
+  VALID_MODEL_PROVIDERS.join(", ");
 export const VALID_REASONING_MODES: ReadonlySet<ReasoningMode> = new Set(
   REASONING_MODES,
 );

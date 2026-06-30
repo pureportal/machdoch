@@ -122,6 +122,7 @@ pub fn run() {
             desktop_task::open_attached_path,
             desktop_task::open_ralph_flow_in_explorer,
             desktop_task::open_workspace_path,
+            desktop_task::resolve_attached_image_preview_path,
             desktop_task::resolve_dropped_paths,
             desktop_task::run_instruction_command,
             desktop_task::run_mcp_command,

@@ -198,6 +198,7 @@ describe("user config API key helpers", () => {
       { provider: "openai", configured: true },
       { provider: "anthropic", configured: false },
       { provider: "google", configured: false },
+      { provider: "langdock", configured: false },
     ]);
   });
 

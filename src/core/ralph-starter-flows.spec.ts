@@ -268,6 +268,32 @@ describe("Ralph starter flows", () => {
         }),
       ]),
     );
+    expect(JSON.stringify(flow)).not.toContain("CHANGE_SCOPE_GUARD");
+    expect(independentReview).toMatchObject({
+      utility: {
+        prompt: expect.stringContaining("Ignore unrelated workspace changes"),
+      },
+    });
+    expect(validateImprovement).toMatchObject({
+      utility: {
+        prompt: expect.stringContaining("Ignore unrelated workspace changes"),
+      },
+    });
+  });
+
+  it("keeps bundled git-diff validators tolerant of shared workspace changes", () => {
+    for (const starterFlow of STARTER_RALPH_FLOWS) {
+      const serializedFlow = JSON.stringify(starterFlow.flow);
+
+      expect(serializedFlow).not.toContain("CHANGE_SCOPE_GUARD");
+      expect(serializedFlow).not.toContain("change-scope-guard");
+
+      if (serializedFlow.includes("{{result:git-diff-summary}}")) {
+        expect(serializedFlow.toLowerCase()).toContain(
+          "ignore unrelated workspace changes",
+        );
+      }
+    }
   });
 
   it("starts bundled templates autonomously without ask-user gates", () => {

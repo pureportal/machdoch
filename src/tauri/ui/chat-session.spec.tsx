@@ -18,6 +18,7 @@ import {
   QUICK_VOICE_SESSION_KIND,
   type ShellPersistedState,
 } from "./chat-session.model";
+import { ALL_SESSION_PROJECTS_FILTER } from "./chat-session/_helpers/session-history-index";
 import {
   createMockExecutionFixture,
   createPreviewFixture,
@@ -409,6 +410,31 @@ const getSessionRow = (title: string): HTMLElement => {
   return row as HTMLElement;
 };
 
+const openSessionActionsMenu = async (
+  title: string,
+  triggerRect?: DOMRect,
+  rowRect?: DOMRect,
+): Promise<HTMLElement> => {
+  const row = getSessionRow(title);
+  const menuButton = within(row).getByRole("button", {
+    name: `Session actions for ${title}`,
+  });
+
+  if (rowRect) {
+    vi.spyOn(row, "getBoundingClientRect").mockReturnValue(rowRect);
+  }
+
+  if (triggerRect) {
+    vi.spyOn(menuButton, "getBoundingClientRect").mockReturnValue(triggerRect);
+  }
+
+  fireEvent.click(menuButton);
+
+  return screen.findByRole("menu", {
+    name: `Session actions for ${title}`,
+  });
+};
+
 const getVisibleSessionButtonLabels = (): string[] => {
   return screen.getAllByRole("button").flatMap((button) => {
     const label = button.getAttribute("aria-label");
@@ -546,6 +572,81 @@ describe("ChatSession component", () => {
 
       expect(screen.getByText(/Reading workspace files/i)).toBeDefined();
       expect(screen.queryByText(/Workspace scan complete\./i)).toBeNull();
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "keeps accepting terminal progress after the desktop task promise resolves",
+    async () => {
+      let resolveTask: ((value: DesktopTaskRunResponse) => void) | null = null;
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(
+          () =>
+            new Promise<DesktopTaskRunResponse>((resolve) => {
+              resolveTask = resolve;
+            }),
+        );
+
+      const { container } = render(<ChatSession />);
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: "scan this workspace and explain the setup" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(() => {
+        expect(desktopEventListeners.has("desktop-task-progress")).toBe(true);
+      });
+
+      const taskId = runDesktopTaskSpy.mock.calls[0]?.[2]?.taskId;
+
+      expect(typeof taskId).toBe("string");
+      expect(container.querySelector(".animate-spin")).not.toBeNull();
+
+      vi.useFakeTimers();
+
+      await act(async () => {
+        resolveTask?.({
+          execution: createMockExecutionFixture(
+            "scan this workspace and explain the setup",
+            "/mock/home/path",
+          ),
+        });
+        await Promise.resolve();
+      });
+
+      emitDesktopTaskProgress({
+        taskId: taskId as string,
+        progress: {
+          task: "scan this workspace and explain the setup",
+          mode: "machdoch",
+          state: "completed",
+          message: "Workspace scan complete.",
+          executedTools: ["filesystem"],
+          outputSections: [],
+          cancellable: false,
+        },
+        timestamp: 2,
+      });
+
+      expect(container.querySelector(".animate-spin")).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Expand thinking process" }),
+      ).toBeDefined();
+
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
 
       runDesktopTaskSpy.mockRestore();
     },
@@ -2425,7 +2526,7 @@ describe("ChatSession component", () => {
       });
 
       expect(screen.queryByText(/^Saved sessions$/i)).toBeNull();
-      expect(screen.queryByLabelText("Project filter")).toBeNull();
+      expect(screen.queryByLabelText("Workspace filter")).toBeNull();
       expect(
         screen.queryByRole("button", {
           name: "Open session Archived session",
@@ -2467,6 +2568,18 @@ describe("ChatSession component", () => {
         screen.queryByRole("button", { name: "Open session Done session" }),
       ).toBeNull();
 
+      fireEvent.click(screen.getByRole("button", { name: "Status: Done" }));
+
+      expect(
+        screen.getByRole("button", { name: "Open session Running session" }),
+      ).toBeDefined();
+      expect(
+        screen.getByRole("button", { name: "Open session Done session" }),
+      ).toBeDefined();
+      expect(
+        screen.queryByRole("button", { name: "Open session Failed session" }),
+      ).toBeNull();
+
       fireEvent.click(
         screen.getByRole("button", { name: "Status: Any status" }),
       );
@@ -2497,6 +2610,69 @@ describe("ChatSession component", () => {
     },
     SLOW_UI_TEST_TIMEOUT_MS,
   );
+
+  it("filters sessions by workspace", async () => {
+    const baseState = createInitialShellState();
+    const now = Date.now();
+    const alphaSession = createSession({
+      id: "alpha-session",
+      manualTitle: "Alpha session",
+      workspace: "C:\\Work\\Alpha",
+      updatedAt: now - 1_000,
+    });
+    const betaSession = createSession({
+      id: "beta-session",
+      manualTitle: "Beta session",
+      workspace: "C:\\Work\\Beta",
+      updatedAt: now,
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: alphaSession.id,
+      sessions: [alphaSession, betaSession],
+    });
+
+    render(<ChatSession />);
+
+    const workspaceFilter = (await screen.findByLabelText(
+      "Workspace filter",
+    )) as HTMLSelectElement;
+
+    expect(workspaceFilter.value).toBe(ALL_SESSION_PROJECTS_FILTER);
+    expect(
+      await screen.findByRole("button", { name: "Open session Alpha session" }),
+    ).toBeDefined();
+    expect(
+      await screen.findByRole("button", { name: "Open session Beta session" }),
+    ).toBeDefined();
+
+    fireEvent.change(workspaceFilter, {
+      target: { value: "c:/work/alpha" },
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Open session Alpha session" }),
+      ).toBeDefined();
+      expect(
+        screen.queryByRole("button", { name: "Open session Beta session" }),
+      ).toBeNull();
+    });
+
+    fireEvent.change(workspaceFilter, {
+      target: { value: ALL_SESSION_PROJECTS_FILTER },
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Open session Alpha session" }),
+      ).toBeDefined();
+      expect(
+        screen.getByRole("button", { name: "Open session Beta session" }),
+      ).toBeDefined();
+    });
+  }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it(
     "highlights completed background sessions until they are opened",
@@ -2556,7 +2732,22 @@ describe("ChatSession component", () => {
         within(unreadRow as HTMLElement).getByText("New reply"),
       ).toBeDefined();
 
-      fireEvent.click(unreadButton);
+      fireEvent.click(screen.getByRole("button", { name: "Status: Unread" }));
+
+      const filteredUnreadButton = await screen.findByRole("button", {
+        name: "Open session Unread done session, new reply ready",
+      });
+
+      expect(
+        screen.queryByRole("button", {
+          name: "Open session Active sidebar session",
+        }),
+      ).toBeNull();
+
+      fireEvent.click(filteredUnreadButton);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Status: Any status" }),
+      );
 
       await waitFor(() => {
         expect(
@@ -2839,6 +3030,66 @@ describe("ChatSession component", () => {
     SLOW_UI_TEST_TIMEOUT_MS,
   );
 
+  it("opens session actions from the row menu and right click", async () => {
+    storeShellState(createStoredShellState());
+
+    render(<ChatSession />);
+
+    await screen.findByRole("button", {
+      name: "Open session Done session",
+    });
+
+    const doneRow = getSessionRow("Done session");
+
+    expect(
+      within(doneRow).queryByRole("button", {
+        name: "Archive Done session",
+      }),
+    ).toBeNull();
+
+    const dropdownMenu = await openSessionActionsMenu(
+      "Done session",
+      DOMRect.fromRect({
+        x: 420,
+        y: 42,
+        width: 24,
+        height: 24,
+      }),
+      DOMRect.fromRect({
+        x: 16,
+        y: 40,
+        width: 292,
+        height: 62,
+      }),
+    );
+
+    expect(
+      within(dropdownMenu).getByRole("menuitem", { name: "Archive" }),
+    ).toBeDefined();
+    expect(dropdownMenu.style.left).toBe("116px");
+    expect(dropdownMenu.style.top).toBe("70px");
+
+    fireEvent.contextMenu(doneRow, {
+      clientX: 96,
+      clientY: 128,
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector(".app-session-context-menu")).not.toBeNull();
+    });
+
+    const contextMenu = document.querySelector(".app-session-context-menu");
+
+    expect(contextMenu).not.toBeNull();
+    expect((contextMenu as HTMLElement).style.left).toBe("96px");
+    expect((contextMenu as HTMLElement).style.top).toBe("128px");
+    expect(
+      within(contextMenu as HTMLElement).getByRole("menuitem", {
+        name: "Archive",
+      }),
+    ).toBeDefined();
+  });
+
   it(
     "keeps archived sessions in timestamp order and removes the archive flag when chat continues",
     async () => {
@@ -2861,9 +3112,8 @@ describe("ChatSession component", () => {
         ).toBeDefined();
       });
 
-      fireEvent.click(
-        screen.getByRole("button", { name: "Archive Done session" }),
-      );
+      await openSessionActionsMenu("Done session");
+      fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
 
       expect(
         screen.queryByRole("button", { name: "Open session Done session" }),
@@ -3152,6 +3402,16 @@ describe("ChatSession component", () => {
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("adds dropped links to the main composer", async () => {
+    const runDesktopTaskSpy = vi.spyOn(runtime, "runDesktopTask").mockResolvedValue({
+      execution: createMockExecutionFixture(
+        'Review this link\n\nUse this link: "https://example.com/docs/intro"',
+        "/mock/home/path",
+      ),
+    });
+    const openExternalUrlSpy = vi
+      .spyOn(runtime, "openExternalUrl")
+      .mockResolvedValue();
+
     render(<ChatSession />);
 
     const input = screen.getByPlaceholderText(
@@ -3170,6 +3430,24 @@ describe("ChatSession component", () => {
       expect(screen.getByText("link")).toBeDefined();
     });
     expect(input.value).not.toContain("https://example.com/docs/intro");
+
+    fireEvent.change(input, {
+      target: { value: "Review this link" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    const sentAttachment = await screen.findByRole("button", {
+      name: "Open link example.com/docs/intro",
+    });
+
+    fireEvent.click(sentAttachment);
+
+    expect(openExternalUrlSpy).toHaveBeenCalledWith(
+      "https://example.com/docs/intro",
+    );
+
+    runDesktopTaskSpy.mockRestore();
+    openExternalUrlSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("adds selected files to the main composer and attaches them on send", async () => {
@@ -3250,7 +3528,7 @@ describe("ChatSession component", () => {
     expect(screen.queryByText("Attached")).toBeNull();
 
     const sentAttachment = screen.getByRole("button", {
-      name: "Open plan.md preview",
+      name: "Show file plan.md",
     });
 
     expect(sentAttachment).toBeDefined();
@@ -3263,6 +3541,98 @@ describe("ChatSession component", () => {
     resolveDroppedPathsSpy.mockRestore();
     runDesktopTaskSpy.mockRestore();
     openAttachedPathSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("opens attached files directly from the main composer", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "composer-file-open-session",
+      workspace: "C:\\Docs",
+      draftContextAttachments: [
+        {
+          id: "composer-file-attachment",
+          path: "C:\\Docs\\plan.md",
+          kind: "file",
+          name: "plan.md",
+          parent: "C:\\Docs",
+        },
+      ],
+    });
+    const openAttachedPathSpy = vi
+      .spyOn(runtime, "openAttachedPath")
+      .mockResolvedValue();
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    render(<ChatSession />);
+
+    const attachmentButton = await screen.findByRole("button", {
+      name: "Show file plan.md",
+    });
+    fireEvent.click(attachmentButton);
+
+    expect(openAttachedPathSpy).toHaveBeenCalledWith(
+      "C:\\Docs\\plan.md",
+      "C:\\Docs",
+    );
+
+    openAttachedPathSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("previews clipboard image attachments directly from the main composer", async () => {
+    const baseState = createInitialShellState();
+    const imagePath =
+      "\\\\?\\C:\\Users\\andreas-ehrhardt\\AppData\\Local\\Temp\\machdoch\\clipboard-images\\image-1782804926429-42976.png";
+    const session = createSession({
+      id: "composer-image-preview-session",
+      workspace: "C:\\Development\\_others\\machdoch",
+      draftContextAttachments: [
+        {
+          id: "composer-image-attachment",
+          path: imagePath,
+          kind: "image",
+          name: "image-1782804926429-42976.png",
+          parent:
+            "\\\\?\\C:\\Users\\andreas-ehrhardt\\AppData\\Local\\Temp\\machdoch\\clipboard-images",
+        },
+      ],
+    });
+    const resolveAttachedImagePreviewSourceSpy = vi
+      .spyOn(runtime, "resolveAttachedImagePreviewSource")
+      .mockResolvedValue("asset://clipboard-image.png");
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    render(<ChatSession />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Preview image image-1782804926429-42976.png",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(resolveAttachedImagePreviewSourceSpy).toHaveBeenCalledWith(
+        imagePath,
+        "C:\\Development\\_others\\machdoch",
+      );
+    });
+
+    const previewImage = await screen.findByRole("img", {
+      name: "Preview of image-1782804926429-42976.png",
+    });
+
+    expect(previewImage.getAttribute("src")).toBe("asset://clipboard-image.png");
+
+    resolveAttachedImagePreviewSourceSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("adds selected folders to the main composer from the add context menu", async () => {
@@ -3332,6 +3702,12 @@ describe("ChatSession component", () => {
         "C:\\Docs",
       ),
     });
+    const openAttachedPathSpy = vi
+      .spyOn(runtime, "openAttachedPath")
+      .mockResolvedValue();
+    const resolveAttachedImagePreviewSourceSpy = vi
+      .spyOn(runtime, "resolveAttachedImagePreviewSource")
+      .mockResolvedValue("asset://screen.png");
 
     render(<ChatSession />);
 
@@ -3391,14 +3767,31 @@ describe("ChatSession component", () => {
     expect(userMessageText).toBeDefined();
     expect(userMessageText?.textContent).not.toContain("Use this image");
     const sentAttachment = screen.getByRole("button", {
-      name: "Open screen.png preview",
+      name: "Preview image screen.png",
     });
 
     expect(sentAttachment).toBeDefined();
     expect(within(sentAttachment).queryByText("image")).toBeNull();
+    fireEvent.click(sentAttachment);
+
+    await waitFor(() => {
+      expect(resolveAttachedImagePreviewSourceSpy).toHaveBeenCalledWith(
+        "C:\\Docs\\screen.png",
+        "C:\\Docs",
+      );
+    });
+
+    const previewImage = await screen.findByRole("img", {
+      name: "Preview of screen.png",
+    });
+
+    expect(previewImage.getAttribute("src")).toBe("asset://screen.png");
+    expect(openAttachedPathSpy).not.toHaveBeenCalled();
 
     resolveDroppedPathsSpy.mockRestore();
     runDesktopTaskSpy.mockRestore();
+    openAttachedPathSpy.mockRestore();
+    resolveAttachedImagePreviewSourceSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("adds pasted clipboard images to the main composer", async () => {
@@ -4545,6 +4938,9 @@ describe("ChatSession component", () => {
           "C:\\Docs",
         ),
       });
+    const openAttachedPathSpy = vi
+      .spyOn(runtime, "openAttachedPath")
+      .mockResolvedValue();
 
     render(<AssistantPopupShell />);
 
@@ -4573,6 +4969,14 @@ describe("ChatSession component", () => {
       "C:\\Docs\\quick-note.txt",
     ]);
 
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show file quick-note.txt" }),
+    );
+    expect(openAttachedPathSpy).toHaveBeenCalledWith(
+      "C:\\Docs\\quick-note.txt",
+      "C:\\Docs",
+    );
+
     fireEvent.change(input, {
       target: { value: "Summarize it" },
     });
@@ -4592,6 +4996,7 @@ describe("ChatSession component", () => {
 
     resolveDroppedPathsSpy.mockRestore();
     runDesktopTaskSpy.mockRestore();
+    openAttachedPathSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("adds selected images to the Quick Chat composer and sends them as image inputs", async () => {

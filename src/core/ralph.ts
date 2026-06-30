@@ -213,6 +213,7 @@ const DEFAULT_RALPH_UI_ANALYZE_VIEWPORTS: readonly RalphUiAnalyzeViewport[] = [
   { name: "desktop", width: 1280, height: 900 },
   { name: "tablet", width: 768, height: 1024 },
   { name: "mobile", width: 390, height: 844 },
+  { name: "small-mobile", width: 320, height: 568 },
 ];
 const DEFAULT_RALPH_UI_ANALYZE_TIMEOUT_MS = 30_000;
 const MAX_RALPH_UI_ANALYZE_TEXT_CHARS = 20_000;
@@ -5301,6 +5302,89 @@ interface RalphUiAnalyzeIssue {
   category: string;
   message: string;
   selector?: string;
+  evidence?: Record<string, unknown>;
+}
+
+interface RalphUiAnalyzeElementSummary {
+  selector?: string;
+  text?: string;
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+}
+
+interface RalphUiAnalyzeHeadingSummary {
+  level: number;
+  text: string;
+}
+
+interface RalphUiAnalyzeViewportAnalysis {
+  viewport: {
+    width: number;
+    height: number;
+    scrollWidth: number;
+    scrollHeight: number;
+    horizontalOverflowPixels: number;
+  };
+  viewportMeta: {
+    present: boolean;
+    content?: string;
+    hasDeviceWidth: boolean;
+    hasInitialScale: boolean;
+    warnings: string[];
+  };
+  structure: {
+    headings: RalphUiAnalyzeHeadingSummary[];
+    h1Count: number;
+    landmarkCounts: Record<string, number>;
+    navigationCount: number;
+    mainCount: number;
+    formCount: number;
+    interactiveCount: number;
+    imageCount: number;
+    missingAltImageCount: number;
+  };
+  textDensity: {
+    characterCount: number;
+    wordCount: number;
+    blockCount: number;
+    denseBlockCount: number;
+    maxBlockCharacters: number;
+    denseBlocks: RalphUiAnalyzeElementSummary[];
+  };
+  layout: {
+    hasHorizontalOverflow: boolean;
+    clippedElementCount: number;
+    clippedElements: RalphUiAnalyzeElementSummary[];
+    overflowElementCount: number;
+    overflowElements: RalphUiAnalyzeElementSummary[];
+    overlapCandidateCount: number;
+    overlapCandidates: Array<{
+      first: RalphUiAnalyzeElementSummary;
+      second: RalphUiAnalyzeElementSummary;
+      overlapArea: number;
+    }>;
+  };
+  interaction: {
+    smallTargetCount: number;
+    smallTargets: RalphUiAnalyzeElementSummary[];
+  };
+  contrast: {
+    checkedTextElementCount: number;
+    lowContrastCount: number;
+    lowContrastElements: Array<
+      RalphUiAnalyzeElementSummary & {
+        contrastRatio: number;
+        requiredRatio: number;
+      }
+    >;
+  };
+}
+
+interface RalphUiAnalyzeEvaluation {
+  issues: RalphUiAnalyzeIssue[];
+  analysis?: RalphUiAnalyzeViewportAnalysis;
 }
 
 interface RalphUiAnalyzeViewportData {
@@ -5316,6 +5400,7 @@ interface RalphUiAnalyzeViewportData {
   pageErrors: string[];
   failedRequests: string[];
   issues: RalphUiAnalyzeIssue[];
+  analysis?: RalphUiAnalyzeViewportAnalysis;
 }
 
 interface RalphUiAnalyzeData {
@@ -5495,65 +5580,583 @@ const launchUiAnalyzeBrowser = async (): Promise<{
   );
 };
 
+const normalizeUiAnalyzeIssue = (
+  value: unknown,
+): RalphUiAnalyzeIssue | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const severity = value.severity;
+  const category = value.category;
+  const message = value.message;
+
+  if (
+    severity !== "error" &&
+    severity !== "warning" &&
+    severity !== "info"
+  ) {
+    return undefined;
+  }
+
+  if (typeof category !== "string" || typeof message !== "string") {
+    return undefined;
+  }
+
+  return {
+    severity,
+    category,
+    message,
+    ...(typeof value.selector === "string" ? { selector: value.selector } : {}),
+    ...(isRecord(value.evidence) ? { evidence: value.evidence } : {}),
+  };
+};
+
+const shouldIncludeUiAnalyzeIssue = (
+  issue: RalphUiAnalyzeIssue,
+  checks: Required<RalphUiAnalyzeChecks>,
+): boolean => {
+  if (
+    issue.category === "accessibility" ||
+    issue.category === "contrast" ||
+    issue.category === "structure"
+  ) {
+    return checks.accessibility;
+  }
+
+  if (
+    issue.category === "responsive" ||
+    issue.category === "layout" ||
+    issue.category === "interaction" ||
+    issue.category === "text-density" ||
+    issue.category === "viewport-meta"
+  ) {
+    return checks.responsive;
+  }
+
+  return checks.accessibility || checks.responsive;
+};
+
 const evaluateUiHeuristics = async (
   page: PlaywrightPage,
-): Promise<RalphUiAnalyzeIssue[]> => {
-  const issues = await page.evaluate(`(() => {
+  checks: Required<RalphUiAnalyzeChecks>,
+): Promise<RalphUiAnalyzeEvaluation> => {
+  const evaluation = await page.evaluate(`(() => {
+    const MAX_ISSUES = ${MAX_RALPH_UI_ANALYZE_ISSUES};
+    const MAX_SAMPLES = 12;
     const issues = [];
-    const add = (severity, category, message, element) => {
-      const selector = element && element.tagName
-        ? element.tagName.toLowerCase() + (element.id ? "#" + element.id : "")
-        : undefined;
-      issues.push({ severity, category, message, ...(selector ? { selector } : {}) });
+    const round = (value) => Math.round(value * 100) / 100;
+    const cssEscape = (value) => {
+      if (window.CSS && typeof window.CSS.escape === "function") {
+        return window.CSS.escape(value);
+      }
+      return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\\\$&");
+    };
+    const rectSummary = (element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        x: round(rect.x),
+        y: round(rect.y),
+        width: round(rect.width),
+        height: round(rect.height),
+      };
+    };
+    const textSnippet = (element) => {
+      const text = (element.innerText || element.textContent || "").replace(/\\s+/g, " ").trim();
+      return text ? text.slice(0, 140) : undefined;
+    };
+    const selectorFor = (element) => {
+      if (!element || !element.tagName) {
+        return undefined;
+      }
+      const tag = element.tagName.toLowerCase();
+      if (element.id) {
+        return tag + "#" + cssEscape(element.id);
+      }
+      const testId = element.getAttribute("data-testid") || element.getAttribute("data-test-id");
+      if (testId) {
+        return tag + "[data-testid=\\"" + testId.replace(/"/g, "\\\\\\"") + "\\"]";
+      }
+      const ariaLabel = element.getAttribute("aria-label");
+      if (ariaLabel && ariaLabel.length < 80) {
+        return tag + "[aria-label=\\"" + ariaLabel.replace(/"/g, "\\\\\\"") + "\\"]";
+      }
+      const parts = [];
+      let current = element;
+      while (current && current !== document.body && parts.length < 4) {
+        const currentTag = current.tagName.toLowerCase();
+        let part = currentTag;
+        const stableClass = Array.from(current.classList || [])
+          .filter((className) => /^[a-zA-Z][a-zA-Z0-9_-]{1,40}$/.test(className))
+          .slice(0, 2);
+        if (stableClass.length > 0) {
+          part += "." + stableClass.map(cssEscape).join(".");
+        }
+        const parent = current.parentElement;
+        if (parent) {
+          const siblings = Array.from(parent.children).filter(
+            (sibling) => sibling.tagName === current.tagName,
+          );
+          if (siblings.length > 1) {
+            part += ":nth-of-type(" + (siblings.indexOf(current) + 1) + ")";
+          }
+        }
+        parts.unshift(part);
+        current = parent;
+      }
+      return parts.join(" > ") || tag;
+    };
+    const summarizeElement = (element, extra = {}) => {
+      return {
+        selector: selectorFor(element),
+        text: textSnippet(element),
+        ...rectSummary(element),
+        ...extra,
+      };
+    };
+    const add = (severity, category, message, element, evidence = {}) => {
+      if (issues.length >= MAX_ISSUES) {
+        return;
+      }
+      const selector = element ? selectorFor(element) : undefined;
+      issues.push({
+        severity,
+        category,
+        message,
+        ...(selector ? { selector } : {}),
+        evidence: {
+          ...(element ? rectSummary(element) : {}),
+          ...evidence,
+        },
+      });
+    };
+    const isVisible = (element) => {
+      if (!element || !element.getBoundingClientRect) {
+        return false;
+      }
+      const style = window.getComputedStyle(element);
+      if (
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        Number.parseFloat(style.opacity || "1") <= 0.01
+      ) {
+        return false;
+      }
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const isDisabled = (element) => {
+      return Boolean(
+        element.disabled ||
+          element.getAttribute("aria-disabled") === "true" ||
+          element.closest("[aria-disabled='true']"),
+      );
     };
     const body = document.body;
-    if (!body || !body.innerText.trim()) {
+    const documentElement = document.documentElement;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const visibleText = body ? (body.innerText || "").trim() : "";
+
+    if (!body || !visibleText) {
       add("warning", "content", "Page body has no visible text.");
     }
-    if (!document.querySelector("h1")) {
-      add("info", "structure", "Page has no h1 heading.");
-    }
-    for (const image of Array.from(document.images)) {
-      if (!image.getAttribute("alt")) {
-        add("warning", "accessibility", "Image is missing alt text.", image);
+
+    const viewportMetaElement = document.querySelector("meta[name='viewport']");
+    const viewportMetaContent = viewportMetaElement?.getAttribute("content")?.trim() || "";
+    const viewportMetaWarnings = [];
+    if (!viewportMetaElement) {
+      viewportMetaWarnings.push("Missing viewport meta tag.");
+      add("warning", "viewport-meta", "Page is missing a viewport meta tag.");
+    } else {
+      if (!/width\\s*=\\s*device-width/i.test(viewportMetaContent)) {
+        viewportMetaWarnings.push("Viewport meta does not set width=device-width.");
+        add("warning", "viewport-meta", "Viewport meta does not set width=device-width.", viewportMetaElement, {
+          content: viewportMetaContent,
+        });
+      }
+      if (!/initial-scale\\s*=\\s*1(?:\\.0+)?/i.test(viewportMetaContent)) {
+        viewportMetaWarnings.push("Viewport meta does not set initial-scale=1.");
       }
     }
-    const namedControls = Array.from(document.querySelectorAll("button, a, input, textarea, select"));
-    for (const element of namedControls) {
+
+    const headingElements = Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6"))
+      .filter(isVisible);
+    const headings = headingElements.slice(0, 24).map((heading) => ({
+      level: Number.parseInt(heading.tagName.slice(1), 10),
+      text: textSnippet(heading) || "",
+    }));
+    const h1Count = document.querySelectorAll("h1").length;
+    if (h1Count === 0) {
+      add("info", "structure", "Page has no h1 heading.");
+    }
+    if (h1Count > 1) {
+      add("info", "structure", "Page has multiple h1 headings.", undefined, {
+        h1Count,
+      });
+    }
+
+    const imageElements = Array.from(document.images);
+    const missingAltImages = imageElements.filter((image) => !image.hasAttribute("alt"));
+    for (const image of missingAltImages.slice(0, MAX_SAMPLES)) {
+      add("warning", "accessibility", "Image is missing an alt attribute.", image, {
+        src: image.currentSrc || image.src || undefined,
+      });
+    }
+
+    const interactiveSelector = [
+      "button",
+      "a[href]",
+      "input",
+      "textarea",
+      "select",
+      "summary",
+      "[role='button']",
+      "[role='link']",
+      "[role='menuitem']",
+      "[tabindex]:not([tabindex='-1'])",
+    ].join(",");
+    const interactiveElements = Array.from(document.querySelectorAll(interactiveSelector))
+      .filter((element) => isVisible(element) && !isDisabled(element));
+    for (const element of interactiveElements.slice(0, 80)) {
       const ariaLabel = element.getAttribute("aria-label") || element.getAttribute("aria-labelledby");
-      const text = element.textContent || element.getAttribute("value") || element.getAttribute("placeholder") || "";
+      const text = element.textContent ||
+        element.getAttribute("value") ||
+        element.getAttribute("placeholder") ||
+        element.getAttribute("title") ||
+        "";
       if (!ariaLabel && !text.trim()) {
         add("warning", "accessibility", "Interactive element may not have an accessible name.", element);
       }
     }
-    for (const input of Array.from(document.querySelectorAll("input, textarea, select"))) {
+
+    for (const input of Array.from(document.querySelectorAll("input, textarea, select")).filter(isVisible)) {
       const id = input.id;
       const hasLabel = Boolean(
         input.getAttribute("aria-label") ||
         input.getAttribute("aria-labelledby") ||
-        (id && document.querySelector("label[for='" + CSS.escape(id) + "']")) ||
+        (id && document.querySelector("label[for='" + cssEscape(id) + "']")) ||
         input.closest("label")
       );
       if (!hasLabel) {
         add("warning", "accessibility", "Form control may be missing a label.", input);
       }
     }
-    if (document.documentElement.scrollWidth > window.innerWidth + 2) {
-      add("warning", "responsive", "Page has horizontal overflow.");
+
+    const horizontalOverflowPixels = Math.max(
+      0,
+      documentElement.scrollWidth - viewportWidth,
+    );
+    if (horizontalOverflowPixels > 2) {
+      add("warning", "responsive", "Page has horizontal overflow.", undefined, {
+        scrollWidth: documentElement.scrollWidth,
+        viewportWidth,
+        overflowPixels: horizontalOverflowPixels,
+      });
     }
-    return issues.slice(0, ${MAX_RALPH_UI_ANALYZE_ISSUES});
+
+    const allVisibleElements = Array.from(document.querySelectorAll("body *")).filter(isVisible);
+    const overflowElements = [];
+    const clippedElements = [];
+    for (const element of allVisibleElements) {
+      if (overflowElements.length < MAX_SAMPLES) {
+        const rect = element.getBoundingClientRect();
+        if (rect.left < -1 || rect.right > viewportWidth + 1) {
+          overflowElements.push(summarizeElement(element));
+          add("warning", "layout", "Element extends beyond the viewport horizontally.", element, {
+            viewportWidth,
+          });
+        }
+      }
+
+      if (clippedElements.length < MAX_SAMPLES) {
+        const style = window.getComputedStyle(element);
+        const clipsX = (style.overflowX === "hidden" || style.overflowX === "clip") &&
+          element.scrollWidth > element.clientWidth + 2;
+        const clipsY = (style.overflowY === "hidden" || style.overflowY === "clip") &&
+          element.scrollHeight > element.clientHeight + 2;
+        if (clipsX || clipsY) {
+          clippedElements.push(summarizeElement(element, {
+            scrollWidth: element.scrollWidth,
+            scrollHeight: element.scrollHeight,
+            clientWidth: element.clientWidth,
+            clientHeight: element.clientHeight,
+          }));
+          add("warning", "layout", "Element content may be clipped by overflow settings.", element, {
+            clipsX,
+            clipsY,
+            scrollWidth: element.scrollWidth,
+            scrollHeight: element.scrollHeight,
+            clientWidth: element.clientWidth,
+            clientHeight: element.clientHeight,
+          });
+        }
+      }
+    }
+
+    const smallTargets = [];
+    for (const element of interactiveElements) {
+      if (smallTargets.length >= MAX_SAMPLES) {
+        break;
+      }
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 44 || rect.height < 44) {
+        smallTargets.push(summarizeElement(element));
+        add("warning", "interaction", "Interactive target may be smaller than 44 by 44 CSS pixels.", element, {
+          width: round(rect.width),
+          height: round(rect.height),
+        });
+      }
+    }
+
+    const overlapCandidates = [];
+    const overlapElements = interactiveElements.slice(0, 80);
+    for (let firstIndex = 0; firstIndex < overlapElements.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < overlapElements.length; secondIndex += 1) {
+        if (overlapCandidates.length >= MAX_SAMPLES) {
+          break;
+        }
+        const first = overlapElements[firstIndex];
+        const second = overlapElements[secondIndex];
+        if (first.contains(second) || second.contains(first)) {
+          continue;
+        }
+        const firstRect = first.getBoundingClientRect();
+        const secondRect = second.getBoundingClientRect();
+        const overlapWidth = Math.max(
+          0,
+          Math.min(firstRect.right, secondRect.right) - Math.max(firstRect.left, secondRect.left),
+        );
+        const overlapHeight = Math.max(
+          0,
+          Math.min(firstRect.bottom, secondRect.bottom) - Math.max(firstRect.top, secondRect.top),
+        );
+        const overlapArea = overlapWidth * overlapHeight;
+        if (overlapArea > 8) {
+          const candidate = {
+            first: summarizeElement(first),
+            second: summarizeElement(second),
+            overlapArea: round(overlapArea),
+          };
+          overlapCandidates.push(candidate);
+          add("warning", "layout", "Interactive elements appear to overlap.", first, {
+            otherSelector: selectorFor(second),
+            overlapArea: candidate.overlapArea,
+          });
+        }
+      }
+      if (overlapCandidates.length >= MAX_SAMPLES) {
+        break;
+      }
+    }
+
+    const textBlockElements = Array.from(document.querySelectorAll(
+      "p,li,td,th,label,button,a,h1,h2,h3,h4,h5,h6,[role='button'],[role='link']",
+    )).filter(isVisible);
+    const textBlocks = textBlockElements.map((element) => {
+      const text = textSnippet(element) || "";
+      const fullText = (element.innerText || element.textContent || "").replace(/\\s+/g, " ").trim();
+      const words = fullText ? fullText.split(/\\s+/).length : 0;
+      return {
+        element,
+        characters: fullText.length,
+        words,
+      };
+    }).filter((entry) => entry.characters > 0);
+    const denseBlocks = textBlocks
+      .filter((entry) => entry.characters > 280 || entry.words > 70)
+      .slice(0, MAX_SAMPLES)
+      .map((entry) => summarizeElement(entry.element, {
+        characters: entry.characters,
+        words: entry.words,
+      }));
+    for (const block of denseBlocks.slice(0, 6)) {
+      issues.push({
+        severity: "info",
+        category: "text-density",
+        message: "Large dense text block may reduce scanability.",
+        ...(block.selector ? { selector: block.selector } : {}),
+        evidence: block,
+      });
+    }
+
+    const parseColor = (value) => {
+      const match = String(value).match(/rgba?\\(([^)]+)\\)/i);
+      if (!match) {
+        return undefined;
+      }
+      const parts = match[1].split(",").map((part) => Number.parseFloat(part.trim()));
+      if (parts.length < 3 || parts.slice(0, 3).some((part) => !Number.isFinite(part))) {
+        return undefined;
+      }
+      return {
+        r: parts[0],
+        g: parts[1],
+        b: parts[2],
+        a: Number.isFinite(parts[3]) ? parts[3] : 1,
+      };
+    };
+    const relativeLuminance = (color) => {
+      const transform = (channel) => {
+        const value = channel / 255;
+        return value <= 0.03928
+          ? value / 12.92
+          : Math.pow((value + 0.055) / 1.055, 2.4);
+      };
+      return 0.2126 * transform(color.r) +
+        0.7152 * transform(color.g) +
+        0.0722 * transform(color.b);
+    };
+    const contrastRatio = (foreground, background) => {
+      const foregroundLuminance = relativeLuminance(foreground);
+      const backgroundLuminance = relativeLuminance(background);
+      const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+      const darker = Math.min(foregroundLuminance, backgroundLuminance);
+      return (lighter + 0.05) / (darker + 0.05);
+    };
+    const solidBackgroundFor = (element) => {
+      let current = element;
+      while (current && current !== document.documentElement) {
+        const background = parseColor(window.getComputedStyle(current).backgroundColor);
+        if (background && background.a >= 0.95) {
+          return background;
+        }
+        current = current.parentElement;
+      }
+      const documentBackground = parseColor(window.getComputedStyle(document.body).backgroundColor);
+      return documentBackground && documentBackground.a >= 0.95
+        ? documentBackground
+        : undefined;
+    };
+    const textElementsForContrast = allVisibleElements
+      .filter((element) => {
+        const text = textSnippet(element);
+        return Boolean(text && text.length > 0);
+      })
+      .slice(0, 160);
+    const lowContrastElements = [];
+    let checkedTextElementCount = 0;
+    for (const element of textElementsForContrast) {
+      if (lowContrastElements.length >= MAX_SAMPLES) {
+        break;
+      }
+      const style = window.getComputedStyle(element);
+      const foreground = parseColor(style.color);
+      const background = solidBackgroundFor(element);
+      if (!foreground || !background) {
+        continue;
+      }
+      checkedTextElementCount += 1;
+      const fontSize = Number.parseFloat(style.fontSize || "16");
+      const fontWeight = Number.parseInt(style.fontWeight || "400", 10);
+      const requiredRatio = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700)
+        ? 3
+        : 4.5;
+      const ratio = contrastRatio(foreground, background);
+      if (ratio < requiredRatio) {
+        const summary = summarizeElement(element, {
+          contrastRatio: round(ratio),
+          requiredRatio,
+        });
+        lowContrastElements.push(summary);
+        add("warning", "contrast", "Text may not meet computed contrast requirements.", element, {
+          contrastRatio: summary.contrastRatio,
+          requiredRatio,
+        });
+      }
+    }
+
+    const landmarkCounts = {
+      header: document.querySelectorAll("header,[role='banner']").length,
+      nav: document.querySelectorAll("nav,[role='navigation']").length,
+      main: document.querySelectorAll("main,[role='main']").length,
+      aside: document.querySelectorAll("aside,[role='complementary']").length,
+      footer: document.querySelectorAll("footer,[role='contentinfo']").length,
+      search: document.querySelectorAll("[role='search']").length,
+    };
+    const words = visibleText ? visibleText.split(/\\s+/).length : 0;
+    const analysis = {
+      viewport: {
+        width: viewportWidth,
+        height: viewportHeight,
+        scrollWidth: documentElement.scrollWidth,
+        scrollHeight: documentElement.scrollHeight,
+        horizontalOverflowPixels,
+      },
+      viewportMeta: {
+        present: Boolean(viewportMetaElement),
+        ...(viewportMetaContent ? { content: viewportMetaContent } : {}),
+        hasDeviceWidth: /width\\s*=\\s*device-width/i.test(viewportMetaContent),
+        hasInitialScale: /initial-scale\\s*=\\s*1(?:\\.0+)?/i.test(viewportMetaContent),
+        warnings: viewportMetaWarnings,
+      },
+      structure: {
+        headings,
+        h1Count,
+        landmarkCounts,
+        navigationCount: landmarkCounts.nav,
+        mainCount: landmarkCounts.main,
+        formCount: document.forms.length,
+        interactiveCount: interactiveElements.length,
+        imageCount: imageElements.length,
+        missingAltImageCount: missingAltImages.length,
+      },
+      textDensity: {
+        characterCount: visibleText.length,
+        wordCount: words,
+        blockCount: textBlocks.length,
+        denseBlockCount: denseBlocks.length,
+        maxBlockCharacters: textBlocks.reduce(
+          (max, entry) => Math.max(max, entry.characters),
+          0,
+        ),
+        denseBlocks,
+      },
+      layout: {
+        hasHorizontalOverflow: horizontalOverflowPixels > 2,
+        clippedElementCount: clippedElements.length,
+        clippedElements,
+        overflowElementCount: overflowElements.length,
+        overflowElements,
+        overlapCandidateCount: overlapCandidates.length,
+        overlapCandidates,
+      },
+      interaction: {
+        smallTargetCount: smallTargets.length,
+        smallTargets,
+      },
+      contrast: {
+        checkedTextElementCount,
+        lowContrastCount: lowContrastElements.length,
+        lowContrastElements,
+      },
+    };
+
+    return {
+      issues: issues.slice(0, MAX_ISSUES),
+      analysis,
+    };
   })()`);
 
-  return Array.isArray(issues)
-    ? issues.filter((issue): issue is RalphUiAnalyzeIssue => {
-        return isRecord(issue) &&
-          (issue.severity === "error" ||
-            issue.severity === "warning" ||
-            issue.severity === "info") &&
-          typeof issue.category === "string" &&
-          typeof issue.message === "string";
-      })
-    : [];
+  if (!isRecord(evaluation)) {
+    return { issues: [] };
+  }
+
+  const rawIssues = Array.isArray(evaluation.issues) ? evaluation.issues : [];
+  const issues = rawIssues
+    .map(normalizeUiAnalyzeIssue)
+    .filter((issue): issue is RalphUiAnalyzeIssue => Boolean(issue))
+    .filter((issue) => shouldIncludeUiAnalyzeIssue(issue, checks))
+    .slice(0, MAX_RALPH_UI_ANALYZE_ISSUES);
+
+  return {
+    issues,
+    ...(isRecord(evaluation.analysis)
+      ? {
+          analysis: evaluation.analysis as unknown as RalphUiAnalyzeViewportAnalysis,
+        }
+      : {}),
+  };
 };
 
 const captureUiAnalyzeViewport = async (
@@ -5626,7 +6229,7 @@ const captureUiAnalyzeViewport = async (
       });
     }
 
-    const [title, visibleText, ariaSnapshot, issues] = await Promise.all([
+    const [title, visibleText, ariaSnapshot, evaluation] = await Promise.all([
       page.title(),
       page.locator("body").innerText({ timeout: timeoutMs }).catch(() => ""),
       checks.accessibility
@@ -5637,7 +6240,9 @@ const captureUiAnalyzeViewport = async (
               `ARIA snapshot unavailable: ${error instanceof Error ? error.message : String(error)}`,
             )
         : Promise.resolve(undefined),
-      checks.responsive ? evaluateUiHeuristics(page) : Promise.resolve([]),
+      checks.responsive || checks.accessibility
+        ? evaluateUiHeuristics(page, checks)
+        : Promise.resolve<RalphUiAnalyzeEvaluation>({ issues: [] }),
     ]);
 
     return {
@@ -5655,7 +6260,8 @@ const captureUiAnalyzeViewport = async (
       consoleErrors: consoleErrors.slice(0, MAX_RALPH_UI_ANALYZE_ISSUES),
       pageErrors: pageErrors.slice(0, MAX_RALPH_UI_ANALYZE_ISSUES),
       failedRequests: failedRequests.slice(0, MAX_RALPH_UI_ANALYZE_ISSUES),
-      issues,
+      issues: evaluation.issues,
+      ...(evaluation.analysis ? { analysis: evaluation.analysis } : {}),
     };
   } finally {
     await context.close().catch(() => undefined);
@@ -6439,6 +7045,8 @@ const executeChangeScopeGuardUtilityBlock = async (
     const isEnforced = utility.enforce === true;
     const output =
       outOfScopeFiles.length > 0 && isEnforced ? "OUT_OF_SCOPE" : "IN_SCOPE";
+    const blockingOutOfScopeFiles = isEnforced ? outOfScopeFiles : [];
+    const advisoryOutOfScopeFiles = isEnforced ? [] : outOfScopeFiles;
 
     return createUtilityResult(
       block,
@@ -6446,7 +7054,7 @@ const executeChangeScopeGuardUtilityBlock = async (
       outOfScopeFiles.length > 0
         ? isEnforced
           ? `${block.title} found ${outOfScopeFiles.length} out-of-scope file(s).`
-          : `${block.title} recorded ${outOfScopeFiles.length} advisory out-of-scope file(s).`
+          : `${block.title} confirmed scoped flow can continue and recorded ${outOfScopeFiles.length} unrelated workspace file(s).`
         : `${block.title} confirmed changed files stay in scope.`,
       {
         cwd,
@@ -6457,7 +7065,9 @@ const executeChangeScopeGuardUtilityBlock = async (
         ...(baseline?.blockId ? { baselineBlockId: baseline.blockId } : {}),
         ignoredBaselineFiles,
         changedSinceBaselineFiles,
-        outOfScopeFiles,
+        outOfScopeFiles: blockingOutOfScopeFiles,
+        advisoryOutOfScopeFiles,
+        unrelatedWorkspaceFiles: advisoryOutOfScopeFiles,
         files: changedFileEntries,
         allowedPaths: rules.paths,
         allowedGlobs: rules.globs,
