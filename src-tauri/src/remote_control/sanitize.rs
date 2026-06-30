@@ -1,3 +1,4 @@
+use super::commands::truncate_chars;
 use super::shell::{
     RemoteShellAttachment, RemoteShellComposer, RemoteShellContextPack, RemoteShellMessage,
     RemoteShellMessageSource, RemoteShellQuickTask, RemoteShellRuntime,
@@ -6,9 +7,9 @@ use super::shell::{
     RemoteShellVoice,
 };
 use super::{
-    now_millis, truncate_chars, MAX_REMOTE_CONTEXT_PACKS, MAX_REMOTE_PROMPT_HISTORY,
-    MAX_REMOTE_SCHEDULER_JOBS, MAX_REMOTE_SCHEDULER_RUNS, MAX_REMOTE_SHELL_MESSAGES,
-    MAX_REMOTE_SHELL_SESSIONS, MAX_REMOTE_SHORT_TEXT_CHARS, MAX_REMOTE_TEXT_CHARS,
+    now_millis, MAX_REMOTE_CONTEXT_PACKS, MAX_REMOTE_PROMPT_HISTORY, MAX_REMOTE_SCHEDULER_JOBS,
+    MAX_REMOTE_SCHEDULER_RUNS, MAX_REMOTE_SHELL_MESSAGES, MAX_REMOTE_SHELL_SESSIONS,
+    MAX_REMOTE_SHORT_TEXT_CHARS, MAX_REMOTE_TEXT_CHARS,
 };
 
 pub(super) fn sanitize_shell_snapshot(

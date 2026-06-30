@@ -75,7 +75,7 @@ describe("Ralph starter flows", () => {
     expect(endBlocks[0]?.id).toBe("blocked");
   });
 
-  it("ships the refactor starter with validation fallback, scoped guard baseline, and pass counter", () => {
+  it("ships the refactor starter with validation fallback, workspace-tolerant final scan, and pass counter", () => {
     const starterFlow = getRalphStarterFlow("autonomous-refactoring-flow");
     const flow = starterFlow?.flow;
     const passCounter = flow?.blocks.find(
@@ -96,12 +96,9 @@ describe("Ralph starter flows", () => {
     const finalRefactorScan = flow?.blocks.find(
       (block) => block.id === "final-refactor-scan",
     );
-    const scopeGuard = flow?.blocks.find(
-      (block) => block.id === "change-scope-guard",
-    );
     const blocked = flow?.blocks.find((block) => block.id === "blocked");
 
-    expect(starterFlow?.version).toBeGreaterThanOrEqual(3);
+    expect(starterFlow?.version).toBeGreaterThanOrEqual(4);
     expect(passCounter).toMatchObject({
       type: "UTILITY",
       utility: {
@@ -143,15 +140,11 @@ describe("Ralph starter flows", () => {
       settings: {
         timeoutSeconds: 3600,
       },
+      prompt: expect.stringContaining("ignore unrelated workspace changes"),
     });
-    expect(scopeGuard).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        type: "CHANGE_SCOPE_GUARD",
-        baseline: "{{result:git-snapshot-before}}",
-        input: expect.stringContaining("allowedPaths"),
-      },
-    });
+    expect(flow?.blocks.some((block) => block.id === "change-scope-guard")).toBe(
+      false,
+    );
     expect(blocked).toMatchObject({ type: "END", status: "failed" });
     expect(flow?.edges).toEqual(
       expect.arrayContaining([
@@ -175,6 +168,11 @@ describe("Ralph starter flows", () => {
           fromOutput: "CONTINUE",
           to: "count-refactor-pass",
         }),
+        expect.objectContaining({
+          from: "git-diff-summary",
+          fromOutput: "SUCCESS",
+          to: "final-refactor-scan",
+        }),
       ]),
     );
     expect(flow?.edges).not.toEqual(
@@ -183,6 +181,12 @@ describe("Ralph starter flows", () => {
           from: "final-refactor-scan",
           fromOutput: "CONTINUE",
           to: "refactor-pass",
+        }),
+        expect.objectContaining({
+          to: "change-scope-guard",
+        }),
+        expect.objectContaining({
+          from: "change-scope-guard",
         }),
       ]),
     );

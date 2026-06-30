@@ -12,14 +12,15 @@ import {
   useEffect,
   useRef,
   useState,
-  type CSSProperties,
   type JSX,
 } from "react";
 import {
   canArchiveSession,
+  getLatestSessionUserRequestAt,
   getSessionOverviewStatus,
   getSessionRetentionProgress,
   getSessionTitle,
+  hasUnreadCompletedSessionResponse,
   isQuickVoiceSession,
   isSessionArchived,
   type ChatSessionRecord,
@@ -69,13 +70,6 @@ export interface SessionsSidebarProps {
   onExportSessions: () => void;
   onImportSessions: (file: File) => void;
 }
-
-const SESSION_TITLE_CLAMP_STYLE: CSSProperties = {
-  display: "-webkit-box",
-  WebkitBoxOrient: "vertical",
-  WebkitLineClamp: 2,
-  overflow: "hidden",
-};
 
 export const SessionsSidebar = ({
   totalSessions,
@@ -315,6 +309,10 @@ export const SessionsSidebar = ({
               const isQuickSession = isQuickVoiceSession(session);
               const isPinned =
                 isQuickSession || typeof session.pinnedAt === "number";
+              const hasUnreadCompletion =
+                !isActive &&
+                !archived &&
+                hasUnreadCompletedSessionResponse(session);
               const retentionProgress = getSessionRetentionProgress(
                 session,
                 {
@@ -323,12 +321,15 @@ export const SessionsSidebar = ({
                 },
                 retentionNow,
               );
+              const primaryTag = session.tags[0];
+              const extraTagCount = Math.max(0, session.tags.length - 1);
 
               return (
                 <div
                   key={session.id}
                   className={cn(
-                    "app-session-card group flex items-start gap-2 rounded-xl border px-3 py-2.5 transition-all",
+                    "app-session-card group relative flex min-h-[3.85rem] items-start rounded-xl border px-3 py-2 transition-colors",
+                    hasUnreadCompletion && "app-session-card--needs-read",
                     isActive
                       ? "border-sky-500/30 bg-sky-500/10 shadow-lg shadow-sky-950/20"
                       : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-950",
@@ -338,9 +339,11 @@ export const SessionsSidebar = ({
                 >
                   <button
                     type="button"
-                    aria-label={`Open session ${getSessionTitle(session)}`}
+                    aria-label={`Open session ${getSessionTitle(session)}${
+                      hasUnreadCompletion ? ", new reply ready" : ""
+                    }`}
                     onClick={() => onActivateSession(session.id)}
-                    className="min-w-0 flex-1 text-left"
+                    className="app-session-open-button min-w-0 flex-1 pr-[5.75rem] text-left"
                   >
                     <div className="flex w-full min-w-0 items-start gap-2">
                       <Tooltip>
@@ -362,41 +365,44 @@ export const SessionsSidebar = ({
                         </TooltipContent>
                       </Tooltip>
                       <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 items-start gap-1.5">
+                        <div className="flex min-w-0 items-center gap-1.5">
                           {isPinned ? (
-                            <Pin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
+                            <Pin className="h-3.5 w-3.5 shrink-0 text-amber-300" />
                           ) : null}
                           <p
-                            style={SESSION_TITLE_CLAMP_STYLE}
                             className={cn(
-                              "app-session-title wrap-break-word text-sm font-semibold leading-5 placeholder:text-slate-500",
+                              "app-session-title min-w-0 truncate text-sm font-semibold leading-5 placeholder:text-slate-500",
                               archived ? "text-slate-300" : "text-slate-100",
                             )}
                           >
                             {getSessionTitle(session)}
                           </p>
                         </div>
-                        {session.tags.length > 0 ? (
-                          <div className="app-session-tags mt-1 flex flex-wrap gap-1">
-                            {session.tags.slice(0, 3).map((tag) => (
-                              <span
-                                key={tag}
-                                className="app-session-tag-chip max-w-24 truncate rounded-full border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[10px] font-medium text-slate-500"
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
                       </div>
                     </div>
 
                     <div className="app-session-meta mt-1 flex w-full min-w-0 items-center justify-between gap-2 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
-                      <span className="min-w-0 flex-1 truncate">
-                        {createSessionSubtitle(session)}
+                      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                        {hasUnreadCompletion ? (
+                          <span className="app-session-read-cue inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase">
+                            New reply
+                          </span>
+                        ) : null}
+                        {primaryTag ? (
+                          <span className="app-session-tag-chip max-w-20 shrink-0 truncate rounded-full border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[9px] font-medium text-slate-500">
+                            {extraTagCount > 0
+                              ? `${primaryTag} +${extraTagCount}`
+                              : primaryTag}
+                          </span>
+                        ) : null}
+                        <span className="min-w-0 truncate">
+                          {createSessionSubtitle(session)}
+                        </span>
                       </span>
                       <span className="shrink-0">
-                        {formatSessionTimestamp(session.updatedAt)}
+                        {formatSessionTimestamp(
+                          getLatestSessionUserRequestAt(session),
+                        )}
                       </span>
                     </div>
                     {retentionProgress ? (
@@ -425,16 +431,16 @@ export const SessionsSidebar = ({
                     ) : null}
                   </button>
 
-                  <div className="app-session-card-actions flex shrink-0 items-start gap-1 self-start pt-0.5">
+                  <div
+                    className={cn(
+                      "app-session-card-actions absolute top-2 right-2 flex shrink-0 items-start gap-1 transition-opacity duration-150 ease-out",
+                      isActive || isPinned || archived
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+                    )}
+                  >
                     {!isQuickSession ? (
-                      <div
-                        className={cn(
-                          "app-session-card-action-slot overflow-hidden transition-[width,opacity] duration-150 ease-out",
-                          isActive || isPinned
-                            ? "w-8 opacity-100"
-                            : "w-0 opacity-0 group-hover:w-8 group-hover:opacity-100 group-focus-within:w-8 group-focus-within:opacity-100",
-                        )}
-                      >
+                      <div className="app-session-card-action-slot">
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -445,7 +451,7 @@ export const SessionsSidebar = ({
                               aria-pressed={isPinned}
                               onClick={() => onTogglePinnedSession(session.id)}
                               className={cn(
-                                "app-session-card-action-button h-8 w-8 rounded-full border border-slate-800 bg-slate-950/80 text-slate-500 transition-all hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
+                                "app-session-card-action-button h-7 w-7 rounded-full border border-slate-800 bg-slate-950/85 text-slate-500 transition-all hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
                                 isPinned &&
                                   "border-amber-500/30 bg-amber-500/10 text-amber-200",
                               )}
@@ -461,14 +467,7 @@ export const SessionsSidebar = ({
                     ) : null}
 
                     {!isQuickSession ? (
-                      <div
-                        className={cn(
-                          "app-session-card-action-slot overflow-hidden transition-[width,opacity] duration-150 ease-out",
-                          isActive
-                            ? "w-8 opacity-100"
-                            : "w-0 opacity-0 group-hover:w-8 group-hover:opacity-100 group-focus-within:w-8 group-focus-within:opacity-100",
-                        )}
-                      >
+                      <div className="app-session-card-action-slot">
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -477,7 +476,7 @@ export const SessionsSidebar = ({
                               variant="ghost"
                               aria-label={`Duplicate ${getSessionTitle(session)}`}
                               onClick={() => onDuplicateSession(session.id)}
-                              className="app-session-card-action-button h-8 w-8 rounded-full border border-slate-800 bg-slate-950/80 text-slate-500 transition-all hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100"
+                              className="app-session-card-action-button h-7 w-7 rounded-full border border-slate-800 bg-slate-950/85 text-slate-500 transition-all hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100"
                             >
                               <Copy className="h-3.5 w-3.5" />
                             </Button>
@@ -492,7 +491,7 @@ export const SessionsSidebar = ({
                         <TooltipTrigger asChild>
                           <div
                             aria-label="Archived session"
-                            className="app-session-card-action-button flex h-8 w-8 items-center justify-center rounded-full border border-slate-800 bg-slate-950/80 text-slate-500"
+                            className="app-session-card-action-button flex h-7 w-7 items-center justify-center rounded-full border border-slate-800 bg-slate-950/85 text-slate-500"
                           >
                             <Archive className="h-3.5 w-3.5" />
                           </div>
@@ -502,14 +501,7 @@ export const SessionsSidebar = ({
                     ) : null}
 
                     {showArchiveAction ? (
-                      <div
-                        className={cn(
-                          "app-session-card-action-slot overflow-hidden transition-[width,opacity] duration-150 ease-out",
-                          isActive
-                            ? "w-8 opacity-100"
-                            : "w-0 opacity-0 group-hover:w-8 group-hover:opacity-100 group-focus-within:w-8 group-focus-within:opacity-100",
-                        )}
-                      >
+                      <div className="app-session-card-action-slot">
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -518,7 +510,7 @@ export const SessionsSidebar = ({
                               variant="ghost"
                               aria-label={`Archive ${getSessionTitle(session)}`}
                               onClick={() => onArchiveSession(session.id)}
-                              className="app-session-card-action-button h-8 w-8 rounded-full border border-slate-800 bg-slate-950/80 text-slate-500 transition-all hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100"
+                              className="app-session-card-action-button h-7 w-7 rounded-full border border-slate-800 bg-slate-950/85 text-slate-500 transition-all hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100"
                             >
                               <Archive className="h-3.5 w-3.5" />
                             </Button>

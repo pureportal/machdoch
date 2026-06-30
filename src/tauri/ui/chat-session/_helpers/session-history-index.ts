@@ -1,4 +1,5 @@
 import {
+  compareSessionsByAttention,
   createSession,
   getSessionOverviewStatus,
   getSessionTitle,
@@ -329,14 +330,7 @@ export const filterSessionHistoryIndex = (
         return right.score - left.score;
       }
 
-      const leftPinnedAt = left.session.pinnedAt ?? 0;
-      const rightPinnedAt = right.session.pinnedAt ?? 0;
-
-      if (leftPinnedAt !== rightPinnedAt) {
-        return rightPinnedAt - leftPinnedAt;
-      }
-
-      return right.session.updatedAt - left.session.updatedAt;
+      return compareSessionsByAttention(left.session, right.session);
     });
 
   return {

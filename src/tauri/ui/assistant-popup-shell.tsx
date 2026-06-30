@@ -7,6 +7,7 @@ import {
   LoaderCircle,
   Mic,
   Monitor,
+  Pin,
   Sparkles,
   WandSparkles,
   X,
@@ -17,6 +18,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type JSX,
 } from "react";
 import { revealMainWindow, showQuickVoiceWindow } from "./assistant-surface";
@@ -31,6 +33,7 @@ import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest
 import { Button } from "./components/ui/button";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { cn } from "./lib/utils";
+import { QUICK_CHAT_DROP_EVENT } from "./runtime";
 
 const QUICK_TASK_HISTORY_LIMIT = 6;
 const QUICK_WINDOW_BLUR_HIDE_DELAY_MS = 100;
@@ -244,9 +247,16 @@ const QuickTaskComposer = ({
 };
 
 export const AssistantPopupShell = (): JSX.Element => {
+  const [quickChatPinned, setQuickChatPinned] = useState(false);
+  const quickChatPinnedRef = useRef(false);
   const controller = useChatSessionController({
     fileDropTarget: "quick-task",
+    forwardedDropEventName: QUICK_CHAT_DROP_EVENT,
   });
+
+  useEffect(() => {
+    quickChatPinnedRef.current = quickChatPinned;
+  }, [quickChatPinned]);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -275,10 +285,14 @@ export const AssistantPopupShell = (): JSX.Element => {
           return;
         }
 
+        if (quickChatPinnedRef.current) {
+          return;
+        }
+
         hideTimeoutId = window.setTimeout(() => {
           hideTimeoutId = undefined;
 
-          if (disposed) {
+          if (disposed || quickChatPinnedRef.current) {
             return;
           }
 
@@ -339,6 +353,24 @@ export const AssistantPopupShell = (): JSX.Element => {
               className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
             >
               <ArrowUpRight className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={quickChatPinned ? "Unpin Quick Chat" : "Pin Quick Chat"}
+              aria-pressed={quickChatPinned}
+              title={quickChatPinned ? "Unpin Quick Chat" : "Pin Quick Chat"}
+              onClick={() => {
+                setQuickChatPinned((currentValue) => !currentValue);
+              }}
+              className={cn(
+                "h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100",
+                quickChatPinned &&
+                  "border border-sky-400/25 bg-sky-400/10 text-sky-100 hover:bg-sky-400/15 hover:text-white",
+              )}
+            >
+              <Pin className={cn("h-4 w-4", quickChatPinned && "fill-current")} />
             </Button>
             <Button
               type="button"

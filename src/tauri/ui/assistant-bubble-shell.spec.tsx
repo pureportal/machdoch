@@ -14,11 +14,16 @@ import {
   monitorFromPoint,
   PhysicalPosition,
   PhysicalSize,
+  windowDragDropListeners,
   windowMovedListeners,
   windowResizedListeners,
   windowScaleChangedListeners,
 } from "./test/tauri-test-mocks";
 import type { AppearanceSettings } from "./lib/shell-store";
+import {
+  ASSISTANT_POPUP_WINDOW_LABEL,
+  QUICK_CHAT_DROP_EVENT,
+} from "./runtime";
 
 const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
 const APPEARANCE_STORAGE_KEY = "machdoch.desktop.appearance-state";
@@ -64,6 +69,7 @@ describe("AssistantBubbleShell", () => {
     monitorFromPoint.mockResolvedValue(null);
     currentWindowMock.innerSize.mockResolvedValue(new PhysicalSize(0, 0));
     currentWindowMock.outerPosition.mockResolvedValue(new PhysicalPosition(0, 0));
+    windowDragDropListeners.clear();
     windowMovedListeners.clear();
     windowResizedListeners.clear();
     windowScaleChangedListeners.clear();
@@ -72,6 +78,7 @@ describe("AssistantBubbleShell", () => {
 
   afterEach(() => {
     cleanup();
+    windowDragDropListeners.clear();
     windowMovedListeners.clear();
     windowResizedListeners.clear();
     windowScaleChangedListeners.clear();
@@ -94,6 +101,41 @@ describe("AssistantBubbleShell", () => {
     expect(bubble.getAttribute("data-running")).toBe("false");
     expect(bubble.getAttribute("data-has-notification")).toBe("false");
     expect(bubble.getAttribute("data-voice-enabled")).toBe("true");
+  });
+
+  it("forwards dropped files from the launcher bubble to Quick Chat", async () => {
+    isTauriMock.mockReturnValue(true);
+
+    render(<AssistantBubbleShell />);
+
+    const bubble = await screen.findByRole("button", {
+      name: "Open Quick Chat",
+    });
+
+    await waitFor(() => {
+      expect(windowDragDropListeners.size).toBe(1);
+    });
+
+    const [listener] = windowDragDropListeners;
+
+    await act(async () => {
+      listener?.({
+        payload: {
+          type: "drop",
+          paths: ["C:\\Docs\\quick-note.txt"],
+          position: { x: 12, y: 18 },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(currentWindowMock.emitTo).toHaveBeenCalledWith(
+        ASSISTANT_POPUP_WINDOW_LABEL,
+        QUICK_CHAT_DROP_EVENT,
+        { paths: ["C:\\Docs\\quick-note.txt"] },
+      );
+      expect(bubble.getAttribute("aria-expanded")).toBe("true");
+    });
   });
 
   it("marks running sessions for stateful attention styles", async () => {

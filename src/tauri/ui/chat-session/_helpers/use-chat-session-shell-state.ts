@@ -11,7 +11,9 @@ import {
 import {
   createInitialShellState,
   createVisibleConversationMessages,
+  getLatestCompletedSessionResponseAt,
   getSessionTitle,
+  markSessionRead,
   mergeRecentWorkspaces,
   normalizeShellState,
   recoverInterruptedTasksForLaunch,
@@ -54,6 +56,7 @@ const getSessionPersistenceTimestamp = (
 ): number => {
   let timestamp = Math.max(
     session.updatedAt,
+    session.lastReadAt ?? 0,
     session.archivedAt ?? 0,
     session.pinnedAt ?? 0,
   );
@@ -731,6 +734,37 @@ export const useChatSessionShellState = (
   }, [activeSession.id, activeSession.manualTitle, activeSession.messages]);
 
   useEffect(() => {
+    if (!hasHydrated) {
+      return;
+    }
+
+    const latestCompletedResponseAt =
+      getLatestCompletedSessionResponseAt(activeSession);
+
+    if (
+      latestCompletedResponseAt === null ||
+      (activeSession.lastReadAt ?? 0) >= latestCompletedResponseAt
+    ) {
+      return;
+    }
+
+    applyShellState((prev) => ({
+      ...prev,
+      sessions: prev.sessions.map((session) =>
+        session.id === activeSession.id
+          ? markSessionRead(session, latestCompletedResponseAt)
+          : session,
+      ),
+    }));
+  }, [
+    activeSession,
+    activeSession.id,
+    activeSession.lastReadAt,
+    applyShellState,
+    hasHydrated,
+  ]);
+
+  useEffect(() => {
     return () => {
       scheduledTimeoutsRef.current.forEach((timeoutId) => {
         window.clearTimeout(timeoutId);
@@ -797,13 +831,30 @@ export const useChatSessionShellState = (
     (sessionId: string): void => {
       setActiveSessionIdState(sessionId);
       applyShellState((prev) => {
-        if (prev.activeSessionId === sessionId) {
+        const readAt = Date.now();
+        let didUpdateReadState = false;
+        const sessions = prev.sessions.map((session) => {
+          if (session.id !== sessionId) {
+            return session;
+          }
+
+          const nextSession = markSessionRead(session, readAt);
+
+          if (nextSession !== session) {
+            didUpdateReadState = true;
+          }
+
+          return nextSession;
+        });
+
+        if (prev.activeSessionId === sessionId && !didUpdateReadState) {
           return prev;
         }
 
         return {
           ...prev,
           activeSessionId: sessionId,
+          sessions,
         };
       });
     },

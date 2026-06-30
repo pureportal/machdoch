@@ -403,6 +403,46 @@ body {
     min-width: 0;
 }
 
+.app-session-card--needs-read {
+    position: relative;
+    overflow: hidden;
+    border-color: rgb(16 185 129 / 0.48) !important;
+    background:
+        linear-gradient(
+            90deg,
+            rgb(16 185 129 / 0.14),
+            rgb(14 165 233 / 0.08) 58%,
+            rgb(15 23 42 / 0.72)
+        ) !important;
+    box-shadow:
+        0 0 0 1px rgb(16 185 129 / 0.12),
+        0 10px 24px rgb(2 44 34 / 0.2);
+}
+
+.app-session-card--needs-read::before {
+    content: "";
+    position: absolute;
+    top: 0.7rem;
+    bottom: 0.7rem;
+    left: 0;
+    width: 0.18rem;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgb(125 211 252), rgb(52 211 153));
+    box-shadow: 0 0 16px rgb(52 211 153 / 0.42);
+}
+
+.app-session-card--needs-read > * {
+    position: relative;
+    z-index: 1;
+}
+
+.app-session-read-cue {
+    border-color: rgb(52 211 153 / 0.34);
+    background: rgb(6 78 59 / 0.32);
+    color: rgb(167 243 208);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
 .quick-chat-bubble-shell {
     color: var(--app-text);
     color-scheme: dark;
@@ -988,13 +1028,15 @@ body {
 
 :root[data-density="compact"] .app-session-card {
     gap: 0.375rem !important;
+    min-height: 3.35rem !important;
     border-radius: 0.75rem !important;
-    padding: 0.5rem 0.55rem !important;
+    padding: 0.45rem 0.5rem !important;
     box-shadow: none !important;
 }
 
-:root[data-density="compact"] .app-session-card button {
+:root[data-density="compact"] .app-session-open-button {
     min-width: 0;
+    padding-right: 4.85rem !important;
 }
 
 :root[data-density="compact"] .app-session-status-icon {
@@ -1012,20 +1054,21 @@ body {
     line-height: 1rem !important;
 }
 
-:root[data-density="compact"] .app-session-tags {
-    margin-top: 0.25rem !important;
-    gap: 0.25rem !important;
-}
-
 :root[data-density="compact"] .app-session-tag-chip {
-    max-width: 4.5rem !important;
-    padding: 0 0.35rem !important;
+    max-width: 3.75rem !important;
+    padding: 0 0.3rem !important;
     font-size: 0.56rem !important;
     line-height: 0.95rem !important;
 }
 
+:root[data-density="compact"] .app-session-read-cue {
+    padding: 0 0.35rem !important;
+    font-size: 0.52rem !important;
+    line-height: 0.9rem !important;
+}
+
 :root[data-density="compact"] .app-session-meta {
-    margin-top: 0.25rem !important;
+    margin-top: 0.15rem !important;
     gap: 0.35rem !important;
     font-size: 0.56rem !important;
     line-height: 0.9rem !important;
@@ -1034,18 +1077,13 @@ body {
 
 :root[data-density="compact"] .app-session-card-actions {
     gap: 0.2rem !important;
-    padding-top: 0 !important;
-}
-
-:root[data-density="compact"] .app-session-card-action-slot[class~="w-8"],
-:root[data-density="compact"] .app-session-card:hover .app-session-card-action-slot[class~="group-hover:w-8"],
-:root[data-density="compact"] .app-session-card:focus-within .app-session-card-action-slot[class~="group-focus-within:w-8"] {
-    width: 1.6rem !important;
+    top: 0.45rem !important;
+    right: 0.45rem !important;
 }
 
 :root[data-density="compact"] .app-session-card-action-button {
-    width: 1.6rem !important;
-    height: 1.6rem !important;
+    width: 1.45rem !important;
+    height: 1.45rem !important;
 }
 
 :root[data-density="compact"] .app-session-card-action-button svg {
@@ -1755,6 +1793,26 @@ body {
 :root[data-theme="light"] .app-session-card[class*="bg-sky-500"] {
     background: hsl(198 76% 94%) !important;
     border-color: hsl(197 48% 70%) !important;
+}
+
+:root[data-theme="light"] .app-session-card--needs-read {
+    background:
+        linear-gradient(
+            90deg,
+            hsl(154 70% 92%),
+            hsl(197 82% 94%) 58%,
+            hsl(0 0% 100%)
+        ) !important;
+    border-color: hsl(158 54% 51%) !important;
+    box-shadow:
+        0 0 0 1px hsl(158 54% 51% / 0.12),
+        0 12px 24px hsl(160 48% 38% / 0.13);
+}
+
+:root[data-theme="light"] .app-session-read-cue {
+    border-color: hsl(158 56% 47% / 0.32);
+    background: hsl(154 66% 88%);
+    color: hsl(159 68% 25%);
 }
 
 :root[data-theme="light"] .app-session-card-action-button,

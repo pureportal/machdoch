@@ -1,4 +1,11 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import {
   afterEach,
   beforeAll,
@@ -77,5 +84,37 @@ describe("AssistantPopupShell", () => {
     await waitFor(() => {
       expect(currentWindowMock.hide).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("does not hide the Quick Chat window on focus loss while pinned", async () => {
+    render(<AssistantPopupShell />);
+
+    await waitFor(() => {
+      expect(windowFocusChangedListeners.size).toBe(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Pin Quick Chat" }));
+
+    expect(
+      screen
+        .getByRole("button", { name: "Unpin Quick Chat" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    vi.useFakeTimers();
+
+    try {
+      act(() => {
+        for (const listener of windowFocusChangedListeners) {
+          listener({ payload: false });
+        }
+
+        vi.advanceTimersByTime(150);
+      });
+
+      expect(currentWindowMock.hide).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

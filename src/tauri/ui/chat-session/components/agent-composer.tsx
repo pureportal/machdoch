@@ -1,4 +1,12 @@
-import { SendHorizonal, Square } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  CornerDownRight,
+  ListOrdered,
+  SendHorizonal,
+  Square,
+  X,
+} from "lucide-react";
 import type {
   ClipboardEvent,
   JSX,
@@ -10,6 +18,7 @@ import type { ChatSessionContextAttachment } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
+import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import type { RuntimeProvider } from "../../model-catalog";
 import {
   ContextAttachmentMenuButton,
@@ -43,6 +52,12 @@ export interface AgentComposerAction {
   className?: string;
 }
 
+export interface AgentComposerQueuedMessage {
+  id: string;
+  content: string;
+  attachmentCount: number;
+}
+
 export interface AgentComposerProps {
   variant: AgentComposerVariant;
   draft: string;
@@ -65,6 +80,8 @@ export interface AgentComposerProps {
     text: string;
     tone: "success" | "error" | "info" | null;
   } | null;
+  runningTaskMessageAction?: RunningTaskMessageAction;
+  queuedMessages?: AgentComposerQueuedMessage[];
   onModelSelection: (provider: RuntimeProvider, model: string) => void;
   onSelectContextFiles: () => Promise<void>;
   onSelectContextFolders: () => Promise<void>;
@@ -76,9 +93,50 @@ export interface AgentComposerProps {
   onAdditionalTextareaKeyDown?: (
     event: KeyboardEvent<HTMLTextAreaElement>,
   ) => void;
+  onRunningTaskMessageActionChange?: (
+    action: RunningTaskMessageAction,
+  ) => void;
+  onQueuedMessageChange?: (messageId: string, content: string) => void;
+  onQueuedMessageMove?: (messageId: string, direction: -1 | 1) => void;
+  onQueuedMessageRemove?: (messageId: string) => void;
   onSend: () => void;
   onCancel: () => void;
 }
+
+const RUNNING_TASK_MESSAGE_ACTIONS = [
+  {
+    id: "steer",
+    label: "Steer",
+    sendLabel: "Steer running task",
+    icon: CornerDownRight,
+  },
+  {
+    id: "stop-and-send",
+    label: "Stop & Send",
+    sendLabel: "Stop task and send message",
+    icon: Square,
+  },
+  {
+    id: "queue",
+    label: "Queue",
+    sendLabel: "Queue message",
+    icon: ListOrdered,
+  },
+] as const satisfies ReadonlyArray<{
+  id: RunningTaskMessageAction;
+  label: string;
+  sendLabel: string;
+  icon: typeof SendHorizonal;
+}>;
+
+const getRunningTaskMessageActionMeta = (
+  action: RunningTaskMessageAction | undefined,
+) => {
+  return (
+    RUNNING_TASK_MESSAGE_ACTIONS.find((entry) => entry.id === action) ??
+    RUNNING_TASK_MESSAGE_ACTIONS[2]
+  );
+};
 
 const getVariantStyles = (variant: AgentComposerVariant) => {
   if (variant === "quick") {
@@ -210,6 +268,8 @@ export const AgentComposer = ({
   toggles = [],
   actions = [],
   statusMessage,
+  runningTaskMessageAction,
+  queuedMessages = [],
   onModelSelection,
   onSelectContextFiles,
   onSelectContextFolders,
@@ -219,11 +279,26 @@ export const AgentComposer = ({
   onClearContextAttachments,
   onDraftChange,
   onAdditionalTextareaKeyDown,
+  onRunningTaskMessageActionChange,
+  onQueuedMessageChange,
+  onQueuedMessageMove,
+  onQueuedMessageRemove,
   onSend,
   onCancel,
 }: AgentComposerProps): JSX.Element => {
   const styles = getVariantStyles(variant);
   const showCancelButton = isExecuting && (variant === "quick" || !canSend);
+  const selectedRunningAction =
+    runningTaskMessageAction ?? RUNNING_TASK_MESSAGE_ACTIONS[2].id;
+  const selectedRunningActionMeta =
+    getRunningTaskMessageActionMeta(selectedRunningAction);
+  const sendLabel =
+    variant === "session" && isExecuting
+      ? selectedRunningActionMeta.sendLabel
+      : variant === "quick"
+        ? "Send"
+        : "Send message";
+  const queuePanelVisible = variant === "session" && queuedMessages.length > 0;
 
   const submit = (): void => {
     if (canSend) {
@@ -294,6 +369,117 @@ export const AgentComposer = ({
   const actionButtons = actions.map((action) =>
     renderAction(action, styles.iconButton),
   );
+  const runningTaskControls =
+    variant === "session" && isExecuting ? (
+      <div className="app-composer-running-controls flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800/80 bg-slate-900/35 px-3 py-2">
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
+          <span className="h-2 w-2 rounded-full bg-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.65)]" />
+          Running
+        </div>
+        <div
+          aria-label="Running task message action"
+          className="flex min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70 p-0.5"
+          role="group"
+        >
+          {RUNNING_TASK_MESSAGE_ACTIONS.map((action) => {
+            const Icon = action.icon;
+            const selected = action.id === selectedRunningAction;
+
+            return (
+              <button
+                key={action.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => onRunningTaskMessageActionChange?.(action.id)}
+                className={cn(
+                  "inline-flex h-8 min-w-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100",
+                  selected &&
+                    "bg-sky-500/12 text-sky-100 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.2)]",
+                )}
+              >
+                <Icon className="h-3.5 w-3.5 shrink-0" />
+                <span>{action.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    ) : null;
+  const queuedMessagesPanel = queuePanelVisible ? (
+    <div
+      aria-label="Queued messages"
+      className="app-composer-queued-messages rounded-xl border border-slate-800/80 bg-slate-900/30 p-2"
+    >
+      <div className="flex items-center gap-2 px-1 pb-2 text-xs font-medium text-slate-300">
+        <ListOrdered className="h-3.5 w-3.5 text-sky-300" />
+        Queued
+        <span className="rounded-full bg-slate-800 px-1.5 py-0.5 text-[11px] leading-none text-slate-400">
+          {queuedMessages.length}
+        </span>
+      </div>
+      <div className="grid gap-2">
+        {queuedMessages.map((message, index) => (
+          <div
+            key={message.id}
+            className="grid gap-2 rounded-lg border border-slate-800/75 bg-slate-950/45 p-2 sm:grid-cols-[minmax(0,1fr)_auto]"
+          >
+            <div className="grid min-w-0 gap-1.5">
+              <Textarea
+                aria-label={`Queued message ${index + 1}`}
+                value={message.content}
+                onChange={(event) =>
+                  onQueuedMessageChange?.(message.id, event.target.value)
+                }
+                className="min-h-10 resize-y border-slate-800 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500"
+              />
+              {message.attachmentCount > 0 ? (
+                <div className="px-1 text-[11px] leading-4 text-slate-500">
+                  {message.attachmentCount} attached
+                </div>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-1 sm:flex-col sm:justify-start">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-xs"
+                aria-label={`Move queued message ${index + 1} up`}
+                title="Move up"
+                disabled={index === 0}
+                onClick={() => onQueuedMessageMove?.(message.id, -1)}
+                className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
+              >
+                <ArrowUp className="h-3 w-3" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-xs"
+                aria-label={`Move queued message ${index + 1} down`}
+                title="Move down"
+                disabled={index === queuedMessages.length - 1}
+                onClick={() => onQueuedMessageMove?.(message.id, 1)}
+                className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
+              >
+                <ArrowDown className="h-3 w-3" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-xs"
+                aria-label={`Remove queued message ${index + 1}`}
+                title="Remove"
+                onClick={() => onQueuedMessageRemove?.(message.id)}
+                className="border-rose-500/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15 hover:text-white"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  ) : null;
   const sendControl = showCancelButton ? (
     <Button
       type="button"
@@ -311,8 +497,8 @@ export const AgentComposer = ({
       type="submit"
       variant="outline"
       size={variant === "session" ? "icon" : undefined}
-      aria-label={variant === "quick" ? "Send" : "Send message"}
-      title={sendDisabledReason ?? (variant === "quick" ? "Send" : "Send message")}
+      aria-label={sendLabel}
+      title={sendDisabledReason ?? sendLabel}
       disabled={!canSend}
       className={cn(styles.sendButton, canSend && styles.sendButtonActive)}
     >
@@ -379,6 +565,8 @@ export const AgentComposer = ({
       </div>
 
       <div className="app-composer-body mt-3 grid gap-2">
+        {runningTaskControls}
+
         <ContextAttachmentsList
           attachments={contextAttachments}
           onRemove={onRemoveContextAttachment}
@@ -397,6 +585,8 @@ export const AgentComposer = ({
           {actionButtons}
           {sendControl}
         </form>
+
+        {queuedMessagesPanel}
 
         {statusMessage?.text ? (
           <p

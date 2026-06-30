@@ -448,6 +448,32 @@ const emitWindowDropEvent = (
   });
 };
 
+const createDataTransfer = (
+  data: Record<string, string>,
+  files: File[] = [],
+): DataTransfer =>
+  ({
+    types: Object.keys(data),
+    files,
+    dropEffect: "none",
+    getData: vi.fn((type: string) => data[type] ?? ""),
+  }) as unknown as DataTransfer;
+
+const dispatchBrowserDrop = (dataTransfer: DataTransfer): void => {
+  const event = new Event("drop", {
+    bubbles: true,
+    cancelable: true,
+  }) as DragEvent;
+
+  Object.defineProperty(event, "dataTransfer", {
+    value: dataTransfer,
+  });
+
+  act(() => {
+    window.dispatchEvent(event);
+  });
+};
+
 describe("ChatSession component", () => {
   it("renders empty state initially", async () => {
     const { container } = render(<ChatSession />);
@@ -521,6 +547,216 @@ describe("ChatSession component", () => {
       expect(screen.getByText(/Reading workspace files/i)).toBeDefined();
       expect(screen.queryByText(/Workspace scan complete\./i)).toBeNull();
 
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "queues running-session follow-ups and drains edited reordered messages serially",
+    async () => {
+      const taskResolvers: Array<(value: DesktopTaskRunResponse) => void> = [];
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(
+          () =>
+            new Promise<DesktopTaskRunResponse>((resolve) => {
+              taskResolvers.push(resolve);
+            }),
+        );
+
+      render(<ChatSession />);
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+
+      fireEvent.change(input, {
+        target: { value: "First running task" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      fireEvent.change(input, {
+        target: { value: "Second queued task" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+
+      expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+
+      fireEvent.change(input, {
+        target: { value: "Third queued task" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+
+      expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      expect(screen.getByLabelText("Queued messages")).toBeDefined();
+
+      fireEvent.change(screen.getByLabelText("Queued message 1"), {
+        target: { value: "Edited second queued task" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Move queued message 2 up" }),
+      );
+
+      await act(async () => {
+        taskResolvers[0]?.({
+          execution: createMockExecutionFixture(
+            "First running task",
+            "/mock/home/path",
+          ),
+        });
+        await Promise.resolve();
+      });
+
+      await waitFor(
+        () => {
+          expect(runDesktopTaskSpy).toHaveBeenCalledTimes(2);
+        },
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+      );
+      expect(runDesktopTaskSpy.mock.calls[1]?.[1]).toBe("Third queued task");
+
+      await act(async () => {
+        taskResolvers[1]?.({
+          execution: createMockExecutionFixture(
+            "Third queued task",
+            "/mock/home/path",
+          ),
+        });
+        await Promise.resolve();
+      });
+
+      await waitFor(
+        () => {
+          expect(runDesktopTaskSpy).toHaveBeenCalledTimes(3);
+        },
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+      );
+      expect(runDesktopTaskSpy.mock.calls[2]?.[1]).toBe(
+        "Edited second queued task",
+      );
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "adds steering notes to the running task without launching another task",
+    async () => {
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(
+          () => new Promise<DesktopTaskRunResponse>(() => {}),
+        );
+
+      render(<ChatSession />);
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+
+      fireEvent.change(input, {
+        target: { value: "Start a long task" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Steer" }));
+      fireEvent.change(input, {
+        target: { value: "Use the new log file too" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Steer running task" }),
+      );
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(screen.getByText("Use the new log file too")).toBeDefined();
+      expect(screen.getByText(/Steering note received/i)).toBeDefined();
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "stops the running task before sending a stop-and-send follow-up",
+    async () => {
+      const taskRejecters: Array<(reason?: unknown) => void> = [];
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(
+          (_workspaceRoot, task) =>
+            new Promise<DesktopTaskRunResponse>((resolve, reject) => {
+              taskRejecters.push(reject);
+
+              if (String(task) === "Replacement task") {
+                resolve({
+                  execution: createMockExecutionFixture(
+                    "Replacement task",
+                    "/mock/home/path",
+                  ),
+                });
+              }
+            }),
+        );
+      const cancelDesktopTaskSpy = vi
+        .spyOn(runtime, "cancelDesktopTask")
+        .mockResolvedValue(undefined);
+
+      render(<ChatSession />);
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+
+      fireEvent.change(input, {
+        target: { value: "Task to stop" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Stop & Send" }));
+      fireEvent.change(input, {
+        target: { value: "Replacement task" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Stop task and send message",
+        }),
+      );
+
+      await waitFor(() => {
+        expect(cancelDesktopTaskSpy).toHaveBeenCalled();
+      });
+      expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        taskRejecters[0]?.(new Error("cancelled"));
+        await Promise.resolve();
+      });
+
+      await waitFor(
+        () => {
+          expect(runDesktopTaskSpy).toHaveBeenCalledTimes(2);
+        },
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+      );
+      expect(runDesktopTaskSpy.mock.calls[1]?.[1]).toBe("Replacement task");
+
+      cancelDesktopTaskSpy.mockRestore();
       runDesktopTaskSpy.mockRestore();
     },
     SLOW_UI_TEST_TIMEOUT_MS,
@@ -2263,6 +2499,146 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "highlights completed background sessions until they are opened",
+    async () => {
+      const baseState = createInitialShellState();
+      const now = Date.now();
+      const activeSession = createSession({
+        id: "active-sidebar-session",
+        manualTitle: "Active sidebar session",
+        updatedAt: now - 4_000,
+      });
+      const unreadSession = createSession({
+        id: "unread-done-session",
+        manualTitle: "Unread done session",
+        updatedAt: now - 1_000,
+        lastReadAt: now - 3_000,
+        messages: [
+          {
+            id: "unread-done-user",
+            taskId: "unread-done-task",
+            role: "user",
+            content: "Finish the background task",
+            createdAt: now - 2_000,
+          },
+          {
+            id: "unread-done-agent",
+            taskId: "unread-done-task",
+            role: "agent",
+            content: "Finished the background task",
+            createdAt: now - 1_000,
+            source: {
+              kind: "execution",
+              execution: createMockExecutionFixture(
+                "Finish the background task",
+                "/mocked/tauri/path",
+              ),
+            },
+          },
+        ],
+      });
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: activeSession.id,
+        sessions: [activeSession, unreadSession],
+      });
+
+      render(<ChatSession />);
+
+      const unreadButton = await screen.findByRole("button", {
+        name: "Open session Unread done session, new reply ready",
+      });
+      const unreadRow = unreadButton.parentElement;
+
+      expect(unreadRow?.className).toContain("app-session-card--needs-read");
+      expect(
+        within(unreadRow as HTMLElement).getByText("New reply"),
+      ).toBeDefined();
+
+      fireEvent.click(unreadButton);
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", {
+            name: "Open session Unread done session",
+          }),
+        ).toBeDefined();
+      });
+      expect(screen.queryByText("New reply")).toBeNull();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it("keeps the chat rail running badge visible for background sessions", async () => {
+    const baseState = createInitialShellState();
+    const now = Date.now();
+    const activeSession = createSession({
+      id: "active-done-rail-session",
+      manualTitle: "Active done rail session",
+      updatedAt: now,
+      messages: [
+        {
+          id: "active-done-rail-user",
+          taskId: "active-done-rail-task",
+          role: "user",
+          content: "Finish active task",
+          createdAt: now - 200,
+        },
+        {
+          id: "active-done-rail-agent",
+          taskId: "active-done-rail-task",
+          role: "agent",
+          content: "Finished active task",
+          createdAt: now - 100,
+          source: {
+            kind: "execution",
+            execution: {
+              ...createMockExecutionFixture(
+                "Finish active task",
+                "/mocked/tauri/path",
+              ),
+              status: "executed",
+              summary: "Task finished cleanly.",
+            },
+          },
+        },
+      ],
+    });
+    const backgroundRunningSession = createSession({
+      id: "background-running-rail-session",
+      manualTitle: "Background running rail session",
+      updatedAt: now - 1_000,
+      messages: [
+        {
+          id: "background-running-rail-user",
+          taskId: "background-running-rail-task",
+          role: "user",
+          content: "Keep running in the background",
+          createdAt: now - 1_000,
+        },
+      ],
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: activeSession.id,
+      sessions: [activeSession, backgroundRunningSession],
+    });
+
+    render(<ChatSession />);
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Open session Background running rail session",
+      }),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Chat, running" }),
+    ).toBeDefined();
+  });
+
+  it(
     "shows different retention progress bars for open and archived sessions",
     async () => {
       const baseState = createInitialShellState();
@@ -2773,6 +3149,27 @@ describe("ChatSession component", () => {
     });
 
     resolveDroppedPathsSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("adds dropped links to the main composer", async () => {
+    render(<ChatSession />);
+
+    const input = screen.getByPlaceholderText(
+      /What should machdoch do next\?/i,
+    ) as HTMLTextAreaElement;
+
+    dispatchBrowserDrop(
+      createDataTransfer({
+        "text/uri-list": "https://example.com/docs/intro",
+        "text/plain": "https://example.com/docs/intro",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("example.com/docs/intro")).toBeDefined();
+      expect(screen.getByText("link")).toBeDefined();
+    });
+    expect(input.value).not.toContain("https://example.com/docs/intro");
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("adds selected files to the main composer and attaches them on send", async () => {
@@ -4105,6 +4502,24 @@ describe("ChatSession component", () => {
     ]);
 
     resolveDroppedPathsSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("adds dropped text to the Quick Chat composer", async () => {
+    render(<AssistantPopupShell />);
+
+    const input = (await screen.findByPlaceholderText(
+      /Quick Chat/i,
+    )) as HTMLTextAreaElement;
+
+    dispatchBrowserDrop(
+      createDataTransfer({
+        "text/plain": "Summarize this dropped text.",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(input.value).toBe("Summarize this dropped text.");
+    });
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("adds selected files to the Quick Chat composer from the add context button", async () => {

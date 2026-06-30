@@ -414,6 +414,7 @@ export const coerceRalphUtilityConfig = (
       : {}),
     ...(typeof record.forceNew === "boolean" ? { forceNew: record.forceNew } : {}),
     ...(typeof record.reset === "boolean" ? { reset: record.reset } : {}),
+    ...(typeof record.enforce === "boolean" ? { enforce: record.enforce } : {}),
     ...(jsonPatchMode ? { jsonPatchMode } : {}),
     ...(typeof record.counterName === "string"
       ? { counterName: record.counterName }

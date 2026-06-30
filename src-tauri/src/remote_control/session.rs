@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 
+use super::commands::truncate_chars;
 use super::{
     auth::hash_remote_control_token, config::prune_expired_paired_devices_locked,
     config::write_remote_control_config_file, create_secure_token, now_millis,
-    refresh_server_pairing_url, truncate_chars, RemoteControlPairedDevice, RemoteControlShared,
-    MAX_PAIRED_DEVICES, REMOTE_CONTROL_CONFIG_VERSION, WEB_SESSION_TTL_MS,
+    refresh_server_pairing_url, RemoteControlPairedDevice, RemoteControlShared, MAX_PAIRED_DEVICES,
+    REMOTE_CONTROL_CONFIG_VERSION, WEB_SESSION_TTL_MS,
 };
 
 pub(super) fn create_remote_web_session_token(

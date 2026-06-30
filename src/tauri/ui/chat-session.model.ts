@@ -67,6 +67,7 @@ export interface ChatSessionRecord {
   id: string;
   createdAt: number;
   updatedAt: number;
+  lastReadAt?: number;
   archivedAt?: number;
   pinnedAt?: number;
   specialSession?: ChatSessionSpecialKind;
@@ -779,6 +780,8 @@ export const createSession = (
     id: overrides.id ?? crypto.randomUUID(),
     createdAt: overrides.createdAt ?? now,
     updatedAt: now,
+    lastReadAt:
+      typeof overrides.lastReadAt === "number" ? overrides.lastReadAt : now,
     ...(typeof overrides.archivedAt === "number"
       ? { archivedAt: overrides.archivedAt }
       : {}),
@@ -1466,6 +1469,10 @@ const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord =
       typeof session.createdAt === "number" ? session.createdAt : undefined,
     updatedAt:
       typeof session.updatedAt === "number" ? session.updatedAt : undefined,
+    lastReadAt:
+      typeof session.lastReadAt === "number"
+        ? session.lastReadAt
+        : session.updatedAt,
     archivedAt:
       typeof session.archivedAt === "number" ? session.archivedAt : undefined,
     pinnedAt:
@@ -1593,30 +1600,6 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
   };
 };
 
-export const sortSessionsByUpdatedAt = (
-  sessions: ChatSessionRecord[],
-): ChatSessionRecord[] => {
-  return [...sessions].sort((left, right) => {
-    const leftIsQuickTaskSession =
-      left.specialSession === QUICK_VOICE_SESSION_KIND;
-    const rightIsQuickTaskSession =
-      right.specialSession === QUICK_VOICE_SESSION_KIND;
-
-    if (leftIsQuickTaskSession !== rightIsQuickTaskSession) {
-      return leftIsQuickTaskSession ? -1 : 1;
-    }
-
-    const leftPinnedAt = left.pinnedAt ?? 0;
-    const rightPinnedAt = right.pinnedAt ?? 0;
-
-    if (leftPinnedAt !== rightPinnedAt) {
-      return rightPinnedAt - leftPinnedAt;
-    }
-
-    return right.updatedAt - left.updatedAt;
-  });
-};
-
 const getMessageTaskId = (message: ChatSessionMessage): string => {
   return message.taskId ?? message.id;
 };
@@ -1728,6 +1711,139 @@ export const getSessionOverviewStatus = (
   }
 
   return "done";
+};
+
+export const getLatestCompletedSessionResponseAt = (
+  session: ChatSessionRecord,
+): number | null => {
+  if (getSessionOverviewStatus(session) !== "done") {
+    return null;
+  }
+
+  const latestUserTaskId = getLatestUserTaskId(session.messages);
+
+  if (!latestUserTaskId) {
+    return null;
+  }
+
+  const latestTerminalAgentMessage = getLatestTerminalAgentMessageForTask(
+    session.messages,
+    latestUserTaskId,
+  );
+
+  if (!latestTerminalAgentMessage) {
+    return null;
+  }
+
+  return getMessageTimestamp(latestTerminalAgentMessage, session.updatedAt);
+};
+
+export const hasUnreadCompletedSessionResponse = (
+  session: ChatSessionRecord,
+): boolean => {
+  const latestCompletedResponseAt = getLatestCompletedSessionResponseAt(session);
+
+  return (
+    latestCompletedResponseAt !== null &&
+    latestCompletedResponseAt > (session.lastReadAt ?? session.updatedAt)
+  );
+};
+
+export const markSessionRead = (
+  session: ChatSessionRecord,
+  readAt = Date.now(),
+): ChatSessionRecord => {
+  const latestCompletedResponseAt = getLatestCompletedSessionResponseAt(session);
+  const nextLastReadAt = Math.max(
+    session.lastReadAt ?? 0,
+    readAt,
+    latestCompletedResponseAt ?? 0,
+  );
+
+  if ((session.lastReadAt ?? 0) >= nextLastReadAt) {
+    return session;
+  }
+
+  return {
+    ...session,
+    lastReadAt: nextLastReadAt,
+  };
+};
+
+export const getLatestSessionUserRequestAt = (
+  session: ChatSessionRecord,
+): number => {
+  let latestRequestAt: number | null = null;
+
+  for (const [index, message] of session.messages.entries()) {
+    if (message.role !== "user") {
+      continue;
+    }
+
+    latestRequestAt = Math.max(
+      latestRequestAt ?? Number.NEGATIVE_INFINITY,
+      getMessageTimestamp(message, session.createdAt + index),
+    );
+  }
+
+  return latestRequestAt ?? session.updatedAt;
+};
+
+const getSessionAttentionSortGroup = (session: ChatSessionRecord): number => {
+  if (hasUnreadCompletedSessionResponse(session)) {
+    return 0;
+  }
+
+  if (getSessionOverviewStatus(session) === "running") {
+    return 1;
+  }
+
+  if (typeof session.pinnedAt === "number" || isQuickVoiceSession(session)) {
+    return 2;
+  }
+
+  return 3;
+};
+
+export const compareSessionsByAttention = (
+  left: ChatSessionRecord,
+  right: ChatSessionRecord,
+): number => {
+  const leftIsQuickTaskSession = isQuickVoiceSession(left);
+  const rightIsQuickTaskSession = isQuickVoiceSession(right);
+
+  if (leftIsQuickTaskSession !== rightIsQuickTaskSession) {
+    return leftIsQuickTaskSession ? -1 : 1;
+  }
+
+  const leftSortGroup = getSessionAttentionSortGroup(left);
+  const rightSortGroup = getSessionAttentionSortGroup(right);
+
+  if (leftSortGroup !== rightSortGroup) {
+    return leftSortGroup - rightSortGroup;
+  }
+
+  const leftPinnedAt = left.pinnedAt ?? 0;
+  const rightPinnedAt = right.pinnedAt ?? 0;
+
+  if (leftPinnedAt !== rightPinnedAt) {
+    return rightPinnedAt - leftPinnedAt;
+  }
+
+  const latestRequestDelta =
+    getLatestSessionUserRequestAt(right) - getLatestSessionUserRequestAt(left);
+
+  if (latestRequestDelta !== 0) {
+    return latestRequestDelta;
+  }
+
+  return right.updatedAt - left.updatedAt;
+};
+
+export const sortSessionsByUpdatedAt = (
+  sessions: ChatSessionRecord[],
+): ChatSessionRecord[] => {
+  return [...sessions].sort(compareSessionsByAttention);
 };
 
 export const getLatestRunningTaskId = (

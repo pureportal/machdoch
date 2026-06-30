@@ -81,6 +81,7 @@ describe("runRalphFlow", () => {
     expect(vi.mocked(executeTask).mock.calls[0]?.[3]).toEqual(
       expect.objectContaining({
         runId: "ralph-run-1",
+        maxDurationMs: 3_600_000,
       }),
     );
   });
@@ -1443,7 +1444,7 @@ describe("runRalphFlow", () => {
     }
   });
 
-  it("guards changed files against selected scope paths", async () => {
+  it("records out-of-scope changed files as advisory by default", async () => {
     const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
 
     if (gitAvailable.status !== 0) {
@@ -1506,10 +1507,12 @@ describe("runRalphFlow", () => {
                 }),
               },
             },
-            { id: "blocked", type: "END", title: "Blocked" },
+            { id: "success", type: "END", title: "Success" },
+            { id: "blocked", type: "END", title: "Blocked", status: "failed" },
           ],
           edges: [
             { id: "start-to-guard", from: "start", fromOutput: "SUCCESS", to: "scope-guard" },
+            { id: "guard-to-success", from: "scope-guard", fromOutput: "IN_SCOPE", to: "success" },
             { id: "guard-to-blocked", from: "scope-guard", fromOutput: "OUT_OF_SCOPE", to: "blocked" },
           ],
         }),
@@ -1518,13 +1521,14 @@ describe("runRalphFlow", () => {
         { maxTransitions: 10 },
       );
 
-      expect(result.status).toBe("blocked");
+      expect(result.status).toBe("completed");
       expect(result.blockResults).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             blockId: "scope-guard",
-            output: "OUT_OF_SCOPE",
+            output: "IN_SCOPE",
             data: expect.objectContaining({
+              enforcement: "advisory",
               outOfScopeFiles: expect.arrayContaining(["docs/note.md"]),
             }),
           }),
@@ -2005,6 +2009,7 @@ describe("runRalphFlow", () => {
               cwd: ".",
               input: JSON.stringify({ paths: ["src"] }),
               baseline: "{{result:snapshot}}",
+              enforce: true,
             },
           },
           { id: "success", type: "END", title: "Success" },

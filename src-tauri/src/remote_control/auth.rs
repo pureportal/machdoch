@@ -4,9 +4,7 @@ use axum::http::HeaderMap;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use sha2::{Digest, Sha256};
 
-use super::{
-    http::HttpRequest, now_millis, RemoteControlShared, WEB_SESSION_COOKIE_NAME, WEB_SESSION_TTL_MS,
-};
+use super::{now_millis, RemoteControlShared, WEB_SESSION_COOKIE_NAME, WEB_SESSION_TTL_MS};
 
 pub(super) fn header_to_str<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name).and_then(|value| value.to_str().ok())
@@ -83,95 +81,6 @@ pub(super) fn state_changing_headers_allowed(headers: &HeaderMap) -> bool {
     };
 
     origin == format!("http://{host}")
-}
-
-#[allow(dead_code)]
-fn request_has_bearer_token(request: &HttpRequest, token: &str) -> bool {
-    request
-        .headers
-        .get("authorization")
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(|value| constant_time_eq(value.as_bytes(), token.as_bytes()))
-        .unwrap_or(false)
-}
-
-#[allow(dead_code)]
-pub(super) fn request_has_current_pairing_token(
-    request: &HttpRequest,
-    shared: &Arc<RemoteControlShared>,
-) -> bool {
-    let Ok(inner) = shared.inner.lock() else {
-        return false;
-    };
-
-    let Some(server) = inner.server.as_ref() else {
-        return false;
-    };
-
-    request_has_bearer_token(request, &server.token)
-}
-
-#[allow(dead_code)]
-fn request_has_web_session(request: &HttpRequest, shared: &Arc<RemoteControlShared>) -> bool {
-    let Some(session_token) = cookie_value(request, WEB_SESSION_COOKIE_NAME) else {
-        return false;
-    };
-
-    let Ok(inner) = shared.inner.lock() else {
-        return false;
-    };
-
-    let session_hash = hash_remote_control_token(&session_token);
-    let now = now_millis();
-
-    inner.config.paired_devices.iter().any(|device| {
-        device.expires_at > now
-            && constant_time_eq(device.token_hash.as_bytes(), session_hash.as_bytes())
-    })
-}
-
-#[allow(dead_code)]
-pub(super) fn request_is_authorized(
-    request: &HttpRequest,
-    shared: &Arc<RemoteControlShared>,
-) -> bool {
-    request_has_web_session(request, shared)
-}
-
-#[allow(dead_code)]
-pub(super) fn state_changing_request_is_allowed(request: &HttpRequest) -> bool {
-    if request
-        .headers
-        .get("x-machdoch-remote")
-        .map(|value| value == "1")
-        .unwrap_or(false)
-        == false
-    {
-        return false;
-    }
-
-    if request
-        .headers
-        .get("sec-fetch-site")
-        .map(|value| value == "cross-site")
-        .unwrap_or(false)
-    {
-        return false;
-    }
-
-    let Some(origin) = request.headers.get("origin") else {
-        return true;
-    };
-    let Some(host) = request.headers.get("host") else {
-        return false;
-    };
-
-    origin == &format!("http://{host}")
-}
-
-#[allow(dead_code)]
-fn cookie_value(request: &HttpRequest, name: &str) -> Option<String> {
-    cookie_value_from_header(request.headers.get("cookie").map(String::as_str), name)
 }
 
 fn cookie_value_from_header(cookie_header: Option<&str>, name: &str) -> Option<String> {

@@ -10,6 +10,7 @@ import type { RunMode } from "../../../../core/runtime-contract.generated.js";
 import {
   isQuickVoiceSession,
   isSessionArchived,
+  getSessionOverviewStatus,
   type ChatSessionContextAttachment,
   type ChatSessionMessage,
   type ChatSessionRecord,
@@ -115,6 +116,18 @@ export const useSessionTaskSubmission = (options: {
         return;
       }
 
+      const { sessionSnapshot } = submitOptions;
+      const hasActiveTaskForSession = [
+        ...options.activeDesktopTasksRef.current.values(),
+      ].includes(sessionSnapshot.id);
+
+      if (
+        hasActiveTaskForSession ||
+        getSessionOverviewStatus(sessionSnapshot) === "running"
+      ) {
+        return;
+      }
+
       const contextAttachments = submitOptions.contextAttachments;
       const executionTask = appendContextAttachmentsToTask(
         normalizedTask,
@@ -125,7 +138,6 @@ export const useSessionTaskSubmission = (options: {
       const promptHistoryContent =
         submitOptions.promptHistoryContent?.trim() || normalizedTask;
       const imagePaths = getImageAttachmentPaths(contextAttachments);
-      const { sessionSnapshot } = submitOptions;
       const isQuickTaskSessionSnapshot = isQuickVoiceSession(sessionSnapshot);
       const taskId = crypto.randomUUID();
       const userMessageCreatedAt = Date.now();

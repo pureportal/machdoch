@@ -51,3 +51,44 @@
 - Kept public Tauri command names, serialized `RuntimeSnapshot` and settings payload shapes, workspace config JSON keys, environment precedence, default mode/reasoning behavior, and provider fallback behavior unchanged.
 - Ran `cargo fmt` and `cargo test runtime_snapshot`; all 12 focused runtime snapshot tests passed.
 - `src-tauri/src/runtime_snapshot/collect.rs` and `src-tauri/src/runtime_snapshot/workspace.rs` are under the 500-line policy. `src-tauri/src/runtime_snapshot.rs` remains over the 500-line policy after this bounded pass because it still owns public serde structs, Tauri command wrappers, and user settings load/save command helpers. Remaining over-limit `src-tauri` follow-ups are `src-tauri/src/remote_control.rs` and `src-tauri/src/runtime_snapshot.rs`.
+
+## src-tauri pass 8
+
+- Extracted Ralph-specific command response parsing, flow-scope normalization, long-running CLI execution, cancellation/timeout handling, payload cleanup, and flow-path resolution from `src-tauri/src/desktop_task/commands.rs` into `src-tauri/src/desktop_task/ralph.rs`.
+- Kept public Tauri command names, serialized request/response structs, Ralph CLI arguments, timeout values, progress events, cancellation semantics, and temporary payload cleanup behavior unchanged.
+- Ran `cargo fmt` and `cargo test desktop_task`; all 23 focused desktop task tests passed.
+- `src-tauri/src/desktop_task/commands.rs` is now below the 500-line policy at 213 lines, and `src-tauri/src/desktop_task/ralph.rs` is below the policy at 276 lines. Remaining over-limit `src-tauri` follow-ups are `src-tauri/src/remote_control.rs` and `src-tauri/src/runtime_snapshot.rs`.
+
+## src-tauri pass 9
+
+- Extracted runtime environment dotenv parsing and process-environment overrides from `src-tauri/src/runtime_snapshot/env.rs` into `src-tauri/src/runtime_snapshot/env_dotenv.rs`.
+- Extracted PATH, PATHEXT, home-directory, default install-location, and executable file-name helpers into `src-tauri/src/runtime_snapshot/env_paths.rs`.
+- Extracted configured binary validation, command-on-PATH resolution, packaged Windows app alias filtering, and agent CLI binary resolution into `src-tauri/src/runtime_snapshot/env_commands.rs`.
+- Kept `load_global_env`, `load_workspace_env`, `has_configured_value`, and `resolve_agent_cli_binary` available through the existing `env` module facade, preserving current callers and public Tauri command behavior.
+- Added focused tests for quoted dotenv values, PATHEXT command expansion, and configured binary fallback while preserving the existing CLI resolution coverage.
+- Ran `cargo fmt` and `cargo test runtime_snapshot`; all 15 focused runtime snapshot tests passed.
+- `src-tauri/src/runtime_snapshot/env.rs` is now below the 500-line policy at 62 lines, with extracted modules also below policy. Remaining over-limit `src-tauri` follow-ups are `src-tauri/src/remote_control.rs` and `src-tauri/src/runtime_snapshot.rs`.
+
+## src-tauri pass 10
+
+- Extracted Mission Control command request/event/record structs, command normalization, command ID creation, target-preview generation, optional text helpers, and truncation into `src-tauri/src/remote_control/commands.rs`.
+- Kept the `remote_control::RemoteControlCommandEvent` type path re-exported, preserved serde camelCase fields, accepted command names, validation messages, command history payload shape, route paths, and Tauri event emission behavior.
+- Added focused tests for invalid command kinds, follow-up prompt validation, session-mode validation, prompt truncation, command target previews, and Unicode-safe truncation.
+- Ran `cargo fmt` and `cargo test remote_control`; all 22 focused Mission Control tests passed.
+- `src-tauri/src/remote_control/commands.rs` is below the 500-line policy at 405 lines. `src-tauri/src/remote_control.rs` remains over policy at 1400 lines because it still owns server lifecycle, Axum/SSE routing, raw HTTP fallback dispatch, state snapshot construction, progress recording, pairing URLs, and QR/network helpers. Remaining over-limit `src-tauri` follow-ups are `src-tauri/src/remote_control.rs` and `src-tauri/src/runtime_snapshot.rs`.
+
+## src-tauri pass 11
+
+- Extracted runtime snapshot user settings load/save helpers, user API-key persistence, user web-search settings, voice and speech-to-text settings, memory settings, review model settings, desktop settings, and environment merge helpers into `src-tauri/src/runtime_snapshot/settings_commands.rs`.
+- Kept public Tauri command names, invoke handler entries, serialized settings payloads, config file paths, JSON keys, provider validation, default values, clamp behavior, autostart behavior, and environment merge precedence unchanged.
+- Reused the existing user-config writer for provider and web-search settings writes to keep directory creation, pretty JSON, trailing newline, and write error handling consistent.
+- Ran `cargo fmt` and `cargo test runtime_snapshot`; all 15 focused runtime snapshot tests passed.
+- `src-tauri/src/runtime_snapshot.rs` is now below the 500-line policy at 433 lines, and `src-tauri/src/runtime_snapshot/settings_commands.rs` is below policy at 498 lines. Remaining over-limit `src-tauri` follow-up is `src-tauri/src/remote_control.rs`.
+
+## src-tauri pass 12
+
+- Extracted Mission Control Axum router setup, web-session creation route, status route, SSE event stream route, command post route, not-found route, JSON/no-store/security header helpers, and graceful shutdown waiter from `src-tauri/src/remote_control.rs` into `src-tauri/src/remote_control/web.rs`.
+- Kept raw HTTP fallback routing in `src-tauri/src/remote_control.rs`, preserving its low-level request parsing and response behavior separately from the Axum transport.
+- Preserved Mission Control route paths, cookie/header names, auth checks, state-changing request checks, SSE event name/payload, command event emission, cancel forwarding, response status codes, and public Tauri command registrations.
+- Ran `cargo fmt` and `cargo test remote_control`; all 19 focused Mission Control tests passed.
+- `src-tauri/src/remote_control/web.rs` is below the 500-line policy at 299 lines. `src-tauri/src/remote_control.rs` remains over policy at 1323 lines because it still owns state lifecycle, progress recording, raw HTTP fallback dispatch, snapshot/status construction, pairing URL refresh, QR generation, and LAN/open-browser helpers. The next bounded split should target state/snapshot lifecycle helpers or the raw HTTP fallback.

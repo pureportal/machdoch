@@ -291,24 +291,10 @@ const autonomousRefactoringFlow: RalphFlow = {
         timeoutSeconds: RALPH_REFACTOR_AGENT_TIMEOUT_SECONDS,
       },
       prompt:
-        "Perform a final scan for selected JSON scope {{result:select-scope}} using conventions {{data:detect-conventions:output}}, refactor plan {{data:audit-against-policy:output}}, validation result {{result:run-validation-checks}}, git diff {{result:git-diff-summary}}, and latest changes. Verify the configured objective, naming policy, max file line policy, helper placement policy, tests, public API policy, exclusions, selected paths/globs, and notes file {{notesFile:path=RALPH_REFACTOR_NOTES.md}}. If this selected scope is complete, end with RALPH_DECISION: DONE. If unresolved issues remain, end with RALPH_DECISION: CONTINUE; the flow counter enforces maxRefactorPasses={{maxRefactorPasses:number=5}}. If validation failed due to own changes, end with RALPH_DECISION: RETRY. If blocked, end with RALPH_DECISION: ERROR.",
+        "Perform a final scan for selected JSON scope {{result:select-scope}} using conventions {{data:detect-conventions:output}}, refactor plan {{data:audit-against-policy:output}}, validation result {{result:run-validation-checks}}, git diff {{result:git-diff-summary}}, and latest changes. Evaluate only the selected paths/globs and notes file {{notesFile:path=RALPH_REFACTOR_NOTES.md}}; ignore unrelated workspace changes outside the selected scope unless they directly break verification of this scope. Verify the configured objective, naming policy, max file line policy, helper placement policy, tests, public API policy, and exclusions. If this selected scope is complete, end with RALPH_DECISION: DONE. If unresolved issues remain, end with RALPH_DECISION: CONTINUE; the flow counter enforces maxRefactorPasses={{maxRefactorPasses:number=5}}. If validation failed due to own changes, end with RALPH_DECISION: RETRY. If blocked, end with RALPH_DECISION: ERROR.",
       validationScope: {
         mode: "sinceLastValidator",
         blockIds: [],
-      },
-    },
-    {
-      id: "change-scope-guard",
-      title: "Guard Scope Changes",
-      position: { x: 3740, y: -390 },
-      size: { width: 280, height: 170 },
-      type: "UTILITY",
-      utility: {
-        type: "CHANGE_SCOPE_GUARD",
-        cwd: ".",
-        input:
-          "{\"scope\": {{data:select-scope:scope}}, \"allowedPaths\": [\"{{notesFile:path=RALPH_REFACTOR_NOTES.md}}\"]}",
-        baseline: "{{result:git-snapshot-before}}",
       },
     },
     {
@@ -407,13 +393,9 @@ const autonomousRefactoringFlow: RalphFlow = {
     { id: "validation-error-to-fix", from: "run-validation-checks", fromOutput: "ERROR", to: "fix-validation-failures" },
     { id: "fix-to-validation-decision", from: "fix-validation-failures", fromOutput: "SUCCESS", to: "validation-decision" },
     { id: "fix-error", from: "fix-validation-failures", fromOutput: "ERROR", to: "blocked" },
-    { id: "git-diff-success-to-scope-guard", from: "git-diff-summary", fromOutput: "SUCCESS", to: "change-scope-guard" },
+    { id: "git-diff-success-to-scan", from: "git-diff-summary", fromOutput: "SUCCESS", to: "final-refactor-scan" },
     { id: "git-diff-empty-to-scan", from: "git-diff-summary", fromOutput: "EMPTY", to: "final-refactor-scan" },
     { id: "git-diff-error-to-scan", from: "git-diff-summary", fromOutput: "ERROR", to: "final-refactor-scan" },
-    { id: "scope-guard-in-scope", from: "change-scope-guard", fromOutput: "IN_SCOPE", to: "final-refactor-scan" },
-    { id: "scope-guard-empty", from: "change-scope-guard", fromOutput: "EMPTY", to: "final-refactor-scan" },
-    { id: "scope-guard-out-of-scope", from: "change-scope-guard", fromOutput: "OUT_OF_SCOPE", to: "blocked" },
-    { id: "scope-guard-error", from: "change-scope-guard", fromOutput: "ERROR", to: "blocked" },
     { id: "scan-done", from: "final-refactor-scan", fromOutput: "DONE", to: "final-report" },
     { id: "scan-continue", from: "final-refactor-scan", fromOutput: "CONTINUE", to: "count-refactor-pass" },
     { id: "scan-retry", from: "final-refactor-scan", fromOutput: "RETRY", to: "validation-decision" },
@@ -431,7 +413,7 @@ const autonomousRefactoringFlow: RalphFlow = {
 
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 3,
+  version: 4,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],

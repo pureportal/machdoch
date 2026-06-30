@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { JSX } from "react";
 import type { ChatSessionContextAttachment } from "../../chat-session.model";
+import { isLinkContextAttachment } from "../_helpers/session-context-attachments";
 import { Button } from "../../components/ui/button";
 import {
   DropdownMenu,
@@ -46,7 +47,7 @@ const getAttachmentKindLabel = (
       return "image";
     case "other":
     default:
-      return "path";
+      return isLinkContextAttachment(attachment) ? "link" : "path";
   }
 };
 
@@ -158,30 +159,14 @@ export const ContextAttachmentsList = ({
   return (
     <div
       className={cn(
-        "app-context-attachments-list grid gap-1.5",
+        "app-context-attachments-list grid grid-cols-[minmax(0,1fr)_auto] items-start",
         compact ? "gap-1" : "gap-1.5",
       )}
     >
-      <div className="flex justify-end px-0.5">
-        <button
-          type="button"
-          aria-label="Remove all attached context"
-          title="Remove all attached context"
-          onClick={onClearAll}
-          className={cn(
-          "app-context-attachments-clear inline-flex items-center gap-1 rounded-full border border-slate-800 bg-slate-950/70 text-slate-500 hover:border-rose-500/25 hover:bg-rose-500/10 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30",
-            compact ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs",
-          )}
-        >
-          <X className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
-          Clear all
-        </button>
-      </div>
-
       <ul
         aria-label="Attached context"
         className={cn(
-          "app-context-attachments-items flex flex-wrap content-start items-start gap-1.5 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable] [scrollbar-width:thin]",
+          "app-context-attachments-items flex min-w-0 flex-wrap content-start items-start gap-1.5 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable] [scrollbar-width:thin]",
           compact ? "max-h-20 px-0.5" : "max-h-32 px-1",
         )}
       >
@@ -226,6 +211,20 @@ export const ContextAttachmentsList = ({
           );
         })}
       </ul>
+
+      <button
+        type="button"
+        aria-label="Remove all attached context"
+        title="Remove all attached context"
+        onClick={onClearAll}
+        className={cn(
+          "app-context-attachments-clear inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-slate-800 bg-slate-950/70 text-slate-500 hover:border-rose-500/25 hover:bg-rose-500/10 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30",
+          compact ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs",
+        )}
+      >
+        <X className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
+        Clear all
+      </button>
     </div>
   );
 };

@@ -4,13 +4,18 @@ import {
   createInitialShellState,
   createSession,
   createVisibleConversationMessages,
+  getLatestCompletedSessionResponseAt,
+  getLatestSessionUserRequestAt,
   getLatestRunningTaskId,
   getSessionOverviewStatus,
+  hasUnreadCompletedSessionResponse,
+  markSessionRead,
   normalizeRecentWorkspaces,
   normalizeShellState,
   rememberRecentWorkspace,
   recoverInterruptedTasksForLaunch,
   QUICK_VOICE_SESSION_KIND,
+  sortSessionsByUpdatedAt,
 } from "./chat-session.model";
 import {
   createMockExecutionFixture,
@@ -649,6 +654,145 @@ describe("getSessionOverviewStatus", () => {
     });
 
     expect(getSessionOverviewStatus(session)).toBe("failed");
+  });
+
+  it("tracks unread completed responses until the session is read", () => {
+    const session = createSession({
+      updatedAt: 20,
+      lastReadAt: 10,
+      messages: [
+        {
+          id: "user-task",
+          taskId: "task-1",
+          role: "user",
+          content: "finish this task",
+          createdAt: 10,
+        },
+        {
+          id: "agent-task",
+          taskId: "task-1",
+          role: "agent",
+          content: "done",
+          createdAt: 20,
+          source: {
+            kind: "execution",
+            execution: createMockExecutionFixture("finish this task"),
+          },
+        },
+      ],
+    });
+
+    expect(getLatestCompletedSessionResponseAt(session)).toBe(20);
+    expect(hasUnreadCompletedSessionResponse(session)).toBe(true);
+
+    const readSession = markSessionRead(session, 15);
+
+    expect(readSession.lastReadAt).toBe(20);
+    expect(hasUnreadCompletedSessionResponse(readSession)).toBe(false);
+  });
+
+  it("sorts session overviews by unread, running, and latest user request time", () => {
+    const unreadSession = createSession({
+      id: "unread-session",
+      updatedAt: 900,
+      lastReadAt: 200,
+      messages: [
+        {
+          id: "unread-user",
+          taskId: "unread-task",
+          role: "user",
+          content: "finish in the background",
+          createdAt: 300,
+        },
+        {
+          id: "unread-agent",
+          taskId: "unread-task",
+          role: "agent",
+          content: "done",
+          createdAt: 900,
+          source: {
+            kind: "execution",
+            execution: createMockExecutionFixture("finish in the background"),
+          },
+        },
+      ],
+    });
+    const runningSession = createSession({
+      id: "running-session",
+      updatedAt: 800,
+      messages: [
+        {
+          id: "running-user",
+          taskId: "running-task",
+          role: "user",
+          content: "keep working",
+          createdAt: 800,
+        },
+      ],
+    });
+    const recentRequestedSession = createSession({
+      id: "recent-requested-session",
+      updatedAt: 1_200,
+      messages: [
+        {
+          id: "recent-user",
+          taskId: "recent-task",
+          role: "user",
+          content: "recent request",
+          createdAt: 700,
+        },
+        {
+          id: "recent-agent",
+          taskId: "recent-task",
+          role: "agent",
+          content: "done",
+          createdAt: 1_200,
+          source: {
+            kind: "execution",
+            execution: createMockExecutionFixture("recent request"),
+          },
+        },
+      ],
+    });
+    const olderRequestedSession = createSession({
+      id: "older-requested-session",
+      updatedAt: 1_300,
+      messages: [
+        {
+          id: "older-user",
+          taskId: "older-task",
+          role: "user",
+          content: "older request",
+          createdAt: 600,
+        },
+        {
+          id: "older-agent",
+          taskId: "older-task",
+          role: "agent",
+          content: "done later",
+          createdAt: 1_300,
+          source: {
+            kind: "execution",
+            execution: createMockExecutionFixture("older request"),
+          },
+        },
+      ],
+    });
+
+    expect(getLatestSessionUserRequestAt(olderRequestedSession)).toBe(600);
+    expect(
+      sortSessionsByUpdatedAt([
+        olderRequestedSession,
+        recentRequestedSession,
+        runningSession,
+        unreadSession,
+      ]).map((session) => session.id),
+    ).toEqual([
+      "unread-session",
+      "running-session",
+      "recent-requested-session",
+      "older-requested-session",
+    ]);
   });
 });
 

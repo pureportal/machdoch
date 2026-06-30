@@ -40,6 +40,15 @@ type TransportType = "stdio" | "streamable-http" | "sse";
 type AuthType = "none" | "bearer" | "headers" | "oauth";
 type ServerTab = "setup" | "auth" | "capabilities" | "advanced";
 type IssueTone = "error" | "warning";
+type McpPresetOption = McpSettingsControls["presets"][number];
+type McpPresetCategoryId =
+  | "web-search"
+  | "docs-knowledge"
+  | "planning-design"
+  | "code-ci"
+  | "data-observability"
+  | "browser-apps"
+  | "more";
 
 interface ParsedMcpDraft {
   config: ServerRecord;
@@ -73,6 +82,11 @@ interface CustomServerDraft {
   url: string;
 }
 
+interface McpPresetCategory {
+  id: McpPresetCategoryId;
+  label: string;
+}
+
 const MCP_CONFIG_SCHEMA_VERSION = 1;
 
 const SERVER_TABS: ReadonlyArray<{ value: ServerTab; label: string }> = [
@@ -81,6 +95,37 @@ const SERVER_TABS: ReadonlyArray<{ value: ServerTab; label: string }> = [
   { value: "capabilities", label: "Capabilities" },
   { value: "advanced", label: "Advanced" },
 ];
+
+const MCP_PRESET_CATEGORIES: readonly McpPresetCategory[] = [
+  { id: "web-search", label: "Web & Search" },
+  { id: "docs-knowledge", label: "Docs & Knowledge" },
+  { id: "planning-design", label: "Planning & Design" },
+  { id: "code-ci", label: "Code & CI" },
+  { id: "data-observability", label: "Data & Observability" },
+  { id: "browser-apps", label: "Browser & Apps" },
+  { id: "more", label: "More" },
+];
+
+const MCP_PRESET_CATEGORY_BY_ID = {
+  "serper-search": "web-search",
+  "firecrawl-web": "web-search",
+  "context7-docs": "docs-knowledge",
+  "notion-remote": "docs-knowledge",
+  "linear-remote": "planning-design",
+  "figma-remote": "planning-design",
+  "github-remote": "code-ci",
+  "github-local-docker": "code-ci",
+  "gitlab-remote": "code-ci",
+  "sentry-remote": "data-observability",
+  "supabase-remote": "data-observability",
+  "chrome-devtools": "browser-apps",
+  "playwright-browser": "browser-apps",
+  "tauri-mcp-server": "browser-apps",
+} satisfies Partial<Record<string, McpPresetCategoryId>>;
+
+const getMcpPresetCategoryId = (presetId: string): McpPresetCategoryId => {
+  return MCP_PRESET_CATEGORY_BY_ID[presetId] ?? "more";
+};
 
 const createEmptyCustomServerDraft = (
   servers: ServerRecord[],
@@ -649,6 +694,17 @@ export const McpSettingsPanel = ({
       : isValidHttpUrl(customDraft.url.trim());
   const customDraftReady =
     normalizedCustomId.length > 0 && !customIdAlreadyExists && customTransportReady;
+  const presetGroups = useMemo(
+    () =>
+      MCP_PRESET_CATEGORIES.flatMap((category) => {
+        const presets = setup.presets.filter(
+          (preset) => getMcpPresetCategoryId(preset.id) === category.id,
+        );
+
+        return presets.length > 0 ? [{ ...category, presets }] : [];
+      }),
+    [setup.presets],
+  );
 
   const writeServers = (servers: ServerRecord[]): void => {
     setup.onDraftChange(stringifyDraft(parsed.config, servers));
@@ -900,33 +956,51 @@ export const McpSettingsPanel = ({
         </DialogTrigger>
         <DialogContent
           aria-describedby={undefined}
-          className="w-[min(42rem,calc(100vw-2rem))] max-w-none overflow-hidden border-slate-800 bg-slate-950 text-slate-100 sm:max-w-none"
+          className="max-h-[min(44rem,calc(100vh-2rem))] w-[min(42rem,calc(100vw-2rem))] max-w-none overflow-hidden border-slate-800 bg-slate-950 text-slate-100 sm:max-w-none"
         >
           <DialogHeader>
             <DialogTitle>Add MCP preset</DialogTitle>
           </DialogHeader>
-          <div className="grid min-w-0 gap-2">
-            {setup.presets.map((preset) => (
-              <DialogClose key={preset.id} asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => addPreset(preset.id, preset.serverId)}
-                  className="h-auto w-full max-w-full min-w-0 justify-start whitespace-normal rounded-lg border-slate-800 bg-slate-950 px-3 py-3 text-left text-sm text-slate-200 shadow-none hover:border-sky-500/30 hover:bg-slate-900"
-                >
-                  <span className="grid min-w-0 flex-1 gap-1">
-                    <span className="min-w-0 break-words font-semibold text-slate-100">
-                      {preset.title}
-                    </span>
-                    <span className="min-w-0 break-words text-xs leading-5 text-slate-500">
-                      {preset.description}
-                    </span>
-                    <span className="min-w-0 break-all font-mono text-xs text-slate-500">
-                      {preset.serverId}
-                    </span>
-                  </span>
-                </Button>
-              </DialogClose>
+          <div
+            role="region"
+            aria-label="MCP preset categories"
+            className="grid min-h-0 max-h-[min(32rem,calc(100vh-10rem))] min-w-0 gap-4 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable] [scrollbar-width:thin]"
+          >
+            {presetGroups.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-slate-800 bg-slate-950/60 px-3 py-6 text-center text-sm text-slate-500">
+                No MCP presets available.
+              </p>
+            ) : null}
+            {presetGroups.map((group) => (
+              <section key={group.id} className="grid min-w-0 gap-2">
+                <h3 className="sticky top-0 z-10 bg-slate-950/95 py-1 text-xs font-semibold text-slate-400 backdrop-blur">
+                  {group.label}
+                </h3>
+                <div className="grid min-w-0 gap-2">
+                  {group.presets.map((preset: McpPresetOption) => (
+                    <DialogClose key={preset.id} asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => addPreset(preset.id, preset.serverId)}
+                        className="h-auto w-full max-w-full min-w-0 justify-start whitespace-normal rounded-lg border-slate-800 bg-slate-950 px-3 py-3 text-left text-sm text-slate-200 shadow-none hover:border-sky-500/30 hover:bg-slate-900"
+                      >
+                        <span className="grid min-w-0 flex-1 gap-1">
+                          <span className="min-w-0 break-words font-semibold text-slate-100">
+                            {preset.title}
+                          </span>
+                          <span className="min-w-0 break-words text-xs leading-5 text-slate-500">
+                            {preset.description}
+                          </span>
+                          <span className="min-w-0 break-all font-mono text-xs text-slate-500">
+                            {preset.serverId}
+                          </span>
+                        </span>
+                      </Button>
+                    </DialogClose>
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         </DialogContent>

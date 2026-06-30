@@ -363,6 +363,27 @@ export const isAssistantPopupVisible = async (): Promise<boolean> => {
   }
 };
 
+export const showAssistantPopup = async (
+  popupPositionOverride?: { x: number; y: number },
+): Promise<boolean> => {
+  const popupWindow = await getWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL);
+
+  if (!popupWindow) {
+    return false;
+  }
+
+  try {
+    await applyAssistantPopupLayout(popupWindow, popupPositionOverride);
+
+    await Promise.all([popupWindow.show(), popupWindow.unminimize()]);
+    await popupWindow.setFocus();
+    return true;
+  } catch (error) {
+    console.error("Failed to show the assistant popup", error);
+    return false;
+  }
+};
+
 export const toggleAssistantPopup = async (
   popupPositionOverride?: { x: number; y: number },
 ): Promise<boolean> => {
@@ -378,11 +399,7 @@ export const toggleAssistantPopup = async (
       return false;
     }
 
-    await applyAssistantPopupLayout(popupWindow, popupPositionOverride);
-
-    await Promise.all([popupWindow.show(), popupWindow.unminimize()]);
-    await popupWindow.setFocus();
-    return true;
+    return await showAssistantPopup(popupPositionOverride);
   } catch (error) {
     console.error("Failed to toggle the assistant popup", error);
     return false;

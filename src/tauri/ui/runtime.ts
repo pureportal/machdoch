@@ -115,6 +115,7 @@ export const TRAY_MENU_WINDOW_LABEL = "tray-menu";
 export const DESKTOP_SETTINGS_CHANGED_EVENT =
   "machdoch://desktop-settings-changed";
 export const QUICK_VOICE_START_EVENT = "machdoch://quick-voice-start";
+export const QUICK_CHAT_DROP_EVENT = "machdoch://quick-chat-drop";
 
 export const USER_API_KEY_PROVIDER_ORDER: UserApiKeyProvider[] = [
   ...USER_API_PROVIDERS,

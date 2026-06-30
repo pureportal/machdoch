@@ -13,6 +13,8 @@ import {
 
 const STORAGE_KEY = "machdoch.desktop.shell-state";
 const APP_SHELL_STORAGE_KEY = "machdoch.desktop.app-shell-state";
+const RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY =
+  "machdoch.desktop.running-task-message-action";
 const RALPH_SETTINGS_STORAGE_KEY = "machdoch.desktop.ralph-settings";
 const ONBOARDING_STORAGE_KEY = "machdoch.desktop.onboarding-state";
 const APPEARANCE_STORAGE_KEY = "machdoch.desktop.appearance-state";
@@ -41,6 +43,7 @@ export interface OnboardingState {
 }
 
 export type MainAppId = "chat" | "ralph" | "marketplace";
+export type RunningTaskMessageAction = "steer" | "stop-and-send" | "queue";
 
 export interface AppShellState {
   version: 1;
@@ -109,6 +112,9 @@ export const DEFAULT_APP_SHELL_STATE = {
   },
 } as const satisfies AppShellState;
 
+export const DEFAULT_RUNNING_TASK_MESSAGE_ACTION =
+  "queue" as const satisfies RunningTaskMessageAction;
+
 export const DEFAULT_MCP_MARKETPLACE_STATE = {
   version: 1,
   registries: [],
@@ -164,6 +170,14 @@ const normalizeMainAppId = (value: unknown): MainAppId => {
   }
 
   return "chat";
+};
+
+const normalizeRunningTaskMessageAction = (
+  value: unknown,
+): RunningTaskMessageAction => {
+  return value === "steer" || value === "stop-and-send" || value === "queue"
+    ? value
+    : DEFAULT_RUNNING_TASK_MESSAGE_ACTION;
 };
 
 const normalizeAppShellState = (value: unknown): AppShellState => {
@@ -481,6 +495,82 @@ export const saveAppShellState = async (
     localStorage.setItem(APP_SHELL_STORAGE_KEY, JSON.stringify(normalizedState));
   } catch (error) {
     console.error("Failed to persist app shell state to localStorage", error);
+  }
+};
+
+export const loadRunningTaskMessageAction =
+  async (): Promise<RunningTaskMessageAction> => {
+    if (canUseTauriStore()) {
+      try {
+        const value = await getStore().get<RunningTaskMessageAction>(
+          RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY,
+        );
+
+        if (value !== null && value !== undefined) {
+          return normalizeRunningTaskMessageAction(value);
+        }
+      } catch (error) {
+        console.error(
+          "Failed to load running task message action from Tauri store",
+          error,
+        );
+      }
+    }
+
+    const localStorage = getLocalStorage();
+
+    if (!localStorage) {
+      return DEFAULT_RUNNING_TASK_MESSAGE_ACTION;
+    }
+
+    try {
+      return normalizeRunningTaskMessageAction(
+        localStorage.getItem(RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY),
+      );
+    } catch (error) {
+      console.error(
+        "Failed to load running task message action from localStorage",
+        error,
+      );
+      return DEFAULT_RUNNING_TASK_MESSAGE_ACTION;
+    }
+  };
+
+export const saveRunningTaskMessageAction = async (
+  action: RunningTaskMessageAction,
+): Promise<void> => {
+  const normalizedAction = normalizeRunningTaskMessageAction(action);
+
+  if (canUseTauriStore()) {
+    try {
+      const store = getStore();
+      await store.set(RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY, normalizedAction);
+      await store.save();
+      return;
+    } catch (error) {
+      console.error(
+        "Failed to persist running task message action to Tauri store",
+        error,
+      );
+    }
+  }
+
+  const localStorage = getLocalStorage();
+
+  if (!localStorage) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY,
+      normalizedAction,
+    );
+  } catch (error) {
+    console.error(
+      "Failed to persist running task message action to localStorage",
+      error,
+    );
   }
 };
 

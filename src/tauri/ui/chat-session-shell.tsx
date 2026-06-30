@@ -82,8 +82,7 @@ export const ChatSession = (): JSX.Element => {
   const activeApp = appShellState.activeApp;
   const ralphActivity = useRalphActivity(activeApp);
 
-  const chatRunning =
-    controller.composer.isExecuting || controller.quickTask.status === "running";
+  const chatRunning = controller.hasRunningSession;
   const chatActivity = toActivityState(chatRunning, chatCompletedSinceView);
 
   useEffect(() => {

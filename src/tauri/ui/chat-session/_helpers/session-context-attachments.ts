@@ -14,6 +14,13 @@ export type AttachmentSelectionKind = "files" | "folders" | "images";
 
 export type DialogSelection = string | string[] | null;
 
+const LINK_ATTACHMENT_PROTOCOLS = new Set([
+  "http:",
+  "https:",
+  "mailto:",
+  "ftp:",
+]);
+
 export const appendTranscriptToDraft = (
   draft: string,
   transcript: string,
@@ -68,7 +75,7 @@ const normalizeDroppedPathKind = (
 };
 
 const formatContextAttachmentKind = (
-  attachment: Pick<ChatSessionContextAttachment, "kind">,
+  attachment: Pick<ChatSessionContextAttachment, "kind" | "path">,
 ): string => {
   switch (attachment.kind) {
     case "directory":
@@ -79,7 +86,33 @@ const formatContextAttachmentKind = (
       return "image";
     case "other":
     default:
-      return "path";
+      return isLinkContextAttachment(attachment) ? "link" : "path";
+  }
+};
+
+export const isLinkContextAttachment = (
+  attachment: Pick<ChatSessionContextAttachment, "kind" | "path">,
+): boolean => {
+  if (attachment.kind !== "other") {
+    return false;
+  }
+
+  try {
+    return LINK_ATTACHMENT_PROTOCOLS.has(new URL(attachment.path).protocol);
+  } catch {
+    return false;
+  }
+};
+
+const getLinkAttachmentName = (value: string): string => {
+  try {
+    const url = new URL(value);
+    const path = url.pathname === "/" ? "" : url.pathname;
+    const label = `${url.hostname}${path}`.trim();
+
+    return label || url.protocol.replace(/:$/u, "") || value;
+  } catch {
+    return value.split(/\s+/u).filter(Boolean).at(0) ?? value;
   }
 };
 
@@ -94,6 +127,23 @@ export const createContextAttachment = (
     kind: normalizeDroppedPathKind(entry),
     name: entry.name,
     ...(parent ? { parent } : {}),
+  };
+};
+
+export const createContextAttachmentFromReference = (
+  value: string,
+): ChatSessionContextAttachment | null => {
+  const normalizedValue = value.trim();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return {
+    id: crypto.randomUUID(),
+    path: normalizedValue,
+    kind: "other",
+    name: getLinkAttachmentName(normalizedValue),
   };
 };
 
@@ -147,13 +197,13 @@ const createContextAttachmentsTaskBlock = (
 };
 
 const CONTEXT_ATTACHMENTS_TASK_BLOCK_PATTERN =
-  /(?:\r?\n){2,}(?:Use this (?:file|image|folder|path): "[^"\r\n]+"|Use these paths:(?:\r?\n- (?:file|image|folder|path): "[^"\r\n]+")+)\s*$/u;
+  /(?:\r?\n){2,}(?:Use this (?:file|image|folder|path|link): "[^"\r\n]+"|Use these paths:(?:\r?\n- (?:file|image|folder|path|link): "[^"\r\n]+")+)\s*$/u;
 const CONTEXT_ATTACHMENTS_TASK_BLOCK_CAPTURE_PATTERN =
-  /(?:\r?\n){2,}(Use this (?:file|image|folder|path): "[^"\r\n]+"|Use these paths:(?:\r?\n- (?:file|image|folder|path): "[^"\r\n]+")+)\s*$/u;
+  /(?:\r?\n){2,}(Use this (?:file|image|folder|path|link): "[^"\r\n]+"|Use these paths:(?:\r?\n- (?:file|image|folder|path|link): "[^"\r\n]+")+)\s*$/u;
 const SINGLE_CONTEXT_ATTACHMENT_LINE_PATTERN =
-  /^Use this (file|image|folder|path): "([^"\r\n]+)"$/u;
+  /^Use this (file|image|folder|path|link): "([^"\r\n]+)"$/u;
 const MULTI_CONTEXT_ATTACHMENT_LINE_PATTERN =
-  /^- (file|image|folder|path): "([^"\r\n]+)"$/u;
+  /^- (file|image|folder|path|link): "([^"\r\n]+)"$/u;
 
 export const appendContextAttachmentsToTask = (
   task: string,
@@ -176,6 +226,7 @@ const getAttachmentKindFromTaskLabel = (
       return "image";
     case "folder":
       return "directory";
+    case "link":
     case "path":
     default:
       return "other";
@@ -226,12 +277,13 @@ export const createContextAttachmentsFromTaskBlock = (
     }
 
     const parent = getAttachmentParentFromPath(path);
+    const kind = getAttachmentKindFromTaskLabel(label);
 
     attachments.push({
       id: `${idPrefix}-${attachments.length}`,
       path,
-      kind: getAttachmentKindFromTaskLabel(label),
-      name: getAttachmentNameFromPath(path),
+      kind,
+      name: label === "link" ? getLinkAttachmentName(path) : getAttachmentNameFromPath(path),
       ...(parent ? { parent } : {}),
     });
   }

@@ -135,7 +135,7 @@ export const SESSION_STATUS_META = {
     icon: Check,
     containerClassName:
       "border-emerald-500/20 bg-emerald-500/10 shadow-[0_0_18px_rgba(63,137,117,0.16)]",
-    iconClassName: "animate-pulse text-emerald-300",
+    iconClassName: "text-emerald-300",
   },
   failed: {
     label: "Failed",

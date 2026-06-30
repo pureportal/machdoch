@@ -505,6 +505,13 @@ describe("SettingsDialog", () => {
     expect(screen.queryByLabelText("MCP JSON config")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Add preset" }));
+    const presetCategories = screen.getByRole("region", {
+      name: "MCP preset categories",
+    });
+    expect(presetCategories.className).toContain("overflow-y-auto");
+    expect(screen.getByRole("heading", { name: "Web & Search" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Code & CI" })).toBeDefined();
+
     fireEvent.click(screen.getByRole("button", { name: /GitHub Remote/u }));
     expect(onPresetInsert).toHaveBeenCalledWith("github-remote");
 

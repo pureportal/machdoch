@@ -192,6 +192,7 @@ const RALPH_BLOCK_PROGRESS_TRUNCATION_MARKER = `\n[Ralph block progress truncate
 
 const DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES = 1_000_000;
 const DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS = 120_000;
+const DEFAULT_RALPH_MODEL_BLOCK_TIMEOUT_MS = 60 * 60 * 1_000;
 const DEFAULT_RALPH_UTILITY_POLL_INTERVAL_SECONDS = 30;
 const DEFAULT_RALPH_UTILITY_MAX_SEARCH_RESULTS = 100;
 const DEFAULT_RALPH_REPEATED_FAILURE_LIMIT = 3;
@@ -497,6 +498,7 @@ export interface RalphUtilityConfig {
   includeMarkdown?: boolean;
   forceNew?: boolean;
   reset?: boolean;
+  enforce?: boolean;
   jsonPatchMode?: "merge" | "replace";
   counterName?: string;
   counterKey?: string;
@@ -2375,6 +2377,20 @@ const withRalphBlockProgress = (
     : result;
 };
 
+const getRalphBlockMaxDurationMs = (block: RalphFlowBlock | undefined): number | undefined => {
+  if (!block) {
+    return undefined;
+  }
+
+  const timeoutSeconds = block.settings?.timeoutSeconds;
+
+  return typeof timeoutSeconds === "number" &&
+    Number.isFinite(timeoutSeconds) &&
+    timeoutSeconds > 0
+    ? timeoutSeconds * 1000
+    : DEFAULT_RALPH_MODEL_BLOCK_TIMEOUT_MS;
+};
+
 const createExecutionOptions = async (
   options: RalphExecutionOptionsSource,
   config: RuntimeConfig,
@@ -2478,6 +2494,7 @@ const createExecutionOptions = async (
         void baseOnStateChange?.(progress);
       }
     : undefined;
+  const maxDurationMs = getRalphBlockMaxDurationMs(block);
 
   return {
     ...(options.signal ? { signal: options.signal } : {}),
@@ -2485,11 +2502,7 @@ const createExecutionOptions = async (
     ...(onStateChange ? { onStateChange } : {}),
     ...(onActionOutput ? { onActionOutput } : {}),
     ...(conversationContext ? { conversationContext } : {}),
-    ...(typeof block?.settings?.timeoutSeconds === "number" &&
-    Number.isFinite(block.settings.timeoutSeconds) &&
-    block.settings.timeoutSeconds > 0
-      ? { maxDurationMs: block.settings.timeoutSeconds * 1000 }
-      : {}),
+    ...(maxDurationMs !== undefined ? { maxDurationMs } : {}),
     ...(imageInputs.length > 0 ? { imageInputs } : {}),
     ralphProgressEvents: progressEvents,
   };
@@ -6423,13 +6436,17 @@ const executeChangeScopeGuardUtilityBlock = async (
           ),
       )
       .map((file) => file.path);
-    const output = outOfScopeFiles.length > 0 ? "OUT_OF_SCOPE" : "IN_SCOPE";
+    const isEnforced = utility.enforce === true;
+    const output =
+      outOfScopeFiles.length > 0 && isEnforced ? "OUT_OF_SCOPE" : "IN_SCOPE";
 
     return createUtilityResult(
       block,
       output,
       outOfScopeFiles.length > 0
-        ? `${block.title} found ${outOfScopeFiles.length} out-of-scope file(s).`
+        ? isEnforced
+          ? `${block.title} found ${outOfScopeFiles.length} out-of-scope file(s).`
+          : `${block.title} recorded ${outOfScopeFiles.length} advisory out-of-scope file(s).`
         : `${block.title} confirmed changed files stay in scope.`,
       {
         cwd,
@@ -6444,6 +6461,7 @@ const executeChangeScopeGuardUtilityBlock = async (
         files: changedFileEntries,
         allowedPaths: rules.paths,
         allowedGlobs: rules.globs,
+        enforcement: isEnforced ? "blocking" : "advisory",
       },
       output === "IN_SCOPE" ? "completed" : "error",
     );

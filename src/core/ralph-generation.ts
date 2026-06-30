@@ -675,14 +675,15 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
   },
   CHANGE_SCOPE_GUARD: {
     type: "CHANGE_SCOPE_GUARD",
-    role: "Compare changed git files against allowed paths/globs from the selected scope.",
+    role: "Record whether changed git files match allowed paths/globs from the selected scope.",
     requiredFields: ["type"],
-    optionalFields: ["cwd", "input", "baseline", "maxOutputBytes"],
+    optionalFields: ["cwd", "input", "baseline", "enforce", "maxOutputBytes"],
     outputs: ["IN_SCOPE", "OUT_OF_SCOPE", "EMPTY", "ERROR"],
     generationNotes: [
-      "Use after edit passes in scoped loops before validation/reporting.",
+      "Use after edit passes in scoped loops when later prompts need advisory scope-change data.",
       "Pass selected scope JSON via input, for example {{data:select-scope:scope}}.",
       "Pass a GIT_SNAPSHOT result via baseline when pre-existing dirty files should not fail the guard.",
+      "By default, out-of-scope files are advisory and still produce IN_SCOPE so shared workspace edits do not stop the flow. Set enforce=true only when the user explicitly wants blocking scope enforcement.",
     ],
   },
   SCAN_SCOPE_EVIDENCE: {
@@ -2111,7 +2112,7 @@ const createFlowGenerationTask = (
     "- VALIDATOR.RETRY may omit an edge; Ralph falls back to the validator group start.",
     "- DECISION blocks must define labels and end with RALPH_DECISION: <LABEL>.",
     "- UTILITY blocks usually run deterministic operations without an LLM. PROMPT_JSON is the explicit exception and must be used only when structured AI output is genuinely needed. Available utility.type values come from the utilityTypes contract list.",
-    "- Use utility outputs exactly as produced: WAIT/SET_VARIABLE/NOTIFY use SUCCESS only; HTTP_FETCH uses SUCCESS, HTTP_ERROR, TIMEOUT, ERROR; POLL uses SUCCESS, ERROR, and TIMEOUT when maxAttempts is finite; CONDITION uses MATCH, NO_MATCH, ERROR; RUN_CHECK uses SUCCESS, FAILED, ERROR; UI_ANALYZE uses SUCCESS, UNAVAILABLE, ERROR; FILE_EXISTS uses EXISTS, MISSING, ERROR; DELETE_FILE/MOVE_FILE/ARCHIVE_FILE use SUCCESS, NOT_FOUND, ERROR; READ_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; READ_JSONL/QUERY_JSONL use SUCCESS, EMPTY, NOT_FOUND, INVALID, ERROR; WRITE_JSON/APPEND_JSONL/PROMPT_JSON/VALIDATE_JSON use SUCCESS, INVALID, ERROR; PATCH_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; VALIDATOR_JSON uses DONE, CONTINUE, RETRY, ERROR, INVALID; SELECT_JSON_TASK uses SELECTED, EMPTY, NOT_FOUND, INVALID, ERROR; MARK_JSON_TASK uses SUCCESS, NOT_FOUND, INVALID, ERROR; CHANGE_SCOPE_GUARD uses IN_SCOPE, OUT_OF_SCOPE, EMPTY, ERROR; LOOP_COUNTER uses CONTINUE, LIMIT_REACHED, ERROR; SCAN_SCOPE_EVIDENCE, UPDATE_SCOPE_REGISTRY, SEARCH_FILES, GIT_DIFF_SUMMARY, and DETECT_PROJECT_COMMANDS use SUCCESS, EMPTY, ERROR; SELECT_SCOPE uses SELECTED, EMPTY, ERROR; MARK_SCOPE_RESULT uses SUCCESS, NOT_FOUND, ERROR.",
+    "- Use utility outputs exactly as produced: WAIT/SET_VARIABLE/NOTIFY use SUCCESS only; HTTP_FETCH uses SUCCESS, HTTP_ERROR, TIMEOUT, ERROR; POLL uses SUCCESS, ERROR, and TIMEOUT when maxAttempts is finite; CONDITION uses MATCH, NO_MATCH, ERROR; RUN_CHECK uses SUCCESS, FAILED, ERROR; UI_ANALYZE uses SUCCESS, UNAVAILABLE, ERROR; FILE_EXISTS uses EXISTS, MISSING, ERROR; DELETE_FILE/MOVE_FILE/ARCHIVE_FILE use SUCCESS, NOT_FOUND, ERROR; READ_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; READ_JSONL/QUERY_JSONL use SUCCESS, EMPTY, NOT_FOUND, INVALID, ERROR; WRITE_JSON/APPEND_JSONL/PROMPT_JSON/VALIDATE_JSON use SUCCESS, INVALID, ERROR; PATCH_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; VALIDATOR_JSON uses DONE, CONTINUE, RETRY, ERROR, INVALID; SELECT_JSON_TASK uses SELECTED, EMPTY, NOT_FOUND, INVALID, ERROR; MARK_JSON_TASK uses SUCCESS, NOT_FOUND, INVALID, ERROR; CHANGE_SCOPE_GUARD uses IN_SCOPE, OUT_OF_SCOPE, EMPTY, ERROR, but OUT_OF_SCOPE requires enforce=true; LOOP_COUNTER uses CONTINUE, LIMIT_REACHED, ERROR; SCAN_SCOPE_EVIDENCE, UPDATE_SCOPE_REGISTRY, SEARCH_FILES, GIT_DIFF_SUMMARY, and DETECT_PROJECT_COMMANDS use SUCCESS, EMPTY, ERROR; SELECT_SCOPE uses SELECTED, EMPTY, ERROR; MARK_SCOPE_RESULT uses SUCCESS, NOT_FOUND, ERROR.",
     "- Add variables directly in prompts using {{name:type=default}}, for example {{scope:path=ALL}}.",
     "- Use block result placeholders such as {{lastResult}}, {{summary:block-id}}, and {{result:block-id}} where useful.",
     "- Use structured utility data placeholders such as {{data:block-id:path.to.value}} where useful.",

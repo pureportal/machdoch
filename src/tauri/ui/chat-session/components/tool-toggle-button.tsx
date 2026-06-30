@@ -39,7 +39,7 @@ const DEFAULT_BASE_CLASS_NAME =
 const DEFAULT_DISABLED_CLASS_NAME =
   "cursor-not-allowed border-dashed bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600";
 const TOOLTIP_CLASS_NAME =
-  "max-w-64 rounded-2xl border-slate-800 bg-slate-950 text-slate-100";
+  "max-w-[min(16rem,calc(100vw-1rem))] whitespace-normal rounded-2xl border-slate-800 bg-slate-950 text-slate-100";
 
 export const ToolToggleButton = ({
   label,
@@ -77,7 +77,7 @@ export const ToolToggleButton = ({
       aria-pressed={pressed}
       aria-disabled={ariaDisabled || undefined}
       disabled={nativeDisabled || undefined}
-      title={title ?? label}
+      title={description ? undefined : (title ?? label)}
       onClick={() => {
         if (!disabled) {
           onPressedChange(!pressed);

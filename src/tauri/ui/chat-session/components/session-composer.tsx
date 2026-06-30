@@ -18,12 +18,14 @@ import {
   type SmartContextPack,
 } from "../../chat-session.model";
 import { cn } from "../../lib/utils";
+import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import type { RuntimeProvider } from "../../model-catalog";
 import type { SaveSmartContextPackInput } from "../_helpers/smart-context-packs";
 import type { RUN_MODE_META } from "../_helpers/session-shell";
 import {
   AgentComposer,
   type AgentComposerAction,
+  type AgentComposerQueuedMessage,
   type AgentComposerToggle,
 } from "./agent-composer";
 import { SessionModePicker } from "./session-mode-picker";
@@ -66,6 +68,8 @@ export interface SessionComposerProps {
   };
   canSendMessage: boolean;
   sendDisabledReason: string | null;
+  runningTaskMessageAction: RunningTaskMessageAction;
+  queuedMessages: AgentComposerQueuedMessage[];
   onSelectFolder: () => Promise<void>;
   onWorkspaceSelection: (workspace: string) => void;
   onSessionModelSelection: (provider: RuntimeProvider, model: string) => void;
@@ -92,6 +96,12 @@ export interface SessionComposerProps {
   onComposerHistoryNavigation: (
     event: KeyboardEvent<HTMLTextAreaElement>,
   ) => void;
+  onRunningTaskMessageActionChange: (
+    action: RunningTaskMessageAction,
+  ) => void;
+  onQueuedMessageChange: (messageId: string, content: string) => void;
+  onQueuedMessageMove: (messageId: string, direction: -1 | 1) => void;
+  onQueuedMessageRemove: (messageId: string) => void;
   onSend: () => void;
   onCancel: () => void;
   isExecuting: boolean;
@@ -124,6 +134,8 @@ export const SessionComposer = ({
   speechInput,
   canSendMessage,
   sendDisabledReason,
+  runningTaskMessageAction,
+  queuedMessages,
   onSelectFolder,
   onWorkspaceSelection,
   onSessionModelSelection,
@@ -145,6 +157,10 @@ export const SessionComposer = ({
   onImportContextPacks,
   onDraftChange,
   onComposerHistoryNavigation,
+  onRunningTaskMessageActionChange,
+  onQueuedMessageChange,
+  onQueuedMessageMove,
+  onQueuedMessageRemove,
   onSend,
   onCancel,
   isExecuting,
@@ -297,6 +313,8 @@ export const SessionComposer = ({
       toolbarControls={toolbarControls}
       toggles={toggles}
       actions={actions}
+      runningTaskMessageAction={runningTaskMessageAction}
+      queuedMessages={queuedMessages}
       statusMessage={
         speechInput.statusText
           ? {
@@ -314,6 +332,10 @@ export const SessionComposer = ({
       onClearContextAttachments={onClearContextAttachments}
       onDraftChange={onDraftChange}
       onAdditionalTextareaKeyDown={onComposerHistoryNavigation}
+      onRunningTaskMessageActionChange={onRunningTaskMessageActionChange}
+      onQueuedMessageChange={onQueuedMessageChange}
+      onQueuedMessageMove={onQueuedMessageMove}
+      onQueuedMessageRemove={onQueuedMessageRemove}
       onSend={onSend}
       onCancel={onCancel}
     />

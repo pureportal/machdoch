@@ -16,6 +16,7 @@ mod paths;
 mod payload;
 mod process;
 mod progress;
+mod ralph;
 mod registry;
 
 use attachments::{
@@ -23,7 +24,7 @@ use attachments::{
     save_clipboard_image_attachment_sync,
 };
 use cli_commands::{execute_instruction_command, execute_mcp_command, execute_scheduler_command};
-use commands::{execute_desktop_task, execute_ralph_command, resolve_ralph_flow_path_for_open};
+use commands::execute_desktop_task;
 #[cfg(test)]
 use diagnostics::format_timeout_duration;
 use paths::{
@@ -32,6 +33,7 @@ use paths::{
 };
 use process::open_path_in_system_shell;
 use progress::create_progress_timestamp;
+use ralph::{execute_ralph_command, resolve_ralph_flow_path_for_open};
 use registry::{
     active_task_ids, active_task_summaries, finish_active_task, normalize_task_id,
     register_active_task, ActiveDesktopTaskRegistration,

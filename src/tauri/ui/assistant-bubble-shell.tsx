@@ -1,7 +1,14 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { MessageSquareMore, Mic, Zap } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
 import { getSessionOverviewStatus } from "./chat-session.model";
 import {
   hideAssistantPopup,
@@ -10,6 +17,7 @@ import {
   resolveMonitorTopologyKey,
   setWindowSize,
   setWindowPosition,
+  showAssistantPopup,
   showQuickVoiceWindow,
   syncAssistantPopupPosition,
   toggleAssistantPopup,
@@ -17,7 +25,15 @@ import {
 import { useUserDesktopSettings } from "./_helpers/use-user-desktop-settings";
 import { useAppearanceSettings } from "./chat-session/_helpers/use-appearance-settings";
 import { useChatSessionShellState } from "./chat-session/_helpers/use-chat-session-shell-state";
-import { detectFullscreenWindowOnMonitor } from "./runtime";
+import {
+  ASSISTANT_POPUP_WINDOW_LABEL,
+  QUICK_CHAT_DROP_EVENT,
+  detectFullscreenWindowOnMonitor,
+} from "./runtime";
+import {
+  useSessionFileDrops,
+  type SessionDropPayload,
+} from "./chat-session/_helpers/use-session-file-drops";
 
 const BUBBLE_SYNC_INTERVAL_MS = 2500;
 const BUBBLE_EVENT_SYNC_DEBOUNCE_MS = 100;
@@ -40,6 +56,41 @@ export const AssistantBubbleShell = () => {
   const lastMonitorTopologyKeyRef = useRef<string | null>(null);
   const syncInFlightRef = useRef(false);
   const togglePopupInFlightRef = useRef(false);
+
+  const emitQuickChatDrop = useCallback(
+    async (payload: SessionDropPayload): Promise<void> => {
+      if (!isTauri()) {
+        return;
+      }
+
+      const shown = await showAssistantPopup();
+
+      if (shown) {
+        setPopupOpen(true);
+      }
+
+      await getCurrentWindow().emitTo(
+        ASSISTANT_POPUP_WINDOW_LABEL,
+        QUICK_CHAT_DROP_EVENT,
+        payload,
+      );
+    },
+    [],
+  );
+
+  const bubbleFileDrop = useSessionFileDrops({
+    fileDropTarget: "quick-task",
+    isDesktop: isTauri(),
+    onAttachPaths: async (paths) => {
+      await emitQuickChatDrop({ paths });
+    },
+    onAttachReferences: async (references) => {
+      await emitQuickChatDrop({ references });
+    },
+    onAppendText: async (text) => {
+      await emitQuickChatDrop({ text });
+    },
+  });
 
   const activeSessionSummary = useMemo(() => {
     let runningCount = 0;
@@ -338,6 +389,7 @@ export const AssistantBubbleShell = () => {
           data-voice-enabled={
             desktopSettings.quickVoiceEnabled ? "true" : "false"
           }
+          data-drop-active={bubbleFileDrop.isActive ? "true" : "false"}
           onClick={handleBubbleClick}
           onFocus={() => {
             void isAssistantPopupVisible().then(setPopupOpen);
