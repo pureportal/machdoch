@@ -113,6 +113,135 @@ const mergeSessionRuntimeSelection = (
   return mergedSession;
 };
 
+const mergeSessionFieldForPersistence = <T,>(
+  primaryValue: T,
+  localValue: T,
+  baseValue: T,
+  latestValue: T,
+): T => {
+  const localChanged = !areShellFragmentsEqual(localValue, baseValue);
+  const latestChanged = !areShellFragmentsEqual(latestValue, baseValue);
+
+  if (localChanged && !latestChanged) {
+    return localValue;
+  }
+
+  if (!localChanged && latestChanged) {
+    return latestValue;
+  }
+
+  return primaryValue;
+};
+
+const didRemoveBaseMessages = (
+  messages: readonly ChatSessionMessage[],
+  baseMessages: readonly ChatSessionMessage[],
+): boolean => {
+  const messageIds = new Set(messages.map((message) => message.id));
+
+  return baseMessages.some((message) => !messageIds.has(message.id));
+};
+
+const mergeAppendOnlyMessages = (
+  localMessages: readonly ChatSessionMessage[],
+  latestMessages: readonly ChatSessionMessage[],
+): ChatSessionMessage[] => {
+  const messagesById = new Map<string, ChatSessionMessage>();
+
+  for (const message of [...localMessages, ...latestMessages]) {
+    if (!messagesById.has(message.id)) {
+      messagesById.set(message.id, message);
+    }
+  }
+
+  return [...messagesById.values()].sort((left, right) => {
+    const leftCreatedAt = left.createdAt ?? 0;
+    const rightCreatedAt = right.createdAt ?? 0;
+
+    if (leftCreatedAt !== rightCreatedAt) {
+      return leftCreatedAt - rightCreatedAt;
+    }
+
+    return 0;
+  });
+};
+
+const mergeSessionMessagesForPersistence = (
+  primarySession: ChatSessionRecord,
+  localSession: ChatSessionRecord,
+  baseSession: ChatSessionRecord,
+  latestSession: ChatSessionRecord,
+): ChatSessionMessage[] => {
+  const localChanged = !areShellFragmentsEqual(
+    localSession.messages,
+    baseSession.messages,
+  );
+  const latestChanged = !areShellFragmentsEqual(
+    latestSession.messages,
+    baseSession.messages,
+  );
+
+  if (localChanged && !latestChanged) {
+    return localSession.messages;
+  }
+
+  if (!localChanged && latestChanged) {
+    return latestSession.messages;
+  }
+
+  if (
+    localChanged &&
+    latestChanged &&
+    !didRemoveBaseMessages(localSession.messages, baseSession.messages) &&
+    !didRemoveBaseMessages(latestSession.messages, baseSession.messages)
+  ) {
+    return mergeAppendOnlyMessages(localSession.messages, latestSession.messages);
+  }
+
+  return primarySession.messages;
+};
+
+const mergeSessionConcurrentFields = (
+  primarySession: ChatSessionRecord,
+  localSession: ChatSessionRecord,
+  baseSession: ChatSessionRecord,
+  latestSession: ChatSessionRecord,
+): ChatSessionRecord => {
+  return {
+    ...primarySession,
+    draft: mergeSessionFieldForPersistence(
+      primarySession.draft,
+      localSession.draft,
+      baseSession.draft,
+      latestSession.draft,
+    ),
+    draftContextAttachments: mergeSessionFieldForPersistence(
+      primarySession.draftContextAttachments,
+      localSession.draftContextAttachments,
+      baseSession.draftContextAttachments,
+      latestSession.draftContextAttachments,
+    ),
+    messages: mergeSessionMessagesForPersistence(
+      primarySession,
+      localSession,
+      baseSession,
+      latestSession,
+    ),
+    promptHistory: mergeSessionFieldForPersistence(
+      primarySession.promptHistory,
+      localSession.promptHistory,
+      baseSession.promptHistory,
+      latestSession.promptHistory,
+    ),
+    promptContextHistory: mergeSessionFieldForPersistence(
+      primarySession.promptContextHistory,
+      localSession.promptContextHistory,
+      baseSession.promptContextHistory,
+      latestSession.promptContextHistory,
+    ),
+  };
+};
+
 const getContextPackPersistenceTimestamp = (
   pack: SmartContextPack,
 ): number => {
@@ -192,7 +321,7 @@ const mergeContextPacksForPersistence = (
   return sortContextPacksForPersistence([...mergedPacksById.values()]);
 };
 
-const mergeShellStateForPersistence = (
+export const mergeShellStateForPersistence = (
   localState: ShellPersistedState,
   baseState: ShellPersistedState,
   latestState: ShellPersistedState,
@@ -255,16 +384,26 @@ const mergeShellStateForPersistence = (
     const primarySession =
       localTimestamp >= latestTimestamp ? localSession : latestSession;
 
+    if (!baseSession) {
+      mergedSessionsById.set(sessionId, primarySession);
+      continue;
+    }
+
+    const runtimeMergedSession = mergeSessionRuntimeSelection(
+      primarySession,
+      localSession,
+      baseSession,
+      latestSession,
+    );
+
     mergedSessionsById.set(
       sessionId,
-      baseSession
-        ? mergeSessionRuntimeSelection(
-            primarySession,
-            localSession,
-            baseSession,
-            latestSession,
-          )
-        : primarySession,
+      mergeSessionConcurrentFields(
+        runtimeMergedSession,
+        localSession,
+        baseSession,
+        latestSession,
+      ),
     );
   }
 
@@ -344,6 +483,17 @@ const mergeShellStateForPersistence = (
   }
 
   return mergedState;
+};
+
+export const mergeShellStateFromExternalUpdate = (
+  currentState: ShellPersistedState,
+  baseState: ShellPersistedState,
+  externalState: ShellPersistedState,
+  hasUnpersistedLocalChanges: boolean,
+): ShellPersistedState => {
+  return hasUnpersistedLocalChanges
+    ? mergeShellStateForPersistence(currentState, baseState, externalState)
+    : externalState;
 };
 
 export interface ChatSessionShellStateController {
@@ -733,9 +883,23 @@ export const useChatSessionShellState = (
         }
 
         const normalizedShellState = normalizeShellState(value);
+        const previousPersistedShellState =
+          lastPersistedShellStateRef.current;
+        const hasUnpersistedLocalChanges =
+          localMutationRevisionRef.current >
+          persistedMutationRevisionRef.current;
+        const nextShellState = mergeShellStateFromExternalUpdate(
+          shellStateRef.current,
+          previousPersistedShellState,
+          normalizedShellState,
+          hasUnpersistedLocalChanges,
+        );
 
         lastPersistedShellStateRef.current = normalizedShellState;
-        setShellState(normalizedShellState);
+
+        if (!areShellFragmentsEqual(shellStateRef.current, nextShellState)) {
+          setShellState(nextShellState);
+        }
       });
     }).then((unlisten) => {
       if (disposed) {

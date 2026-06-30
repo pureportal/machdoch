@@ -17,6 +17,7 @@ import type {
 } from "../runtime-contract.generated.js";
 import { TASK_EXECUTION_TIMEOUT_REASON_PREFIX } from "./agent-runtime-types.js";
 import { isTerminalTaskExecutionState } from "./execution-progress.js";
+import { limitText } from "./runtime-text.js";
 
 export interface TaskExecutionRuntime {
   taskContext: ResolvedTaskContext | undefined;
@@ -27,6 +28,8 @@ export interface TaskExecutionRuntime {
   pendingResult: TaskExecutionResult | undefined;
   executedTools: ToolName[];
 }
+
+const PROGRESS_ASSISTANT_TEXT_LIMIT = 4_000;
 
 export const createExecutionResult = (
   base: Omit<TaskExecutionResult, "reason">,
@@ -66,6 +69,8 @@ const createProgressSnapshot = (
   runtime: TaskExecutionRuntime,
   result?: TaskExecutionResult,
 ): TaskExecutionProgress => {
+  const assistantText = result?.response?.markdown.trim();
+
   return {
     task,
     mode: config.mode,
@@ -81,6 +86,9 @@ const createProgressSnapshot = (
       runtime.contextSections,
     cancellable: !isTerminalTaskExecutionState(state),
     ...(result?.reason ? { reason: result.reason } : {}),
+    ...(assistantText
+      ? { assistantText: limitText(assistantText, PROGRESS_ASSISTANT_TEXT_LIMIT) }
+      : {}),
   };
 };
 

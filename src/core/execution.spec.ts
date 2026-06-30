@@ -934,6 +934,52 @@ describe("executeTask", () => {
     expect(result.executedTools).toEqual([]);
   });
 
+  it("emits final response markdown on terminal progress", async () => {
+    const workspaceRoot = await createWorkspace();
+    const finalMarkdown =
+      "Implementation completed.\n\n- Changed the target file.\n- Ran focused verification.";
+    const terminalProgress: TaskExecutionProgress[] = [];
+    const finalResponseAdapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "",
+        toolCalls: [
+          createFinalResponseToolCall({
+            summary: "Implementation completed.",
+            markdown: finalMarkdown,
+          }),
+        ],
+      }),
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The final response adapter should not continue.");
+      },
+    };
+
+    const result = await executeTask(
+      "Implement a small requested change.",
+      createConfig(workspaceRoot, "ask"),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: finalResponseAdapter,
+        onStateChange: (progress) => {
+          if (!progress.cancellable) {
+            terminalProgress.push(progress);
+          }
+        },
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(result.response?.markdown).toBe(finalMarkdown);
+    expect(terminalProgress).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          state: "completed",
+          assistantText: finalMarkdown,
+        }),
+      ]),
+    );
+  });
+
   it("uses the dedicated review model for validator passes", async () => {
     const workspaceRoot = await createWorkspace();
     const executorAdapter = createFinalOnlyAdapter("Completed with base model.");

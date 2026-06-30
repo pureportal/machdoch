@@ -92,3 +92,16 @@
 - Preserved Mission Control route paths, cookie/header names, auth checks, state-changing request checks, SSE event name/payload, command event emission, cancel forwarding, response status codes, and public Tauri command registrations.
 - Ran `cargo fmt` and `cargo test remote_control`; all 19 focused Mission Control tests passed.
 - `src-tauri/src/remote_control/web.rs` is below the 500-line policy at 299 lines. `src-tauri/src/remote_control.rs` remains over policy at 1323 lines because it still owns state lifecycle, progress recording, raw HTTP fallback dispatch, snapshot/status construction, pairing URL refresh, QR generation, and LAN/open-browser helpers. The next bounded split should target state/snapshot lifecycle helpers or the raw HTTP fallback.
+
+## src pass 1
+
+- Extracted Ralph active-run progress state, block progress snapshots, metadata readers, event tone/progress labels, timestamp formatting, and block-detail sorting from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/_helpers/ralph-active-run-progress.helper.ts`.
+- Kept the `RalphFlowEditor` component as the React composition boundary for state wiring, progress subscription handling, and rendered run panels; no public component props, runtime bridge payloads, flow formats, or saved state shapes were changed.
+- Added focused helper coverage in `src/tauri/ui/ralph/_helpers/ralph-active-run-progress.helper.spec.ts` for timeline metadata snapshots, active-run event updates, streamed block progress, and block detail ordering.
+- `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over the 500-line policy after this bounded pass because it still owns the flow library, canvas editing, inspector, generation, run setup, live run, history/detail/log panels, and dialog composition. Further splits should target one of those UI responsibilities at a time.
+
+## src pass 2
+
+- Extracted Ralph inspector width bounds, local-storage load/save behavior, and scroll epsilon constants from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/_helpers/ralph-inspector-width.helper.ts`.
+- Added focused coverage in `src/tauri/ui/ralph/_helpers/ralph-inspector-width.helper.spec.ts` for width clamping, viewport caps, invalid stored values, valid stored values, and preference writes.
+- Kept `RalphFlowEditor` responsible for the inspector UI, drag handlers, scroll state, and visible section composition; no component props, persisted key names, or runtime bridge payloads were changed.

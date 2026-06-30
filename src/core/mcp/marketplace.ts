@@ -1,9 +1,20 @@
 import {
-  MCP_CONFIG_SCHEMA_VERSION,
   type McpServerConfig,
   type McpTransportConfig,
 } from "./types.js";
 import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
+import { normalizeMcpConfigServerId } from "./_helpers/mcp-config-raw.helper.js";
+import {
+  MCP_MARKETPLACE_DISCOVERY_CATEGORIES,
+  getMcpMarketplaceDiscoveryCategoriesForServer,
+  getMcpMarketplaceDiscoveryRecommendationForServer,
+} from "./_helpers/mcp-marketplace-discovery.helper.js";
+
+export {
+  createMcpConfigRawWithMarketplaceServer,
+  createMcpConfigRawWithServerEnabled,
+  createMcpConfigRawWithoutServer,
+} from "./_helpers/mcp-config-raw.helper.js";
 
 export const MCP_OFFICIAL_REGISTRY_BASE_URL =
   "https://registry.modelcontextprotocol.io/v0.1";
@@ -177,79 +188,8 @@ export interface McpMarketplaceRecommendation {
   reason: string;
 }
 
-export const MCP_MARKETPLACE_CATEGORIES: readonly McpMarketplaceCategory[] = [
-  {
-    id: "featured",
-    label: "Featured",
-    description: "Useful MCPs to start with.",
-    keywords: ["github", "filesystem", "browser", "search", "docs", "database"],
-  },
-  {
-    id: "developer-tools",
-    label: "Developer Tools",
-    description: "Code, repositories, browsers, terminals, and local workflows.",
-    keywords: [
-      "github",
-      "gitlab",
-      "git",
-      "browser",
-      "chrome",
-      "playwright",
-      "filesystem",
-      "developer",
-      "code",
-      "repository",
-    ],
-  },
-  {
-    id: "data-search",
-    label: "Data & Search",
-    description: "Search, databases, analytics, and retrieval tools.",
-    keywords: [
-      "search",
-      "database",
-      "postgres",
-      "mysql",
-      "sqlite",
-      "analytics",
-      "vector",
-      "docs",
-      "knowledge",
-    ],
-  },
-  {
-    id: "productivity",
-    label: "Productivity",
-    description: "Notes, documents, calendars, tasks, and workspace automation.",
-    keywords: [
-      "notion",
-      "slack",
-      "linear",
-      "jira",
-      "calendar",
-      "obsidian",
-      "docs",
-      "task",
-      "email",
-    ],
-  },
-  {
-    id: "infrastructure",
-    label: "Infrastructure",
-    description: "Cloud, containers, Kubernetes, CI, and operations.",
-    keywords: [
-      "docker",
-      "kubernetes",
-      "cloud",
-      "aws",
-      "azure",
-      "gcp",
-      "terraform",
-      "ci",
-      "deploy",
-    ],
-  },
-] as const;
+export const MCP_MARKETPLACE_CATEGORIES: readonly McpMarketplaceCategory[] =
+  MCP_MARKETPLACE_DISCOVERY_CATEGORIES;
 
 const INSTALL_KIND_ORDER: readonly McpMarketplaceInstallKind[] = [
   "remote",
@@ -262,38 +202,6 @@ const INSTALL_KIND_ORDER: readonly McpMarketplaceInstallKind[] = [
   "unknown",
 ] as const;
 
-const MCP_MARKETPLACE_RECOMMENDED_SERVER_NAMES: ReadonlySet<string> = new Set([
-  "app.linear/linear",
-  "com.figma.mcp/mcp",
-  "com.notion/mcp",
-  "com.pulsemcp.mirror/modelcontextprotocol-fetch",
-  "com.pulsemcp.mirror/modelcontextprotocol-filesystem",
-  "com.pulsemcp.mirror/modelcontextprotocol-git",
-  "com.pulsemcp.mirror/modelcontextprotocol-github",
-  "com.pulsemcp.mirror/modelcontextprotocol-memory",
-  "com.pulsemcp.mirror/modelcontextprotocol-postgres",
-  "com.pulsemcp.mirror/modelcontextprotocol-sequential-thinking",
-  "com.pulsemcp.mirror/modelcontextprotocol-sqlite",
-  "com.supabase/mcp",
-  "io.github.firecrawl/firecrawl-mcp-server",
-  "io.github.github/github-mcp-server",
-  "io.github.grafana/mcp-grafana",
-  "io.github.microsoft/playwright-mcp",
-  "io.github.mongodb-js/mongodb-mcp-server",
-  "io.github.upstash/context7",
-] as const);
-
-const MCP_MARKETPLACE_RECOMMENDED_REPOSITORIES: ReadonlySet<string> = new Set([
-  "figma/mcp-server-guide",
-  "firecrawl/firecrawl-mcp-server",
-  "github/github-mcp-server",
-  "grafana/mcp-grafana",
-  "microsoft/playwright-mcp",
-  "mongodb-js/mongodb-mcp-server",
-  "supabase/mcp",
-  "upstash/context7",
-] as const);
-
 const DEFAULT_SERVER_TIMEOUT_MS = 60_000;
 const DEFAULT_SERVER_MAX_TOTAL_TIMEOUT_MS = 300_000;
 const DEFAULT_SERVER_IDLE_SHUTDOWN_MS = 900_000;
@@ -305,15 +213,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 const isStringArray = (value: unknown): value is string[] => {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
-};
-
-const normalizeServerId = (value: string): string => {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/gu, "-")
-    .replace(/^-+|-+$/gu, "")
-    .slice(0, 80);
 };
 
 const isEnvironmentVariableName = (value: string): boolean => {
@@ -432,82 +331,22 @@ export const getMcpRegistryServerId = (
   server: Pick<McpRegistryServerJson, "name" | "title">,
 ): string => {
   const normalized =
-    normalizeServerId(server.name) ||
-    normalizeServerId(server.title ?? server.name);
+    normalizeMcpConfigServerId(server.name) ||
+    normalizeMcpConfigServerId(server.title ?? server.name);
 
   return normalized || "mcp-server";
-};
-
-const escapeRegExp = (value: string): string => {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-};
-
-const includesKeyword = (haystack: string, keyword: string): boolean => {
-  return new RegExp(
-    `(^|[^a-z0-9])${escapeRegExp(keyword)}([^a-z0-9]|$)`,
-    "u",
-  ).test(haystack);
-};
-
-const normalizeMarketplaceRecommendationValue = (value: string): string => {
-  return value.trim().toLowerCase().replace(/\.git$/u, "");
-};
-
-const getGitHubRepositoryPath = (value: string | undefined): string | null => {
-  if (!value) {
-    return null;
-  }
-
-  try {
-    const url = new URL(value);
-
-    if (url.hostname !== "github.com") {
-      return null;
-    }
-
-    const [owner, repo] = url.pathname
-      .replace(/^\/+|\/+$/gu, "")
-      .split("/")
-      .map((part) => part.trim())
-      .filter(Boolean);
-
-    return owner && repo
-      ? normalizeMarketplaceRecommendationValue(`${owner}/${repo}`)
-      : null;
-  } catch {
-    return null;
-  }
 };
 
 export const getMcpMarketplaceRecommendationForServer = (
   server: Pick<McpRegistryServerJson, "name" | "repository">,
 ): McpMarketplaceRecommendation | null => {
-  const serverName = normalizeMarketplaceRecommendationValue(server.name);
-  const repositoryPath = getGitHubRepositoryPath(server.repository?.url);
-
-  if (
-    MCP_MARKETPLACE_RECOMMENDED_SERVER_NAMES.has(serverName) ||
-    (repositoryPath &&
-      MCP_MARKETPLACE_RECOMMENDED_REPOSITORIES.has(repositoryPath))
-  ) {
-    return {
-      label: "Recommended",
-      reason: "MachDoch curated pick based on broad utility, provider trust, and marketplace popularity signals.",
-    };
-  }
-
-  return null;
+  return getMcpMarketplaceDiscoveryRecommendationForServer(server);
 };
 
 export const getMcpMarketplaceCategoriesForServer = (
   server: Pick<McpRegistryServerJson, "name" | "title" | "description">,
 ): string[] => {
-  const haystack = `${server.name} ${server.title ?? ""} ${server.description}`.toLowerCase();
-  const matches = MCP_MARKETPLACE_CATEGORIES.filter((category) => {
-    return category.keywords.some((keyword) => includesKeyword(haystack, keyword));
-  }).map((category) => category.id);
-
-  return matches;
+  return getMcpMarketplaceDiscoveryCategoriesForServer(server);
 };
 
 const createCredentialId = (
@@ -1369,7 +1208,9 @@ const createBaseServerConfig = (
   options: McpMarketplaceInstallOptions | undefined,
   transport: McpTransportConfig,
 ): McpServerConfig => {
-  const id = normalizeServerId(options?.serverId ?? getMcpRegistryServerId(registryServer));
+  const id = normalizeMcpConfigServerId(
+    options?.serverId ?? getMcpRegistryServerId(registryServer),
+  );
 
   return {
     id: id || "mcp-server",
@@ -1489,114 +1330,4 @@ export const createMcpMarketplaceInstallPlan = (
     blockedReasons,
     ...(generatedCommand ? { generatedCommand } : {}),
   };
-};
-
-const getMcpConfigServerArray = (
-  value: unknown,
-): Array<Record<string, unknown>> => {
-  if (Array.isArray(value)) {
-    return value.flatMap((entry) => (isRecord(entry) ? [{ ...entry }] : []));
-  }
-
-  if (!isRecord(value)) {
-    return [];
-  }
-
-  return Object.entries(value).flatMap(([id, entry]) => {
-    if (!isRecord(entry)) {
-      return [];
-    }
-
-    return [{ id, ...entry }];
-  });
-};
-
-const parseMcpConfigRaw = (raw: string): Record<string, unknown> => {
-  const parsed: unknown = JSON.parse(raw);
-
-  if (!isRecord(parsed)) {
-    return {};
-  }
-
-  return parsed;
-};
-
-const stringifyMcpConfig = (
-  config: Record<string, unknown>,
-  servers: Array<Record<string, unknown>>,
-): string => {
-  return `${JSON.stringify(
-    {
-      ...config,
-      schemaVersion: MCP_CONFIG_SCHEMA_VERSION,
-      servers,
-    },
-    null,
-    2,
-  )}\n`;
-};
-
-export const createMcpConfigRawWithMarketplaceServer = (
-  raw: string,
-  server: McpServerConfig,
-): string => {
-  const config = parseMcpConfigRaw(raw);
-  const servers = getMcpConfigServerArray(config.servers);
-  const normalizedId = normalizeServerId(server.id);
-  const serverRecord = JSON.parse(JSON.stringify(server)) as Record<string, unknown>;
-  const existingIndex = servers.findIndex((entry) => {
-    return typeof entry.id === "string" && normalizeServerId(entry.id) === normalizedId;
-  });
-
-  if (existingIndex >= 0) {
-    servers[existingIndex] = {
-      ...servers[existingIndex],
-      ...serverRecord,
-      id: normalizedId,
-      enabled: true,
-    };
-  } else {
-    servers.push({
-      ...serverRecord,
-      id: normalizedId,
-      enabled: true,
-    });
-  }
-
-  return stringifyMcpConfig(config, servers);
-};
-
-export const createMcpConfigRawWithServerEnabled = (
-  raw: string,
-  serverId: string,
-  enabled: boolean,
-): string => {
-  const config = parseMcpConfigRaw(raw);
-  const normalizedId = normalizeServerId(serverId);
-  const servers = getMcpConfigServerArray(config.servers).map((server) => {
-    if (typeof server.id !== "string" || normalizeServerId(server.id) !== normalizedId) {
-      return server;
-    }
-
-    return {
-      ...server,
-      id: normalizedId,
-      enabled,
-    };
-  });
-
-  return stringifyMcpConfig(config, servers);
-};
-
-export const createMcpConfigRawWithoutServer = (
-  raw: string,
-  serverId: string,
-): string => {
-  const config = parseMcpConfigRaw(raw);
-  const normalizedId = normalizeServerId(serverId);
-  const servers = getMcpConfigServerArray(config.servers).filter((server) => {
-    return typeof server.id !== "string" || normalizeServerId(server.id) !== normalizedId;
-  });
-
-  return stringifyMcpConfig(config, servers);
 };

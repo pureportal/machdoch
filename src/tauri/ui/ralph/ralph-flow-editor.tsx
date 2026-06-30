@@ -268,6 +268,30 @@ import {
   formatRunRecordDuration,
   getTimestampMs,
 } from "./_helpers/format-duration-ms.helper";
+import {
+  RALPH_INSPECTOR_DEFAULT_WIDTH,
+  RALPH_INSPECTOR_SCROLL_EPSILON,
+  clampRalphInspectorWidth,
+  loadRalphInspectorWidth,
+  saveRalphInspectorWidth,
+} from "./_helpers/ralph-inspector-width.helper";
+import {
+  applyActiveRunBlockProgressSnapshot,
+  applyActiveRunEventSnapshot,
+  createRalphBlockProgressSnapshot,
+  formatRalphProgressTimestamp,
+  getProgressMetadataBoolean,
+  getProgressMetadataNumber,
+  getProgressMetadataString,
+  getRalphProgressKindLabel,
+  getRalphProgressSnapshot,
+  getRalphProgressToneClassName,
+  getRunEventToneClassName,
+  getSortedActiveBlockDetails,
+  type ActiveRalphRun,
+  type ActiveRalphRunBlockDetail,
+  type ActiveRalphRunStatus,
+} from "./_helpers/ralph-active-run-progress.helper";
 import { getRalphRecordEventLabel } from "./_helpers/get-ralph-record-event-label.helper";
 import {
   createRalphRunTaskId,
@@ -319,12 +343,6 @@ type RalphEditorMode = "design" | "generate" | "run" | "review";
 type RalphAiTarget = "flow" | "prompt-block" | "refactor";
 type RalphAiGenerationMode = "do-it" | "interview";
 type RalphRunPanelTab = "setup" | "live" | "history" | "details" | "logs";
-type ActiveRalphRunStatus = "running" | "stopping";
-type RalphRunEventTone = NonNullable<
-  NonNullable<TaskExecutionProgress["timelineEvent"]>["tone"]
->;
-type RalphRunEventPhase =
-  NonNullable<TaskExecutionProgress["timelineEvent"]>["phase"];
 type ClipboardCopyState = "idle" | "copied" | "failed";
 type RalphInspectorSectionId =
   | "content"
@@ -383,57 +401,6 @@ const STARTER_RALPH_FLOW_SUMMARIES = STARTER_RALPH_FLOWS.map(
 const ACTIVE_RUN_LIST_LIMIT = 6;
 const LIVE_VARIABLE_PREVIEW_LIMIT = 6;
 const LIVE_EXPANDED_NODE_PREVIEW_LIMIT = 3;
-
-interface ActiveRalphRun {
-  id: string;
-  flowId: string;
-  scope: RalphFlowScope;
-  flowName: string;
-  startedAt: number;
-  status: ActiveRalphRunStatus;
-  mode: RunMode;
-  provider: RuntimeProvider;
-  model: string;
-  reasoning?: ReasoningMode;
-  maxTransitions?: number;
-  variableValues: Record<string, string>;
-  events: ActiveRalphRunEvent[];
-  currentBlockId?: string;
-  currentBlockTitle?: string;
-  lastEventType?: string;
-  lastOutput?: string;
-  lastMessage?: string;
-  blockDetails: Record<string, ActiveRalphRunBlockDetail>;
-}
-
-interface ActiveRalphRunEvent {
-  id: string;
-  timestamp: number;
-  eventType: string;
-  label: string;
-  phase: RalphRunEventPhase;
-  tone: RalphRunEventTone;
-  blockId?: string;
-  blockTitle?: string;
-  activeBlockId?: string;
-  activeBlockTitle?: string;
-  nextBlockId?: string;
-  nextBlockTitle?: string;
-  output?: string;
-  attempt?: number;
-  detail?: string;
-}
-
-interface ActiveRalphRunBlockDetail {
-  blockId: string;
-  blockTitle?: string;
-  output?: string;
-  status?: string;
-  attempt?: number;
-  summary?: string;
-  events: ActiveRalphRunEvent[];
-  progress: RalphRunRecordBlockProgressEvent[];
-}
 
 interface RalphGenerationJob {
   id: string;
@@ -717,12 +684,6 @@ const UTILITY_TYPE_OPTIONS: RalphUtilityType[] = [
   "NOTIFY",
 ];
 
-const RALPH_INSPECTOR_STORAGE_KEY = "machdoch.ralph.inspector-width";
-const RALPH_INSPECTOR_MIN_WIDTH = 352;
-const RALPH_INSPECTOR_DEFAULT_WIDTH = 448;
-const RALPH_INSPECTOR_MAX_WIDTH = 704;
-const RALPH_INSPECTOR_SCROLL_EPSILON = 4;
-
 const RALPH_INSPECTOR_SECTIONS: Array<{
   id: RalphInspectorSectionId;
   label: string;
@@ -741,54 +702,6 @@ const RALPH_VARIABLE_SNIPPETS = [
   "{{targetUrl:url=http://localhost:1420}}",
   "{{verificationCommand:string=pnpm typecheck:ui}}",
 ] as const;
-
-const clampRalphInspectorWidth = (
-  value: number,
-  viewportWidth = typeof window === "undefined" ? undefined : window.innerWidth,
-): number => {
-  const viewportMax =
-    typeof viewportWidth === "number" && Number.isFinite(viewportWidth)
-      ? Math.max(
-          RALPH_INSPECTOR_MIN_WIDTH,
-          Math.floor(viewportWidth * 0.48),
-        )
-      : RALPH_INSPECTOR_MAX_WIDTH;
-  const maxWidth = Math.min(RALPH_INSPECTOR_MAX_WIDTH, viewportMax);
-
-  return Math.min(
-    maxWidth,
-    Math.max(RALPH_INSPECTOR_MIN_WIDTH, Math.round(value)),
-  );
-};
-
-const loadRalphInspectorWidth = (): number => {
-  if (typeof window === "undefined") {
-    return RALPH_INSPECTOR_DEFAULT_WIDTH;
-  }
-
-  try {
-    const storedWidth = window.localStorage.getItem(RALPH_INSPECTOR_STORAGE_KEY);
-    const parsedWidth = storedWidth ? Number.parseInt(storedWidth, 10) : NaN;
-
-    return Number.isFinite(parsedWidth)
-      ? clampRalphInspectorWidth(parsedWidth)
-      : clampRalphInspectorWidth(RALPH_INSPECTOR_DEFAULT_WIDTH);
-  } catch {
-    return clampRalphInspectorWidth(RALPH_INSPECTOR_DEFAULT_WIDTH);
-  }
-};
-
-const saveRalphInspectorWidth = (width: number): void => {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(RALPH_INSPECTOR_STORAGE_KEY, String(width));
-  } catch {
-    // Inspector width is a preference; ignore persistence failures.
-  }
-};
 
 interface RalphInspectorFieldProps {
   label: string;
@@ -1588,467 +1501,9 @@ const getOutputChipClassName = (output: string | undefined): string => {
   return "border-sky-400/30 bg-sky-500/10 text-sky-100";
 };
 
-const getRunEventToneClassName = (tone: RalphRunEventTone): string => {
-  switch (tone) {
-    case "danger":
-      return "border-rose-400/30 bg-rose-500/10 text-rose-100";
-    case "warning":
-      return "border-amber-400/30 bg-amber-500/10 text-amber-100";
-    case "success":
-      return "border-emerald-400/30 bg-emerald-500/10 text-emerald-100";
-    case "info":
-      return "border-sky-400/30 bg-sky-500/10 text-sky-100";
-    case "neutral":
-      return "border-slate-800 bg-slate-950 text-slate-300";
-  }
-};
-
 const ACTIVE_TASK_REGISTRATION_GRACE_MS = 5_000;
 
-type RalphProgressMetadata =
-  NonNullable<TaskExecutionProgress["timelineEvent"]>["metadata"];
-
-interface RalphProgressSnapshot {
-  eventType: string;
-  label: string;
-  phase: RalphRunEventPhase;
-  tone: RalphRunEventTone;
-  blockId?: string;
-  blockTitle?: string;
-  activeBlockId?: string;
-  activeBlockTitle?: string;
-  nextBlockId?: string;
-  nextBlockTitle?: string;
-  output?: string;
-  attempt?: number;
-  detail?: string;
-}
-
-const RALPH_PROGRESS_EVENT_TYPES = new Set([
-  "block-start",
-  "block-output",
-  "edge-route",
-  "retry",
-  "input-required",
-  "input-submitted",
-  "input-cancelled",
-  "crash",
-  "end",
-]);
-
 const RALPH_GENERATION_ACTIVITY_LIMIT = 80;
-const RALPH_BLOCK_PROGRESS_LIMIT = 120;
-
-const getProgressMetadataString = (
-  metadata: RalphProgressMetadata | undefined,
-  key: string,
-): string | undefined => {
-  const value = metadata?.[key];
-
-  return typeof value === "string" && value.trim() ? value : undefined;
-};
-
-const getProgressMetadataNumber = (
-  metadata: RalphProgressMetadata | undefined,
-  key: string,
-): number | undefined => {
-  const value = metadata?.[key];
-
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-};
-
-const getProgressMetadataBoolean = (
-  metadata: RalphProgressMetadata | undefined,
-  key: string,
-): boolean | undefined => {
-  const value = metadata?.[key];
-
-  return typeof value === "boolean" ? value : undefined;
-};
-
-interface RalphBlockProgressSnapshot {
-  blockId: string;
-  blockTitle?: string;
-  event: RalphRunRecordBlockProgressEvent;
-}
-
-const createIsoTimestamp = (timestamp: number): string => {
-  const date = new Date(timestamp);
-
-  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
-};
-
-const getRalphProgressBlockReference = (
-  progress: TaskExecutionProgress,
-): { blockId: string; blockTitle?: string } | null => {
-  const metadata = progress.timelineEvent?.metadata;
-  const blockId =
-    getProgressMetadataString(metadata, "ralphActiveBlockId") ??
-    getProgressMetadataString(metadata, "ralphBlockId");
-
-  if (!blockId) {
-    return null;
-  }
-
-  const blockTitle =
-    getProgressMetadataString(metadata, "ralphActiveBlockTitle") ??
-    getProgressMetadataString(metadata, "ralphBlockTitle");
-
-  return {
-    blockId,
-    ...(blockTitle ? { blockTitle } : {}),
-  };
-};
-
-const createRalphBlockProgressSnapshot = (
-  progress: TaskExecutionProgress,
-  timestamp: number,
-): RalphBlockProgressSnapshot | null => {
-  const blockReference = getRalphProgressBlockReference(progress);
-
-  if (!blockReference) {
-    return null;
-  }
-
-  const createdAt = createIsoTimestamp(timestamp);
-
-  if (progress.modelStream) {
-    return {
-      ...blockReference,
-      event: {
-        timestamp: createdAt,
-        kind: "model-stream",
-        label: progress.modelStream.label,
-        streamKind: progress.modelStream.kind,
-        content: progress.modelStream.content,
-        ...(progress.modelStream.complete !== undefined
-          ? { complete: progress.modelStream.complete }
-          : {}),
-      },
-    };
-  }
-
-  if (progress.actionOutput) {
-    return {
-      ...blockReference,
-      event: {
-        timestamp: createdAt,
-        kind: "action-output",
-        label: `${progress.actionOutput.toolName} ${progress.actionOutput.stream}`,
-        toolName: progress.actionOutput.toolName,
-        stream: progress.actionOutput.stream,
-        content: progress.actionOutput.chunk,
-      },
-    };
-  }
-
-  if (progress.timelineEvent) {
-    return {
-      ...blockReference,
-      event: {
-        timestamp: createdAt,
-        kind: "timeline",
-        label: progress.timelineEvent.label,
-        phase: progress.timelineEvent.phase,
-        ...(progress.timelineEvent.tone
-          ? { tone: progress.timelineEvent.tone }
-          : {}),
-        ...(progress.timelineEvent.toolName
-          ? { toolName: progress.timelineEvent.toolName }
-          : {}),
-        ...(progress.timelineEvent.detail
-          ? { detail: progress.timelineEvent.detail }
-          : {}),
-      },
-    };
-  }
-
-  return {
-    ...blockReference,
-    event: {
-      timestamp: createdAt,
-      kind: "message",
-      label: progress.message,
-      detail: progress.message,
-    },
-  };
-};
-
-const getRalphProgressSnapshot = (
-  progress: TaskExecutionProgress,
-): RalphProgressSnapshot | null => {
-  const metadata = progress.timelineEvent?.metadata;
-  const eventType = getProgressMetadataString(metadata, "ralphEventType");
-
-  if (!eventType || !RALPH_PROGRESS_EVENT_TYPES.has(eventType)) {
-    return null;
-  }
-
-  const activeBlockId =
-    getProgressMetadataString(metadata, "ralphActiveBlockId") ??
-    getProgressMetadataString(metadata, "ralphBlockId");
-  const blockId = getProgressMetadataString(metadata, "ralphBlockId");
-  const blockTitle = getProgressMetadataString(metadata, "ralphBlockTitle");
-  const activeBlockTitle =
-    getProgressMetadataString(metadata, "ralphActiveBlockTitle") ??
-    blockTitle ??
-    activeBlockId;
-  const nextBlockId = getProgressMetadataString(metadata, "ralphNextBlockId");
-  const nextBlockTitle = getProgressMetadataString(
-    metadata,
-    "ralphNextBlockTitle",
-  );
-  const phase: RalphRunEventPhase =
-    progress.timelineEvent?.phase ??
-    (eventType === "crash"
-      ? "failed"
-      : eventType === "end" ||
-          eventType === "block-output" ||
-          eventType === "input-submitted" ||
-          eventType === "input-cancelled"
-        ? "completed"
-        : "started");
-  const tone: RalphRunEventTone =
-    progress.timelineEvent?.tone ??
-    (eventType === "crash"
-      ? "danger"
-      : eventType === "retry"
-        ? "warning"
-        : eventType === "input-cancelled"
-          ? "warning"
-        : eventType === "end"
-          ? "success"
-          : "info");
-
-  return {
-    eventType,
-    label: progress.timelineEvent?.label || progress.message || eventType,
-    phase,
-    tone,
-    ...(blockId ? { blockId } : {}),
-    ...(blockTitle ? { blockTitle } : {}),
-    ...(activeBlockId ? { activeBlockId } : {}),
-    ...(activeBlockTitle ? { activeBlockTitle } : {}),
-    ...(nextBlockId ? { nextBlockId } : {}),
-    ...(nextBlockTitle ? { nextBlockTitle } : {}),
-    ...(getProgressMetadataString(metadata, "ralphOutput")
-      ? { output: getProgressMetadataString(metadata, "ralphOutput") }
-      : {}),
-    ...(getProgressMetadataNumber(metadata, "ralphAttempt") !== undefined
-      ? { attempt: getProgressMetadataNumber(metadata, "ralphAttempt") }
-      : {}),
-    ...(progress.timelineEvent?.detail
-      ? { detail: progress.timelineEvent.detail }
-      : {}),
-  };
-};
-
-const getActiveRunBlockDetail = (
-  run: ActiveRalphRun,
-  blockId: string,
-  blockTitle?: string,
-): ActiveRalphRunBlockDetail => {
-  return (
-    run.blockDetails[blockId] ?? {
-      blockId,
-      ...(blockTitle ? { blockTitle } : {}),
-      events: [],
-      progress: [],
-    }
-  );
-};
-
-const applyActiveRunEventSnapshot = (
-  run: ActiveRalphRun,
-  snapshot: RalphProgressSnapshot,
-  timestamp: number,
-): ActiveRalphRun => {
-  const runEvent: ActiveRalphRunEvent = {
-    id: `${timestamp}-${snapshot.eventType}-${snapshot.blockId ?? snapshot.activeBlockId ?? "run"}-${run.events.length}`,
-    timestamp,
-    eventType: snapshot.eventType,
-    label: snapshot.label,
-    phase: snapshot.phase,
-    tone: snapshot.tone,
-    ...(snapshot.blockId ? { blockId: snapshot.blockId } : {}),
-    ...(snapshot.blockTitle ? { blockTitle: snapshot.blockTitle } : {}),
-    ...(snapshot.activeBlockId
-      ? { activeBlockId: snapshot.activeBlockId }
-      : {}),
-    ...(snapshot.activeBlockTitle
-      ? { activeBlockTitle: snapshot.activeBlockTitle }
-      : {}),
-    ...(snapshot.nextBlockId ? { nextBlockId: snapshot.nextBlockId } : {}),
-    ...(snapshot.nextBlockTitle
-      ? { nextBlockTitle: snapshot.nextBlockTitle }
-      : {}),
-    ...(snapshot.output ? { output: snapshot.output } : {}),
-    ...(snapshot.attempt !== undefined ? { attempt: snapshot.attempt } : {}),
-    ...(snapshot.detail ? { detail: snapshot.detail } : {}),
-  };
-  const blockId = snapshot.blockId ?? snapshot.activeBlockId;
-  const blockTitle = snapshot.blockTitle ?? snapshot.activeBlockTitle;
-  const currentDetail = blockId
-    ? getActiveRunBlockDetail(run, blockId, blockTitle)
-    : null;
-  const nextBlockDetails = currentDetail
-    ? {
-        ...run.blockDetails,
-        [currentDetail.blockId]: {
-          ...currentDetail,
-          ...(blockTitle ? { blockTitle } : {}),
-          ...(snapshot.output ? { output: snapshot.output } : {}),
-          ...(snapshot.attempt !== undefined ? { attempt: snapshot.attempt } : {}),
-          ...(snapshot.eventType === "block-output"
-            ? { status: "completed", summary: snapshot.detail ?? snapshot.label }
-            : {}),
-          ...(snapshot.eventType === "crash"
-            ? { status: "error", summary: snapshot.detail ?? snapshot.label }
-            : {}),
-          events: [...currentDetail.events, runEvent].slice(
-            -RALPH_GENERATION_ACTIVITY_LIMIT,
-          ),
-        },
-      }
-    : run.blockDetails;
-
-  return {
-    ...run,
-    ...(snapshot.activeBlockId
-      ? { currentBlockId: snapshot.activeBlockId }
-      : {}),
-    ...(snapshot.activeBlockTitle
-      ? { currentBlockTitle: snapshot.activeBlockTitle }
-      : {}),
-    lastEventType: snapshot.eventType,
-    lastMessage: snapshot.label,
-    ...(snapshot.output ? { lastOutput: snapshot.output } : {}),
-    events: [...run.events, runEvent].slice(-RALPH_GENERATION_ACTIVITY_LIMIT),
-    blockDetails: nextBlockDetails,
-  };
-};
-
-const applyActiveRunBlockProgressSnapshot = (
-  run: ActiveRalphRun,
-  snapshot: RalphBlockProgressSnapshot,
-): ActiveRalphRun => {
-  const currentDetail = getActiveRunBlockDetail(
-    run,
-    snapshot.blockId,
-    snapshot.blockTitle,
-  );
-
-  return {
-    ...run,
-    currentBlockId: snapshot.blockId,
-    ...(snapshot.blockTitle ? { currentBlockTitle: snapshot.blockTitle } : {}),
-    lastMessage: snapshot.event.label,
-    blockDetails: {
-      ...run.blockDetails,
-      [snapshot.blockId]: {
-        ...currentDetail,
-        ...(snapshot.blockTitle ? { blockTitle: snapshot.blockTitle } : {}),
-        progress: [...currentDetail.progress, snapshot.event].slice(
-          -RALPH_BLOCK_PROGRESS_LIMIT,
-        ),
-      },
-    },
-  };
-};
-
-const getRalphProgressKindLabel = (
-  event: RalphRunRecordBlockProgressEvent,
-): string => {
-  if (event.kind === "model-stream") {
-    switch (event.streamKind) {
-      case "reasoning":
-        return "Reasoning";
-      case "tool-call":
-        return "Tool call";
-      case "tool-result":
-        return "Tool result";
-      case "assistant":
-        return "Assistant";
-      case "status":
-        return "Model status";
-      default:
-        return "Model stream";
-    }
-  }
-
-  if (event.kind === "action-output") {
-    return event.stream === "stderr" ? "stderr" : "stdout";
-  }
-
-  if (event.kind === "timeline") {
-    return event.phase ? titleFromId(event.phase) : "Event";
-  }
-
-  return "Message";
-};
-
-const getRalphProgressToneClassName = (
-  event: RalphRunRecordBlockProgressEvent,
-): string => {
-  if (event.tone) {
-    return getRunEventToneClassName(event.tone);
-  }
-
-  if (event.kind === "model-stream") {
-    if (event.streamKind === "reasoning") {
-      return "border-violet-400/30 bg-violet-500/10 text-violet-100";
-    }
-
-    if (event.streamKind === "tool-call" || event.streamKind === "tool-result") {
-      return "border-sky-400/30 bg-sky-500/10 text-sky-100";
-    }
-  }
-
-  if (event.kind === "action-output" && event.stream === "stderr") {
-    return "border-amber-400/30 bg-amber-500/10 text-amber-100";
-  }
-
-  return "border-slate-800 bg-slate-950 text-slate-300";
-};
-
-const formatRalphProgressTimestamp = (
-  timestamp: string,
-): string => {
-  const date = new Date(timestamp);
-
-  return Number.isNaN(date.getTime())
-    ? ""
-    : date.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      });
-};
-
-const getActiveBlockDetailTimestamp = (
-  detail: ActiveRalphRunBlockDetail,
-): number => {
-  const progressTimestamp = detail.progress.at(-1)?.timestamp;
-  const progressMs = progressTimestamp
-    ? Date.parse(progressTimestamp)
-    : Number.NaN;
-  const eventMs = detail.events.at(-1)?.timestamp ?? Number.NaN;
-
-  return Math.max(
-    Number.isFinite(progressMs) ? progressMs : 0,
-    Number.isFinite(eventMs) ? eventMs : 0,
-  );
-};
-
-const getSortedActiveBlockDetails = (
-  run: ActiveRalphRun,
-): ActiveRalphRunBlockDetail[] => {
-  return Object.values(run.blockDetails).sort(
-    (left, right) =>
-      getActiveBlockDetailTimestamp(right) -
-      getActiveBlockDetailTimestamp(left),
-  );
-};
 
 const RalphBlockProgressList = ({
   progress,

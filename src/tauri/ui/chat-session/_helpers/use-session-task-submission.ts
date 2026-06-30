@@ -131,24 +131,29 @@ export const useSessionTaskSubmission = (options: {
       taskId: string,
       content: string,
       source?: ChatSessionMessage["source"],
-    ): void => {
+    ): string => {
+      const messageId = crypto.randomUUID();
+      const createdAt = Date.now();
+
       options.state.updateSessionById(sessionId, (session) => {
         return options.applySessionMessageLimit({
           ...session,
-          updatedAt: Date.now(),
+          updatedAt: createdAt,
           messages: [
             ...session.messages,
             {
-              id: crypto.randomUUID(),
+              id: messageId,
               taskId,
               role: "agent",
               content,
-              createdAt: Date.now(),
+              createdAt,
               ...(source ? { source } : {}),
             },
           ],
         });
       });
+
+      return messageId;
     },
     [options],
   );
@@ -260,6 +265,8 @@ export const useSessionTaskSubmission = (options: {
       let taskFailureReported = false;
       let taskFinalized = false;
       let latestAssistantText = "";
+      let terminalFallbackMessageId: string | null = null;
+      let terminalFallbackNeedsAuthoritativeResponse = false;
       let terminalFallbackTimeoutId: number | undefined;
 
       options.voice.stopSpeaking();
@@ -277,6 +284,55 @@ export const useSessionTaskSubmission = (options: {
         clearTerminalFallbackTimeout();
         options.progressHandlersRef.current.delete(taskId);
         options.activeDesktopTasksRef.current.delete(taskId);
+      };
+
+      const replaceWeakTerminalFallback = (
+        execution: TaskExecutionResult,
+      ): void => {
+        if (
+          !terminalFallbackMessageId ||
+          !terminalFallbackNeedsAuthoritativeResponse ||
+          !execution.response?.markdown.trim()
+        ) {
+          return;
+        }
+
+        const fallbackMessageId = terminalFallbackMessageId;
+
+        terminalFallbackNeedsAuthoritativeResponse = false;
+        options.state.updateSessionById(sessionId, (session) => {
+          let didReplace = false;
+          const nextMessages = session.messages.map((message) => {
+            if (
+              message.id !== fallbackMessageId ||
+              message.taskId !== taskId ||
+              message.role !== "agent" ||
+              message.source?.kind !== "execution"
+            ) {
+              return message;
+            }
+
+            didReplace = true;
+            return {
+              ...message,
+              content: createExecutionMessageContent(execution),
+              source: {
+                kind: "execution" as const,
+                execution,
+              },
+            };
+          });
+
+          if (!didReplace) {
+            return session;
+          }
+
+          return options.applySessionMessageLimit({
+            ...session,
+            updatedAt: Date.now(),
+            messages: nextMessages,
+          });
+        });
       };
 
       const reportTaskFailure = (error: unknown): void => {
@@ -333,7 +389,7 @@ export const useSessionTaskSubmission = (options: {
           }
 
           taskFinalized = true;
-          appendAgentMessage(
+          terminalFallbackMessageId = appendAgentMessage(
             sessionId,
             taskId,
             createExecutionMessageContent(fallbackExecution),
@@ -342,6 +398,8 @@ export const useSessionTaskSubmission = (options: {
               execution: fallbackExecution,
             },
           );
+          terminalFallbackNeedsAuthoritativeResponse =
+            !fallbackExecution.response?.markdown.trim();
         }, TERMINAL_PROGRESS_FALLBACK_DELAY_MS);
       };
 
@@ -505,6 +563,7 @@ export const useSessionTaskSubmission = (options: {
           }
 
           if (taskFinalized) {
+            replaceWeakTerminalFallback(taskRun.execution);
             cleanupTaskTracking();
             return;
           }

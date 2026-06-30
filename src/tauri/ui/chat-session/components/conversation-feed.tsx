@@ -59,13 +59,16 @@ export interface ConversationFeedProps {
 
 const RECOVERED_TASK_CRASH_PREFIX = "**Task crashed.**";
 const MESSAGE_CONTEXT_MENU_WIDTH = 196;
-const MESSAGE_CONTEXT_MENU_HEIGHT = 108;
+const MESSAGE_CONTEXT_MENU_HEADER_HEIGHT = 44;
+const MESSAGE_CONTEXT_MENU_ITEM_HEIGHT = 32;
 const MESSAGE_CONTEXT_MENU_MARGIN = 8;
 
 interface MessageContextMenuState {
   role: ChatSessionMessage["role"];
   content: string;
   fileName: string;
+  contextPackMessage: ChatSessionMessage | null;
+  hasMarkdownContent: boolean;
   left: number;
   top: number;
 }
@@ -93,6 +96,7 @@ const clampMenuCoordinate = (
 
 const createMessageContextMenuPosition = (
   event: MouseEvent<HTMLElement>,
+  menuHeight: number,
 ): { left: number; top: number } => {
   if (typeof window === "undefined") {
     return {
@@ -109,11 +113,14 @@ const createMessageContextMenuPosition = (
     ),
     top: clampMenuCoordinate(
       event.clientY,
-      MESSAGE_CONTEXT_MENU_HEIGHT,
+      menuHeight,
       window.innerHeight,
     ),
   };
 };
+
+const getMessageContextMenuHeight = (itemCount: number): number =>
+  MESSAGE_CONTEXT_MENU_HEADER_HEIGHT + itemCount * MESSAGE_CONTEXT_MENU_ITEM_HEIGHT;
 
 const sanitizeMessageFileNamePart = (value: string): string => {
   return value
@@ -213,21 +220,31 @@ export const ConversationFeed = ({
       event: MouseEvent<HTMLDivElement>,
       message: ChatSessionMessage,
       content: string,
+      canSaveAsContextPack: boolean,
     ): void => {
       event.preventDefault();
       event.stopPropagation();
 
-      if (content.length === 0) {
+      const hasMarkdownContent = content.length > 0;
+
+      if (!hasMarkdownContent && !canSaveAsContextPack) {
         setMessageContextMenu(null);
         return;
       }
 
-      const position = createMessageContextMenuPosition(event);
+      const position = createMessageContextMenuPosition(
+        event,
+        getMessageContextMenuHeight(
+          (canSaveAsContextPack ? 1 : 0) + (hasMarkdownContent ? 2 : 0),
+        ),
+      );
 
       setMessageContextMenu({
         role: message.role,
         content,
         fileName: createMessageMarkdownFileName(message),
+        contextPackMessage: canSaveAsContextPack ? message : null,
+        hasMarkdownContent,
         ...position,
       });
     },
@@ -265,6 +282,17 @@ export const ConversationFeed = ({
       console.error("Failed to save message Markdown:", error);
     }
   }, [messageContextMenu]);
+
+  const saveMessageAsContextPack = useCallback((): void => {
+    const activeMenu = messageContextMenu;
+
+    if (!activeMenu?.contextPackMessage) {
+      return;
+    }
+
+    setMessageContextMenu(null);
+    onSaveMessageAsContextPack?.(activeMenu.contextPackMessage);
+  }, [messageContextMenu, onSaveMessageAsContextPack]);
 
   if (visibleMessages.length === 0) {
     return (
@@ -379,27 +407,16 @@ export const ConversationFeed = ({
                       message.role === "user"
                         ? "app-user-message-bubble rounded-tr-md bg-slate-800 text-slate-100 shadow-slate-950/20"
                         : "app-agent-message-bubble rounded-tl-sm border border-slate-800 bg-slate-900/80 pr-14 text-slate-300 shadow-slate-950/30",
-                      canSaveMessageAsContextPack &&
-                        "app-user-message-bubble-with-action pr-12",
                     )}
                     onContextMenu={(event) =>
-                      openMessageContextMenu(event, message, renderedContent)
+                      openMessageContextMenu(
+                        event,
+                        message,
+                        renderedContent,
+                        canSaveMessageAsContextPack,
+                      )
                     }
                   >
-                    {canSaveMessageAsContextPack ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Save as pack"
-                        title="Save as pack"
-                        onClick={() => onSaveMessageAsContextPack?.(message)}
-                        className="app-message-save-pack-button absolute top-3 right-3 h-7 w-7 rounded-full border border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white focus-visible:ring-sky-500/35"
-                      >
-                        <Save className="h-3.5 w-3.5" />
-                      </Button>
-                    ) : null}
-
                     {message.role === "agent" &&
                     voicePlayback.supported &&
                     renderedContent.trim().length > 0 ? (
@@ -517,24 +534,39 @@ export const ConversationFeed = ({
               {messageContextMenu.role === "agent" ? "Assistant" : "User"} message
             </span>
           </div>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => void copyMessageMarkdown()}
-            className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
-          >
-            <Copy className="h-3.5 w-3.5 shrink-0 text-sky-300" />
-            <span className="min-w-0 flex-1 truncate">Copy Markdown</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={saveMessageMarkdown}
-            className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
-          >
-            <Download className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
-            <span className="min-w-0 flex-1 truncate">Save Message</span>
-          </button>
+          {messageContextMenu.contextPackMessage ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={saveMessageAsContextPack}
+              className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
+            >
+              <Save className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+              <span className="min-w-0 flex-1 truncate">Save as pack</span>
+            </button>
+          ) : null}
+          {messageContextMenu.hasMarkdownContent ? (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => void copyMessageMarkdown()}
+                className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
+              >
+                <Copy className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+                <span className="min-w-0 flex-1 truncate">Copy Markdown</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={saveMessageMarkdown}
+                className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
+              >
+                <Download className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+                <span className="min-w-0 flex-1 truncate">Save Message</span>
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
       <div ref={bottomRef} className="h-2 shrink-0" />

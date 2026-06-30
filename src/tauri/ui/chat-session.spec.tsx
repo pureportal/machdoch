@@ -775,6 +775,105 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "replaces a summary-only terminal fallback when the desktop response arrives",
+    async () => {
+      const taskResolvers: Array<(value: DesktopTaskRunResponse) => void> = [];
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(
+          () =>
+            new Promise<DesktopTaskRunResponse>((resolve) => {
+              taskResolvers.push(resolve);
+            }),
+        );
+
+      render(<ChatSession />);
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: "ask a model-driven agent to inspect the app" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(() => {
+        expect(desktopEventListeners.has("desktop-task-progress")).toBe(true);
+      });
+
+      const taskId = runDesktopTaskSpy.mock.calls[0]?.[2]?.taskId;
+
+      expect(typeof taskId).toBe("string");
+
+      vi.useFakeTimers();
+
+      emitDesktopTaskProgress({
+        taskId: taskId as string,
+        progress: {
+          task: "ask a model-driven agent to inspect the app",
+          mode: "machdoch",
+          state: "completed",
+          message: "Summary-only terminal completion.",
+          executedTools: ["filesystem"],
+          outputSections: [],
+          cancellable: false,
+        },
+        timestamp: 2,
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_600);
+        await Promise.resolve();
+      });
+
+      expect(
+        screen.getByText(/Summary-only terminal completion\./i),
+      ).toBeDefined();
+      expect(
+        screen.queryByText(/Authoritative final response\./i),
+      ).toBeNull();
+
+      await act(async () => {
+        const execution = createMockExecutionFixture(
+          "ask a model-driven agent to inspect the app",
+          "/mock/home/path",
+          { mode: "machdoch" },
+        );
+
+        taskResolvers[0]?.({
+          execution: {
+            ...execution,
+            summary: "Authoritative summary.",
+            response: {
+              ...(execution.response ?? {
+                highlights: [],
+                relatedFiles: [],
+                verification: [],
+                followUps: [],
+              }),
+              markdown: "Authoritative final response.",
+            },
+          },
+        });
+        await Promise.resolve();
+      });
+
+      expect(
+        screen.queryByText(/Summary-only terminal completion\./i),
+      ).toBeNull();
+      expect(
+        screen.getByText(/Authoritative final response\./i),
+      ).toBeDefined();
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "queues running-session follow-ups and drains edited reordered messages serially",
     async () => {
       const taskResolvers: Array<(value: DesktopTaskRunResponse) => void> = [];
@@ -3180,7 +3279,9 @@ describe("ChatSession component", () => {
       const deleteBar = deleteProgress.firstElementChild as HTMLElement | null;
 
       expect(deleteBar).not.toBeNull();
-      expect(deleteBar?.className).toContain("bg-rose-400");
+      expect(deleteProgress.className).toContain("h-px");
+      expect(deleteProgress.className).toContain("bg-transparent");
+      expect(deleteBar?.className).toContain("bg-rose-300/25");
       expect(Number.parseInt(deleteBar?.style.width ?? "0", 10)).toBeGreaterThan(
         0,
       );
@@ -4611,12 +4712,26 @@ describe("ChatSession component", () => {
     render(<ChatSession />);
     await flushShellHydration();
 
-    const saveAsPackButton = await screen.findByRole("button", {
-      name: "Save as pack",
-    });
+    const messageText = await screen.findByText(
+      "Review {target_file} before release",
+      {
+        selector: ".app-user-message-text",
+      },
+    );
 
-    expect(saveAsPackButton.textContent).toBe("");
-    fireEvent.click(saveAsPackButton);
+    expect(
+      screen.queryByRole("button", { name: "Save as pack" }),
+    ).toBeNull();
+
+    const messageBubble = messageText.closest(".app-message-bubble");
+
+    expect(messageBubble).not.toBeNull();
+
+    fireEvent.contextMenu(messageBubble as Element, {
+      clientX: 120,
+      clientY: 160,
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Save as pack" }));
 
     await waitFor(() => {
       const storedState = JSON.parse(

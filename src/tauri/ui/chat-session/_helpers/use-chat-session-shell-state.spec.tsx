@@ -9,7 +9,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInitialShellState, createSession } from "../../chat-session.model";
-import { useChatSessionShellState } from "./use-chat-session-shell-state";
+import {
+  mergeShellStateForPersistence,
+  mergeShellStateFromExternalUpdate,
+  useChatSessionShellState,
+} from "./use-chat-session-shell-state";
 
 const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
 
@@ -278,6 +282,142 @@ describe("useChatSessionShellState", () => {
       expect(persisted.sessions[0]?.model).toBe("gpt-5.5");
       expect(persisted.sessions[0]?.messages).toHaveLength(1);
     });
+  });
+
+  it("preserves a local submit when a newer external snapshot only changed metadata", () => {
+    const baseState = createInitialShellState();
+    const attachment = {
+      id: "image-attachment",
+      path: "C:\\Temp\\screen.png",
+      kind: "image" as const,
+      name: "screen.png",
+      parent: "C:\\Temp",
+    };
+    const baseSession = createSession({
+      id: "session-submit-race",
+      manualTitle: "Submit race",
+      draft: "Investigate state mismatch",
+      draftContextAttachments: [attachment],
+      messages: [],
+      promptHistory: [],
+      promptContextHistory: [],
+      updatedAt: 100,
+    });
+    const localSession = {
+      ...baseSession,
+      draft: "",
+      draftContextAttachments: [],
+      messages: [
+        {
+          id: "submitted-user-message",
+          taskId: "task-submit-race",
+          role: "user" as const,
+          content: "Investigate state mismatch",
+          createdAt: 200,
+          contextAttachments: [attachment],
+        },
+      ],
+      promptHistory: ["Investigate state mismatch"],
+      promptContextHistory: [[attachment]],
+      updatedAt: 200,
+    };
+    const latestSession = {
+      ...baseSession,
+      lastReadAt: 300,
+      updatedAt: 300,
+    };
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: baseSession.id,
+      sessions: [baseSession],
+    };
+    const localState = {
+      ...storedBaseState,
+      sessions: [localSession],
+    };
+    const latestState = {
+      ...storedBaseState,
+      sessions: [latestSession],
+    };
+
+    const mergedState = mergeShellStateForPersistence(
+      localState,
+      storedBaseState,
+      latestState,
+    );
+    const mergedSession = mergedState.sessions.find(
+      (session) => session.id === baseSession.id,
+    );
+
+    expect(mergedSession?.messages).toHaveLength(1);
+    expect(mergedSession?.messages[0]?.content).toBe(
+      "Investigate state mismatch",
+    );
+    expect(mergedSession?.draft).toBe("");
+    expect(mergedSession?.draftContextAttachments).toEqual([]);
+    expect(mergedSession?.promptHistory).toEqual([
+      "Investigate state mismatch",
+    ]);
+    expect(mergedSession?.promptContextHistory).toEqual([[attachment]]);
+    expect(mergedSession?.lastReadAt).toBe(300);
+  });
+
+  it("merges external shell-state events with pending local changes", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-external-race",
+      manualTitle: "External race",
+      draft: "Run task",
+      updatedAt: 100,
+    });
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    };
+    const localState = {
+      ...storedBaseState,
+      sessions: [
+        {
+          ...session,
+          draft: "",
+          messages: [
+            {
+              id: "submitted-user-message",
+              taskId: "task-external-race",
+              role: "user" as const,
+              content: "Run task",
+              createdAt: 200,
+            },
+          ],
+          updatedAt: 200,
+        },
+      ],
+    };
+    const externalState = {
+      ...storedBaseState,
+      sessions: [
+        {
+          ...session,
+          pinnedAt: 300,
+          updatedAt: 300,
+        },
+      ],
+    };
+
+    const mergedState = mergeShellStateFromExternalUpdate(
+      localState,
+      storedBaseState,
+      externalState,
+      true,
+    );
+    const mergedSession = mergedState.sessions.find(
+      (entry) => entry.id === session.id,
+    );
+
+    expect(mergedSession?.messages).toHaveLength(1);
+    expect(mergedSession?.draft).toBe("");
+    expect(mergedSession?.pinnedAt).toBe(300);
   });
 
   it("keeps the window-local active session stable when persisted activeSessionId changes", async () => {
