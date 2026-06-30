@@ -14,7 +14,7 @@ describe("createRalphInterviewTranscriptMarkdown", () => {
           { fieldId: "name", question: "Name?", answer: "Acme" },
           { fieldId: "tags", question: "Tags?", answer: ["alpha", "beta"] },
           { fieldId: "skip", question: "Optional?", answer: null },
-          { fieldId: "missing", question: "Missing?", answer: undefined },
+          { fieldId: "missing", question: "Missing?" },
         ],
       }),
     ).toBe(

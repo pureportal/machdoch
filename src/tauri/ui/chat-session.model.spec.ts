@@ -831,6 +831,45 @@ describe("getLatestRunningTaskId", () => {
 
     expect(getLatestRunningTaskId(completedSession)).toBeNull();
   });
+
+  it("does not treat stale thinking after execution as a running task", () => {
+    const session = createSession({
+      messages: [
+        {
+          id: "user-task-1",
+          taskId: "task-1",
+          role: "user",
+          content: "finish this task",
+          createdAt: 1,
+        },
+        {
+          id: "agent-task-1",
+          taskId: "task-1",
+          role: "agent",
+          content: "done",
+          createdAt: 2,
+          source: {
+            kind: "execution",
+            execution: createMockExecutionFixture("finish this task"),
+          },
+        },
+        {
+          id: "late-thinking-task-1",
+          taskId: "task-1",
+          role: "agent",
+          content: "",
+          createdAt: 3,
+          source: {
+            kind: "thinking",
+            thinking: createInitialThinkingTrace("ask", 3),
+          },
+        },
+      ],
+    });
+
+    expect(getLatestRunningTaskId(session)).toBeNull();
+    expect(getSessionOverviewStatus(session)).toBe("done");
+  });
 });
 
 describe("recoverInterruptedTasksForLaunch", () => {
@@ -1158,6 +1197,78 @@ describe("createVisibleConversationMessages", () => {
       "user-task-1",
       "execution-task-1",
       "user-task-2",
+    ]);
+  });
+
+  it("keeps the terminal response visible when stale thinking arrives later", () => {
+    const visibleMessages = createVisibleConversationMessages([
+      {
+        id: "user-task-1",
+        taskId: "task-1",
+        role: "user",
+        content: "first request",
+      },
+      {
+        id: "execution-task-1",
+        taskId: "task-1",
+        role: "agent",
+        content: "final answer",
+        source: {
+          kind: "execution",
+          execution: createMockExecutionFixture("scan this workspace"),
+        },
+      },
+      {
+        id: "late-thinking-task-1",
+        taskId: "task-1",
+        role: "agent",
+        content: "late progress update",
+        source: {
+          kind: "thinking",
+          thinking: createInitialThinkingTrace("ask", 2),
+        },
+      },
+    ]);
+
+    expect(visibleMessages.map((message) => message.id)).toEqual([
+      "user-task-1",
+      "execution-task-1",
+    ]);
+  });
+
+  it("keeps the latest thinking update visible until a terminal response exists", () => {
+    const visibleMessages = createVisibleConversationMessages([
+      {
+        id: "user-task-1",
+        taskId: "task-1",
+        role: "user",
+        content: "first request",
+      },
+      {
+        id: "thinking-task-1",
+        taskId: "task-1",
+        role: "agent",
+        content: "thinking",
+        source: {
+          kind: "thinking",
+          thinking: createInitialThinkingTrace("ask", 1),
+        },
+      },
+      {
+        id: "latest-thinking-task-1",
+        taskId: "task-1",
+        role: "agent",
+        content: "still thinking",
+        source: {
+          kind: "thinking",
+          thinking: createInitialThinkingTrace("ask", 2),
+        },
+      },
+    ]);
+
+    expect(visibleMessages.map((message) => message.id)).toEqual([
+      "user-task-1",
+      "latest-thinking-task-1",
     ]);
   });
 });

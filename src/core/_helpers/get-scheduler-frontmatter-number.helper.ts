@@ -1,7 +1,7 @@
 import type { FrontmatterValue } from "../types.js";
 
 export const getSchedulerFrontmatterNumber = (
-  attributes: Record<string, FrontmatterValue>,
+  attributes: Record<string, FrontmatterValue | null | undefined>,
   key: string,
 ): number | undefined => {
   const value = attributes[key];

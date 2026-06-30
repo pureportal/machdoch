@@ -15,7 +15,7 @@ describe("normalizeRalphWatchEvents", () => {
 
   it("rejects event lists without a supported event type", () => {
     expect(() =>
-      normalizeRalphWatchEvents(["invalid"] as RalphWatchEventType[]),
+      normalizeRalphWatchEvents(["invalid"] as unknown as RalphWatchEventType[]),
     ).toThrow("Expected Ralph watch to include at least one event type.");
   });
 });

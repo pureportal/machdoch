@@ -687,7 +687,7 @@ export const parseInstalledServersRaw = (
   }
 
   const rawServers = parsed.servers;
-  const servers = Array.isArray(rawServers)
+  const servers: Array<Record<string, unknown>> = Array.isArray(rawServers)
     ? rawServers.flatMap((entry) => (isRecord(entry) ? [entry] : []))
     : isRecord(rawServers)
       ? Object.entries(rawServers).flatMap(([id, entry]) =>

@@ -50,7 +50,13 @@ describe("ralph layout node sizing", () => {
   });
 
   it("returns null bounds for unpositioned blocks", () => {
-    expect(getRalphLayoutNodeBounds({ ...startBlock, position: undefined })).toBeNull();
+    const unpositionedStartBlock: RalphFlowBlock = {
+      id: "start",
+      type: "START",
+      title: "Start",
+    };
+
+    expect(getRalphLayoutNodeBounds(unpositionedStartBlock)).toBeNull();
   });
 });
 

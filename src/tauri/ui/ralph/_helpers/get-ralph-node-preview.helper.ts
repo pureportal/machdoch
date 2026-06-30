@@ -374,7 +374,11 @@ export const getBlockSettingsPreviewChips = (
 ): string[] => {
   const chips: string[] = [];
 
-  if (settings?.provider && settings.provider !== "default") {
+  if (
+    settings?.provider &&
+    settings.provider !== "default" &&
+    settings.provider !== "unconfigured"
+  ) {
     chips.push(getProviderLabel(settings.provider));
   }
 
@@ -421,7 +425,7 @@ export const getBlockNodePreview = (block: RalphFlowBlock): RalphNodePreview => 
         block.packIds.length > 0
           ? block.packIds.join(", ")
           : "No packs selected",
-      secondary: titleFromId(block.propagationMode),
+      secondary: titleFromId(block.propagationMode ?? "nextBlockOnly"),
       chips: [],
     };
   }

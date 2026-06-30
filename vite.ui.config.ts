@@ -1,10 +1,12 @@
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
+const packageManifestPath = path.resolve(currentDirectory, "package.json");
 const previewRoot = path.resolve(currentDirectory, "./src/tauri/ui/preview");
 const rootNodeModules = path.resolve(currentDirectory, "./node_modules");
 const tauriDebug = process.env.TAURI_ENV_DEBUG === "true";
@@ -16,10 +18,21 @@ const tauriBuildTarget =
     : tauriPlatform === "macos"
       ? "safari13"
       : "es2022";
+const packageManifest = JSON.parse(
+  readFileSync(packageManifestPath, "utf8"),
+) as { version?: unknown };
+const appVersion =
+  typeof packageManifest.version === "string" &&
+  packageManifest.version.trim().length > 0
+    ? packageManifest.version.trim()
+    : "0.0.0";
 
 export default defineConfig({
   clearScreen: false,
   root: previewRoot,
+  define: {
+    __MACHDOCH_VERSION__: JSON.stringify(appVersion),
+  },
   plugins: [react(), tailwindcss()],
   resolve: {
     dedupe: ["react", "react-dom"],

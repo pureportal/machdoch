@@ -62,7 +62,7 @@ import type {
   AudioProvider,
   AudioProviderAvailability as SharedAudioProviderAvailability,
   RuntimeAgentLimits as SharedRuntimeAgentLimits,
-  RuntimeCompatibilityConfig as SharedRuntimeCompatibilityConfig,
+  WorkspaceCompatibilityConfig as SharedRuntimeCompatibilityConfig,
   RuntimeSnapshot as SharedRuntimeSnapshot,
   ReasoningMode as SharedReasoningMode,
   RuntimeWebSearchConfig as SharedRuntimeWebSearchConfig,
@@ -1326,8 +1326,8 @@ const isTaskExecutionTimelineEvent = (value: unknown): boolean => {
     (value.tone === undefined ||
       TASK_TIMELINE_EVENT_TONES.includes(
         value.tone as NonNullable<
-          TaskExecutionProgress["timelineEvent"]
-        >["tone"],
+          Exclude<TaskExecutionProgress["timelineEvent"], undefined>["tone"]
+        >,
       )) &&
     (value.provider === undefined ||
       MODEL_PROVIDERS.includes(

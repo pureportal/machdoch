@@ -68,7 +68,7 @@ describe("validateGeneratedRalphFlowStructure", () => {
       createFlow({
         blocks: [
           { id: "start", type: "START", title: "Start" },
-          { id: "note", type: "NOTE", title: "Context", markdown: "FYI" },
+          { id: "note", type: "NOTE", title: "Context", text: "FYI" },
           { id: "task", type: "PROMPT", title: "Task", prompt: "Do it." },
         ],
       }),
@@ -82,7 +82,7 @@ describe("validateGeneratedRalphFlowStructure", () => {
   it("does not warn about visual blocks once the generated flow is larger than seven blocks", () => {
     const blocks: RalphFlow["blocks"] = [
       { id: "start", type: "START", title: "Start" },
-      { id: "note", type: "NOTE", title: "Context", markdown: "FYI" },
+      { id: "note", type: "NOTE", title: "Context", text: "FYI" },
       { id: "one", type: "PROMPT", title: "One", prompt: "1" },
       { id: "two", type: "PROMPT", title: "Two", prompt: "2" },
       { id: "three", type: "PROMPT", title: "Three", prompt: "3" },

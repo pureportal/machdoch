@@ -8,6 +8,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
   name: "Autonomous Code Improvement Loop",
   description:
     "Endless autonomous loop that discovers evidence-backed code improvements, allows justified behavior changes, verifies and reviews them, and stops when no meaningful candidate remains.",
+  settings: {
+    maxTransitions: 500,
+  },
   variables: [
     { name: "scopeRoot", type: "path", default: ".", required: false },
     { name: "scopeSelectionStrategy", type: "text", default: "round-robin", required: false },
@@ -38,7 +41,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
     { name: "gitDiffFile", type: "path", default: ".machdoch/ralph/code-improvements/git-diff.json", required: false },
     { name: "improvementReportFile", type: "path", default: ".machdoch/ralph/code-improvements/final-report.json", required: false },
     { name: "improvementReportMarkdown", type: "path", default: ".machdoch/ralph/code-improvements/final-report.md", required: false },
-    { name: "notesFile", type: "path", default: "RALPH_CODE_IMPROVEMENT_NOTES.md", required: false },
+    { name: "notesFile", type: "path", default: ".machdoch/ralph/code-improvements/RALPH_CODE_IMPROVEMENT_NOTES.md", required: false },
   ],
   blocks: [
     {
@@ -268,7 +271,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Implement the active code improvement at {{activeImprovementFile:path=.machdoch/ralph/code-improvements/active-improvement.json}} using candidate {{data:choose-improvement:output.selectedCandidate}}, selected scope {{result:select-scope}}, scope analysis {{data:analyze-selected-scope:output}}, git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, and latest validation feedback {{lastResult}}. Behavior changes are allowed when tied to currentBehavior/proposedBehavior, acceptanceCriteria, and verificationPlan. Keep changes bounded to the selected scope and required adjacent tests/docs/imports. Add or update meaningful tests when feasible. Update docs only when behavior, commands, or user interaction changes. Do not perform broad formatting sweeps, speculative abstractions, unrelated cleanup, or extra candidates. Dependency changes require allowDependencyChanges={{allowDependencyChanges:boolean=false}} and a documented necessity. Schema or migration changes require allowSchemaChanges={{allowSchemaChanges:boolean=false}} and must be blocked if unsafe. Do not start or restart servers. Append a concise note to {{notesFile:path=RALPH_CODE_IMPROVEMENT_NOTES.md}} with behavior changes, verification, and remaining risks.",
+        "Implement the active code improvement at {{activeImprovementFile:path=.machdoch/ralph/code-improvements/active-improvement.json}} using candidate {{data:choose-improvement:output.selectedCandidate}}, selected scope {{result:select-scope}}, scope analysis {{data:analyze-selected-scope:output}}, git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, and latest validation feedback {{lastResult}}. Behavior changes are allowed when tied to currentBehavior/proposedBehavior, acceptanceCriteria, and verificationPlan. Keep changes bounded to the selected scope and required adjacent tests/docs/imports. Add or update meaningful tests when feasible. Update docs only when behavior, commands, or user interaction changes. Do not perform broad formatting sweeps, speculative abstractions, unrelated cleanup, or extra candidates. Dependency changes require allowDependencyChanges={{allowDependencyChanges:boolean=false}} and a documented necessity. Schema or migration changes require allowSchemaChanges={{allowSchemaChanges:boolean=false}} and must be blocked if unsafe. Do not start or restart servers. Append a concise note to {{notesFile:path=.machdoch/ralph/code-improvements/RALPH_CODE_IMPROVEMENT_NOTES.md}} with behavior changes, verification, and remaining risks.",
     },
     {
       id: "verification-decision",
@@ -418,7 +421,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
         prompt:
-          "Validate the latest autonomous code improvement. Candidate: {{data:choose-improvement:output.selectedCandidate}}. Review: {{data:independent-review:output}}. Verification: {{result:run-verification}}. Visual review: {{result:visual-review}}. Git diff: {{result:git-diff-summary}}. Notes file: {{notesFile:path=RALPH_CODE_IMPROVEMENT_NOTES.md}}. Judge only the active candidate, selected scope, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that scope unless they directly break verification of this improvement. Return DONE only when the improvement implements the selected candidate, any behavior change is intentional and captured by acceptance criteria/tests/docs as feasible, verification is passing or skipped with a sound reason, no security regression is introduced, and no further high-confidence fixes are needed for this same candidate. Return CONTINUE when the candidate still needs bounded implementation work and fewer than {{maxImprovementPasses:number=8}} passes have been attempted. Return RETRY when validation/review found own regressions that should be corrected. Return ERROR when blocked by unsafe changes, ambiguous behavior, required human/product decision, unavailable credentials/tooling, repeated failure, or work that no longer meets meaningfulThreshold={{meaningfulThreshold:text=}}.",
+          "Validate the latest autonomous code improvement. Candidate: {{data:choose-improvement:output.selectedCandidate}}. Review: {{data:independent-review:output}}. Verification: {{result:run-verification}}. Visual review: {{result:visual-review}}. Git diff: {{result:git-diff-summary}}. Notes file: {{notesFile:path=.machdoch/ralph/code-improvements/RALPH_CODE_IMPROVEMENT_NOTES.md}}. Judge only the active candidate, selected scope, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that scope unless they directly break verification of this improvement. Return DONE only when the improvement implements the selected candidate, any behavior change is intentional and captured by acceptance criteria/tests/docs as feasible, verification is passing or skipped with a sound reason, no security regression is introduced, and no further high-confidence fixes are needed for this same candidate. Return CONTINUE when the candidate still needs bounded implementation work and fewer than {{maxImprovementPasses:number=8}} passes have been attempted. Return RETRY when validation/review found own regressions that should be corrected. Return ERROR when blocked by unsafe changes, ambiguous behavior, required human/product decision, unavailable credentials/tooling, repeated failure, or work that no longer meets meaningfulThreshold={{meaningfulThreshold:text=}}.",
       },
     },
     {
@@ -606,7 +609,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
 
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 3,
+  version: 5,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "behavior-change", "validation"],

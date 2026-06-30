@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_RALPH_SETTINGS, type RalphSettings } from "../lib/shell-store";
+import { RUNNABLE_PROVIDER_ORDER } from "../model-catalog";
 import type { RuntimeProviderAvailability } from "../runtime";
 import {
   getConnectedRalphProviderChoices,
@@ -40,14 +41,7 @@ describe("Ralph provider choices", () => {
       { provider: "codex-cli", configured: false },
     ] satisfies RuntimeProviderAvailability[];
 
-    expect(getRalphProviderChoices(availability)).toEqual([
-      "openai",
-      "anthropic",
-      "google",
-      "codex-cli",
-      "claude-cli",
-      "copilot-cli",
-    ]);
+    expect(getRalphProviderChoices(availability)).toEqual(RUNNABLE_PROVIDER_ORDER);
   });
 
   it("keeps Codex CLI when model catalog discovery reports it available", () => {

@@ -3,6 +3,7 @@ import {
   MAX_RALPH_AI_PROMPT_HISTORY_ENTRIES,
   addRalphAiPromptHistoryEntry,
   areRalphAiPromptHistoriesEqual,
+  navigateRalphAiPromptHistory,
   normalizeRalphAiPromptHistory,
 } from "./normalize-ralph-ai-prompt-history.helper";
 
@@ -90,5 +91,76 @@ describe("Ralph AI prompt history helpers", () => {
     expect(nextHistory).toHaveLength(MAX_RALPH_AI_PROMPT_HISTORY_ENTRIES);
     expect(nextHistory[0]).toBe("prompt-1");
     expect(nextHistory.at(-1)).toBe("new prompt");
+  });
+
+  it("navigates to the newest prompt while preserving the draft", () => {
+    expect(
+      navigateRalphAiPromptHistory(
+        { draft: "current draft", draftBeforeHistory: "", historyIndex: null },
+        ["first prompt", "newest prompt"],
+        "previous",
+      ),
+    ).toEqual({
+      draft: "newest prompt",
+      draftBeforeHistory: "current draft",
+      historyIndex: 1,
+    });
+  });
+
+  it("clamps previous navigation at the oldest prompt", () => {
+    expect(
+      navigateRalphAiPromptHistory(
+        {
+          draft: "first prompt",
+          draftBeforeHistory: "current draft",
+          historyIndex: 0,
+        },
+        ["first prompt", "newest prompt"],
+        "previous",
+      ),
+    ).toEqual({
+      draft: "first prompt",
+      draftBeforeHistory: "current draft",
+      historyIndex: 0,
+    });
+  });
+
+  it("moves forward through history and restores the original draft at the end", () => {
+    const next = navigateRalphAiPromptHistory(
+      {
+        draft: "first prompt",
+        draftBeforeHistory: "current draft",
+        historyIndex: 0,
+      },
+      ["first prompt", "newest prompt"],
+      "next",
+    );
+
+    expect(next).toEqual({
+      draft: "newest prompt",
+      draftBeforeHistory: "current draft",
+      historyIndex: 1,
+    });
+
+    expect(
+      navigateRalphAiPromptHistory(next, ["first prompt", "newest prompt"], "next"),
+    ).toEqual({
+      draft: "current draft",
+      draftBeforeHistory: "",
+      historyIndex: null,
+    });
+  });
+
+  it("leaves navigation state unchanged without history or without an active next index", () => {
+    const state = {
+      draft: "current draft",
+      draftBeforeHistory: "",
+      historyIndex: null,
+    };
+
+    expect(navigateRalphAiPromptHistory(state, [], "previous")).toBe(state);
+    expect(navigateRalphAiPromptHistory(state, ["first prompt"], "next")).toBe(
+      state,
+    );
   });
 });

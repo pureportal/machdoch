@@ -5,7 +5,7 @@ const createResult = (
   overrides: Partial<Pick<TaskExecutionResult, "status" | "summary" | "reason">>,
 ): TaskExecutionResult => ({
   task: "Generate",
-  mode: "auto",
+  mode: "machdoch",
   status: "blocked",
   summary: "Could not run.",
   executedTools: [],

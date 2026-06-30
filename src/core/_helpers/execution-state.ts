@@ -31,6 +31,44 @@ export interface TaskExecutionRuntime {
 
 const PROGRESS_ASSISTANT_TEXT_LIMIT = 4_000;
 
+const stripPreviewLineNumber = (line: string): string => {
+  return line.replace(/^\d+:\s?/, "");
+};
+
+const getAssistantTextFromOutputSections = (
+  result: TaskExecutionResult,
+): string | undefined => {
+  const answerSection = result.outputSections.find(
+    (section) =>
+      section.audience !== "internal" &&
+      section.title === "Agent answer" &&
+      section.lines.some((line) => line.trim().length > 0),
+  );
+
+  if (!answerSection) {
+    return undefined;
+  }
+
+  const assistantText = answerSection.lines
+    .map(stripPreviewLineNumber)
+    .join("\n")
+    .trim();
+
+  return assistantText.length > 0 && assistantText !== "(empty)"
+    ? assistantText
+    : undefined;
+};
+
+const getProgressAssistantText = (
+  result: TaskExecutionResult | undefined,
+): string | undefined => {
+  if (!result) {
+    return undefined;
+  }
+
+  return result.response?.markdown.trim() || getAssistantTextFromOutputSections(result);
+};
+
 export const createExecutionResult = (
   base: Omit<TaskExecutionResult, "reason">,
   reason?: string,
@@ -69,7 +107,7 @@ const createProgressSnapshot = (
   runtime: TaskExecutionRuntime,
   result?: TaskExecutionResult,
 ): TaskExecutionProgress => {
-  const assistantText = result?.response?.markdown.trim();
+  const assistantText = getProgressAssistantText(result);
 
   return {
     task,

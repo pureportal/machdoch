@@ -22,10 +22,21 @@ export type HandleDesktopTaskProgress = (
   timestamp: number,
 ) => void;
 
+export type HandleUnhandledDesktopTaskProgress = (
+  sessionId: string,
+  taskId: string,
+  progress: TaskExecutionProgress,
+  timestamp: number,
+) => void;
+
+export type ResolveDesktopTaskSessionId = (taskId: string) => string | null;
+
 export const useDesktopTaskProgress = (options: {
   activeDesktopTasksRef: MutableRefObject<Map<string, string>>;
   ignoredDesktopTaskIdsRef: MutableRefObject<Set<string>>;
   progressHandlersRef?: MutableRefObject<Map<string, HandleDesktopTaskProgress>>;
+  onUnhandledProgress?: HandleUnhandledDesktopTaskProgress;
+  resolveSessionIdForTask?: ResolveDesktopTaskSessionId;
   updateThinkingTrace: UpdateThinkingTrace;
 }): void => {
   useEffect(() => {
@@ -33,9 +44,18 @@ export const useDesktopTaskProgress = (options: {
     let unsubscribe: (() => void) | undefined;
 
     void subscribeToDesktopTaskProgress((progressEvent) => {
-      const sessionId = options.activeDesktopTasksRef.current.get(
+      let sessionId = options.activeDesktopTasksRef.current.get(
         progressEvent.taskId,
       );
+
+      if (!sessionId) {
+        sessionId =
+          options.resolveSessionIdForTask?.(progressEvent.taskId) ?? undefined;
+
+        if (sessionId) {
+          options.activeDesktopTasksRef.current.set(progressEvent.taskId, sessionId);
+        }
+      }
 
       if (
         !sessionId ||
@@ -52,9 +72,21 @@ export const useDesktopTaskProgress = (options: {
         );
       });
 
-      options.progressHandlersRef?.current
-        .get(progressEvent.taskId)
-        ?.(progressEvent.progress, progressEvent.timestamp);
+      const progressHandler = options.progressHandlersRef?.current.get(
+        progressEvent.taskId,
+      );
+
+      if (progressHandler) {
+        progressHandler(progressEvent.progress, progressEvent.timestamp);
+        return;
+      }
+
+      options.onUnhandledProgress?.(
+        sessionId,
+        progressEvent.taskId,
+        progressEvent.progress,
+        progressEvent.timestamp,
+      );
     }).then((unlisten) => {
       if (disposed) {
         unlisten();
@@ -71,7 +103,9 @@ export const useDesktopTaskProgress = (options: {
   }, [
     options.activeDesktopTasksRef,
     options.ignoredDesktopTaskIdsRef,
+    options.onUnhandledProgress,
     options.progressHandlersRef,
+    options.resolveSessionIdForTask,
     options.updateThinkingTrace,
   ]);
 };

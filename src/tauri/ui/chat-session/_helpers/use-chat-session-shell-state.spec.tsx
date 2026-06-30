@@ -9,6 +9,8 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInitialShellState, createSession } from "../../chat-session.model";
+import { createMockExecutionFixture } from "../../preview/fixtures";
+import { createInitialThinkingTrace } from "../../task-thinking.model";
 import {
   mergeShellStateForPersistence,
   mergeShellStateFromExternalUpdate,
@@ -181,6 +183,88 @@ describe("useChatSessionShellState", () => {
 
     expect(setItemSpy).not.toHaveBeenCalled();
     expect(loadStoredShellState().sessions[0]?.draft).toBe("");
+  });
+
+  it("keeps a pre-hydration draft on the hydrated active session", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-hydrated-draft",
+      manualTitle: "Hydrated draft session",
+      updatedAt: 1,
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    const { result } = renderHook(() => useChatSessionShellState());
+
+    act(() => {
+      result.current.setDraftValue("Draft typed before hydration");
+    });
+
+    await flushShellHydration();
+
+    expect(result.current.activeSession.id).toBe(session.id);
+    expect(result.current.activeSession.draft).toBe(
+      "Draft typed before hydration",
+    );
+  });
+
+  it("applies functional draft updates against the latest local draft", async () => {
+    const { result } = renderHook(() => useChatSessionShellState());
+
+    await flushShellHydration();
+
+    act(() => {
+      result.current.setDraftValue((draft) => `${draft}first`);
+      result.current.setDraftValue((draft) => `${draft} second`);
+    });
+
+    expect(result.current.activeSession.draft).toBe("first second");
+  });
+
+  it("applies pre-hydration async active-session updates to the hydrated active session", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-hydrated-active",
+      manualTitle: "Hydrated active session",
+      updatedAt: 1,
+    });
+    const attachment = {
+      id: "pasted-image",
+      path: "C:\\Temp\\pasted.png",
+      kind: "image" as const,
+      name: "pasted.png",
+      parent: "C:\\Temp",
+    };
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    const { result } = renderHook(() => useChatSessionShellState());
+    const updateActiveSessionBeforeHydration =
+      result.current.updateActiveSession;
+
+    await flushShellHydration();
+
+    act(() => {
+      updateActiveSessionBeforeHydration((currentSession) => ({
+        ...currentSession,
+        draftContextAttachments: [attachment],
+        updatedAt: 2,
+      }));
+    });
+
+    expect(result.current.activeSession.id).toBe(session.id);
+    expect(result.current.activeSession.draftContextAttachments).toEqual([
+      attachment,
+    ]);
   });
 
   it("merges helper-window updates with newer archived session state", async () => {
@@ -360,6 +444,182 @@ describe("useChatSessionShellState", () => {
     ]);
     expect(mergedSession?.promptContextHistory).toEqual([[attachment]]);
     expect(mergedSession?.lastReadAt).toBe(300);
+  });
+
+  it("keeps a changed local active session active when merging pre-hydration work", () => {
+    const baseState = createInitialShellState();
+    const persistedSession = createSession({
+      id: "persisted-session",
+      manualTitle: "Persisted session",
+      updatedAt: 50,
+    });
+    const localActiveSession = {
+      ...baseState.sessions[0]!,
+      updatedAt: 100,
+      messages: [
+        {
+          id: "pre-hydration-user-message",
+          taskId: "pre-hydration-task",
+          role: "user" as const,
+          content: "Submitted before hydration",
+          createdAt: 100,
+        },
+      ],
+    };
+
+    const mergedState = mergeShellStateForPersistence(
+      {
+        ...baseState,
+        activeSessionId: localActiveSession.id,
+        sessions: [localActiveSession],
+      },
+      baseState,
+      {
+        ...baseState,
+        activeSessionId: persistedSession.id,
+        sessions: [persistedSession],
+      },
+    );
+
+    expect(mergedState.activeSessionId).toBe(localActiveSession.id);
+    expect(
+      mergedState.sessions.some((session) => session.id === persistedSession.id),
+    ).toBe(true);
+    expect(
+      mergedState.sessions.find((session) => session.id === localActiveSession.id)
+        ?.messages[0]?.content,
+    ).toBe("Submitted before hydration");
+  });
+
+  it("merges same-id message updates from concurrent thinking and final-response saves", () => {
+    const baseState = createInitialShellState();
+    const task = "Summarize the workspace";
+    const baseExecution = createMockExecutionFixture(task, "C:\\Project");
+    const userMessage = {
+      id: "user-task",
+      taskId: "task-1",
+      role: "user" as const,
+      content: task,
+      createdAt: 100,
+    };
+    const fallbackExecutionMessage = {
+      id: "agent-execution-task",
+      taskId: "task-1",
+      role: "agent" as const,
+      content: "**Done.** Fallback summary.",
+      createdAt: 200,
+      source: {
+        kind: "execution" as const,
+        execution: {
+          ...(() => {
+            const executionWithoutResponse = { ...baseExecution };
+            delete executionWithoutResponse.response;
+
+            return executionWithoutResponse;
+          })(),
+          summary: "Fallback summary.",
+        },
+      },
+    };
+    const baseThinkingMessage = {
+      id: "agent-thinking-task",
+      taskId: "task-1",
+      role: "agent" as const,
+      content: "",
+      createdAt: 150,
+      source: {
+        kind: "thinking" as const,
+        thinking: createInitialThinkingTrace("machdoch", 150),
+      },
+    };
+    const baseSession = createSession({
+      id: "session-message-merge",
+      messages: [userMessage, baseThinkingMessage, fallbackExecutionMessage],
+      updatedAt: 200,
+    });
+    const localSession = {
+      ...baseSession,
+      messages: [
+        userMessage,
+        {
+          ...baseThinkingMessage,
+          source: {
+            kind: "thinking" as const,
+            thinking: {
+              ...baseThinkingMessage.source.thinking,
+              completedAt: 250,
+              status: "complete" as const,
+            },
+          },
+        },
+        fallbackExecutionMessage,
+      ],
+      updatedAt: 250,
+    };
+    const latestSession = {
+      ...baseSession,
+      messages: [
+        userMessage,
+        baseThinkingMessage,
+        {
+          ...fallbackExecutionMessage,
+          content: "Authoritative final response.",
+          source: {
+            kind: "execution" as const,
+            execution: {
+              ...baseExecution,
+              summary: "Authoritative summary.",
+              response: {
+                ...(baseExecution.response ?? {
+                  highlights: [],
+                  relatedFiles: [],
+                  verification: [],
+                  followUps: [],
+                }),
+                markdown: "Authoritative final response.",
+              },
+            },
+          },
+        },
+      ],
+      updatedAt: 300,
+    };
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: baseSession.id,
+      sessions: [baseSession],
+    };
+    const mergedState = mergeShellStateForPersistence(
+      {
+        ...storedBaseState,
+        sessions: [localSession],
+      },
+      storedBaseState,
+      {
+        ...storedBaseState,
+        sessions: [latestSession],
+      },
+    );
+    const mergedSession = mergedState.sessions[0];
+    const mergedThinking = mergedSession?.messages.find(
+      (message) => message.id === baseThinkingMessage.id,
+    );
+    const mergedExecution = mergedSession?.messages.find(
+      (message) => message.id === fallbackExecutionMessage.id,
+    );
+
+    expect(mergedThinking?.source?.kind).toBe("thinking");
+    expect(
+      mergedThinking?.source?.kind === "thinking"
+        ? mergedThinking.source.thinking.status
+        : null,
+    ).toBe("complete");
+    expect(mergedExecution?.content).toBe("Authoritative final response.");
+    expect(
+      mergedExecution?.source?.kind === "execution"
+        ? mergedExecution.source.execution.response?.markdown
+        : null,
+    ).toBe("Authoritative final response.");
   });
 
   it("merges external shell-state events with pending local changes", () => {

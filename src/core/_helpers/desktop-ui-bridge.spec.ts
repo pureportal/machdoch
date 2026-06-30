@@ -47,7 +47,9 @@ const uiControl: UiControlRuntimeInfo = {
   available: true,
   platform: "windows",
   bridgeCommand: "machdoch.exe",
+  supportsScreenshots: true,
   supportsWindowEnumeration: true,
+  supportsInput: true,
   supportsWindowHandles: true,
 };
 

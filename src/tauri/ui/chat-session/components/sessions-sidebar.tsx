@@ -850,18 +850,18 @@ export const SessionsSidebar = ({
                           : "Auto-delete"
                       } progress for ${sessionTitle}`}
                       className={cn(
-                        "app-session-retention-progress pointer-events-none absolute inset-x-0 bottom-0 overflow-hidden",
+                        "app-session-retention-progress pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden",
                         retentionProgress.phase === "archive"
-                          ? "h-1 bg-slate-800/80"
-                          : "h-px bg-transparent",
+                          ? "bg-slate-800/80"
+                          : "bg-transparent",
                       )}
                     >
                       <div
                         className={cn(
                           "h-full transition-[width] duration-500",
                           retentionProgress.phase === "archive"
-                            ? "bg-sky-400"
-                            : "bg-rose-300/25",
+                            ? "bg-sky-400/70"
+                            : "bg-rose-300/45",
                         )}
                         style={{
                           width: `${Math.round(

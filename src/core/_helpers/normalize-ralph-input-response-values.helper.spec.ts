@@ -1,4 +1,4 @@
-import type { RalphInputField } from "../ralph.js";
+import type { RalphInputField, RalphInputValue } from "../ralph.js";
 import {
   getRalphInputFieldVariableNames,
   hasRalphInputValue,
@@ -172,7 +172,7 @@ describe("normalizeRalphInputResponseValues", () => {
 });
 
 describe("hasRalphInputValue", () => {
-  it.each([
+  it.each<[RalphInputValue | undefined, boolean]>([
     [undefined, false],
     [null, false],
     ["", false],
@@ -181,7 +181,7 @@ describe("hasRalphInputValue", () => {
     [[""], true],
     [0, true],
     [false, true],
-  ] as const)("returns %s for %j", (value, expected) => {
+  ])("returns %s for %j", (value, expected) => {
     expect(hasRalphInputValue(value)).toBe(expected);
   });
 });

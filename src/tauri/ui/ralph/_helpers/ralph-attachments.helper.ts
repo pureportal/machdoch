@@ -27,7 +27,7 @@ export const getRalphPathParent = (path: string): string | undefined => {
 export const normalizeRalphAttachmentKind = (
   value: DroppedPathEntry["kind"] | RalphAttachmentReference["kind"] | undefined,
   path: string,
-): RalphAttachmentReference["kind"] => {
+): NonNullable<RalphAttachmentReference["kind"]> => {
   if (value === "directory" || value === "file" || value === "image") {
     return value;
   }

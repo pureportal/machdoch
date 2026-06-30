@@ -1,6 +1,7 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -10,6 +11,8 @@ use super::{
     format_path_for_ui, AttachmentPathGrantMap, ClipboardImageAttachmentRequest,
     DroppedPathsResolution, MAX_ATTACHMENT_PATH_GRANTS, MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES,
 };
+
+static CLIPBOARD_IMAGE_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub(super) fn remember_attachment_path_grant(
     grants: &AttachmentPathGrantMap,
@@ -144,6 +147,20 @@ fn base64_decoded_len_upper_bound(value: &str) -> usize {
         .saturating_sub(padding)
 }
 
+fn build_clipboard_image_attachment_path(
+    output_directory: &Path,
+    file_stem: &str,
+    timestamp_ms: u128,
+    process_id: u32,
+    extension: &str,
+) -> PathBuf {
+    let unique_id = CLIPBOARD_IMAGE_FILE_COUNTER.fetch_add(1, Ordering::SeqCst);
+
+    output_directory.join(format!(
+        "{file_stem}-{timestamp_ms}-{process_id}-{unique_id}.{extension}"
+    ))
+}
+
 pub(super) fn save_clipboard_image_attachment_sync(
     request: ClipboardImageAttachmentRequest,
 ) -> Result<String, String> {
@@ -190,11 +207,13 @@ pub(super) fn save_clipboard_image_attachment_sync(
         .map(|duration| duration.as_millis())
         .unwrap_or(0);
     let file_stem = sanitize_clipboard_image_file_stem(request.file_name.as_deref());
-    let output_path = output_directory.join(format!(
-        "{file_stem}-{timestamp_ms}-{}.{}",
+    let output_path = build_clipboard_image_attachment_path(
+        &output_directory,
+        &file_stem,
+        timestamp_ms,
         std::process::id(),
-        extension
-    ));
+        extension,
+    );
 
     fs::write(&output_path, image_bytes).map_err(|error| {
         format!(
@@ -235,6 +254,70 @@ mod tests {
         assert_eq!(base64_decoded_len_upper_bound("AAAA"), 3);
         assert_eq!(base64_decoded_len_upper_bound("AAA="), 2);
         assert_eq!(base64_decoded_len_upper_bound("AA=="), 1);
+    }
+
+    #[test]
+    fn clipboard_image_attachment_paths_are_unique_for_same_millisecond_and_process() {
+        let output_directory = std::env::temp_dir();
+        let first_path = build_clipboard_image_attachment_path(
+            &output_directory,
+            "screen-shot",
+            1_771_220_400_000,
+            42,
+            "png",
+        );
+        let second_path = build_clipboard_image_attachment_path(
+            &output_directory,
+            "screen-shot",
+            1_771_220_400_000,
+            42,
+            "png",
+        );
+
+        assert_ne!(first_path, second_path);
+        let first_file_name = first_path
+            .file_name()
+            .expect("first path should include a filename")
+            .to_string_lossy();
+
+        assert!(first_file_name.starts_with("screen-shot-1771220400000-42-"));
+        assert!(first_file_name.ends_with(".png"));
+        assert_eq!(
+            first_path
+                .extension()
+                .and_then(|extension| extension.to_str()),
+            Some("png")
+        );
+    }
+
+    #[test]
+    fn repeated_clipboard_image_attachment_saves_return_distinct_paths() {
+        let data_base64 = base64::engine::general_purpose::STANDARD.encode([0_u8, 1_u8, 2_u8]);
+        let first_path = save_clipboard_image_attachment_sync(ClipboardImageAttachmentRequest {
+            data_base64: data_base64.clone(),
+            media_type: "image/png".to_string(),
+            file_name: Some("same name.png".to_string()),
+        })
+        .expect("first clipboard image attachment should be saved");
+        let second_path = save_clipboard_image_attachment_sync(ClipboardImageAttachmentRequest {
+            data_base64,
+            media_type: "image/png".to_string(),
+            file_name: Some("same name.png".to_string()),
+        })
+        .expect("second clipboard image attachment should be saved");
+
+        assert_ne!(first_path, second_path);
+        assert_eq!(
+            fs::read(&first_path).expect("first image should be readable"),
+            [0, 1, 2]
+        );
+        assert_eq!(
+            fs::read(&second_path).expect("second image should be readable"),
+            [0, 1, 2]
+        );
+
+        let _ = fs::remove_file(first_path);
+        let _ = fs::remove_file(second_path);
     }
 
     #[test]

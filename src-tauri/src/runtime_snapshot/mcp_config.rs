@@ -1,4 +1,10 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 use super::{
     get_user_config_directory, resolve_workspace_root_path, settings_types::McpConfigDocument,
@@ -94,10 +100,17 @@ pub(super) fn save_mcp_config_document(
     if let Some(config_directory) = config_path.parent() {
         fs::create_dir_all(config_directory)
             .map_err(|error| format!("Failed to create {}: {error}", config_directory.display()))?;
+        if scope == "user" {
+            secure_user_mcp_config_directory(config_directory)?;
+        }
     }
 
     fs::write(&config_path, &normalized_raw)
         .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))?;
+
+    if scope == "user" {
+        secure_user_mcp_config_file(&config_path)?;
+    }
 
     Ok(McpConfigDocument {
         scope: scope.to_string(),
@@ -107,6 +120,40 @@ pub(super) fn save_mcp_config_document(
     })
 }
 
+fn secure_user_mcp_config_directory(path: &Path) -> Result<(), String> {
+    #[cfg(not(unix))]
+    let _ = path;
+
+    #[cfg(unix)]
+    {
+        let mut permissions = fs::metadata(path)
+            .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?
+            .permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(path, permissions)
+            .map_err(|error| format!("Failed to secure {}: {error}", path.display()))?;
+    }
+
+    Ok(())
+}
+
+fn secure_user_mcp_config_file(path: &Path) -> Result<(), String> {
+    #[cfg(not(unix))]
+    let _ = path;
+
+    #[cfg(unix)]
+    {
+        let mut permissions = fs::metadata(path)
+            .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?
+            .permissions();
+        permissions.set_mode(0o600);
+        fs::set_permissions(path, permissions)
+            .map_err(|error| format!("Failed to secure {}: {error}", path.display()))?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -114,6 +161,9 @@ mod tests {
         path::{Path, PathBuf},
         time::{SystemTime, UNIX_EPOCH},
     };
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     use super::*;
 
@@ -164,6 +214,65 @@ mod tests {
         assert_eq!(loaded.scope, "workspace");
         assert_eq!(saved.raw, loaded.raw);
         assert!(loaded.raw.contains("\"servers\": []"));
+
+        cleanup(&directory);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn user_mcp_config_save_secures_directory_and_file_permissions() {
+        let directory = temp_test_directory("user-permissions");
+        let config_path = directory.join("user-config").join("mcp.json");
+
+        let saved = save_mcp_config_document("user", config_path.clone(), r#"{"servers":[]}"#)
+            .expect("user MCP config should save");
+
+        let config_directory = config_path
+            .parent()
+            .expect("MCP config path should have a parent directory");
+        let directory_mode = fs::metadata(config_directory)
+            .expect("config directory metadata should be readable")
+            .permissions()
+            .mode()
+            & 0o777;
+        let file_mode = fs::metadata(&config_path)
+            .expect("config file metadata should be readable")
+            .permissions()
+            .mode()
+            & 0o777;
+
+        assert_eq!(saved.scope, "user");
+        assert!(saved.raw.ends_with('\n'));
+        assert_eq!(directory_mode, 0o700);
+        assert_eq!(file_mode, 0o600);
+
+        cleanup(&directory);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_mcp_config_save_does_not_change_existing_directory_permissions() {
+        let directory = temp_test_directory("workspace-permissions");
+        let config_directory = directory.join(".machdoch").join("mcp");
+        let config_path = config_directory.join("mcp.json");
+        fs::create_dir_all(&config_directory).expect("workspace MCP directory should be created");
+        let mut permissions = fs::metadata(&config_directory)
+            .expect("workspace MCP directory metadata should be readable")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&config_directory, permissions)
+            .expect("workspace MCP directory permissions should be set");
+
+        save_mcp_config_document("workspace", config_path, r#"{"servers":[]}"#)
+            .expect("workspace MCP config should save");
+
+        let directory_mode = fs::metadata(&config_directory)
+            .expect("workspace MCP directory metadata should still be readable")
+            .permissions()
+            .mode()
+            & 0o777;
+
+        assert_eq!(directory_mode, 0o755);
 
         cleanup(&directory);
     }

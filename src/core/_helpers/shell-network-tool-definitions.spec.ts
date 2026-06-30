@@ -34,6 +34,7 @@ const createRuntimeConfig = (): RuntimeConfig => ({
   mode: "machdoch",
   provider: "unconfigured",
   model: "gpt-5.5",
+  reasoning: "default",
   offline: true,
   compatibility: {},
   providerAvailability: [],

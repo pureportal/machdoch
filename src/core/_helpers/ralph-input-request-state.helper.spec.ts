@@ -40,6 +40,21 @@ const createPendingInput = (overrides: Partial<RalphInputRequest> = {}): RalphIn
   ...overrides,
 });
 
+const createCheckpoint = (
+  overrides: Partial<RalphRunCheckpoint> = {},
+): RalphRunCheckpoint => ({
+  currentBlockId: "input",
+  transitions: 0,
+  variables: {},
+  resultsByBlock: {},
+  runLog: [],
+  blockResults: [],
+  events: [],
+  errorCounts: {},
+  repeatedFailures: {},
+  ...overrides,
+});
+
 describe("ralph input request state helpers", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -158,21 +173,25 @@ describe("ralph input request state helpers", () => {
     const block = createInputBlock() as RalphFlowBlock;
     const pendingInput = createPendingInput();
     const options: RalphRunOptions = {
-      workspaceRoot: "C:/repo",
-      checkpoint: { pendingInput } as RalphRunCheckpoint,
-      inputResponse: { requestId: "request-1", values: { name: "Ada" } },
+      checkpoint: createCheckpoint({ pendingInput }),
+      inputResponse: {
+        requestId: "request-1",
+        action: "submit",
+        values: { name: "Ada" },
+      },
     };
 
     expect(getPendingInputForBlock(block, options)).toBe(pendingInput);
     expect(getMatchingInputResponse(block, options)).toEqual({
       requestId: "request-1",
+      action: "submit",
       values: { name: "Ada" },
     });
 
     expect(
       getMatchingInputResponse(block, {
         ...options,
-        inputResponse: { requestId: "other", values: {} },
+        inputResponse: { requestId: "other", action: "submit", values: {} },
       }),
     ).toBeUndefined();
     expect(
@@ -197,14 +216,16 @@ describe("ralph input request state helpers", () => {
   it("creates immutable checkpoint snapshots from mutable run state", () => {
     const result: RalphBlockExecutionResult = {
       blockId: "prompt",
-      blockType: "PROMPT",
       output: "SUCCESS",
+      status: "completed",
+      attempt: 1,
       summary: "Done",
     };
     const event = {
       type: "block-start",
       timestamp: "2026-06-20T10:00:00.000Z",
       blockId: "prompt",
+      attempt: 1,
       blockType: "PROMPT",
       title: "Prompt",
     } as const;
@@ -246,14 +267,15 @@ describe("ralph input request state helpers", () => {
   it("restores checkpoint maps while filtering invalid numeric and failure entries", () => {
     const result: RalphBlockExecutionResult = {
       blockId: "prompt",
-      blockType: "PROMPT",
       output: "SUCCESS",
+      status: "completed",
+      attempt: 1,
       summary: "Done",
     };
 
-    expect(
-      restoreRalphResultMap({ resultsByBlock: { prompt: result } } as RalphRunCheckpoint),
-    ).toEqual(new Map([["prompt", result]]));
+    expect(restoreRalphResultMap(createCheckpoint({ resultsByBlock: { prompt: result } }))).toEqual(
+      new Map([["prompt", result]]),
+    );
     expect(restoreRalphResultMap(undefined)).toEqual(new Map());
     expect(restoreRalphNumberMap({ ok: 1, nan: Number.NaN, infinite: Infinity })).toEqual(
       new Map([["ok", 1]]),

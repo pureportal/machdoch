@@ -142,16 +142,76 @@ const didRemoveBaseMessages = (
   return baseMessages.some((message) => !messageIds.has(message.id));
 };
 
+const mergeMessageVersionForPersistence = (
+  primaryMessage: ChatSessionMessage | undefined,
+  localMessage: ChatSessionMessage,
+  baseMessage: ChatSessionMessage | undefined,
+  latestMessage: ChatSessionMessage,
+): ChatSessionMessage => {
+  const localChanged =
+    !baseMessage || !areShellFragmentsEqual(localMessage, baseMessage);
+  const latestChanged =
+    !baseMessage || !areShellFragmentsEqual(latestMessage, baseMessage);
+
+  if (localChanged && !latestChanged) {
+    return localMessage;
+  }
+
+  if (!localChanged && latestChanged) {
+    return latestMessage;
+  }
+
+  return primaryMessage ?? localMessage;
+};
+
 const mergeAppendOnlyMessages = (
+  primaryMessages: readonly ChatSessionMessage[],
   localMessages: readonly ChatSessionMessage[],
+  baseMessages: readonly ChatSessionMessage[],
   latestMessages: readonly ChatSessionMessage[],
 ): ChatSessionMessage[] => {
+  const primaryMessagesById = new Map(
+    primaryMessages.map((message) => [message.id, message]),
+  );
+  const localMessagesById = new Map(
+    localMessages.map((message) => [message.id, message]),
+  );
+  const baseMessagesById = new Map(
+    baseMessages.map((message) => [message.id, message]),
+  );
+  const latestMessagesById = new Map(
+    latestMessages.map((message) => [message.id, message]),
+  );
   const messagesById = new Map<string, ChatSessionMessage>();
 
-  for (const message of [...localMessages, ...latestMessages]) {
-    if (!messagesById.has(message.id)) {
-      messagesById.set(message.id, message);
+  for (const messageId of new Set([
+    ...localMessagesById.keys(),
+    ...latestMessagesById.keys(),
+  ])) {
+    const localMessage = localMessagesById.get(messageId);
+    const latestMessage = latestMessagesById.get(messageId);
+
+    if (!localMessage) {
+      if (latestMessage) {
+        messagesById.set(messageId, latestMessage);
+      }
+      continue;
     }
+
+    if (!latestMessage) {
+      messagesById.set(messageId, localMessage);
+      continue;
+    }
+
+    messagesById.set(
+      messageId,
+      mergeMessageVersionForPersistence(
+        primaryMessagesById.get(messageId),
+        localMessage,
+        baseMessagesById.get(messageId),
+        latestMessage,
+      ),
+    );
   }
 
   return [...messagesById.values()].sort((left, right) => {
@@ -195,7 +255,12 @@ const mergeSessionMessagesForPersistence = (
     !didRemoveBaseMessages(localSession.messages, baseSession.messages) &&
     !didRemoveBaseMessages(latestSession.messages, baseSession.messages)
   ) {
-    return mergeAppendOnlyMessages(localSession.messages, latestSession.messages);
+    return mergeAppendOnlyMessages(
+      primarySession.messages,
+      localSession.messages,
+      baseSession.messages,
+      latestSession.messages,
+    );
   }
 
   return primarySession.messages;
@@ -409,8 +474,15 @@ export const mergeShellStateForPersistence = (
 
   const sessions = sortSessionsByUpdatedAt([...mergedSessionsById.values()]);
   const sessionIds = new Set(sessions.map((session) => session.id));
+  const localActiveSession = localSessionsById.get(localState.activeSessionId);
+  const baseActiveSession = baseSessionsById.get(localState.activeSessionId);
+  const localActiveSessionChanged =
+    localActiveSession !== undefined &&
+    (baseActiveSession === undefined ||
+      !areShellFragmentsEqual(localActiveSession, baseActiveSession));
   const activeSessionId =
-    localState.activeSessionId !== baseState.activeSessionId &&
+    (localState.activeSessionId !== baseState.activeSessionId ||
+      localActiveSessionChanged) &&
     sessionIds.has(localState.activeSessionId)
       ? localState.activeSessionId
       : sessionIds.has(latestState.activeSessionId)
@@ -542,8 +614,7 @@ export interface ChatSessionShellStateController {
     sessionId: string,
     updater: (session: ChatSessionRecord) => ChatSessionRecord,
   ) => void;
-  setDraftValue: (value: string) => void;
-  scheduleMessage: (callback: () => void, delay: number) => void;
+  setDraftValue: Dispatch<SetStateAction<string>>;
 }
 
 export interface UseChatSessionShellStateOptions {
@@ -592,7 +663,6 @@ export const useChatSessionShellState = (
   const persistedMutationRevisionRef = useRef(0);
   const persistInFlightRef = useRef(false);
   const persistQueuedRef = useRef(false);
-  const scheduledTimeoutsRef = useRef<number[]>([]);
 
   const resolvedActiveSessionId = useMemo(() => {
     if (!isolateActiveSession) {
@@ -678,7 +748,13 @@ export const useChatSessionShellState = (
       }
 
       localMutationRevisionRef.current += 1;
-      setShellState(updater);
+      setShellState((prev) => {
+        const nextState =
+          typeof updater === "function" ? updater(prev) : updater;
+
+        shellStateRef.current = nextState;
+        return nextState;
+      });
     },
     [hasHydrated],
   );
@@ -699,23 +775,36 @@ export const useChatSessionShellState = (
     const sessionIds = new Set(
       shellState.sessions.map((session) => session.id),
     );
+    const canAdoptOrphanDraft = sessionIds.has(resolvedActiveSessionId);
 
     setDraftsBySessionId((prev) => {
       let changed = false;
       const nextDrafts: Record<string, string> = {};
+      const orphanDrafts: string[] = [];
 
       for (const [sessionId, draft] of Object.entries(prev)) {
         if (!sessionIds.has(sessionId)) {
           changed = true;
+          if (draft.length > 0) {
+            orphanDrafts.push(draft);
+          }
           continue;
         }
 
         nextDrafts[sessionId] = draft;
       }
 
+      if (
+        canAdoptOrphanDraft &&
+        nextDrafts[resolvedActiveSessionId] === undefined &&
+        orphanDrafts.length === 1
+      ) {
+        nextDrafts[resolvedActiveSessionId] = orphanDrafts[0];
+      }
+
       return changed ? nextDrafts : prev;
     });
-  }, [shellState.sessions]);
+  }, [resolvedActiveSessionId, shellState.sessions]);
 
   useEffect(() => {
     if (!activeSession || resolvedActiveSessionId === activeSessionId) {
@@ -847,7 +936,10 @@ export const useChatSessionShellState = (
           lastPersistedShellStateRef.current = mergedShellState;
           persistedMutationRevisionRef.current = targetRevision;
 
-          if (!areShellFragmentsEqual(shellStateRef.current, mergedShellState)) {
+          if (
+            localMutationRevisionRef.current === targetRevision &&
+            !areShellFragmentsEqual(shellStateRef.current, mergedShellState)
+          ) {
             setShellState(mergedShellState);
           }
 
@@ -954,25 +1046,38 @@ export const useChatSessionShellState = (
     hasHydrated,
   ]);
 
-  useEffect(() => {
-    return () => {
-      scheduledTimeoutsRef.current.forEach((timeoutId) => {
-        window.clearTimeout(timeoutId);
-      });
-      scheduledTimeoutsRef.current = [];
-    };
-  }, []);
-
   const updateActiveSession = useCallback(
     (updater: (session: ChatSessionRecord) => ChatSessionRecord): void => {
-      applyShellState((prev) => ({
-        ...prev,
-        sessions: prev.sessions.map((session) =>
-          session.id === activeSession.id ? updater(session) : session,
-        ),
-      }));
+      const targetSessionId = activeSession.id;
+      const allowHydrationFallback = !hasHydrated;
+
+      applyShellState((prev) => {
+        const targetSessionExists = prev.sessions.some(
+          (session) => session.id === targetSessionId,
+        );
+        const fallbackSessionId = allowHydrationFallback
+          ? prev.activeSessionId
+          : null;
+        const resolvedSessionId = targetSessionExists
+          ? targetSessionId
+          : fallbackSessionId &&
+              prev.sessions.some((session) => session.id === fallbackSessionId)
+            ? fallbackSessionId
+            : null;
+
+        if (!resolvedSessionId) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          sessions: prev.sessions.map((session) =>
+            session.id === resolvedSessionId ? updater(session) : session,
+          ),
+        };
+      });
     },
-    [activeSession.id, applyShellState],
+    [activeSession.id, applyShellState, hasHydrated],
   );
 
   const updateSessionById = useCallback(
@@ -991,31 +1096,27 @@ export const useChatSessionShellState = (
   );
 
   const setDraftValue = useCallback(
-    (value: string): void => {
+    (value: SetStateAction<string>): void => {
+      const sessionId = activeSession.id;
+      const fallbackDraft = activeSession.draft;
+
       setDraftsBySessionId((prev) => {
-        if (prev[activeSession.id] === value) {
+        const currentValue = prev[sessionId] ?? fallbackDraft;
+        const nextValue =
+          typeof value === "function" ? value(currentValue) : value;
+
+        if (prev[sessionId] === nextValue) {
           return prev;
         }
 
         return {
           ...prev,
-          [activeSession.id]: value,
+          [sessionId]: nextValue,
         };
       });
     },
-    [activeSession.id],
+    [activeSession.draft, activeSession.id],
   );
-
-  const scheduleMessage = useCallback((callback: () => void, delay: number) => {
-    const timeoutId = window.setTimeout(() => {
-      scheduledTimeoutsRef.current = scheduledTimeoutsRef.current.filter(
-        (entry) => entry !== timeoutId,
-      );
-      callback();
-    }, delay);
-
-    scheduledTimeoutsRef.current.push(timeoutId);
-  }, []);
 
   const setActiveSessionId = useCallback(
     (sessionId: string): void => {
@@ -1091,6 +1192,5 @@ export const useChatSessionShellState = (
     updateActiveSession,
     updateSessionById,
     setDraftValue,
-    scheduleMessage,
   };
 };

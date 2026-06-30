@@ -106,7 +106,7 @@ const MCP_PRESET_CATEGORIES: readonly McpPresetCategory[] = [
   { id: "more", label: "More" },
 ];
 
-const MCP_PRESET_CATEGORY_BY_ID = {
+const MCP_PRESET_CATEGORY_BY_ID: Partial<Record<string, McpPresetCategoryId>> = {
   "serper-search": "web-search",
   "firecrawl-web": "web-search",
   "context7-docs": "docs-knowledge",
@@ -121,7 +121,7 @@ const MCP_PRESET_CATEGORY_BY_ID = {
   "chrome-devtools": "browser-apps",
   "playwright-browser": "browser-apps",
   "tauri-mcp-server": "browser-apps",
-} satisfies Partial<Record<string, McpPresetCategoryId>>;
+};
 
 const getMcpPresetCategoryId = (presetId: string): McpPresetCategoryId => {
   return MCP_PRESET_CATEGORY_BY_ID[presetId] ?? "more";

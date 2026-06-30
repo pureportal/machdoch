@@ -41,9 +41,48 @@ pub(super) fn normalize_mime_type(value: &str) -> Result<String, String> {
     Ok(normalized)
 }
 
+fn normalize_audio_base64(value: &str) -> Result<&str, String> {
+    let normalized = value.trim();
+
+    if normalized.is_empty() {
+        return Err("Expected non-empty audio data.".to_string());
+    }
+
+    Ok(normalized)
+}
+
+pub(super) fn validate_audio_base64_encoded_size(
+    value: &str,
+    provider_label: &str,
+    max_size_bytes: usize,
+) -> Result<(), String> {
+    let normalized = normalize_audio_base64(value)?;
+
+    validate_audio_base64_encoded_len(normalized.len(), provider_label, max_size_bytes)
+}
+
+pub(super) fn validate_audio_base64_encoded_len(
+    encoded_len: usize,
+    provider_label: &str,
+    max_size_bytes: usize,
+) -> Result<(), String> {
+    let max_encoded_len = max_base64_encoded_len_for_decoded_size(max_size_bytes);
+
+    if encoded_len > max_encoded_len {
+        return audio_upload_size_error(provider_label, max_size_bytes);
+    }
+
+    Ok(())
+}
+
+fn max_base64_encoded_len_for_decoded_size(max_size_bytes: usize) -> usize {
+    (max_size_bytes / 3)
+        .saturating_mul(4)
+        .saturating_add(if max_size_bytes % 3 == 0 { 0 } else { 4 })
+}
+
 pub(super) fn decode_audio_base64(value: &str) -> Result<Vec<u8>, String> {
-    let normalized = normalize_optional_string(Some(value))
-        .ok_or_else(|| "Expected non-empty audio data.".to_string())?;
+    let normalized = normalize_audio_base64(value)?;
     let decoded = BASE64_STANDARD
         .decode(normalized)
         .map_err(|error| format!("Failed to decode audio payload: {error}"))?;
@@ -81,13 +120,18 @@ pub(super) fn validate_audio_upload_size(
     max_size_bytes: usize,
 ) -> Result<(), String> {
     if size_bytes > max_size_bytes {
-        let max_size_mb = max_size_bytes / (1024 * 1024);
-        return Err(format!(
-            "{provider_label} speech-to-text uploads are limited to {max_size_mb} MB. Record a shorter clip and try again."
-        ));
+        return audio_upload_size_error(provider_label, max_size_bytes);
     }
 
     Ok(())
+}
+
+fn audio_upload_size_error(provider_label: &str, max_size_bytes: usize) -> Result<(), String> {
+    let max_size_mb = max_size_bytes / (1024 * 1024);
+
+    Err(format!(
+        "{provider_label} speech-to-text uploads are limited to {max_size_mb} MB. Record a shorter clip and try again."
+    ))
 }
 
 pub(super) fn build_http_client() -> Result<Client, String> {
@@ -119,4 +163,32 @@ pub(super) fn get_required_api_key(
 ) -> Result<String, String> {
     normalize_optional_string(env.get(key_name).map(String::as_str))
         .ok_or_else(|| format!("{provider_label} is not configured. Save an API key first."))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_audio_base64_encoded_size_allows_boundary_encoded_lengths() {
+        assert!(validate_audio_base64_encoded_size("AAAA", "Test", 3).is_ok());
+        assert!(validate_audio_base64_encoded_size(" AA== ", "Test", 1).is_ok());
+        assert!(validate_audio_base64_encoded_size("AAA=", "Test", 2).is_ok());
+    }
+
+    #[test]
+    fn validate_audio_base64_encoded_size_rejects_lengths_that_cannot_fit_decoded_limit() {
+        let error = validate_audio_base64_encoded_size("AAAAA", "Test", 3).unwrap_err();
+
+        assert!(error.contains("Test speech-to-text uploads are limited to 0 MB"));
+    }
+
+    #[test]
+    fn max_base64_encoded_len_for_decoded_size_rounds_up_to_base64_blocks() {
+        assert_eq!(max_base64_encoded_len_for_decoded_size(0), 0);
+        assert_eq!(max_base64_encoded_len_for_decoded_size(1), 4);
+        assert_eq!(max_base64_encoded_len_for_decoded_size(2), 4);
+        assert_eq!(max_base64_encoded_len_for_decoded_size(3), 4);
+        assert_eq!(max_base64_encoded_len_for_decoded_size(4), 8);
+    }
 }

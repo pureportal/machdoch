@@ -3,7 +3,7 @@ import type { RalphInputRequest, RalphInputValue, RalphInterviewState } from "..
 export const appendRalphInterviewAnswers = (
   state: RalphInterviewState,
   request: Pick<RalphInputRequest, "fields">,
-  values: Record<string, RalphInputValue>,
+  values: Record<string, RalphInputValue | undefined>,
 ): RalphInterviewState => {
   return {
     turn: state.turn,

@@ -2,7 +2,7 @@ import { normalizeStringList } from "../../helpers/normalize-string-list.helper.
 import type { FrontmatterValue } from "../types.js";
 
 export const getSchedulerFrontmatterStringList = (
-  attributes: Record<string, FrontmatterValue>,
+  attributes: Record<string, FrontmatterValue | null | undefined>,
   key: string,
 ): string[] => {
   const value = attributes[key];

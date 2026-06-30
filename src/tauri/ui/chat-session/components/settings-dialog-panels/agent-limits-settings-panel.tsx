@@ -125,7 +125,8 @@ export const AgentLimitsSettingsPanel = ({
     normalizedSavedReviewSettings,
   );
   const reviewProvider =
-    normalizedReviewDraft.mode === "dedicated"
+    normalizedReviewDraft.mode === "dedicated" &&
+    isRuntimeProvider(normalizedReviewDraft.provider)
       ? normalizedReviewDraft.provider
       : DEFAULT_REVIEW_MODEL_PROVIDER;
   const reviewModel =
@@ -325,6 +326,10 @@ export const AgentLimitsSettingsPanel = ({
                 }))}
                 disabled={setup.saving}
                 onChange={(value) => {
+                  if (!isRuntimeProvider(value)) {
+                    return;
+                  }
+
                   setReviewDraft({
                     mode: "dedicated",
                     provider: value,

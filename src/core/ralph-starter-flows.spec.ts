@@ -7,6 +7,7 @@ import {
 } from "./ralph-starter-flows.js";
 import {
   discoverRalphFlowVariables,
+  hasGraphCycle,
   validateRalphFlow,
   type RalphFlowBlock,
 } from "./ralph.js";
@@ -29,6 +30,65 @@ describe("Ralph starter flows", () => {
       expect(summary.variableCount).toBe(
         discoverRalphFlowVariables(starterFlow.flow).length,
       );
+    }
+  });
+
+  it("keeps generated template note and history files under the machdoch workspace directory", () => {
+    const expectedMachdochFiles = [
+      {
+        starterFlowId: "autonomous-code-improvement-loop",
+        variableName: "notesFile",
+        expectedPath:
+          ".machdoch/ralph/code-improvements/RALPH_CODE_IMPROVEMENT_NOTES.md",
+        rootFallback: "path=RALPH_CODE_IMPROVEMENT_NOTES.md",
+      },
+      {
+        starterFlowId: "autonomous-refactoring-flow",
+        variableName: "notesFile",
+        expectedPath: ".machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md",
+        rootFallback: "path=RALPH_REFACTOR_NOTES.md",
+      },
+      {
+        starterFlowId: "security-fix-loop",
+        variableName: "historyFile",
+        expectedPath: ".machdoch/ralph/security/RALPH_SECURITY_HISTORY.md",
+        rootFallback: "path=RALPH_SECURITY_HISTORY.md",
+      },
+    ] as const;
+
+    for (const {
+      starterFlowId,
+      variableName,
+      expectedPath,
+      rootFallback,
+    } of expectedMachdochFiles) {
+      const flow = getRalphStarterFlow(starterFlowId)?.flow;
+      const fileVariable = flow?.variables?.find(
+        (variable) => variable.name === variableName,
+      );
+      const serializedFlow = JSON.stringify(flow);
+
+      expect(fileVariable).toMatchObject({
+        type: "path",
+        default: expectedPath,
+      });
+      expect(serializedFlow).toContain(expectedPath);
+      expect(serializedFlow).not.toContain(rootFallback);
+    }
+  });
+
+  it("caps bundled starter flows that contain cycles", () => {
+    for (const starterFlow of STARTER_RALPH_FLOWS) {
+      if (!hasGraphCycle(starterFlow.flow)) {
+        continue;
+      }
+
+      const validation = validateRalphFlow(starterFlow.flow);
+      const maxTransitions = starterFlow.flow.settings?.maxTransitions;
+
+      expect(maxTransitions).toEqual(expect.any(Number));
+      expect(maxTransitions ?? 0).toBeGreaterThanOrEqual(1);
+      expect(validation.warnings).not.toContain("flow-cycle-without-cap");
     }
   });
 
@@ -216,6 +276,7 @@ describe("Ralph starter flows", () => {
     });
     expect(flow).toMatchObject({
       name: "Autonomous Code Improvement Loop",
+      settings: { maxTransitions: 500 },
     });
     expect(chooseImprovement).toMatchObject({
       type: "UTILITY",

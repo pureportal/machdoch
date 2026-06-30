@@ -190,10 +190,14 @@ describe("runRalphFlow", () => {
       fields: [expect.objectContaining({ id: "details", type: "textarea" })],
     });
     expect(paused.checkpoint).toBeDefined();
+    const pausedCheckpoint = paused.checkpoint;
+    if (!pausedCheckpoint) {
+      throw new Error("Expected waiting Ralph run to include a checkpoint.");
+    }
 
     const resumed = await runRalphFlow(flow, runtimeConfig, customizations, {
       runId: "ralph-input-run",
-      checkpoint: paused.checkpoint,
+      checkpoint: pausedCheckpoint,
       inputResponse: {
         requestId: paused.pendingInput?.id ?? "",
         action: "submit",
@@ -2063,6 +2067,10 @@ describe("runRalphFlow", () => {
       );
 
       await writeFile(join(workspace, "docs", "note.md"), "dirty before run\n", "utf8");
+      const blockedCheckpoint = blocked.checkpoint;
+      if (!blockedCheckpoint) {
+        throw new Error("Expected blocked Ralph run to include a checkpoint.");
+      }
 
       const resumed = await runRalphFlow(
         flow,
@@ -2070,7 +2078,7 @@ describe("runRalphFlow", () => {
         customizations,
         {
           maxTransitions: 10,
-          checkpoint: blocked.checkpoint,
+          checkpoint: blockedCheckpoint,
         },
       );
       const latestScopeGuardResult = resumed.blockResults

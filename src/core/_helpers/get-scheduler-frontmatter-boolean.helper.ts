@@ -1,7 +1,7 @@
 import type { FrontmatterValue } from "../types.js";
 
 export const getSchedulerFrontmatterBoolean = (
-  attributes: Record<string, FrontmatterValue>,
+  attributes: Record<string, FrontmatterValue | null | undefined>,
   key: string,
 ): boolean | undefined => {
   const value = attributes[key];

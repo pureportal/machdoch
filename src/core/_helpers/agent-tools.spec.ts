@@ -25,6 +25,7 @@ const createRuntimeConfig = (
     mode: "ask",
     provider: "unconfigured",
     model: "gpt-5.5",
+    reasoning: "default",
     offline: false,
     compatibility: {
       discoverGithubCustomizations: false,

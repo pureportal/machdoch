@@ -7,7 +7,6 @@ import {
   ReactFlowProvider,
   type Connection,
   type NodeChange,
-  type ProOptions,
   type OnNodeDrag,
   type ReactFlowInstance,
   type XYPosition,
@@ -19,26 +18,19 @@ import {
   AlertTriangle,
   Check,
   ChevronDown,
-  ChevronRight,
   CheckCircle2,
-  ClipboardPaste,
   Copy,
   FileJson,
   FileText,
-  FolderOpen,
   Globe2,
   GripVertical,
   History,
   LayoutGrid,
   LoaderCircle,
-  LockKeyhole,
-  LockKeyholeOpen,
   Maximize2,
-  MessageSquare,
   Octagon,
   Play,
   Plus,
-  Redo2,
   RefreshCw,
   RotateCcw,
   Route,
@@ -47,11 +39,9 @@ import {
   Sparkles,
   Terminal,
   Trash2,
-  Undo2,
   Variable,
   Workflow,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -63,7 +53,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  type ReactNode,
 } from "react";
 import {
   createImageInputUnsupportedModelMessage,
@@ -71,18 +60,13 @@ import {
   modelSupportsImageInput,
 } from "../../../core/model-capabilities.js";
 import {
-  STARTER_RALPH_FLOWS,
   createImportedRalphStarterFlow,
-  createRalphStarterFlowSummary,
-  type RalphStarterFlow,
   type RalphStarterFlowSummary,
 } from "../../../core/ralph-starter-flows.js";
-import type {
-  RalphGenerationEvent,
-  RalphGenerationInterviewSession,
-} from "../../../core/ralph-generation.js";
+import type { RalphGenerationInterviewSession } from "../../../core/ralph-generation.js";
 import { discoverRalphFlowVariables } from "../../../core/_helpers/ralph-placeholders.helper.js";
 import type {
+  RalphAnnotationTone,
   RalphAskUserMode,
   RalphAttachmentReference,
   RalphBlockSettings,
@@ -94,29 +78,24 @@ import type {
   RalphFlowScope,
   RalphFlowRevisionSummary,
   RalphFlowSummary,
-  RalphFlowVariable,
   RalphInputField,
   RalphInputFieldType,
   RalphInputValue,
   RalphPromptBlock,
   RalphPosition,
   RalphRunResult,
-  RalphRunRecordBlockProgressEvent,
   RalphRunSummary,
   RalphUtilityCondition,
   RalphUtilityConfig,
-  RalphUtilityConditionStyle,
   RalphUtilityType,
   RalphValidationScope,
 } from "../../../core/ralph.js";
-import type { TaskExecutionProgress } from "../../../core/types.js";
 import type {
   ReasoningMode,
   RunMode,
 } from "../../../core/runtime-contract.generated.js";
 import {
   getCatalogModelsForProvider,
-  getDefaultModelForProvider,
   type ProviderModelCatalogSnapshot,
   type RuntimeProvider,
 } from "../model-catalog";
@@ -145,7 +124,6 @@ import {
   type RalphRunDetailResult,
 } from "../runtime";
 import { Button } from "../components/ui/button";
-import { Badge } from "../components/ui/badge";
 import {
   ContextAttachmentMenuButton,
   ContextAttachmentsList,
@@ -159,19 +137,6 @@ import {
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { Textarea } from "../components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../components/ui/dialog";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import {
   getReasoningModesForProvider,
@@ -197,9 +162,6 @@ import {
   RALPH_BLOCK_FALLBACK_HEIGHT,
   RALPH_CANVAS_X_GAP,
   RALPH_CANVAS_STACK_OFFSET,
-  RALPH_CANVAS_Y_GAP,
-  RALPH_GROUP_DEFAULT_SIZE,
-  RALPH_NOTE_DEFAULT_SIZE,
   createDerivedGroupChildrenById,
   createLockedCanvasBlockIdSet,
   flowToEdges,
@@ -212,11 +174,11 @@ import {
   getSelectableRouteTargets,
   normalizeDerivedGroupMembership,
   type RalphCanvasEdge,
+  type RalphNodeData,
   type RalphCanvasNode,
 } from "./_helpers/ralph-canvas-layout.helper";
 import {
   formatCatalogModelLabel,
-  formatFlowSubtitle,
   formatProviderOptionLabel,
   formatRouteOptionTargetLabel,
   formatRouteTargetLabel,
@@ -224,18 +186,61 @@ import {
   formatUtilityTypeLabel,
   formatValidationScopeLabel,
   titleFromId,
-  type RalphProviderOption,
 } from "./_helpers/format-ralph-flow-labels.helper";
 import {
-  getBlockTone,
+  MAX_RALPH_HISTORY_ENTRIES,
+  arePositionsEqual,
+  areSizesEqual,
+  createDefaultInputField,
+  createSetupVariableErrorId,
+  formatRevisionDate,
+  formatSaveFlowMessage,
+  getCanvasMenuPlacement,
+  getCanvasNodePositions,
+  getFlowLayoutKey,
+  getFlowSnapshot,
+  isEditableShortcutTarget,
+  isGroupChildMoveSuppressed,
+  isLockedNodePositionChange,
+  shouldSyncUtilityTitle,
+  updatePromptLikeText,
+  type RalphPersistedFlowValidationResult,
+} from "./_helpers/ralph-flow-editor-state.helper";
+import {
+  createBlock,
+  createCopiedBlock,
+  createDefaultUtilityConfig,
+  createEdgeId,
+} from "./_helpers/ralph-block-factory.helper";
+import {
+  canCopyGenerationError,
+  createLocalGenerationInterviewPrompt,
+  createPromptBlockGenerationPrompt,
+  formatCreateFlowMessage,
+  formatGenerationActivityTime,
+  formatGenerationErrorClipboardText,
+  formatJsonDraft,
+  formatPromptBlockTargetLabel,
+  formatRunMessage,
+  getEffectiveProvider,
+  getGenerationJobStatusLabel,
+  getGenerationPhaseLabel,
+  getPreferredModelForProvider,
+  getProviderOption,
+  getTrimmedGenerationInterviewAnswerComments,
+  isRalphPromptBlock,
+  parseJsonDraft,
+  parseNumberList,
+  parseStringRecordDraft,
+  type RalphGenerationStatus,
+} from "./_helpers/ralph-generation-formatting.helper";
+import {
   getBlockVisual,
   getUtilityTone,
 } from "./_helpers/get-ralph-block-visual.helper";
 import { getPromptLikeText } from "./_helpers/get-ralph-node-preview.helper";
 import {
   DEFAULT_RALPH_FLOW_SCOPE,
-  RALPH_FLOW_LIBRARY_LABELS,
-  RALPH_FLOW_LIBRARY_MODES,
   RALPH_FLOW_SCOPES,
   RALPH_FLOW_SCOPE_LABELS,
   getDefaultCreationScope,
@@ -261,6 +266,7 @@ import {
   EMPTY_RALPH_AI_PROMPT_HISTORY,
   addRalphAiPromptHistoryEntry,
   areRalphAiPromptHistoriesEqual,
+  navigateRalphAiPromptHistory,
   normalizeRalphAiPromptHistory,
 } from "./_helpers/normalize-ralph-ai-prompt-history.helper";
 import {
@@ -279,18 +285,10 @@ import {
   applyActiveRunBlockProgressSnapshot,
   applyActiveRunEventSnapshot,
   createRalphBlockProgressSnapshot,
-  formatRalphProgressTimestamp,
-  getProgressMetadataBoolean,
-  getProgressMetadataNumber,
-  getProgressMetadataString,
-  getRalphProgressKindLabel,
   getRalphProgressSnapshot,
-  getRalphProgressToneClassName,
   getRunEventToneClassName,
   getSortedActiveBlockDetails,
   type ActiveRalphRun,
-  type ActiveRalphRunBlockDetail,
-  type ActiveRalphRunStatus,
 } from "./_helpers/ralph-active-run-progress.helper";
 import { getRalphRecordEventLabel } from "./_helpers/get-ralph-record-event-label.helper";
 import {
@@ -303,20 +301,98 @@ import {
 } from "./_helpers/parse-ralph-run-task-id.helper";
 import {
   createDefaultRalphInputValues,
-  formatRalphInputValueForPrompt,
   getDefaultRalphInputValue,
   validateRalphInputFieldValues,
 } from "./_helpers/validate-ralph-input-field-values.helper";
 import {
   createDefaultRalphVariableValues,
   getRalphVariableValue,
-  normalizeRalphBooleanVariableValue,
   validateRalphFlowVariableValues,
 } from "./_helpers/validate-ralph-flow-variable-values.helper";
+import {
+  getOutputChipClassName,
+  getRunStatusPresentation,
+} from "./_helpers/ralph-run-presentation.helper";
+import {
+  applyGenerationActivity,
+  createGenerationActivityFromProgress,
+  createGenerationActivityFromResultEvent,
+  type RalphGenerationActivityEvent,
+} from "./_helpers/ralph-generation-activity.helper";
+import {
+  createStarterImportId,
+  getStarterFlowById,
+  getStarterFlowUpdate,
+} from "./_helpers/ralph-starter-flow-presentation.helper";
+import {
+  ACTIVE_RUN_LIST_LIMIT,
+  ACTIVE_TASK_REGISTRATION_GRACE_MS,
+  ANNOTATION_TONES,
+  ASK_USER_MODE_OPTIONS,
+  DEFAULT_RUNTIME_PROVIDER_OPTIONS,
+  EDITOR_MODES,
+  END_STATUS_OPTIONS,
+  INPUT_FIELD_TYPE_OPTIONS,
+  LIVE_EXPANDED_NODE_PREVIEW_LIMIT,
+  LIVE_VARIABLE_PREVIEW_LIMIT,
+  RALPH_INSPECTOR_SECTIONS,
+  RALPH_NEW_BLOCK_CENTER_DURATION_MS,
+  RALPH_REACT_FLOW_PRO_OPTIONS,
+  RALPH_VALIDATION_JUMP_DURATION_MS,
+  RALPH_VARIABLE_SNIPPETS,
+  UTILITY_TYPE_OPTIONS,
+  VALIDATION_SCOPE_OPTIONS,
+  createRalphProviderOptions,
+  type ClipboardCopyState,
+  type RalphAiGenerationMode,
+  type RalphAiTarget,
+  type RalphAttachmentSelectionKind,
+  type RalphEditorMode,
+  type RalphInspectorSectionId,
+  type RalphRunPanelTab,
+} from "./_helpers/ralph-flow-editor-options.helper";
 import {
   RALPH_EDGE_TYPES,
   RALPH_NODE_TYPES,
 } from "./components/ralph-flow-canvas-elements";
+import {
+  RalphInspectorDetails,
+  RalphInspectorField,
+} from "./components/ralph-inspector-primitives";
+import { RalphUtilityConditionFields } from "./components/ralph-utility-condition-fields";
+import {
+  RalphInspectorSectionTabs,
+  RalphSelectedRouteSummary,
+} from "./components/ralph-inspector-navigation";
+import {
+  ActiveRalphBlockDetailCard,
+  RalphRunRecordBlockCard,
+} from "./components/ralph-run-detail-cards";
+import {
+  RalphExpandedEditorDialog,
+  RalphStarterFlowDialog,
+  type RalphExpandedEditorState,
+} from "./components/ralph-editor-dialogs";
+import {
+  RalphGenerationInterviewDialog,
+  type RalphGenerationInterviewDialogState,
+} from "./components/ralph-generation-interview-dialog";
+import { RalphFlowEditorToolbar } from "./components/ralph-flow-editor-toolbar";
+import {
+  RalphCanvasContextMenu,
+  RalphFlowListContextMenu,
+  type RalphCanvasMenu,
+  type RalphFlowListMenu,
+} from "./components/ralph-flow-context-menus";
+import { RalphPromptHighlight } from "./components/ralph-prompt-highlight";
+import {
+  RalphInputControl,
+  RalphSetupVariableControl,
+} from "./components/ralph-input-controls";
+import {
+  RalphFlowLibraryPanel,
+  type RalphFlowListRow,
+} from "./components/ralph-flow-library-panel";
 
 export type { RalphFlowLibraryMode } from "./_helpers/normalize-ralph-flow-scope.helper";
 
@@ -338,69 +414,6 @@ export interface RalphFlowEditorProps {
   generationPromptHistory?: readonly string[];
   onGenerationPromptHistoryChange?: (history: string[]) => void;
 }
-
-type RalphEditorMode = "design" | "generate" | "run" | "review";
-type RalphAiTarget = "flow" | "prompt-block" | "refactor";
-type RalphAiGenerationMode = "do-it" | "interview";
-type RalphRunPanelTab = "setup" | "live" | "history" | "details" | "logs";
-type ClipboardCopyState = "idle" | "copied" | "failed";
-type RalphInspectorSectionId =
-  | "content"
-  | "execution"
-  | "behavior"
-  | "routes"
-  | "advanced";
-type RalphExpandedEditorMode = "text" | "code" | "json";
-type RalphGenerationStatus =
-  | "running"
-  | "stopping"
-  | "created"
-  | "blocked"
-  | "failed";
-type RalphAttachmentSelectionKind = "files" | "folders" | "images";
-type RalphCanvasMenu =
-  | {
-      type: "pane";
-      left: number;
-      top: number;
-      position: RalphPosition;
-    }
-  | {
-      type: "node";
-      left: number;
-      top: number;
-      blockId: string;
-    }
-  | {
-      type: "edge";
-      left: number;
-      top: number;
-      edgeId: string;
-    };
-
-type RalphFlowListRow =
-  | {
-      type: "heading";
-      scope: RalphFlowScope;
-      count: number;
-    }
-  | {
-      type: "flow";
-      flow: RalphFlowSummary;
-    };
-
-interface RalphFlowListMenu {
-  left: number;
-  top: number;
-  flow: RalphFlowSummary;
-}
-
-const STARTER_RALPH_FLOW_SUMMARIES = STARTER_RALPH_FLOWS.map(
-  createRalphStarterFlowSummary,
-);
-const ACTIVE_RUN_LIST_LIMIT = 6;
-const LIVE_VARIABLE_PREVIEW_LIMIT = 6;
-const LIVE_EXPANDED_NODE_PREVIEW_LIMIT = 3;
 
 interface RalphGenerationJob {
   id: string;
@@ -448,1900 +461,6 @@ interface RalphAiGenerationStartContext {
   draftWasDirtyAtStart: boolean;
   promptBlockLabel?: string;
 }
-
-type RalphGenerationInterviewDialogStatus =
-  | "loading"
-  | "ready"
-  | "generating"
-  | "blocked";
-
-interface RalphGenerationInterviewDialogState {
-  context: RalphAiGenerationStartContext;
-  status: RalphGenerationInterviewDialogStatus;
-  session?: RalphGenerationInterviewSession;
-  fields: RalphInputField[];
-  values: Record<string, RalphInputValue>;
-  answerComments: Record<string, string>;
-  expandedCommentFieldIds: string[];
-  skippedFieldIds: string[];
-  validationErrors: Record<string, string>;
-  summary: string;
-  findings: string[];
-  assumptions: string[];
-  relevantFiles: string[];
-  finalPrompt?: string;
-  provider?: string | null;
-  model?: string | null;
-  error?: string;
-  taskId?: string;
-}
-
-interface RalphGenerationActivityEvent {
-  id: string;
-  type: string;
-  label: string;
-  timestamp: number;
-  detail?: string;
-  round?: number;
-  maxRounds?: number;
-  actor?: string;
-  provider?: string;
-  model?: string;
-  flowPath?: string;
-  tempFlowPath?: string;
-  validationValid?: boolean;
-  validationErrorCount?: number;
-  validationWarningCount?: number;
-  validatorDecision?: string;
-  blockCount?: number;
-  edgeCount?: number;
-}
-
-interface RalphExpandedEditorState {
-  title: string;
-  description: string;
-  ariaLabel: string;
-  mode: RalphExpandedEditorMode;
-  value: string;
-  supportsVariables?: boolean;
-  onApply: (value: string) => void;
-}
-
-const getFlowRunStatusLabel = (runs: ActiveRalphRun[]): string | null => {
-  if (runs.length === 0) {
-    return null;
-  }
-
-  if (runs.some((run) => run.status === "stopping")) {
-    return runs.length > 1 ? `${runs.length} stopping` : "Stopping";
-  }
-
-  return runs.length > 1 ? `${runs.length} running` : "Running";
-};
-
-const getFlowStatusPresentation = (
-  statusLabel: string,
-): {
-  icon: LucideIcon;
-  className: string;
-  spin?: boolean;
-} => {
-  const normalizedStatus = statusLabel.toLowerCase();
-
-  if (
-    normalizedStatus.includes("running") ||
-    normalizedStatus.includes("stopping")
-  ) {
-    return {
-      icon: LoaderCircle,
-      className: "text-sky-200",
-      spin: true,
-    };
-  }
-
-  if (statusLabel === "Generated") {
-    return { icon: Sparkles, className: "text-emerald-200" };
-  }
-
-  if (statusLabel === "Unsaved") {
-    return { icon: FileText, className: "text-amber-200" };
-  }
-
-  if (statusLabel === "Warnings") {
-    return { icon: AlertTriangle, className: "text-amber-200" };
-  }
-
-  if (statusLabel === "Starter update") {
-    return { icon: AlertTriangle, className: "text-amber-200" };
-  }
-
-  if (statusLabel === "Errors") {
-    return { icon: AlertTriangle, className: "text-red-200" };
-  }
-
-  if (statusLabel === "Ready") {
-    return { icon: Check, className: "text-emerald-200" };
-  }
-
-  return { icon: CheckCircle2, className: "text-slate-500" };
-};
-
-const EDITOR_MODES: Array<{
-  id: RalphEditorMode;
-  label: string;
-}> = [
-  { id: "design", label: "Design" },
-  { id: "generate", label: "Generate" },
-  { id: "run", label: "Run" },
-  { id: "review", label: "Review" },
-];
-
-const BLOCK_ACTIONS: Array<{
-  type: RalphBlockType;
-  label: string;
-}> = [
-  { type: "START", label: "Start" },
-  { type: "PROMPT", label: "Prompt" },
-  { type: "VALIDATOR", label: "Validate" },
-  { type: "DECISION", label: "Decision" },
-  { type: "PACK", label: "Pack" },
-  { type: "ASK_USER", label: "Ask User" },
-  { type: "INTERVIEW", label: "Interview" },
-  { type: "UTILITY", label: "Utility" },
-  { type: "NOTE", label: "Note" },
-  { type: "GROUP", label: "Group" },
-  { type: "END", label: "End" },
-];
-
-const INPUT_FIELD_TYPE_OPTIONS: Array<{
-  value: RalphInputFieldType;
-  label: string;
-}> = [
-  { value: "text", label: "Text" },
-  { value: "textarea", label: "Textarea" },
-  { value: "number", label: "Number" },
-  { value: "boolean", label: "Boolean" },
-  { value: "select", label: "Select" },
-  { value: "multiselect", label: "Multi-select" },
-  { value: "url", label: "URL" },
-  { value: "path", label: "Path" },
-  { value: "file", label: "File" },
-  { value: "files", label: "Files" },
-  { value: "image", label: "Image" },
-  { value: "images", label: "Images" },
-];
-
-const ASK_USER_MODE_OPTIONS: Array<{
-  value: RalphAskUserMode;
-  label: string;
-  help: string;
-}> = [
-  {
-    value: "missingOnly",
-    label: "Missing Only",
-    help: "Continue automatically when required values are already available.",
-  },
-  {
-    value: "alwaysAsk",
-    label: "Always Ask",
-    help: "Pause every time this block is reached.",
-  },
-  {
-    value: "confirmOnly",
-    label: "Confirm Only",
-    help: "Pause for a continue/cancel decision without requiring fields.",
-  },
-];
-
-const MCP_BLOCK_ACTIONS: Array<{
-  type: RalphBlockType;
-  label: string;
-}> = [
-  { type: "MCP_TOOL", label: "Tool" },
-  { type: "MCP_RESOURCE", label: "Resource" },
-  { type: "MCP_PROMPT", label: "Prompt" },
-];
-
-const UTILITY_TYPE_OPTIONS: RalphUtilityType[] = [
-  "WAIT",
-  "HTTP_FETCH",
-  "POLL",
-  "CONDITION",
-  "RUN_COMMAND",
-  "READ_FILE",
-  "WRITE_FILE",
-  "READ_JSON",
-  "WRITE_JSON",
-  "PATCH_JSON",
-  "APPEND_JSONL",
-  "READ_JSONL",
-  "QUERY_JSONL",
-  "FILE_EXISTS",
-  "DELETE_FILE",
-  "MOVE_FILE",
-  "ARCHIVE_FILE",
-  "LOOP_COUNTER",
-  "PROMPT_JSON",
-  "VALIDATOR_JSON",
-  "SELECT_JSON_TASK",
-  "MARK_JSON_TASK",
-  "CHANGE_SCOPE_GUARD",
-  "SCAN_SCOPE_EVIDENCE",
-  "UPDATE_SCOPE_REGISTRY",
-  "SELECT_SCOPE",
-  "MARK_SCOPE_RESULT",
-  "SEARCH_FILES",
-  "RUN_CHECK",
-  "UI_ANALYZE",
-  "GIT_STATUS",
-  "GIT_SNAPSHOT",
-  "GIT_DIFF_SUMMARY",
-  "DETECT_PROJECT_COMMANDS",
-  "SET_VARIABLE",
-  "TRANSFORM_JSON",
-  "VALIDATE_JSON",
-  "FINAL_REPORT",
-  "NOTIFY",
-];
-
-const RALPH_INSPECTOR_SECTIONS: Array<{
-  id: RalphInspectorSectionId;
-  label: string;
-}> = [
-  { id: "content", label: "Content" },
-  { id: "behavior", label: "Behavior" },
-  { id: "execution", label: "Execution" },
-  { id: "advanced", label: "Advanced" },
-  { id: "routes", label: "Routes" },
-];
-
-const RALPH_VARIABLE_SNIPPETS = [
-  "{{scope:path=ALL}}",
-  "{{lastResult}}",
-  "{{lastResultSummary}}",
-  "{{targetUrl:url=http://localhost:1420}}",
-  "{{verificationCommand:string=pnpm typecheck:ui}}",
-] as const;
-
-interface RalphInspectorFieldProps {
-  label: string;
-  help?: string;
-  className?: string;
-  action?: ReactNode;
-  children: ReactNode;
-}
-
-const RalphInspectorField = ({
-  label,
-  help,
-  className,
-  action,
-  children,
-}: RalphInspectorFieldProps): JSX.Element => {
-  return (
-    <div className={cn("grid gap-1.5 text-sm text-slate-100", className)}>
-      <span className="flex min-w-0 items-center justify-between gap-2">
-        <span className="min-w-0 truncate font-semibold">{label}</span>
-        {action ? <span className="shrink-0">{action}</span> : null}
-      </span>
-      {children}
-      {help ? (
-        <span className="text-xs leading-4 text-slate-400">{help}</span>
-      ) : null}
-    </div>
-  );
-};
-
-interface RalphInspectorDetailsProps {
-  title: string;
-  help?: string;
-  children: ReactNode;
-}
-
-const RalphInspectorDetails = ({
-  title,
-  help,
-  children,
-}: RalphInspectorDetailsProps): JSX.Element => {
-  return (
-    <details className="group grid gap-2 rounded-lg bg-slate-900/35 px-3 py-2 ring-1 ring-slate-800/60">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200 [&::-webkit-details-marker]:hidden">
-        <span>{title}</span>
-        <ChevronDown className="h-3.5 w-3.5 transition group-open:rotate-180" />
-      </summary>
-      <div className="mt-2 grid gap-2">
-        {help ? (
-          <p className="text-xs leading-4 text-slate-400">{help}</p>
-        ) : null}
-        {children}
-      </div>
-    </details>
-  );
-};
-
-const PROVIDER_OPTIONS = [
-  "default",
-  "openai",
-  "anthropic",
-  "google",
-  "codex-cli",
-  "claude-cli",
-  "copilot-cli",
-] as const;
-
-const DEFAULT_RUNTIME_PROVIDER_OPTIONS = PROVIDER_OPTIONS.filter(
-  (provider): provider is RuntimeProvider => provider !== "default",
-);
-
-const createRalphProviderOptions = (
-  providers: readonly RuntimeProvider[],
-): RalphProviderOption[] => {
-  const options: RalphProviderOption[] = ["default"];
-  const seen = new Set<RalphProviderOption>(options);
-
-  for (const provider of providers) {
-    if (!seen.has(provider)) {
-      options.push(provider);
-      seen.add(provider);
-    }
-  }
-
-  return options;
-};
-
-const createSetupVariableErrorId = (variableName: string): string =>
-  `ralph-variable-${variableName.replace(/[^A-Za-z0-9_-]+/gu, "_") || "value"}-error`;
-
-const createUniqueInputFieldId = (
-  fields: readonly RalphInputField[],
-  baseId = "field",
-): string => {
-  const existingIds = new Set(fields.map((field) => field.id));
-
-  if (!existingIds.has(baseId)) {
-    return baseId;
-  }
-
-  for (let index = fields.length + 1; index < 1_000; index += 1) {
-    const candidate = `${baseId}_${index}`;
-
-    if (!existingIds.has(candidate)) {
-      return candidate;
-    }
-  }
-
-  return `${baseId}_${Date.now()}`;
-};
-
-const createDefaultInputField = (
-  fields: readonly RalphInputField[],
-): RalphInputField => {
-  const id = createUniqueInputFieldId(fields);
-
-  return {
-    id,
-    label: titleFromId(id),
-    type: "text",
-    required: false,
-    skippable: false,
-    variableName: id.replace(/-/gu, "_"),
-  };
-};
-
-const VALIDATION_SCOPE_OPTIONS: RalphValidationScope["mode"][] = [
-  "sinceLastValidator",
-  "previousBlock",
-  "selectedBlocks",
-  "wholeFlow",
-];
-
-const END_STATUS_OPTIONS = [
-  "success",
-  "failed",
-  "cancelled",
-  "review",
-] as const;
-
-const ANNOTATION_TONES: RalphAnnotationTone[] = [
-  "slate",
-  "amber",
-  "sky",
-  "lime",
-  "rose",
-  "violet",
-];
-
-const PLACEHOLDER_PATTERN = /\{\{\s*([^}]+?)\s*\}\}/gu;
-const MAX_RALPH_HISTORY_ENTRIES = 80;
-const RALPH_CONTEXT_MENU_WIDTH = 224;
-const RALPH_CONTEXT_SUBMENU_WIDTH = 224;
-const RALPH_CONTEXT_MENU_HEIGHT = 300;
-const RALPH_CONTEXT_MENU_MARGIN = 8;
-const RALPH_BLOCK_DUPLICATE_OFFSET = 36;
-const RALPH_VALIDATION_JUMP_DURATION_MS = 220;
-const RALPH_NEW_BLOCK_CENTER_DURATION_MS = 180;
-const RALPH_REACT_FLOW_PRO_OPTIONS = {
-  hideAttribution: true,
-} satisfies ProOptions;
-
-const getCanvasMenuPlacement = (
-  event: ReactMouseEvent,
-  options: {
-    estimatedWidth?: number;
-    estimatedHeight?: number;
-  } = {},
-): Pick<RalphCanvasMenu, "left" | "top"> => {
-  const margin = RALPH_CONTEXT_MENU_MARGIN;
-  const estimatedWidth = options.estimatedWidth ?? RALPH_CONTEXT_MENU_WIDTH;
-  const estimatedHeight = options.estimatedHeight ?? RALPH_CONTEXT_MENU_HEIGHT;
-  const maxLeft =
-    typeof window === "undefined"
-      ? event.clientX
-      : Math.max(margin, window.innerWidth - estimatedWidth - margin);
-  const menuHeight =
-    typeof window === "undefined"
-      ? estimatedHeight
-      : Math.min(estimatedHeight, window.innerHeight - margin * 2);
-  const maxTop =
-    typeof window === "undefined"
-      ? event.clientY
-      : Math.max(margin, window.innerHeight - menuHeight - margin);
-
-  return {
-    left: Math.max(margin, Math.min(event.clientX, maxLeft)),
-    top: Math.max(margin, Math.min(event.clientY, maxTop)),
-  };
-};
-
-const isEditableShortcutTarget = (target: EventTarget | null): boolean => {
-  if (
-    typeof HTMLElement === "undefined" ||
-    !(target instanceof HTMLElement)
-  ) {
-    return false;
-  }
-
-  if (target.isContentEditable) {
-    return true;
-  }
-
-  const tagName = target.tagName.toLowerCase();
-  return tagName === "input" || tagName === "textarea" || tagName === "select";
-};
-
-const createBlockId = (
-  flow: RalphFlow,
-  type: RalphBlockType,
-): string => {
-  const base = type.toLowerCase();
-  const usedIds = new Set(flow.blocks.map((block) => block.id));
-
-  for (let index = 1; index < 1000; index += 1) {
-    const candidate = `${base}-${index}`;
-
-    if (!usedIds.has(candidate)) {
-      return candidate;
-    }
-  }
-
-  return `${base}-${Date.now()}`;
-};
-
-const createCopiedBlock = (
-  flow: RalphFlow,
-  block: RalphFlowBlock,
-  position?: RalphPosition,
-): RalphFlowBlock | null => {
-  if (block.type === "START" && flow.blocks.some((candidate) => candidate.type === "START")) {
-    return null;
-  }
-
-  const id = createBlockId(flow, block.type);
-  const cloned = JSON.parse(JSON.stringify(block)) as RalphFlowBlock;
-  const fallbackPosition = block.position
-    ? {
-        x: block.position.x + RALPH_BLOCK_DUPLICATE_OFFSET,
-        y: block.position.y + RALPH_BLOCK_DUPLICATE_OFFSET,
-      }
-    : getDefaultCanvasPosition(flow.blocks.length);
-  const nextPosition = getDisplacedCanvasPosition(
-    flow,
-    position ?? fallbackPosition,
-  );
-
-  return {
-    ...cloned,
-    id,
-    title: block.type === "START" ? "Start" : `${block.title} Copy`,
-    position: nextPosition,
-  };
-};
-
-const createEdgeId = (
-  flow: RalphFlow,
-  from: string,
-  output: RalphExecutionOutput,
-  to: string,
-): string => {
-  const safeOutput = String(output)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, "-")
-    .replace(/^-+|-+$/gu, "")
-    .slice(0, 32);
-  const base = `${from}-${safeOutput || "out"}-${to}`.slice(0, 110);
-  const usedIds = new Set(flow.edges.map((edge) => edge.id));
-
-  if (!usedIds.has(base)) {
-    return base;
-  }
-
-  for (let index = 2; index < 1000; index += 1) {
-    const candidate = `${base}-${index}`.slice(0, 119);
-
-    if (!usedIds.has(candidate)) {
-      return candidate;
-    }
-  }
-
-  return `${base}-${Date.now()}`.slice(0, 119);
-};
-
-const createDefaultUtilityConfig = (
-  type: RalphUtilityType,
-): RalphUtilityConfig => {
-  switch (type) {
-    case "WAIT":
-      return { type, mode: "delay", delaySeconds: 1 };
-    case "HTTP_FETCH":
-      return {
-        type,
-        method: "GET",
-        url: "{{url:url}}",
-        timeoutSeconds: 30,
-        maxOutputBytes: 1_000_000,
-      };
-    case "POLL":
-      return {
-        type,
-        method: "GET",
-        url: "{{url:url}}",
-        intervalSeconds: 30,
-        maxAttempts: null,
-        ignoreErrors: true,
-        condition: {
-          style: "simple",
-          expression: "status == 200",
-        },
-      };
-    case "CONDITION":
-      return {
-        type,
-        condition: {
-          style: "javascript",
-          expression: 'variables.enabled === "true"',
-        },
-      };
-    case "RUN_COMMAND":
-      return { type, command: "npm test", timeoutSeconds: 120 };
-    case "RUN_CHECK":
-      return { type, command: "npm run typecheck", fallbackCommand: "", timeoutSeconds: 120 };
-    case "UI_ANALYZE":
-      return {
-        type,
-        adapter: "browser",
-        targetUrl: "{{targetUrl:url=http://localhost:1420}}",
-        server: {
-          mode: "existing",
-          healthUrl: "{{targetUrl:url=http://localhost:1420}}",
-          reuseExisting: true,
-        },
-        checks: {
-          screenshots: true,
-          accessibility: true,
-          console: true,
-          network: true,
-          responsive: true,
-        },
-        viewports: [
-          { name: "desktop", width: 1280, height: 900 },
-          { name: "tablet", width: 768, height: 1024 },
-          { name: "mobile", width: 390, height: 844 },
-          { name: "small-mobile", width: 320, height: 568 },
-        ],
-        timeoutSeconds: 30,
-        fullPage: true,
-        waitUntil: "domcontentloaded",
-      };
-    case "READ_FILE":
-      return { type, path: "{{file:path}}" };
-    case "WRITE_FILE":
-      return { type, path: "{{file:path}}", content: "{{lastResult}}" };
-    case "READ_JSON":
-      return { type, path: "{{file:path}}" };
-    case "WRITE_JSON":
-      return { type, path: "{{file:path}}", input: "{{lastResult}}" };
-    case "PATCH_JSON":
-      return { type, path: "{{file:path}}", input: "{}", jsonPatchMode: "merge" };
-    case "APPEND_JSONL":
-      return { type, path: "{{file:path}}", input: "{{lastResult}}" };
-    case "READ_JSONL":
-      return { type, path: "{{file:path}}", maxResults: 100 };
-    case "QUERY_JSONL":
-      return {
-        type,
-        path: "{{file:path}}",
-        maxResults: 100,
-        condition: { style: "json-path", path: "$.status", operator: "equals", value: "done" },
-      };
-    case "FILE_EXISTS":
-      return { type, path: "{{file:path}}" };
-    case "DELETE_FILE":
-      return { type, path: "{{file:path}}" };
-    case "MOVE_FILE":
-      return {
-        type,
-        path: "{{file:path}}",
-        outputPath: "{{destination:path}}",
-      };
-    case "ARCHIVE_FILE":
-      return {
-        type,
-        path: "{{file:path}}",
-        rootPath: ".machdoch/ralph/archive",
-      };
-    case "LOOP_COUNTER":
-      return {
-        type,
-        path: ".machdoch/ralph/counters.json",
-        counterName: "loop",
-        maxAttempts: 10,
-      };
-    case "PROMPT_JSON":
-      return {
-        type,
-        prompt: "Return structured JSON for {{lastResultSummary}}.",
-        schema: { type: "object" },
-        maxAttempts: 2,
-      };
-    case "VALIDATOR_JSON":
-      return {
-        type,
-        prompt:
-          "Review the current run evidence and return a JSON validator decision.",
-        maxAttempts: 2,
-      };
-    case "SELECT_JSON_TASK":
-      return {
-        type,
-        path: "{{checklistFile:path=.machdoch/ralph/tasks.json}}",
-        jsonPath: "tasks",
-        strategy: "start-to-end",
-      };
-    case "MARK_JSON_TASK":
-      return {
-        type,
-        path: "{{checklistFile:path=.machdoch/ralph/tasks.json}}",
-        jsonPath: "tasks",
-        status: "done",
-      };
-    case "CHANGE_SCOPE_GUARD":
-      return {
-        type,
-        cwd: ".",
-        input: "{{data:select-scope:scope}}",
-        baseline: "{{result:git-snapshot-before}}",
-      };
-    case "SCAN_SCOPE_EVIDENCE":
-      return {
-        type,
-        rootPath: ".",
-        excludePaths: "node_modules, dist, build, coverage, target, .next, .machdoch",
-        maxDepth: 4,
-        maxResults: 200,
-      };
-    case "UPDATE_SCOPE_REGISTRY":
-      return {
-        type,
-        flowAlias: "{{flowAlias:string=scope-registry}}",
-        strategy: "round-robin",
-        includeMarkdown: true,
-      };
-    case "SELECT_SCOPE":
-      return {
-        type,
-        flowAlias: "{{flowAlias:string=scope-registry}}",
-        strategy: "round-robin",
-      };
-    case "MARK_SCOPE_RESULT":
-      return {
-        type,
-        flowAlias: "{{flowAlias:string=scope-registry}}",
-      };
-    case "SEARCH_FILES":
-      return { type, rootPath: ".", pattern: "{{query:string}}" };
-    case "GIT_STATUS":
-      return { type, cwd: "." };
-    case "GIT_SNAPSHOT":
-      return { type, cwd: ".", outputPath: ".machdoch/ralph/git-snapshot.json" };
-    case "GIT_DIFF_SUMMARY":
-      return { type, cwd: ".", outputPath: ".machdoch/ralph/git-diff-summary.json" };
-    case "DETECT_PROJECT_COMMANDS":
-      return {
-        type,
-        rootPath: ".",
-        outputPath: ".machdoch/ralph/project-commands.json",
-      };
-    case "SET_VARIABLE":
-      return { type, variableName: "value", value: "{{lastResultSummary}}" };
-    case "TRANSFORM_JSON":
-      return { type, expression: "input" };
-    case "VALIDATE_JSON":
-      return {
-        type,
-        schema: {
-          type: "object",
-        },
-      };
-    case "FINAL_REPORT":
-      return {
-        type,
-        path: ".machdoch/ralph/final-report.json",
-        outputPath: ".machdoch/ralph/final-report.md",
-      };
-    case "NOTIFY":
-      return { type, message: "{{lastResultSummary}}" };
-  }
-};
-
-const formatJsonDraft = (value: unknown): string => {
-  return JSON.stringify(value ?? {}, null, 2);
-};
-
-const parseJsonDraft = (value: string): unknown | undefined => {
-  if (!value.trim()) {
-    return undefined;
-  }
-
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return undefined;
-  }
-};
-
-const parseStringRecordDraft = (
-  value: string,
-): Record<string, string> | undefined => {
-  const parsed = parseJsonDraft(value);
-
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return undefined;
-  }
-
-  return Object.fromEntries(
-    Object.entries(parsed).flatMap(([key, entry]) =>
-      typeof entry === "string" ? ([[key, entry]] as const) : [],
-    ),
-  );
-};
-
-const parseNumberList = (value: string): number[] | undefined => {
-  const numbers = value
-    .split(",")
-    .map((entry) => Number.parseInt(entry.trim(), 10))
-    .filter((entry) => Number.isInteger(entry));
-
-  return numbers.length > 0 ? numbers : undefined;
-};
-
-const getProviderOption = (
-  provider: RalphBlockSettings["provider"] | undefined,
-): RalphProviderOption => {
-  return PROVIDER_OPTIONS.includes(provider as RalphProviderOption)
-    ? (provider as RalphProviderOption)
-    : "default";
-};
-
-const getEffectiveProvider = (
-  provider: RalphProviderOption,
-  activeProvider: RuntimeProvider,
-): RuntimeProvider => {
-  return provider === "default" ? activeProvider : provider;
-};
-
-const getPreferredModelForProvider = (
-  provider: RuntimeProvider,
-  snapshot: ProviderModelCatalogSnapshot | null,
-): string => {
-  const models = getCatalogModelsForProvider(provider, snapshot);
-  const defaultModel = getDefaultModelForProvider(provider);
-
-  return models.some((model) => model.id === defaultModel)
-    ? defaultModel
-    : models[0]?.id ?? defaultModel;
-};
-
-const formatCreateFlowMessage = (result: RalphCreateFlowResult): string => {
-  const details = [
-    ...result.validation.errors.map((error) => `Error: ${error}`),
-    ...result.validation.warnings.map((warning) => `Warning: ${warning}`),
-  ];
-
-  return details.length > 0
-    ? `${result.summary} ${details.join(" ")}`
-    : result.summary;
-};
-
-const isRalphPromptBlock = (
-  block: RalphFlowBlock | null | undefined,
-): block is RalphPromptBlock => block?.type === "PROMPT";
-
-const formatPromptBlockTargetLabel = (block: RalphPromptBlock): string =>
-  `${block.title || block.id} (${block.id})`;
-
-const createPromptBlockGenerationPrompt = (
-  userPrompt: string,
-  block: RalphPromptBlock,
-): string => [
-  "Update the selected PROMPT block in the current Ralph flow.",
-  [
-    "Use the prompt block below as the target for this Prompt change.",
-    "Preserve its id and existing routes unless the user explicitly asks to change them.",
-  ].join(" "),
-  "",
-  "Selected PROMPT block:",
-  JSON.stringify(
-    {
-      id: block.id,
-      title: block.title,
-      prompt: getPromptLikeText(block),
-    },
-    null,
-    2,
-  ),
-  "",
-  "Requested change:",
-  userPrompt,
-].join("\n");
-
-const getTrimmedGenerationInterviewAnswerComments = (
-  answerComments: Record<string, string>,
-): Record<string, string> => {
-  return Object.fromEntries(
-    Object.entries(answerComments).flatMap(([fieldId, comment]) => {
-      const trimmedComment = comment.trim();
-
-      return trimmedComment ? [[fieldId, trimmedComment]] : [];
-    }),
-  );
-};
-
-const formatGenerationInterviewAnswerForPrompt = (
-  label: string,
-  value: RalphInputValue | undefined,
-  comment?: string,
-): string[] => {
-  const lines = [`- ${label}: ${formatRalphInputValueForPrompt(value)}`];
-  const trimmedComment = comment?.trim();
-
-  if (trimmedComment) {
-    lines.push(`  Comment: ${trimmedComment}`);
-  }
-
-  return lines;
-};
-
-const createLocalGenerationInterviewPrompt = (
-  context: RalphAiGenerationStartContext,
-  session: RalphGenerationInterviewSession | undefined,
-  fields: readonly RalphInputField[],
-  values: Record<string, RalphInputValue>,
-  answerComments: Record<string, string> = {},
-): string => [
-  context.generationPrompt,
-  "",
-  "Interview context for generation:",
-  session?.contextSummary ?? context.userPrompt,
-  "",
-  "Collected interview answers:",
-  ...(session?.transcript ?? []).flatMap((turn) => [
-    `Turn ${turn.turn}:`,
-    ...turn.answers.flatMap((answer) =>
-      formatGenerationInterviewAnswerForPrompt(
-        answer.label,
-        answer.value,
-        answer.comment,
-      ),
-    ),
-  ]),
-  ...(fields.length > 0
-    ? [
-        "Current answers:",
-        ...fields.flatMap((field) =>
-          formatGenerationInterviewAnswerForPrompt(
-            field.label,
-            values[field.id],
-            answerComments[field.id],
-          ),
-        ),
-      ]
-    : []),
-  "",
-  "Use this interview context when generating the Ralph flow changes.",
-].join("\n");
-
-const getGenerationJobStatusLabel = (status: RalphGenerationStatus): string => {
-  switch (status) {
-    case "running":
-      return "Generating";
-    case "stopping":
-      return "Stopping";
-    case "created":
-      return "Generated";
-    case "blocked":
-      return "Blocked";
-    case "failed":
-      return "Failed";
-  }
-};
-
-const canCopyGenerationError = (
-  job: RalphGenerationJob | null,
-): job is RalphGenerationJob => job?.status === "blocked" || job?.status === "failed";
-
-const formatGenerationErrorClipboardText = (
-  job: RalphGenerationJob,
-): string => `${getGenerationJobStatusLabel(job.status)}\n\n${job.summary}`;
-
-const formatGenerationActivityTime = (timestamp: number): string => {
-  const date = new Date(timestamp);
-
-  return Number.isNaN(date.getTime())
-    ? ""
-    : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-};
-
-const getGenerationPhaseLabel = (job: RalphGenerationJob): string => {
-  const actor = job.currentActor ? `${titleFromId(job.currentActor)} ` : "";
-  const round =
-    job.currentRound !== undefined
-      ? `Round ${job.currentRound}${job.maxRounds ? `/${job.maxRounds}` : ""}`
-      : null;
-
-  return [round, actor ? `${actor.trim()} phase` : null]
-    .filter((value): value is string => Boolean(value))
-    .join(" - ");
-};
-
-const formatRunMessage = (run: RalphRunResult): string => {
-  return `${run.summary} Status: ${run.status}. ${run.blockResults.length} block result${run.blockResults.length === 1 ? "" : "s"}.`;
-};
-
-const getRunStatusPresentation = (
-  status: RalphRunStatus | ActiveRalphRunStatus,
-): {
-  label: string;
-  icon: LucideIcon;
-  className: string;
-  chipClassName: string;
-  spin?: boolean;
-} => {
-  switch (status) {
-    case "running":
-      return {
-        label: "Running",
-        icon: LoaderCircle,
-        className: "text-sky-200",
-        chipClassName: "border-sky-400/30 bg-sky-500/10 text-sky-100",
-        spin: true,
-      };
-    case "stopping":
-      return {
-        label: "Stopping",
-        icon: LoaderCircle,
-        className: "text-amber-200",
-        chipClassName: "border-amber-400/30 bg-amber-500/10 text-amber-100",
-        spin: true,
-      };
-    case "completed":
-      return {
-        label: "Completed",
-        icon: CheckCircle2,
-        className: "text-emerald-200",
-        chipClassName: "border-emerald-400/30 bg-emerald-500/10 text-emerald-100",
-      };
-    case "blocked":
-      return {
-        label: "Blocked",
-        icon: AlertTriangle,
-        className: "text-amber-200",
-        chipClassName: "border-amber-400/30 bg-amber-500/10 text-amber-100",
-      };
-    case "waiting-for-input":
-      return {
-        label: "Waiting for input",
-        icon: MessageSquare,
-        className: "text-teal-200",
-        chipClassName: "border-teal-400/30 bg-teal-500/10 text-teal-100",
-      };
-    case "crashed":
-      return {
-        label: "Crashed",
-        icon: Octagon,
-        className: "text-rose-200",
-        chipClassName: "border-rose-400/30 bg-rose-500/10 text-rose-100",
-      };
-    case "stopped":
-      return {
-        label: "Stopped",
-        icon: Octagon,
-        className: "text-slate-300",
-        chipClassName: "border-slate-700 bg-slate-900 text-slate-300",
-      };
-  }
-};
-
-const getOutputChipClassName = (output: string | undefined): string => {
-  if (!output) {
-    return "border-slate-800 bg-slate-950 text-slate-500";
-  }
-
-  if (output === "SUCCESS") {
-    return "border-emerald-400/30 bg-emerald-500/10 text-emerald-100";
-  }
-
-  if (output === "ERROR") {
-    return "border-rose-400/30 bg-rose-500/10 text-rose-100";
-  }
-
-  if (output === "RETRY") {
-    return "border-amber-400/30 bg-amber-500/10 text-amber-100";
-  }
-
-  return "border-sky-400/30 bg-sky-500/10 text-sky-100";
-};
-
-const ACTIVE_TASK_REGISTRATION_GRACE_MS = 5_000;
-
-const RALPH_GENERATION_ACTIVITY_LIMIT = 80;
-
-const RalphBlockProgressList = ({
-  progress,
-}: {
-  progress: readonly RalphRunRecordBlockProgressEvent[] | undefined;
-}): JSX.Element => {
-  if (!progress || progress.length === 0) {
-    return (
-      <div className="text-xs text-slate-500">
-        No streamed model or tool detail was captured for this block.
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-2">
-      {progress.map((event, index) => {
-        const body = event.content ?? event.detail ?? "";
-
-        return (
-          <div
-            key={`${event.timestamp}-${event.kind}-${index}`}
-            className="grid gap-1 rounded border border-slate-800 bg-slate-950/80 p-2"
-          >
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <span
-                className={cn(
-                  "rounded border px-1.5 py-0.5 text-[0.62rem] font-semibold",
-                  getRalphProgressToneClassName(event),
-                )}
-              >
-                {getRalphProgressKindLabel(event)}
-              </span>
-              <span className="min-w-0 truncate text-xs font-medium text-slate-300">
-                {event.label}
-              </span>
-              {event.toolName ? (
-                <span className="rounded border border-slate-800 px-1.5 py-0.5 text-[0.62rem] text-slate-400">
-                  {event.toolName}
-                </span>
-              ) : null}
-              {event.complete ? (
-                <span className="rounded border border-emerald-400/30 bg-emerald-500/10 px-1.5 py-0.5 text-[0.62rem] font-semibold text-emerald-100">
-                  complete
-                </span>
-              ) : null}
-              <span className="ml-auto shrink-0 font-mono text-[0.62rem] text-slate-600">
-                {formatRalphProgressTimestamp(event.timestamp)}
-              </span>
-            </div>
-            {body ? (
-              <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-900 bg-black/30 p-2 font-mono text-[0.7rem] leading-4 text-slate-300">
-                {body}
-              </pre>
-            ) : null}
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-const RalphOutputSectionsList = ({
-  sections,
-}: {
-  sections: RalphRunRecordBlock["outputSections"];
-}): JSX.Element => {
-  if (!sections || sections.length === 0) {
-    return (
-      <div className="text-xs text-slate-500">
-        No structured output sections were recorded.
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-2">
-      {sections.map((section, index) => (
-        <details
-          key={`${section.title}-${index}`}
-          className="group rounded border border-slate-800 bg-slate-950/80 p-2"
-        >
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold text-slate-200 [&::-webkit-details-marker]:hidden">
-            <span className="min-w-0 truncate">{section.title}</span>
-            <span className="flex shrink-0 items-center gap-1">
-              {section.audience ? (
-                <span className="rounded border border-slate-800 px-1.5 py-0.5 text-[0.62rem] text-slate-500">
-                  {section.audience}
-                </span>
-              ) : null}
-              <ChevronDown className="h-3.5 w-3.5 text-slate-500 transition group-open:rotate-180" />
-            </span>
-          </summary>
-          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-900 bg-black/30 p-2 font-mono text-[0.7rem] leading-4 text-slate-300">
-            {section.lines.join("\n")}
-          </pre>
-        </details>
-      ))}
-    </div>
-  );
-};
-
-const RalphRunRecordBlockCard = ({
-  block,
-}: {
-  block: RalphRunRecordBlock;
-}): JSX.Element => {
-  const hasExpandedContent = Boolean(
-    block.markdown ||
-      block.response?.markdown ||
-      block.reason ||
-      block.outputSections?.length ||
-      block.progress?.length ||
-      block.executedTools?.length ||
-      block.data !== undefined,
-  );
-
-  return (
-    <details className="group rounded border border-slate-800 bg-slate-950 p-2">
-      <summary className="grid cursor-pointer list-none gap-1 [&::-webkit-details-marker]:hidden">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="truncate text-xs font-semibold text-slate-200">
-            {block.blockId}
-          </span>
-          <span
-            className={cn(
-              "rounded border px-1.5 py-0.5 text-[0.62rem] font-semibold",
-              getOutputChipClassName(block.output),
-            )}
-          >
-            {block.output}
-          </span>
-          <span className="rounded border border-slate-800 px-1.5 py-0.5 text-[0.62rem] text-slate-400">
-            {block.status}
-          </span>
-          <span className="rounded border border-slate-800 px-1.5 py-0.5 text-[0.62rem] text-slate-400">
-            attempt {block.attempt}
-          </span>
-          {block.executionStatus ? (
-            <span className="rounded border border-slate-800 px-1.5 py-0.5 text-[0.62rem] text-slate-400">
-              {block.executionStatus}
-            </span>
-          ) : null}
-          <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-slate-500 transition group-open:rotate-180" />
-        </div>
-        <div className="break-words text-xs text-slate-400">
-          {block.summary}
-        </div>
-      </summary>
-
-      <div className="mt-3 grid gap-3 border-t border-slate-800 pt-3">
-        {block.error ? (
-          <div className="break-words rounded border border-rose-400/30 bg-rose-500/10 p-2 text-xs text-rose-100">
-            {block.error}
-          </div>
-        ) : null}
-        {block.reason ? (
-          <div className="break-words rounded border border-amber-400/30 bg-amber-500/10 p-2 text-xs text-amber-100">
-            {block.reason}
-          </div>
-        ) : null}
-        {block.executedTools && block.executedTools.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {block.executedTools.map((tool) => (
-              <span
-                key={tool}
-                className="rounded border border-sky-400/30 bg-sky-500/10 px-1.5 py-0.5 text-[0.62rem] font-semibold text-sky-100"
-              >
-                {tool}
-              </span>
-            ))}
-          </div>
-        ) : null}
-        {block.response?.markdown || block.markdown ? (
-          <div className="grid gap-1">
-            <div className="text-xs font-semibold text-slate-300">
-              Final output
-            </div>
-            <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-800 bg-black/30 p-2 font-mono text-[0.72rem] leading-5 text-slate-300">
-              {block.response?.markdown ?? block.markdown}
-            </pre>
-          </div>
-        ) : null}
-        {block.data !== undefined ? (
-          <div className="grid gap-1">
-            <div className="text-xs font-semibold text-slate-300">
-              Data
-            </div>
-            <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-800 bg-black/30 p-2 font-mono text-[0.7rem] leading-4 text-slate-300">
-              {JSON.stringify(block.data, null, 2)}
-            </pre>
-          </div>
-        ) : null}
-        {hasExpandedContent ? (
-          <div className="grid gap-2 md:grid-cols-2">
-            <div className="grid gap-2">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-                <Terminal className="h-3.5 w-3.5 text-slate-500" />
-                Inside the node
-              </div>
-              <RalphBlockProgressList progress={block.progress} />
-            </div>
-            <div className="grid gap-2">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-                <FileText className="h-3.5 w-3.5 text-slate-500" />
-                Output sections
-              </div>
-              <RalphOutputSectionsList sections={block.outputSections} />
-            </div>
-          </div>
-        ) : (
-          <div className="text-xs text-slate-500">
-            No deeper execution detail was recorded for this block.
-          </div>
-        )}
-      </div>
-    </details>
-  );
-};
-
-const ActiveRalphBlockDetailCard = ({
-  detail,
-}: {
-  detail: ActiveRalphRunBlockDetail;
-}): JSX.Element => {
-  return (
-    <details className="group rounded border border-slate-800 bg-slate-950/80 p-2">
-      <summary className="grid cursor-pointer list-none gap-1 [&::-webkit-details-marker]:hidden">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="truncate text-xs font-semibold text-slate-200">
-            {detail.blockTitle ?? detail.blockId}
-          </span>
-          <span className="rounded border border-slate-800 px-1.5 py-0.5 text-[0.62rem] text-slate-500">
-            {detail.blockId}
-          </span>
-          {detail.output ? (
-            <span
-              className={cn(
-                "rounded border px-1.5 py-0.5 text-[0.62rem] font-semibold",
-                getOutputChipClassName(detail.output),
-              )}
-            >
-              {detail.output}
-            </span>
-          ) : null}
-          {detail.attempt !== undefined ? (
-            <span className="rounded border border-slate-800 px-1.5 py-0.5 text-[0.62rem] text-slate-400">
-              attempt {detail.attempt}
-            </span>
-          ) : null}
-          <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-slate-500 transition group-open:rotate-180" />
-        </div>
-        <div className="break-words text-xs text-slate-400">
-          {detail.summary ??
-            detail.progress.at(-1)?.label ??
-            detail.events.at(-1)?.label ??
-            "Waiting for node activity."}
-        </div>
-      </summary>
-      <div className="mt-3 grid gap-3 border-t border-slate-800 pt-3">
-        {detail.events.length > 0 ? (
-          <div className="grid gap-1.5">
-            <div className="text-xs font-semibold text-slate-300">
-              Node events
-            </div>
-            {detail.events.slice(-8).map((event) => (
-              <div
-                key={event.id}
-                className="rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-slate-300"
-              >
-                <span
-                  className={cn(
-                    "mr-1 rounded border px-1 py-0.5 text-[0.62rem] font-semibold",
-                    getRunEventToneClassName(event.tone),
-                  )}
-                >
-                  {event.eventType}
-                </span>
-                {event.label}
-              </div>
-            ))}
-          </div>
-        ) : null}
-        <div className="grid gap-1.5">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-            <Terminal className="h-3.5 w-3.5 text-slate-500" />
-            Live inside the node
-          </div>
-          <RalphBlockProgressList progress={detail.progress} />
-        </div>
-      </div>
-    </details>
-  );
-};
-
-const createGenerationActivityFromProgress = (
-  progress: TaskExecutionProgress,
-  timestamp: number,
-): RalphGenerationActivityEvent | null => {
-  const metadata = progress.timelineEvent?.metadata;
-  const type = getProgressMetadataString(metadata, "ralphGenerationEventType");
-
-  if (!type) {
-    return null;
-  }
-
-  const label = progress.timelineEvent?.label || progress.message || type;
-  const round = getProgressMetadataNumber(metadata, "ralphGenerationRound");
-  const maxRounds = getProgressMetadataNumber(metadata, "ralphGenerationMaxRounds");
-  const actor = getProgressMetadataString(metadata, "ralphGenerationActor");
-  const provider = progress.timelineEvent?.provider ?? undefined;
-  const model = progress.timelineEvent?.model ?? undefined;
-
-  return {
-    id: `${timestamp}-${type}-${round ?? 0}-${label}`,
-    type,
-    label,
-    timestamp,
-    ...(progress.timelineEvent?.detail ? { detail: progress.timelineEvent.detail } : {}),
-    ...(round !== undefined ? { round } : {}),
-    ...(maxRounds !== undefined ? { maxRounds } : {}),
-    ...(actor ? { actor } : {}),
-    ...(provider ? { provider } : {}),
-    ...(model ? { model } : {}),
-    ...(getProgressMetadataString(metadata, "ralphGenerationFlowPath")
-      ? { flowPath: getProgressMetadataString(metadata, "ralphGenerationFlowPath") }
-      : {}),
-    ...(getProgressMetadataString(metadata, "ralphGenerationTempFlowPath")
-      ? { tempFlowPath: getProgressMetadataString(metadata, "ralphGenerationTempFlowPath") }
-      : {}),
-    ...(getProgressMetadataBoolean(metadata, "ralphGenerationValidationValid") !== undefined
-      ? {
-          validationValid: getProgressMetadataBoolean(
-            metadata,
-            "ralphGenerationValidationValid",
-          ),
-        }
-      : {}),
-    ...(getProgressMetadataNumber(metadata, "ralphGenerationValidationErrorCount") !== undefined
-      ? {
-          validationErrorCount: getProgressMetadataNumber(
-            metadata,
-            "ralphGenerationValidationErrorCount",
-          ),
-        }
-      : {}),
-    ...(getProgressMetadataNumber(metadata, "ralphGenerationValidationWarningCount") !== undefined
-      ? {
-          validationWarningCount: getProgressMetadataNumber(
-            metadata,
-            "ralphGenerationValidationWarningCount",
-          ),
-        }
-      : {}),
-    ...(getProgressMetadataString(metadata, "ralphGenerationValidatorDecision")
-      ? {
-          validatorDecision: getProgressMetadataString(
-            metadata,
-            "ralphGenerationValidatorDecision",
-          ),
-        }
-      : {}),
-    ...(getProgressMetadataNumber(metadata, "ralphGenerationBlockCount") !== undefined
-      ? {
-          blockCount: getProgressMetadataNumber(
-            metadata,
-            "ralphGenerationBlockCount",
-          ),
-        }
-      : {}),
-    ...(getProgressMetadataNumber(metadata, "ralphGenerationEdgeCount") !== undefined
-      ? {
-          edgeCount: getProgressMetadataNumber(metadata, "ralphGenerationEdgeCount"),
-        }
-      : {}),
-  };
-};
-
-const createGenerationActivityFromResultEvent = (
-  event: RalphGenerationEvent,
-): RalphGenerationActivityEvent => {
-  const timestamp = Date.parse(event.createdAt);
-
-  return {
-    id: `${event.createdAt}-${event.type}-${event.round ?? 0}-${event.message}`,
-    type: event.type,
-    label: event.message,
-    timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
-    ...(event.round !== undefined ? { round: event.round } : {}),
-    ...(event.maxRounds !== undefined ? { maxRounds: event.maxRounds } : {}),
-    ...(event.actor ? { actor: event.actor } : {}),
-    ...(event.provider ? { provider: event.provider } : {}),
-    ...(event.model ? { model: event.model } : {}),
-    ...(event.flowPath ? { flowPath: event.flowPath } : {}),
-    ...(event.generationFlowPath ? { tempFlowPath: event.generationFlowPath } : {}),
-    ...(event.validationValid !== undefined
-      ? { validationValid: event.validationValid }
-      : {}),
-    ...(event.validationErrorCount !== undefined
-      ? { validationErrorCount: event.validationErrorCount }
-      : {}),
-    ...(event.validationWarningCount !== undefined
-      ? { validationWarningCount: event.validationWarningCount }
-      : {}),
-    ...(event.validatorDecision ? { validatorDecision: event.validatorDecision } : {}),
-    ...(event.blockCount !== undefined ? { blockCount: event.blockCount } : {}),
-    ...(event.edgeCount !== undefined ? { edgeCount: event.edgeCount } : {}),
-  };
-};
-
-const appendGenerationActivity = (
-  current: RalphGenerationActivityEvent[],
-  nextEvents: RalphGenerationActivityEvent[],
-): RalphGenerationActivityEvent[] => {
-  if (nextEvents.length === 0) {
-    return current;
-  }
-
-  const seen = new Set(current.map((event) => event.id));
-  const merged = [...current];
-
-  for (const event of nextEvents) {
-    if (seen.has(event.id)) {
-      continue;
-    }
-
-    seen.add(event.id);
-    merged.push(event);
-  }
-
-  return merged
-    .sort((left, right) => left.timestamp - right.timestamp)
-    .slice(-RALPH_GENERATION_ACTIVITY_LIMIT);
-};
-
-const applyGenerationActivity = (
-  job: RalphGenerationJob,
-  event: RalphGenerationActivityEvent,
-): RalphGenerationJob => {
-  return {
-    ...job,
-    summary: event.label || job.summary,
-    activity: appendGenerationActivity(job.activity, [event]),
-    ...(event.round !== undefined ? { currentRound: event.round } : {}),
-    ...(event.maxRounds !== undefined ? { maxRounds: event.maxRounds } : {}),
-    ...(event.actor ? { currentActor: event.actor } : {}),
-    ...(event.provider ? { provider: event.provider } : {}),
-    ...(event.model ? { model: event.model } : {}),
-    ...(event.flowPath ? { flowPath: event.flowPath } : {}),
-    ...(event.tempFlowPath ? { tempFlowPath: event.tempFlowPath } : {}),
-    ...(event.validationValid !== undefined
-      ? { validationValid: event.validationValid }
-      : {}),
-    ...(event.validationErrorCount !== undefined
-      ? { validationErrorCount: event.validationErrorCount }
-      : {}),
-    ...(event.validationWarningCount !== undefined
-      ? { validationWarningCount: event.validationWarningCount }
-      : {}),
-    ...(event.validatorDecision ? { validatorDecision: event.validatorDecision } : {}),
-    ...(event.blockCount !== undefined ? { blockCount: event.blockCount } : {}),
-    ...(event.edgeCount !== undefined ? { edgeCount: event.edgeCount } : {}),
-  };
-};
-
-type RalphPersistedFlowResult = Awaited<ReturnType<typeof saveRalphFlow>>;
-
-const formatSaveFlowMessage = (result: RalphPersistedFlowResult): string => {
-  if (result.validation.errors.length > 0) {
-    return `Saved with ${result.validation.errors.length} error(s). Fix them before running.`;
-  }
-
-  if (result.validation.warnings.length > 0) {
-    return `Saved with ${result.validation.warnings.length} warning(s).`;
-  }
-
-  return "Flow saved.";
-};
-
-const formatRevisionDate = (createdAt: string): string => {
-  const date = new Date(createdAt);
-
-  if (Number.isNaN(date.getTime())) {
-    return createdAt;
-  }
-
-  return date.toLocaleString();
-};
-
-const updatePromptLikeText = (
-  block: RalphFlowBlock,
-  prompt: string,
-): RalphFlowBlock => {
-  switch (block.type) {
-    case "PROMPT":
-    case "VALIDATOR":
-    case "DECISION":
-    case "INTERVIEW":
-      return { ...block, prompt };
-    case "ASK_USER":
-      return { ...block, prompt };
-    case "NOTE":
-      return { ...block, text: prompt };
-    case "GROUP":
-      return { ...block, description: prompt };
-    case "START":
-    case "PACK":
-    case "UTILITY":
-    case "MCP_TOOL":
-    case "MCP_RESOURCE":
-    case "MCP_PROMPT":
-    case "END":
-      return block;
-  }
-};
-
-const createBlock = (
-  flow: RalphFlow,
-  type: RalphBlockType,
-): RalphFlowBlock => {
-  const id = createBlockId(flow, type);
-  const position = getDefaultCanvasPosition(flow.blocks.length);
-  const settings: RalphBlockSettings = {
-    workspace: { mode: "default" },
-    provider: "default",
-    reasoning: "default",
-    webAccess: true,
-    fileAccess: true,
-    maxIterations: 1,
-    internalValidatorEnabled: false,
-    retry: { mode: "infinite", maxRetries: null },
-  };
-  const title = titleFromId(id);
-
-  switch (type) {
-    case "START":
-      return { id, type, title: "Start", position };
-    case "PROMPT":
-      return { id, type, title, position, prompt: "", settings };
-    case "VALIDATOR":
-      return {
-        id,
-        type,
-        title,
-        position,
-        prompt: "",
-        validationScope: { mode: "sinceLastValidator" },
-        settings,
-      };
-    case "DECISION":
-      return {
-        id,
-        type,
-        title,
-        position,
-        prompt: "",
-        labels: ["YES", "NO"],
-        settings,
-      };
-    case "PACK":
-      return {
-        id,
-        type,
-        title,
-        position,
-        packIds: [],
-        propagationMode: "untilOverridden",
-        settings,
-      };
-    case "ASK_USER":
-      return {
-        id,
-        type,
-        title: "Ask User",
-        position,
-        mode: "missingOnly",
-        prompt: "Collect the values needed before continuing.",
-        fields: [
-          {
-            id: "details",
-            label: "Details",
-            type: "textarea",
-            required: false,
-            skippable: true,
-            variableName: "details",
-          },
-        ],
-        submitLabel: "Continue",
-        cancelLabel: "Cancel",
-        timeoutSeconds: null,
-        settings,
-      };
-    case "INTERVIEW":
-      return {
-        id,
-        type,
-        title: "Interview",
-        position,
-        prompt: "Clarify the request until there is enough detail to continue.",
-        completionCriteria: "The request is specific enough to implement and test.",
-        maxTurns: 5,
-        questionsPerTurn: 3,
-        outputVariableName: `${id.replace(/[^A-Za-z0-9_]+/gu, "_")}_interview`,
-        submitLabel: "Continue",
-        cancelLabel: "Cancel interview",
-        settings,
-      };
-    case "UTILITY":
-      return {
-        id,
-        type,
-        title: formatUtilityTypeLabel("WAIT"),
-        position,
-        utility: createDefaultUtilityConfig("WAIT"),
-        settings: {
-          workspace: { mode: "default" },
-          retry: { mode: "infinite", maxRetries: null },
-        },
-      };
-    case "MCP_TOOL":
-      return {
-        id,
-        type,
-        title,
-        position,
-        serverId: "",
-        toolName: "",
-        arguments: {},
-        settings,
-      };
-    case "MCP_RESOURCE":
-      return {
-        id,
-        type,
-        title,
-        position,
-        serverId: "",
-        uri: "",
-        settings,
-      };
-    case "MCP_PROMPT":
-      return {
-        id,
-        type,
-        title,
-        position,
-        serverId: "",
-        promptName: "",
-        arguments: {},
-        settings,
-      };
-    case "NOTE":
-      return {
-        id,
-        type,
-        title: "Note",
-        position,
-        size: RALPH_NOTE_DEFAULT_SIZE,
-        text: "",
-        tone: "amber",
-        tags: [],
-        pinnedBlockIds: [],
-      };
-    case "GROUP":
-      return {
-        id,
-        type,
-        title: titleFromId(id),
-        position,
-        size: RALPH_GROUP_DEFAULT_SIZE,
-        tone: "slate",
-        description: "",
-        childBlockIds: [],
-        collapsed: false,
-        locked: false,
-        moveChildren: true,
-        layoutMode: "freeform",
-        executionBoundary: { mode: "none" },
-      };
-    case "END":
-      return { id, type, title: "End", position, status: "success" };
-  }
-};
-
-const shouldSyncUtilityTitle = (
-  title: string,
-  previousType: RalphUtilityType,
-): boolean => {
-  const trimmedTitle = title.trim();
-
-  return (
-    trimmedTitle.length === 0 ||
-    /^Utility(?:\s+\d+)?$/iu.test(trimmedTitle) ||
-    trimmedTitle === formatUtilityTypeLabel(previousType)
-  );
-};
-
-const isGroupChildMoveSuppressed = (event: MouseEvent | TouchEvent): boolean => {
-  return "ctrlKey" in event && event.ctrlKey;
-};
-
-const renderPromptHighlight = (value: string): JSX.Element[] => {
-  const parts: JSX.Element[] = [];
-  let cursor = 0;
-
-  for (const match of value.matchAll(PLACEHOLDER_PATTERN)) {
-    const index = match.index ?? 0;
-    const raw = match[0] ?? "";
-
-    if (index > cursor) {
-      parts.push(
-        <span key={`text-${cursor}`}>
-          {value.slice(cursor, index)}
-        </span>,
-      );
-    }
-
-    parts.push(
-      <span
-        key={`var-${index}`}
-        className="rounded bg-emerald-500/15 px-1 py-0.5 font-semibold text-emerald-200"
-      >
-        {raw}
-      </span>,
-    );
-    cursor = index + raw.length;
-  }
-
-  if (cursor < value.length) {
-    parts.push(
-      <span key={`text-${cursor}`}>
-        {value.slice(cursor)}
-      </span>,
-    );
-  }
-
-  return parts;
-};
-
-const getFlowSnapshot = (flow: RalphFlow | null): string => {
-  return flow ? JSON.stringify(flow) : "";
-};
-
-const getFlowLayoutKey = (flow: RalphFlow | null): string => {
-  if (!flow) {
-    return "";
-  }
-
-  return flow.blocks
-    .map((block) => {
-      const x = block.position?.x ?? "auto";
-      const y = block.position?.y ?? "auto";
-
-      return `${block.id}:${x}:${y}`;
-    })
-    .join("|");
-};
-
-const getCanvasNodePositions = (
-  nodes: RalphCanvasNode[],
-): Map<string, RalphCanvasNode["position"]> => {
-  return new Map(nodes.map((node) => [node.id, node.position]));
-};
-
-const getStarterFlowById = (
-  starterFlowId: string,
-): RalphStarterFlow | undefined => {
-  return STARTER_RALPH_FLOWS.find(
-    (starterFlow) => starterFlow.id === starterFlowId,
-  );
-};
-
-const getStarterFlowUpdate = (
-  flow: RalphFlowSummary,
-): { latestVersion: number } | null => {
-  if (flow.source?.kind !== "starter") {
-    return null;
-  }
-
-  const starterFlow = getStarterFlowById(flow.source.id);
-
-  if (!starterFlow || starterFlow.version <= flow.source.version) {
-    return null;
-  }
-
-  return { latestVersion: starterFlow.version };
-};
-
-const createStarterImportId = (
-  starterFlow: RalphStarterFlow,
-): string => {
-  const randomUUID = globalThis.crypto?.randomUUID;
-
-  if (typeof randomUUID === "function") {
-    return randomUUID.call(globalThis.crypto);
-  }
-
-  return `${starterFlow.defaultAlias}-${Date.now()}`;
-};
-
-const formatStarterFlowSubtitle = (
-  starterFlow: RalphStarterFlowSummary,
-): string => {
-  return `${starterFlow.category} / ${starterFlow.blockCount} blocks / ${starterFlow.edgeCount} edges / ${starterFlow.variableCount} vars`;
-};
-
-const STARTER_RALPH_FLOW_EMOJIS = {
-  "security-fix-loop": "🔒",
-  "autonomous-refactoring-flow": "🧹",
-  "full-feature-implementation": "🚀",
-  "autonomous-feature-generation-loop": "✨",
-  "autonomous-code-improvement-loop": "🛠️",
-} as const satisfies Record<RalphStarterFlowSummary["id"], string>;
-
-const getStarterFlowEmoji = (
-  starterFlow: RalphStarterFlowSummary,
-): string => STARTER_RALPH_FLOW_EMOJIS[starterFlow.id];
-
-const arePositionsEqual = (
-  current: RalphFlowBlock["position"] | undefined,
-  next: RalphCanvasNode["position"],
-): boolean => {
-  return Boolean(current) && current.x === next.x && current.y === next.y;
-};
-
-const areSizesEqual = (
-  current: RalphFlowBlock["size"] | undefined,
-  next: { width: number; height: number },
-): boolean => {
-  return Boolean(current) && current.width === next.width && current.height === next.height;
-};
-
-const isLockedNodePositionChange = (
-  change: NodeChange<RalphCanvasNode>,
-  lockedBlockIds: ReadonlySet<string>,
-): boolean => {
-  return change.type === "position" && lockedBlockIds.has(change.id);
-};
 
 export const RalphFlowEditor = ({
   workspaceRoot,
@@ -2705,37 +824,35 @@ export const RalphFlowEditor = ({
       event.preventDefault();
 
       if (event.key === "ArrowUp") {
-        if (aiPromptHistoryIndex === null) {
-          const nextIndex = aiPromptHistory.length - 1;
+        const nextState = navigateRalphAiPromptHistory(
+          {
+            draft: aiPromptDraft,
+            draftBeforeHistory: aiPromptDraftBeforeHistory,
+            historyIndex: aiPromptHistoryIndex,
+          },
+          aiPromptHistory,
+          "previous",
+        );
 
-          setAiPromptDraftBeforeHistory(aiPromptDraft);
-          setAiPromptHistoryIndex(nextIndex);
-          setAiPromptDraft(aiPromptHistory[nextIndex] ?? "");
-          return;
-        }
-
-        const nextIndex = Math.max(aiPromptHistoryIndex - 1, 0);
-
-        setAiPromptHistoryIndex(nextIndex);
-        setAiPromptDraft(aiPromptHistory[nextIndex] ?? "");
+        setAiPromptDraft(nextState.draft);
+        setAiPromptDraftBeforeHistory(nextState.draftBeforeHistory);
+        setAiPromptHistoryIndex(nextState.historyIndex);
         return;
       }
 
-      if (aiPromptHistoryIndex === null) {
-        return;
-      }
+      const nextState = navigateRalphAiPromptHistory(
+        {
+          draft: aiPromptDraft,
+          draftBeforeHistory: aiPromptDraftBeforeHistory,
+          historyIndex: aiPromptHistoryIndex,
+        },
+        aiPromptHistory,
+        "next",
+      );
 
-      const nextIndex = aiPromptHistoryIndex + 1;
-
-      if (nextIndex >= aiPromptHistory.length) {
-        setAiPromptHistoryIndex(null);
-        setAiPromptDraft(aiPromptDraftBeforeHistory);
-        setAiPromptDraftBeforeHistory("");
-        return;
-      }
-
-      setAiPromptHistoryIndex(nextIndex);
-      setAiPromptDraft(aiPromptHistory[nextIndex] ?? "");
+      setAiPromptDraft(nextState.draft);
+      setAiPromptDraftBeforeHistory(nextState.draftBeforeHistory);
+      setAiPromptHistoryIndex(nextState.historyIndex);
     },
     [
       aiPromptDraft,
@@ -3544,9 +1661,9 @@ export const RalphFlowEditor = ({
               ? current
               : current === null
                 ? {
-                    id: event.taskId,
-                    target: "flow",
-                    mode: "do-it",
+                  id: event.taskId,
+                    target: "flow" as const,
+                    mode: "do-it" as const,
                     scope: DEFAULT_RALPH_FLOW_SCOPE,
                     targetFlowId: null,
                     targetAlias: "ralph-flow",
@@ -4895,11 +3012,13 @@ export const RalphFlowEditor = ({
       );
       setMessage(formattedMessage);
 
-      if (result.flow?.id) {
+      const generatedFlow = result.flow;
+
+      if (generatedFlow?.id) {
         setFlows((current) =>
           upsertFlowSummary(
             current,
-            flowToSummary(result.flow, result.flowPath, context.targetScope),
+            flowToSummary(generatedFlow, result.flowPath, context.targetScope),
           ),
         );
         const currentDraft = draftFlowRef.current;
@@ -4916,18 +3035,18 @@ export const RalphFlowEditor = ({
               currentDraftSnapshot === context.draftSnapshotAtStart);
 
         if (canAdoptGeneratedFlow) {
-          replaceDraftFlow(result.flow, context.targetScope);
-          replaceSavedSnapshot(getFlowSnapshot(result.flow));
-          replaceSelectedId(result.flow.id, context.targetScope);
+          replaceDraftFlow(generatedFlow, context.targetScope);
+          replaceSavedSnapshot(getFlowSnapshot(generatedFlow));
+          replaceSelectedId(generatedFlow.id, context.targetScope);
           setUnsavedFlowId((current) =>
-            current === result.flow?.id && unsavedFlowScope === context.targetScope
+            current === generatedFlow.id && unsavedFlowScope === context.targetScope
               ? null
               : current,
           );
-          setSelectedBlockId(result.flow.blocks[0]?.id ?? null);
+          setSelectedBlockId(generatedFlow.blocks[0]?.id ?? null);
           setVariableValues(
             createDefaultRalphVariableValues(
-              discoverRalphFlowVariables(result.flow),
+              discoverRalphFlowVariables(generatedFlow),
             ),
           );
         }
@@ -5162,7 +3281,7 @@ export const RalphFlowEditor = ({
   };
 
   const persistFlow = async (
-    formatMessage: (result: RalphPersistedFlowResult) => string,
+    formatMessage: (result: RalphPersistedFlowValidationResult) => string,
   ): Promise<boolean> => {
     if (!workspaceRoot || !draftFlow) {
       return false;
@@ -6182,137 +4301,9 @@ export const RalphFlowEditor = ({
     field: RalphInputField,
     value: RalphInputValue | undefined,
     onChange: (value: RalphInputValue) => void,
-  ): JSX.Element => {
-    const commonInputClassName =
-      "border-slate-700 bg-slate-950 text-sm text-slate-100";
-
-    if (field.type === "textarea") {
-      return (
-        <Textarea
-          value={typeof value === "string" ? value : ""}
-          aria-label={field.label}
-          placeholder={field.placeholder}
-          onChange={(event) => onChange(event.target.value)}
-          className={cn("min-h-24", commonInputClassName)}
-        />
-      );
-    }
-
-    if (field.type === "number") {
-      return (
-        <Input
-          type="number"
-          value={typeof value === "number" ? value : typeof value === "string" ? value : ""}
-          aria-label={field.label}
-          placeholder={field.placeholder}
-          onChange={(event) =>
-            onChange(event.target.value ? Number(event.target.value) : null)
-          }
-          className={cn("h-9", commonInputClassName)}
-        />
-      );
-    }
-
-    if (field.type === "boolean") {
-      return (
-        <label className="flex items-center gap-2 rounded border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200">
-          <input
-            type="checkbox"
-            checked={value === true}
-            onChange={(event) => onChange(event.target.checked)}
-          />
-          Yes
-        </label>
-      );
-    }
-
-    if (field.type === "select") {
-      return (
-        <select
-          value={typeof value === "string" ? value : ""}
-          aria-label={field.label}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-9 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100"
-        >
-          <option value="">Select...</option>
-          {(field.options ?? []).map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      );
-    }
-
-    if (field.type === "multiselect") {
-      const values = Array.isArray(value) ? value : [];
-
-      return (
-        <div className="grid gap-1.5 rounded border border-slate-800 bg-slate-950 p-2">
-          {(field.options ?? []).map((option) => {
-            const checked = values.includes(option.value);
-
-            return (
-              <label
-                key={option.value}
-                className="flex items-center gap-2 text-sm text-slate-200"
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={(event) => {
-                    const nextValues = event.target.checked
-                      ? [...values, option.value]
-                      : values.filter((entry) => entry !== option.value);
-                    onChange(nextValues);
-                  }}
-                />
-                {option.label}
-              </label>
-            );
-          })}
-        </div>
-      );
-    }
-
-    if (field.type === "files" || field.type === "images") {
-      return (
-        <Textarea
-          value={Array.isArray(value) ? value.join("\n") : ""}
-          aria-label={field.label}
-          placeholder={field.placeholder ?? "One path per line"}
-          onChange={(event) =>
-            onChange(
-              event.target.value
-                .split("\n")
-                .map((entry) => entry.trim())
-                .filter(Boolean),
-            )
-          }
-          className={cn("min-h-20 font-mono text-xs", commonInputClassName)}
-        />
-      );
-    }
-
-    return (
-      <Input
-        value={typeof value === "string" ? value : ""}
-        aria-label={field.label}
-        placeholder={field.placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        className={cn(
-          "h-9",
-          field.type === "path" ||
-            field.type === "file" ||
-            field.type === "image" ||
-            field.type === "url"
-            ? "font-mono text-xs"
-            : "",
-          commonInputClassName,
-        )}
-      />
-    );
-  };
+  ): JSX.Element => (
+    <RalphInputControl field={field} value={value} onChange={onChange} />
+  );
 
   const renderPendingInputControl = (
     field: RalphInputField,
@@ -6332,89 +4323,6 @@ export const RalphFlowEditor = ({
       ...current,
       [variableName]: value,
     }));
-  };
-
-  const renderSetupVariableControl = (
-    variable: RalphFlowVariable,
-    error: string | undefined,
-  ): JSX.Element => {
-    const value = getRalphVariableValue(variable, variableValues);
-    const errorId = error ? createSetupVariableErrorId(variable.name) : undefined;
-    const commonClassName = cn(
-      "border border-slate-700 bg-slate-950 text-sm text-slate-100 placeholder:text-slate-600",
-      error &&
-        "border-rose-400/80 bg-rose-950/20 ring-1 ring-rose-400/25 focus-visible:border-rose-300 focus-visible:ring-rose-400/40",
-    );
-
-    if (variable.type === "boolean") {
-      const normalizedValue = normalizeRalphBooleanVariableValue(value);
-      const selectedValue = normalizedValue ?? "";
-      const showUnsetOption =
-        !variable.required || variable.default === undefined || !selectedValue;
-
-      return (
-        <select
-          value={selectedValue}
-          aria-label={`Ralph variable ${variable.name}`}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={errorId}
-          onChange={(event) =>
-            updateSetupVariableValue(variable.name, event.target.value)
-          }
-          className={cn("h-9 rounded-md px-3", commonClassName)}
-        >
-          {showUnsetOption ? <option value="">Unset</option> : null}
-          <option value="true">True</option>
-          <option value="false">False</option>
-        </select>
-      );
-    }
-
-    if (variable.type === "files" || variable.type === "images") {
-      return (
-        <Textarea
-          value={value}
-          aria-label={`Ralph variable ${variable.name}`}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={errorId}
-          placeholder={variable.default ?? "One path per line"}
-          onChange={(event) =>
-            updateSetupVariableValue(variable.name, event.target.value)
-          }
-          className={cn(
-            "min-h-20",
-            "font-mono text-xs",
-            commonClassName,
-          )}
-        />
-      );
-    }
-
-    return (
-      <Input
-        type={variable.type === "number" || variable.type === "url" ? variable.type : "text"}
-        inputMode={variable.type === "number" ? "decimal" : undefined}
-        value={value}
-        aria-label={`Ralph variable ${variable.name}`}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={errorId}
-        placeholder={variable.default ?? variable.name}
-        onChange={(event) =>
-          updateSetupVariableValue(variable.name, event.target.value)
-        }
-        className={cn(
-          "h-9",
-          variable.type === "path" ||
-            variable.type === "file" ||
-            variable.type === "image" ||
-            variable.type === "number" ||
-            variable.type === "url"
-            ? "font-mono text-xs"
-            : "",
-          commonClassName,
-        )}
-      />
-    );
   };
 
   const runFlow = async (): Promise<void> => {
@@ -7062,7 +4970,10 @@ export const RalphFlowEditor = ({
 
   const handleNodesChange = (changes: NodeChange<RalphCanvasNode>[]): void => {
     const selectedChange = changes.find(
-      (change) => change.type === "select" && change.selected,
+      (
+        change,
+      ): change is Extract<NodeChange<RalphCanvasNode>, { type: "select" }> =>
+        change.type === "select" && change.selected,
     );
     const lockedBlockIds = draftFlowRef.current
       ? createLockedCanvasBlockIdSet(draftFlowRef.current)
@@ -7226,7 +5137,7 @@ export const RalphFlowEditor = ({
   };
 
   const getFlowPositionFromPointer = (
-    event: ReactMouseEvent,
+    event: ReactMouseEvent | MouseEvent,
   ): RalphPosition => {
     const point: XYPosition = { x: event.clientX, y: event.clientY };
     const position =
@@ -7271,7 +5182,7 @@ export const RalphFlowEditor = ({
     });
   };
 
-  const openPaneMenu = (event: ReactMouseEvent): void => {
+  const openPaneMenu = (event: ReactMouseEvent | MouseEvent): void => {
     event.preventDefault();
     setFlowListMenu(null);
     setSelectedBlockId(null);
@@ -7482,518 +5393,38 @@ export const RalphFlowEditor = ({
     redoStack,
   ]);
 
-  const renderCanvasMenuButton = (
-    label: string,
-    onClick: () => void,
-    options: {
-      disabled?: boolean;
-      danger?: boolean;
-      icon?: LucideIcon;
-      iconClassName?: string;
-      key?: string;
-    } = {},
-  ): JSX.Element => {
-    const Icon = options.icon;
+  const renderFlowListContextMenu = (): JSX.Element | null => (
+    <RalphFlowListContextMenu
+      flowListMenu={flowListMenu}
+      workspaceRoot={workspaceRoot}
+      loading={loading}
+      selectedId={selectedId}
+      selectedScope={selectedScope}
+      draftFlow={draftFlow}
+      getFlowActiveRuns={getFlowActiveRuns}
+      isGenerationTargetingFlow={isGenerationTargetingFlow}
+      openFlowInExplorer={openFlowInExplorer}
+      copyOrMoveFlowToScope={copyOrMoveFlowToScope}
+      deleteFlow={deleteFlow}
+    />
+  );
 
-    return (
-      <button
-        key={options.key}
-        type="button"
-        role="menuitem"
-        disabled={options.disabled}
-        onClick={onClick}
-        className={cn(
-          "flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium outline-none",
-          options.disabled
-            ? "cursor-not-allowed text-slate-600"
-            : options.danger
-              ? "text-rose-100 hover:bg-rose-500/10"
-              : "text-slate-200 hover:bg-slate-800",
-        )}
-      >
-        {Icon ? (
-          <Icon className={cn("h-3.5 w-3.5 shrink-0", options.iconClassName)} />
-        ) : null}
-        <span className="min-w-0 truncate">{label}</span>
-      </button>
-    );
-  };
-
-  const renderAddBlockCanvasMenuButton = (
-    label: string,
-    type: RalphBlockType,
-    onClick: () => void,
-    options: { key?: string } = {},
-  ): JSX.Element => {
-    const tone = getBlockTone(type);
-
-    return renderCanvasMenuButton(label, onClick, {
-      ...options,
-      icon: tone.icon,
-      iconClassName: tone.badgeClassName,
-    });
-  };
-
-  const renderCanvasSubmenu = (
-    label: string,
-    children: ReactNode,
-    options: {
-      icon?: LucideIcon;
-      iconClassName?: string;
-      side?: "left" | "right";
-      key?: string;
-    } = {},
-  ): JSX.Element => {
-    const Icon = options.icon;
-    const side = options.side ?? "right";
-
-    return (
-      <div key={options.key} className="group/submenu relative" role="none">
-        <button
-          type="button"
-          role="menuitem"
-          aria-haspopup="menu"
-          onClick={(event) => event.preventDefault()}
-          className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
-        >
-          {Icon ? (
-            <Icon className={cn("h-3.5 w-3.5 shrink-0", options.iconClassName)} />
-          ) : null}
-          <span className="min-w-0 flex-1 truncate">{label}</span>
-          <ChevronRight
-            className={cn(
-              "h-3.5 w-3.5 shrink-0 text-slate-500",
-              side === "left" && "rotate-180",
-            )}
-          />
-        </button>
-        <div
-          role="menu"
-          className={cn(
-            "invisible pointer-events-none absolute top-0 z-[140] max-h-[min(24rem,calc(100vh-1rem))] w-56 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-1.5 opacity-0 shadow-2xl shadow-black/45 [scrollbar-width:thin] group-hover/submenu:pointer-events-auto group-hover/submenu:visible group-hover/submenu:opacity-100 group-focus-within/submenu:pointer-events-auto group-focus-within/submenu:visible group-focus-within/submenu:opacity-100",
-            side === "left" ? "right-full mr-1" : "left-full ml-1",
-          )}
-        >
-          {children}
-        </div>
-      </div>
-    );
-  };
-
-  const renderFlowListContextMenu = (): JSX.Element | null => {
-    if (!flowListMenu) {
-      return null;
-    }
-
-    const flow = flowListMenu.flow;
-    const flowScope = getFlowSummaryScope(flow);
-    const activeFlowRuns = getFlowActiveRuns(flow);
-    const baseDisabled = !workspaceRoot || !flow.path || loading;
-    const isSelectedOpenFlow =
-      selectedId === flow.id &&
-      selectedScope === flowScope &&
-      draftFlow?.id === flow.id;
-    const mutationDisabled =
-      baseDisabled || activeFlowRuns.length > 0 || isGenerationTargetingFlow(flow);
-    const deleteDisabled =
-      !workspaceRoot ||
-      loading ||
-      activeFlowRuns.length > 0 ||
-      (!flow.path && !isSelectedOpenFlow);
-    const globalScope: RalphFlowScope = "user";
-    const workspaceScope: RalphFlowScope = "workspace";
-
-    return (
-      <div
-        role="menu"
-        className="fixed z-[130] w-56 rounded-lg border border-slate-700 bg-slate-950 p-1.5 shadow-2xl shadow-black/45"
-        style={{ left: flowListMenu.left, top: flowListMenu.top }}
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-      >
-        <div className="min-w-0 px-2 pb-1 pt-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-          <span className="block truncate">{flow.name}</span>
-        </div>
-        {renderCanvasMenuButton(
-          "Open in Explorer",
-          () => void openFlowInExplorer(flow),
-          {
-            disabled: baseDisabled,
-            icon: FolderOpen,
-            iconClassName: "text-cyan-300",
-          },
-        )}
-        <div className="my-1 h-px bg-slate-800" />
-        {renderCanvasMenuButton(
-          "Copy to global",
-          () => void copyOrMoveFlowToScope(flow, globalScope, "copy"),
-          {
-            disabled: baseDisabled || flowScope === globalScope,
-            icon: Copy,
-            iconClassName: "text-sky-300",
-          },
-        )}
-        {renderCanvasMenuButton(
-          "Copy to workspace",
-          () => void copyOrMoveFlowToScope(flow, workspaceScope, "copy"),
-          {
-            disabled: baseDisabled || flowScope === workspaceScope,
-            icon: Copy,
-            iconClassName: "text-emerald-300",
-          },
-        )}
-        <div className="my-1 h-px bg-slate-800" />
-        {renderCanvasMenuButton(
-          "Move to global",
-          () => void copyOrMoveFlowToScope(flow, globalScope, "move"),
-          {
-            disabled: mutationDisabled || flowScope === globalScope,
-            icon: Route,
-            iconClassName: "text-sky-300",
-          },
-        )}
-        {renderCanvasMenuButton(
-          "Move to workspace",
-          () => void copyOrMoveFlowToScope(flow, workspaceScope, "move"),
-          {
-            disabled: mutationDisabled || flowScope === workspaceScope,
-            icon: Route,
-            iconClassName: "text-emerald-300",
-          },
-        )}
-        <div className="my-1 h-px bg-slate-800" />
-        {renderCanvasMenuButton("Delete", () => void deleteFlow(flow), {
-          disabled: deleteDisabled,
-          danger: true,
-          icon: Trash2,
-        })}
-      </div>
-    );
-  };
-
-  const renderCanvasContextMenu = (): JSX.Element | null => {
-    if (!canvasMenu) {
-      return null;
-    }
-
-    const menuBlock =
-      canvasMenu.type === "node"
-        ? draftFlow?.blocks.find((block) => block.id === canvasMenu.blockId) ?? null
-        : null;
-    const menuEdge =
-      canvasMenu.type === "edge"
-        ? draftFlow?.edges.find((edge) => edge.id === canvasMenu.edgeId) ?? null
-        : null;
-    const submenuSide =
-      typeof window !== "undefined" &&
-      canvasMenu.left +
-        RALPH_CONTEXT_MENU_WIDTH +
-        RALPH_CONTEXT_SUBMENU_WIDTH +
-        RALPH_CONTEXT_MENU_MARGIN >
-        window.innerWidth
-        ? "left"
-        : "right";
-
-    return (
-      <div
-        role="menu"
-        className="fixed z-[120] w-56 overflow-visible rounded-lg border border-slate-700 bg-slate-950 p-1.5 shadow-2xl shadow-black/45"
-        style={{ left: canvasMenu.left, top: canvasMenu.top }}
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-      >
-        {canvasMenu.type === "pane" ? (
-          <>
-            <div className="px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Canvas
-            </div>
-            {renderCanvasSubmenu("Add block", (
-              <>
-                {renderAddBlockCanvasMenuButton("Prompt", "PROMPT", () =>
-                  addBlock("PROMPT", canvasMenu.position),
-                )}
-                {renderAddBlockCanvasMenuButton("Validator", "VALIDATOR", () =>
-                  addBlock("VALIDATOR", canvasMenu.position),
-                )}
-                {renderAddBlockCanvasMenuButton("Decision", "DECISION", () =>
-                  addBlock("DECISION", canvasMenu.position),
-                )}
-                {renderAddBlockCanvasMenuButton("Pack", "PACK", () =>
-                  addBlock("PACK", canvasMenu.position),
-                )}
-                {renderAddBlockCanvasMenuButton("Utility", "UTILITY", () =>
-                  addBlock("UTILITY", canvasMenu.position),
-                )}
-                {renderAddBlockCanvasMenuButton("End", "END", () =>
-                  addBlock("END", canvasMenu.position),
-                )}
-              </>
-            ), {
-              icon: Plus,
-              iconClassName: "text-cyan-300",
-              side: submenuSide,
-            })}
-            {renderCanvasSubmenu("Add visual", (
-              <>
-                {renderAddBlockCanvasMenuButton("Note", "NOTE", () =>
-                  addBlock("NOTE", canvasMenu.position),
-                )}
-                {renderAddBlockCanvasMenuButton("Group", "GROUP", () =>
-                  addBlock("GROUP", canvasMenu.position),
-                )}
-              </>
-            ), {
-              icon: LayoutGrid,
-              iconClassName: "text-slate-300",
-              side: submenuSide,
-            })}
-            {renderCanvasSubmenu("Add MCP", (
-              <>
-                {MCP_BLOCK_ACTIONS.map((action) =>
-                  renderAddBlockCanvasMenuButton(action.label, action.type, () =>
-                    addBlock(action.type, canvasMenu.position),
-                    { key: action.type },
-                  ),
-                )}
-              </>
-            ), {
-              icon: Globe2,
-              iconClassName: "text-violet-300",
-              side: submenuSide,
-            })}
-            <div className="my-1 border-t border-slate-800" />
-            {renderCanvasMenuButton("Paste block", () =>
-              pasteCopiedBlock(canvasMenu.position),
-              { disabled: !copiedBlock, icon: ClipboardPaste },
-            )}
-            {renderCanvasMenuButton("Clean layout", cleanFlowLayout, {
-              disabled: !draftFlow,
-              icon: LayoutGrid,
-            })}
-          </>
-        ) : null}
-
-        {canvasMenu.type === "node" && menuBlock ? (
-          <>
-            <div className="px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              {menuBlock.title}
-            </div>
-            {renderCanvasSubmenu("Add after", (
-              <>
-                {renderAddBlockCanvasMenuButton("Prompt", "PROMPT", () =>
-                  addBlockAfter(menuBlock.id, "PROMPT"),
-                )}
-                {renderAddBlockCanvasMenuButton("Validator", "VALIDATOR", () =>
-                  addBlockAfter(menuBlock.id, "VALIDATOR"),
-                )}
-                {renderAddBlockCanvasMenuButton("Decision", "DECISION", () =>
-                  addBlockAfter(menuBlock.id, "DECISION"),
-                )}
-                {renderAddBlockCanvasMenuButton("Pack", "PACK", () =>
-                  addBlockAfter(menuBlock.id, "PACK"),
-                )}
-                {renderAddBlockCanvasMenuButton("Utility", "UTILITY", () =>
-                  addBlockAfter(menuBlock.id, "UTILITY"),
-                )}
-                {renderAddBlockCanvasMenuButton("End", "END", () =>
-                  addBlockAfter(menuBlock.id, "END"),
-                )}
-              </>
-            ), {
-              icon: Plus,
-              iconClassName: "text-cyan-300",
-              side: submenuSide,
-            })}
-            {renderCanvasSubmenu("Add nearby", (
-              <>
-                {renderAddBlockCanvasMenuButton("Note", "NOTE", () =>
-                  addBlock("NOTE", {
-                    x: (menuBlock.position?.x ?? 0) + RALPH_CANVAS_X_GAP,
-                    y: (menuBlock.position?.y ?? 0) + RALPH_CANVAS_Y_GAP,
-                  }),
-                )}
-                {renderAddBlockCanvasMenuButton("Group", "GROUP", () =>
-                  addBlock("GROUP", {
-                    x: menuBlock.position?.x ?? 0,
-                    y: (menuBlock.position?.y ?? 0) + RALPH_CANVAS_Y_GAP,
-                  }),
-                )}
-              </>
-            ), {
-              icon: LayoutGrid,
-              iconClassName: "text-slate-300",
-              side: submenuSide,
-            })}
-            {renderCanvasSubmenu("Add MCP after", (
-              <>
-                {MCP_BLOCK_ACTIONS.map((action) =>
-                  renderAddBlockCanvasMenuButton(
-                    action.label,
-                    action.type,
-                    () => addBlockAfter(menuBlock.id, action.type),
-                    { key: action.type },
-                  ),
-                )}
-              </>
-            ), {
-              icon: Globe2,
-              iconClassName: "text-violet-300",
-              side: submenuSide,
-            })}
-            <div className="my-1 border-t border-slate-800" />
-            {renderCanvasMenuButton(
-              menuBlock.locked ? "Unlock node" : "Lock node",
-              () => setBlockLocked(menuBlock.id, !(menuBlock.locked ?? false)),
-              {
-                icon: menuBlock.locked ? LockKeyholeOpen : LockKeyhole,
-                iconClassName: menuBlock.locked
-                  ? "text-amber-200"
-                  : "text-cyan-200",
-              },
-            )}
-            {renderCanvasMenuButton("Copy block", () => copyBlock(menuBlock.id), {
-              icon: Copy,
-            })}
-            {renderCanvasMenuButton("Duplicate block", () =>
-              duplicateBlock(menuBlock.id),
-              {
-                disabled: menuBlock.type === "START",
-                icon: ClipboardPaste,
-              },
-            )}
-            {renderCanvasMenuButton("Delete block", deleteSelectedBlock, {
-              disabled: menuBlock.type === "START",
-              danger: true,
-              icon: Trash2,
-            })}
-          </>
-        ) : null}
-
-        {canvasMenu.type === "edge" && menuEdge ? (
-          <>
-            <div className="px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Route {menuEdge.fromOutput}
-            </div>
-            {renderCanvasMenuButton("Remove route", () => removeEdge(menuEdge.id), {
-              danger: true,
-              icon: Trash2,
-            })}
-            {renderCanvasMenuButton("Clean layout", cleanFlowLayout, {
-              disabled: !draftFlow,
-              icon: LayoutGrid,
-            })}
-          </>
-        ) : null}
-      </div>
-    );
-  };
-
-  const renderInspectorSectionTabs = (): JSX.Element | null => {
-    if (!selectedBlock || availableInspectorSections.length <= 1) {
-      return null;
-    }
-
-    return (
-      <div className="border-b border-slate-800/70 bg-slate-950/95 px-3 py-2">
-        <div className="flex min-w-0 gap-1 overflow-x-auto rounded-lg bg-slate-900/45 p-1 [scrollbar-width:thin]">
-          {availableInspectorSections.map((section) => {
-            const isActive = activeInspectorSection === section.id;
-            const routeBadge =
-              section.id === "routes" && missingSelectedRouteCount > 0
-                ? missingSelectedRouteCount
-                : null;
-            const sectionLabel =
-              section.id === "routes" ? "Route map" : section.label;
-
-            return (
-              <button
-                key={section.id}
-                type="button"
-                onClick={() => scrollInspectorSectionIntoView(section.id)}
-                className={cn(
-                  "flex h-8 shrink-0 items-center gap-1 rounded-md px-2.5 text-xs font-semibold transition",
-                  isActive
-                    ? "bg-slate-800 text-white shadow-sm ring-1 ring-cyan-400/25"
-                    : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-100",
-                )}
-              >
-                {sectionLabel}
-                {routeBadge ? (
-                  <span className="rounded-full bg-amber-500/20 px-1.5 text-[0.65rem] text-amber-100">
-                    {routeBadge}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  const renderSelectedRouteSummary = (): JSX.Element | null => {
-    if (!selectedBlock || selectedBlockOutputs.length === 0) {
-      return null;
-    }
-
-    return (
-      <button
-        type="button"
-        data-ralph-inspector-section="routes-summary"
-        onClick={() => scrollInspectorSectionIntoView("routes")}
-        className={cn(
-          "grid gap-2 rounded-lg px-3 py-2 text-left text-xs ring-1 transition",
-          missingSelectedRouteCount > 0
-            ? "bg-amber-500/10 ring-amber-400/30 hover:bg-amber-500/15"
-            : "bg-slate-950/70 ring-slate-800/70 hover:bg-slate-900/70",
-        )}
-      >
-        <div className="flex min-w-0 items-center justify-between gap-3">
-            <span className="flex min-w-0 items-center gap-2 font-semibold text-slate-200">
-            <Route className="h-3.5 w-3.5 shrink-0 text-sky-300" />
-            <span className="truncate">Route summary</span>
-          </span>
-          <span
-            className={cn(
-              "shrink-0 font-medium",
-              missingSelectedRouteCount > 0 ? "text-amber-100" : "text-slate-500",
-            )}
-          >
-            {connectedSelectedRouteCount}/{selectedBlockOutputs.length} connected
-          </span>
-        </div>
-        <div className="flex min-w-0 flex-wrap gap-1.5">
-          {selectedBlockOutputs.map((output) => {
-            const edge = selectedRoutesByOutput.get(output);
-            const targetBlock = edge
-              ? draftFlow?.blocks.find((block) => block.id === edge.to) ?? null
-              : null;
-
-            return (
-              <span
-                key={output}
-                className={cn(
-                  "max-w-full truncate rounded border px-2 py-1 font-mono text-[0.68rem]",
-                  edge
-                    ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-100"
-                    : "border-amber-400/25 bg-amber-500/10 text-amber-100",
-                )}
-              >
-                {output}
-                {" -> "}
-                {targetBlock ? targetBlock.title : edge ? "missing" : "unconnected"}
-              </span>
-            );
-          })}
-        </div>
-      </button>
-    );
-  };
-
+  const renderCanvasContextMenu = (): JSX.Element | null => (
+    <RalphCanvasContextMenu
+      canvasMenu={canvasMenu}
+      draftFlow={draftFlow}
+      hasCopiedBlock={copiedBlock !== null}
+      addBlock={addBlock}
+      addBlockAfter={addBlockAfter}
+      pasteCopiedBlock={pasteCopiedBlock}
+      cleanFlowLayout={cleanFlowLayout}
+      setBlockLocked={setBlockLocked}
+      copyBlock={copyBlock}
+      duplicateBlock={duplicateBlock}
+      deleteSelectedBlock={deleteSelectedBlock}
+      removeEdge={removeEdge}
+    />
+  );
   const renderExpandFieldButton = (
     label: string,
     onClick: () => void,
@@ -8017,143 +5448,15 @@ export const RalphFlowEditor = ({
 
   const renderUtilityConditionFields = (
     condition: RalphUtilityCondition | undefined,
-  ): JSX.Element => {
-    const currentCondition: RalphUtilityCondition =
-      condition ?? {
-        style: "simple",
-        expression: "status == 200",
-      };
-    const updateCondition = (patch: Partial<RalphUtilityCondition>): void => {
-      updateSelectedUtility({
-        condition: {
-          ...currentCondition,
-          ...patch,
-        },
-      });
-    };
-
-    return (
-      <div className="grid gap-2 rounded-md border border-slate-800 bg-slate-950 p-2">
-        <div className={cn("grid gap-2", inspectorTwoColumnClass)}>
-          <label className="grid gap-1.5 text-xs text-slate-300">
-            <span className="font-medium">Condition</span>
-            <select
-              value={currentCondition.style}
-              aria-label="Utility condition style"
-              onChange={(event) =>
-                updateCondition({
-                  style: event.target.value as RalphUtilityConditionStyle,
-                })
-              }
-              className="h-8 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
-            >
-              <option value="simple">Simple</option>
-              <option value="json-path">JSON Path</option>
-              <option value="javascript">JavaScript</option>
-            </select>
-          </label>
-          {currentCondition.style === "json-path" ? (
-            <label className="grid gap-1.5 text-xs text-slate-300">
-              <span className="font-medium">Operator</span>
-              <select
-                value={currentCondition.operator ?? "truthy"}
-                aria-label="Utility condition operator"
-                onChange={(event) =>
-                  updateCondition({
-                    operator: event.target
-                      .value as RalphUtilityCondition["operator"],
-                  })
-                }
-                className="h-8 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
-              >
-                {[
-                  "exists",
-                  "not-exists",
-                  "truthy",
-                  "falsy",
-                  "equals",
-                  "not-equals",
-                  "contains",
-                  "matches",
-                  "gt",
-                  "gte",
-                  "lt",
-                  "lte",
-                ].map((operator) => (
-                  <option key={operator} value={operator}>
-                    {operator}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-        </div>
-
-        {currentCondition.style === "json-path" ? (
-          <div className={cn("grid gap-2", inspectorTwoColumnClass)}>
-            <RalphInspectorField
-              label="JSON path"
-              help="Result field to inspect."
-              className="text-xs text-slate-300"
-            >
-              <Input
-                value={currentCondition.path ?? ""}
-                aria-label="Utility condition path"
-                placeholder="body.state"
-                onChange={(event) =>
-                  updateCondition({ path: event.target.value })
-                }
-                className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
-              />
-            </RalphInspectorField>
-            <RalphInspectorField
-              label="Expected value"
-              help="Used by equals, contains, matches, or range checks."
-              className="text-xs text-slate-300"
-            >
-              <Input
-                value={currentCondition.value ?? ""}
-                aria-label="Utility condition value"
-                placeholder="done"
-                onChange={(event) =>
-                  updateCondition({ value: event.target.value })
-                }
-                className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
-              />
-            </RalphInspectorField>
-          </div>
-        ) : (
-          <RalphInspectorField
-            label={
-              currentCondition.style === "javascript"
-                ? "JavaScript expression"
-                : "Condition expression"
-            }
-            help={
-              currentCondition.style === "javascript"
-                ? "Evaluated against the utility result object."
-                : "Simple status/body check expression."
-            }
-            className="text-xs text-slate-300"
-          >
-            <Textarea
-              value={currentCondition.expression ?? ""}
-              aria-label="Utility condition expression"
-              placeholder={
-                currentCondition.style === "javascript"
-                  ? "result.status === 200 && result.body.state === 'done'"
-                  : "status == 200"
-              }
-              onChange={(event) =>
-                updateCondition({ expression: event.target.value })
-              }
-              className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100 placeholder:text-slate-600"
-            />
-          </RalphInspectorField>
-        )}
-      </div>
-    );
-  };
+  ): JSX.Element => (
+    <RalphUtilityConditionFields
+      condition={condition}
+      inspectorTwoColumnClass={inspectorTwoColumnClass}
+      onChange={(nextCondition) =>
+        updateSelectedUtility({ condition: nextCondition })
+      }
+    />
+  );
 
   const renderUtilitySettings = (): JSX.Element | null => {
     if (!selectedUtility) {
@@ -9476,7 +6779,7 @@ export const RalphFlowEditor = ({
                   className="min-h-20 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
                 />
               </RalphInspectorField>
-            ) : selectedUtility.type !== "TRANSFORM_JSON" ? (
+            ) : selectedUtility.type === "VALIDATE_JSON" ? (
               <RalphInspectorField label="JSON schema" help="Schema used to validate the input JSON.">
                 <Textarea
                   key={`${selectedBlockId}-schema`}
@@ -9556,492 +6859,6 @@ export const RalphFlowEditor = ({
     );
   };
 
-  const renderStarterFlowDialog = (): JSX.Element => {
-    return (
-      <Dialog
-        open={starterFlowDialogOpen}
-        onOpenChange={setStarterFlowDialogOpen}
-      >
-        <DialogContent className="h-[min(720px,calc(100vh-28px))] w-[min(880px,calc(100vw-28px))] max-w-none grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl border-slate-700/80 bg-slate-950 p-0 text-slate-100 shadow-[0_24px_80px_rgba(2,6,23,0.65)] sm:max-w-none">
-          <DialogHeader className="border-b border-slate-800 bg-slate-950 px-5 py-4 pr-12">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-amber-400/25 bg-amber-400/10">
-                <Workflow className="h-4 w-4 text-amber-200" />
-              </div>
-              <div className="min-w-0">
-                <DialogTitle className="truncate text-base font-semibold text-white">
-                  Starter Ralph flows
-                </DialogTitle>
-                <DialogDescription className="mt-1 text-sm text-slate-500">
-                  Import a bundled flow as an editable copy in this workspace or in your global library.
-                </DialogDescription>
-              </div>
-            </div>
-          </DialogHeader>
-
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-950 px-5 py-3">
-            <div className="min-w-0 text-sm">
-              <span className="font-medium text-slate-200">Import to</span>
-              <span className="ml-2 text-slate-500">
-                {starterImportScopeLabel}
-              </span>
-            </div>
-            <div className="grid w-full grid-cols-2 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1 sm:w-64">
-              {RALPH_FLOW_SCOPES.map((scope) => (
-                <button
-                  key={scope}
-                  type="button"
-                  aria-pressed={starterImportScope === scope}
-                  aria-label={`Import starter flows to ${RALPH_FLOW_SCOPE_LABELS[scope]}`}
-                  onClick={() => setStarterImportScope(scope)}
-                  className={cn(
-                    "h-8 rounded-md px-2 text-xs font-semibold",
-                    starterImportScope === scope
-                      ? scope === "user"
-                        ? "bg-sky-500/20 text-sky-100"
-                        : "bg-emerald-500/20 text-emerald-100"
-                      : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
-                  )}
-                >
-                  {RALPH_FLOW_SCOPE_LABELS[scope]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <ScrollArea className="min-h-0 bg-slate-950" type="always">
-            <div className="grid gap-3 p-4 md:grid-cols-2">
-              {STARTER_RALPH_FLOW_SUMMARIES.map((starterFlow) => (
-                <article
-                  key={starterFlow.id}
-                  className="grid content-between gap-4 rounded-lg border border-slate-800 bg-slate-950/70 p-4"
-                >
-                  <div className="grid gap-3">
-                    <div className="flex min-w-0 items-start gap-2">
-                      <span
-                        aria-hidden="true"
-                        className="mt-0.5 shrink-0 text-base leading-none"
-                      >
-                        {getStarterFlowEmoji(starterFlow)}
-                      </span>
-                      <div className="min-w-0">
-                        <h3 className="truncate text-sm font-semibold text-white">
-                          {starterFlow.name}
-                        </h3>
-                        <div className="mt-1 text-xs text-slate-600">
-                          {formatStarterFlowSubtitle(starterFlow)}
-                        </div>
-                      </div>
-                    </div>
-                    <p className="text-sm leading-5 text-slate-400">
-                      {starterFlow.description}
-                    </p>
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={!workspaceRoot || loading}
-                    aria-label={`Add starter flow ${starterFlow.name} to ${starterImportScopeLabel}`}
-                    onClick={() =>
-                      void importStarterFlow(starterFlow, starterImportScope)
-                    }
-                    className="h-8 justify-self-start rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800 hover:text-white disabled:opacity-60"
-                  >
-                    {loading ? (
-                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Plus className="h-3.5 w-3.5" />
-                    )}
-                    Add
-                  </Button>
-                </article>
-              ))}
-            </div>
-          </ScrollArea>
-
-          <DialogFooter className="items-center justify-between border-t border-slate-800 bg-slate-950 px-5 py-3 sm:flex-row">
-            <div className="text-xs text-slate-500">
-              Starter flows stay bundled; imported flows are saved as editable copies.
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setStarterFlowDialogOpen(false)}
-              className="text-slate-400 hover:bg-slate-900 hover:text-white"
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  };
-
-  const renderExpandedEditorDialog = (): JSX.Element => {
-    const isJsonMode = expandedEditor?.mode === "json";
-
-    return (
-      <Dialog
-        open={Boolean(expandedEditor)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setExpandedEditor(null);
-          }
-        }}
-      >
-        <DialogContent className="max-h-[calc(100vh-3rem)] max-w-[min(72rem,calc(100vw-3rem))] grid-rows-[auto_minmax(0,1fr)_auto] border-slate-700 bg-slate-950 p-0 text-slate-100">
-          <DialogHeader className="border-b border-slate-800 px-5 py-4 pr-12">
-            <DialogTitle className="text-base text-white">
-              {expandedEditor?.title ?? "Expanded editor"}
-            </DialogTitle>
-            <DialogDescription className="text-slate-500">
-              {expandedEditor?.description ?? "Edit the field in a larger workspace."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid min-h-0 gap-3 overflow-hidden px-5 py-4">
-            {expandedEditor?.supportsVariables ? (
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                <span className="mr-1 text-xs font-medium text-slate-500">
-                  Insert
-                </span>
-                {RALPH_VARIABLE_SNIPPETS.map((snippet) => (
-                  <button
-                    key={snippet}
-                    type="button"
-                    onClick={() => insertExpandedEditorSnippet(snippet)}
-                    className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-[0.68rem] text-slate-300 hover:border-cyan-400/30 hover:bg-cyan-500/10 hover:text-cyan-100"
-                  >
-                    {snippet}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            <textarea
-              ref={expandedEditorTextareaRef}
-              value={expandedEditorDraft}
-              aria-label={expandedEditor?.ariaLabel ?? "Expanded editor"}
-              wrap={expandedEditorWrap ? "soft" : "off"}
-              spellCheck={expandedEditor?.mode === "text"}
-              onChange={(event) => setExpandedEditorDraft(event.target.value)}
-              className={cn(
-                "min-h-[min(56vh,34rem)] resize-none overflow-auto rounded-md border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm leading-6 text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30",
-                isJsonMode && "font-mono",
-              )}
-            />
-          </div>
-          <DialogFooter className="items-center justify-between border-t border-slate-800 px-5 py-3 sm:flex-row">
-            <label className="flex items-center gap-2 text-xs text-slate-400">
-              <input
-                type="checkbox"
-                checked={expandedEditorWrap}
-                onChange={(event) => setExpandedEditorWrap(event.target.checked)}
-              />
-              Wrap lines
-            </label>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => void copyExpandedEditorDraft()}
-                className="h-8 rounded-lg px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-white"
-              >
-                <Copy className="h-3.5 w-3.5" />
-                Copy
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setExpandedEditor(null)}
-                className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-200 hover:bg-slate-800"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={applyExpandedEditor}
-                className="h-8 rounded-lg bg-cyan-600 px-3 text-xs text-white hover:bg-cyan-500"
-              >
-                Apply
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  };
-
-  const renderGenerationInterviewDialog = (): JSX.Element => {
-    const state = generationInterview;
-    const busy = state?.status === "loading" || state?.status === "generating";
-    const targetLabel =
-      state?.context.target === "prompt-block"
-        ? "Prompt"
-        : state?.context.target === "refactor"
-          ? "Improve"
-          : "Flow";
-    const latestQuestionScope =
-      [...(state?.session?.transcript ?? [])]
-        .reverse()
-        .find((turn) => turn.questions.length > 0)
-        ?.questionScope?.trim() || "Questions";
-    const statusTitle =
-      state?.status === "generating"
-        ? "Generating"
-        : state?.status === "loading"
-          ? "Preparing questions"
-          : state?.status === "blocked"
-            ? "Needs attention"
-            : "Questions";
-    const primaryActionLabel =
-      state?.session && state.session.turn >= state.session.maxTurns
-        ? "Generate"
-        : "Continue";
-
-    return (
-      <Dialog
-        open={Boolean(state)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setGenerationInterview(null);
-          }
-        }}
-      >
-        <DialogContent
-          confirmOnInteractOutside={{
-            title: "Close interview?",
-            description: "Current answers will be discarded.",
-            cancelLabel: "Keep open",
-            confirmLabel: "Close",
-          }}
-          className="h-[min(720px,calc(100vh-28px))] w-[min(760px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-700/80 bg-slate-950 p-0 text-slate-100 shadow-[0_24px_80px_rgba(2,6,23,0.65)] sm:max-w-none"
-        >
-          <DialogHeader className="border-b border-slate-800 bg-slate-950 px-5 py-4 pr-12">
-            <div className="flex min-w-0 items-center justify-between gap-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-cyan-400/25 bg-cyan-400/10">
-                  <Sparkles className="h-4 w-4 text-cyan-200" />
-                </div>
-                <DialogTitle className="min-w-0 truncate text-base font-semibold text-white">
-                  Generation Interview
-                </DialogTitle>
-                <DialogDescription className="sr-only">
-                  Answer generation interview questions before Ralph creates or updates a flow.
-                </DialogDescription>
-              </div>
-              {state ? (
-                <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-                  <Badge
-                    variant="outline"
-                    className="border-cyan-400/30 bg-cyan-400/10 text-cyan-100"
-                  >
-                    {targetLabel}
-                  </Badge>
-                </div>
-              ) : null}
-            </div>
-          </DialogHeader>
-
-          {state ? (
-            <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] bg-slate-950">
-              <ScrollArea className="min-h-0 bg-slate-950" type="always">
-                <div className="grid gap-4 p-5">
-                    {state.status === "loading" ? (
-                      <div className="grid min-h-80 place-items-center">
-                        <div className="grid justify-items-center gap-4">
-                          <LoaderCircle className="h-7 w-7 animate-spin text-cyan-300" />
-                          <div className="text-sm font-semibold text-slate-100">
-                            {statusTitle}
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {state.status === "generating" ? (
-                      <div className="grid min-h-80 place-items-center">
-                        <div className="grid justify-items-center gap-4">
-                          <LoaderCircle className="h-7 w-7 animate-spin text-emerald-300" />
-                          <div className="text-sm font-semibold text-emerald-50">
-                            {statusTitle}
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {state.status === "blocked" ? (
-                      <div className="rounded-md border border-amber-400/25 bg-amber-400/10 p-4">
-                        <div className="mb-1 text-sm font-semibold text-amber-100">
-                          {statusTitle}
-                        </div>
-                        <p className="text-sm leading-6 text-amber-100/80">
-                          {state.error ?? state.summary}
-                        </p>
-                      </div>
-                    ) : null}
-
-                    {state.status === "ready" ? (
-                      <div className="grid gap-3">
-                        <div className="flex min-w-0 items-center justify-between gap-3">
-                          <h2 className="text-base font-semibold text-white">
-                            {latestQuestionScope}
-                          </h2>
-                        </div>
-                        {state.fields.map((field) => {
-                          const error = state.validationErrors[field.id];
-                          const skipped = state.skippedFieldIds.includes(field.id);
-                          const answerComment =
-                            state.answerComments[field.id] ?? "";
-                          const commentOpen =
-                            state.expandedCommentFieldIds.includes(field.id);
-                          const hasComment =
-                            answerComment.trim().length > 0;
-
-                          return (
-                            <div
-                              key={field.id}
-                              className={cn(
-                                "grid gap-3 rounded-lg border border-slate-700/70 bg-slate-900/70 p-4 text-sm text-slate-100 shadow-sm shadow-black/15",
-                                skipped && "border-slate-800 bg-slate-900/35",
-                              )}
-                            >
-                              <span className="flex min-w-0 items-start justify-between gap-3">
-                                <span className="min-w-0 font-semibold leading-5 text-slate-50">
-                                  {field.label}
-                                </span>
-                                <span className="flex shrink-0 items-center gap-1.5">
-                                  {skipped ? (
-                                    <span className="text-xs font-medium text-slate-500">
-                                      Skipped
-                                    </span>
-                                  ) : null}
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() =>
-                                          toggleGenerationInterviewComment(field.id)
-                                        }
-                                        aria-label={`${commentOpen ? "Hide" : "Add"} comment for ${field.label}`}
-                                        className={cn(
-                                          "h-7 w-7 rounded-md hover:bg-slate-800 hover:text-slate-100",
-                                          hasComment || commentOpen
-                                            ? "text-cyan-200"
-                                            : "text-slate-500",
-                                        )}
-                                      >
-                                        <MessageSquare className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      {commentOpen ? "Hide comment" : "Add comment"}
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </span>
-                              </span>
-                              {field.help ? (
-                                <p className="rounded-md border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs font-medium leading-5 text-cyan-50">
-                                  {field.help}
-                                </p>
-                              ) : null}
-                              {renderRalphInputControl(
-                                field,
-                                state.values[field.id] ?? getDefaultRalphInputValue(field),
-                                (value) => updateGenerationInterviewValue(field.id, value),
-                              )}
-                              {commentOpen ? (
-                                <Textarea
-                                  value={answerComment}
-                                  aria-label={`Comment for ${field.label}`}
-                                  placeholder="Add extra context for this answer"
-                                  onChange={(event) =>
-                                    updateGenerationInterviewComment(
-                                      field.id,
-                                      event.target.value,
-                                    )
-                                  }
-                                  className="min-h-20 border-slate-700 bg-slate-950 text-sm text-slate-100"
-                                />
-                              ) : null}
-                              <span className="flex min-w-0 items-start justify-between gap-3">
-                                {error ? (
-                                  <span className="min-w-0 text-xs leading-5 text-rose-200">
-                                    {error}
-                                  </span>
-                                ) : (
-                                  <span />
-                                )}
-                                {field.skippable ? (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="xs"
-                                    onClick={() => skipGenerationInterviewField(field.id)}
-                                    className={cn(
-                                      "shrink-0 hover:bg-slate-800 hover:text-slate-100",
-                                      skipped ? "text-slate-200" : "text-slate-400",
-                                    )}
-                                  >
-                                    {skipped ? "Skipped" : "Skip"}
-                                  </Button>
-                                ) : null}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                </div>
-              </ScrollArea>
-
-                <DialogFooter className="justify-end border-t border-slate-800 bg-slate-950 px-5 py-3 sm:flex-row">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => setGenerationInterview(null)}
-                      className="text-slate-400 hover:bg-slate-900 hover:text-white"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => void generateFromInterviewNow()}
-                      className="border-emerald-400/30 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      Generate
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={busy || state.status !== "ready"}
-                      onClick={() => void submitGenerationInterviewAnswers()}
-                      className="bg-cyan-600 text-white hover:bg-cyan-500"
-                    >
-                      {state.status === "loading" ? (
-                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Check className="h-3.5 w-3.5" />
-                      )}
-                      {primaryActionLabel}
-                    </Button>
-                  </div>
-                </DialogFooter>
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-    );
-  };
-
   return (
     <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-slate-950 text-slate-100">
       <header className="border-b border-slate-800 px-4 py-2 text-left">
@@ -10085,406 +6902,64 @@ export const RalphFlowEditor = ({
             )}
             style={editorGridStyle}
           >
-            {flowListOpen ? (
-            <aside className="col-start-1 row-start-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-slate-800 bg-slate-950/80">
-              <div className="grid gap-3 border-b border-slate-800 p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                    Flows
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      disabled={flowsLoading}
-                      aria-label="Refresh Ralph flows"
-                      title="Refresh Ralph flows"
-                      onClick={() => void refreshFlows()}
-                      className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-                    >
-                      <RefreshCw
-                        className={cn("h-4 w-4", flowsLoading && "animate-spin")}
-                      />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Collapse Ralph flows"
-                      title="Collapse Ralph flows"
-                      onClick={() => setFlowListOpen(false)}
-                      className="h-8 w-8 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
-                  {RALPH_FLOW_LIBRARY_MODES.map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      aria-pressed={flowLibraryMode === mode}
-                      onClick={() => onFlowLibraryModeChange?.(mode)}
-                      className={cn(
-                        "h-7 min-w-0 rounded-md px-2 text-xs font-semibold",
-                        flowLibraryMode === mode
-                          ? mode === "user"
-                            ? "bg-sky-500/20 text-sky-100"
-                            : mode === "workspace"
-                              ? "bg-emerald-500/20 text-emerald-100"
-                              : "bg-slate-700 text-white"
-                          : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
-                      )}
-                    >
-                      <span className="block truncate">
-                        {RALPH_FLOW_LIBRARY_LABELS[mode]}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={!workspaceRoot}
-                    onClick={() => void createLocalFlow(defaultFlowActionScope)}
-                    className="h-9 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    New
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={!workspaceRoot}
-                    aria-label="Open starter Ralph flows"
-                    onClick={openStarterFlowDialog}
-                    className="h-9 rounded-lg border-amber-400/30 bg-amber-500/10 px-3 text-xs text-amber-100 hover:bg-amber-500/15 hover:text-white"
-                  >
-                    <Workflow className="h-3.5 w-3.5" />
-                    Starters
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={!canSaveFlow}
-                    onClick={() => void saveFlow()}
-                    className={cn(
-                      "col-span-2 h-9 rounded-lg px-3 text-xs",
-                      canSaveFlow
-                        ? "bg-emerald-600 text-white hover:bg-emerald-500"
-                        : "border border-slate-800 bg-slate-900 text-slate-500",
-                    )}
-                  >
-                    {loading ? (
-                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Save className="h-3.5 w-3.5" />
-                    )}
-                    Save
-                  </Button>
-                </div>
-              </div>
-
-              <ScrollArea className="min-h-0" type="always">
-                <div className="grid p-2 pr-4">
-                  {flowsLoading && displayFlowRows.length === 0 ? (
-                    <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950 px-3 py-4 text-sm text-slate-400">
-                      <LoaderCircle className="h-4 w-4 animate-spin text-sky-300" />
-                      Loading Ralph flows...
-                    </div>
-                  ) : displayFlowRows.length === 0 ? (
-                    <div className="px-2 py-3 text-sm leading-5 text-slate-500">
-                      {workspaceRoot
-                        ? `No ${RALPH_FLOW_LIBRARY_LABELS[flowLibraryMode].toLowerCase()} Ralph flows found.`
-                        : "Choose a workspace before creating Ralph flows."}
-                    </div>
-                  ) : (
-                    displayFlowRows.map((row) =>
-                      row.type === "heading" ? (
-                        <div
-                          key={`heading-${row.scope}`}
-                          className="flex min-w-0 items-center justify-between gap-2 px-2 pb-1 pt-3 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-slate-500 first:pt-1"
-                        >
-                          <span>{RALPH_FLOW_SCOPE_LABELS[row.scope]}</span>
-                          <span>{row.count}</span>
-                        </div>
-                      ) : (
-                      (() => {
-                        const flow = row.flow;
-                        const flowScope = getFlowSummaryScope(flow);
-                        const flowKey = getFlowSummarySelectionKey(flow);
-                        const isSelectedFlow =
-                          selectedFlowKey === flowKey;
-                        const isDraftSummary =
-                          draftFlow?.id === flow.id &&
-                          selectedScope === flowScope;
-                        const isGeneratedSummary =
-                          generationJob?.status === "created" &&
-                          generationJob.scope === flowScope &&
-                          generationJob.result?.flow?.id === flow.id;
-                        const activeFlowRuns = activeRunsByFlowKey.get(flowKey) ?? [];
-                        const runStatusLabel = getFlowRunStatusLabel(
-                          activeFlowRuns,
-                        );
-                        const starterUpdate = getStarterFlowUpdate(flow);
-                        const canLoadFlow =
-                          Boolean(flow.path) ||
-                          (draftFlow?.id === flow.id && selectedScope === flowScope);
-                        const statusLabel =
-                          runStatusLabel ??
-                          (starterUpdate
-                            ? "Starter update"
-                            : null) ??
-                          (isGeneratedSummary
-                            ? "Generated"
-                            : isDraftSummary
-                              ? dirty
-                                ? "Unsaved"
-                                : errorCount > 0
-                                  ? "Errors"
-                                  : warningCount > 0
-                                    ? "Warnings"
-                                    : "Ready"
-                              : "Saved");
-                        const statusPresentation =
-                          getFlowStatusPresentation(statusLabel);
-                        const StatusIcon = statusPresentation.icon;
-
-                        return (
-                          <div
-                            key={flowKey}
-                            onContextMenu={(event) =>
-                              openFlowListMenu(event, flow)
-                            }
-                            className={cn(
-                              "flex min-w-0 items-center gap-2 border-b border-slate-800/70 px-2 py-2 last:border-b-0",
-                              isSelectedFlow
-                                ? "bg-emerald-500/10"
-                                : canLoadFlow
-                                  ? "hover:bg-slate-900/70"
-                                  : "cursor-default opacity-80",
-                            )}
-                          >
-                            <button
-                              type="button"
-                              disabled={!canLoadFlow}
-                              onClick={() => void selectFlow(flow)}
-                              title={flow.name}
-                              className="grid min-w-0 flex-1 gap-1 text-left disabled:cursor-default"
-                            >
-                              <span className="flex min-w-0 items-center justify-between gap-2">
-                                <span className="truncate text-sm font-medium text-slate-100">
-                                  {flow.name}
-                                </span>
-                                <span
-                                  aria-label={`Flow status: ${statusLabel}`}
-                                  title={statusLabel}
-                                  className={cn(
-                                    "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-slate-800 bg-slate-950",
-                                    statusPresentation.className,
-                                  )}
-                                >
-                                  <StatusIcon
-                                    className={cn(
-                                      "h-3.5 w-3.5",
-                                      statusPresentation.spin && "animate-spin",
-                                    )}
-                                  />
-                                </span>
-                              </span>
-                              <span className="truncate text-[0.68rem] leading-4 text-slate-500">
-                                {formatFlowSubtitle(flow)}
-                              </span>
-                              {starterUpdate ? (
-                                <span className="flex min-w-0 items-center gap-1 text-[0.68rem] font-medium leading-4 text-amber-200">
-                                  <AlertTriangle className="h-3 w-3 shrink-0" />
-                                  <span className="min-w-0 truncate">
-                                    Starter v{starterUpdate.latestVersion} available
-                                  </span>
-                                </span>
-                              ) : null}
-                            </button>
-                          </div>
-                        );
-                      })()
-                    ))
-                  )}
-                </div>
-              </ScrollArea>
-            </aside>
-            ) : (
-              <aside className="col-start-1 row-start-1 flex min-h-0 flex-col items-center gap-3 border-r border-slate-800 bg-slate-950/80 px-1.5 py-3">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Open Ralph flows"
-                  title="Open Ralph flows"
-                  onClick={() => setFlowListOpen(true)}
-                  className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-                >
-                  <Workflow className="h-4 w-4" />
-                </Button>
-                <span className="origin-center rotate-90 whitespace-nowrap text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  Flows
-                </span>
-              </aside>
-            )}
+            <RalphFlowLibraryPanel
+              activeRunsByFlowKey={activeRunsByFlowKey}
+              canSaveFlow={canSaveFlow}
+              defaultFlowActionScope={defaultFlowActionScope}
+              dirty={dirty}
+              displayFlowRows={displayFlowRows}
+              draftFlow={draftFlow}
+              errorCount={errorCount}
+              flowLibraryMode={flowLibraryMode}
+              flowListOpen={flowListOpen}
+              flowsLoading={flowsLoading}
+              generationCreatedFlow={
+                generationJob?.status === "created" &&
+                generationJob.result?.flow
+                  ? {
+                      flowId: generationJob.result.flow.id,
+                      scope: generationJob.scope,
+                    }
+                  : null
+              }
+              getStarterFlowUpdate={getStarterFlowUpdate}
+              loading={loading}
+              selectedFlowKey={selectedFlowKey}
+              selectedScope={selectedScope}
+              warningCount={warningCount}
+              workspaceRoot={workspaceRoot ?? ""}
+              onCollapseFlowList={() => setFlowListOpen(false)}
+              onCreateLocalFlow={(scope) => void createLocalFlow(scope)}
+              onFlowContextMenu={openFlowListMenu}
+              onFlowLibraryModeChange={onFlowLibraryModeChange}
+              onOpenFlowList={() => setFlowListOpen(true)}
+              onOpenStarterFlowDialog={openStarterFlowDialog}
+              onRefreshFlows={() => void refreshFlows()}
+              onSaveFlow={() => void saveFlow()}
+              onSelectFlow={(flow) => void selectFlow(flow)}
+            />
 
             <main className="col-start-2 row-start-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-slate-950">
-              <div className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <Route className="h-4 w-4 shrink-0 text-sky-300" />
-                  <span className="truncate text-sm font-semibold text-white">
-                    {flowTitle}
-                  </span>
-                  {draftFlow || selectedSummary ? (
-                    <span
-                      className={cn(
-                        "shrink-0 rounded border px-1.5 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.12em]",
-                        selectedScope === "user"
-                          ? "border-sky-400/30 bg-sky-500/10 text-sky-100"
-                          : "border-slate-700 bg-slate-900 text-slate-400",
-                      )}
-                    >
-                      {selectedScopeLabel}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        aria-label="Undo Ralph edit"
-                        title="Undo Ralph edit"
-                        disabled={!canUndo}
-                        onClick={undoFlowEdit}
-                        className="h-8 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white disabled:text-slate-700"
-                      >
-                        <Undo2 className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Undo</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        aria-label="Redo Ralph edit"
-                        title="Redo Ralph edit"
-                        disabled={!canRedo}
-                        onClick={redoFlowEdit}
-                        className="h-8 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white disabled:text-slate-700"
-                      >
-                        <Redo2 className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Redo</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        aria-label="Clean Ralph layout"
-                        title="Clean Ralph layout"
-                        disabled={!draftFlow}
-                        onClick={cleanFlowLayout}
-                        className="h-8 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white disabled:text-slate-700"
-                      >
-                        <LayoutGrid className="h-4 w-4 text-slate-300" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Clean layout</TooltipContent>
-                  </Tooltip>
-                  {editorMode === "design" && !showInspectorPanel ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          aria-label="Show block settings"
-                          title="Show block settings"
-                          onClick={() => setInspectorOpen(true)}
-                          className="h-8 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white"
-                        >
-                          <SlidersHorizontal className="h-4 w-4 text-slate-300" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">Show settings</TooltipContent>
-                    </Tooltip>
-                  ) : null}
-                  <div className="mx-1 h-5 w-px bg-slate-800" />
-                  {BLOCK_ACTIONS.map((action) => {
-                      const tone = getBlockTone(action.type);
-                      const Icon = tone.icon;
-
-                      return (
-                        <Tooltip key={action.type}>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              aria-label={`Add ${action.label} block`}
-                              title={`Add ${action.label} block`}
-                              disabled={action.type === "START" && flowHasStart}
-                              onClick={() => addBlock(action.type)}
-                              className="h-8 w-8 rounded-lg p-0 text-slate-300 hover:bg-slate-900 hover:text-white disabled:text-slate-700"
-                            >
-                              <Icon className={cn("h-4 w-4", tone.badgeClassName)} />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            {action.label}
-                          </TooltipContent>
-                        </Tooltip>
-                      );
-                    })}
-                  <DropdownMenu>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            aria-label="Add MCP block"
-                            title="Add MCP block"
-                            className="h-8 w-8 rounded-lg p-0 text-slate-300 hover:bg-slate-900 hover:text-white"
-                          >
-                            <Globe2 className="h-4 w-4 text-violet-300" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">MCP</TooltipContent>
-                    </Tooltip>
-                    <DropdownMenuContent
-                      align="end"
-                      sideOffset={5}
-                      className="z-[90] min-w-36 rounded-md border border-slate-700 bg-slate-950 p-1 text-slate-100 shadow-xl shadow-black/30"
-                    >
-                      {MCP_BLOCK_ACTIONS.map((action) => (
-                        <DropdownMenuItem
-                          key={action.type}
-                          onSelect={() => addBlock(action.type)}
-                          className="flex min-w-0 cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs font-medium text-slate-300 outline-none focus:bg-violet-500/15 focus:text-violet-100"
-                        >
-                          <Globe2 className="h-3.5 w-3.5 shrink-0 text-violet-300" />
-                          <span className="min-w-0 truncate">{action.label}</span>
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
+              <RalphFlowEditorToolbar
+                flowTitle={flowTitle}
+                selectedScope={selectedScope}
+                selectedScopeLabel={selectedScopeLabel}
+                hasSelectedFlow={Boolean(draftFlow || selectedSummary)}
+                canUndo={canUndo}
+                canRedo={canRedo}
+                canCleanLayout={Boolean(draftFlow)}
+                canShowInspector={editorMode === "design" && !showInspectorPanel}
+                flowHasStart={flowHasStart}
+                onUndo={undoFlowEdit}
+                onRedo={redoFlowEdit}
+                onCleanLayout={cleanFlowLayout}
+                onShowInspector={() => setInspectorOpen(true)}
+                onAddBlock={addBlock}
+              />
 
               <div ref={canvasViewportRef} className="relative min-h-0">
                 <ReactFlowProvider>
-                  <ReactFlow
+                  <ReactFlow<RalphCanvasNode, RalphCanvasEdge>
                     nodes={canvasNodes}
                     edges={edges}
                     nodeTypes={RALPH_NODE_TYPES}
@@ -10694,7 +7169,12 @@ export const RalphFlowEditor = ({
                 </div>
               </div>
 
-              {renderInspectorSectionTabs()}
+              <RalphInspectorSectionTabs
+                sections={availableInspectorSections}
+                activeSection={activeInspectorSection}
+                missingRouteCount={missingSelectedRouteCount}
+                onSelectSection={scrollInspectorSectionIntoView}
+              />
 
               <div className="relative min-h-0">
                 <div
@@ -10985,7 +7465,7 @@ export const RalphFlowEditor = ({
                         />
                         {getPromptLikeText(selectedBlock).includes("{{") ? (
                           <div className="max-h-28 overflow-auto rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap text-slate-300">
-                            {renderPromptHighlight(getPromptLikeText(selectedBlock))}
+                            <RalphPromptHighlight value={getPromptLikeText(selectedBlock)} />
                           </div>
                         ) : null}
                       </RalphInspectorField>
@@ -12123,7 +8603,14 @@ export const RalphFlowEditor = ({
                       <div className="text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
                         Routes
                       </div>
-                      {renderSelectedRouteSummary()}
+                      <RalphSelectedRouteSummary
+                        outputs={selectedBlock ? selectedBlockOutputs : []}
+                        routesByOutput={selectedRoutesByOutput}
+                        blocks={draftFlow?.blocks}
+                        missingRouteCount={missingSelectedRouteCount}
+                        connectedRouteCount={connectedSelectedRouteCount}
+                        onOpenRoutes={() => scrollInspectorSectionIntoView("routes")}
+                      />
                       {selectedBlockOutputs.length === 0 ? (
                         <div className="text-xs text-slate-500">
                           END blocks do not route further.
@@ -13438,7 +9925,16 @@ export const RalphFlowEditor = ({
                                       {variable.type}
                                     </span>
                                   </span>
-                                  {renderSetupVariableControl(variable, variableError)}
+                                  <RalphSetupVariableControl
+                                    variable={variable}
+                                    value={getRalphVariableValue(
+                                      variable,
+                                      variableValues,
+                                    )}
+                                    error={variableError}
+                                    errorId={variableErrorId}
+                                    onChange={updateSetupVariableValue}
+                                  />
                                   {variableError ? (
                                     <span
                                       id={variableErrorId}
@@ -14515,9 +11011,43 @@ export const RalphFlowEditor = ({
             </section>
             )}
           </div>
-          {renderGenerationInterviewDialog()}
-          {renderStarterFlowDialog()}
-          {renderExpandedEditorDialog()}
+          <RalphGenerationInterviewDialog
+            state={generationInterview}
+            renderInputControl={renderRalphInputControl}
+            getDefaultInputValue={getDefaultRalphInputValue}
+            onClose={() => setGenerationInterview(null)}
+            onValueChange={updateGenerationInterviewValue}
+            onToggleComment={toggleGenerationInterviewComment}
+            onCommentChange={updateGenerationInterviewComment}
+            onSkipField={skipGenerationInterviewField}
+            onGenerateNow={() => void generateFromInterviewNow()}
+            onSubmitAnswers={() => void submitGenerationInterviewAnswers()}
+          />
+          <RalphStarterFlowDialog
+            open={starterFlowDialogOpen}
+            workspaceRoot={workspaceRoot}
+            loading={loading}
+            starterImportScope={starterImportScope}
+            starterImportScopeLabel={starterImportScopeLabel}
+            onOpenChange={setStarterFlowDialogOpen}
+            onStarterImportScopeChange={setStarterImportScope}
+            onImportStarterFlow={(starterFlow, targetScope) => {
+              void importStarterFlow(starterFlow, targetScope);
+            }}
+          />
+          <RalphExpandedEditorDialog
+            editor={expandedEditor}
+            draft={expandedEditorDraft}
+            wrap={expandedEditorWrap}
+            variableSnippets={RALPH_VARIABLE_SNIPPETS}
+            textareaRef={expandedEditorTextareaRef}
+            onDraftChange={setExpandedEditorDraft}
+            onWrapChange={setExpandedEditorWrap}
+            onClose={() => setExpandedEditor(null)}
+            onApply={applyExpandedEditor}
+            onCopy={() => void copyExpandedEditorDraft()}
+            onInsertSnippet={insertExpandedEditorSnippet}
+          />
     </section>
   );
 };

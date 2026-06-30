@@ -28,12 +28,42 @@ export const createFallbackExecutionMarkdown = (
   }
 };
 
+const stripPreviewLineNumber = (line: string): string => {
+  return line.replace(/^\d+:\s?/, "");
+};
+
+const getAssistantAnswerSectionMarkdown = (
+  execution: TaskExecutionResult,
+): string | null => {
+  const answerSection = execution.outputSections.find(
+    (section) =>
+      section.audience !== "internal" &&
+      section.title === "Agent answer" &&
+      section.lines.some((line) => line.trim().length > 0),
+  );
+
+  if (!answerSection) {
+    return null;
+  }
+
+  const markdown = answerSection.lines
+    .map(stripPreviewLineNumber)
+    .join("\n")
+    .trim();
+
+  return markdown.length > 0 && markdown !== "(empty)" ? markdown : null;
+};
+
 export const getExecutionMessageContent = (
   execution: TaskExecutionResult,
 ): string => {
   const structuredMarkdown = execution.response?.markdown?.trim();
 
-  return structuredMarkdown || createFallbackExecutionMarkdown(execution);
+  return (
+    structuredMarkdown ||
+    getAssistantAnswerSectionMarkdown(execution) ||
+    createFallbackExecutionMarkdown(execution)
+  );
 };
 
 export const getRelatedFileButtonLabel = (path: string): string => {

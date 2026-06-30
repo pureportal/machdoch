@@ -36,8 +36,8 @@ const createResult = (
   overrides: Partial<Pick<TaskExecutionResult, "summary" | "outputSections" | "response">>,
 ): TaskExecutionResult => ({
   task: "Generate a Ralph flow",
-  mode: "auto",
-  status: "completed",
+  mode: "machdoch",
+  status: "executed",
   summary: "",
   executedTools: [],
   outputSections: [],
@@ -49,6 +49,10 @@ describe("readGeneratedRalphFlow", () => {
     const result = createResult({
       response: {
         markdown: `<ralph_flow_json>${createFlowJson("tagged")}</ralph_flow_json>`,
+        highlights: [],
+        relatedFiles: [],
+        verification: [],
+        followUps: [],
       },
     });
 
@@ -86,7 +90,13 @@ describe("readGeneratedRalphFlow", () => {
   it("deduplicates repeated invalid response candidates before reporting errors", async () => {
     const invalidTagged = "<ralph_flow_json>{invalid</ralph_flow_json>";
     const result = createResult({
-      response: { markdown: invalidTagged },
+      response: {
+        markdown: invalidTagged,
+        highlights: [],
+        relatedFiles: [],
+        verification: [],
+        followUps: [],
+      },
       outputSections: [{ title: "Duplicate", lines: [invalidTagged] }],
       summary: invalidTagged,
     });

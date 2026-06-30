@@ -105,3 +105,145 @@
 - Extracted Ralph inspector width bounds, local-storage load/save behavior, and scroll epsilon constants from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/_helpers/ralph-inspector-width.helper.ts`.
 - Added focused coverage in `src/tauri/ui/ralph/_helpers/ralph-inspector-width.helper.spec.ts` for width clamping, viewport caps, invalid stored values, valid stored values, and preference writes.
 - Kept `RalphFlowEditor` responsible for the inspector UI, drag handlers, scroll state, and visible section composition; no component props, persisted key names, or runtime bridge payloads were changed.
+
+## src pass 3
+
+- Extracted Ralph flow editor block creation, copied-block creation, edge ID generation, and default utility config construction from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/_helpers/ralph-block-factory.helper.ts`.
+- Preserved the exported `RalphFlowEditor` component, editor props, DOM labels, command names, flow JSON shapes, block defaults, edge ID formats, and existing UI call sites.
+- Added focused helper tests for block ID allocation, edge ID collision handling, duplicate START copy rejection, copied block positioning, utility block defaults, and UI analysis defaults.
+- `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over the 500-line policy after this bounded pass because it still owns the full editor composition, dialogs, inspector panels, run panels, canvas menus, and keyboard handlers. Follow-up passes should split presentational panels and dialogs without changing accessible labels.
+
+## src pass 4
+
+- Extracted Ralph flow editor JSON draft parsing, provider/model fallback selection, create-flow/run message formatting, prompt-block generation prompt assembly, generation interview prompt formatting, and generation status/error label helpers into `src/tauri/ui/ralph/_helpers/ralph-generation-formatting.helper.ts`.
+- Preserved the exported `RalphFlowEditor` component, editor props, runtime command payloads, provider option behavior, prompt text, run/create summary text, clipboard error text, and visible generation labels.
+- Added focused helper tests for JSON draft parsing, provider fallback behavior, prompt-block prompt assembly, interview answer comment trimming, status/phase labels, error clipboard text, and run/create summaries.
+- `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over the 500-line policy after this bounded pass because it still owns the full editor composition, dialogs, inspector panels, run panels, canvas menus, and keyboard handlers. Follow-up passes should split presentational panels and dialogs without changing accessible labels.
+
+## src pass 5
+
+- Extracted Ralph flow row run labels, flow status presentation, run status presentation, and block output chip class mapping from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/_helpers/ralph-run-presentation.helper.ts`.
+- Preserved visible labels, icons, tone class names, chip class names, active-run status precedence, and editor call sites.
+- Added focused helper tests for active run labels, flow status presentation, run status presentation, and output chip classes.
+- `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over the 500-line policy after this bounded pass because it still owns the full editor composition, dialogs, inspector panels, run panels, canvas menus, and keyboard handlers. Follow-up passes should continue extracting presentational panels and interaction helpers without changing accessible labels.
+
+## src pass 6
+
+- Extracted Ralph generation activity event normalization, result-event normalization, deduplicated activity appending, and job activity application from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/_helpers/ralph-generation-activity.helper.ts`.
+- Preserved generation event IDs, timestamp fallback behavior, metadata keys, activity history limit, job status field updates, and editor call sites.
+- Added focused helper tests for progress metadata handling, result-event handling, invalid timestamp fallback, deduplication/history limiting, and applying activity details to job state.
+- `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over the 500-line policy after this bounded pass because it still owns the full editor composition, dialogs, inspector panels, run panels, canvas menus, and keyboard handlers. Follow-up passes should continue extracting presentational panels and interaction helpers without changing accessible labels.
+
+## src pass 7
+
+- Extracted Ralph starter-flow summary construction, starter lookup, imported-starter update detection, import ID creation, subtitle formatting, and starter icon mapping from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/_helpers/ralph-starter-flow-presentation.helper.ts`.
+- Preserved bundled starter flow IDs, update badge logic, import ID fallback behavior, visible subtitle text, emoji labels, and editor call sites.
+- Added focused helper tests for bundled starter lookup, update detection, subtitle/icon formatting, and UUID-based import ID creation.
+- `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over the 500-line policy after this bounded pass because it still owns the full editor composition, dialogs, inspector panels, run panels, canvas menus, and keyboard handlers. Follow-up passes should continue extracting presentational panels and interaction helpers without changing accessible labels.
+
+## src pass 8
+
+- Extracted Ralph run record block cards, active run block detail cards, streamed progress rows, and output-section details from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/components/ralph-run-detail-cards.tsx`.
+- Preserved visible run detail labels, expandable sections, block output chip classes, progress timestamps, progress tone labels, and existing editor call sites.
+- Verified the extracted render path with `pnpm typecheck:ui` and `pnpm test:ui src/tauri/ui/ralph/ralph-flow-editor.spec.tsx`.
+- `src/tauri/ui/ralph/components/ralph-run-detail-cards.tsx` is below the 500-line policy at 316 lines. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy because it still owns editor state wiring, canvas interactions, inspector forms, generation dialogs, and run panel composition.
+
+## src pass 9
+
+- Extracted the starter-flow import dialog and expanded field editor dialog from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/components/ralph-editor-dialogs.tsx`.
+- Preserved dialog open/close behavior, starter import scope toggles, starter card labels, import button labels, expanded editor variable snippet buttons, copy/apply/cancel actions, textarea labels, and wrap-line controls.
+- Kept `RalphFlowEditor` as the state and command wiring boundary; the extracted dialog module receives existing callbacks and does not change exported editor props or runtime payloads.
+- Verified the extracted render path with `pnpm typecheck:ui` and `pnpm test:ui src/tauri/ui/ralph/ralph-flow-editor.spec.tsx`.
+- `src/tauri/ui/ralph/components/ralph-editor-dialogs.tsx` is below the 500-line policy at 307 lines. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy because it still owns editor state wiring, canvas interactions, inspector forms, generation interview composition, and run panel composition.
+
+## src pass 10
+
+- Extracted shared Ralph inspector field and details primitives from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/components/ralph-inspector-primitives.tsx`.
+- Preserved inspector labels, help text placement, details expand/collapse behavior, class names, action slots, and all existing editor call sites.
+- Kept `RalphFlowEditor` as the inspector state and form wiring boundary; the extracted primitives remain presentational and do not change exported editor props or runtime payloads.
+- Verified the extracted render path with targeted ESLint, `pnpm typecheck:ui`, and `pnpm test:ui src/tauri/ui/ralph/ralph-flow-editor.spec.tsx`.
+- `src/tauri/ui/ralph/components/ralph-inspector-primitives.tsx` is below the 500-line policy. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy because it still owns editor state wiring, canvas interactions, inspector forms, generation interview composition, and run panel composition.
+
+## src pass 11
+
+- Extracted Ralph flow editor mode types, option lists, provider option construction, UI limits, context-menu sizing, and React Flow pro options from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/_helpers/ralph-flow-editor-options.helper.ts`.
+- Preserved option ordering, labels, variable snippets, provider fallback behavior, context-menu sizing constants, editor props, runtime payloads, and visible UI text.
+- Added focused helper coverage for editor/inspector ordering, provider option de-duplication, runtime provider defaults, and variable snippet availability.
+- `src/tauri/ui/ralph/_helpers/ralph-flow-editor-options.helper.ts` is below the 500-line policy. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy because it still owns editor state wiring, canvas interactions, inspector forms, generation interview composition, and run panel composition.
+
+## src pass 12
+
+- Extracted the Ralph generation interview dialog from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/components/ralph-generation-interview-dialog.tsx`.
+- Preserved dialog titles, badges, loading/blocked/ready states, question labels, comment toggles, skip controls, cancel/generate/continue actions, and the editor-owned state/callback flow.
+- Kept `RalphFlowEditor` as the generation state and command wiring boundary; the extracted dialog receives the existing input renderer and callbacks without changing exported editor props or runtime payloads.
+- Verified the extracted render path with `pnpm typecheck:ui`, `pnpm lint`, and `pnpm test:ui src/tauri/ui/ralph/ralph-flow-editor.spec.tsx`.
+- `src/tauri/ui/ralph/components/ralph-generation-interview-dialog.tsx` is below the 500-line policy at 355 lines. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy because it still owns editor state wiring, canvas interactions, inspector forms, generation setup, and run panel composition.
+
+## src pass 13
+
+- Extracted Ralph flow editor state utilities, input-field ID creation, context-menu placement, save/revision message formatting, prompt-like block text updates, utility-title sync detection, history limits, flow snapshots, layout keys, canvas position comparisons, and locked-node change filtering from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/_helpers/ralph-flow-editor-state.helper.ts`.
+- Preserved the exported `RalphFlowEditor` component, editor props, runtime command payloads, visible labels, save messages, revision date fallback behavior, context-menu placement behavior, undo/redo history limit, prompt-like block updates, and canvas drag locking behavior.
+- Added focused helper coverage in `src/tauri/ui/ralph/_helpers/ralph-flow-editor-state.helper.spec.ts` for field IDs/defaults, save messages, prompt-like updates, utility title syncing, flow snapshots/layout keys, position/size comparisons, locked position changes, non-browser menu placement, and missing-DOM shortcut targets.
+- `src/tauri/ui/ralph/_helpers/ralph-flow-editor-state.helper.ts` is below the 500-line policy at 197 lines. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy at 11542 lines because it still owns editor state wiring, canvas interactions, inspector forms, generation setup, and run panel composition.
+
+## src pass 14
+
+- Extracted the main Ralph flow editor canvas toolbar from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/components/ralph-flow-editor-toolbar.tsx`.
+- Preserved toolbar button labels, accessible names, disabled states, tooltips, block action ordering, MCP menu entries, flow scope badge styling, and editor-owned callback behavior.
+- Kept `RalphFlowEditor` as the state and command wiring boundary; the extracted toolbar is presentational and does not change exported editor props, runtime payloads, saved flow shapes, or public imports.
+- `src/tauri/ui/ralph/components/ralph-flow-editor-toolbar.tsx` is below the 500-line policy. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy because it still owns editor state wiring, canvas interactions, inspector forms, generation setup, and run panel composition.
+
+## src pass 15
+
+- Extracted Ralph flow-list and canvas context menus from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/components/ralph-flow-context-menus.tsx` and `src/tauri/ui/ralph/components/ralph-node-context-menu-content.tsx`.
+- Preserved context-menu labels, roles, submenu placement behavior, disabled states, block action ordering, MCP entries, copy/move/delete flow actions, node lock/copy/duplicate/delete actions, route removal, paste behavior, and editor-owned callbacks.
+- Kept `RalphFlowEditor` as the state and command wiring boundary; the extracted components are presentational and do not change exported editor props, runtime payloads, saved flow shapes, or public imports.
+
+## src pass 16
+
+- Extracted Ralph prompt placeholder highlighting from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/components/ralph-prompt-highlight.tsx`.
+- Preserved highlighted placeholder text, surrounding prompt text, class names, editor props, runtime payloads, saved flow shapes, and public imports.
+- Added focused component coverage in `src/tauri/ui/ralph/components/ralph-prompt-highlight.spec.tsx` for plain prompt text and multiple Ralph placeholders.
+- Verified with `pnpm exec vitest run --config vitest.ui.config.ts src/tauri/ui/ralph/components/ralph-prompt-highlight.spec.tsx`, `pnpm exec vitest run --config vitest.ui.config.ts src/tauri/ui/ralph/ralph-flow-editor.spec.tsx`, `pnpm typecheck`, `pnpm lint`, and `pnpm test`.
+- `src/tauri/ui/ralph/components/ralph-prompt-highlight.tsx` is below the 500-line policy at 39 lines. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy at 11683 lines because it still owns editor state wiring, canvas interactions, inspector forms, generation setup, and run panel composition.
+- Both new context-menu component files are below the 500-line policy. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy because it still owns editor state wiring, canvas interactions, inspector forms, generation setup, and run panel composition.
+
+## src pass 17
+
+- Extracted Ralph inspector section tabs and selected route summary rendering from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/components/ralph-inspector-navigation.tsx`.
+- Preserved tab labels, route badge text, active-tab styling, route summary text, connected/missing/unconnected route target labels, data attributes, and editor-owned scroll callbacks.
+- Added focused component coverage in `src/tauri/ui/ralph/components/ralph-inspector-navigation.spec.tsx` for hidden single-section tabs, route badge selection callbacks, route summary labels, and route summary open callbacks.
+- Verified with `pnpm exec vitest run --config vitest.ui.config.ts src/tauri/ui/ralph/components/ralph-inspector-navigation.spec.tsx`, `pnpm exec vitest run --config vitest.ui.config.ts src/tauri/ui/ralph/ralph-flow-editor.spec.tsx`, `pnpm typecheck`, `pnpm lint`, and `pnpm test`.
+- `src/tauri/ui/ralph/components/ralph-inspector-navigation.tsx` is below the 500-line policy at 144 lines. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy at 11597 lines because it still owns editor state wiring, canvas interactions, inspector forms, generation setup, and run panel composition.
+
+## src pass 18
+
+- Extracted Ralph pending input controls and setup variable controls from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/components/ralph-input-controls.tsx`.
+- Preserved input labels, placeholders, file-list normalization, number/null conversion, boolean variable normalization, setup variable error accessibility attributes, and editor-owned state update callbacks.
+- Added focused component coverage in `src/tauri/ui/ralph/components/ralph-input-controls.spec.tsx` for file, number, boolean variable, and error attribute behavior.
+- Verified with `pnpm exec vitest run --config vitest.ui.config.ts src/tauri/ui/ralph/components/ralph-input-controls.spec.tsx`, `pnpm exec vitest run --config vitest.ui.config.ts src/tauri/ui/ralph/ralph-flow-editor.spec.tsx`, `pnpm typecheck`, `pnpm typecheck:ui`, `pnpm lint`, and `pnpm test`.
+- `src/tauri/ui/ralph/components/ralph-input-controls.tsx` is below the 500-line policy at 240 lines. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy at 11397 lines because it still owns editor state wiring, canvas interactions, inspector forms, generation setup, and run panel composition.
+
+## src pass 19
+
+- Extracted the Ralph flow library sidebar from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/components/ralph-flow-library-panel.tsx`.
+- Preserved flow library mode labels, refresh/collapse/open controls, new/starter/save actions, empty/loading messages, flow row status precedence, starter update labels, selection behavior, and editor-owned callback wiring.
+- Added focused component coverage in `src/tauri/ui/ralph/components/ralph-flow-library-panel.spec.tsx` for active run status labels, starter update labels, draft status labels, empty workspace disabled actions, library mode callbacks, and collapsed open behavior.
+- Verified with `pnpm exec vitest run --config vitest.ui.config.ts src/tauri/ui/ralph/components/ralph-flow-library-panel.spec.tsx` and `pnpm exec vitest run --config vitest.ui.config.ts src/tauri/ui/ralph/ralph-flow-editor.spec.tsx` before broad checks.
+- `src/tauri/ui/ralph/components/ralph-flow-library-panel.tsx` is below the 500-line policy at 448 lines. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy at 11174 lines because it still owns editor state wiring, canvas interactions, inspector forms, generation setup, and run panel composition.
+
+## src pass 20
+
+- Extracted Ralph AI prompt history ArrowUp/ArrowDown navigation state into `src/tauri/ui/ralph/_helpers/normalize-ralph-ai-prompt-history.helper.ts`.
+- Preserved prompt history ordering, draft restoration, boundary clamping, editor props, visible UI, and keyboard-triggered draft updates.
+- Added focused helper coverage for newest-entry navigation, oldest-entry clamping, forward navigation, draft restoration, and no-op history states.
+- Verified with `pnpm exec vitest run --config vitest.ui.config.ts src/tauri/ui/ralph/_helpers/normalize-ralph-ai-prompt-history.helper.spec.ts`, `pnpm exec vitest run --config vitest.ui.config.ts src/tauri/ui/ralph/ralph-flow-editor.spec.tsx`, `pnpm typecheck:ui`, and targeted ESLint for the touched Ralph editor/history files.
+- `src/tauri/ui/ralph/_helpers/normalize-ralph-ai-prompt-history.helper.ts` is below the 500-line policy at 83 lines. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy at 10494 lines because it still owns editor state wiring, canvas interactions, inspector forms, generation setup, and run panel composition.
+
+## src pass 21
+
+- Extracted Ralph utility condition form rendering from `src/tauri/ui/ralph/ralph-flow-editor.tsx` into `src/tauri/ui/ralph/components/ralph-utility-condition-fields.tsx`.
+- Preserved utility condition labels, default simple condition behavior, JSON-path operator choices, expression placeholders, editor-owned selected utility updates, and condition payload shape.
+- Added focused component coverage in `src/tauri/ui/ralph/components/ralph-utility-condition-fields.spec.tsx` for default simple rendering, expression updates, and JSON-path operator updates.
+- Verified with `pnpm exec vitest run --config vitest.ui.config.ts src/tauri/ui/ralph/components/ralph-utility-condition-fields.spec.tsx`, `pnpm exec vitest run --config vitest.ui.config.ts src/tauri/ui/ralph/ralph-flow-editor.spec.tsx`, `pnpm typecheck:ui`, and targeted ESLint for the touched Ralph files.
+- `src/tauri/ui/ralph/components/ralph-utility-condition-fields.tsx` is below the 500-line policy at 158 lines. `src/tauri/ui/ralph/ralph-flow-editor.tsx` remains over policy at 11045 lines because it still owns editor state wiring, canvas interactions, inspector forms, generation setup, and run panel composition.

@@ -4,14 +4,14 @@ describe("createLocalGenerationValidatorResult", () => {
   it("creates a successful local validator result for clean validation", () => {
     const result = createLocalGenerationValidatorResult(
       "Validate generated flow.",
-      "auto",
+      "machdoch",
       { decision: "DONE", issues: [], warnings: [] },
       42,
     );
 
     expect(result).toMatchObject({
       task: "Validate generated flow.",
-      mode: "auto",
+      mode: "machdoch",
       status: "executed",
       summary: "Local Ralph generation validator returned DONE.",
       executedTools: [],

@@ -19,6 +19,8 @@ import {
 import { cn } from "../lib/utils";
 import type { MainAppId } from "../lib/shell-store";
 
+declare const __MACHDOCH_VERSION__: string | undefined;
+
 export type AppActivityState =
   | "idle"
   | "running"
@@ -42,6 +44,12 @@ interface AppRailButtonProps {
   activity?: AppActivityState;
   onClick: () => void;
 }
+
+const appVersion =
+  typeof __MACHDOCH_VERSION__ === "string" &&
+  __MACHDOCH_VERSION__.trim().length > 0
+    ? __MACHDOCH_VERSION__.trim()
+    : "0.0.0";
 
 const getActivityLabel = (activity: AppActivityState | undefined): string => {
   switch (activity) {
@@ -190,6 +198,17 @@ export const AppRail = ({
           icon={Cog}
           onClick={onOpenSettings}
         />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className="mt-1 inline-flex h-5 min-w-12 items-center justify-center rounded-full border border-slate-900/80 bg-slate-950/40 px-1.5 text-[9px] font-medium leading-none text-slate-600 transition-colors hover:text-slate-500"
+              title={`machdoch ${appVersion}`}
+            >
+              v{appVersion}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="right">machdoch {appVersion}</TooltipContent>
+        </Tooltip>
       </div>
     </aside>
   );

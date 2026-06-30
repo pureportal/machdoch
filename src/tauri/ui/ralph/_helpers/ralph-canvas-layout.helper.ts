@@ -19,7 +19,7 @@ export type RalphNodeResizeEndHandler = (
   position: RalphPosition,
 ) => void;
 
-export interface RalphNodeData {
+export type RalphNodeData = Record<string, unknown> & {
   block: RalphFlowBlock;
   outputs: RalphExecutionOutput[];
   issueCount: number;
@@ -29,13 +29,13 @@ export interface RalphNodeData {
   hiddenByCollapsedGroup: boolean;
   lockedByGroupId: string | null;
   onResizeEnd?: RalphNodeResizeEndHandler;
-}
+};
 
 export type RalphCanvasNode = Node<RalphNodeData, "ralphBlock">;
 
-export interface RalphEdgeData {
+export type RalphEdgeData = Record<string, unknown> & {
   output: RalphExecutionOutput;
-}
+};
 
 export type RalphCanvasEdge = Edge<RalphEdgeData, "ralphRoute">;
 

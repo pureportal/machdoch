@@ -128,8 +128,6 @@ const writeWorkspaceMcpConfig = async (
 const createSamplingRequest = (
   overrides: Partial<CreateMessageRequest["params"]> = {},
 ): CreateMessageRequest => ({
-  jsonrpc: "2.0",
-  id: "sampling-1",
   method: "sampling/createMessage",
   params: {
     messages: [
@@ -356,9 +354,9 @@ describe("McpClientManager lifecycle", () => {
     const transport = createTransport();
     const client = createClient();
     const samplingHandler: McpSamplingHandler = vi.fn(async () => ({
-      role: "assistant",
+      role: "assistant" as const,
       content: {
-        type: "text",
+        type: "text" as const,
         text: "unexpected",
       },
       model: "test-model",
@@ -546,7 +544,7 @@ describe("McpClientManager lifecycle", () => {
               callToolStream,
             },
           },
-        } as Partial<Client>),
+        } as unknown as Partial<Client>),
       createTransport,
       loadWorkspaceEnv: async () => ({}),
     });
@@ -607,7 +605,7 @@ describe("McpClientManager lifecycle", () => {
               callToolStream,
             },
           },
-        } as Partial<Client>),
+        } as unknown as Partial<Client>),
       createTransport,
       loadWorkspaceEnv: async () => ({}),
     });
@@ -674,7 +672,7 @@ describe("McpClientManager lifecycle", () => {
               listTasks,
             },
           },
-        } as Partial<Client>),
+        } as unknown as Partial<Client>),
       createTransport,
       loadWorkspaceEnv: async () => ({}),
     });

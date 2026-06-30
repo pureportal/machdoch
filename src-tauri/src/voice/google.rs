@@ -19,7 +19,7 @@ const GOOGLE_STT_ENDPOINT: &str =
 const GOOGLE_TTS_VOICE: &str = "Kore";
 const GOOGLE_TTS_RETRY_COUNT: usize = 2;
 const GOOGLE_STT_SYSTEM_INSTRUCTION: &str = "You are a speech-to-text transcription service for a desktop AI assistant. Return only the spoken transcript as plain text. Preserve punctuation, filenames, CLI flags, code symbols, and product names when they are clear. If no intelligible speech is present, return an empty transcript. Do not summarize, explain, or add speaker labels.";
-const GOOGLE_MAX_INLINE_AUDIO_BYTES: usize = 20 * 1024 * 1024;
+pub(super) const GOOGLE_MAX_INLINE_AUDIO_BYTES: usize = 20 * 1024 * 1024;
 
 fn create_google_pace_instruction(rate: Option<f64>) -> Option<String> {
     let rate = rate.filter(|value| value.is_finite())?;

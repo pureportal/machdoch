@@ -35,6 +35,7 @@ import {
 } from "./session-context-attachments";
 import {
   createContinuationTaskPrompt,
+  createExecutionFromTerminalProgress,
   createExecutionMessageContent,
   createRecoveredContinueTaskPrompt,
   createRecoveredRetryTaskPrompt,
@@ -68,16 +69,6 @@ const TERMINAL_PROGRESS_STATE_BY_STATUS = {
   cancelled: "cancelled",
   unsupported: "unsupported",
 } satisfies Record<TaskExecutionResult["status"], TaskExecutionProgress["state"]>;
-
-const TERMINAL_PROGRESS_STATUS_BY_STATE = {
-  planned: "planned",
-  completed: "executed",
-  blocked: "blocked",
-  cancelled: "cancelled",
-  unsupported: "unsupported",
-} satisfies Partial<
-  Record<TaskExecutionProgress["state"], TaskExecutionResult["status"]>
->;
 const TERMINAL_PROGRESS_FALLBACK_DELAY_MS = 1_500;
 
 const createTerminalThinkingProgress = (
@@ -158,54 +149,12 @@ export const useSessionTaskSubmission = (options: {
     [options],
   );
 
-  const createFallbackExecutionFromTerminalProgress = useCallback(
-    (
-      progress: TaskExecutionProgress,
-      latestAssistantText: string,
-    ): TaskExecutionResult | null => {
-      if (progress.cancellable) {
-        return null;
-      }
-
-      const status = TERMINAL_PROGRESS_STATUS_BY_STATE[progress.state];
-
-      if (!status) {
-        return null;
-      }
-
-      const responseMarkdown =
-        latestAssistantText.trim() || progress.assistantText?.trim() || "";
-
-      return {
-        task: progress.task,
-        mode: progress.mode,
-        status,
-        summary: progress.message.trim() || "The task finished.",
-        executedTools: progress.executedTools,
-        outputSections: progress.outputSections,
-        ...(progress.reason ? { reason: progress.reason } : {}),
-        ...(responseMarkdown
-          ? {
-              response: {
-                markdown: responseMarkdown,
-                highlights: [],
-                relatedFiles: [],
-                verification: [],
-                followUps: [],
-              },
-            }
-          : {}),
-      };
-    },
-    [],
-  );
-
   const submitTaskToSession = useCallback(
-    (submitOptions: SubmitTaskToSessionOptions): void => {
+    (submitOptions: SubmitTaskToSessionOptions): boolean => {
       const normalizedTask = submitOptions.task.trim();
 
       if (!normalizedTask) {
-        return;
+        return false;
       }
 
       const { sessionSnapshot } = submitOptions;
@@ -217,7 +166,7 @@ export const useSessionTaskSubmission = (options: {
         hasActiveTaskForSession ||
         getSessionOverviewStatus(sessionSnapshot) === "running"
       ) {
-        return;
+        return false;
       }
 
       const contextAttachments = submitOptions.contextAttachments;
@@ -266,7 +215,6 @@ export const useSessionTaskSubmission = (options: {
       let taskFinalized = false;
       let latestAssistantText = "";
       let terminalFallbackMessageId: string | null = null;
-      let terminalFallbackNeedsAuthoritativeResponse = false;
       let terminalFallbackTimeoutId: number | undefined;
 
       options.voice.stopSpeaking();
@@ -291,7 +239,6 @@ export const useSessionTaskSubmission = (options: {
       ): void => {
         if (
           !terminalFallbackMessageId ||
-          !terminalFallbackNeedsAuthoritativeResponse ||
           !execution.response?.markdown.trim()
         ) {
           return;
@@ -299,7 +246,7 @@ export const useSessionTaskSubmission = (options: {
 
         const fallbackMessageId = terminalFallbackMessageId;
 
-        terminalFallbackNeedsAuthoritativeResponse = false;
+        terminalFallbackMessageId = null;
         options.state.updateSessionById(sessionId, (session) => {
           let didReplace = false;
           const nextMessages = session.messages.map((message) => {
@@ -364,7 +311,7 @@ export const useSessionTaskSubmission = (options: {
           return;
         }
 
-        const fallbackExecution = createFallbackExecutionFromTerminalProgress(
+        const fallbackExecution = createExecutionFromTerminalProgress(
           progress,
           latestAssistantText,
         );
@@ -398,8 +345,6 @@ export const useSessionTaskSubmission = (options: {
               execution: fallbackExecution,
             },
           );
-          terminalFallbackNeedsAuthoritativeResponse =
-            !fallbackExecution.response?.markdown.trim();
         }, TERMINAL_PROGRESS_FALLBACK_DELAY_MS);
       };
 
@@ -605,68 +550,65 @@ export const useSessionTaskSubmission = (options: {
               });
           }
 
-          options.state.scheduleMessage(
-            () => {
-              if (options.ignoredDesktopTaskIdsRef.current.has(taskId)) {
-                cleanupTaskTracking();
-                options.ignoredDesktopTaskIdsRef.current.delete(taskId);
-                return;
+          if (options.ignoredDesktopTaskIdsRef.current.has(taskId)) {
+            cleanupTaskTracking();
+            options.ignoredDesktopTaskIdsRef.current.delete(taskId);
+            return;
+          }
+
+          options.state.updateSessionById(sessionId, (session) => {
+            const timestamp = Date.now();
+            const terminalProgress = createTerminalThinkingProgress(
+              taskRun.execution,
+            );
+            const nextMessages = session.messages.map((message) => {
+              if (
+                message.taskId !== taskId ||
+                message.role !== "agent" ||
+                message.source?.kind !== "thinking"
+              ) {
+                return message;
               }
 
-              options.state.updateSessionById(sessionId, (session) => {
-                const timestamp = Date.now();
-                const terminalProgress = createTerminalThinkingProgress(
-                  taskRun.execution,
-                );
-                const nextMessages = session.messages.map((message) => {
-                  if (
-                    message.taskId !== taskId ||
-                    message.role !== "agent" ||
-                    message.source?.kind !== "thinking"
-                  ) {
-                    return message;
-                  }
+              return {
+                ...message,
+                source: {
+                  kind: "thinking" as const,
+                  thinking: appendThinkingProgress(
+                    message.source.thinking,
+                    terminalProgress,
+                    timestamp,
+                  ),
+                },
+              };
+            });
 
-                  return {
-                    ...message,
-                    source: {
-                      kind: "thinking",
-                      thinking: appendThinkingProgress(
-                        message.source.thinking,
-                        terminalProgress,
-                        timestamp,
-                      ),
-                    },
-                  };
-                });
-
-                return options.applySessionMessageLimit({
-                  ...session,
-                  updatedAt: timestamp,
-                  messages: [
-                    ...nextMessages,
-                    {
-                      id: crypto.randomUUID(),
-                      taskId,
-                      role: "agent",
-                      content: createExecutionMessageContent(taskRun.execution),
-                      createdAt: timestamp,
-                      source: {
-                        kind: "execution",
-                        execution: taskRun.execution,
-                      },
-                    },
-                  ],
-                });
-              });
-              options.activeDesktopTasksRef.current.delete(taskId);
-            },
-            220,
-          );
+            return options.applySessionMessageLimit({
+              ...session,
+              updatedAt: timestamp,
+              messages: [
+                ...nextMessages,
+                {
+                  id: crypto.randomUUID(),
+                  taskId,
+                  role: "agent",
+                  content: createExecutionMessageContent(taskRun.execution),
+                  createdAt: timestamp,
+                  source: {
+                    kind: "execution",
+                    execution: taskRun.execution,
+                  },
+                },
+              ],
+            });
+          });
+          options.activeDesktopTasksRef.current.delete(taskId);
         })
         .catch(reportTaskFailure);
+
+      return true;
     },
-    [appendAgentMessage, createFallbackExecutionFromTerminalProgress, options],
+    [appendAgentMessage, options],
   );
 
   const getMessageSourceSession = useCallback(

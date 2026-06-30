@@ -605,7 +605,9 @@ const normalizeContextPackVariables = (
   const seenVariables = new Set<string>();
 
   for (const entry of value) {
-    const candidate = isRecord(entry) ? entry : { name: entry };
+    const candidate: Record<string, unknown> = isRecord(entry)
+      ? entry
+      : { name: entry };
     const name = normalizeContextPackVariableName(candidate.name);
     const key = name.toLowerCase();
 
@@ -943,6 +945,7 @@ const normalizeResolvedPromptInvocation = (
     inputs: normalizeStringArray(value.inputs),
     arguments: normalizeString(value.arguments),
     expectedInputs: normalizeStringArray(value.expectedInputs),
+    missingInputs: normalizeStringArray(value.missingInputs),
     inputValues: normalizeStringRecord(value.inputValues),
     resolvedBody: normalizeString(value.resolvedBody, normalizeString(value.body)),
     ...(normalizeChatSessionOptionalString(value.description)
@@ -1255,6 +1258,10 @@ const normalizeThinkingTimelineEvents = (
         )
           ? (entry.provider as (typeof MODEL_PROVIDERS)[number])
           : undefined;
+      const stream: TaskThinkingTimelineEvent["stream"] =
+        entry.stream === "stdout" || entry.stream === "stderr"
+          ? entry.stream
+          : undefined;
 
       return {
         id: normalizeString(entry.id, `thinking-timeline-${index}`),
@@ -1283,9 +1290,7 @@ const normalizeThinkingTimelineEvents = (
         ...(normalizeChatSessionOptionalString(entry.callId)
           ? { callId: normalizeChatSessionOptionalString(entry.callId) }
           : {}),
-        ...(entry.stream === "stdout" || entry.stream === "stderr"
-          ? { stream: entry.stream }
-          : {}),
+        ...(stream ? { stream } : {}),
         ...(tokenUsage ? { tokenUsage } : {}),
         ...(metadata ? { metadata } : {}),
       };
@@ -1634,6 +1639,8 @@ const getLatestTerminalAgentMessageForTask = (
   messages: ChatSessionMessage[],
   taskId: string,
 ): ChatSessionMessage | null => {
+  let latestThinkingMessage: ChatSessionMessage | null = null;
+
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
 
@@ -1645,10 +1652,15 @@ const getLatestTerminalAgentMessageForTask = (
       continue;
     }
 
+    if (message.source?.kind === "thinking") {
+      latestThinkingMessage ??= message;
+      continue;
+    }
+
     return message;
   }
 
-  return null;
+  return latestThinkingMessage;
 };
 
 export const isSessionArchived = (session: ChatSessionRecord): boolean => {
@@ -1980,7 +1992,7 @@ const recoverInterruptedSessionTasks = (
   let latestUserTaskId: string | null = null;
 
   for (const [index, message] of session.messages.entries()) {
-    const taskId =
+    const taskId: string =
       message.role === "agent"
         ? message.taskId ?? latestUserTaskId ?? message.id
         : getMessageTaskId(message);
@@ -2301,16 +2313,24 @@ export const deleteExpiredArchivedSessions = (
 export const createVisibleConversationMessages = (
   messages: ChatSessionMessage[],
 ): ChatSessionMessage[] => {
-  const latestRenderableAgentMessageByTask = new Map<string, string>();
+  const latestTerminalAgentMessageByTask = new Map<string, string>();
+  const latestThinkingAgentMessageByTask = new Map<string, string>();
 
   for (const message of messages) {
-    if (
-      message.role === "agent" &&
-      message.taskId &&
-      message.source?.kind !== "preview"
-    ) {
-      latestRenderableAgentMessageByTask.set(message.taskId, message.id);
+    if (message.role !== "agent" || !message.taskId) {
+      continue;
     }
+
+    if (message.source?.kind === "preview") {
+      continue;
+    }
+
+    if (message.source?.kind === "thinking") {
+      latestThinkingAgentMessageByTask.set(message.taskId, message.id);
+      continue;
+    }
+
+    latestTerminalAgentMessageByTask.set(message.taskId, message.id);
   }
 
   const visibleMessages: ChatSessionMessage[] = [];
@@ -2325,7 +2345,19 @@ export const createVisibleConversationMessages = (
       continue;
     }
 
-    if (latestRenderableAgentMessageByTask.get(message.taskId) === message.id) {
+    const latestTerminalMessageId = latestTerminalAgentMessageByTask.get(
+      message.taskId,
+    );
+
+    if (latestTerminalMessageId) {
+      if (latestTerminalMessageId === message.id) {
+        visibleMessages.push(message);
+      }
+
+      continue;
+    }
+
+    if (latestThinkingAgentMessageByTask.get(message.taskId) === message.id) {
       visibleMessages.push(message);
     }
   }

@@ -235,8 +235,8 @@ describe("createRalphDecisionExecutionResult", () => {
       status: "blocked",
       summary: "Blocked.",
       reason: "Tool denied.",
-      response: undefined,
     });
+    delete result.response;
 
     expect(createRalphDecisionExecutionResult(decisionBlock, result)).toMatchObject({
       output: "ERROR",

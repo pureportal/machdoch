@@ -92,6 +92,7 @@ import {
   DEFAULT_MCP_MARKETPLACE_STATE,
   loadMcpMarketplaceState,
   saveMcpMarketplaceState,
+  type McpMarketplaceState,
   type McpMarketplaceRegistrySourceState,
 } from "../lib/shell-store";
 import { cn } from "../lib/utils";
@@ -491,7 +492,7 @@ export const McpMarketplace = ({
   const [sortMode, setSortMode] =
     useState<McpMarketplaceSortMode>("recommended");
   const [detailTab, setDetailTab] = useState<MarketplaceDetailTab>("overview");
-  const [marketplaceState, setMarketplaceState] = useState(
+  const [marketplaceState, setMarketplaceState] = useState<McpMarketplaceState>(
     DEFAULT_MCP_MARKETPLACE_STATE,
   );
   const [results, setResults] = useState<MarketplaceResult[]>([]);
@@ -1057,10 +1058,10 @@ export const McpMarketplace = ({
   const updateMarketplaceState = async (
     registriesPatch: McpMarketplaceRegistrySourceState[],
   ): Promise<void> => {
-    const nextState = {
+    const nextState: McpMarketplaceState = {
       version: 1,
       registries: registriesPatch,
-    } as const;
+    };
 
     setMarketplaceState(nextState);
     await saveMcpMarketplaceState(nextState);

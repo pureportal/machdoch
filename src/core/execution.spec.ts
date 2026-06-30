@@ -50,6 +50,7 @@ const createConfig = (
     mode,
     provider: "unconfigured",
     model: "gpt-5.5",
+    reasoning: "default",
     offline: false,
     compatibility: {
       discoverGithubCustomizations: false,
@@ -975,6 +976,46 @@ describe("executeTask", () => {
         expect.objectContaining({
           state: "completed",
           assistantText: finalMarkdown,
+        }),
+      ]),
+    );
+  });
+
+  it("emits unstructured assistant answers on terminal progress", async () => {
+    const workspaceRoot = await createWorkspace();
+    const assistantAnswer = "Fetched and summarized the current weather.";
+    const terminalProgress: TaskExecutionProgress[] = [];
+    const unstructuredAdapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: assistantAnswer,
+        toolCalls: [],
+      }),
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The unstructured adapter should not continue.");
+      },
+    };
+
+    const result = await executeTask(
+      "What is the weather?",
+      createConfig(workspaceRoot, "machdoch"),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: unstructuredAdapter,
+        onStateChange: (progress) => {
+          if (!progress.cancellable) {
+            terminalProgress.push(progress);
+          }
+        },
+      },
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.response).toBeUndefined();
+    expect(terminalProgress).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          state: "blocked",
+          assistantText: assistantAnswer,
         }),
       ]),
     );

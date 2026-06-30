@@ -17,15 +17,16 @@ import {
   executeLocalCommand,
   normalizeLocalCommandCwd,
 } from "./process-execution.ts";
+import type { ExecException } from "node:child_process";
 
 type ExecFileCallback = (
-  error: NodeJS.ErrnoException | null,
+  error: ExecException | null,
   stdout: string,
   stderr: string,
 ) => void;
 
 const invokeExecFileCallback = (
-  error: NodeJS.ErrnoException | null,
+  error: ExecException | null,
   stdout: string,
   stderr: string,
 ): void => {
@@ -98,7 +99,7 @@ describe("executeLocalCommand", () => {
       code: "ETIMEDOUT",
     });
 
-    invokeExecFileCallback(error, "partial stdout", "partial stderr");
+    invokeExecFileCallback(error as unknown as ExecException, "partial stdout", "partial stderr");
 
     await expect(commandPromise).rejects.toMatchObject({
       message: "Command timed out",

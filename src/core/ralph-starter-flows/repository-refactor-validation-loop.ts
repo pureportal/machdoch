@@ -27,7 +27,7 @@ const autonomousRefactoringFlow: RalphFlow = {
     { name: "validationCommand", type: "text", default: "", required: false },
     { name: "excludePaths", type: "text", default: "node_modules, dist, build, coverage, target, .next, .nuxt, .turbo, .cache, vendor, generated", required: false },
     { name: "allowPublicApiChanges", type: "boolean", default: "false", required: false },
-    { name: "notesFile", type: "path", default: "RALPH_REFACTOR_NOTES.md", required: false },
+    { name: "notesFile", type: "path", default: ".machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md", required: false },
     { name: "maxRefactorPasses", type: "number", default: "5", required: false },
     { name: "projectCommandsFile", type: "path", default: ".machdoch/ralph/refactor/project-commands.json", required: false },
     { name: "conventionsFile", type: "path", default: ".machdoch/ralph/refactor/conventions.json", required: false },
@@ -178,7 +178,7 @@ const autonomousRefactoringFlow: RalphFlow = {
           },
         },
         prompt:
-          "Audit selected JSON scope {{result:select-scope}} against detected conventions {{data:detect-conventions:output}} and this template policy: objective {{refactorObjective:text=Improve maintainability while preserving behavior.}}, file naming {{fileNamingPolicy:text=Follow existing framework and repository conventions.}}, max file lines {{maxFileLines:number=500}}, helper placement {{helperPlacementPolicy:text=Follow existing module-local and shared helper conventions.}}, test framework {{testFramework:text=auto-detect}}, public API changes allowed {{allowPublicApiChanges:boolean=false}}. Produce a prioritized, bounded refactor pass plan. Note exceptions in {{notesFile:path=RALPH_REFACTOR_NOTES.md}} when useful. Do not change files. Return only schema-valid JSON.",
+          "Audit selected JSON scope {{result:select-scope}} against detected conventions {{data:detect-conventions:output}} and this template policy: objective {{refactorObjective:text=Improve maintainability while preserving behavior.}}, file naming {{fileNamingPolicy:text=Follow existing framework and repository conventions.}}, max file lines {{maxFileLines:number=500}}, helper placement {{helperPlacementPolicy:text=Follow existing module-local and shared helper conventions.}}, test framework {{testFramework:text=auto-detect}}, public API changes allowed {{allowPublicApiChanges:boolean=false}}. Produce a prioritized, bounded refactor pass plan. Note exceptions in {{notesFile:path=.machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md}} when useful. Do not change files. Return only schema-valid JSON.",
       },
     },
     {
@@ -267,7 +267,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Fix validation failures from {{result:run-validation-checks}} that were caused by the refactor. Distinguish pre-existing failures from own regressions, keep changes scoped, preserve behavior, and update tests/imports/exports as needed. If validationCommand is unavailable or blank, document that in {{notesFile:path=RALPH_REFACTOR_NOTES.md}} and continue.",
+        "Fix validation failures from {{result:run-validation-checks}} that were caused by the refactor. Distinguish pre-existing failures from own regressions, keep changes scoped, preserve behavior, and update tests/imports/exports as needed. If validationCommand is unavailable or blank, document that in {{notesFile:path=.machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md}} and continue.",
     },
     {
       id: "git-diff-summary",
@@ -291,7 +291,7 @@ const autonomousRefactoringFlow: RalphFlow = {
         timeoutSeconds: RALPH_REFACTOR_AGENT_TIMEOUT_SECONDS,
       },
       prompt:
-        "Perform a final scan for selected JSON scope {{result:select-scope}} using conventions {{data:detect-conventions:output}}, refactor plan {{data:audit-against-policy:output}}, validation result {{result:run-validation-checks}}, git diff {{result:git-diff-summary}}, and latest changes. Evaluate only the selected paths/globs and notes file {{notesFile:path=RALPH_REFACTOR_NOTES.md}}; ignore unrelated workspace changes outside the selected scope unless they directly break verification of this scope. Verify the configured objective, naming policy, max file line policy, helper placement policy, tests, public API policy, and exclusions. If this selected scope is complete, end with RALPH_DECISION: DONE. If unresolved issues remain, end with RALPH_DECISION: CONTINUE; the flow counter enforces maxRefactorPasses={{maxRefactorPasses:number=5}}. If validation failed due to own changes, end with RALPH_DECISION: RETRY. If blocked, end with RALPH_DECISION: ERROR.",
+        "Perform a final scan for selected JSON scope {{result:select-scope}} using conventions {{data:detect-conventions:output}}, refactor plan {{data:audit-against-policy:output}}, validation result {{result:run-validation-checks}}, git diff {{result:git-diff-summary}}, and latest changes. Evaluate only the selected paths/globs and notes file {{notesFile:path=.machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md}}; ignore unrelated workspace changes outside the selected scope unless they directly break verification of this scope. Verify the configured objective, naming policy, max file line policy, helper placement policy, tests, public API policy, and exclusions. If this selected scope is complete, end with RALPH_DECISION: DONE. If unresolved issues remain, end with RALPH_DECISION: CONTINUE; the flow counter enforces maxRefactorPasses={{maxRefactorPasses:number=5}}. If validation failed due to own changes, end with RALPH_DECISION: RETRY. If blocked, end with RALPH_DECISION: ERROR.",
       validationScope: {
         mode: "sinceLastValidator",
         blockIds: [],
@@ -413,7 +413,7 @@ const autonomousRefactoringFlow: RalphFlow = {
 
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 4,
+  version: 5,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],

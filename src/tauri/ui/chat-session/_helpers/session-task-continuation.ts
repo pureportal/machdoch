@@ -1,4 +1,7 @@
-import type { TaskExecutionResult } from "../../../../core/types.js";
+import type {
+  TaskExecutionProgress,
+  TaskExecutionResult,
+} from "../../../../core/types.js";
 import type {
   ChatSessionMessage,
   ChatSessionRecord,
@@ -11,6 +14,16 @@ import {
 
 const RECOVERED_TASK_CRASH_PREFIX = "**Task crashed.**";
 
+const TERMINAL_PROGRESS_STATUS_BY_STATE: Partial<
+  Record<TaskExecutionProgress["state"], TaskExecutionResult["status"]>
+> = {
+  planned: "planned",
+  completed: "executed",
+  blocked: "blocked",
+  cancelled: "cancelled",
+  unsupported: "unsupported",
+};
+
 export const formatTaskExecutionError = (error: unknown): string => {
   const detail = error instanceof Error ? error.message : String(error);
 
@@ -21,6 +34,45 @@ export const createExecutionMessageContent = (
   execution: TaskExecutionResult,
 ): string => {
   return getExecutionMessageContent(execution);
+};
+
+export const createExecutionFromTerminalProgress = (
+  progress: TaskExecutionProgress,
+  latestAssistantText = "",
+): TaskExecutionResult | null => {
+  if (progress.cancellable) {
+    return null;
+  }
+
+  const status = TERMINAL_PROGRESS_STATUS_BY_STATE[progress.state];
+
+  if (!status) {
+    return null;
+  }
+
+  const responseMarkdown =
+    latestAssistantText.trim() || progress.assistantText?.trim() || "";
+
+  return {
+    task: progress.task,
+    mode: progress.mode,
+    status,
+    summary: progress.message.trim() || "The task finished.",
+    executedTools: progress.executedTools,
+    outputSections: progress.outputSections,
+    ...(progress.reason ? { reason: progress.reason } : {}),
+    ...(responseMarkdown
+      ? {
+          response: {
+            markdown: responseMarkdown,
+            highlights: [],
+            relatedFiles: [],
+            verification: [],
+            followUps: [],
+          },
+        }
+      : {}),
+  };
 };
 
 export const isRecoveredTaskCrashMessage = (

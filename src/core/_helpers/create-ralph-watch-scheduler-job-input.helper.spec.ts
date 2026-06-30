@@ -82,8 +82,8 @@ describe("createRalphWatchSchedulerJobInput", () => {
     );
 
     expect(job.name).toBe("Nightly import");
-    expect(job.queue.concurrencyLimit).toBe(3);
-    expect(job.triggers[0]).toMatchObject({ cooldownMs: 5_000 });
+    expect(job.queue?.concurrencyLimit).toBe(3);
+    expect(job.triggers?.[0]).toMatchObject({ cooldownMs: 5_000 });
     expect(job.target.ralphFlow).toMatchObject({
       runLogScope: "user",
       maxTransitions: 7,
@@ -92,17 +92,10 @@ describe("createRalphWatchSchedulerJobInput", () => {
   });
 
   it("omits optional fields when their watch values are empty or undefined", () => {
-    const job = createRalphWatchSchedulerJobInput(
-      createWatchDefinition({
-        name: undefined,
-        runLogScope: undefined,
-        cooldownMs: undefined,
-        maxTransitions: undefined,
-      }),
-    );
+    const job = createRalphWatchSchedulerJobInput(createWatchDefinition());
 
     expect(job.name).toBe("Ralph watch watch-1");
-    expect(job.triggers[0]).not.toHaveProperty("cooldownMs");
+    expect(job.triggers?.[0]).not.toHaveProperty("cooldownMs");
     expect(job.target.ralphFlow).not.toHaveProperty("runLogScope");
     expect(job.target.ralphFlow).not.toHaveProperty("maxTransitions");
   });

@@ -20,7 +20,7 @@ const OPENAI_MAX_INPUT_CHARS: usize = 4096;
 const OPENAI_STT_ENDPOINT: &str = "https://api.openai.com/v1/audio/transcriptions";
 const OPENAI_STT_MODEL: &str = "gpt-4o-transcribe";
 const OPENAI_STT_PROMPT: &str = "Transcribe this short push-to-talk instruction for a desktop AI assistant. Preserve punctuation, filenames, CLI flags, code symbols, and product names when they are clear. If no intelligible speech is present, return an empty transcript. Return only the transcript.";
-const OPENAI_MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
+pub(super) const OPENAI_MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 struct OpenAiTranscriptionResponse {

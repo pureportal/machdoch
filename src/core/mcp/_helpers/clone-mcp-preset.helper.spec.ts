@@ -56,10 +56,17 @@ describe("cloneMcpPreset", () => {
 
     expect(cloned.server.transport.args).not.toBe(preset.server.transport.args);
     expect(cloned.server.transport.env).not.toBe(preset.server.transport.env);
+    if (!cloned.server.transport.env) {
+      throw new Error("expected cloned stdio transport env");
+    }
+    if (!cloned.server.toolOverrides?.search) {
+      throw new Error("expected cloned search tool override");
+    }
+
     cloned.server.transport.args?.push("--debug");
     cloned.server.transport.env.NEW_TOKEN = "new";
     cloned.server.cache!.ttlMs = 2_000;
-    cloned.server.toolOverrides!.search.enabled = false;
+    cloned.server.toolOverrides.search.enabled = false;
     (cloned.server.roots as string[]).push("/other");
 
     expect(preset.server.transport.args).toEqual(["server.js"]);

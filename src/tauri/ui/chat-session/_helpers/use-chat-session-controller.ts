@@ -52,6 +52,7 @@ import {
   cancelDesktopTask,
   createInstruction,
   generateInstruction,
+  loadActiveDesktopTasks,
   listInstructions,
   openAttachedPath,
   openExternalUrl,
@@ -108,6 +109,10 @@ import {
   removeSessionModeOverride,
   RUN_MODE_META,
 } from "./session-shell";
+import {
+  createExecutionFromTerminalProgress,
+  createExecutionMessageContent,
+} from "./session-task-continuation";
 import {
   createMemorySummaryState,
   createProviderChooserState,
@@ -238,6 +243,9 @@ export const useChatSessionController = (
   const desktopTaskProgressHandlersRef = useRef<
     Map<string, HandleDesktopTaskProgress>
   >(new Map());
+  const recoveredTaskAssistantTextRef = useRef<Map<string, string>>(new Map());
+  const finalizedRecoveredTaskIdsRef = useRef<Set<string>>(new Set());
+  const activeTaskRouteHydrationSignatureRef = useRef<string | null>(null);
   const [quickTaskDraft, setQuickTaskDraft] = useState("");
   const [quickTaskContextAttachments, setQuickTaskContextAttachments] =
     useState<ChatSessionContextAttachment[]>([]);
@@ -280,8 +288,8 @@ export const useChatSessionController = (
       if (sessionId === state.activeSession.id) {
         state.setPromptHistoryIndex(null);
         state.setDraftBeforeHistory("");
-        state.setDraftValue(
-          appendTranscriptToDraft(state.activeSession.draft, normalizedTranscript),
+        state.setDraftValue((currentDraft) =>
+          appendTranscriptToDraft(currentDraft, normalizedTranscript),
         );
         return;
       }
@@ -292,7 +300,6 @@ export const useChatSessionController = (
       }));
     },
     [
-      state.activeSession.draft,
       state.activeSession.id,
       state.setDraftBeforeHistory,
       state.setDraftValue,
@@ -656,10 +663,13 @@ export const useChatSessionController = (
           }
         }
 
+        const existingThinkingMessage =
+          thinkingMessageIndex >= 0
+            ? session.messages[thinkingMessageIndex]
+            : undefined;
         const baseTrace =
-          thinkingMessageIndex >= 0 &&
-          session.messages[thinkingMessageIndex]?.source?.kind === "thinking"
-            ? session.messages[thinkingMessageIndex].source.thinking
+          existingThinkingMessage?.source?.kind === "thinking"
+            ? existingThinkingMessage.source.thinking
             : createInitialThinkingTrace(
                 getEffectiveSessionMode(session.mode, runtime.runtimeSnapshot),
               );
@@ -715,10 +725,148 @@ export const useChatSessionController = (
     [applySessionMessageLimit, runtime.runtimeSnapshot, state.updateSessionById],
   );
 
+  useEffect(() => {
+    if (!state.hasHydrated) {
+      return;
+    }
+
+    const runningTaskIds = state.shellState.sessions
+      .map((session) => getLatestRunningTaskId(session))
+      .filter((taskId): taskId is string => Boolean(taskId))
+      .sort();
+    const hydrationSignature = runningTaskIds.join("\0");
+
+    if (
+      runningTaskIds.length === 0 ||
+      activeTaskRouteHydrationSignatureRef.current === hydrationSignature
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void loadActiveDesktopTasks().then((activeTasks) => {
+      if (cancelled || !activeTasks) {
+        return;
+      }
+
+      activeTaskRouteHydrationSignatureRef.current = hydrationSignature;
+      const activeTaskIds = new Set(
+        activeTasks
+          .map((task) => task.id.trim())
+          .filter((taskId) => taskId.length > 0),
+      );
+
+      if (activeTaskIds.size === 0) {
+        return;
+      }
+
+      for (const session of state.shellState.sessions) {
+        const runningTaskId = getLatestRunningTaskId(session);
+
+        if (
+          !runningTaskId ||
+          !activeTaskIds.has(runningTaskId) ||
+          activeDesktopTasksRef.current.has(runningTaskId)
+        ) {
+          continue;
+        }
+
+        activeDesktopTasksRef.current.set(runningTaskId, session.id);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.hasHydrated, state.shellState.sessions]);
+
+  const handleUnhandledDesktopTaskProgress = useCallback(
+    (
+      sessionId: string,
+      taskId: string,
+      progress: TaskExecutionProgress,
+    ): void => {
+      const assistantText = progress.assistantText?.trim();
+
+      if (assistantText) {
+        recoveredTaskAssistantTextRef.current.set(taskId, assistantText);
+      }
+
+      if (finalizedRecoveredTaskIdsRef.current.has(taskId)) {
+        return;
+      }
+
+      const execution = createExecutionFromTerminalProgress(
+        progress,
+        recoveredTaskAssistantTextRef.current.get(taskId) ?? "",
+      );
+
+      if (!execution) {
+        return;
+      }
+
+      finalizedRecoveredTaskIdsRef.current.add(taskId);
+      recoveredTaskAssistantTextRef.current.delete(taskId);
+
+      state.updateSessionById(sessionId, (session) => {
+        const hasExecutionMessage = session.messages.some(
+          (message) =>
+            message.taskId === taskId &&
+            message.role === "agent" &&
+            message.source?.kind === "execution",
+        );
+
+        if (hasExecutionMessage) {
+          return session;
+        }
+
+        const timestamp = Date.now();
+
+        return applySessionMessageLimit({
+          ...session,
+          updatedAt: timestamp,
+          messages: [
+            ...session.messages,
+            {
+              id: crypto.randomUUID(),
+              taskId,
+              role: "agent",
+              content: createExecutionMessageContent(execution),
+              createdAt: timestamp,
+              source: {
+                kind: "execution",
+                execution,
+              },
+            },
+          ],
+        });
+      });
+
+      activeDesktopTasksRef.current.delete(taskId);
+    },
+    [applySessionMessageLimit, state.updateSessionById],
+  );
+
+  const resolveSessionIdForDesktopTask = useCallback(
+    (taskId: string): string | null => {
+      for (const session of state.shellState.sessions) {
+        if (getLatestRunningTaskId(session) === taskId) {
+          return session.id;
+        }
+      }
+
+      return null;
+    },
+    [state.shellState.sessions],
+  );
+
   useDesktopTaskProgress({
     activeDesktopTasksRef,
     ignoredDesktopTaskIdsRef,
+    onUnhandledProgress: handleUnhandledDesktopTaskProgress,
     progressHandlersRef: desktopTaskProgressHandlersRef,
+    resolveSessionIdForTask: resolveSessionIdForDesktopTask,
     updateThinkingTrace,
   });
 
@@ -1334,11 +1482,12 @@ export const useChatSessionController = (
       }
 
       composerState.resetDraftHistoryState();
-      state.setDraftValue(appendDraftBlock(state.activeSession.draft, normalizedText));
+      state.setDraftValue((currentDraft) =>
+        appendDraftBlock(currentDraft, normalizedText),
+      );
     },
     [
       composerState,
-      state.activeSession.draft,
       state.setDraftValue,
     ],
   );
@@ -1421,7 +1570,7 @@ export const useChatSessionController = (
   );
 
   const handlePasteContextImages = useCallback(
-    async (target: FileDropTarget, files: File[]): Promise<void> => {
+    async (files: File[], target: FileDropTarget): Promise<void> => {
       const targetProvider =
         target === "quick-task"
           ? quickTaskProvider
@@ -2049,17 +2198,7 @@ export const useChatSessionController = (
       }
 
       dispatchingQueuedMessageIdsRef.current.add(nextQueuedMessage.id);
-      setQueuedSessionMessages((current) =>
-        current.filter(
-          (message) =>
-            message.id !== nextQueuedMessage.id &&
-            !(
-              message.sessionId === session.id &&
-              message.task.trim().length === 0
-            ),
-        ),
-      );
-      taskSubmission.submitTaskToSession({
+      const didSubmit = taskSubmission.submitTaskToSession({
         sessionSnapshot: session,
         task: nextQueuedMessage.task,
         contextAttachments: nextQueuedMessage.contextAttachments,
@@ -2068,6 +2207,20 @@ export const useChatSessionController = (
         visibleMessageContent: nextQueuedMessage.task,
         promptHistoryContent: nextQueuedMessage.task,
       });
+
+      if (didSubmit) {
+        setQueuedSessionMessages((current) =>
+          current.filter(
+            (message) =>
+              message.id !== nextQueuedMessage.id &&
+              !(
+                message.sessionId === session.id &&
+                message.task.trim().length === 0
+              ),
+          ),
+        );
+      }
+
       dispatchingQueuedMessageIdsRef.current.delete(nextQueuedMessage.id);
     },
     [queuedSessionMessages, taskSubmission],
@@ -2726,11 +2879,14 @@ export const useChatSessionController = (
   }, [quickTaskSession, requestTaskCancellation]);
 
   const clearQuickTaskHistory = useCallback((): void => {
-    const quickTaskSessionId = quickTaskSession?.id ?? null;
+    const currentQuickTaskSession = quickTaskSession;
+    const quickTaskSessionId = currentQuickTaskSession?.id ?? null;
 
-    if (quickTaskSessionId) {
+    if (currentQuickTaskSession && quickTaskSessionId) {
       const quickTaskIds = new Set<string>();
-      const latestRunningQuickTaskId = getLatestRunningTaskId(quickTaskSession);
+      const latestRunningQuickTaskId = getLatestRunningTaskId(
+        currentQuickTaskSession,
+      );
 
       if (latestRunningQuickTaskId) {
         quickTaskIds.add(latestRunningQuickTaskId);
@@ -3033,7 +3189,7 @@ export const useChatSessionController = (
       onSelectContextImages: () =>
         handleSelectAttachments("active-session", "images"),
       onPasteContextImages: (files: File[]) =>
-        handlePasteContextImages("active-session", files),
+        handlePasteContextImages(files, "active-session"),
       onOpenContextAttachment: handleOpenAttachment,
       onRemoveContextAttachment: (attachmentId: string) =>
         handleRemoveContextAttachment("active-session", attachmentId),
@@ -3093,7 +3249,7 @@ export const useChatSessionController = (
       onSelectContextImages: () =>
         handleSelectAttachments("quick-task", "images"),
       onPasteContextImages: (files: File[]) =>
-        handlePasteContextImages("quick-task", files),
+        handlePasteContextImages(files, "quick-task"),
       onOpenContextAttachment: (attachment: ChatSessionContextAttachment) =>
         handleOpenAttachment(
           attachment,
@@ -3224,7 +3380,7 @@ export const useChatSessionController = (
         speechInputDeviceSaving: runtime.speechInputDeviceSaving,
         speechInputDevices: speechInputDevices.devices,
         speechInputDeviceMessage: speechInputDevices.errorText
-          ? { tone: "error", text: speechInputDevices.errorText }
+          ? { tone: "error" as const, text: speechInputDevices.errorText }
           : null,
         speechToTextProviderMessage: runtime.speechToTextSetupMessage,
         aiProvider: runtime.userVoiceSettings.activeProvider,

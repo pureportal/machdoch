@@ -1,4 +1,4 @@
-import type { RalphFlow, RalphFlowBlock } from "../ralph.ts";
+import type { RalphFlow, RalphFlowBlock, RalphGroupBlock } from "../ralph.ts";
 import {
   createRalphLayoutChildGroupIds,
   createRalphLayoutGroupChildIds,
@@ -19,7 +19,7 @@ const groupBlock = (
   id: string,
   childBlockIds: string[],
   parentGroupId?: string,
-): RalphFlowBlock => ({
+): RalphGroupBlock => ({
   id,
   type: "GROUP",
   title: id,

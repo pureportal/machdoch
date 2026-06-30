@@ -26,6 +26,7 @@ import {
 import { resolveAssistantSurfaceLayout } from "./assistant-surface";
 import * as runtime from "./runtime";
 import type { DesktopTaskRunResponse, RuntimeSnapshot } from "./runtime";
+import { createInitialThinkingTrace } from "./task-thinking.model";
 import {
   desktopEventListeners,
   isTauriMock,
@@ -661,7 +662,195 @@ describe("ChatSession component", () => {
   );
 
   it(
-    "renders a fallback final response when terminal progress arrives before the desktop response",
+    "renders terminal progress for a recovered active desktop task",
+    async () => {
+      const now = Date.now();
+      const activeTaskId = "recovered-active-task";
+      const recoveredSession = createSession({
+        id: "recovered-active-session",
+        manualTitle: "Recovered active session",
+        updatedAt: now - 1_000,
+        messages: [
+          {
+            id: "recovered-active-user",
+            taskId: activeTaskId,
+            role: "user",
+            content: "Continue recovered active task",
+            createdAt: now - 1_100,
+          },
+          {
+            id: "recovered-active-thinking",
+            taskId: activeTaskId,
+            role: "agent",
+            content: "",
+            createdAt: now - 1_000,
+            source: {
+              kind: "thinking",
+              thinking: createInitialThinkingTrace("ask", now - 1_000),
+            },
+          },
+        ],
+      });
+
+      storeShellState({
+        ...createInitialShellState(),
+        activeSessionId: recoveredSession.id,
+        sessions: [recoveredSession],
+      });
+
+      const loadActiveDesktopTaskIdsSpy = vi
+        .spyOn(runtime, "loadActiveDesktopTaskIds")
+        .mockResolvedValue([activeTaskId]);
+      const loadActiveDesktopTasksSpy = vi
+        .spyOn(runtime, "loadActiveDesktopTasks")
+        .mockResolvedValue([
+          {
+            id: activeTaskId,
+            kind: "desktop",
+            workspaceRoot: "/mocked/tauri/path",
+            arguments: [],
+            startedAt: now - 900,
+          },
+        ]);
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      await waitFor(() => {
+        expect(loadActiveDesktopTaskIdsSpy).toHaveBeenCalled();
+        expect(loadActiveDesktopTasksSpy).toHaveBeenCalled();
+        expect(desktopEventListeners.has("desktop-task-progress")).toBe(true);
+      });
+
+      emitDesktopTaskProgress({
+        taskId: activeTaskId,
+        timestamp: now,
+        progress: {
+          task: "Continue recovered active task",
+          mode: "ask",
+          state: "completed",
+          message: "Recovered task completed.",
+          executedTools: [],
+          outputSections: [],
+          assistantText: "Recovered final response.",
+          cancellable: false,
+        },
+      });
+
+      expect(
+        await screen.findByText(
+          "Recovered final response.",
+          {},
+          { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+        ),
+      ).toBeDefined();
+      expect(screen.queryByText(/\*\*Task crashed\.\*\*/i)).toBeNull();
+
+      loadActiveDesktopTasksSpy.mockRestore();
+      loadActiveDesktopTaskIdsSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "routes recovered task progress before active-task hydration completes",
+    async () => {
+      const now = Date.now();
+      const activeTaskId = "early-recovered-task";
+      const recoveredSession = createSession({
+        id: "early-recovered-session",
+        manualTitle: "Early recovered session",
+        updatedAt: now - 1_000,
+        messages: [
+          {
+            id: "early-recovered-user",
+            taskId: activeTaskId,
+            role: "user",
+            content: "Continue early recovered task",
+            createdAt: now - 1_100,
+          },
+          {
+            id: "early-recovered-thinking",
+            taskId: activeTaskId,
+            role: "agent",
+            content: "",
+            createdAt: now - 1_000,
+            source: {
+              kind: "thinking",
+              thinking: createInitialThinkingTrace("ask", now - 1_000),
+            },
+          },
+        ],
+      });
+      let resolveActiveTasks:
+        | ((tasks: Awaited<ReturnType<typeof runtime.loadActiveDesktopTasks>>) => void)
+        | undefined;
+
+      storeShellState({
+        ...createInitialShellState(),
+        activeSessionId: recoveredSession.id,
+        sessions: [recoveredSession],
+      });
+
+      const loadActiveDesktopTaskIdsSpy = vi
+        .spyOn(runtime, "loadActiveDesktopTaskIds")
+        .mockResolvedValue([activeTaskId]);
+      const loadActiveDesktopTasksSpy = vi
+        .spyOn(runtime, "loadActiveDesktopTasks")
+        .mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveActiveTasks = resolve;
+            }),
+        );
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      await waitFor(() => {
+        expect(loadActiveDesktopTaskIdsSpy).toHaveBeenCalled();
+        expect(loadActiveDesktopTasksSpy).toHaveBeenCalled();
+        expect(desktopEventListeners.has("desktop-task-progress")).toBe(true);
+      });
+
+      emitDesktopTaskProgress({
+        taskId: activeTaskId,
+        timestamp: now,
+        progress: {
+          task: "Continue early recovered task",
+          mode: "ask",
+          state: "completed",
+          message: "Early recovered task completed.",
+          executedTools: [],
+          outputSections: [],
+          assistantText: "Early recovered final response.",
+          cancellable: false,
+        },
+      });
+
+      expect(
+        await screen.findByText(
+          "Early recovered final response.",
+          {},
+          { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+        ),
+      ).toBeDefined();
+
+      await act(async () => {
+        resolveActiveTasks?.([]);
+        await Promise.resolve();
+      });
+
+      expect(screen.getAllByText("Early recovered final response.")).toHaveLength(1);
+
+      loadActiveDesktopTasksSpy.mockRestore();
+      loadActiveDesktopTaskIdsSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "replaces terminal fallback text when the desktop response arrives",
     async () => {
       const taskResolvers: Array<(value: DesktopTaskRunResponse) => void> = [];
       const runDesktopTaskSpy = vi
@@ -725,8 +914,7 @@ describe("ChatSession component", () => {
       });
 
       await act(async () => {
-        vi.advanceTimersByTime(1_600);
-        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(1_600);
       });
 
       expect(screen.getByText(/Delegated final answer\./i)).toBeDefined();
@@ -762,12 +950,15 @@ describe("ChatSession component", () => {
           },
         });
         await Promise.resolve();
-        vi.advanceTimersByTime(250);
+        await vi.advanceTimersByTimeAsync(250);
+      });
+      await act(async () => {
+        await Promise.resolve();
         await Promise.resolve();
       });
 
-      expect(screen.queryByText(/Late command response\./i)).toBeNull();
-      expect(screen.getAllByText(/Delegated final answer\./i)).toHaveLength(1);
+      expect(screen.queryByText(/Delegated final answer\./i)).toBeNull();
+      expect(screen.getByText(/Late command response\./i)).toBeDefined();
 
       runDesktopTaskSpy.mockRestore();
     },
@@ -825,8 +1016,7 @@ describe("ChatSession component", () => {
       });
 
       await act(async () => {
-        vi.advanceTimersByTime(1_600);
-        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(1_600);
       });
 
       expect(
@@ -1489,10 +1679,8 @@ describe("ChatSession component", () => {
   );
 
   it(
-    "keeps preview staging hidden while the final response is queued",
+    "renders the final response as soon as the desktop response resolves",
     async () => {
-      vi.useFakeTimers();
-
       const runDesktopTaskSpy = vi
         .spyOn(runtime, "runDesktopTask")
         .mockResolvedValue({
@@ -1514,26 +1702,14 @@ describe("ChatSession component", () => {
       fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
       expect(
-        screen.getByText(/Submitting the task to the desktop runtime\./i),
+        await screen.findByText(
+          /Preview only\./i,
+          {},
+          { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+        ),
       ).toBeDefined();
-
-      await act(async () => {
-        await Promise.resolve();
-        vi.advanceTimersByTime(100);
-      });
-
       expect(screen.queryByText(/Task preview/i)).toBeNull();
       expect(screen.queryByText(/compact task preview/i)).toBeNull();
-      expect(
-        screen.getByRole("button", { name: /Collapse thinking process/i }),
-      ).toBeDefined();
-
-      await act(async () => {
-        vi.advanceTimersByTime(200);
-        await Promise.resolve();
-      });
-
-      expect(screen.getByText(/Preview only\./i)).toBeDefined();
       expect(
         screen.getByRole("button", { name: /Expand thinking process/i }),
       ).toBeDefined();
@@ -3266,7 +3442,8 @@ describe("ChatSession component", () => {
       const archiveBar = archiveProgress.firstElementChild as HTMLElement | null;
 
       expect(archiveBar).not.toBeNull();
-      expect(archiveBar?.className).toContain("bg-sky-400");
+      expect(archiveProgress.className).toContain("h-[2px]");
+      expect(archiveBar?.className).toContain("bg-sky-400/70");
       expect(Number.parseInt(archiveBar?.style.width ?? "0", 10)).toBeGreaterThan(
         0,
       );
@@ -3279,9 +3456,9 @@ describe("ChatSession component", () => {
       const deleteBar = deleteProgress.firstElementChild as HTMLElement | null;
 
       expect(deleteBar).not.toBeNull();
-      expect(deleteProgress.className).toContain("h-px");
+      expect(deleteProgress.className).toContain("h-[2px]");
       expect(deleteProgress.className).toContain("bg-transparent");
-      expect(deleteBar?.className).toContain("bg-rose-300/25");
+      expect(deleteBar?.className).toContain("bg-rose-300/45");
       expect(Number.parseInt(deleteBar?.style.width ?? "0", 10)).toBeGreaterThan(
         0,
       );
@@ -4289,6 +4466,29 @@ describe("ChatSession component", () => {
         }),
       );
     });
+
+    const userMessageText = screen
+      .getAllByText("Describe the pasted image")
+      .find((element) =>
+        element.className.includes("app-user-message-text"),
+      );
+    const sentAttachments = screen.getByRole("list", {
+      name: "Attached files",
+    });
+
+    expect(userMessageText).toBeDefined();
+    expect(userMessageText?.textContent).not.toContain("Use this image");
+    expect(
+      within(sentAttachments).getByRole("button", {
+        name: "Preview image clipboard-image.png",
+      }),
+    ).toBeDefined();
+    expect(input.value).toBe("");
+    expect(
+      screen.queryByRole("list", {
+        name: "Attached context",
+      }),
+    ).toBeNull();
 
     saveClipboardImageAttachmentSpy.mockRestore();
     resolveDroppedPathsSpy.mockRestore();

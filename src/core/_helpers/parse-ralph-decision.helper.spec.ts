@@ -94,10 +94,11 @@ describe("parseRalphDecision", () => {
           task: "task",
           mode: "machdoch",
           status: "blocked",
+          summary: undefined,
           executedTools: [],
           outputSections: [],
           reason: "RALPH_DECISION: RETRY",
-        } as TaskExecutionResult,
+        } as unknown as TaskExecutionResult,
       ),
     ).toBe("RETRY");
   });

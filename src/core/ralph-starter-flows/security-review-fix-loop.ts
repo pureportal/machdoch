@@ -75,7 +75,7 @@ const securityFixLoopFlow: RalphFlow = {
     {
       name: "historyFile",
       type: "path",
-      default: "RALPH_SECURITY_HISTORY.md",
+      default: ".machdoch/ralph/security/RALPH_SECURITY_HISTORY.md",
       required: false,
     },
     {
@@ -288,7 +288,7 @@ const securityFixLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Fix security findings from {{data:security-check:output.findings}} for selected scope {{result:select-scope}} at or above {{severityThreshold:text=high}}. Use threat model {{data:security-check:output.threatModel}} and git baseline {{result:git-snapshot-before}}. Keep changes narrow, preserve behavior unless the security fix requires a contract change, add or update targeted tests, and do not start or restart servers. Dependency changes are allowed only when allowDependencyChanges={{allowDependencyChanges:boolean=false}} permits them or when the security fix cannot be done safely otherwise; document the reason. Follow schemaChangePolicy={{schemaChangePolicy:text=report-only}} for schema or migration needs. Append a concise note to {{historyFile:path=RALPH_SECURITY_HISTORY.md}} with fixed findings, tests, remaining risks, and blocked items.",
+        "Fix security findings from {{data:security-check:output.findings}} for selected scope {{result:select-scope}} at or above {{severityThreshold:text=high}}. Use threat model {{data:security-check:output.threatModel}} and git baseline {{result:git-snapshot-before}}. Keep changes narrow, preserve behavior unless the security fix requires a contract change, add or update targeted tests, and do not start or restart servers. Dependency changes are allowed only when allowDependencyChanges={{allowDependencyChanges:boolean=false}} permits them or when the security fix cannot be done safely otherwise; document the reason. Follow schemaChangePolicy={{schemaChangePolicy:text=report-only}} for schema or migration needs. Append a concise note to {{historyFile:path=.machdoch/ralph/security/RALPH_SECURITY_HISTORY.md}} with fixed findings, tests, remaining risks, and blocked items.",
     },
     {
       id: "verification-decision",
@@ -336,7 +336,7 @@ const securityFixLoopFlow: RalphFlow = {
       size: { width: 300, height: 238 },
       type: "VALIDATOR",
       prompt:
-        "Validate the latest iteration since the previous validator for selected scope {{result:select-scope}}. Confirm whether the structured review {{result:security-check}} and git diff {{result:git-diff-summary}} show no remaining findings at or above {{severityThreshold:text=high}} in the selected scope, fixes followed schemaChangePolicy={{schemaChangePolicy:text=report-only}}, dependency changes followed allowDependencyChanges={{allowDependencyChanges:boolean=false}}, {{historyFile:path=RALPH_SECURITY_HISTORY.md}} was updated when changes were made, no servers were started or restarted, and verification result {{result:run-verification}} was considered when a command was configured. Ignore unrelated workspace changes outside the selected scope unless they directly break verification of this security fix. If this selected scope is done, end with RALPH_DECISION: DONE. If qualifying findings remain and fewer than {{maxFixLoops:number=10}} loops have been attempted for this scope, end with RALPH_DECISION: CONTINUE. If the last fix needs correction or verification rerun, end with RALPH_DECISION: RETRY. If blocked by missing credentials, unsafe schema work, unavailable tooling, or repeated failures, end with RALPH_DECISION: ERROR.",
+        "Validate the latest iteration since the previous validator for selected scope {{result:select-scope}}. Confirm whether the structured review {{result:security-check}} and git diff {{result:git-diff-summary}} show no remaining findings at or above {{severityThreshold:text=high}} in the selected scope, fixes followed schemaChangePolicy={{schemaChangePolicy:text=report-only}}, dependency changes followed allowDependencyChanges={{allowDependencyChanges:boolean=false}}, {{historyFile:path=.machdoch/ralph/security/RALPH_SECURITY_HISTORY.md}} was updated when changes were made, no servers were started or restarted, and verification result {{result:run-verification}} was considered when a command was configured. Ignore unrelated workspace changes outside the selected scope unless they directly break verification of this security fix. If this selected scope is done, end with RALPH_DECISION: DONE. If qualifying findings remain and fewer than {{maxFixLoops:number=10}} loops have been attempted for this scope, end with RALPH_DECISION: CONTINUE. If the last fix needs correction or verification rerun, end with RALPH_DECISION: RETRY. If blocked by missing credentials, unsafe schema work, unavailable tooling, or repeated failures, end with RALPH_DECISION: ERROR.",
       validationScope: {
         mode: "sinceLastValidator",
         blockIds: [],
@@ -458,7 +458,7 @@ const securityFixLoopFlow: RalphFlow = {
 
 export const securityReviewFixLoopStarterFlow = {
   id: "security-fix-loop",
-  version: 3,
+  version: 4,
   defaultAlias: "security-review-fix-loop",
   category: "Security",
   tags: ["review", "fix", "tests"],

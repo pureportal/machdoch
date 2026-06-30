@@ -58,6 +58,26 @@ describe("execution-message helpers", () => {
     ).toBe("**Updated the shell.**");
   });
 
+  it("uses an unstructured assistant answer section before generic fallback content", () => {
+    expect(
+      getExecutionMessageContent(
+        createExecution({
+          status: "blocked",
+          summary:
+            "The model-driven execution stopped without submitting a structured final response.",
+          outputSections: [
+            {
+              title: "Agent answer",
+              lines: [
+                "1: Fetched and summarized the current weather for Sulz am Neckar.",
+              ],
+            },
+          ],
+        }),
+      ),
+    ).toBe("Fetched and summarized the current weather for Sulz am Neckar.");
+  });
+
   it("truncates long related file labels from the front", () => {
     expect(
       getRelatedFileButtonLabel(
