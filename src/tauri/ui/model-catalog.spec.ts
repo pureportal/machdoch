@@ -138,7 +138,7 @@ describe("provider model catalog", () => {
     ]);
   });
 
-  it("keeps broad Langdock account-discovered chat models", () => {
+  it("keeps Langdock OpenAI-compatible runtime chat models", () => {
     const snapshot = {
       generatedAt: 1,
       providers: [
@@ -148,16 +148,13 @@ describe("provider model catalog", () => {
           available: true,
           models: [
             { id: "text-embedding-3-large" },
-            { id: "gpt-5" },
-            { id: "gemini-2.5-flash" },
-            { id: "ollama-llama3.1" },
-            { id: "custom-workspace-model-9" },
-            { id: "claude-sonnet-4-6-20260217" },
+            { id: "gpt-5.5" },
+            { id: "gpt-5.4" },
+            { id: "gpt-5.4-mini" },
+            { id: "gpt-5.2-pro" },
+            { id: "o4-mini" },
+            { id: "langdock-llama-3.3-70b-2" },
             { id: "langdock-image-generator" },
-            { id: "qwen-coder-32b" },
-            { id: "deepseek-r1" },
-            { id: "mistral-large" },
-            { id: "codestral-latest" },
           ],
         },
       ],
@@ -166,15 +163,12 @@ describe("provider model catalog", () => {
     expect(
       getCatalogModelsForProvider("langdock", snapshot).map((model) => model.id),
     ).toEqual([
-      "claude-sonnet-4-6-20260217",
-      "gpt-5",
-      "gemini-2.5-flash",
-      "codestral-latest",
-      "custom-workspace-model-9",
-      "deepseek-r1",
-      "mistral-large",
-      "ollama-llama3.1",
-      "qwen-coder-32b",
+      "gpt-5.5",
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.2-pro",
+      "langdock-llama-3.3-70b-2",
+      "o4-mini",
     ]);
   });
 });

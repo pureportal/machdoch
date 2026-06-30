@@ -8,8 +8,8 @@ use super::{
         clamp_assistant_bubble_hide_seconds, clamp_inactive_session_archive_days,
         clamp_quick_voice_message_limit, clamp_quick_voice_silence_seconds,
         normalize_user_desktop_settings_input, resolve_quick_voice_shortcut,
-        UserDesktopLaunchPreferences, UserDesktopSettings,
     },
+    settings_types::{UserDesktopLaunchPreferences, UserDesktopSettings},
     user_config::{load_user_config_file, write_user_config_file},
 };
 use crate::runtime_contract_generated::{

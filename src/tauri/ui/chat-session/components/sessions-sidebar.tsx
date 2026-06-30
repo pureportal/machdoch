@@ -718,7 +718,7 @@ export const SessionsSidebar = ({
                     openSessionContextMenu(event, session, sessionActionItems)
                   }
                   className={cn(
-                    "app-session-card group relative flex min-h-[3.85rem] items-start rounded-xl border px-3 py-2 transition-colors",
+                    "app-session-card group relative flex min-h-[3.15rem] items-start overflow-hidden rounded-lg border px-2.5 pt-1.5 pb-2 transition-colors",
                     hasUnreadCompletion && "app-session-card--needs-read",
                     isActive
                       ? "border-sky-500/30 bg-sky-500/10 shadow-lg shadow-sky-950/20"
@@ -733,13 +733,14 @@ export const SessionsSidebar = ({
                       hasUnreadCompletion ? ", new reply ready" : ""
                     }`}
                     onClick={() => onActivateSession(session.id)}
-                    className={cn(
-                      "app-session-open-button min-w-0 flex-1 text-left",
-                      hasSessionActionMenu &&
-                        "app-session-open-button--has-actions pr-8",
-                    )}
+                    className="app-session-open-button min-w-0 flex-1 text-left"
                   >
-                    <div className="flex w-full min-w-0 items-start gap-2">
+                    <div
+                      className={cn(
+                        "flex w-full min-w-0 items-start gap-2",
+                        hasSessionActionMenu && "pr-6",
+                      )}
+                    >
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <div
@@ -790,7 +791,7 @@ export const SessionsSidebar = ({
                       </div>
                     </div>
 
-                    <div className="app-session-meta mt-1 flex w-full min-w-0 items-center justify-between gap-2 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
+                    <div className="app-session-meta mt-0.5 flex w-full min-w-0 items-center justify-between gap-2 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
                       <span className="flex min-w-0 flex-1 items-center gap-1.5">
                         {hasUnreadCompletion ? (
                           <span className="app-session-read-cue inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase">
@@ -814,30 +815,6 @@ export const SessionsSidebar = ({
                         )}
                       </span>
                     </div>
-                    {retentionProgress ? (
-                      <div
-                        aria-label={`${
-                          retentionProgress.phase === "archive"
-                            ? "Auto-archive"
-                            : "Auto-delete"
-                        } progress for ${sessionTitle}`}
-                        className="mt-2 h-1 overflow-hidden rounded-full bg-slate-800/80"
-                      >
-                        <div
-                          className={cn(
-                            "h-full rounded-full transition-[width] duration-500",
-                            retentionProgress.phase === "archive"
-                              ? "bg-sky-400"
-                              : "bg-rose-400",
-                          )}
-                          style={{
-                            width: `${Math.round(
-                              retentionProgress.progress * 100,
-                            )}%`,
-                          }}
-                        />
-                      </div>
-                    ) : null}
                   </button>
 
                   {hasSessionActionMenu ? (
@@ -860,10 +837,34 @@ export const SessionsSidebar = ({
                           sessionActionItems,
                         )
                       }
-                      className="app-session-card-action-button absolute top-2 right-2 h-6 w-6 rounded-full border border-slate-800 bg-slate-950/85 text-slate-500 opacity-0 transition-opacity duration-150 ease-out hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100 group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
+                      className="app-session-card-action-button absolute top-1.5 right-1.5 h-5 w-5 rounded-md border border-transparent bg-transparent text-slate-500 opacity-0 transition-[background-color,border-color,color,opacity] duration-150 ease-out hover:border-slate-700 hover:bg-slate-900/80 hover:text-slate-100 group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
                     >
                       <Ellipsis className="h-3.5 w-3.5" />
                     </Button>
+                  ) : null}
+                  {retentionProgress ? (
+                    <div
+                      aria-label={`${
+                        retentionProgress.phase === "archive"
+                          ? "Auto-archive"
+                          : "Auto-delete"
+                      } progress for ${sessionTitle}`}
+                      className="app-session-retention-progress pointer-events-none absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-slate-800/80"
+                    >
+                      <div
+                        className={cn(
+                          "h-full transition-[width] duration-500",
+                          retentionProgress.phase === "archive"
+                            ? "bg-sky-400"
+                            : "bg-rose-400",
+                        )}
+                        style={{
+                          width: `${Math.round(
+                            retentionProgress.progress * 100,
+                          )}%`,
+                        }}
+                      />
+                    </div>
                   ) : null}
                 </div>
               );

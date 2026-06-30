@@ -6,8 +6,10 @@ use super::{
         constant_time_eq, hash_remote_control_token, headers_are_authorized,
         state_changing_headers_allowed,
     },
-    create_snapshot_locked, create_status_locked, now_millis, RemoteControlInner,
-    RemoteControlPairedDevice, RemoteControlState, WEB_SESSION_COOKIE_NAME, WEB_SESSION_TTL_MS,
+    now_millis,
+    status::{create_snapshot_locked, create_status_locked, create_token_hint},
+    RemoteControlCommandEvent, RemoteControlInner, RemoteControlPairedDevice, RemoteControlState,
+    WEB_SESSION_COOKIE_NAME, WEB_SESSION_TTL_MS,
 };
 
 #[test]
@@ -96,6 +98,21 @@ fn recorded_progress_updates_remote_snapshot() {
 }
 
 #[test]
+fn status_orders_sessions_by_most_recent_update() {
+    let state = RemoteControlState::default();
+
+    state.record_progress("older-task", &json!({ "task": "Older task" }), 100);
+    state.record_progress("newer-task", &json!({ "task": "Newer task" }), 200);
+
+    let inner = state.shared.inner.lock().expect("state lock");
+    let status = create_status_locked(&inner);
+
+    assert_eq!(status.sessions.len(), 2);
+    assert_eq!(status.sessions[0].task_id, "newer-task");
+    assert_eq!(status.sessions[1].task_id, "older-task");
+}
+
+#[test]
 fn snapshots_do_not_expose_approval_prompts() {
     let state = RemoteControlState::default();
 
@@ -127,6 +144,73 @@ fn snapshots_do_not_expose_approval_prompts() {
 }
 
 #[test]
+fn snapshots_return_newest_commands_first() {
+    let state = RemoteControlState::default();
+
+    state.record_command(&RemoteControlCommandEvent {
+        command_id: "command-1".to_string(),
+        kind: "cancel".to_string(),
+        task_id: Some("task-1".to_string()),
+        session_id: None,
+        prompt: None,
+        title: None,
+        tags: None,
+        provider: None,
+        model: None,
+        mode: None,
+        workspace: None,
+        enabled: None,
+        attachment_id: None,
+        context_pack_id: None,
+        message_id: None,
+        job_id: None,
+        run_id: None,
+        created_at: 100,
+    });
+    state.record_command(&RemoteControlCommandEvent {
+        command_id: "command-2".to_string(),
+        kind: "cancel".to_string(),
+        task_id: Some("task-2".to_string()),
+        session_id: None,
+        prompt: None,
+        title: None,
+        tags: None,
+        provider: None,
+        model: None,
+        mode: None,
+        workspace: None,
+        enabled: None,
+        attachment_id: None,
+        context_pack_id: None,
+        message_id: None,
+        job_id: None,
+        run_id: None,
+        created_at: 200,
+    });
+
+    let inner = state.shared.inner.lock().expect("state lock");
+    let snapshot = create_snapshot_locked(&inner);
+    let payload = serde_json::to_value(&snapshot).expect("snapshot should serialize");
+    let commands = payload
+        .get("commands")
+        .and_then(serde_json::Value::as_array)
+        .expect("commands should serialize as an array");
+
+    assert_eq!(
+        commands[0]
+            .get("commandId")
+            .and_then(serde_json::Value::as_str),
+        Some("command-2")
+    );
+    assert_eq!(
+        commands[1]
+            .get("commandId")
+            .and_then(serde_json::Value::as_str),
+        Some("command-1")
+    );
+}
+
+#[test]
 fn disabled_status_omits_handoff_secrets() {
     let status = create_status_locked(&RemoteControlInner::default());
     let payload = serde_json::to_value(&status).expect("status should serialize");
@@ -138,4 +222,10 @@ fn disabled_status_omits_handoff_secrets() {
     assert!(payload.get("displayUrl").is_none());
     assert!(payload.get("qrSvg").is_none());
     assert!(payload.get("tokenHint").is_none());
+}
+
+#[test]
+fn token_hint_uses_last_six_characters_without_exposing_full_token() {
+    assert_eq!(create_token_hint("short"), "...short");
+    assert_eq!(create_token_hint("abcdefghijklmnopqrstuvwxyz"), "...uvwxyz");
 }

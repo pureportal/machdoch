@@ -75,6 +75,7 @@ import {
 } from "../../task-thinking.model";
 import { clampAiContextMessageLimit } from "./ai-context-window";
 import {
+  appendContextAttachmentsToTask,
   appendTranscriptToDraft,
   appendDraftBlock,
   clampQuickVoiceMessageLimit,
@@ -115,7 +116,10 @@ import { useChatSessionRuntime } from "./use-chat-session-runtime";
 import { useChatSessionSpeechInput } from "./use-chat-session-speech-input";
 import { useChatSessionShellState } from "./use-chat-session-shell-state";
 import { useChatSessionVoice } from "./use-chat-session-voice";
-import { useDesktopTaskProgress } from "./use-desktop-task-progress";
+import {
+  useDesktopTaskProgress,
+  type HandleDesktopTaskProgress,
+} from "./use-desktop-task-progress";
 import { useRemoteMissionControl } from "./use-remote-mission-control";
 import { useSessionComposerState } from "./use-session-composer-state";
 import { useSessionFileDrops } from "./use-session-file-drops";
@@ -133,6 +137,55 @@ interface QueuedSessionMessage {
   contextAttachments: ChatSessionContextAttachment[];
   createdAt: number;
 }
+
+const reorderQueuedMessagesWithinSession = (
+  messages: QueuedSessionMessage[],
+  messageId: string,
+  targetIndex: number,
+): QueuedSessionMessage[] => {
+  const movingMessage = messages.find((message) => message.id === messageId);
+
+  if (!movingMessage) {
+    return messages;
+  }
+
+  const sessionMessages = messages.filter(
+    (message) => message.sessionId === movingMessage.sessionId,
+  );
+  const sourceIndex = sessionMessages.findIndex(
+    (message) => message.id === messageId,
+  );
+  const clampedTargetIndex = Math.max(
+    0,
+    Math.min(targetIndex, sessionMessages.length - 1),
+  );
+
+  if (sourceIndex < 0 || sourceIndex === clampedTargetIndex) {
+    return messages;
+  }
+
+  const reorderedSessionMessages = [...sessionMessages];
+  const [removedMessage] = reorderedSessionMessages.splice(sourceIndex, 1);
+
+  if (!removedMessage) {
+    return messages;
+  }
+
+  reorderedSessionMessages.splice(clampedTargetIndex, 0, removedMessage);
+
+  let nextSessionMessageIndex = 0;
+
+  return messages.map((message) => {
+    if (message.sessionId !== movingMessage.sessionId) {
+      return message;
+    }
+
+    const replacement = reorderedSessionMessages[nextSessionMessageIndex];
+    nextSessionMessageIndex += 1;
+
+    return replacement ?? message;
+  });
+};
 
 interface AttachmentImagePreviewState {
   attachment: ChatSessionContextAttachment;
@@ -182,6 +235,9 @@ export const useChatSessionController = (
   });
   const activeDesktopTasksRef = useRef<Map<string, string>>(new Map());
   const ignoredDesktopTaskIdsRef = useRef<Set<string>>(new Set());
+  const desktopTaskProgressHandlersRef = useRef<
+    Map<string, HandleDesktopTaskProgress>
+  >(new Map());
   const [quickTaskDraft, setQuickTaskDraft] = useState("");
   const [quickTaskContextAttachments, setQuickTaskContextAttachments] =
     useState<ChatSessionContextAttachment[]>([]);
@@ -662,6 +718,7 @@ export const useChatSessionController = (
   useDesktopTaskProgress({
     activeDesktopTasksRef,
     ignoredDesktopTaskIdsRef,
+    progressHandlersRef: desktopTaskProgressHandlersRef,
     updateThinkingTrace,
   });
 
@@ -1841,6 +1898,7 @@ export const useChatSessionController = (
     aiContextMessageLimit,
     activeDesktopTasksRef,
     ignoredDesktopTaskIdsRef,
+    progressHandlersRef: desktopTaskProgressHandlersRef,
     applySessionMessageLimit,
     updateThinkingTrace,
   });
@@ -1930,21 +1988,12 @@ export const useChatSessionController = (
         task,
         contextAttachments,
       );
-      const steeringMessage: ChatSessionMessage = {
-        id: crypto.randomUUID(),
-        taskId: targetTaskId,
-        role: "user",
-        content: task,
-        createdAt,
-        ...(contextAttachments.length > 0 ? { contextAttachments } : {}),
-      };
 
       return applySessionMessageLimit({
         ...session,
         updatedAt: createdAt,
         draft: "",
         draftContextAttachments: [],
-        messages: [...session.messages, steeringMessage],
         promptHistory: promptHistory.promptHistory,
         promptContextHistory: promptHistory.promptContextHistory,
       });
@@ -1954,13 +2003,20 @@ export const useChatSessionController = (
     composerState.resetDraftHistoryState();
     updateThinkingTrace(state.activeSession.id, targetTaskId, (trace) => {
       const progress: TaskExecutionProgress = {
-        task: trace.task || task,
+        task: trace.task ?? "",
         mode: trace.mode,
         state: "executing",
         message: "Steering note received.",
         executedTools: [],
         outputSections: [],
         cancellable: true,
+        timelineEvent: {
+          kind: "state",
+          phase: "started",
+          label: "Steering note",
+          detail: appendContextAttachmentsToTask(task, contextAttachments),
+          tone: "info",
+        },
       };
 
       return appendThinkingProgress(trace, progress);
@@ -2049,31 +2105,31 @@ export const useChatSessionController = (
   const handleQueuedMessageMove = useCallback(
     (messageId: string, direction: -1 | 1): void => {
       setQueuedSessionMessages((current) => {
-        const index = current.findIndex((message) => message.id === messageId);
-        const targetIndex = index + direction;
+        const movingMessage = current.find((message) => message.id === messageId);
 
-        if (
-          index < 0 ||
-          targetIndex < 0 ||
-          targetIndex >= current.length ||
-          current[index]?.sessionId !== current[targetIndex]?.sessionId
-        ) {
+        if (!movingMessage) {
           return current;
         }
 
-        const nextMessages = [...current];
-        const currentMessage = nextMessages[index];
-        const targetMessage = nextMessages[targetIndex];
+        const sessionIndex = current
+          .filter((message) => message.sessionId === movingMessage.sessionId)
+          .findIndex((message) => message.id === messageId);
 
-        if (!currentMessage || !targetMessage) {
-          return current;
-        }
-
-        nextMessages[index] = targetMessage;
-        nextMessages[targetIndex] = currentMessage;
-
-        return nextMessages;
+        return reorderQueuedMessagesWithinSession(
+          current,
+          messageId,
+          sessionIndex + direction,
+        );
       });
+    },
+    [],
+  );
+
+  const handleQueuedMessageReorder = useCallback(
+    (messageId: string, targetIndex: number): void => {
+      setQueuedSessionMessages((current) =>
+        reorderQueuedMessagesWithinSession(current, messageId, targetIndex),
+      );
     },
     [],
   );
@@ -2083,6 +2139,151 @@ export const useChatSessionController = (
       current.filter((message) => message.id !== messageId),
     );
   }, []);
+
+  const handleAttachQueuedMessagePaths = useCallback(
+    async (messageId: string, paths: string[]): Promise<void> => {
+      const resolution = await resolveDroppedPaths(paths);
+      const attachments = resolution.entries.map(createContextAttachment);
+
+      if (attachments.length === 0) {
+        return;
+      }
+
+      setQueuedSessionMessages((current) =>
+        current.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                contextAttachments: mergeContextAttachments(
+                  message.contextAttachments,
+                  attachments,
+                ),
+              }
+            : message,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleSelectQueuedMessageAttachments = useCallback(
+    async (
+      messageId: string,
+      selectionKind: AttachmentSelectionKind,
+    ): Promise<void> => {
+      const queuedMessage = queuedSessionMessages.find(
+        (message) => message.id === messageId,
+      );
+
+      if (!queuedMessage) {
+        return;
+      }
+
+      const targetSession =
+        state.shellState.sessions.find(
+          (session) => session.id === queuedMessage.sessionId,
+        ) ?? state.activeSession;
+      const selectingFolders = selectionKind === "folders";
+      const selectingImages = selectionKind === "images";
+
+      if (
+        selectingImages &&
+        !modelSupportsImageInput(targetSession.provider, targetSession.model)
+      ) {
+        console.error(
+          createImageInputUnsupportedModelMessage(
+            targetSession.provider,
+            targetSession.model,
+          ),
+        );
+        return;
+      }
+
+      if (!isDesktop) {
+        await handleAttachQueuedMessagePaths(messageId, [
+          selectingFolders
+            ? "/mock/context-folder"
+            : selectingImages
+              ? "/mock/screenshot.png"
+              : "/mock/document.txt",
+        ]);
+        return;
+      }
+
+      try {
+        const selected = (await open({
+          directory: selectingFolders,
+          multiple: true,
+          title: selectingFolders
+            ? "Add Folders to Queued Message"
+            : selectingImages
+              ? "Add Images to Queued Message"
+              : "Add Files to Queued Message",
+          ...(selectingImages
+            ? {
+                filters: [
+                  {
+                    name: "Images",
+                    extensions: getSupportedImageInputExtensions(
+                      targetSession.provider,
+                    ),
+                  },
+                ],
+              }
+            : {}),
+        })) as DialogSelection;
+
+        await handleAttachQueuedMessagePaths(
+          messageId,
+          normalizeDialogSelection(selected),
+        );
+      } catch (error) {
+        console.error("Failed to select queued message attachments", error);
+      }
+    },
+    [
+      handleAttachQueuedMessagePaths,
+      isDesktop,
+      queuedSessionMessages,
+      state.activeSession,
+      state.shellState.sessions,
+    ],
+  );
+
+  const handleQueuedMessageRemoveContextAttachment = useCallback(
+    (messageId: string, attachmentId: string): void => {
+      setQueuedSessionMessages((current) =>
+        current.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                contextAttachments: message.contextAttachments.filter(
+                  (attachment) => attachment.id !== attachmentId,
+                ),
+              }
+            : message,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleQueuedMessageClearContextAttachments = useCallback(
+    (messageId: string): void => {
+      setQueuedSessionMessages((current) =>
+        current.map((message) =>
+          message.id === messageId &&
+          message.contextAttachments.length > 0
+            ? {
+                ...message,
+                contextAttachments: [],
+              }
+            : message,
+        ),
+      );
+    },
+    [],
+  );
 
   const handleRemoteRenameSession = useCallback(
     (sessionId: string, title: string): void => {
@@ -2814,7 +3015,8 @@ export const useChatSessionController = (
       queuedMessages: activeSessionQueuedMessages.map((message) => ({
         id: message.id,
         content: message.task,
-        attachmentCount: message.contextAttachments.length,
+        attachments: message.contextAttachments,
+        createdAt: message.createdAt,
       })),
       onSelectFolder: handleSelectFolder,
       onWorkspaceSelection: applyWorkspaceSelection,
@@ -2847,7 +3049,14 @@ export const useChatSessionController = (
       onRunningTaskMessageActionChange: setRunningTaskMessageAction,
       onQueuedMessageChange: handleQueuedMessageChange,
       onQueuedMessageMove: handleQueuedMessageMove,
+      onQueuedMessageReorder: handleQueuedMessageReorder,
       onQueuedMessageRemove: handleQueuedMessageRemove,
+      onQueuedMessageSelectContextAttachments:
+        handleSelectQueuedMessageAttachments,
+      onQueuedMessageRemoveContextAttachment:
+        handleQueuedMessageRemoveContextAttachment,
+      onQueuedMessageClearContextAttachments:
+        handleQueuedMessageClearContextAttachments,
       onSend: handleSend,
       onCancel: handleCancel,
       isExecuting: getSessionOverviewStatus(state.activeSession) === "running",

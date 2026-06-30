@@ -9,6 +9,7 @@ import {
   appendThinkingProgress,
   type TaskThinkingTrace,
 } from "../../task-thinking.model";
+import type { TaskExecutionProgress } from "../../../../core/types.js";
 
 export type UpdateThinkingTrace = (
   sessionId: string,
@@ -16,9 +17,15 @@ export type UpdateThinkingTrace = (
   updater: (trace: TaskThinkingTrace) => TaskThinkingTrace,
 ) => void;
 
+export type HandleDesktopTaskProgress = (
+  progress: TaskExecutionProgress,
+  timestamp: number,
+) => void;
+
 export const useDesktopTaskProgress = (options: {
   activeDesktopTasksRef: MutableRefObject<Map<string, string>>;
   ignoredDesktopTaskIdsRef: MutableRefObject<Set<string>>;
+  progressHandlersRef?: MutableRefObject<Map<string, HandleDesktopTaskProgress>>;
   updateThinkingTrace: UpdateThinkingTrace;
 }): void => {
   useEffect(() => {
@@ -44,6 +51,10 @@ export const useDesktopTaskProgress = (options: {
           progressEvent.timestamp,
         );
       });
+
+      options.progressHandlersRef?.current
+        .get(progressEvent.taskId)
+        ?.(progressEvent.progress, progressEvent.timestamp);
     }).then((unlisten) => {
       if (disposed) {
         unlisten();
@@ -60,6 +71,7 @@ export const useDesktopTaskProgress = (options: {
   }, [
     options.activeDesktopTasksRef,
     options.ignoredDesktopTaskIdsRef,
+    options.progressHandlersRef,
     options.updateThinkingTrace,
   ]);
 };

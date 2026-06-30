@@ -285,7 +285,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         condition: {
           style: "javascript",
           expression:
-            'variables.enableVisualReview === "true" && Boolean(variables.targetUrl?.trim())',
+            'variables.enableVisualReview === "true" && (Boolean(variables.targetUrl?.trim()) || Boolean(variables.screenshotPath?.trim()))',
         },
       },
     },
@@ -297,12 +297,29 @@ const fullFeatureImplementationFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "UI_ANALYZE",
+        adapter: "auto",
         targetUrl: "{{targetUrl:url=}}",
         screenshotPath: "{{screenshotPath:path=}}",
         server: {
           mode: "existing",
           healthUrl: "{{healthUrl:url=}}",
         },
+        checks: {
+          screenshots: true,
+          accessibility: true,
+          console: true,
+          network: true,
+          responsive: true,
+        },
+        viewports: [
+          { name: "desktop", width: 1280, height: 900 },
+          { name: "tablet", width: 768, height: 1024 },
+          { name: "mobile", width: 390, height: 844 },
+          { name: "small-mobile", width: 320, height: 568 },
+        ],
+        timeoutSeconds: 30,
+        fullPage: true,
+        waitUntil: "domcontentloaded",
       },
     },
     {
@@ -426,7 +443,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 3,
+  version: 4,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],

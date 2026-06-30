@@ -63,31 +63,28 @@ mod model_catalog_parser_tests {
     }
 
     #[test]
-    fn langdock_model_catalog_parser_keeps_account_chat_models() {
+    fn langdock_model_catalog_parser_keeps_openai_compatible_chat_models() {
         let raw = r#"
         {
             "object": "list",
             "data": [
                 {
-                    "id": "gpt-5",
+                    "id": "gpt-5.5",
                     "object": "model",
                     "created": 0,
-                    "region": "eu",
-                    "supportsExtendedThinking": true
+                    "region": "eu"
                 },
                 {
-                    "id": "gemini-2.5-flash",
+                    "id": "gpt-5.4-mini",
                     "object": "model",
                     "created": 0,
-                    "region": "global",
-                    "supportsExtendedThinking": false
+                    "region": "eu"
                 },
                 {
-                    "id": "ollama-llama3.1",
+                    "id": "langdock-llama-3.3-70b-2",
                     "object": "model",
                     "created": 0,
-                    "region": "us",
-                    "supportsExtendedThinking": false
+                    "region": "eu"
                 },
                 {
                     "id": "text-embedding-3-large",
@@ -99,8 +96,7 @@ mod model_catalog_parser_tests {
             ]
         }
         "#;
-        let models =
-            parse_langdock_model_catalog(raw).expect("Langdock catalog should parse");
+        let models = parse_langdock_model_catalog(raw).expect("Langdock catalog should parse");
         let model_ids = models
             .iter()
             .map(|model| model.id.as_str())
@@ -108,10 +104,49 @@ mod model_catalog_parser_tests {
 
         assert_eq!(
             model_ids,
-            vec!["gemini-2.5-flash", "gpt-5", "ollama-llama3.1"]
+            vec!["gpt-5.4-mini", "gpt-5.5", "langdock-llama-3.3-70b-2"]
         );
         assert_eq!(models[1].release_date.as_deref(), Some("1970-01-01"));
         assert_eq!(models[1].capabilities.reasoning, Some(true));
         assert!(!model_ids.contains(&"text-embedding-3-large"));
+    }
+
+    #[test]
+    fn langdock_model_catalog_parser_sorts_and_deduplicates_models() {
+        let raw = r#"
+        {
+            "object": "list",
+            "data": [
+                {
+                    "id": "gpt-5.5",
+                    "object": "model",
+                    "created": 0,
+                    "region": "eu"
+                },
+                {
+                    "id": "gpt-5.4-mini",
+                    "object": "model",
+                    "created": 0,
+                    "region": "eu"
+                },
+                {
+                    "id": "gpt-5.5",
+                    "object": "model",
+                    "created": 86400000,
+                    "region": "us"
+                }
+            ]
+        }
+        "#;
+        let models = parse_langdock_model_catalog(raw).expect("Langdock catalog should parse");
+
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["gpt-5.4-mini", "gpt-5.5"]
+        );
+        assert_eq!(models[1].release_date.as_deref(), Some("1970-01-01"));
     }
 }

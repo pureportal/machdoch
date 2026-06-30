@@ -127,6 +127,7 @@ mod mcp_config;
 mod model_catalog;
 mod settings;
 mod settings_commands;
+mod settings_types;
 mod user_config;
 mod workspace;
 
@@ -147,11 +148,6 @@ use mcp_config::{
 };
 use model_catalog::{create_provider_model_http_client, fetch_provider_model_catalog};
 use settings::create_timestamp_millis;
-pub(crate) use settings::UserDesktopLaunchPreferences;
-pub use settings::{
-    McpConfigDocument, UserAgentLimitsSettings, UserDesktopSettings, UserMemorySettings,
-    UserReviewModelSettings, UserSpeechToTextSettings, UserVoiceSettings, UserWebSearchSettings,
-};
 use settings_commands::{
     load_user_agent_limits_settings, load_user_api_keys, load_user_memory_settings,
     load_user_review_model_settings, load_user_speech_to_text_settings, load_user_voice_settings,
@@ -164,6 +160,11 @@ use settings_commands::{
 pub(super) use settings_commands::{
     merge_user_agent_cli_paths_into_env, merge_user_api_keys_into_env,
     merge_user_web_search_api_keys_into_env,
+};
+pub(crate) use settings_types::UserDesktopLaunchPreferences;
+pub use settings_types::{
+    McpConfigDocument, UserAgentLimitsSettings, UserDesktopSettings, UserMemorySettings,
+    UserReviewModelSettings, UserSpeechToTextSettings, UserVoiceSettings, UserWebSearchSettings,
 };
 pub(crate) use workspace::{get_user_config_directory, resolve_workspace_root_path};
 use workspace::{save_workspace_default_mode_value, save_workspace_reasoning_mode_value};

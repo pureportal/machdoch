@@ -7,9 +7,11 @@ use super::{
     settings::{
         normalize_user_agent_limits_settings, normalize_user_agent_limits_settings_input,
         normalize_user_memory_entries, normalize_user_review_model_settings,
-        normalize_user_review_model_settings_input, UserAgentLimitsSettings, UserConfigFile,
-        UserMemorySettings, UserReviewModelSettings, UserSpeechToTextSettings, UserVoiceSettings,
-        UserWebSearchSettings,
+        normalize_user_review_model_settings_input,
+    },
+    settings_types::{
+        UserAgentLimitsSettings, UserConfigFile, UserMemorySettings, UserReviewModelSettings,
+        UserSpeechToTextSettings, UserVoiceSettings, UserWebSearchSettings,
     },
     user_config::{load_user_config_file, write_user_config_file},
 };

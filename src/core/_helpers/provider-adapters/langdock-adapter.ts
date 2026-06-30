@@ -306,7 +306,11 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
       messages: [...messages],
       ...(chatTools.length > 0 ? { tools: chatTools } : {}),
       ...createLangdockToolSelection(tools),
-      ...createLangdockReasoningConfig(params.model, params.reasoning),
+      // Langdock rejects Chat Completions requests that combine function tools
+      // with reasoning_effort; Machdoch tool turns must keep function tools.
+      ...(chatTools.length === 0
+        ? createLangdockReasoningConfig(params.model, params.reasoning)
+        : {}),
       ...createLangdockStructuredOutputConfig(params.structuredOutput),
     };
   }

@@ -215,9 +215,9 @@ export const PROVIDER_CATALOG_METADATA: readonly ProviderCatalogMetadata[] = [
   },
   {
     provider: "langdock",
-    docsUrl: "https://docs.langdock.com/en/developer/agents-api/agent-models",
+    docsUrl: "https://docs.langdock.com/en/developer/completion-api/openai",
     note:
-      "Langdock model discovery returns the models available to the API key account, including workspace and BYOK model availability.",
+      "Langdock runtime model discovery returns the models accepted by the API key account on the OpenAI-compatible chat endpoint.",
   },
   {
     provider: "codex-cli",
@@ -484,10 +484,10 @@ export const PROVIDER_MODEL_METADATA = [
   },
   {
     provider: "langdock",
-    id: "gpt-5",
-    label: "GPT-5",
+    id: "gpt-5.5",
+    label: "GPT-5.5",
     lifecycle: "stable",
-    releaseDate: "2025-08-07",
+    releaseDate: "2026-05-01",
     description:
       "Default Langdock OpenAI-compatible model option for coding and agent workflows.",
     recommendedFor: ["coding", "vision"],
@@ -496,63 +496,61 @@ export const PROVIDER_MODEL_METADATA = [
       maxOutputTokens: null,
     }),
     warnings: [
-      "Langdock model availability is workspace-specific; use live model discovery to confirm this API key can access the model.",
+      "Langdock model availability is tied to the API key account; use live model discovery to confirm this key can access the model.",
     ],
     source: "curated-fallback",
   },
   {
     provider: "langdock",
-    id: "gpt-5-mini",
-    label: "GPT-5 mini",
+    id: "gpt-5.4",
+    label: "GPT-5.4",
     lifecycle: "stable",
-    releaseDate: "2025-08-07",
+    releaseDate: "2026-03-05",
     description:
-      "Lower-latency Langdock OpenAI-compatible model option shown in the Langdock API examples.",
+      "Langdock OpenAI-compatible frontier model option for coding and agent workflows.",
+    recommendedFor: ["coding", "vision"],
+    capabilities: createLangdockCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Langdock model availability is tied to the API key account; use live model discovery to confirm this key can access the model.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "langdock",
+    id: "gpt-5.4-mini",
+    label: "GPT-5.4 mini",
+    lifecycle: "stable",
+    releaseDate: "2026-03-17",
+    description:
+      "Lower-latency Langdock OpenAI-compatible model option for coding and agent workflows.",
     recommendedFor: ["coding", "fast", "cheap", "vision"],
     capabilities: createLangdockCapabilities({
       contextWindowTokens: null,
       maxOutputTokens: null,
     }),
     warnings: [
-      "Langdock model availability is workspace-specific; use live model discovery to confirm this API key can access the model.",
+      "Langdock model availability is tied to the API key account; use live model discovery to confirm this key can access the model.",
     ],
     source: "curated-fallback",
   },
   {
     provider: "langdock",
-    id: "gemini-2.5-pro",
-    label: "Gemini 2.5 Pro",
+    id: "gpt-5.2-pro",
+    label: "GPT-5.2 Pro",
     lifecycle: "stable",
-    releaseDate: "2025-06-17",
+    releaseDate: "2025-08-07",
     description:
-      "Gemini model option when enabled in the Langdock workspace or BYOK account.",
+      "Langdock OpenAI-compatible model option for high-capability coding and agent workflows.",
     recommendedFor: ["coding", "vision"],
     capabilities: createLangdockCapabilities({
-      supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
       contextWindowTokens: null,
       maxOutputTokens: null,
     }),
     warnings: [
-      "Langdock model availability is workspace-specific; use live model discovery to confirm this API key can access the model.",
-    ],
-    source: "curated-fallback",
-  },
-  {
-    provider: "langdock",
-    id: "gemini-2.5-flash",
-    label: "Gemini 2.5 Flash",
-    lifecycle: "stable",
-    releaseDate: "2025-06-17",
-    description:
-      "Fast Gemini model option when enabled in the Langdock workspace or BYOK account.",
-    recommendedFor: ["fast", "cheap", "vision"],
-    capabilities: createLangdockCapabilities({
-      supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
-      contextWindowTokens: null,
-      maxOutputTokens: null,
-    }),
-    warnings: [
-      "Langdock model availability is workspace-specific; use live model discovery to confirm this API key can access the model.",
+      "Langdock model availability is tied to the API key account; use live model discovery to confirm this key can access the model.",
     ],
     source: "curated-fallback",
   },

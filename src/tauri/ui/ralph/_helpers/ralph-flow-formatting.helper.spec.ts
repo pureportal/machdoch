@@ -214,6 +214,16 @@ describe("Ralph flow formatting helpers", () => {
       secondary: "Failed exit codes route to FAILED.",
       chips: ["2m timeout"],
     });
+    expect(
+      getUtilityNodePreview({
+        type: "UI_ANALYZE",
+        adapter: "auto",
+      }),
+    ).toMatchObject({
+      primary: "Target URL not set",
+      secondary: "Server: existing",
+      chips: ["auto", "4 viewport(s)", "30s timeout"],
+    });
   });
 
   it("derives block setting chips without default settings noise", () => {

@@ -94,7 +94,7 @@ pub(super) async fn fetch_provider_model_catalog(
             match api_key.filter(|value| has_configured_value(Some(value))) {
                 Some(value) => (
                     "LANGDOCK_API_KEY",
-                    fetch_langdock_model_catalog(client, value).await,
+                    fetch_langdock_model_catalog(client, value, env).await,
                 ),
                 None => {
                     return provider_model_catalog_unavailable(

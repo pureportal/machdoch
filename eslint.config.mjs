@@ -8,17 +8,36 @@ const sharedGlobals = {
   ...globals.node,
 };
 
+const generatedAndBuildIgnores = [
+  "coverage/**",
+  "dist/**",
+  "node_modules/**",
+  "src-tauri/target/**",
+];
+
+const configJavaScriptFiles = ["eslint.config.mjs"];
+const sourceTypeScriptFiles = ["src/**/*.{ts,tsx}", "*.ts"];
+const testTypeScriptFiles = [
+  "src/**/*.spec.ts",
+  "src/**/*.test.{ts,tsx}",
+  "vitest*.ts",
+];
+
 export default tseslint.config(
   {
-    ignores: [
-      "coverage/**",
-      "dist/**",
-      "node_modules/**",
-      "src-tauri/target/**",
-    ],
+    ignores: generatedAndBuildIgnores,
   },
   {
-    files: ["src/**/*.{ts,tsx}", "*.ts"],
+    files: configJavaScriptFiles,
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: sharedGlobals,
+    },
+  },
+  {
+    files: sourceTypeScriptFiles,
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,
@@ -35,7 +54,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/**/*.spec.ts", "src/**/*.test.{ts,tsx}", "vitest*.ts"],
+    files: testTypeScriptFiles,
     languageOptions: {
       globals: {
         ...sharedGlobals,

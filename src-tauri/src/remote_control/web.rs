@@ -33,8 +33,8 @@ use super::{
         headers_have_current_pairing_token, state_changing_headers_allowed,
     },
     commands::{normalize_command, RemoteCommandRequest},
-    create_snapshot_locked,
     mission_control_html::mission_control_html,
+    status::create_snapshot_locked,
     RemoteControlShared, RemoteControlState, REMOTE_CONTROL_COMMAND_EVENT,
     SERVER_ACCEPT_POLL_INTERVAL, SSE_KEEPALIVE_INTERVAL,
 };

@@ -176,7 +176,30 @@ pub(super) fn resolve_attached_path(
 
 #[cfg(test)]
 mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use base64::Engine as _;
+
+    use super::super::{
+        attachments::{remember_attachment_path_grant, save_clipboard_image_attachment_sync},
+        ClipboardImageAttachmentRequest,
+    };
     use super::*;
+
+    fn create_test_directory(label: &str) -> PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let path = std::env::temp_dir().join(format!(
+            "machdoch-desktop-task-test-{label}-{}-{timestamp}",
+            std::process::id()
+        ));
+
+        fs::create_dir_all(&path).expect("test directory should be created");
+
+        path
+    }
 
     #[test]
     fn dropped_paths_ignore_empty_values_and_dedupe() {
@@ -201,5 +224,173 @@ mod tests {
         .expect_err("absolute relative path input should be rejected");
 
         assert!(error.contains("not an absolute path"));
+    }
+
+    #[test]
+    fn attached_path_resolver_allows_paths_inside_active_workspace() {
+        let grants = AttachmentPathGrantMap::default();
+        let workspace_path = create_test_directory("workspace");
+        let file_path = workspace_path.join("plan.md");
+
+        fs::write(&file_path, "plan").expect("test file should be written");
+        remember_attachment_path_grant(&grants, file_path.to_string_lossy().as_ref())
+            .expect("test file should be granted");
+
+        let resolved_path = resolve_attached_path(
+            &grants,
+            Some(workspace_path.to_string_lossy().as_ref()),
+            file_path.to_string_lossy().as_ref(),
+        )
+        .expect("workspace attachment should resolve");
+
+        assert_eq!(
+            resolved_path,
+            file_path
+                .canonicalize()
+                .expect("test file should canonicalize")
+        );
+
+        let _ = fs::remove_dir_all(workspace_path);
+    }
+
+    #[test]
+    fn attached_path_resolver_rejects_paths_outside_active_workspace() {
+        let grants = AttachmentPathGrantMap::default();
+        let workspace_path = create_test_directory("workspace");
+        let outside_path = create_test_directory("outside");
+        let file_path = outside_path.join("secret.txt");
+
+        fs::write(&file_path, "secret").expect("test file should be written");
+        remember_attachment_path_grant(&grants, file_path.to_string_lossy().as_ref())
+            .expect("test file should be granted");
+
+        let error = resolve_attached_path(
+            &grants,
+            Some(workspace_path.to_string_lossy().as_ref()),
+            file_path.to_string_lossy().as_ref(),
+        )
+        .expect_err("outside attachment should be rejected");
+
+        assert!(error.contains("outside the active workspace"));
+
+        let _ = fs::remove_dir_all(workspace_path);
+        let _ = fs::remove_dir_all(outside_path);
+    }
+
+    #[test]
+    fn attached_path_resolver_rejects_ungranted_paths_outside_active_workspace() {
+        let grants = AttachmentPathGrantMap::default();
+        let workspace_path = create_test_directory("workspace");
+        let outside_path = create_test_directory("outside");
+        let file_path = outside_path.join("secret.txt");
+
+        fs::write(&file_path, "secret").expect("test file should be written");
+
+        let error = resolve_attached_path(
+            &grants,
+            Some(workspace_path.to_string_lossy().as_ref()),
+            file_path.to_string_lossy().as_ref(),
+        )
+        .expect_err("ungranted outside attachment should be rejected");
+
+        assert!(error.contains("not selected or created by this app session"));
+
+        let _ = fs::remove_dir_all(workspace_path);
+        let _ = fs::remove_dir_all(outside_path);
+    }
+
+    #[test]
+    fn attached_path_resolver_rejects_granted_directories_outside_active_workspace() {
+        let grants = AttachmentPathGrantMap::default();
+        let workspace_path = create_test_directory("workspace");
+        let outside_directory = create_test_directory("outside-folder");
+
+        remember_attachment_path_grant(&grants, outside_directory.to_string_lossy().as_ref())
+            .expect("test directory should be granted");
+
+        let error = resolve_attached_path(
+            &grants,
+            Some(workspace_path.to_string_lossy().as_ref()),
+            outside_directory.to_string_lossy().as_ref(),
+        )
+        .expect_err("granted outside directory should be rejected");
+
+        assert!(error.contains("outside the active workspace"));
+
+        let _ = fs::remove_dir_all(workspace_path);
+        let _ = fs::remove_dir_all(outside_directory);
+    }
+
+    #[test]
+    fn attached_path_resolver_allows_workspace_attachments_after_restart() {
+        let grants = AttachmentPathGrantMap::default();
+        let workspace_path = create_test_directory("workspace");
+        let file_path = workspace_path.join("persisted.md");
+
+        fs::write(&file_path, "persisted").expect("test file should be written");
+
+        let resolved_path = resolve_attached_path(
+            &grants,
+            Some(workspace_path.to_string_lossy().as_ref()),
+            file_path.to_string_lossy().as_ref(),
+        )
+        .expect("persisted workspace attachment should resolve after restart");
+
+        assert_eq!(
+            resolved_path,
+            file_path
+                .canonicalize()
+                .expect("test file should canonicalize")
+        );
+
+        let _ = fs::remove_dir_all(workspace_path);
+    }
+
+    #[test]
+    fn attached_path_resolver_allows_granted_clipboard_image_attachments() {
+        let grants = AttachmentPathGrantMap::default();
+        let saved_path = save_clipboard_image_attachment_sync(ClipboardImageAttachmentRequest {
+            data_base64: base64::engine::general_purpose::STANDARD.encode([0_u8, 1_u8, 2_u8]),
+            media_type: "image/png".to_string(),
+            file_name: Some("clipboard.png".to_string()),
+        })
+        .expect("clipboard image attachment should be saved");
+        remember_attachment_path_grant(&grants, &saved_path)
+            .expect("clipboard image attachment should be granted");
+
+        let resolved_path = resolve_attached_path(&grants, None, &saved_path)
+            .expect("saved clipboard image attachment should resolve");
+
+        assert_eq!(
+            resolved_path,
+            PathBuf::from(&saved_path)
+                .canonicalize()
+                .expect("saved clipboard image should canonicalize")
+        );
+
+        let _ = fs::remove_file(saved_path);
+    }
+
+    #[test]
+    fn attached_path_resolver_allows_clipboard_image_attachments_after_restart() {
+        let grants = AttachmentPathGrantMap::default();
+        let saved_path = save_clipboard_image_attachment_sync(ClipboardImageAttachmentRequest {
+            data_base64: base64::engine::general_purpose::STANDARD.encode([0_u8, 1_u8, 2_u8]),
+            media_type: "image/png".to_string(),
+            file_name: Some("restart-clipboard.png".to_string()),
+        })
+        .expect("clipboard image attachment should be saved");
+
+        let resolved_path = resolve_attached_path(&grants, None, &saved_path)
+            .expect("saved clipboard image attachment should resolve without an in-memory grant");
+
+        assert_eq!(
+            resolved_path,
+            PathBuf::from(&saved_path)
+                .canonicalize()
+                .expect("saved clipboard image should canonicalize")
+        );
+
+        let _ = fs::remove_file(saved_path);
     }
 }

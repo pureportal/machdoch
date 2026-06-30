@@ -132,7 +132,7 @@ export const getUtilityNodePreview = (
             : `Server: ${utility.server?.mode ?? "existing"}`,
         chips: [
           utility.adapter ?? "auto",
-          `${utility.viewports?.length ?? 3} viewport(s)`,
+          `${utility.viewports?.length ?? 4} viewport(s)`,
           `${formatSeconds(utility.timeoutSeconds ?? 30)} timeout`,
         ],
       };

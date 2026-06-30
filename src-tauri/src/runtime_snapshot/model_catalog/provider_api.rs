@@ -10,6 +10,38 @@ use super::{
     ProviderRuntimeModel, ProviderRuntimeModelCapabilities,
 };
 
+const LANGDOCK_DEFAULT_REGION: &str = "eu";
+const LANGDOCK_SUPPORTED_REGIONS: [&str; 2] = ["eu", "us"];
+
+fn strip_trailing_slashes(value: &str) -> String {
+    value.trim_end_matches('/').to_string()
+}
+
+fn resolve_langdock_base_url(env: &HashMap<String, String>) -> String {
+    if let Some(base_url) = env
+        .get("LANGDOCK_BASE_URL")
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return strip_trailing_slashes(base_url);
+    }
+
+    let region = env
+        .get("LANGDOCK_REGION")
+        .map(String::as_str)
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .filter(|value| {
+            LANGDOCK_SUPPORTED_REGIONS
+                .iter()
+                .any(|region| *region == value.as_str())
+        })
+        .unwrap_or_else(|| LANGDOCK_DEFAULT_REGION.to_string());
+
+    format!("https://api.langdock.com/openai/{region}/v1")
+}
+
 fn create_openai_runtime_model(
     model_id: &str,
     release_date: Option<String>,
@@ -277,24 +309,39 @@ fn create_langdock_runtime_model(entry: &serde_json::Value) -> Option<ProviderRu
     })
 }
 
-pub(super) fn parse_langdock_model_catalog(
-    raw: &str,
-) -> Result<Vec<ProviderRuntimeModel>, String> {
-    let payload = serde_json::from_str::<serde_json::Value>(raw)
-        .map_err(|error| format!("Failed to parse Langdock model list: {error}"))?;
+fn sorted_runtime_models(mut models: Vec<ProviderRuntimeModel>) -> Vec<ProviderRuntimeModel> {
+    models.sort_by(|left, right| left.id.cmp(&right.id));
+    models
+}
+
+fn sorted_unique_runtime_models(
+    models: impl IntoIterator<Item = ProviderRuntimeModel>,
+) -> Vec<ProviderRuntimeModel> {
     let mut by_id = HashMap::<String, ProviderRuntimeModel>::new();
 
-    if let Some(entries) = payload.get("data").and_then(serde_json::Value::as_array) {
-        for model in entries.iter().filter_map(create_langdock_runtime_model) {
-            if is_langdock_runtime_model(&model.id) {
-                by_id.entry(model.id.clone()).or_insert(model);
-            }
-        }
+    for model in models {
+        by_id.entry(model.id.clone()).or_insert(model);
     }
 
-    let mut models = by_id.into_values().collect::<Vec<_>>();
-    models.sort_by(|left, right| left.id.cmp(&right.id));
-    Ok(models)
+    sorted_runtime_models(by_id.into_values().collect())
+}
+
+pub(super) fn parse_langdock_model_catalog(raw: &str) -> Result<Vec<ProviderRuntimeModel>, String> {
+    let payload = serde_json::from_str::<serde_json::Value>(raw)
+        .map_err(|error| format!("Failed to parse Langdock model list: {error}"))?;
+
+    Ok(payload
+        .get("data")
+        .and_then(serde_json::Value::as_array)
+        .map(|entries| {
+            sorted_unique_runtime_models(
+                entries
+                    .iter()
+                    .filter_map(create_langdock_runtime_model)
+                    .filter(|model| is_langdock_runtime_model(&model.id)),
+            )
+        })
+        .unwrap_or_default())
 }
 
 pub(super) async fn fetch_openai_model_catalog(
@@ -311,7 +358,7 @@ pub(super) async fn fetch_openai_model_catalog(
         .json::<serde_json::Value>()
         .await
         .map_err(|error| format!("Failed to parse OpenAI model list: {error}"))?;
-    let mut models = payload
+    let models = payload
         .get("data")
         .and_then(serde_json::Value::as_array)
         .map(|entries| {
@@ -331,16 +378,17 @@ pub(super) async fn fetch_openai_model_catalog(
         })
         .unwrap_or_default();
 
-    models.sort_by(|left, right| left.id.cmp(&right.id));
-    Ok(models)
+    Ok(sorted_runtime_models(models))
 }
 
 pub(super) async fn fetch_langdock_model_catalog(
     client: &reqwest::Client,
     api_key: &str,
+    env: &HashMap<String, String>,
 ) -> Result<Vec<ProviderRuntimeModel>, String> {
+    let url = format!("{}/models", resolve_langdock_base_url(env));
     let raw = client
-        .get("https://api.langdock.com/agent/v1/models")
+        .get(url)
         .bearer_auth(api_key)
         .send()
         .await
@@ -368,7 +416,7 @@ pub(super) async fn fetch_anthropic_model_catalog(
         .json::<serde_json::Value>()
         .await
         .map_err(|error| format!("Failed to parse Anthropic model list: {error}"))?;
-    let mut models = payload
+    let models = payload
         .get("data")
         .and_then(serde_json::Value::as_array)
         .map(|entries| {
@@ -380,8 +428,7 @@ pub(super) async fn fetch_anthropic_model_catalog(
         })
         .unwrap_or_default();
 
-    models.sort_by(|left, right| left.id.cmp(&right.id));
-    Ok(models)
+    Ok(sorted_runtime_models(models))
 }
 
 pub(super) async fn fetch_google_model_catalog(
@@ -398,17 +445,16 @@ pub(super) async fn fetch_google_model_catalog(
         .json::<serde_json::Value>()
         .await
         .map_err(|error| format!("Failed to parse Google model list: {error}"))?;
-    let mut by_id = HashMap::<String, ProviderRuntimeModel>::new();
-
-    if let Some(entries) = payload.get("models").and_then(serde_json::Value::as_array) {
-        for model in entries.iter().filter_map(create_google_runtime_model) {
-            if is_google_runtime_model(&model.id) {
-                by_id.entry(model.id.clone()).or_insert(model);
-            }
-        }
-    }
-
-    let mut models = by_id.into_values().collect::<Vec<_>>();
-    models.sort_by(|left, right| left.id.cmp(&right.id));
-    Ok(models)
+    Ok(payload
+        .get("models")
+        .and_then(serde_json::Value::as_array)
+        .map(|entries| {
+            sorted_unique_runtime_models(
+                entries
+                    .iter()
+                    .filter_map(create_google_runtime_model)
+                    .filter(|model| is_google_runtime_model(&model.id)),
+            )
+        })
+        .unwrap_or_default())
 }

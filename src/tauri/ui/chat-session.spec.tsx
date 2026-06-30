@@ -477,13 +477,20 @@ const emitWindowDropEvent = (
 const createDataTransfer = (
   data: Record<string, string>,
   files: File[] = [],
-): DataTransfer =>
-  ({
+): DataTransfer => {
+  const transferData = { ...data };
+
+  return ({
     types: Object.keys(data),
     files,
     dropEffect: "none",
-    getData: vi.fn((type: string) => data[type] ?? ""),
+    effectAllowed: "all",
+    getData: vi.fn((type: string) => transferData[type] ?? ""),
+    setData: vi.fn((type: string, value: string) => {
+      transferData[type] = value;
+    }),
   }) as unknown as DataTransfer;
+};
 
 const dispatchBrowserDrop = (dataTransfer: DataTransfer): void => {
   const event = new Event("drop", {
@@ -654,6 +661,120 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "renders a fallback final response when terminal progress arrives before the desktop response",
+    async () => {
+      const taskResolvers: Array<(value: DesktopTaskRunResponse) => void> = [];
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(
+          () =>
+            new Promise<DesktopTaskRunResponse>((resolve) => {
+              taskResolvers.push(resolve);
+            }),
+        );
+
+      render(<ChatSession />);
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: "ask a delegated agent to summarize the repo" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(() => {
+        expect(desktopEventListeners.has("desktop-task-progress")).toBe(true);
+      });
+
+      const taskId = runDesktopTaskSpy.mock.calls[0]?.[2]?.taskId;
+
+      expect(typeof taskId).toBe("string");
+
+      vi.useFakeTimers();
+
+      emitDesktopTaskProgress({
+        taskId: taskId as string,
+        progress: {
+          task: "ask a delegated agent to summarize the repo",
+          mode: "machdoch",
+          state: "verifying",
+          message: "Codex CLI completed.",
+          executedTools: ["shell"],
+          outputSections: [],
+          cancellable: true,
+          assistantText: "Delegated final answer.",
+        },
+        timestamp: 2,
+      });
+      emitDesktopTaskProgress({
+        taskId: taskId as string,
+        progress: {
+          task: "ask a delegated agent to summarize the repo",
+          mode: "machdoch",
+          state: "completed",
+          message: "Delegated task completed.",
+          executedTools: ["shell"],
+          outputSections: [],
+          cancellable: false,
+        },
+        timestamp: 3,
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_600);
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText(/Delegated final answer\./i)).toBeDefined();
+      expect(screen.queryByText(/Late command response\./i)).toBeNull();
+
+      fireEvent.change(input, {
+        target: { value: "follow up after fallback" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      expect(runDesktopTaskSpy).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        const lateExecution = createMockExecutionFixture(
+          "ask a delegated agent to summarize the repo",
+          "/mock/home/path",
+          { mode: "machdoch" },
+        );
+
+        taskResolvers[0]?.({
+          execution: {
+            ...lateExecution,
+            summary: "Late command response.",
+            response: {
+              ...(lateExecution.response ?? {
+                highlights: [],
+                relatedFiles: [],
+                verification: [],
+                followUps: [],
+              }),
+              markdown: "Late command response.",
+            },
+          },
+        });
+        await Promise.resolve();
+        vi.advanceTimersByTime(250);
+        await Promise.resolve();
+      });
+
+      expect(screen.queryByText(/Late command response\./i)).toBeNull();
+      expect(screen.getAllByText(/Delegated final answer\./i)).toHaveLength(1);
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "queues running-session follow-ups and drains edited reordered messages serially",
     async () => {
       const taskResolvers: Array<(value: DesktopTaskRunResponse) => void> = [];
@@ -747,8 +868,105 @@ describe("ChatSession component", () => {
   );
 
   it(
-    "adds steering notes to the running task without launching another task",
+    "reorders queued follow-ups by dragging the queued row handle",
     async () => {
+      const taskResolvers: Array<(value: DesktopTaskRunResponse) => void> = [];
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(
+          () =>
+            new Promise<DesktopTaskRunResponse>((resolve) => {
+              taskResolvers.push(resolve);
+            }),
+        );
+
+      render(<ChatSession />);
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+
+      fireEvent.change(input, {
+        target: { value: "First running task" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      fireEvent.change(input, {
+        target: { value: "Second queued task" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+      fireEvent.change(input, {
+        target: { value: "Third queued task" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+
+      expect(
+        (screen.getByLabelText("Queued message 1") as HTMLTextAreaElement).value,
+      ).toBe("Second queued task");
+      expect(
+        (screen.getByLabelText("Queued message 2") as HTMLTextAreaElement).value,
+      ).toBe("Third queued task");
+
+      const dataTransfer = createDataTransfer({});
+      const dragHandle = screen.getByRole("button", {
+        name: "Drag queued message 2 to reorder",
+      });
+      const firstQueuedRow = screen.getByLabelText("Queued message 1 of 2");
+
+      fireEvent.dragStart(dragHandle, { dataTransfer });
+      fireEvent.dragEnter(firstQueuedRow, { dataTransfer });
+      fireEvent.dragOver(firstQueuedRow, { dataTransfer });
+      fireEvent.drop(firstQueuedRow, { dataTransfer });
+
+      expect(
+        (screen.getByLabelText("Queued message 1") as HTMLTextAreaElement).value,
+      ).toBe("Third queued task");
+      expect(
+        (screen.getByLabelText("Queued message 2") as HTMLTextAreaElement).value,
+      ).toBe("Second queued task");
+
+      await act(async () => {
+        taskResolvers[0]?.({
+          execution: createMockExecutionFixture(
+            "First running task",
+            "/mock/home/path",
+          ),
+        });
+        await Promise.resolve();
+      });
+
+      await waitFor(
+        () => {
+          expect(runDesktopTaskSpy).toHaveBeenCalledTimes(2);
+        },
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+      );
+      expect(runDesktopTaskSpy.mock.calls[1]?.[1]).toBe("Third queued task");
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "edits attachments on queued follow-ups before they run",
+    async () => {
+      openMock.mockResolvedValue(["C:\\Docs\\plan.md"]);
+      const resolveDroppedPathsSpy = vi
+        .spyOn(runtime, "resolveDroppedPaths")
+        .mockImplementation(async (paths) => ({
+          workspaceRoot: "C:\\Docs",
+          entries: paths.map((path) => ({
+            path,
+            kind: "file",
+            name: path.split("\\").at(-1) ?? path,
+            parent: "C:\\Docs",
+          })),
+        }));
       const runDesktopTaskSpy = vi
         .spyOn(runtime, "runDesktopTask")
         .mockImplementation(
@@ -756,6 +974,86 @@ describe("ChatSession component", () => {
         );
 
       render(<ChatSession />);
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+
+      fireEvent.change(input, {
+        target: { value: "First running task" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Add context" }), {
+        button: 0,
+        ctrlKey: false,
+      });
+      fireEvent.click(await screen.findByRole("menuitem", { name: /Files/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("plan.md")).toBeDefined();
+      });
+
+      fireEvent.change(input, {
+        target: { value: "Queued task with context" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+
+      expect(
+        (screen.getByLabelText("Queued message 1") as HTMLTextAreaElement).value,
+      ).toBe("Queued task with context");
+      expect(
+        screen.getByRole("button", { name: "Show file plan.md" }),
+      ).toBeDefined();
+
+      fireEvent.click(screen.getByRole("button", { name: "Remove plan.md" }));
+
+      await waitFor(() => {
+        expect(screen.queryByText("plan.md")).toBeNull();
+        expect(screen.getByText("No attachments")).toBeDefined();
+      });
+
+      openMock.mockResolvedValue(["C:\\Docs\\extra.md"]);
+      fireEvent.pointerDown(
+        screen.getByRole("button", {
+          name: "Add attachments to queued message 1",
+        }),
+        {
+          button: 0,
+          ctrlKey: false,
+        },
+      );
+      fireEvent.click(await screen.findByRole("menuitem", { name: /Files/i }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Show file extra.md" }),
+        ).toBeDefined();
+      });
+      expect(resolveDroppedPathsSpy).toHaveBeenLastCalledWith([
+        "C:\\Docs\\extra.md",
+      ]);
+
+      resolveDroppedPathsSpy.mockRestore();
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "adds steering notes to the running task timeline without launching another task",
+    async () => {
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(
+          () => new Promise<DesktopTaskRunResponse>(() => {}),
+        );
+
+      const { container } = render(<ChatSession />);
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -781,8 +1079,15 @@ describe("ChatSession component", () => {
       await waitFor(() => {
         expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
       });
+      const userBubbles = container.querySelectorAll(".app-user-message-bubble");
+
+      expect(userBubbles).toHaveLength(1);
+      expect(userBubbles[0]?.textContent).toContain("Start a long task");
+      expect(userBubbles[0]?.textContent).not.toContain(
+        "Use the new log file too",
+      );
+      expect(screen.getByText("Steering note")).toBeDefined();
       expect(screen.getByText("Use the new log file too")).toBeDefined();
-      expect(screen.getByText(/Steering note received/i)).toBeDefined();
 
       runDesktopTaskSpy.mockRestore();
     },

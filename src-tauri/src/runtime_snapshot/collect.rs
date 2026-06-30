@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use super::settings::{UserConfigFile, WorkspaceConfigFile};
 use super::{
     env::{has_configured_value, load_workspace_env, resolve_agent_cli_binary},
     settings::{normalize_user_agent_limits_settings, normalize_user_review_model_settings},
+    settings_types::{UserConfigFile, WorkspaceConfigFile},
     user_config::load_user_config_file,
     workspace::{load_workspace_config, resolve_workspace_root_path},
     ProviderAvailability, RuntimeAgentLimits, RuntimeCompatibilityConfig, RuntimeReviewModelConfig,

@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::settings::WorkspaceConfigFile;
+use super::settings_types::WorkspaceConfigFile;
 use super::{is_valid_mode, is_valid_reasoning_mode, normalize_optional_string};
 
 pub(crate) fn get_user_config_directory() -> Result<PathBuf, String> {

@@ -22,7 +22,7 @@ pub const PROVIDER_ENV_KEYS: [(&str, &str); 4] = [("openai", "OPENAI_API_KEY"), 
 pub const AGENT_CLI_PROVIDER_ENV_KEYS: [(&str, &str); 3] = [("codex-cli", "MACHDOCH_CODEX_CLI_PATH"), ("claude-cli", "MACHDOCH_CLAUDE_CLI_PATH"), ("copilot-cli", "MACHDOCH_COPILOT_CLI_PATH")];
 pub const WEB_SEARCH_ENV_KEYS: [(&str, &str); 3] = [("perplexity", "PERPLEXITY_API_KEY"), ("tavily", "TAVILY_API_KEY"), ("serper", "SERPER_API_KEY")];
 pub const DEFAULT_MODEL_PROVIDER: &str = "openai";
-pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); 7] = [("openai", "gpt-5.5"), ("anthropic", "claude-sonnet-4-6"), ("google", "gemini-3.5-flash"), ("langdock", "gpt-5"), ("codex-cli", "gpt-5.5"), ("claude-cli", "claude-sonnet-4-6"), ("copilot-cli", "auto")];
+pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); 7] = [("openai", "gpt-5.5"), ("anthropic", "claude-sonnet-4-6"), ("google", "gemini-3.5-flash"), ("langdock", "gpt-5.5"), ("codex-cli", "gpt-5.5"), ("claude-cli", "claude-sonnet-4-6"), ("copilot-cli", "auto")];
 pub const DEFAULT_USER_REVIEW_MODEL_MODE: &str = "base";
 
 pub const DEFAULT_USER_AGENT_LIMITS_INFINITE: bool = false;

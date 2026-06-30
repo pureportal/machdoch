@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{get_user_config_directory, settings::UserConfigFile};
+use super::{get_user_config_directory, settings_types::UserConfigFile};
 
 const USER_CONFIG_FILE_NAME: &str = "user-config.json";
 

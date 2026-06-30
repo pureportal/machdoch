@@ -154,6 +154,7 @@ describe("Langdock Chat Completions conformance", () => {
     });
     expect(calls[0]?.body).not.toHaveProperty("parallel_tool_calls");
     expect(calls[0]?.body).not.toHaveProperty("stream_options");
+    expect(calls[0]?.body).not.toHaveProperty("reasoning_effort");
     expect(calls[0]?.options).toMatchObject({
       timeout: TASK_EXECUTION_TIMEOUT_MS,
     });
@@ -182,5 +183,59 @@ describe("Langdock Chat Completions conformance", () => {
         },
       ],
     });
+  });
+
+  it("omits reasoning effort when function tools are required", async () => {
+    const calls: Array<{ body: unknown; options: unknown }> = [];
+    const client = {
+      chat: {
+        completions: {
+          create: async (body: unknown, options: unknown) => {
+            calls.push({ body, options });
+            return {
+              id: "chat_1",
+              object: "chat.completion",
+              created: 1,
+              model: "gpt-5.5",
+              choices: [
+                {
+                  index: 0,
+                  finish_reason: "tool_calls",
+                  logprobs: null,
+                  message: {
+                    role: "assistant",
+                    content: null,
+                    refusal: null,
+                    tool_calls: [
+                      {
+                        id: "call_1",
+                        type: "function",
+                        function: {
+                          name: "inspect_file",
+                          arguments: "{\"path\":\"README.md\"}",
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            };
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const adapter = new LangdockChatCompletionsAdapter(client, [tool]);
+
+    await adapter.startTurn({
+      ...startParams,
+      model: "gpt-5.5",
+      reasoning: "xhigh",
+    });
+
+    expect(calls[0]?.body).toMatchObject({
+      model: "gpt-5.5",
+      tool_choice: "required",
+    });
+    expect(calls[0]?.body).not.toHaveProperty("reasoning_effort");
   });
 });

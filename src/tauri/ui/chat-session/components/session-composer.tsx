@@ -20,6 +20,7 @@ import {
 import { cn } from "../../lib/utils";
 import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import type { RuntimeProvider } from "../../model-catalog";
+import type { AttachmentSelectionKind } from "../_helpers/session-context-attachments";
 import type { SaveSmartContextPackInput } from "../_helpers/smart-context-packs";
 import type { RUN_MODE_META } from "../_helpers/session-shell";
 import {
@@ -102,7 +103,17 @@ export interface SessionComposerProps {
   ) => void;
   onQueuedMessageChange: (messageId: string, content: string) => void;
   onQueuedMessageMove: (messageId: string, direction: -1 | 1) => void;
+  onQueuedMessageReorder: (messageId: string, targetIndex: number) => void;
   onQueuedMessageRemove: (messageId: string) => void;
+  onQueuedMessageSelectContextAttachments: (
+    messageId: string,
+    selectionKind: AttachmentSelectionKind,
+  ) => Promise<void>;
+  onQueuedMessageRemoveContextAttachment: (
+    messageId: string,
+    attachmentId: string,
+  ) => void;
+  onQueuedMessageClearContextAttachments: (messageId: string) => void;
   onSend: () => void;
   onCancel: () => void;
   isExecuting: boolean;
@@ -162,7 +173,11 @@ export const SessionComposer = ({
   onRunningTaskMessageActionChange,
   onQueuedMessageChange,
   onQueuedMessageMove,
+  onQueuedMessageReorder,
   onQueuedMessageRemove,
+  onQueuedMessageSelectContextAttachments,
+  onQueuedMessageRemoveContextAttachment,
+  onQueuedMessageClearContextAttachments,
   onSend,
   onCancel,
   isExecuting,
@@ -338,7 +353,17 @@ export const SessionComposer = ({
       onRunningTaskMessageActionChange={onRunningTaskMessageActionChange}
       onQueuedMessageChange={onQueuedMessageChange}
       onQueuedMessageMove={onQueuedMessageMove}
+      onQueuedMessageReorder={onQueuedMessageReorder}
       onQueuedMessageRemove={onQueuedMessageRemove}
+      onQueuedMessageSelectContextAttachments={
+        onQueuedMessageSelectContextAttachments
+      }
+      onQueuedMessageRemoveContextAttachment={
+        onQueuedMessageRemoveContextAttachment
+      }
+      onQueuedMessageClearContextAttachments={
+        onQueuedMessageClearContextAttachments
+      }
       onSend={onSend}
       onCancel={onCancel}
     />

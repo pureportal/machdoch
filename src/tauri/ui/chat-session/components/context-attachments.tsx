@@ -180,6 +180,7 @@ export interface ContextAttachmentsListProps {
   onOpen?: (attachment: ChatSessionContextAttachment) => void;
   onRemove: (attachmentId: string) => void;
   onClearAll: () => void;
+  clearAllLabel?: string;
   compact?: boolean;
 }
 
@@ -188,6 +189,7 @@ export const ContextAttachmentsList = ({
   onOpen,
   onRemove,
   onClearAll,
+  clearAllLabel = "Remove all attached context",
   compact = false,
 }: ContextAttachmentsListProps): JSX.Element | null => {
   if (attachments.length === 0) {
@@ -259,7 +261,7 @@ export const ContextAttachmentsList = ({
                 onClick={() => onRemove(attachment.id)}
                 className={cn(
                   "ml-0.5 flex shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
-                  compact ? "h-4 w-4" : "h-5 w-5",
+                  "h-6 w-6",
                 )}
               >
                 <X className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
@@ -271,8 +273,8 @@ export const ContextAttachmentsList = ({
 
       <button
         type="button"
-        aria-label="Remove all attached context"
-        title="Remove all attached context"
+        aria-label={clearAllLabel}
+        title={clearAllLabel}
         onClick={onClearAll}
         className={cn(
           "app-context-attachments-clear inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-slate-800 bg-slate-950/70 text-slate-500 hover:border-rose-500/25 hover:bg-rose-500/10 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30",

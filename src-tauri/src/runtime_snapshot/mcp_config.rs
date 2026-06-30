@@ -1,6 +1,8 @@
 use std::{fs, path::PathBuf};
 
-use super::{get_user_config_directory, resolve_workspace_root_path, settings::McpConfigDocument};
+use super::{
+    get_user_config_directory, resolve_workspace_root_path, settings_types::McpConfigDocument,
+};
 
 const MCP_CONFIG_FILE_NAME: &str = "mcp.json";
 const MCP_WORKSPACE_CONFIG_DIRECTORY: [&str; 2] = [".machdoch", "mcp"];

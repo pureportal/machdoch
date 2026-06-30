@@ -208,6 +208,8 @@ pub(super) fn save_clipboard_image_attachment_sync(
 
 #[cfg(test)]
 mod tests {
+    use base64::Engine as _;
+
     use super::*;
 
     #[test]
@@ -233,5 +235,21 @@ mod tests {
         assert_eq!(base64_decoded_len_upper_bound("AAAA"), 3);
         assert_eq!(base64_decoded_len_upper_bound("AAA="), 2);
         assert_eq!(base64_decoded_len_upper_bound("AA=="), 1);
+    }
+
+    #[test]
+    fn clipboard_image_attachment_rejects_oversized_payloads() {
+        let data_base64 =
+            base64::engine::general_purpose::STANDARD.encode(vec![0_u8; (20 * 1024 * 1024) + 1]);
+
+        let result = save_clipboard_image_attachment_sync(ClipboardImageAttachmentRequest {
+            data_base64,
+            media_type: "image/png".to_string(),
+            file_name: Some("huge.png".to_string()),
+        });
+
+        assert!(result
+            .expect_err("oversized clipboard images should be rejected")
+            .contains("too large"));
     }
 }

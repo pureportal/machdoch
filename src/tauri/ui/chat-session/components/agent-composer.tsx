@@ -1,11 +1,8 @@
 import {
-  ArrowDown,
-  ArrowUp,
   CornerDownRight,
   ListOrdered,
   SendHorizonal,
   Square,
-  X,
 } from "lucide-react";
 import type {
   ClipboardEvent,
@@ -20,10 +17,15 @@ import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import type { RuntimeProvider } from "../../model-catalog";
+import type { AttachmentSelectionKind } from "../_helpers/session-context-attachments";
 import {
   ContextAttachmentMenuButton,
   ContextAttachmentsList,
 } from "./context-attachments";
+import {
+  QueuedMessagesPanel,
+  type QueuedMessagePanelMessage,
+} from "./queued-messages-panel";
 import { SessionModelPicker } from "./session-model-picker";
 import { ToolToggleButton } from "./tool-toggle-button";
 
@@ -52,11 +54,7 @@ export interface AgentComposerAction {
   className?: string;
 }
 
-export interface AgentComposerQueuedMessage {
-  id: string;
-  content: string;
-  attachmentCount: number;
-}
+export type AgentComposerQueuedMessage = QueuedMessagePanelMessage;
 
 export interface AgentComposerProps {
   variant: AgentComposerVariant;
@@ -99,7 +97,17 @@ export interface AgentComposerProps {
   ) => void;
   onQueuedMessageChange?: (messageId: string, content: string) => void;
   onQueuedMessageMove?: (messageId: string, direction: -1 | 1) => void;
+  onQueuedMessageReorder?: (messageId: string, targetIndex: number) => void;
   onQueuedMessageRemove?: (messageId: string) => void;
+  onQueuedMessageSelectContextAttachments?: (
+    messageId: string,
+    selectionKind: AttachmentSelectionKind,
+  ) => Promise<void>;
+  onQueuedMessageRemoveContextAttachment?: (
+    messageId: string,
+    attachmentId: string,
+  ) => void;
+  onQueuedMessageClearContextAttachments?: (messageId: string) => void;
   onSend: () => void;
   onCancel: () => void;
 }
@@ -284,7 +292,11 @@ export const AgentComposer = ({
   onRunningTaskMessageActionChange,
   onQueuedMessageChange,
   onQueuedMessageMove,
+  onQueuedMessageReorder,
   onQueuedMessageRemove,
+  onQueuedMessageSelectContextAttachments,
+  onQueuedMessageRemoveContextAttachment,
+  onQueuedMessageClearContextAttachments,
   onSend,
   onCancel,
 }: AgentComposerProps): JSX.Element => {
@@ -408,79 +420,19 @@ export const AgentComposer = ({
       </div>
     ) : null;
   const queuedMessagesPanel = queuePanelVisible ? (
-    <div
-      aria-label="Queued messages"
-      className="app-composer-queued-messages rounded-xl border border-slate-800/80 bg-slate-900/30 p-2"
-    >
-      <div className="flex items-center gap-2 px-1 pb-2 text-xs font-medium text-slate-300">
-        <ListOrdered className="h-3.5 w-3.5 text-sky-300" />
-        Queued
-        <span className="rounded-full bg-slate-800 px-1.5 py-0.5 text-[11px] leading-none text-slate-400">
-          {queuedMessages.length}
-        </span>
-      </div>
-      <div className="grid gap-2">
-        {queuedMessages.map((message, index) => (
-          <div
-            key={message.id}
-            className="grid gap-2 rounded-lg border border-slate-800/75 bg-slate-950/45 p-2 sm:grid-cols-[minmax(0,1fr)_auto]"
-          >
-            <div className="grid min-w-0 gap-1.5">
-              <Textarea
-                aria-label={`Queued message ${index + 1}`}
-                value={message.content}
-                onChange={(event) =>
-                  onQueuedMessageChange?.(message.id, event.target.value)
-                }
-                className="min-h-10 resize-y border-slate-800 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500"
-              />
-              {message.attachmentCount > 0 ? (
-                <div className="px-1 text-[11px] leading-4 text-slate-500">
-                  {message.attachmentCount} attached
-                </div>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-1 sm:flex-col sm:justify-start">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-xs"
-                aria-label={`Move queued message ${index + 1} up`}
-                title="Move up"
-                disabled={index === 0}
-                onClick={() => onQueuedMessageMove?.(message.id, -1)}
-                className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
-              >
-                <ArrowUp className="h-3 w-3" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-xs"
-                aria-label={`Move queued message ${index + 1} down`}
-                title="Move down"
-                disabled={index === queuedMessages.length - 1}
-                onClick={() => onQueuedMessageMove?.(message.id, 1)}
-                className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
-              >
-                <ArrowDown className="h-3 w-3" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-xs"
-                aria-label={`Remove queued message ${index + 1}`}
-                title="Remove"
-                onClick={() => onQueuedMessageRemove?.(message.id)}
-                className="border-rose-500/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15 hover:text-white"
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+    <QueuedMessagesPanel
+      messages={queuedMessages}
+      imageInputDisabled={!imageInputSupported}
+      imageInputDisabledReason={imageInputDisabledReason}
+      onOpenAttachment={onOpenContextAttachment}
+      onMessageChange={onQueuedMessageChange}
+      onMessageMove={onQueuedMessageMove}
+      onMessageReorder={onQueuedMessageReorder}
+      onMessageRemove={onQueuedMessageRemove}
+      onMessageSelectAttachments={onQueuedMessageSelectContextAttachments}
+      onMessageRemoveAttachment={onQueuedMessageRemoveContextAttachment}
+      onMessageClearAttachments={onQueuedMessageClearContextAttachments}
+    />
   ) : null;
   const sendControl = showCancelButton ? (
     <Button

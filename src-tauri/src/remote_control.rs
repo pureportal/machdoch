@@ -22,6 +22,7 @@ mod sanitize;
 mod session;
 mod shell;
 mod state;
+mod status;
 #[cfg(test)]
 mod tests;
 mod web;
@@ -29,6 +30,7 @@ mod web;
 use commands::RemoteCommandRecord;
 pub use commands::RemoteControlCommandEvent;
 pub use shell::RemoteShellSnapshot;
+pub use status::RemoteControlStatus;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -129,42 +131,6 @@ struct RemoteControlServerInfo {
     started_at: u64,
     bind_address: String,
     shutdown: Arc<AtomicBool>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteControlStatus {
-    enabled: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    local_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    lan_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    display_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    qr_svg: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    token_hint: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    started_at: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bind_address: Option<String>,
-    port: u16,
-    paired_device_count: usize,
-    event_id: u64,
-    sessions: Vec<RemoteTaskSession>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RemoteControlSnapshot {
-    enabled: bool,
-    server_time: u64,
-    event_id: u64,
-    sessions: Vec<RemoteTaskSession>,
-    commands: Vec<RemoteCommandRecord>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    shell: Option<RemoteShellSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -332,58 +298,6 @@ fn open_url_in_system_browser(url: &str) -> Result<(), String> {
     Err("Opening Mission Control is not supported on this platform.".to_string())
 }
 
-fn create_status_locked(inner: &RemoteControlInner) -> RemoteControlStatus {
-    let sessions = sorted_sessions(inner);
-
-    match &inner.server {
-        Some(server) => RemoteControlStatus {
-            enabled: true,
-            local_url: Some(server.local_url.clone()),
-            lan_url: server.lan_url.clone(),
-            display_url: Some(server.display_url.clone()),
-            qr_svg: Some(server.qr_svg.clone()),
-            token_hint: Some(create_token_hint(&server.token)),
-            started_at: Some(server.started_at),
-            bind_address: Some(server.bind_address.clone()),
-            port: inner.config.port,
-            paired_device_count: inner.config.paired_devices.len(),
-            event_id: inner.event_id,
-            sessions,
-        },
-        None => RemoteControlStatus {
-            enabled: false,
-            local_url: None,
-            lan_url: None,
-            display_url: None,
-            qr_svg: None,
-            token_hint: None,
-            started_at: None,
-            bind_address: None,
-            port: inner.config.port,
-            paired_device_count: inner.config.paired_devices.len(),
-            event_id: inner.event_id,
-            sessions,
-        },
-    }
-}
-
-fn create_snapshot_locked(inner: &RemoteControlInner) -> RemoteControlSnapshot {
-    RemoteControlSnapshot {
-        enabled: inner.server.is_some(),
-        server_time: now_millis(),
-        event_id: inner.event_id,
-        sessions: sorted_sessions(inner),
-        commands: inner.commands.iter().cloned().rev().collect(),
-        shell: inner.shell.clone(),
-    }
-}
-
-fn sorted_sessions(inner: &RemoteControlInner) -> Vec<RemoteTaskSession> {
-    let mut sessions = inner.sessions.values().cloned().collect::<Vec<_>>();
-    sessions.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
-    sessions
-}
-
 fn string_field(value: &Value, field: &str) -> Option<String> {
     value.get(field).and_then(Value::as_str).map(str::to_string)
 }
@@ -394,19 +308,6 @@ fn push_bounded<T>(items: &mut VecDeque<T>, item: T, max_items: usize) {
     }
 
     items.push_back(item);
-}
-
-fn create_token_hint(token: &str) -> String {
-    let suffix = token
-        .chars()
-        .rev()
-        .take(6)
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect::<String>();
-
-    format!("...{suffix}")
 }
 
 fn create_secure_token() -> Result<String, String> {

@@ -296,6 +296,85 @@ describe("Ralph starter flows", () => {
     }
   });
 
+  it("configures visual UI analysis for URL or screenshot evidence", () => {
+    const visualReviewBlocks = [
+      {
+        starterFlowId: "autonomous-code-improvement-loop",
+        minimumVersion: 3,
+        decisionBlockId: "visual-decision",
+        analyzeBlockId: "visual-review",
+      },
+      {
+        starterFlowId: "autonomous-feature-generation-loop",
+        minimumVersion: 4,
+        decisionBlockId: "visual-decision",
+        analyzeBlockId: "visual-review",
+      },
+      {
+        starterFlowId: "full-feature-implementation",
+        minimumVersion: 4,
+        decisionBlockId: "visual-decision",
+        analyzeBlockId: "visual-analysis",
+      },
+    ] as const;
+
+    for (const {
+      starterFlowId,
+      minimumVersion,
+      decisionBlockId,
+      analyzeBlockId,
+    } of visualReviewBlocks) {
+      const starterFlow = getRalphStarterFlow(starterFlowId);
+      const flow = starterFlow?.flow;
+      const decisionBlock = flow?.blocks.find(
+        (block) => block.id === decisionBlockId,
+      );
+      const analyzeBlock = flow?.blocks.find(
+        (block) => block.id === analyzeBlockId,
+      );
+
+      expect(starterFlow?.version).toBeGreaterThanOrEqual(minimumVersion);
+      expect(decisionBlock).toMatchObject({
+        type: "UTILITY",
+        utility: {
+          type: "CONDITION",
+          condition: {
+            expression: expect.stringContaining("screenshotPath"),
+          },
+        },
+      });
+      expect(analyzeBlock).toMatchObject({
+        type: "UTILITY",
+        utility: {
+          type: "UI_ANALYZE",
+          adapter: "auto",
+          targetUrl: "{{targetUrl:url=}}",
+          screenshotPath: "{{screenshotPath:path=}}",
+          server: {
+            mode: "existing",
+            healthUrl: "{{healthUrl:url=}}",
+          },
+          checks: {
+            screenshots: true,
+            accessibility: true,
+            console: true,
+            network: true,
+            responsive: true,
+          },
+          viewports: [
+            { name: "desktop", width: 1280, height: 900 },
+            { name: "tablet", width: 768, height: 1024 },
+            { name: "mobile", width: 390, height: 844 },
+            { name: "small-mobile", width: 320, height: 568 },
+          ],
+          timeoutSeconds: 30,
+          fullPage: true,
+          waitUntil: "domcontentloaded",
+        },
+      });
+    }
+  });
+
   it("starts bundled templates autonomously without ask-user gates", () => {
     const expectedStartTargets: Record<string, string> = {
       "autonomous-feature-generation-loop": "find-active-goal",

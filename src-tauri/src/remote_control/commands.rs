@@ -5,6 +5,52 @@ use super::{
     now_millis, MAX_COMMAND_TEXT_CHARS, MAX_REMOTE_SHORT_TEXT_CHARS, MAX_REMOTE_TEXT_CHARS,
 };
 
+const TASK_ID_COMMANDS: &[&str] = &["cancel", "retry", "continue"];
+
+const SESSION_ID_COMMANDS: &[&str] = &[
+    "activate-session",
+    "archive-session",
+    "pin-session",
+    "duplicate-session",
+    "branch-session",
+    "delete-session",
+    "rename-session",
+    "tag-session",
+    "clear-session-history",
+    "update-draft",
+    "set-session-model",
+    "set-session-mode",
+    "set-session-memory",
+    "set-global-memory",
+    "set-ui-control",
+    "remove-attachment",
+    "clear-attachments",
+    "apply-context-pack",
+    "save-message-context-pack",
+    "speak-message",
+];
+
+const SESSION_MUTATION_COMMANDS: &[&str] = &[
+    "follow-up",
+    "create-session",
+    "stop-speaking",
+    "delete-context-pack",
+];
+
+const ENABLED_COMMANDS: &[&str] = &["set-session-memory", "set-global-memory", "set-ui-control"];
+
+const CONTEXT_PACK_ID_COMMANDS: &[&str] = &["apply-context-pack", "delete-context-pack"];
+const MESSAGE_ID_COMMANDS: &[&str] = &["save-message-context-pack", "speak-message"];
+
+const JOB_ID_COMMANDS: &[&str] = &[
+    "scheduler-trigger",
+    "scheduler-pause",
+    "scheduler-resume",
+    "scheduler-delete",
+];
+
+const RUN_ID_COMMANDS: &[&str] = &["scheduler-retry-run", "scheduler-cancel-run"];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteControlCommandEvent {
@@ -86,57 +132,25 @@ pub(super) fn normalize_command(
     request: RemoteCommandRequest,
 ) -> Result<RemoteControlCommandEvent, String> {
     let kind = request.kind.trim().to_ascii_lowercase();
-    let allowed = matches!(
-        kind.as_str(),
-        "cancel"
-            | "retry"
-            | "continue"
-            | "follow-up"
-            | "create-session"
-            | "activate-session"
-            | "archive-session"
-            | "pin-session"
-            | "duplicate-session"
-            | "branch-session"
-            | "delete-session"
-            | "rename-session"
-            | "tag-session"
-            | "clear-session-history"
-            | "update-draft"
-            | "set-session-model"
-            | "set-session-mode"
-            | "set-session-memory"
-            | "set-global-memory"
-            | "set-ui-control"
-            | "remove-attachment"
-            | "clear-attachments"
-            | "apply-context-pack"
-            | "delete-context-pack"
-            | "save-message-context-pack"
-            | "speak-message"
-            | "stop-speaking"
-            | "scheduler-trigger"
-            | "scheduler-pause"
-            | "scheduler-resume"
-            | "scheduler-delete"
-            | "scheduler-retry-run"
-            | "scheduler-cancel-run"
-    );
 
-    if !allowed {
+    if !is_supported_command(&kind) {
         return Err("Unsupported Mission Control command.".to_string());
     }
 
     let task_id = optional_trimmed_string(request.task_id.as_deref());
     let session_id = optional_trimmed_string(request.session_id.as_deref());
 
-    if matches!(kind.as_str(), "cancel" | "retry" | "continue") && task_id.is_none() {
-        return Err("This Mission Control command requires a taskId.".to_string());
-    }
+    require_value(
+        requires_task_id(&kind),
+        &task_id,
+        "This Mission Control command requires a taskId.",
+    )?;
 
-    if requires_session_id(&kind) && session_id.is_none() {
-        return Err("This Mission Control command requires a sessionId.".to_string());
-    }
+    require_value(
+        requires_session_id(&kind),
+        &session_id,
+        "This Mission Control command requires a sessionId.",
+    )?;
 
     let prompt = optional_truncated_text(request.prompt.as_deref(), MAX_COMMAND_TEXT_CHARS);
     if kind == "follow-up" && prompt.is_none() {
@@ -148,13 +162,7 @@ pub(super) fn normalize_command(
         return Err("Renaming a session requires a title.".to_string());
     }
 
-    let tags = request.tags.map(|tags| {
-        tags.into_iter()
-            .map(|tag| truncate_chars(tag.trim(), 64))
-            .filter(|tag| !tag.is_empty())
-            .take(24)
-            .collect::<Vec<_>>()
-    });
+    let tags = normalized_tags(request.tags);
     if kind == "tag-session" && tags.is_none() {
         return Err("Tagging a session requires tags.".to_string());
     }
@@ -172,13 +180,11 @@ pub(super) fn normalize_command(
     }
 
     let workspace = optional_truncated_text(request.workspace.as_deref(), MAX_REMOTE_TEXT_CHARS);
-    if matches!(
-        kind.as_str(),
-        "set-session-memory" | "set-global-memory" | "set-ui-control"
-    ) && request.enabled.is_none()
-    {
-        return Err("This Mission Control command requires an enabled value.".to_string());
-    }
+    require_value(
+        requires_enabled(&kind),
+        &request.enabled,
+        "This Mission Control command requires an enabled value.",
+    )?;
 
     let attachment_id = optional_trimmed_string(request.attachment_id.as_deref());
     if kind == "remove-attachment" && attachment_id.is_none() {
@@ -186,36 +192,32 @@ pub(super) fn normalize_command(
     }
 
     let context_pack_id = optional_trimmed_string(request.context_pack_id.as_deref());
-    if matches!(kind.as_str(), "apply-context-pack" | "delete-context-pack")
-        && context_pack_id.is_none()
-    {
-        return Err("This Mission Control command requires a contextPackId.".to_string());
-    }
+    require_value(
+        requires_context_pack_id(&kind),
+        &context_pack_id,
+        "This Mission Control command requires a contextPackId.",
+    )?;
 
     let message_id = optional_trimmed_string(request.message_id.as_deref());
-    if matches!(kind.as_str(), "save-message-context-pack" | "speak-message")
-        && message_id.is_none()
-    {
-        return Err("This Mission Control command requires a messageId.".to_string());
-    }
+    require_value(
+        requires_message_id(&kind),
+        &message_id,
+        "This Mission Control command requires a messageId.",
+    )?;
 
     let job_id = optional_trimmed_string(request.job_id.as_deref());
-    if matches!(
-        kind.as_str(),
-        "scheduler-trigger" | "scheduler-pause" | "scheduler-resume" | "scheduler-delete"
-    ) && job_id.is_none()
-    {
-        return Err("This Mission Control command requires a jobId.".to_string());
-    }
+    require_value(
+        requires_job_id(&kind),
+        &job_id,
+        "This Mission Control command requires a jobId.",
+    )?;
 
     let run_id = optional_trimmed_string(request.run_id.as_deref());
-    if matches!(
-        kind.as_str(),
-        "scheduler-retry-run" | "scheduler-cancel-run"
-    ) && run_id.is_none()
-    {
-        return Err("This Mission Control command requires a runId.".to_string());
-    }
+    require_value(
+        requires_run_id(&kind),
+        &run_id,
+        "This Mission Control command requires a runId.",
+    )?;
 
     Ok(RemoteControlCommandEvent {
         command_id: create_command_id(),
@@ -263,30 +265,56 @@ pub(super) fn truncate_chars(value: &str, max_chars: usize) -> String {
     value.chars().take(max_chars).collect::<String>()
 }
 
+fn is_supported_command(kind: &str) -> bool {
+    [
+        TASK_ID_COMMANDS,
+        SESSION_ID_COMMANDS,
+        SESSION_MUTATION_COMMANDS,
+        JOB_ID_COMMANDS,
+        RUN_ID_COMMANDS,
+    ]
+    .into_iter()
+    .any(|commands| includes_command(commands, kind))
+}
+
+fn includes_command(commands: &[&str], kind: &str) -> bool {
+    commands.contains(&kind)
+}
+
+fn requires_task_id(kind: &str) -> bool {
+    includes_command(TASK_ID_COMMANDS, kind)
+}
+
 fn requires_session_id(kind: &str) -> bool {
-    matches!(
-        kind,
-        "activate-session"
-            | "archive-session"
-            | "pin-session"
-            | "duplicate-session"
-            | "branch-session"
-            | "delete-session"
-            | "rename-session"
-            | "tag-session"
-            | "clear-session-history"
-            | "update-draft"
-            | "set-session-model"
-            | "set-session-mode"
-            | "set-session-memory"
-            | "set-global-memory"
-            | "set-ui-control"
-            | "remove-attachment"
-            | "clear-attachments"
-            | "apply-context-pack"
-            | "save-message-context-pack"
-            | "speak-message"
-    )
+    includes_command(SESSION_ID_COMMANDS, kind)
+}
+
+fn requires_enabled(kind: &str) -> bool {
+    includes_command(ENABLED_COMMANDS, kind)
+}
+
+fn requires_context_pack_id(kind: &str) -> bool {
+    includes_command(CONTEXT_PACK_ID_COMMANDS, kind)
+}
+
+fn requires_message_id(kind: &str) -> bool {
+    includes_command(MESSAGE_ID_COMMANDS, kind)
+}
+
+fn requires_job_id(kind: &str) -> bool {
+    includes_command(JOB_ID_COMMANDS, kind)
+}
+
+fn requires_run_id(kind: &str) -> bool {
+    includes_command(RUN_ID_COMMANDS, kind)
+}
+
+fn require_value<T>(required: bool, value: &Option<T>, message: &str) -> Result<(), String> {
+    if required && value.is_none() {
+        return Err(message.to_string());
+    }
+
+    Ok(())
 }
 
 fn optional_trimmed_string(value: Option<&str>) -> Option<String> {
@@ -301,6 +329,16 @@ fn optional_truncated_text(value: Option<&str>, max_chars: usize) -> Option<Stri
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| truncate_chars(value, max_chars))
+}
+
+fn normalized_tags(tags: Option<Vec<String>>) -> Option<Vec<String>> {
+    tags.map(|tags| {
+        tags.into_iter()
+            .map(|tag| truncate_chars(tag.trim(), 64))
+            .filter(|tag| !tag.is_empty())
+            .take(24)
+            .collect::<Vec<_>>()
+    })
 }
 
 fn create_command_target_preview(event: &RemoteControlCommandEvent) -> Option<String> {
