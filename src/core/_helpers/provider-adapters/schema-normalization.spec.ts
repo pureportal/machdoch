@@ -72,4 +72,31 @@ describe("normalizeOpenAIStrictInputSchema", () => {
       },
     });
   });
+
+  it("removes property name validators rejected by strict tool schemas", () => {
+    const normalized = normalizeOpenAIStrictInputSchema({
+      type: "object",
+      properties: {
+        data: {
+          type: "object",
+          propertyNames: {
+            type: "string",
+          },
+          additionalProperties: {
+            type: "string",
+          },
+        },
+      },
+      required: ["data"],
+    });
+    const properties = normalized.properties as Record<string, unknown>;
+    const dataSchema = properties.data as Record<string, unknown>;
+
+    expect(dataSchema).not.toHaveProperty("propertyNames");
+    expect(dataSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: [],
+    });
+  });
 });

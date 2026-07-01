@@ -432,6 +432,25 @@ export const rememberRecentWorkspace = (
   return normalizeRecentWorkspaces([normalizedWorkspace, ...previousWorkspaces]);
 };
 
+export const removeRecentWorkspace = (
+  recentWorkspaces: readonly string[],
+  workspace: string | null | undefined,
+): string[] => {
+  const normalizedWorkspace = workspace?.trim();
+
+  if (!normalizedWorkspace) {
+    return normalizeRecentWorkspaces(recentWorkspaces);
+  }
+
+  const workspaceKey = createWorkspaceHistoryKey(normalizedWorkspace);
+
+  return normalizeRecentWorkspaces(
+    recentWorkspaces.filter(
+      (entry) => createWorkspaceHistoryKey(entry) !== workspaceKey,
+    ),
+  );
+};
+
 export const mergeRecentWorkspaces = (
   ...workspaceLists: ReadonlyArray<readonly string[]>
 ): string[] => {
@@ -442,6 +461,36 @@ export const mergeRecentWorkspaces = (
   }
 
   return normalizeRecentWorkspaces(mergedWorkspaces);
+};
+
+export const mergeRecentWorkspacesForPersistence = (
+  localWorkspaces: readonly string[],
+  baseWorkspaces: readonly string[],
+  latestWorkspaces: readonly string[],
+): string[] => {
+  const localRecentWorkspaces = normalizeRecentWorkspaces(localWorkspaces);
+  const localWorkspaceKeys = new Set(
+    localRecentWorkspaces.map(createWorkspaceHistoryKey),
+  );
+  const removedBaseWorkspaceKeys = new Set(
+    normalizeRecentWorkspaces(baseWorkspaces)
+      .filter(
+        (workspace) =>
+          !localWorkspaceKeys.has(createWorkspaceHistoryKey(workspace)),
+      )
+      .map(createWorkspaceHistoryKey),
+  );
+  const latestWorkspacesWithLocalRemovals = normalizeRecentWorkspaces(
+    latestWorkspaces,
+  ).filter(
+    (workspace) =>
+      !removedBaseWorkspaceKeys.has(createWorkspaceHistoryKey(workspace)),
+  );
+
+  return mergeRecentWorkspaces(
+    localRecentWorkspaces,
+    latestWorkspacesWithLocalRemovals,
+  );
 };
 
 const normalizeToolNames = (value: unknown): ToolName[] => {

@@ -10,9 +10,11 @@ import {
   getSessionOverviewStatus,
   hasUnreadCompletedSessionResponse,
   markSessionRead,
+  mergeRecentWorkspacesForPersistence,
   normalizeRecentWorkspaces,
   normalizeShellState,
   rememberRecentWorkspace,
+  removeRecentWorkspace,
   recoverInterruptedTasksForLaunch,
   QUICK_VOICE_SESSION_KIND,
   sortSessionsByUpdatedAt,
@@ -151,6 +153,19 @@ describe("normalizeShellState", () => {
     expect(
       rememberRecentWorkspace(["C:\\Docs", "/tmp/one"], "c:/docs"),
     ).toEqual(["c:/docs", "/tmp/one"]);
+    expect(
+      removeRecentWorkspace(["C:\\Docs", "/tmp/one"], "c:/docs"),
+    ).toEqual(["/tmp/one"]);
+  });
+
+  it("preserves local recent workspace removals during persistence merges", () => {
+    expect(
+      mergeRecentWorkspacesForPersistence(
+        ["C:\\Docs"],
+        ["C:\\Docs", "C:\\Old"],
+        ["C:\\New", "C:\\Docs", "C:\\Old"],
+      ),
+    ).toEqual(["C:\\Docs", "C:\\New"]);
   });
 
   it("derives recent workspaces from legacy sessions", () => {

@@ -73,6 +73,7 @@ export interface SessionComposerProps {
   queuedMessages: AgentComposerQueuedMessage[];
   onSelectFolder: () => Promise<void>;
   onWorkspaceSelection: (workspace: string) => void;
+  onWorkspaceRemoval: (workspace: string) => void;
   onSessionModelSelection: (provider: RuntimeProvider, model: string) => void;
   onSessionModeSelection: (mode: RunMode | null) => void;
   onSessionReasoningSelection: (reasoning: ReasoningMode | null) => void;
@@ -150,6 +151,7 @@ export const SessionComposer = ({
   queuedMessages,
   onSelectFolder,
   onWorkspaceSelection,
+  onWorkspaceRemoval,
   onSessionModelSelection,
   onSessionModeSelection,
   onSessionReasoningSelection,
@@ -224,6 +226,7 @@ export const SessionComposer = ({
         recentWorkspaces={recentWorkspaces}
         hasActiveWorkspace={hasActiveWorkspace}
         onSelectWorkspace={onWorkspaceSelection}
+        onRemoveWorkspace={onWorkspaceRemoval}
         onChooseNewWorkspace={onSelectFolder}
       />
 

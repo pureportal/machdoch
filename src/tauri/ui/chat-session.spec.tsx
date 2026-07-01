@@ -1609,6 +1609,48 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "removes recent workspaces from the workspace picker",
+    async () => {
+      const baseState = createInitialShellState();
+
+      storeShellState({
+        ...baseState,
+        recentWorkspaces: ["C:\\Docs\\Current", "C:\\Docs\\Archive"],
+        sessions: baseState.sessions.map((session) => ({
+          ...session,
+          workspace: "C:\\Docs\\Current",
+        })),
+      });
+
+      render(<ChatSession />);
+      expect(
+        await screen.findByRole("button", { name: "Current" }),
+      ).toBeDefined();
+
+      fireEvent.click(screen.getByRole("button", { name: "Current" }));
+      expect(await screen.findByText("C:\\Docs\\Archive")).toBeDefined();
+
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Remove Archive from workspace list",
+        }),
+      );
+
+      await waitFor(() => {
+        expect(screen.queryByText("C:\\Docs\\Archive")).toBeNull();
+      });
+      await waitFor(() => {
+        const storedState = JSON.parse(
+          window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+        ) as ShellPersistedState;
+
+        expect(storedState.recentWorkspaces).toEqual(["C:\\Docs\\Current"]);
+      });
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "uses the last selected workspace for new sessions",
     async () => {
       const baseState = createInitialShellState();

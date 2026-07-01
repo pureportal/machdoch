@@ -11,6 +11,7 @@ import {
   createInitialShellState,
   normalizeShellState,
   rememberRecentWorkspace,
+  removeRecentWorkspace,
   type ShellPersistedState,
 } from "../chat-session.model";
 import { getWorkspaceLabel } from "../chat-session/_helpers/session-shell";
@@ -447,10 +448,6 @@ export const RalphApp = ({
     settings.runProvider,
     settings.runModel,
   );
-  const displayedRecentWorkspaces = useMemo(
-    () => rememberRecentWorkspace(recentWorkspaces, settings.workspaceRoot),
-    [recentWorkspaces, settings.workspaceRoot],
-  );
   const effectiveProviderAvailability =
     providerStatuses && providerStatuses.length > 0
       ? providerStatuses
@@ -612,6 +609,22 @@ export const RalphApp = ({
     await broadcastShellStateChanged();
   };
 
+  const persistRecentWorkspaceRemoval = async (
+    workspace: string,
+  ): Promise<void> => {
+    const shellState = await loadSharedShellState();
+    const nextShellState = {
+      ...shellState,
+      recentWorkspaces: removeRecentWorkspace(
+        shellState.recentWorkspaces,
+        workspace,
+      ),
+    } satisfies ShellPersistedState;
+
+    await saveShellState(nextShellState);
+    await broadcastShellStateChanged();
+  };
+
   const applyWorkspaceSelection = (workspace: string): void => {
     const normalizedWorkspace = workspace.trim();
 
@@ -625,6 +638,13 @@ export const RalphApp = ({
     );
     void persistRecentWorkspace(normalizedWorkspace).catch((error) => {
       console.error("Failed to save Ralph workspace history", error);
+    });
+  };
+
+  const removeWorkspaceFromHistory = (workspace: string): void => {
+    setRecentWorkspaces((current) => removeRecentWorkspace(current, workspace));
+    void persistRecentWorkspaceRemoval(workspace).catch((error) => {
+      console.error("Failed to remove Ralph workspace history entry", error);
     });
   };
 
@@ -658,10 +678,11 @@ export const RalphApp = ({
                   ? getWorkspaceLabel(settings.workspaceRoot)
                   : "Choose workspace"
               }
-              recentWorkspaces={displayedRecentWorkspaces}
+              recentWorkspaces={recentWorkspaces}
               hasActiveWorkspace={Boolean(settings.workspaceRoot)}
               buttonAriaLabel="Ralph workspace"
               onSelectWorkspace={applyWorkspaceSelection}
+              onRemoveWorkspace={removeWorkspaceFromHistory}
               onChooseNewWorkspace={chooseWorkspace}
               buttonClassName="h-8 w-full justify-start rounded-lg border-slate-700 bg-slate-950 px-3 text-xs font-medium text-slate-100 shadow-none hover:border-slate-600 hover:bg-slate-900"
             />

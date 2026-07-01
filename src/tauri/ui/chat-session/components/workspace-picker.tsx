@@ -1,4 +1,4 @@
-import { Check, FolderOpen, FolderPlus } from "lucide-react";
+import { Check, FolderOpen, FolderPlus, X } from "lucide-react";
 import { useState, type JSX } from "react";
 import { Button } from "../../components/ui/button";
 import {
@@ -6,6 +6,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "../../components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import { getWorkspaceLabel } from "../_helpers/session-shell";
 
@@ -17,6 +22,7 @@ export interface WorkspacePickerProps {
   buttonAriaLabel?: string;
   buttonClassName?: string;
   onSelectWorkspace: (workspace: string) => void;
+  onRemoveWorkspace: (workspace: string) => void;
   onChooseNewWorkspace: () => Promise<void>;
 }
 
@@ -50,6 +56,7 @@ export const WorkspacePicker = ({
   buttonAriaLabel,
   buttonClassName,
   onSelectWorkspace,
+  onRemoveWorkspace,
   onChooseNewWorkspace,
 }: WorkspacePickerProps): JSX.Element => {
   const [open, setOpen] = useState(false);
@@ -119,37 +126,60 @@ export const WorkspacePicker = ({
 
           <div className="grid max-h-72 gap-2 overflow-y-auto pr-1">
             {recentWorkspaces.map((workspace) => {
-              const selected = currentWorkspaceKey === createWorkspaceKey(workspace);
+              const workspaceKey = createWorkspaceKey(workspace);
+              const workspaceLabel = getWorkspaceLabel(workspace);
+              const selected = currentWorkspaceKey === workspaceKey;
 
               return (
-                <button
-                  key={createWorkspaceKey(workspace)}
-                  type="button"
-                  title={workspace}
-                  onClick={() => {
-                    setOpen(false);
-                    onSelectWorkspace(workspace);
-                  }}
+                <div
+                  key={workspaceKey}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition-all",
+                    "group grid w-full grid-cols-[minmax(0,1fr)_2rem] items-center gap-1 rounded-2xl border p-1.5 transition-all",
                     selected
                       ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
                       : "border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
                   )}
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-sky-300">
-                    <FolderOpen className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-slate-100">
-                      {getWorkspaceLabel(workspace)}
-                    </p>
-                    <p className="truncate text-xs leading-5 text-slate-500">
-                      {workspace}
-                    </p>
-                  </div>
-                  {selected ? <Check className="h-4 w-4 text-sky-300" /> : null}
-                </button>
+                  <button
+                    type="button"
+                    title={workspace}
+                    onClick={() => {
+                      setOpen(false);
+                      onSelectWorkspace(workspace);
+                    }}
+                    className="flex min-w-0 items-center gap-3 rounded-xl px-1.5 py-1 text-left outline-none transition-colors hover:bg-white/[0.03] focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-sky-300">
+                      <FolderOpen className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-100">
+                        {workspaceLabel}
+                      </p>
+                      <p className="truncate text-xs leading-5 text-slate-500">
+                        {workspace}
+                      </p>
+                    </div>
+                    {selected ? (
+                      <Check className="h-4 w-4 shrink-0 text-sky-300" />
+                    ) : null}
+                  </button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${workspaceLabel} from workspace list`}
+                        onClick={() => {
+                          onRemoveWorkspace(workspace);
+                        }}
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-slate-500 opacity-70 outline-none transition-colors hover:bg-rose-500/10 hover:text-rose-200 hover:opacity-100 focus-visible:bg-rose-500/10 focus-visible:text-rose-200 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-rose-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">Remove from list</TooltipContent>
+                  </Tooltip>
+                </div>
               );
             })}
           </div>

@@ -82,6 +82,7 @@ export const normalizeOpenAIStrictInputSchema = (
   schema: Record<string, unknown>,
 ): Record<string, unknown> => {
   const normalizedSchema: Record<string, unknown> = { ...schema };
+  delete normalizedSchema.propertyNames;
 
   if (Array.isArray(schema.items)) {
     normalizedSchema.items = schema.items.map((item) =>

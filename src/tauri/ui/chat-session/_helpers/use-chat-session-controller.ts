@@ -38,6 +38,7 @@ import {
   normalizeSessionTags,
   QUICK_VOICE_SESSION_KIND,
   rememberRecentWorkspace,
+  removeRecentWorkspace,
   type ChatSessionContextAttachment,
   type ChatSessionMessage,
   type ChatSessionRecord,
@@ -961,6 +962,16 @@ export const useChatSessionController = (
       }));
     },
     [state.activeSessionId, state.applyShellState],
+  );
+
+  const removeWorkspaceFromHistory = useCallback(
+    (workspace: string): void => {
+      state.applyShellState((prev) => ({
+        ...prev,
+        recentWorkspaces: removeRecentWorkspace(prev.recentWorkspaces, workspace),
+      }));
+    },
+    [state.applyShellState],
   );
 
   const handleSelectFolder = async (): Promise<void> => {
@@ -3176,6 +3187,7 @@ export const useChatSessionController = (
       })),
       onSelectFolder: handleSelectFolder,
       onWorkspaceSelection: applyWorkspaceSelection,
+      onWorkspaceRemoval: removeWorkspaceFromHistory,
       onSessionModelSelection: handleSessionModelSelection,
       onSessionModeSelection: handleSessionModeSelection,
       onSessionReasoningSelection: handleSessionReasoningSelection,

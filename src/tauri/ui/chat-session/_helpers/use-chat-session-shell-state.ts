@@ -14,7 +14,7 @@ import {
   getLatestCompletedSessionResponseAt,
   getSessionTitle,
   markSessionRead,
-  mergeRecentWorkspaces,
+  mergeRecentWorkspacesForPersistence,
   normalizeShellState,
   recoverInterruptedTasksForLaunch,
   sortSessionsByUpdatedAt,
@@ -508,8 +508,9 @@ export const mergeShellStateForPersistence = (
     ),
     recentWorkspaces:
       localRecentWorkspacesChanged && latestRecentWorkspacesChanged
-        ? mergeRecentWorkspaces(
+        ? mergeRecentWorkspacesForPersistence(
             localState.recentWorkspaces,
+            baseState.recentWorkspaces,
             latestState.recentWorkspaces,
           )
         : localRecentWorkspacesChanged
