@@ -1532,7 +1532,10 @@ export const McpSettingsPanel = ({
                 </Field>
               </div>
               <div className="grid gap-2 rounded-lg border border-slate-800 bg-slate-950 p-3">
-                <Field label="OAuth callback URL or code">
+                <Field
+                  label="OAuth callback URL or code"
+                  detail="Manual fallback: paste a callback URL or code here only if automatic browser authorization cannot receive the localhost redirect."
+                >
                   <Input
                     aria-label="MCP OAuth callback URL or code"
                     value={oauthCallback}

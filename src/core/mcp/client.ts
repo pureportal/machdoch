@@ -46,6 +46,7 @@ import type {
   SamplingMessage,
   SamplingMessageContentBlock,
 } from "@modelcontextprotocol/sdk/types.js";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { basename, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -71,6 +72,10 @@ import {
   type McpLifecycleOperation,
   type McpLifecyclePhase,
 } from "./lifecycle.js";
+import {
+  createMcpOAuthLoopbackCallbackServer,
+  isMcpOAuthLoopbackRedirectUrl,
+} from "./oauth-loopback.js";
 import { mcpRunCacheManager } from "./run-cache.js";
 import type {
   McpAuthConfig,
@@ -137,6 +142,11 @@ export interface McpClientManagerOptions {
     timeoutMs: number,
   ) => ReturnType<typeof setTimeout>;
   clearIdleTimer?: (timer: ReturnType<typeof setTimeout>) => void;
+}
+
+export interface McpInteractiveOAuthOptions extends McpOperationOptions {
+  callbackTimeoutMs?: number;
+  openAuthorizationUrl?: (authorizationUrl: string) => Promise<void> | void;
 }
 
 const MCP_CLIENT_INFO = {
@@ -942,6 +952,66 @@ const createOAuthFlowResult = (
   };
 };
 
+const OAUTH_AUTHORIZATION_URL_PROTOCOLS = new Set(["http:", "https:"]);
+
+const getOpenExternalUrlCommand = (
+  authorizationUrl: string,
+): { command: string; args: string[] } => {
+  switch (process.platform) {
+    case "darwin":
+      return { command: "open", args: [authorizationUrl] };
+    case "win32":
+      return {
+        command: "rundll32.exe",
+        args: ["url.dll,FileProtocolHandler", authorizationUrl],
+      };
+    default:
+      return { command: "xdg-open", args: [authorizationUrl] };
+  }
+};
+
+const openExternalAuthorizationUrl = async (
+  authorizationUrl: string,
+): Promise<void> => {
+  const parsedUrl = new URL(authorizationUrl);
+
+  if (!OAUTH_AUTHORIZATION_URL_PROTOCOLS.has(parsedUrl.protocol)) {
+    throw new Error("OAuth authorization URL must use HTTP or HTTPS.");
+  }
+
+  const { command, args } = getOpenExternalUrlCommand(parsedUrl.href);
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+
+    const handleError = (error: Error): void => {
+      reject(error);
+    };
+
+    child.once("error", handleError);
+    child.once("spawn", () => {
+      child.off("error", handleError);
+      child.unref();
+      resolve();
+    });
+  });
+};
+
+const getOAuthAuthorizationUrlState = (
+  authorizationUrl: string,
+): string | undefined => {
+  try {
+    const parsedUrl = new URL(authorizationUrl);
+    return normalizeOptionalString(parsedUrl.searchParams.get("state") ?? undefined);
+  } catch {
+    return undefined;
+  }
+};
+
 const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[A-Za-z]:[\\/]/u;
 
 const hasUriScheme = (value: string): boolean => {
@@ -1724,6 +1794,69 @@ export class McpClientManager {
       }
 
       throw error;
+    }
+  }
+
+  async authorizeOAuth(
+    workspaceRoot: string,
+    serverId: string,
+    options: McpInteractiveOAuthOptions = {},
+  ): Promise<McpOAuthFlowResult> {
+    const {
+      callbackTimeoutMs,
+      openAuthorizationUrl = openExternalAuthorizationUrl,
+      ...operationOptions
+    } = options;
+    const config = await loadMcpConfig(workspaceRoot, operationOptions.configOverride);
+    const server = getEnabledMcpServer(config, serverId);
+
+    if (!server) {
+      throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
+    }
+
+    if (server.auth?.type !== "oauth") {
+      throw new Error(`MCP server \`${server.id}\` is not configured for OAuth.`);
+    }
+
+    const env = await this.loadWorkspaceEnvImpl(workspaceRoot);
+    const context: McpConnectionContext = { workspaceRoot, env, server };
+    const redirectUrl = server.auth.redirectUrl
+      ? resolveTemplateValue(server.auth.redirectUrl, context)
+      : undefined;
+
+    if (!redirectUrl || !isMcpOAuthLoopbackRedirectUrl(redirectUrl)) {
+      const result = await this.beginOAuth(workspaceRoot, serverId, operationOptions);
+
+      if (result.authorizationUrl) {
+        await openAuthorizationUrl(result.authorizationUrl);
+      }
+
+      return result;
+    }
+
+    const result = await this.beginOAuth(workspaceRoot, serverId, operationOptions);
+
+    if (result.status !== "authorization-required" || !result.authorizationUrl) {
+      return result;
+    }
+
+    const expectedState = getOAuthAuthorizationUrlState(result.authorizationUrl);
+    const callbackServer = await createMcpOAuthLoopbackCallbackServer(redirectUrl, {
+      ...(expectedState ? { expectedState } : {}),
+      ...(callbackTimeoutMs !== undefined ? { timeoutMs: callbackTimeoutMs } : {}),
+    });
+
+    try {
+      await openAuthorizationUrl(result.authorizationUrl);
+      const callbackUrl = await callbackServer.waitForCallback();
+      return await this.finishOAuth(
+        workspaceRoot,
+        serverId,
+        callbackUrl,
+        operationOptions,
+      );
+    } finally {
+      await callbackServer.close();
     }
   }
 

@@ -406,6 +406,21 @@ describe("parseCliArgs", () => {
     });
 
     expect(
+      parseCliArgs(["mcp", "oauth-authorize", "github"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toEqual({
+      command: "mcp",
+      mcp: {
+        action: "oauth-authorize",
+        serverId: "github",
+      },
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+
+    expect(
       parseCliArgs(
         [
           "mcp",

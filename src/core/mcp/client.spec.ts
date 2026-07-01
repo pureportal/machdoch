@@ -6,6 +6,7 @@ import type {
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer as createHttpServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -85,6 +86,37 @@ const wait = (timeoutMs: number): Promise<void> => {
   });
 };
 
+const getAvailableLoopbackPort = async (): Promise<number> => {
+  const server = createHttpServer();
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+
+  const address = server.address();
+
+  if (!address || typeof address === "string") {
+    throw new Error("Expected a TCP listener address.");
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
+
+  return address.port;
+};
+
 const createWorkspace = async (): Promise<string> => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-mcp-client-"));
   workspacesToClean.push(workspaceRoot);
@@ -114,6 +146,41 @@ const writeWorkspaceMcpConfig = async (
             transport: {
               type: "stdio",
               command: "test-mcp",
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+};
+
+const writeWorkspaceOAuthMcpConfig = async (
+  workspaceRoot: string,
+  redirectUrl: string,
+): Promise<void> => {
+  const configDirectory = join(workspaceRoot, ".machdoch", "mcp");
+
+  await mkdir(configDirectory, { recursive: true });
+  await writeFile(
+    join(configDirectory, "mcp.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        servers: [
+          {
+            id: "test",
+            enabled: true,
+            transport: {
+              type: "streamable-http",
+              url: "https://example.com/mcp",
+            },
+            auth: {
+              type: "oauth",
+              redirectUrl,
+              scopes: ["read"],
             },
           },
         ],
@@ -498,6 +565,152 @@ describe("McpClientManager lifecycle", () => {
     });
     expect(persistedServer?.auth).not.toHaveProperty("codeVerifier");
     expect(persistedServer?.auth).not.toHaveProperty("authorizationUrl");
+  });
+
+  it("receives loopback callbacks during interactive OAuth authorization", async () => {
+    const workspaceRoot = await createWorkspace();
+    const port = await getAvailableLoopbackPort();
+    const callbackUrl = `http://127.0.0.1:${port}/oauth/callback`;
+    const manager = new McpClientManager({
+      loadWorkspaceEnv: async () => ({}),
+    });
+
+    await writeWorkspaceOAuthMcpConfig(workspaceRoot, callbackUrl);
+
+    const beginSpy = vi.spyOn(manager, "beginOAuth").mockResolvedValue({
+      serverId: "test",
+      status: "authorization-required",
+      configPath: join(workspaceRoot, ".user-config", "mcp.json"),
+      authorizationUrl: "https://example.com/oauth/authorize?state=state-1",
+    });
+    const finishSpy = vi.spyOn(manager, "finishOAuth").mockResolvedValue({
+      serverId: "test",
+      status: "authorized",
+      configPath: join(workspaceRoot, ".user-config", "mcp.json"),
+      stateVerified: true,
+    });
+
+    await expect(
+      manager.authorizeOAuth(workspaceRoot, "test", {
+        callbackTimeoutMs: 1_000,
+        openAuthorizationUrl: async (authorizationUrl) => {
+          expect(authorizationUrl).toBe(
+            "https://example.com/oauth/authorize?state=state-1",
+          );
+
+          const rejectedResponse = await fetch(
+            `${callbackUrl}?code=wrong&state=state-2`,
+          );
+
+          expect(rejectedResponse.status).toBe(400);
+
+          const acceptedResponse = await fetch(
+            `${callbackUrl}?code=abc&state=state-1`,
+          );
+
+          expect(acceptedResponse.status).toBe(200);
+        },
+      }),
+    ).resolves.toMatchObject({
+      serverId: "test",
+      status: "authorized",
+      stateVerified: true,
+    });
+
+    expect(beginSpy).toHaveBeenCalledWith(workspaceRoot, "test", {});
+    expect(finishSpy).toHaveBeenCalledWith(
+      workspaceRoot,
+      "test",
+      `${callbackUrl}?code=abc&state=state-1`,
+      {},
+    );
+  });
+
+  it("rejects OAuth error callbacks during interactive authorization", async () => {
+    const workspaceRoot = await createWorkspace();
+    const port = await getAvailableLoopbackPort();
+    const callbackUrl = `http://127.0.0.1:${port}/oauth/callback`;
+    const manager = new McpClientManager({
+      loadWorkspaceEnv: async () => ({}),
+    });
+
+    await writeWorkspaceOAuthMcpConfig(workspaceRoot, callbackUrl);
+
+    vi.spyOn(manager, "beginOAuth").mockResolvedValue({
+      serverId: "test",
+      status: "authorization-required",
+      configPath: join(workspaceRoot, ".user-config", "mcp.json"),
+      authorizationUrl: "https://example.com/oauth/authorize?state=state-1",
+    });
+    const finishSpy = vi.spyOn(manager, "finishOAuth").mockResolvedValue({
+      serverId: "test",
+      status: "authorized",
+      configPath: join(workspaceRoot, ".user-config", "mcp.json"),
+    });
+
+    await expect(
+      manager.authorizeOAuth(workspaceRoot, "test", {
+        callbackTimeoutMs: 1_000,
+        openAuthorizationUrl: async () => {
+          const response = await fetch(
+            `${callbackUrl}?error=access_denied&error_description=Denied&state=state-1`,
+          );
+
+          expect(response.status).toBe(400);
+        },
+      }),
+    ).rejects.toThrow("access_denied: Denied");
+
+    expect(finishSpy).not.toHaveBeenCalled();
+  });
+
+  it("reports callback listener port conflicts before opening the browser", async () => {
+    const workspaceRoot = await createWorkspace();
+    const port = await getAvailableLoopbackPort();
+    const callbackUrl = `http://127.0.0.1:${port}/oauth/callback`;
+    const occupyingServer = createHttpServer();
+    const manager = new McpClientManager({
+      loadWorkspaceEnv: async () => ({}),
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      occupyingServer.once("error", reject);
+      occupyingServer.listen(port, "127.0.0.1", () => {
+        occupyingServer.off("error", reject);
+        resolve();
+      });
+    });
+
+    await writeWorkspaceOAuthMcpConfig(workspaceRoot, callbackUrl);
+
+    vi.spyOn(manager, "beginOAuth").mockResolvedValue({
+      serverId: "test",
+      status: "authorization-required",
+      configPath: join(workspaceRoot, ".user-config", "mcp.json"),
+      authorizationUrl: "https://example.com/oauth/authorize?state=state-1",
+    });
+    const openAuthorizationUrl = vi.fn(async () => undefined);
+
+    try {
+      await expect(
+        manager.authorizeOAuth(workspaceRoot, "test", {
+          callbackTimeoutMs: 1_000,
+          openAuthorizationUrl,
+        }),
+      ).rejects.toThrow("already in use");
+      expect(openAuthorizationUrl).not.toHaveBeenCalled();
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        occupyingServer.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve();
+        });
+      });
+    }
   });
 
   it("falls back to task streams when a tool requires task-based execution", async () => {

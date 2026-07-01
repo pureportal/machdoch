@@ -72,6 +72,7 @@ export const MCP_ACTIONS: ReadonlySet<McpCliAction> = new Set([
   "cache",
   "discover",
   "refresh",
+  "oauth-authorize",
   "oauth-start",
   "oauth-finish",
   "call-tool",
@@ -84,6 +85,7 @@ export const MCP_ACTIONS: ReadonlySet<McpCliAction> = new Set([
 export const MCP_ACTIONS_REQUIRING_SERVER: ReadonlySet<McpCliAction> = new Set([
   "discover",
   "refresh",
+  "oauth-authorize",
   "oauth-start",
   "oauth-finish",
   "call-tool",

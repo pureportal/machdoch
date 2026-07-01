@@ -10,7 +10,7 @@ import {
 import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
 import {
   loadGlobalProviderAvailability,
-  beginMcpOAuth,
+  authorizeMcpOAuth,
   discoverMcpServer,
   finishMcpOAuth,
   listMcpCachedCapabilities,
@@ -25,7 +25,6 @@ import {
   loadUserWebSearchSettings,
   loadWorkspaceRuntimeSnapshot,
   openUserProviderApiKeyPortal,
-  openMcpOAuthAuthorizationUrl,
   saveUserSpeechToTextActiveProvider,
   saveUserSpeechToTextInputDevice,
   saveUserDesktopSettings,
@@ -1882,21 +1881,22 @@ export const useChatSessionRuntime = (
     setMcpConfigMessage(null);
 
     try {
-      const result = await beginMcpOAuth(options.activeSessionWorkspace, serverId);
-      const authorizationUrl = result.result.authorizationUrl;
+      const result = await authorizeMcpOAuth(
+        options.activeSessionWorkspace,
+        serverId,
+      );
 
       setMcpDiscoveryOutput(JSON.stringify(result, null, 2));
       await refreshUserMcpConfigDocument();
 
-      if (authorizationUrl) {
-        await openMcpOAuthAuthorizationUrl(authorizationUrl);
-      }
-
       setMcpConfigMessage({
         tone: "success",
-        text: authorizationUrl
-          ? "MCP OAuth started. Authorization URL opened."
-          : "MCP OAuth is already authorized.",
+        text:
+          result.result.status === "authorization-required"
+            ? "MCP OAuth needs manual completion. Paste the callback URL or code here and finish OAuth."
+            : result.result.stateVerified === false
+              ? "MCP OAuth authorized. Callback state was not available to verify."
+              : "MCP OAuth authorized.",
       });
     } catch (error) {
       setMcpConfigMessage({

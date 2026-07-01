@@ -330,6 +330,32 @@ export const printMcpSummary = async (
         printDiscoveryLines(result.discovery, result.cachePath, result.changes);
         return;
       }
+      case "oauth-authorize": {
+        const serverId = options.serverId ??
+          fail("Expected a server id after `machdoch mcp oauth-authorize`.");
+        const result = await mcpClientManager.authorizeOAuth(
+          args.workspaceRoot,
+          serverId,
+        );
+
+        if (args.json) {
+          printJson({ workspaceRoot: args.workspaceRoot, result });
+          return;
+        }
+
+        writeStdoutLine(`mcp oauth: ${result.serverId} ${result.status}`);
+        writeStdoutLine(`path: ${result.configPath}`);
+
+        if (result.authorizationUrl) {
+          writeStdoutLine(`authorizationUrl: ${result.authorizationUrl}`);
+        }
+
+        if (result.stateVerified !== undefined) {
+          writeStdoutLine(`stateVerified: ${result.stateVerified}`);
+        }
+
+        return;
+      }
       case "oauth-start": {
         const serverId = options.serverId ??
           fail("Expected a server id after `machdoch mcp oauth-start`.");

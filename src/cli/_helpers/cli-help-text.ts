@@ -40,6 +40,7 @@ Usage:
   machdoch mcp servers [--include-disabled] [--json]
   machdoch mcp cache [--json]
   machdoch mcp discover|refresh <server-id> [--json]
+  machdoch mcp oauth-authorize <server-id> [--json]
   machdoch mcp oauth-start <server-id> [--json]
   machdoch mcp oauth-finish <server-id> <callback-url-or-code> [--json]
   machdoch mcp call-tool <server-id> <tool-name> [--arguments-json <json>] [--json]

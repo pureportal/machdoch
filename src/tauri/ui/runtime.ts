@@ -3693,6 +3693,23 @@ export const beginMcpOAuth = async (
   );
 };
 
+export const authorizeMcpOAuth = async (
+  workspaceRoot: string | null | undefined,
+  serverId: string,
+): Promise<McpCommandOAuthResult> => {
+  const normalizedServerId = serverId.trim();
+
+  if (!normalizedServerId) {
+    throw new Error("Expected an MCP server id.");
+  }
+
+  return runMcpCommand(
+    workspaceRoot,
+    ["oauth-authorize", normalizedServerId],
+    assertMcpDesktopAvailable,
+  );
+};
+
 export const finishMcpOAuth = async (
   workspaceRoot: string | null | undefined,
   serverId: string,

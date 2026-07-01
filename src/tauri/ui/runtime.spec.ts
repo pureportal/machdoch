@@ -8,6 +8,7 @@ import {
   openUrlMock,
 } from "./test/tauri-test-mocks";
 import {
+  authorizeMcpOAuth,
   cancelDesktopTask,
   beginMcpOAuth,
   createInstruction,
@@ -299,6 +300,15 @@ describe("desktop runtime fullscreen detection", () => {
           configPath: "C:\\Users\\Test\\AppData\\Roaming\\machdoch\\mcp.json",
           stateVerified: true,
         },
+      })
+      .mockResolvedValueOnce({
+        workspaceRoot: "C:\\Project",
+        result: {
+          serverId: "github",
+          status: "authorized",
+          configPath: "C:\\Users\\Test\\AppData\\Roaming\\machdoch\\mcp.json",
+          stateVerified: true,
+        },
       });
 
     await listMcpServers("C:\\Project", true);
@@ -306,6 +316,7 @@ describe("desktop runtime fullscreen detection", () => {
     await discoverMcpServer("C:\\Project", "serper");
     await refreshMcpDiscoveryCache("C:\\Project", "serper");
     await beginMcpOAuth("C:\\Project", "github");
+    await authorizeMcpOAuth("C:\\Project", "github");
     await finishMcpOAuth(
       "C:\\Project",
       "github",
@@ -343,6 +354,12 @@ describe("desktop runtime fullscreen detection", () => {
       },
     });
     expect(invokeMock).toHaveBeenNthCalledWith(6, "run_mcp_command", {
+      request: {
+        workspaceRoot: "C:\\Project",
+        arguments: ["oauth-authorize", "github"],
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(7, "run_mcp_command", {
       request: {
         workspaceRoot: "C:\\Project",
         arguments: [

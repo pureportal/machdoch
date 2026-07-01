@@ -69,6 +69,7 @@ export type McpCliAction =
   | "cache"
   | "discover"
   | "refresh"
+  | "oauth-authorize"
   | "oauth-start"
   | "oauth-finish"
   | "call-tool"

@@ -543,6 +543,11 @@ describe("SettingsDialog", () => {
     expect(onListDiscoveryCache).toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Auth" }));
+    expect(
+      screen.getByText(
+        /Manual fallback: paste a callback URL or code/u,
+      ),
+    ).toBeDefined();
     fireEvent.change(screen.getByLabelText("MCP OAuth callback URL or code"), {
       target: { value: "http://127.0.0.1:43110/oauth/callback?code=def" },
     });
