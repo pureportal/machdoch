@@ -1267,6 +1267,37 @@ const normalizeWorkspaceRoot = (
   return normalizedWorkspaceRoot ? normalizedWorkspaceRoot : null;
 };
 
+const WINDOWS_NAMESPACED_PATH_PREFIX_PATTERN = /^\\\\[?.]\\/u;
+const WINDOWS_NAMESPACED_UNC_PATH_PREFIX_PATTERN = /^\\\\[?.]\\UNC\\/iu;
+
+const isWindowsDriveAbsolutePath = (path: string): boolean =>
+  /^[a-zA-Z]:[\\/]/u.test(path);
+
+const normalizeLocalFileSourcePath = (path: string): string => {
+  const normalizedPath = path.trim();
+  const uncPrefixMatch =
+    WINDOWS_NAMESPACED_UNC_PATH_PREFIX_PATTERN.exec(normalizedPath);
+
+  if (uncPrefixMatch) {
+    return `\\\\${normalizedPath.slice(uncPrefixMatch[0].length)}`;
+  }
+
+  const namespacePrefixMatch =
+    WINDOWS_NAMESPACED_PATH_PREFIX_PATTERN.exec(normalizedPath);
+
+  if (!namespacePrefixMatch) {
+    return normalizedPath;
+  }
+
+  const pathWithoutPrefix = normalizedPath.slice(namespacePrefixMatch[0].length);
+
+  if (isWindowsDriveAbsolutePath(pathWithoutPrefix)) {
+    return pathWithoutPrefix;
+  }
+
+  return normalizedPath;
+};
+
 const isRuntimeRunMode = (mode: string): mode is RuntimeSnapshot["mode"] => {
   return RUN_MODES.includes(mode as RuntimeSnapshot["mode"]);
 };
@@ -4876,15 +4907,17 @@ export const openExternalUrl = async (url: string): Promise<void> => {
 };
 
 const convertLocalFileSource = (path: string): string => {
+  const sourcePath = normalizeLocalFileSourcePath(path);
+
   if (!canConvertTauriFileSources()) {
-    return path;
+    return sourcePath;
   }
 
   try {
-    return tauriCore.convertFileSrc(path);
+    return tauriCore.convertFileSrc(sourcePath);
   } catch (error) {
     console.error("Failed to create attachment preview source", error);
-    return path;
+    return sourcePath;
   }
 };
 

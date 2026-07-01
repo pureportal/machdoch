@@ -38,6 +38,8 @@ export interface RalphGitChangeSnapshotOptions {
   workspaceRoot: string;
   timeoutMs: number;
   maxOutputBytes: number;
+  includeDiffs?: boolean;
+  includeHead?: boolean;
   signal?: AbortSignal;
 }
 
@@ -137,15 +139,29 @@ const readWorktreeHash = async (path: string): Promise<string | undefined> => {
   return createHash("sha256").update(await readFile(path)).digest("hex");
 };
 
-const readIndexOid = async (
-  path: string,
+const readIndexOids = async (
+  paths: readonly string[],
   options: RalphGitChangeSnapshotOptions,
-): Promise<string | undefined> => {
-  const output = await runGitCommand(["ls-files", "--stage", "-z", "--", path], options);
-  const firstEntry = splitNulOutput(output)[0];
-  const match = firstEntry?.match(/^\d+\s+([0-9a-f]{40,64})\s+\d+\t/u);
+): Promise<Map<string, string>> => {
+  if (paths.length === 0) {
+    return new Map();
+  }
 
-  return match?.[1];
+  const output = await runGitCommand(
+    ["ls-files", "--stage", "-z", "--", ...paths],
+    options,
+  );
+  const indexOids = new Map<string, string>();
+
+  for (const entry of splitNulOutput(output)) {
+    const match = entry.match(/^\d+\s+([0-9a-f]{40,64})\s+\d+\t(.+)$/u);
+
+    if (match?.[1] && match[2]) {
+      indexOids.set(match[2], match[1]);
+    }
+  }
+
+  return indexOids;
 };
 
 const createFileSignature = (
@@ -160,12 +176,12 @@ const createFileSignature = (
 
 const createChangedFileSnapshot = async (
   entry: ReturnType<typeof parsePorcelainV1ZStatus>[number],
-  options: RalphGitChangeSnapshotOptions,
+  indexOids: ReadonlyMap<string, string>,
   gitRoot: string,
 ): Promise<RalphGitChangedFileSnapshot> => {
   const absolutePath = resolve(gitRoot, entry.gitPath);
   const worktreeHash = await readWorktreeHash(absolutePath);
-  const indexOid = await readIndexOid(entry.gitPath, options);
+  const indexOid = indexOids.get(entry.gitPath);
   const indexChanged = entry.indexStatus !== " " && entry.indexStatus !== "?";
   const worktreeChanged = entry.worktreeStatus !== " " && entry.worktreeStatus !== "?";
   const untracked = entry.indexStatus === "?" && entry.worktreeStatus === "?";
@@ -199,18 +215,37 @@ export const collectRalphGitChangeSnapshot = async (
     realpath(options.workspaceRoot).catch(() => resolve(options.workspaceRoot)),
   ]);
   const rootOptions: RalphGitChangeSnapshotOptions = { ...options, cwd: root };
+  const includeHead = options.includeHead !== false;
+  const includeDiffs = options.includeDiffs !== false;
   const [head, statusText, diffStat, diffNames, stagedDiffStat, stagedDiffNames] =
     await Promise.all([
-      runGitCommand(["rev-parse", "--short", "HEAD"], rootOptions),
+      includeHead
+        ? runGitCommand(["rev-parse", "--short", "HEAD"], rootOptions)
+        : Promise.resolve(""),
       runGitCommand(["status", "--porcelain=v1", "-z", "-uall"], rootOptions),
-      runGitCommand(["diff", "--stat"], rootOptions),
-      runGitCommand(["diff", "--name-only", "-z"], rootOptions),
-      runGitCommand(["diff", "--cached", "--stat"], rootOptions),
-      runGitCommand(["diff", "--cached", "--name-only", "-z"], rootOptions),
+      includeDiffs
+        ? runGitCommand(["diff", "--stat"], rootOptions)
+        : Promise.resolve(""),
+      includeDiffs
+        ? runGitCommand(["diff", "--name-only", "-z"], rootOptions)
+        : Promise.resolve(""),
+      includeDiffs
+        ? runGitCommand(["diff", "--cached", "--stat"], rootOptions)
+        : Promise.resolve(""),
+      includeDiffs
+        ? runGitCommand(["diff", "--cached", "--name-only", "-z"], rootOptions)
+        : Promise.resolve(""),
     ]);
+  const statusEntries = parsePorcelainV1ZStatus(statusText, root, workspaceRoot);
+  const indexOids = await readIndexOids(
+    statusEntries
+      .filter((entry) => entry.indexStatus !== "?")
+      .map((entry) => entry.gitPath),
+    rootOptions,
+  );
   const files = await Promise.all(
-    parsePorcelainV1ZStatus(statusText, root, workspaceRoot).map((entry) =>
-      createChangedFileSnapshot(entry, rootOptions, root),
+    statusEntries.map((entry) =>
+      createChangedFileSnapshot(entry, indexOids, root),
     ),
   );
   const changedFiles = files.map((file) => file.path);

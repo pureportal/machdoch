@@ -115,7 +115,7 @@ const getProjectId = (workspace: string | null): string => {
 };
 
 const getProjectLabel = (workspace: string | null): string => {
-  return workspace?.trim() ? getWorkspaceLabel(workspace) : "No workspace";
+  return getWorkspaceLabel(workspace);
 };
 
 const getMessageSearchParts = (message: ChatSessionMessage): string[] => {

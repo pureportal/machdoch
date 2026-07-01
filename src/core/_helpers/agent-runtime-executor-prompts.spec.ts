@@ -55,6 +55,10 @@ const createConversationContext = (
   overrides: Partial<PreparedConversationPromptContext> = {},
 ): PreparedConversationPromptContext => {
   return {
+    workspace: {
+      selection: "selected",
+      root: "c:/Development/machdoch",
+    },
     sections: [],
     memory: {
       sessionEnabled: false,
@@ -270,6 +274,26 @@ describe("createExecutorSystemPrompt", () => {
         createConversationContext(),
       ),
     ).toContain("Desktop host elevation: standard user");
+  });
+
+  it("explains when the user intentionally leaves the workspace Not Set", () => {
+    const prompt = createExecutorSystemPrompt(
+      createRuntimeConfig({ workspaceRoot: "C:/Users/example" }),
+      createTaskContext(),
+      [createTool("read_file")],
+      createConversationContext({
+        workspace: {
+          selection: "not-set",
+        },
+      }),
+    );
+
+    expect(prompt).toContain("Workspace selection: Not Set");
+    expect(prompt).toContain("Runtime fallback root: C:/Users/example");
+    expect(prompt).toContain(
+      "Treat the fallback root as the process working directory only",
+    );
+    expect(prompt).not.toContain("Workspace root: C:/Users/example");
   });
 
   it("makes the current task authoritative over prior conversation context", () => {

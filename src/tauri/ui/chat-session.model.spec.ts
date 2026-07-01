@@ -9,6 +9,7 @@ import {
   getLatestRunningTaskId,
   getSessionOverviewStatus,
   hasUnreadCompletedSessionResponse,
+  isSessionWorkspaceLocked,
   markSessionRead,
   mergeRecentWorkspacesForPersistence,
   normalizeRecentWorkspaces,
@@ -156,6 +157,50 @@ describe("normalizeShellState", () => {
     expect(
       removeRecentWorkspace(["C:\\Docs", "/tmp/one"], "c:/docs"),
     ).toEqual(["/tmp/one"]);
+  });
+
+  it("locks normal session workspaces after the first user message", () => {
+    expect(isSessionWorkspaceLocked(createSession())).toBe(false);
+    expect(
+      isSessionWorkspaceLocked(
+        createSession({
+          messages: [
+            {
+              id: "agent-only",
+              role: "agent",
+              content: "Hello",
+            },
+          ],
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isSessionWorkspaceLocked(
+        createSession({
+          messages: [
+            {
+              id: "user-1",
+              role: "user",
+              content: "Do the thing",
+            },
+          ],
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isSessionWorkspaceLocked(
+        createSession({
+          specialSession: QUICK_VOICE_SESSION_KIND,
+          messages: [
+            {
+              id: "quick-user-1",
+              role: "user",
+              content: "Do the thing",
+            },
+          ],
+        }),
+      ),
+    ).toBe(false);
   });
 
   it("preserves local recent workspace removals during persistence merges", () => {

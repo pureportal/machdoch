@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { TASK_EXECUTION_TIMEOUT_MS } from "../../core/_helpers/agent-runtime-types.js";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { cn } from "./lib/utils";
 import type { TaskPanelTone } from "./task-panel";
@@ -239,11 +240,43 @@ export const TaskThinkingPanel = ({
     [thinking.entries, thinking.startedAt, thinking.timelineEvents],
   );
   const latestTimelineEvent = timelineEvents.at(-1);
+  const latestActionOutputLine = actionOutputLines.at(-1);
+  const latestRecordedActivityAt = Math.max(
+    thinking.startedAt,
+    latestTimelineEvent?.timestamp ?? 0,
+    latestEntry?.timestamp ?? 0,
+    latestActionOutputLine?.timestamp ?? 0,
+  );
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
+  const [timeoutActivityStartedAt, setTimeoutActivityStartedAt] = useState(
+    latestRecordedActivityAt,
+  );
+  const previousThinkingRef = useRef<TaskThinkingTrace | null>(null);
   const elapsedMs = Math.max(
     0,
-    (thinking.completedAt ?? latestTimelineEvent?.timestamp ?? thinking.startedAt) -
+    (isRunning
+      ? currentTimeMs
+      : thinking.completedAt ?? latestTimelineEvent?.timestamp ?? thinking.startedAt) -
       thinking.startedAt,
   );
+  const timeoutElapsedMs = isRunning
+    ? Math.max(0, currentTimeMs - timeoutActivityStartedAt)
+    : 0;
+  const timeoutProgress = Math.min(
+    1,
+    timeoutElapsedMs / TASK_EXECUTION_TIMEOUT_MS,
+  );
+  const timeoutProgressPercent = Math.round(timeoutProgress * 100);
+  const timeoutRemainingMs = Math.max(
+    0,
+    TASK_EXECUTION_TIMEOUT_MS - timeoutElapsedMs,
+  );
+  const timeoutProgressFillClassName =
+    timeoutProgress >= 0.9
+      ? "bg-rose-300/70"
+      : timeoutProgress >= 0.75
+        ? "bg-amber-300/75"
+        : "bg-sky-400/70";
   const replayExport = useMemo(
     () => createReplayExport(thinking, timelineEvents),
     [thinking, timelineEvents],
@@ -267,6 +300,50 @@ export const TaskThinkingPanel = ({
 
     node.scrollTop = node.scrollHeight;
   }, [timelineEvents.length, entries.length, activeView, isRunning]);
+
+  useEffect(() => {
+    if (!isRunning) {
+      return;
+    }
+
+    const updateCurrentTime = (): void => {
+      setCurrentTimeMs(Date.now());
+    };
+
+    updateCurrentTime();
+
+    const intervalId = window.setInterval(updateCurrentTime, 1_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isRunning]);
+
+  useEffect(() => {
+    const previousThinking = previousThinkingRef.current;
+    previousThinkingRef.current = thinking;
+
+    if (!isRunning) {
+      setTimeoutActivityStartedAt(latestRecordedActivityAt);
+      return;
+    }
+
+    if (previousThinking === null) {
+      setTimeoutActivityStartedAt(latestRecordedActivityAt);
+      return;
+    }
+
+    if (previousThinking !== thinking) {
+      setTimeoutActivityStartedAt(
+        Math.max(Date.now(), latestRecordedActivityAt),
+      );
+      return;
+    }
+
+    setTimeoutActivityStartedAt((current) =>
+      Math.max(current, latestRecordedActivityAt),
+    );
+  }, [isRunning, latestRecordedActivityAt, thinking]);
 
   useEffect(() => {
     setIsCollapsed(!isRunning);
@@ -313,7 +390,7 @@ export const TaskThinkingPanel = ({
     <div aria-live="polite" className="app-thinking-panel min-h-0 min-w-0 w-full">
       <Card
         className={cn(
-          "app-thinking-card min-w-0 gap-0 overflow-hidden border py-0 text-slate-100",
+          "app-thinking-card relative min-w-0 gap-0 overflow-hidden border py-0 text-slate-100",
           isCollapsed
             ? "w-full rounded-2xl rounded-bl-sm border-slate-800/60 bg-slate-900/28 shadow-none"
             : "w-full rounded-3xl border-slate-800 bg-slate-900/85 shadow-xl shadow-slate-950/25",
@@ -633,6 +710,25 @@ export const TaskThinkingPanel = ({
               ) : null}
             </div>
           </CardContent>
+        ) : null}
+        {isRunning ? (
+          <div
+            role="progressbar"
+            aria-label="AI chat timeout progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={timeoutProgressPercent}
+            aria-valuetext={`${formatElapsedTime(timeoutRemainingMs)} until timeout if no further activity`}
+            className="app-thinking-timeout-progress pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden bg-slate-800/80"
+          >
+            <div
+              className={cn(
+                "h-full transition-[width,background-color] duration-500",
+                timeoutProgressFillClassName,
+              )}
+              style={{ width: `${timeoutProgressPercent}%` }}
+            />
+          </div>
         ) : null}
       </Card>
     </div>

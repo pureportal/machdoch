@@ -2,7 +2,6 @@ import {
   extractRalphPlaceholders,
   getRalphAttachmentTemplateTexts,
   getRalphPromptLikeTexts,
-  hasRalphPlaceholders,
 } from "./ralph-placeholders.helper.js";
 import { addRalphValidationIssue } from "./create-ralph-validation-result.helper.js";
 import { validateRalphUtilityBlock } from "./validate-ralph-utility-block.helper.js";

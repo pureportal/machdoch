@@ -978,6 +978,77 @@ describe("desktop runtime fullscreen detection", () => {
     expect(convertFileSrcMock).toHaveBeenCalledWith("C:\\Docs\\screen.png");
   });
 
+  it("normalizes Windows extended-length image preview paths before conversion", async () => {
+    invokeMock.mockResolvedValueOnce("\\\\?\\C:\\Docs\\screen.png");
+
+    await expect(
+      resolveAttachedImagePreviewSource(
+        " \\\\?\\C:\\Docs\\screen.png ",
+        " C:\\Docs ",
+      ),
+    ).resolves.toBe(
+      "http://asset.localhost/C%3A%5CDocs%5Cscreen.png",
+    );
+
+    expect(convertFileSrcMock).toHaveBeenCalledWith("C:\\Docs\\screen.png");
+  });
+
+  it("normalizes Windows namespaced UNC image preview paths before conversion", async () => {
+    invokeMock.mockResolvedValueOnce("\\\\?\\unc\\server\\share\\screen.png");
+
+    await expect(
+      resolveAttachedImagePreviewSource(
+        "\\\\?\\UNC\\server\\share\\screen.png",
+        null,
+      ),
+    ).resolves.toBe(
+      "http://asset.localhost/%5C%5Cserver%5Cshare%5Cscreen.png",
+    );
+
+    expect(convertFileSrcMock).toHaveBeenCalledWith(
+      "\\\\server\\share\\screen.png",
+    );
+  });
+
+  it("normalizes Windows DOS device image preview paths before conversion", async () => {
+    invokeMock.mockResolvedValueOnce("\\\\.\\C:\\Docs\\screen.png");
+
+    await expect(
+      resolveAttachedImagePreviewSource("\\\\.\\C:\\Docs\\screen.png", null),
+    ).resolves.toBe(
+      "http://asset.localhost/C%3A%5CDocs%5Cscreen.png",
+    );
+
+    expect(convertFileSrcMock).toHaveBeenCalledWith("C:\\Docs\\screen.png");
+  });
+
+  it("normalizes persisted image preview paths when Tauri commands are unavailable", async () => {
+    disableInvokeMock();
+
+    await expect(
+      resolveAttachedImagePreviewSource("\\\\?\\C:\\Docs\\screen.png", null),
+    ).resolves.toBe(
+      "http://asset.localhost/C%3A%5CDocs%5Cscreen.png",
+    );
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(convertFileSrcMock).toHaveBeenCalledWith("C:\\Docs\\screen.png");
+  });
+
+  it("leaves unsupported Windows namespace preview paths unchanged", async () => {
+    invokeMock.mockResolvedValueOnce("\\\\?\\Volume{abc}\\screen.png");
+
+    await expect(
+      resolveAttachedImagePreviewSource("\\\\?\\Volume{abc}\\screen.png", null),
+    ).resolves.toBe(
+      "http://asset.localhost/%5C%5C%3F%5CVolume%7Babc%7D%5Cscreen.png",
+    );
+
+    expect(convertFileSrcMock).toHaveBeenCalledWith(
+      "\\\\?\\Volume{abc}\\screen.png",
+    );
+  });
+
   it("opens attachment URLs through the Tauri opener", async () => {
     await openExternalUrl(" https://example.com/docs ");
 

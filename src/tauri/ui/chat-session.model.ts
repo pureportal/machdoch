@@ -1722,6 +1722,18 @@ export const isQuickVoiceSession = (
   return session.specialSession === QUICK_VOICE_SESSION_KIND;
 };
 
+export const isSessionWorkspaceLocked = (
+  session: ChatSessionRecord,
+): boolean => {
+  return (
+    !isQuickVoiceSession(session) &&
+    session.messages.some(
+      (message) =>
+        message.role === "user" && message.content.trim().length > 0,
+    )
+  );
+};
+
 export const canDeleteSession = (session: ChatSessionRecord): boolean => {
   return !isQuickVoiceSession(session);
 };

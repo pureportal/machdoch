@@ -160,6 +160,10 @@ const createConfig = (
 });
 
 const preparedConversationContext: PreparedConversationPromptContext = {
+  workspace: {
+    selection: "selected",
+    root: "C:/workspace",
+  },
   sections: [],
   memory: {
     sessionEnabled: true,
@@ -267,6 +271,34 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(result?.status).toBe("executed");
     expect(result?.executedTools).toEqual(["shell"]);
+    expect(result?.response?.markdown).toBe("Codex delegated answer.");
+  });
+
+  it("strips Windows taskkill success lines from Codex stdout", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+
+    call?.child.stdout.write(
+      [
+        "SUCCESS: The process with PID 1234 (child process of PID 5678) has been terminated.",
+        "Codex delegated answer.",
+        "SUCCESS: The process with PID 9012 has been terminated.",
+      ].join("\r\n"),
+    );
+    call?.child.emit("close", 0, null);
+
+    const result = await resultPromise;
+
+    expect(result?.status).toBe("executed");
+    expect(result?.summary).toBe("Codex delegated answer.");
     expect(result?.response?.markdown).toBe("Codex delegated answer.");
   });
 

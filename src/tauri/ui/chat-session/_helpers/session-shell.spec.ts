@@ -71,7 +71,7 @@ describe("session shell helpers", () => {
     expect(getWorkspaceLabel("/tmp/example-workspace")).toBe(
       "example-workspace",
     );
-    expect(getWorkspaceLabel(null)).toBe("No workspace");
+    expect(getWorkspaceLabel(null)).toBe("Not Set");
   });
 
   it("builds conversation context from visible messages only", () => {
@@ -135,6 +135,7 @@ describe("session shell helpers", () => {
     expect(context.globalMemoryEnabled).toBe(false);
     expect(context.uiControlEnabled).toBe(true);
     expect(context.uiControl).toEqual(uiControl);
+    expect(context.workspace).toEqual({ selection: "not-set" });
   });
 
   it("limits conversation context to the configured latest messages", () => {

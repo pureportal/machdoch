@@ -228,7 +228,7 @@ export const formatSessionTimestamp = (timestamp: number): string => {
 
 export const getWorkspaceLabel = (workspace: string | null): string => {
   if (!workspace) {
-    return "No workspace";
+    return "Not Set";
   }
 
   const parts = workspace.replace(/\\/g, "/").split("/").filter(Boolean);
@@ -330,6 +330,9 @@ export const createConversationContextFromSession = (
   const history = createAiContextHistory(session.messages, maxHistoryMessages);
 
   return {
+    workspace: session.workspace
+      ? { selection: "selected", root: session.workspace }
+      : { selection: "not-set" },
     history,
     sessionMemoryEnabled: session.sessionMemoryEnabled,
     sessionMemory: session.sessionMemory,

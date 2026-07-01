@@ -199,12 +199,12 @@ afterEach(() => {
 });
 
 const selectWorkspace = async (): Promise<void> => {
-  fireEvent.click(screen.getByRole("button", { name: /Choose workspace/i }));
+  fireEvent.click(screen.getByRole("button", { name: /Not Set/i }));
 
   await waitFor(() => {
     const dialogOpened = openMock.mock.calls.length > 0;
     const workspaceLabelUpdated =
-      screen.queryByRole("button", { name: /Choose workspace/i }) === null;
+      screen.queryByRole("button", { name: /Not Set/i }) === null;
 
     expect(dialogOpened || workspaceLabelUpdated).toBe(true);
   });
@@ -1495,6 +1495,10 @@ describe("ChatSession component", () => {
           provider: expect.any(String),
         }),
       );
+      expect(screen.getByRole("button", { name: "Not Set" })).toHaveProperty(
+        "disabled",
+        true,
+      );
 
       runDesktopTaskSpy.mockRestore();
     },
@@ -1604,6 +1608,93 @@ describe("ChatSession component", () => {
       expect(
         await screen.findByRole("button", { name: "Workspace" }),
       ).toBeDefined();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "allows clearing the workspace to Not Set before the first message",
+    async () => {
+      const baseState = createInitialShellState();
+
+      storeShellState({
+        ...baseState,
+        recentWorkspaces: ["C:\\Docs\\Current"],
+        sessions: baseState.sessions.map((session) => ({
+          ...session,
+          workspace: "C:\\Docs\\Current",
+        })),
+      });
+
+      render(<ChatSession />);
+      expect(
+        await screen.findByRole("button", { name: "Current" }),
+      ).toBeDefined();
+
+      fireEvent.click(screen.getByRole("button", { name: "Current" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Not Set" }));
+
+      expect(
+        await screen.findByRole("button", { name: "Not Set" }),
+      ).toBeDefined();
+
+      await waitFor(() => {
+        const storedState = JSON.parse(
+          window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+        ) as ShellPersistedState;
+
+        expect(storedState.sessions[0]?.workspace).toBeNull();
+      });
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "locks the selected workspace after the first submitted message",
+    async () => {
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockResolvedValue({
+          execution: createMockExecutionFixture("scan this workspace", "C:\\Docs"),
+        });
+
+      render(<ChatSession />);
+      await selectWorkspace();
+      openMock.mockClear();
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: "scan this workspace" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledWith(
+          "/mocked/tauri/path",
+          "scan this workspace",
+          expect.objectContaining({
+            model: expect.any(String),
+            provider: expect.any(String),
+          }),
+        );
+      });
+
+      const workspaceButton = await screen.findByRole("button", {
+        name: "path",
+      });
+
+      expect(workspaceButton).toHaveProperty("disabled", true);
+      fireEvent.click(workspaceButton);
+      expect(openMock).not.toHaveBeenCalled();
+      expect(
+        screen.queryByRole("button", {
+          name: /Choose new workspace folder/i,
+        }),
+      ).toBeNull();
+
+      runDesktopTaskSpy.mockRestore();
     },
     SLOW_UI_TEST_TIMEOUT_MS,
   );

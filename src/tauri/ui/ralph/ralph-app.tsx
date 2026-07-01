@@ -680,8 +680,14 @@ export const RalphApp = ({
               }
               recentWorkspaces={recentWorkspaces}
               hasActiveWorkspace={Boolean(settings.workspaceRoot)}
+              workspaceLocked={false}
+              allowNotSet={false}
               buttonAriaLabel="Ralph workspace"
-              onSelectWorkspace={applyWorkspaceSelection}
+              onSelectWorkspace={(workspace) => {
+                if (workspace) {
+                  applyWorkspaceSelection(workspace);
+                }
+              }}
               onRemoveWorkspace={removeWorkspaceFromHistory}
               onChooseNewWorkspace={chooseWorkspace}
               buttonClassName="h-8 w-full justify-start rounded-lg border-slate-700 bg-slate-950 px-3 text-xs font-medium text-slate-100 shadow-none hover:border-slate-600 hover:bg-slate-900"

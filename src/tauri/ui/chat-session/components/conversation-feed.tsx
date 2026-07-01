@@ -42,6 +42,7 @@ import { MessageMarkdown } from "./message-markdown";
 
 export interface ConversationFeedProps {
   visibleMessages: ChatSessionMessage[];
+  workspaceRoot?: string | null;
   aiContextMessageLimit?: number;
   bottomRef: RefObject<HTMLDivElement | null>;
   onRetryTask: (message: ChatSessionMessage) => void;
@@ -176,6 +177,7 @@ const saveMarkdownDownload = (content: string, fileName: string): void => {
 
 export const ConversationFeed = ({
   visibleMessages,
+  workspaceRoot,
   aiContextMessageLimit = DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
   bottomRef,
   onRetryTask,
@@ -458,6 +460,8 @@ export const ConversationFeed = ({
 
                     <MessageMarkdown
                       content={renderedContent}
+                      workspaceRoot={workspaceRoot}
+                      onOpenWorkspaceFile={onOpenWorkspaceFile}
                       className={
                         message.role === "user"
                           ? "app-user-message-text"

@@ -97,7 +97,7 @@ export const createMemorySummaryState = (options: {
 }): MemorySummaryState => {
   const composerWorkspaceLabel = options.session.workspace
     ? getWorkspaceLabel(options.session.workspace)
-    : "Choose workspace";
+    : "Not Set";
   const sessionMemoryFactCount = options.session.sessionMemory.length;
   const globalMemoryFactCount = options.userMemorySettings.entries.length;
   const isGlobalMemoryAvailable = options.userMemorySettings.globalEnabled;

@@ -41,8 +41,12 @@ const QUICK_WINDOW_BLUR_HIDE_DELAY_MS = 100;
 
 const QuickTaskMessage = ({
   message,
+  workspaceRoot,
+  onOpenWorkspaceFile,
 }: {
   message: ChatSessionMessage;
+  workspaceRoot: string | null;
+  onOpenWorkspaceFile: (relativePath: string) => void;
 }): JSX.Element | null => {
   const renderedContent = getRenderedMessageContent(message).trim();
 
@@ -80,7 +84,11 @@ const QuickTaskMessage = ({
       {isUser ? (
         <p className="whitespace-pre-wrap">{renderedContent}</p>
       ) : (
-        <MessageMarkdown content={renderedContent} />
+        <MessageMarkdown
+          content={renderedContent}
+          workspaceRoot={workspaceRoot}
+          onOpenWorkspaceFile={onOpenWorkspaceFile}
+        />
       )}
     </article>
   );
@@ -127,7 +135,12 @@ const QuickTaskActivity = ({
         ) : (
           <div className="grid gap-3 px-5 py-5 [@media(max-height:620px)]:px-4 [@media(max-height:620px)]:py-3">
             {recentMessages.map((message) => (
-              <QuickTaskMessage key={message.id} message={message} />
+              <QuickTaskMessage
+                key={message.id}
+                message={message}
+                workspaceRoot={quickTask.workspaceRoot}
+                onOpenWorkspaceFile={quickTask.onOpenWorkspaceFile}
+              />
             ))}
             <div
               ref={newestMessageScroll.bottomRef}

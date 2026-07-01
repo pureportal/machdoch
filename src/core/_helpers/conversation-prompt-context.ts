@@ -24,6 +24,10 @@ const MAX_CONVERSATION_SUMMARY_SECTION_LINES = 12;
 const MAX_MEMORY_PROMPT_ENTRIES = 10;
 
 export interface PreparedConversationPromptContext {
+  workspace: {
+    selection: "selected" | "not-set";
+    root?: string;
+  };
   promptBlock?: string;
   sections: TaskExecutionSection[];
   memory: ConversationMemoryRuntime;
@@ -139,6 +143,21 @@ const createMemoryLines = (entries: ConversationMemoryEntry[]): string[] => {
     .map((entry) => entry.content);
 };
 
+const normalizeWorkspaceContext = (
+  conversationContext: TaskConversationContext | undefined,
+): PreparedConversationPromptContext["workspace"] => {
+  const selection =
+    conversationContext?.workspace?.selection === "not-set"
+      ? "not-set"
+      : "selected";
+  const root = conversationContext?.workspace?.root?.trim();
+
+  return {
+    selection,
+    ...(root ? { root } : {}),
+  };
+};
+
 const summarizeConversationHistory = async (
   task: string,
   config: RuntimeConfig,
@@ -212,6 +231,7 @@ export const prepareConversationPromptContext = async (
     : [];
   const uiControlEnabled = conversationContext?.uiControlEnabled === true;
   const uiControl = conversationContext?.uiControl;
+  const workspace = normalizeWorkspaceContext(conversationContext);
   const { omittedHistory, recentHistory } =
     createRecentHistoryWindow(normalizedHistory);
   const summary =
@@ -274,6 +294,7 @@ export const prepareConversationPromptContext = async (
   ].filter((section): section is string => typeof section === "string");
 
   return {
+    workspace,
     ...(promptSections.length > 0
       ? {
           promptBlock: [

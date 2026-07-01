@@ -46,6 +46,8 @@ const EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS = 5_000;
 const ANSI_ESCAPE_PATTERN =
   // eslint-disable-next-line no-control-regex
   /\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/gu;
+const WINDOWS_TASKKILL_SUCCESS_LINE_PATTERN =
+  /^[ \t]*SUCCESS: The process with PID \d+(?: \(child process of PID \d+\))? has been terminated\.[ \t]*(?:\r?\n|$)/gmu;
 
 type CodexCliReasoningEffort =
   | "minimal"
@@ -142,7 +144,10 @@ const mapReasoningToCopilotCliEffort = (
 };
 
 const cleanCliText = (value: string): string => {
-  return value.replace(ANSI_ESCAPE_PATTERN, "").trim();
+  return value
+    .replace(ANSI_ESCAPE_PATTERN, "")
+    .replace(WINDOWS_TASKKILL_SUCCESS_LINE_PATTERN, "")
+    .trim();
 };
 
 const extractStructuredErrorMessage = (value: string): string | undefined => {

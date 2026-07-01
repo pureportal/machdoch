@@ -128,6 +128,24 @@ pub(super) struct RemoteCommandRequest {
     pub(super) run_id: Option<String>,
 }
 
+struct NormalizedCommandFields {
+    task_id: Option<String>,
+    session_id: Option<String>,
+    prompt: Option<String>,
+    title: Option<String>,
+    tags: Option<Vec<String>>,
+    provider: Option<String>,
+    model: Option<String>,
+    mode: Option<String>,
+    workspace: Option<String>,
+    enabled: Option<bool>,
+    attachment_id: Option<String>,
+    context_pack_id: Option<String>,
+    message_id: Option<String>,
+    job_id: Option<String>,
+    run_id: Option<String>,
+}
+
 pub(super) fn normalize_command(
     request: RemoteCommandRequest,
 ) -> Result<RemoteControlCommandEvent, String> {
@@ -137,17 +155,45 @@ pub(super) fn normalize_command(
         return Err("Unsupported Mission Control command.".to_string());
     }
 
+    let fields = normalize_command_fields(&kind, request)?;
+
+    Ok(RemoteControlCommandEvent {
+        command_id: create_command_id(),
+        kind,
+        task_id: fields.task_id,
+        session_id: fields.session_id,
+        prompt: fields.prompt,
+        title: fields.title,
+        tags: fields.tags,
+        provider: fields.provider,
+        model: fields.model,
+        mode: fields.mode,
+        workspace: fields.workspace,
+        enabled: fields.enabled,
+        attachment_id: fields.attachment_id,
+        context_pack_id: fields.context_pack_id,
+        message_id: fields.message_id,
+        job_id: fields.job_id,
+        run_id: fields.run_id,
+        created_at: now_millis(),
+    })
+}
+
+fn normalize_command_fields(
+    kind: &str,
+    request: RemoteCommandRequest,
+) -> Result<NormalizedCommandFields, String> {
     let task_id = optional_trimmed_string(request.task_id.as_deref());
     let session_id = optional_trimmed_string(request.session_id.as_deref());
 
     require_value(
-        requires_task_id(&kind),
+        requires_task_id(kind),
         &task_id,
         "This Mission Control command requires a taskId.",
     )?;
 
     require_value(
-        requires_session_id(&kind),
+        requires_session_id(kind),
         &session_id,
         "This Mission Control command requires a sessionId.",
     )?;
@@ -181,7 +227,7 @@ pub(super) fn normalize_command(
 
     let workspace = optional_truncated_text(request.workspace.as_deref(), MAX_REMOTE_TEXT_CHARS);
     require_value(
-        requires_enabled(&kind),
+        requires_enabled(kind),
         &request.enabled,
         "This Mission Control command requires an enabled value.",
     )?;
@@ -193,35 +239,33 @@ pub(super) fn normalize_command(
 
     let context_pack_id = optional_trimmed_string(request.context_pack_id.as_deref());
     require_value(
-        requires_context_pack_id(&kind),
+        requires_context_pack_id(kind),
         &context_pack_id,
         "This Mission Control command requires a contextPackId.",
     )?;
 
     let message_id = optional_trimmed_string(request.message_id.as_deref());
     require_value(
-        requires_message_id(&kind),
+        requires_message_id(kind),
         &message_id,
         "This Mission Control command requires a messageId.",
     )?;
 
     let job_id = optional_trimmed_string(request.job_id.as_deref());
     require_value(
-        requires_job_id(&kind),
+        requires_job_id(kind),
         &job_id,
         "This Mission Control command requires a jobId.",
     )?;
 
     let run_id = optional_trimmed_string(request.run_id.as_deref());
     require_value(
-        requires_run_id(&kind),
+        requires_run_id(kind),
         &run_id,
         "This Mission Control command requires a runId.",
     )?;
 
-    Ok(RemoteControlCommandEvent {
-        command_id: create_command_id(),
-        kind,
+    Ok(NormalizedCommandFields {
         task_id,
         session_id,
         prompt,
@@ -237,7 +281,6 @@ pub(super) fn normalize_command(
         message_id,
         job_id,
         run_id,
-        created_at: now_millis(),
     })
 }
 

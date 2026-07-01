@@ -45,6 +45,7 @@ export interface SessionComposerProps {
   isUsingWorkspaceDefaultMode: boolean;
   isUsingWorkspaceDefaultReasoning: boolean;
   hasActiveWorkspace: boolean;
+  workspaceLocked: boolean;
   recentWorkspaces: string[];
   composerWorkspaceLabel: string;
   sessionMemoryDescription: string;
@@ -72,7 +73,7 @@ export interface SessionComposerProps {
   runningTaskMessageAction: RunningTaskMessageAction;
   queuedMessages: AgentComposerQueuedMessage[];
   onSelectFolder: () => Promise<void>;
-  onWorkspaceSelection: (workspace: string) => void;
+  onWorkspaceSelection: (workspace: string | null) => void;
   onWorkspaceRemoval: (workspace: string) => void;
   onSessionModelSelection: (provider: RuntimeProvider, model: string) => void;
   onSessionModeSelection: (mode: RunMode | null) => void;
@@ -131,6 +132,7 @@ export const SessionComposer = ({
   isUsingWorkspaceDefaultMode,
   isUsingWorkspaceDefaultReasoning,
   hasActiveWorkspace,
+  workspaceLocked,
   recentWorkspaces,
   composerWorkspaceLabel,
   sessionMemoryDescription,
@@ -225,6 +227,7 @@ export const SessionComposer = ({
         workspaceLabel={composerWorkspaceLabel}
         recentWorkspaces={recentWorkspaces}
         hasActiveWorkspace={hasActiveWorkspace}
+        workspaceLocked={workspaceLocked}
         onSelectWorkspace={onWorkspaceSelection}
         onRemoveWorkspace={onWorkspaceRemoval}
         onChooseNewWorkspace={onSelectFolder}

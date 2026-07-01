@@ -132,6 +132,10 @@ export interface ConversationMemoryEntry {
 }
 
 export interface TaskConversationContext {
+  workspace?: {
+    selection: "selected" | "not-set";
+    root?: string;
+  };
   history: ConversationHistoryEntry[];
   sessionMemoryEnabled?: boolean;
   sessionMemory?: ConversationMemoryEntry[];

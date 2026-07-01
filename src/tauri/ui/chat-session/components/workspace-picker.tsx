@@ -1,4 +1,4 @@
-import { Check, FolderOpen, FolderPlus, X } from "lucide-react";
+import { Check, FolderOpen, FolderPlus, LockKeyhole, X } from "lucide-react";
 import { useState, type JSX } from "react";
 import { Button } from "../../components/ui/button";
 import {
@@ -19,9 +19,11 @@ export interface WorkspacePickerProps {
   workspaceLabel: string;
   recentWorkspaces: string[];
   hasActiveWorkspace: boolean;
+  workspaceLocked: boolean;
+  allowNotSet?: boolean;
   buttonAriaLabel?: string;
   buttonClassName?: string;
-  onSelectWorkspace: (workspace: string) => void;
+  onSelectWorkspace: (workspace: string | null) => void;
   onRemoveWorkspace: (workspace: string) => void;
   onChooseNewWorkspace: () => Promise<void>;
 }
@@ -32,18 +34,23 @@ const createWorkspaceKey = (workspace: string): string => {
 
 const WorkspaceButtonContent = ({
   hasActiveWorkspace,
+  workspaceLocked,
   workspaceLabel,
 }: Pick<
   WorkspacePickerProps,
-  "hasActiveWorkspace" | "workspaceLabel"
+  "hasActiveWorkspace" | "workspaceLocked" | "workspaceLabel"
 >): JSX.Element => (
   <>
-    <FolderOpen
-      className={cn(
-        "mr-2 h-3.5 w-3.5",
-        hasActiveWorkspace ? "text-sky-300" : "text-slate-500",
-      )}
-    />
+    {workspaceLocked ? (
+      <LockKeyhole className="mr-2 h-3.5 w-3.5 text-slate-500" />
+    ) : (
+      <FolderOpen
+        className={cn(
+          "mr-2 h-3.5 w-3.5",
+          hasActiveWorkspace ? "text-sky-300" : "text-slate-500",
+        )}
+      />
+    )}
     {workspaceLabel}
   </>
 );
@@ -53,6 +60,8 @@ export const WorkspacePicker = ({
   workspaceLabel,
   recentWorkspaces,
   hasActiveWorkspace,
+  workspaceLocked,
+  allowNotSet = true,
   buttonAriaLabel,
   buttonClassName,
   onSelectWorkspace,
@@ -76,7 +85,29 @@ export const WorkspacePicker = ({
           "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15",
       );
 
-  if (recentWorkspaces.length === 0) {
+  if (workspaceLocked) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        aria-label={buttonAriaLabel}
+        title="Workspace locked after first message"
+        disabled
+        className={cn(
+          resolvedButtonClassName,
+          "cursor-not-allowed opacity-75 disabled:opacity-75",
+        )}
+      >
+        <WorkspaceButtonContent
+          hasActiveWorkspace={hasActiveWorkspace}
+          workspaceLocked={workspaceLocked}
+          workspaceLabel={workspaceLabel}
+        />
+      </Button>
+    );
+  }
+
+  if (recentWorkspaces.length === 0 && (!hasActiveWorkspace || !allowNotSet)) {
     return (
       <Button
         type="button"
@@ -89,6 +120,7 @@ export const WorkspacePicker = ({
       >
         <WorkspaceButtonContent
           hasActiveWorkspace={hasActiveWorkspace}
+          workspaceLocked={workspaceLocked}
           workspaceLabel={workspaceLabel}
         />
       </Button>
@@ -106,6 +138,7 @@ export const WorkspacePicker = ({
         >
           <WorkspaceButtonContent
             hasActiveWorkspace={hasActiveWorkspace}
+            workspaceLocked={workspaceLocked}
             workspaceLabel={workspaceLabel}
           />
         </Button>
@@ -120,11 +153,39 @@ export const WorkspacePicker = ({
               Workspaces
             </p>
             <p className="text-sm leading-5 text-slate-400">
-              Pick a recent folder or choose a different workspace.
+              Workspace target for this session.
             </p>
           </div>
 
           <div className="grid max-h-72 gap-2 overflow-y-auto pr-1">
+            {allowNotSet ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onSelectWorkspace(null);
+                }}
+                className={cn(
+                  "flex min-w-0 items-center gap-3 rounded-2xl border p-3 text-left outline-none transition-all focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+                  currentWorkspaceKey === null
+                    ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
+                    : "border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
+                )}
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500">
+                  <X className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-100">
+                    Not Set
+                  </p>
+                </div>
+                {currentWorkspaceKey === null ? (
+                  <Check className="h-4 w-4 shrink-0 text-sky-300" />
+                ) : null}
+              </button>
+            ) : null}
+
             {recentWorkspaces.map((workspace) => {
               const workspaceKey = createWorkspaceKey(workspace);
               const workspaceLabel = getWorkspaceLabel(workspace);

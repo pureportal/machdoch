@@ -109,6 +109,7 @@ const DEFAULT_RETRY_POLICY: ScheduledRetryPolicy = {
 };
 const SCHEDULER_STATE_LOCK_RETRY_MS = 25;
 const SCHEDULER_STATE_LOCK_STALE_MS = 5 * 60_000;
+const SCHEDULER_STATE_LOCK_TRANSIENT_ACCESS_MS = 2_000;
 const SCHEDULER_STATE_REPLACE_RETRY_DELAYS_MS = [
   0,
   10,
@@ -708,6 +709,7 @@ const acquireSchedulerStateLock = async (
 ): Promise<() => Promise<void>> => {
   const lockPath = getSchedulerStateLockPath(statePath);
   const token = `${process.pid}:${Date.now()}:${randomUUID()}`;
+  const startedAt = Date.now();
 
   await mkdir(dirname(statePath), { recursive: true });
 
@@ -724,6 +726,15 @@ const acquireSchedulerStateLock = async (
 
       return () => releaseSchedulerStateLock(lockPath, token);
     } catch (error) {
+      if (
+        (isErrorWithCode(error, "EACCES") || isErrorWithCode(error, "EPERM")) &&
+        !existsSync(lockPath) &&
+        Date.now() - startedAt <= SCHEDULER_STATE_LOCK_TRANSIENT_ACCESS_MS
+      ) {
+        await sleep(SCHEDULER_STATE_LOCK_RETRY_MS);
+        continue;
+      }
+
       if (!isSchedulerStateLockContentionError(error, lockPath)) {
         throw error;
       }

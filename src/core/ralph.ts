@@ -3663,6 +3663,51 @@ const getShellInvocation = (
     : { executable: "/bin/sh", args: ["-lc", command] };
 };
 
+const WINDOWS_POWERSHELL_FAILURE_GUARD =
+  "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }";
+
+const createPowerShellFailFastCommand = (commands: string[]): string => {
+  return commands
+    .map((command) => `${command}; ${WINDOWS_POWERSHELL_FAILURE_GUARD}`)
+    .join("; ");
+};
+
+const createVerificationCommand = (commands: string[]): string => {
+  const uniqueCommands = commands.filter(
+    (command, index, all) => all.indexOf(command) === index,
+  );
+
+  if (process.platform !== "win32") {
+    return uniqueCommands.join(" && ");
+  }
+
+  return createPowerShellFailFastCommand(uniqueCommands);
+};
+
+const normalizeLegacyWindowsPowerShellCommand = (
+  command: string,
+  executable: string,
+): string => {
+  if (
+    process.platform !== "win32" ||
+    executable.toLowerCase() !== "powershell.exe" ||
+    !command.includes("&&")
+  ) {
+    return command;
+  }
+
+  // Repair legacy generated verification commands saved in checkpoints before
+  // Windows PowerShell-compatible chaining was emitted by DETECT_PROJECT_COMMANDS.
+  const chainedCommands = command
+    .split(/\s+&&\s+/u)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return chainedCommands.length > 1
+    ? createPowerShellFailFastCommand(chainedCommands)
+    : command;
+};
+
 const executeCommandUtilityBlock = async (
   block: RalphUtilityBlock,
   utility: RalphUtilityConfig,
@@ -3677,6 +3722,11 @@ const executeCommandUtilityBlock = async (
   }
 
   const invocation = getShellInvocation(command);
+  const executableCommand = normalizeLegacyWindowsPowerShellCommand(
+    command,
+    invocation.executable,
+  );
+  const executableInvocation = getShellInvocation(executableCommand);
   const cwd = normalizeLocalCommandCwd(
     resolveUtilityPath(utility.cwd, config.workspaceRoot),
   );
@@ -3685,20 +3735,24 @@ const executeCommandUtilityBlock = async (
     : utility.acceptedExitCodes ?? [0];
 
   try {
-    const result = await executeLocalCommand(invocation.executable, invocation.args, {
-      cwd,
-      timeoutMs: getUtilityTimeoutMs(
-        utility,
-        DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
-      ),
-      maxBufferBytes:
-        utility.maxOutputBytes ?? DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
-      acceptedExitCodes,
-      ...(signal ? { signal } : {}),
-      ...(utility.env ? { env: { ...process.env, ...utility.env } } : {}),
-    });
+    const result = await executeLocalCommand(
+      executableInvocation.executable,
+      executableInvocation.args,
+      {
+        cwd,
+        timeoutMs: getUtilityTimeoutMs(
+          utility,
+          DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
+        ),
+        maxBufferBytes:
+          utility.maxOutputBytes ?? DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
+        acceptedExitCodes,
+        ...(signal ? { signal } : {}),
+        ...(utility.env ? { env: { ...process.env, ...utility.env } } : {}),
+      },
+    );
     const data = {
-      command,
+      command: executableCommand,
       cwd,
       stdout: result.stdout,
       stderr: result.stderr,
@@ -6944,7 +6998,16 @@ const executeChangeScopeGuardUtilityBlock = async (
   );
 
   try {
-    const snapshot = await collectUtilityGitChangeSnapshot(cwd, utility, config, signal);
+    const snapshot = await collectRalphGitChangeSnapshot({
+      cwd,
+      workspaceRoot: config.workspaceRoot,
+      timeoutMs: getUtilityTimeoutMs(utility, DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS),
+      maxOutputBytes:
+        utility.maxOutputBytes ?? DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
+      includeDiffs: false,
+      includeHead: false,
+      ...(signal ? { signal } : {}),
+    });
     const changedFileEntries = snapshot.files;
     const changedFiles = changedFileEntries.map((file) => file.path);
 
@@ -7202,14 +7265,12 @@ const executeDetectProjectCommandsUtilityBlock = async (
         entry.kind === "lint" ||
         entry.kind === "test"
       )
-      .map((entry) => entry.command)
-      .filter((command, index, all) => all.indexOf(command) === index)
-      .join(" && ");
+      .map((entry) => entry.command);
     const data = {
       rootPath,
       manifests,
       commands,
-      verificationCommand,
+      verificationCommand: createVerificationCommand(verificationCommand),
       detectedAt: new Date().toISOString(),
     };
     const outputPath = await maybeWriteJsonArtifact(

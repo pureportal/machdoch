@@ -199,6 +199,24 @@ export const createHostElevationRuntimeLine = (): string | undefined => {
   return undefined;
 };
 
+const createWorkspaceRuntimeLines = (
+  config: RuntimeConfig,
+  conversationContext: PreparedConversationPromptContext,
+): string[] => {
+  if (conversationContext.workspace.selection === "not-set") {
+    return [
+      "Workspace selection: Not Set",
+      `Runtime fallback root: ${config.workspaceRoot}`,
+      "No workspace was selected for this conversation. Treat the fallback root as the process working directory only; do not infer a project workspace, repository, or project-specific files unless the user names paths or tool results confirm them.",
+    ];
+  }
+
+  return [
+    "Workspace selection: Selected",
+    `Workspace root: ${conversationContext.workspace.root ?? config.workspaceRoot}`,
+  ];
+};
+
 export const createExecutorSystemPrompt = (
   config: RuntimeConfig,
   taskContext: ResolvedTaskContext,
@@ -261,7 +279,7 @@ export const createExecutorSystemPrompt = (
       : "<monitor_feedback>No prior monitor feedback has been issued for this task.</monitor_feedback>",
     [
       "<runtime>",
-      `Workspace root: ${config.workspaceRoot}`,
+      ...createWorkspaceRuntimeLines(config, conversationContext),
       `Runtime mode: ${config.mode}`,
       `Selected provider: ${config.provider}`,
       `Selected model: ${config.model}`,

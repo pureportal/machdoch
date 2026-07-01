@@ -33,6 +33,7 @@ import {
   getLatestRunningTaskId,
   getSessionOverviewStatus,
   getSessionTitle,
+  isSessionWorkspaceLocked,
   isQuickVoiceSession,
   MAX_SMART_CONTEXT_PACKS,
   normalizeSessionTags,
@@ -388,6 +389,7 @@ export const useChatSessionController = (
   const isUsingWorkspaceDefaultMode = !state.activeSession.mode;
   const isUsingWorkspaceDefaultReasoning = !state.activeSession.reasoning;
   const hasActiveWorkspace = state.activeSession.workspace !== null;
+  const workspaceLocked = isSessionWorkspaceLocked(state.activeSession);
   const workspaceContextPacks = useMemo(
     () =>
       getSmartContextPacksForWorkspace(
@@ -961,29 +963,34 @@ export const useChatSessionController = (
   };
 
   const applyWorkspaceSelection = useCallback(
-    (workspace: string): void => {
-      const normalizedWorkspace = workspace.trim();
+    (workspace: string | null): void => {
+      const normalizedWorkspace = workspace?.trim() || null;
 
-      if (!normalizedWorkspace) {
-        return;
-      }
+      state.applyShellState((prev) => {
+        const targetSession = prev.sessions.find(
+          (session) => session.id === state.activeSessionId,
+        );
 
-      state.applyShellState((prev) => ({
-        ...prev,
-        recentWorkspaces: rememberRecentWorkspace(
-          prev.recentWorkspaces,
-          normalizedWorkspace,
-        ),
-        sessions: prev.sessions.map((session) =>
-          session.id === state.activeSessionId
-            ? {
-                ...session,
-                workspace: normalizedWorkspace,
-                updatedAt: Date.now(),
-              }
-            : session,
-        ),
-      }));
+        if (!targetSession || isSessionWorkspaceLocked(targetSession)) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          recentWorkspaces: normalizedWorkspace
+            ? rememberRecentWorkspace(prev.recentWorkspaces, normalizedWorkspace)
+            : prev.recentWorkspaces,
+          sessions: prev.sessions.map((session) =>
+            session.id === state.activeSessionId
+              ? {
+                  ...session,
+                  workspace: normalizedWorkspace,
+                  updatedAt: Date.now(),
+                }
+              : session,
+          ),
+        };
+      });
     },
     [state.activeSessionId, state.applyShellState],
   );
@@ -999,6 +1006,10 @@ export const useChatSessionController = (
   );
 
   const handleSelectFolder = async (): Promise<void> => {
+    if (isSessionWorkspaceLocked(state.activeSession)) {
+      return;
+    }
+
     if (!isDesktop) {
       applyWorkspaceSelection("/mock/workspace/path");
       return;
@@ -1117,11 +1128,23 @@ export const useChatSessionController = (
     });
   };
 
+  const openWorkspaceFile = (
+    workspaceRoot: string | null | undefined,
+    relativePath: string,
+  ): void => {
+    void openWorkspacePath(workspaceRoot, relativePath).catch((error) => {
+      console.error("Failed to open workspace path", error);
+    });
+  };
+
   const handleOpenWorkspaceFile = (relativePath: string): void => {
-    void openWorkspacePath(state.activeSession.workspace, relativePath).catch(
-      (error) => {
-        console.error("Failed to open workspace path", error);
-      },
+    openWorkspaceFile(state.activeSession.workspace, relativePath);
+  };
+
+  const handleOpenQuickTaskWorkspaceFile = (relativePath: string): void => {
+    openWorkspaceFile(
+      quickTaskSession?.workspace ?? state.activeSession.workspace,
+      relativePath,
     );
   };
 
@@ -1452,11 +1475,15 @@ export const useChatSessionController = (
       }));
 
       if (shouldUpdateWorkspaceRoot && resolution.workspaceRoot) {
-        state.updateActiveSession((session) => ({
-          ...session,
-          workspace: resolution.workspaceRoot,
-          updatedAt: Date.now(),
-        }));
+        state.updateActiveSession((session) =>
+          isSessionWorkspaceLocked(session)
+            ? session
+            : {
+                ...session,
+                workspace: resolution.workspaceRoot,
+                updatedAt: Date.now(),
+              },
+        );
       }
     },
     [
@@ -3046,6 +3073,8 @@ export const useChatSessionController = (
     quickTask: {
       session: quickTaskSession,
       visibleMessages: quickTaskVisibleMessages,
+      workspaceRoot: quickTaskSession?.workspace ?? state.activeSession.workspace,
+      onOpenWorkspaceFile: handleOpenQuickTaskWorkspaceFile,
       canClearHistory: Boolean(
         quickTaskSession &&
           (quickTaskSession.messages.length > 0 ||
@@ -3138,6 +3167,7 @@ export const useChatSessionController = (
     },
     conversation: {
       visibleMessages: state.visibleMessages,
+      workspaceRoot: state.activeSession.workspace,
       aiContextMessageLimit,
       bottomRef: state.bottomRef,
       showScrollToNewestButton: state.showScrollToNewestButton,
@@ -3173,6 +3203,7 @@ export const useChatSessionController = (
       isUsingWorkspaceDefaultMode,
       isUsingWorkspaceDefaultReasoning,
       hasActiveWorkspace,
+      workspaceLocked,
       recentWorkspaces: state.shellState.recentWorkspaces,
       composerWorkspaceLabel: memorySummaryState.composerWorkspaceLabel,
       sessionMemoryDescription: memorySummaryState.sessionMemoryDescription,

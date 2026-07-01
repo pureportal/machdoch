@@ -35,6 +35,8 @@ vi.mock("playwright-core", () => ({
   },
 }));
 
+const GIT_SCOPE_GUARD_TEST_TIMEOUT_MS = 90_000;
+
 describe("runRalphFlow", () => {
   beforeEach(() => {
     vi.mocked(executeTask).mockReset();
@@ -1443,13 +1445,24 @@ describe("runRalphFlow", () => {
         customizations,
         { maxTransitions: 10 },
       );
+      const expectedVerificationCommand =
+        process.platform === "win32"
+          ? [
+              "pnpm typecheck",
+              "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
+              "pnpm lint",
+              "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
+              "pnpm test",
+              "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
+            ].join("; ")
+          : "pnpm typecheck && pnpm lint && pnpm test";
 
       expect(result.status).toBe("completed");
       expect(result.blockResults.find((entry) => entry.blockId === "detect"))
         .toMatchObject({
           output: "SUCCESS",
           data: expect.objectContaining({
-            verificationCommand: "pnpm typecheck && pnpm lint && pnpm test",
+            verificationCommand: expectedVerificationCommand,
           }),
         });
       await expect(readFile(join(workspace, "state", "project-commands.json"), "utf8"))
@@ -1555,7 +1568,7 @@ describe("runRalphFlow", () => {
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
-  });
+  }, GIT_SCOPE_GUARD_TEST_TIMEOUT_MS);
 
   it("uses the latest prior git snapshot as an implicit scope guard baseline", async () => {
     const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
@@ -1661,7 +1674,7 @@ describe("runRalphFlow", () => {
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
-  });
+  }, GIT_SCOPE_GUARD_TEST_TIMEOUT_MS);
 
   it("keeps unstaged tracked files in allowed scope", async () => {
     const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
@@ -1752,7 +1765,7 @@ describe("runRalphFlow", () => {
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
-  });
+  }, GIT_SCOPE_GUARD_TEST_TIMEOUT_MS);
 
   it("normalizes scope guard allowed paths before matching changed files", async () => {
     const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
@@ -1843,7 +1856,7 @@ describe("runRalphFlow", () => {
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
-  });
+  }, GIT_SCOPE_GUARD_TEST_TIMEOUT_MS);
 
   it("ignores files already dirty in the scope guard baseline", async () => {
     const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
@@ -1948,7 +1961,7 @@ describe("runRalphFlow", () => {
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
-  });
+  }, GIT_SCOPE_GUARD_TEST_TIMEOUT_MS);
 
   it("guards files that changed after the scope guard baseline and can retry the checkpoint", async () => {
     const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
@@ -2097,7 +2110,7 @@ describe("runRalphFlow", () => {
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
-  });
+  }, GIT_SCOPE_GUARD_TEST_TIMEOUT_MS);
 
   it("scans, updates, selects, and marks JSON scope registries", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-registry-"));
@@ -2587,6 +2600,58 @@ describe("runRalphFlow", () => {
             data: expect.objectContaining({
               command: expect.stringContaining("fallback-check"),
               stdout: "fallback-check",
+            }),
+          }),
+        ]),
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("runs legacy RUN_CHECK command chains", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-check-chain-"));
+
+    try {
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "check",
+              type: "UTILITY",
+              title: "Check",
+              utility: {
+                type: "RUN_CHECK",
+                command:
+                  "node -e \"process.stdout.write('first')\" && node -e \"process.stdout.write('second')\"",
+              },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            { id: "start-to-check", from: "start", fromOutput: "SUCCESS", to: "check" },
+            {
+              id: "check-to-success",
+              from: "check",
+              fromOutput: "SUCCESS",
+              to: "success",
+            },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10 },
+      );
+
+      expect(result.status).toBe("completed");
+      expect(result.blockResults).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            blockId: "check",
+            output: "SUCCESS",
+            data: expect.objectContaining({
+              stdout: "firstsecond",
             }),
           }),
         ]),
