@@ -241,12 +241,11 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const call = spawnCalls[0];
 
     expect(call?.executable).toBe(process.execPath);
-    expect(call?.args.slice(0, 9)).toEqual([
+    expect(call?.args.slice(0, 8)).toEqual([
       "exec",
       "--dangerously-bypass-approvals-and-sandbox",
       "--skip-git-repo-check",
       "--ignore-rules",
-      "--dangerously-bypass-hook-trust",
       "--cd",
       workspaceRoot,
       "--model",
@@ -256,7 +255,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).not.toContain("--sandbox");
     expect(call?.args).toContain("--skip-git-repo-check");
     expect(call?.args).toContain("--ignore-rules");
-    expect(call?.args).toContain("--dangerously-bypass-hook-trust");
+    expect(call?.args).not.toContain("--dangerously-bypass-hook-trust");
     expect(call?.args.at(-1)).toBe("-");
     expect(call?.child.stdinText).toContain("User task:");
     expect(call?.options.cwd).toBe(workspaceRoot);

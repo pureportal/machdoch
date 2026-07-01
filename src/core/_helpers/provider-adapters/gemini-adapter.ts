@@ -68,6 +68,10 @@ const isGemini25Model = (model: string): boolean => {
   return /\bgemini-2\.5\b/i.test(model);
 };
 
+const isGemini3Model = (model: string): boolean => {
+  return /\bgemini-3(?:\.\d+)?\b/i.test(model);
+};
+
 const isGemini25ProModel = (model: string): boolean => {
   return /\bgemini-2\.5\b.*\bpro\b/i.test(model);
 };
@@ -154,6 +158,14 @@ export const createGeminiThinkingConfig = (
       ),
     },
   };
+};
+
+export const createGeminiFunctionCallingMode = (
+  model: string,
+): FunctionCallingConfigMode => {
+  return isGemini3Model(model)
+    ? FunctionCallingConfigMode.VALIDATED
+    : FunctionCallingConfigMode.ANY;
 };
 
 const createGeminiFunctionResponseParts = (
@@ -251,7 +263,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
   private readonly tools: AgentModelToolSpec[];
   private startParams?: AgentModelStartParams;
 
-  private createConfig(tools: AgentModelToolSpec[]) {
+  private createConfig(model: string, tools: AgentModelToolSpec[]) {
     if (tools.length === 0) {
       return {
         automaticFunctionCalling: {
@@ -264,7 +276,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
       tools: createGeminiTools(tools),
       toolConfig: {
         functionCallingConfig: {
-          mode: FunctionCallingConfigMode.ANY,
+          mode: createGeminiFunctionCallingMode(model),
           allowedFunctionNames: tools.map((tool) => tool.name),
         },
       },
@@ -278,7 +290,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
     this.tools = tools;
     this.chat = client.chats.create({
       model,
-      config: this.createConfig(tools),
+      config: this.createConfig(model, tools),
     });
   }
 
@@ -296,7 +308,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
           message: createGeminiUserMessage(params),
           config: {
             systemInstruction: params.systemPrompt,
-            ...this.createConfig(params.tools),
+            ...this.createConfig(params.model, params.tools),
             ...createGeminiThinkingConfig(params.model, params.reasoning),
             httpOptions: {
               timeout: TASK_EXECUTION_TIMEOUT_MS,
@@ -352,7 +364,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
           ),
           config: {
             systemInstruction: startParams.systemPrompt,
-            ...this.createConfig(this.tools),
+            ...this.createConfig(startParams.model, this.tools),
             ...createGeminiThinkingConfig(
               startParams.model,
               startParams.reasoning,

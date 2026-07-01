@@ -96,6 +96,7 @@ describe("OpenAI Responses conformance", () => {
           strict: true,
           schema: {
             type: "object",
+            additionalProperties: false,
             properties: { decision: { type: "string" } },
             required: ["decision"],
           },

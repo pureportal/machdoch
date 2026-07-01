@@ -11,6 +11,7 @@ import type {
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
 import {
   GeminiChatAdapter,
+  createGeminiFunctionCallingMode,
   createGeminiThinkingConfig,
   createGeminiUserMessage,
   normalizeGeminiResponse,
@@ -117,7 +118,19 @@ describe("Gemini function-calling conformance", () => {
     });
   });
 
-  it("sends ANY-mode function calls and function responses through chat", async () => {
+  it("uses validated function calling for Gemini 3 models", () => {
+    expect(createGeminiFunctionCallingMode("gemini-3.5-flash")).toBe(
+      FunctionCallingConfigMode.VALIDATED,
+    );
+    expect(createGeminiFunctionCallingMode("gemini-3-pro")).toBe(
+      FunctionCallingConfigMode.VALIDATED,
+    );
+    expect(createGeminiFunctionCallingMode("gemini-2.5-flash")).toBe(
+      FunctionCallingConfigMode.ANY,
+    );
+  });
+
+  it("sends Gemini 3 validated-mode function calls and function responses through chat", async () => {
     const createCalls: unknown[] = [];
     const sendCalls: unknown[] = [];
     const responses = [
@@ -195,7 +208,7 @@ describe("Gemini function-calling conformance", () => {
       config: {
         toolConfig: {
           functionCallingConfig: {
-            mode: FunctionCallingConfigMode.ANY,
+            mode: FunctionCallingConfigMode.VALIDATED,
             allowedFunctionNames: ["inspect_file"],
           },
         },
@@ -213,7 +226,7 @@ describe("Gemini function-calling conformance", () => {
         },
         toolConfig: {
           functionCallingConfig: {
-            mode: FunctionCallingConfigMode.ANY,
+            mode: FunctionCallingConfigMode.VALIDATED,
             allowedFunctionNames: ["inspect_file"],
           },
         },

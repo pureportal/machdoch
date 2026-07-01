@@ -85,6 +85,23 @@ const normalizeOpenAIStructuredOutputName = (name: string): string => {
   return normalized || "structured_output";
 };
 
+const isSchemaRecord = (schema: unknown): schema is Record<string, unknown> => {
+  return typeof schema === "object" && schema !== null && !Array.isArray(schema);
+};
+
+const normalizeOpenAIStructuredOutputSchema = (
+  structuredOutput: AgentModelStartParams["structuredOutput"],
+): unknown => {
+  if (
+    structuredOutput?.strict === false ||
+    !isSchemaRecord(structuredOutput?.schema)
+  ) {
+    return structuredOutput?.schema;
+  }
+
+  return normalizeOpenAIStrictInputSchema(structuredOutput.schema);
+};
+
 export const createOpenAIStructuredOutputTextConfig = (
   structuredOutput: AgentModelStartParams["structuredOutput"],
 ): { text?: Record<string, unknown> } => {
@@ -97,7 +114,7 @@ export const createOpenAIStructuredOutputTextConfig = (
       format: {
         type: "json_schema",
         name: normalizeOpenAIStructuredOutputName(structuredOutput.name),
-        schema: structuredOutput.schema,
+        schema: normalizeOpenAIStructuredOutputSchema(structuredOutput),
         strict: structuredOutput.strict !== false,
       },
     },

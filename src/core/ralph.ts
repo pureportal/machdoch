@@ -7576,7 +7576,7 @@ const executePromptJsonUtilityBlock = async (
             structuredOutput: {
               name: `ralph_${block.id}`,
               schema: utility.schema,
-              strict: true,
+              strict: false,
             },
           };
 

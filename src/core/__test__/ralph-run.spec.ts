@@ -1390,7 +1390,7 @@ describe("runRalphFlow", () => {
       expect(vi.mocked(executeTask).mock.calls[0]?.[3]).toMatchObject({
         structuredOutput: {
           name: "ralph_validator-json",
-          strict: true,
+          strict: false,
           schema: expect.objectContaining({
             required: ["decision", "confidence", "summary", "evidence", "remainingWork"],
           }),

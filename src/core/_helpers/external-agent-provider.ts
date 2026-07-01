@@ -672,9 +672,6 @@ const createCodexArgs = (
   args.push(
     "--skip-git-repo-check",
     "--ignore-rules",
-    ...(delegationMode === "read-only-artifact"
-      ? []
-      : ["--dangerously-bypass-hook-trust"]),
     "--cd",
     config.workspaceRoot,
     "--model",
@@ -700,7 +697,7 @@ const createCodexArgs = (
     runDetail:
       delegationMode === "read-only-artifact"
         ? "Running codex exec in a read-only artifact-generation sandbox with user config, git-repo guard, and execpolicy rules ignored."
-        : "Running codex exec with approvals, sandbox, git-repo guard, execpolicy rules, and hook trust bypassed.",
+        : "Running codex exec with approvals, sandbox, git-repo guard, and execpolicy rules bypassed.",
     startMessage:
       delegationMode === "read-only-artifact"
         ? "Starting Codex CLI in constrained read-only artifact mode."
@@ -715,9 +712,6 @@ const createCodexArgs = (
         : []),
       "git repo check: skipped",
       "execpolicy rules: ignored",
-      ...(delegationMode === "read-only-artifact"
-        ? []
-        : ["hook trust: bypassed"]),
       ...(reasoningEffort ? [`reasoning effort: ${reasoningEffort}`] : []),
       ...(delegationMode === "read-only-artifact"
         ? ["model verbosity: low"]
@@ -732,8 +726,7 @@ const createCodexArgs = (
         delegationMode === "read-only-artifact" ? "ignored" : "loaded",
       gitRepoCheck: "skipped",
       execpolicyRules: "ignored",
-      hookTrust:
-        delegationMode === "read-only-artifact" ? "not-bypassed" : "bypassed",
+      hookTrust: "not-bypassed",
       requestedReasoning: config.reasoning,
       effectiveReasoning: reasoningEffort ?? "default",
       ...(delegationMode === "read-only-artifact"
