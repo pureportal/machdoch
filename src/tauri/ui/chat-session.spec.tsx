@@ -2076,6 +2076,103 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "continues a crashed task as a new running task with a visible user anchor",
+    async () => {
+      const now = Date.now();
+      const baseState = createInitialShellState();
+      const crashedTaskId = "crashed-task";
+      const session = createSession({
+        id: "crashed-continue-session",
+        manualTitle: "Crashed continue session",
+        updatedAt: now - 1_000,
+        messages: [
+          {
+            id: "crashed-user",
+            taskId: crashedTaskId,
+            role: "user",
+            content: "Finish the crashed task",
+            createdAt: now - 1_100,
+          },
+          {
+            id: "crashed-agent",
+            taskId: crashedTaskId,
+            role: "agent",
+            content:
+              "**Task crashed.** machdoch restarted before this AI task finished, so it was marked as crashed.",
+            createdAt: now - 1_000,
+          },
+        ],
+      });
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(
+          () => new Promise<DesktopTaskRunResponse>(() => {}),
+        );
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: session.id,
+        sessions: [session],
+      });
+
+      render(<ChatSession />);
+
+      await flushShellHydration();
+      await screen.findByRole("button", {
+        name: "Open session Crashed continue session",
+      });
+      expect(
+        within(getSessionRow("Crashed continue session")).getByLabelText(
+          "Session status: Crashed",
+        ),
+      ).toBeDefined();
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: /^Continue$/i }),
+      );
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(await screen.findByText("Continue previous task.")).toBeDefined();
+      await waitFor(() => {
+        expect(
+          within(getSessionRow("Crashed continue session")).getByLabelText(
+            "Session status: Running",
+          ),
+        ).toBeDefined();
+      });
+
+      const continuedTaskId = runDesktopTaskSpy.mock.calls[0]?.[2]?.taskId;
+
+      expect(typeof continuedTaskId).toBe("string");
+      expect(continuedTaskId).not.toBe(crashedTaskId);
+      await waitFor(() => {
+        expect(desktopEventListeners.has("desktop-task-progress")).toBe(true);
+      });
+
+      emitDesktopTaskProgress({
+        taskId: continuedTaskId as string,
+        timestamp: now,
+        progress: {
+          task: "Continue crashed task",
+          mode: "ask",
+          state: "executing",
+          message: "Recovered continue is working.",
+          executedTools: [],
+          outputSections: [],
+          cancellable: true,
+        },
+      });
+
+      expect(screen.getByText("Recovered continue is working.")).toBeDefined();
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "switches settings sections with navbar buttons and shows saved web-search key value",
     async () => {
       const loadUserWebSearchSettingsSpy = vi
@@ -2540,6 +2637,50 @@ describe("ChatSession component", () => {
     expect(onStopSpeaking).not.toHaveBeenCalled();
   });
 
+  it("renders user messages with Markdown in the conversation feed", () => {
+    const userMarkdown = [
+      "**Important.**",
+      "",
+      "- Keep the Markdown",
+      "",
+      "[Docs](https://example.com)",
+    ].join("\n");
+
+    const { container } = render(
+      <ConversationFeed
+        visibleMessages={[
+          {
+            id: "markdown-user-message",
+            role: "user",
+            content: userMarkdown,
+          },
+        ]}
+        bottomRef={{ current: null }}
+        onRetryTask={() => {}}
+        onContinueTask={() => {}}
+        onOpenWorkspaceFile={() => {}}
+        voicePlayback={{
+          supported: false,
+          speakingMessageId: null,
+          onSpeakMessage: () => {},
+          onStopSpeaking: () => {},
+        }}
+      />,
+    );
+
+    const messageText = screen
+      .getByText("Important.")
+      .closest(".app-user-message-text");
+    const listItem = screen.getByText("Keep the Markdown");
+    const link = screen.getByRole("link", { name: "Docs" });
+
+    expect(messageText?.className).toContain("app-message-markdown");
+    expect(screen.getByText("Important.").tagName).toBe("STRONG");
+    expect(listItem.tagName).toBe("LI");
+    expect(link.getAttribute("href")).toBe("https://example.com");
+    expect(container.textContent).not.toContain("**Important.**");
+  });
+
   it("copies raw message Markdown from the message context menu", async () => {
     const messageMarkdown = "**Important.**\n\n- Keep the Markdown";
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -2702,9 +2843,11 @@ describe("ChatSession component", () => {
     expect(container.firstElementChild?.className).toContain("min-w-0");
 
     const messageText = screen.getByText(longMessage);
+    const messageBubble = messageText.closest(".app-message-bubble");
+
     expect(messageText.className).toContain("wrap-break-word");
-    expect(messageText.parentElement?.className).toContain("min-w-0");
-    expect(messageText.parentElement?.className).toContain("overflow-hidden");
+    expect(messageBubble?.className).toContain("min-w-0");
+    expect(messageBubble?.className).toContain("overflow-hidden");
   });
 
   it("hides legacy generated attachment instructions in user messages", () => {
@@ -4143,9 +4286,8 @@ describe("ChatSession component", () => {
 
     const userMessageText = screen
       .getAllByText("Summarize the plan")
-      .find((element) =>
-        element.className.includes("app-user-message-text"),
-      );
+      .map((element) => element.closest(".app-user-message-text"))
+      .find((element) => element !== null);
 
     expect(userMessageText).toBeDefined();
     expect(userMessageText?.textContent).not.toContain("Use this file");
@@ -4385,9 +4527,8 @@ describe("ChatSession component", () => {
 
     const userMessageText = screen
       .getAllByText("Describe the screenshot")
-      .find((element) =>
-        element.className.includes("app-user-message-text"),
-      );
+      .map((element) => element.closest(".app-user-message-text"))
+      .find((element) => element !== null);
 
     expect(userMessageText).toBeDefined();
     expect(userMessageText?.textContent).not.toContain("Use this image");
@@ -4511,9 +4652,8 @@ describe("ChatSession component", () => {
 
     const userMessageText = screen
       .getAllByText("Describe the pasted image")
-      .find((element) =>
-        element.className.includes("app-user-message-text"),
-      );
+      .map((element) => element.closest(".app-user-message-text"))
+      .find((element) => element !== null);
     const sentAttachments = screen.getByRole("list", {
       name: "Attached files",
     });
@@ -4957,7 +5097,7 @@ describe("ChatSession component", () => {
     const messageText = await screen.findByText(
       "Review {target_file} before release",
       {
-        selector: ".app-user-message-text",
+        selector: ".app-user-message-text *",
       },
     );
 

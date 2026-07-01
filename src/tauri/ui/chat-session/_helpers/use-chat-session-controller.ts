@@ -144,6 +144,19 @@ interface QueuedSessionMessage {
   createdAt: number;
 }
 
+const getMessageTaskId = (message: ChatSessionMessage): string => {
+  return message.taskId ?? message.id;
+};
+
+const hasUserMessageForTask = (
+  session: ChatSessionRecord,
+  taskId: string,
+): boolean => {
+  return session.messages.some(
+    (message) => message.role === "user" && getMessageTaskId(message) === taskId,
+  );
+};
+
 const reorderQueuedMessagesWithinSession = (
   messages: QueuedSessionMessage[],
   messageId: string,
@@ -664,6 +677,13 @@ export const useChatSessionController = (
           }
         }
 
+        if (
+          thinkingMessageIndex < 0 &&
+          !hasUserMessageForTask(session, taskId)
+        ) {
+          return session;
+        }
+
         const existingThinkingMessage =
           thinkingMessageIndex >= 0
             ? session.messages[thinkingMessageIndex]
@@ -819,6 +839,10 @@ export const useChatSessionController = (
         );
 
         if (hasExecutionMessage) {
+          return session;
+        }
+
+        if (!hasUserMessageForTask(session, taskId)) {
           return session;
         }
 

@@ -21,7 +21,8 @@ use super::{
     diagnostics::{format_command_failure, format_timeout_duration},
     payload::{cleanup_temporary_files, rewrite_ralph_payload_arguments},
     process::{
-        join_cli_output_and_cleanup, read_stderr, read_stdout, terminate_child_process_tree,
+        create_desktop_task_activity, join_cli_output_and_cleanup, read_stderr, read_stdout,
+        terminate_child_process_tree,
     },
     progress::{create_bridge_progress, emit_progress_event},
     registry::normalize_task_id,
@@ -143,9 +144,10 @@ pub(super) fn execute_ralph_command(
     let progress_app_handle = app_handle.clone();
     let progress_window_label = window_label.clone();
     let progress_task_id = task_id.clone();
+    let activity = create_desktop_task_activity();
     let stdout_worker = thread::spawn(move || read_stdout(stdout));
     let stderr_worker =
-        thread::spawn(move || read_stderr(stderr, app_handle, window_label, task_id));
+        thread::spawn(move || read_stderr(stderr, app_handle, window_label, task_id, activity));
 
     let started_at = Instant::now();
     let status = loop {

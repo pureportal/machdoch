@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+export { matchesWorkspaceGlob } from "./_helpers/workspace-glob-matching.helper.js";
 import { createTokenSet, tokenSetHasAny } from "./text.js";
 
 const PATH_INSPECTION_ACTION_TOKENS = new Set([
@@ -290,129 +291,6 @@ const resolveWorkspacePathReference = (
   }
 };
 
-const createSegmentMatcher = (patternSegment: string): RegExp => {
-  let output = "^";
-
-  for (const character of patternSegment) {
-    if (character === "*") {
-      output += "[^/]*";
-      continue;
-    }
-
-    if (character === "?") {
-      output += "[^/]";
-      continue;
-    }
-
-    output += character.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
-  }
-
-  output += "$";
-
-  return new RegExp(output);
-};
-
-const segmentMatchCache = new Map<string, RegExp>();
-
-const matchesPatternSegment = (
-  patternSegment: string,
-  pathSegment: string,
-): boolean => {
-  const cacheKey = patternSegment;
-  const matcher =
-    segmentMatchCache.get(cacheKey) ?? createSegmentMatcher(patternSegment);
-
-  if (!segmentMatchCache.has(cacheKey)) {
-    segmentMatchCache.set(cacheKey, matcher);
-  }
-
-  return matcher.test(pathSegment);
-};
-
-const splitGlobSegments = (value: string): string[] => {
-  const normalized = normalizeRelativePath(value);
-
-  return normalized.length === 0 ? [] : normalized.split("/");
-};
-
-const matchGlobSegments = (
-  patternSegments: string[],
-  pathSegments: string[],
-  patternIndex: number,
-  pathIndex: number,
-  memo: Map<string, boolean>,
-): boolean => {
-  const memoKey = `${patternIndex}:${pathIndex}`;
-  const cached = memo.get(memoKey);
-
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  if (patternIndex === patternSegments.length) {
-    const result = pathIndex === pathSegments.length;
-    memo.set(memoKey, result);
-    return result;
-  }
-
-  const patternSegment = patternSegments[patternIndex];
-
-  if (patternSegment === undefined) {
-    memo.set(memoKey, false);
-    return false;
-  }
-
-  if (patternSegment === "**") {
-    if (patternIndex === patternSegments.length - 1) {
-      memo.set(memoKey, true);
-      return true;
-    }
-
-    for (
-      let nextPathIndex = pathIndex;
-      nextPathIndex <= pathSegments.length;
-      nextPathIndex += 1
-    ) {
-      if (
-        matchGlobSegments(
-          patternSegments,
-          pathSegments,
-          patternIndex + 1,
-          nextPathIndex,
-          memo,
-        )
-      ) {
-        memo.set(memoKey, true);
-        return true;
-      }
-    }
-
-    memo.set(memoKey, false);
-    return false;
-  }
-
-  const pathSegment = pathSegments[pathIndex];
-
-  if (
-    pathSegment === undefined ||
-    !matchesPatternSegment(patternSegment, pathSegment)
-  ) {
-    memo.set(memoKey, false);
-    return false;
-  }
-
-  const result = matchGlobSegments(
-    patternSegments,
-    pathSegments,
-    patternIndex + 1,
-    pathIndex + 1,
-    memo,
-  );
-
-  memo.set(memoKey, result);
-  return result;
-};
-
 /**
  * Extracts path-like references from a task string and resolves them relative to
  * the workspace when possible.
@@ -595,26 +473,3 @@ export const resolveDeterministicCreateFileTarget = (
   };
 };
 
-/**
- * Matches a workspace-relative path against a workspace-root-relative glob.
- * Supports the common `*`, `**`, and `?` glob syntax used by instruction files.
- */
-export const matchesWorkspaceGlob = (
-  workspacePath: string,
-  pattern: string,
-): boolean => {
-  const patternSegments = splitGlobSegments(pattern);
-  const pathSegments = splitGlobSegments(workspacePath);
-
-  if (patternSegments.length === 0) {
-    return pathSegments.length === 0;
-  }
-
-  return matchGlobSegments(
-    patternSegments,
-    pathSegments,
-    0,
-    0,
-    new Map<string, boolean>(),
-  );
-};

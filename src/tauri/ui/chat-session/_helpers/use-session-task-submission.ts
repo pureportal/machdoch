@@ -181,7 +181,7 @@ export const useSessionTaskSubmission = (options: {
       const imagePaths = getImageAttachmentPaths(contextAttachments);
       const isQuickTaskSessionSnapshot = isQuickVoiceSession(sessionSnapshot);
       const taskId = crypto.randomUUID();
-      const userMessageCreatedAt = Date.now();
+      const taskStartedAt = Date.now();
       const userMessageContextAttachments = contextAttachments.map(
         (attachment) => ({ ...attachment }),
       );
@@ -190,7 +190,7 @@ export const useSessionTaskSubmission = (options: {
         taskId,
         role: "user",
         content: visibleMessageContent,
-        createdAt: userMessageCreatedAt,
+        createdAt: taskStartedAt,
         ...(submitOptions.messageIntent
           ? { intent: submitOptions.messageIntent }
           : {}),
@@ -211,6 +211,17 @@ export const useSessionTaskSubmission = (options: {
         sessionMode,
         options.runtime.runtimeSnapshot,
       );
+      const initialThinkingMessage: ChatSessionMessage = {
+        id: crypto.randomUUID(),
+        taskId,
+        role: "agent",
+        content: "",
+        createdAt: taskStartedAt,
+        source: {
+          kind: "thinking",
+          thinking: createInitialThinkingTrace(nextRunMode, taskStartedAt),
+        },
+      };
       let taskFailureReported = false;
       let taskFinalized = false;
       let latestAssistantText = "";
@@ -402,6 +413,7 @@ export const useSessionTaskSubmission = (options: {
             messages: [
               ...sessionWithoutArchive.messages,
               userMessage,
+              initialThinkingMessage,
             ],
             promptHistory: nextPromptHistory.promptHistory,
             promptContextHistory: nextPromptHistory.promptContextHistory,
@@ -450,6 +462,7 @@ export const useSessionTaskSubmission = (options: {
             messages: [
               ...sessionSnapshot.messages,
               userMessage,
+              initialThinkingMessage,
             ],
             promptHistory: nextPromptHistory.promptHistory,
             promptContextHistory: nextPromptHistory.promptContextHistory,
@@ -483,9 +496,6 @@ export const useSessionTaskSubmission = (options: {
       }
 
       options.activeDesktopTasksRef.current.set(taskId, sessionId);
-      options.updateThinkingTrace(sessionId, taskId, () => {
-        return createInitialThinkingTrace(nextRunMode);
-      });
 
       const taskRunPromise = runDesktopTask(sessionWorkspace, executionTask, {
         conversationContext: taskConversationContext,

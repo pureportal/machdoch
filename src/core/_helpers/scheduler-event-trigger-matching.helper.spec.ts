@@ -4,6 +4,10 @@ import {
   getSchedulerStatefulTriggerSkipReason,
   getSchedulerTriggerCooldownSkipReason,
   getSchedulerTriggerRateLimitSkipReason,
+  inferSchedulerEventTriggerKind,
+  isSchedulerEventTriggerFiringMode,
+  isSchedulerEventTriggerKind,
+  isSchedulerEventTriggerState,
   normalizeSchedulerEventPayload,
   schedulerEventFiltersMatch,
   schedulerEventTypeMatches,
@@ -65,6 +69,25 @@ describe("schedulerEventTypeMatches", () => {
     expect(
       schedulerEventTypeMatches(createTrigger({ eventType: "git.*" }), event),
     ).toBe(false);
+  });
+});
+
+describe("scheduler event trigger coercion helpers", () => {
+  it("recognizes event trigger kinds, firing modes, and states", () => {
+    expect(isSchedulerEventTriggerKind("workspace-file")).toBe(true);
+    expect(isSchedulerEventTriggerKind("time")).toBe(false);
+    expect(isSchedulerEventTriggerFiringMode("state")).toBe(true);
+    expect(isSchedulerEventTriggerFiringMode("queued")).toBe(false);
+    expect(isSchedulerEventTriggerState("active")).toBe(true);
+    expect(isSchedulerEventTriggerState("running")).toBe(false);
+  });
+
+  it("infers event trigger kind from event type prefixes with manual fallback", () => {
+    expect(inferSchedulerEventTriggerKind("git.branch.changed")).toBe("git");
+    expect(inferSchedulerEventTriggerKind("workspace-file.changed")).toBe(
+      "workspace-file",
+    );
+    expect(inferSchedulerEventTriggerKind("unknown.event")).toBe("manual");
   });
 });
 

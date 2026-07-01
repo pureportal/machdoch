@@ -1525,6 +1525,74 @@ describe("executeTask", () => {
     expect(result.outputSections.at(-1)?.title).toBe("Execution limit");
   }, 10_000);
 
+  it("keeps model-driven execution alive when stream progress arrives before the safety timeout", async () => {
+    const workspaceRoot = await createWorkspace();
+    const streamingAdapter: AgentModelAdapter = {
+      startTurn: ({ signal, onStreamEvent }: AgentModelStartParams) => {
+        return new Promise((resolve, reject) => {
+          const timers = [
+            setTimeout(() => {
+              onStreamEvent?.({
+                type: "text-delta",
+                provider: "openai",
+                delta: "Still working.",
+              });
+            }, 50),
+            setTimeout(() => {
+              resolve({
+                text: "",
+                toolCalls: [createFinalResponseToolCall()],
+              });
+            }, 120),
+          ];
+          const rejectWithReason = (): void => {
+            for (const timer of timers) {
+              clearTimeout(timer);
+            }
+
+            const reason = signal?.reason;
+
+            reject(
+              reason instanceof Error
+                ? reason
+                : new Error(
+                    typeof reason === "string" && reason.trim().length > 0
+                      ? reason
+                      : "Execution cancelled by user.",
+                  ),
+            );
+          };
+
+          if (signal?.aborted) {
+            rejectWithReason();
+            return;
+          }
+
+          signal?.addEventListener("abort", rejectWithReason, { once: true });
+        });
+      },
+      continueTurn: (): Promise<never> => {
+        throw new Error(
+          "The streaming timeout adapter should not continue after final response.",
+        );
+      },
+    };
+
+    const result = await executeTask(
+      "stream a final response after the original timeout",
+      createConfig(workspaceRoot, "ask"),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: streamingAdapter,
+        maxDurationMs: 100,
+        onStateChange: () => undefined,
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(result.reason).toBeUndefined();
+  }, 10_000);
+
   it("guards against repeated identical failing tool calls in model-driven execution", async () => {
     const workspaceRoot = await createWorkspace();
     const observedToolOutputs: string[] = [];

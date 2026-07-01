@@ -2,7 +2,9 @@ use std::{
     io::{BufRead, BufReader, Read},
     path::Path,
     process::{Child, Command, Stdio},
+    sync::{Arc, Mutex},
     thread,
+    time::{Duration, Instant},
 };
 
 #[cfg(target_os = "windows")]
@@ -32,11 +34,29 @@ pub(super) fn read_stdout(stdout: impl Read) -> Result<String, String> {
     Ok(output)
 }
 
-pub(super) fn read_stderr(
+pub(super) type DesktopTaskActivity = Arc<Mutex<Instant>>;
+
+pub(super) fn create_desktop_task_activity() -> DesktopTaskActivity {
+    Arc::new(Mutex::new(Instant::now()))
+}
+
+pub(super) fn mark_desktop_task_activity(activity: &DesktopTaskActivity) {
+    if let Ok(mut last_activity_at) = activity.lock() {
+        *last_activity_at = Instant::now();
+    }
+}
+
+pub(super) fn desktop_task_activity_elapsed(activity: &DesktopTaskActivity) -> Duration {
+    activity
+        .lock()
+        .map(|last_activity_at| last_activity_at.elapsed())
+        .unwrap_or(Duration::MAX)
+}
+
+fn read_stderr_lines(
     stderr: impl Read,
-    app_handle: tauri::AppHandle,
-    window_label: String,
-    task_id: Option<String>,
+    activity: &DesktopTaskActivity,
+    mut handle_progress_line: impl FnMut(&str) -> bool,
 ) -> Result<Vec<String>, String> {
     let mut stderr_lines = Vec::new();
 
@@ -50,12 +70,8 @@ pub(super) fn read_stderr(
             continue;
         }
 
-        if emit_progress_from_stderr_line(
-            &app_handle,
-            &window_label,
-            task_id.as_deref(),
-            trimmed_line,
-        ) {
+        if handle_progress_line(trimmed_line) {
+            mark_desktop_task_activity(activity);
             continue;
         }
 
@@ -63,6 +79,18 @@ pub(super) fn read_stderr(
     }
 
     Ok(stderr_lines)
+}
+
+pub(super) fn read_stderr(
+    stderr: impl Read,
+    app_handle: tauri::AppHandle,
+    window_label: String,
+    task_id: Option<String>,
+    activity: DesktopTaskActivity,
+) -> Result<Vec<String>, String> {
+    read_stderr_lines(stderr, &activity, |trimmed_line| {
+        emit_progress_from_stderr_line(&app_handle, &window_label, task_id.as_deref(), trimmed_line)
+    })
 }
 
 fn join_worker<T>(
@@ -211,11 +239,14 @@ pub(super) fn open_path_in_system_shell(path: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, thread};
+    use std::{fs, io::Cursor, thread, time::Duration};
 
     use serde_json::json;
 
-    use super::join_cli_output_and_cleanup;
+    use super::{
+        create_desktop_task_activity, desktop_task_activity_elapsed, join_cli_output_and_cleanup,
+        mark_desktop_task_activity, read_stderr_lines,
+    };
     use crate::desktop_task::payload::write_conversation_context_file;
 
     #[test]
@@ -248,5 +279,37 @@ mod tests {
             .contains("stdout failed"));
         assert!(!context_path.exists());
         let _ = fs::remove_file(context_path);
+    }
+
+    #[test]
+    fn desktop_task_activity_tracks_elapsed_time_since_last_progress() {
+        let activity = create_desktop_task_activity();
+
+        thread::sleep(Duration::from_millis(15));
+        let elapsed_before_progress = desktop_task_activity_elapsed(&activity);
+
+        mark_desktop_task_activity(&activity);
+        let elapsed_after_progress = desktop_task_activity_elapsed(&activity);
+
+        assert!(elapsed_before_progress >= Duration::from_millis(10));
+        assert!(elapsed_after_progress < elapsed_before_progress);
+    }
+
+    #[test]
+    fn stderr_reader_marks_activity_for_structured_progress_lines() {
+        let activity = create_desktop_task_activity();
+
+        thread::sleep(Duration::from_millis(15));
+        let elapsed_before_progress = desktop_task_activity_elapsed(&activity);
+
+        let stderr_lines = read_stderr_lines(
+            Cursor::new("ordinary stderr\nmachdoch-progress: {\"state\":\"running\"}\n"),
+            &activity,
+            |line| line.starts_with("machdoch-progress: "),
+        )
+        .expect("stderr should be read");
+
+        assert_eq!(stderr_lines, vec!["ordinary stderr".to_string()]);
+        assert!(desktop_task_activity_elapsed(&activity) < elapsed_before_progress);
     }
 }

@@ -3,7 +3,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 #[cfg(target_os = "windows")]
@@ -21,7 +21,8 @@ use super::{
         write_conversation_context_file, CliCommandOptions,
     },
     process::{
-        join_cli_output_and_cleanup, read_stderr, read_stdout, terminate_child_process_tree,
+        create_desktop_task_activity, desktop_task_activity_elapsed, join_cli_output_and_cleanup,
+        read_stderr, read_stdout, terminate_child_process_tree,
     },
     progress::{create_bridge_progress, emit_progress_event},
     DesktopTaskRunRequest, DesktopTaskRunResponse, DESKTOP_TASK_TIMEOUT_MS,
@@ -147,11 +148,13 @@ pub(super) fn execute_desktop_task(
     let progress_window_label = window_label.clone();
     let progress_task_id = task_id.clone();
 
+    let activity = create_desktop_task_activity();
+    let stderr_activity = activity.clone();
     let stdout_worker = thread::spawn(move || read_stdout(stdout));
-    let stderr_worker =
-        thread::spawn(move || read_stderr(stderr, app_handle, window_label, task_id));
+    let stderr_worker = thread::spawn(move || {
+        read_stderr(stderr, app_handle, window_label, task_id, stderr_activity)
+    });
 
-    let started_at = Instant::now();
     let status = loop {
         match child
             .try_wait()
@@ -186,7 +189,9 @@ pub(super) fn execute_desktop_task(
                     return Err(format!("The task was cancelled. {}", failure_tail));
                 }
 
-                if started_at.elapsed() >= Duration::from_millis(DESKTOP_TASK_TIMEOUT_MS) {
+                if desktop_task_activity_elapsed(&activity)
+                    >= Duration::from_millis(DESKTOP_TASK_TIMEOUT_MS)
+                {
                     emit_progress_event(
                         &progress_app_handle,
                         &progress_window_label,

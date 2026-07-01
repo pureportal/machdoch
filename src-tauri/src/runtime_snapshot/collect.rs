@@ -326,3 +326,69 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
         ui_control: crate::ui_control::detect_ui_control_availability(),
     })
 }
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    use std::{
+        env as std_env, fs,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn temp_test_directory(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after the Unix epoch")
+            .as_nanos();
+
+        std_env::temp_dir().join(format!("machdoch-collect-{name}-{unique}"))
+    }
+
+    fn create_file(path: &Path) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("test directory should be creatable");
+        }
+
+        fs::write(path, "").expect("test binary should be writable");
+    }
+
+    fn set_executable(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = fs::metadata(path)
+            .expect("test file metadata should be readable")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).expect("test file should be made executable");
+    }
+
+    fn provider_is_configured(provider: &str, env: &HashMap<String, String>) -> bool {
+        get_provider_availability(env)
+            .into_iter()
+            .find(|entry| entry.provider == provider)
+            .expect("provider availability should include requested provider")
+            .configured
+    }
+
+    #[test]
+    fn provider_availability_rejects_non_executable_unix_cli_path() {
+        let directory = temp_test_directory("provider-non-executable");
+        let binary_path = directory.join("codex");
+        create_file(&binary_path);
+
+        let env = HashMap::from([(
+            "MACHDOCH_CODEX_CLI_PATH".to_string(),
+            binary_path.display().to_string(),
+        )]);
+
+        assert!(!provider_is_configured("codex-cli", &env));
+
+        set_executable(&binary_path);
+
+        assert!(provider_is_configured("codex-cli", &env));
+
+        let _ = fs::remove_dir_all(directory);
+    }
+}

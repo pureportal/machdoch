@@ -193,7 +193,7 @@ const createCancelledResult = (
       mode: config.mode,
       status: "cancelled",
       summary: timedOut
-        ? "Execution was stopped after running longer than the configured safety timeout."
+        ? "Execution was stopped after exceeding the configured safety timeout."
         : "Execution was cancelled before the task completed.",
       executedTools:
         runtime.pendingResult?.executedTools ?? runtime.executedTools,

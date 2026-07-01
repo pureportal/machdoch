@@ -5,7 +5,6 @@ import { join, resolve } from "node:path";
 import {
   extractExplicitInspectionPathReference,
   extractTaskPathReferences,
-  matchesWorkspaceGlob,
   resolveDeterministicCreateFileTarget,
 } from "./task-paths.ts";
 
@@ -173,22 +172,6 @@ describe("extractExplicitInspectionPathReference", () => {
       insideWorkspace: true,
       workspacePath: "README.md",
     });
-  });
-});
-
-describe("matchesWorkspaceGlob", () => {
-  it("supports *, **, and ? path matching for workspace-relative paths", () => {
-    expect(matchesWorkspaceGlob("src/core/config.ts", "src/**/*.ts")).toBe(
-      true,
-    );
-    expect(matchesWorkspaceGlob("src/core/config.ts", "src/*/config.ts")).toBe(
-      true,
-    );
-    expect(matchesWorkspaceGlob("src/core/config.ts", "src/*/config.?s")).toBe(
-      true,
-    );
-    expect(matchesWorkspaceGlob("src/core/config.ts", "src/*.ts")).toBe(false);
-    expect(matchesWorkspaceGlob("README.md", "src/**/*.ts")).toBe(false);
   });
 });
 

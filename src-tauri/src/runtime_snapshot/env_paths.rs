@@ -108,7 +108,25 @@ pub(super) fn default_agent_cli_path_candidates(
 }
 
 pub(super) fn is_existing_file(path: &Path) -> bool {
-    path.is_file()
+    let Ok(metadata) = path.metadata() else {
+        return false;
+    };
+
+    if !metadata.is_file() {
+        return false;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        metadata.permissions().mode() & 0o111 != 0
+    }
+
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 fn executable_extensions(env: &HashMap<String, String>) -> Vec<String> {
@@ -160,8 +178,35 @@ pub(super) fn command_file_names(command: &str, env: &HashMap<String, String>) -
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    #[cfg(unix)]
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     use super::*;
+
+    #[cfg(unix)]
+    fn temp_test_directory(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after the Unix epoch")
+            .as_nanos();
+
+        std_env::temp_dir().join(format!("machdoch-env-paths-{name}-{unique}"))
+    }
+
+    #[cfg(unix)]
+    fn set_executable(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = fs::metadata(path)
+            .expect("test file metadata should be readable")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).expect("test file should be made executable");
+    }
 
     #[test]
     fn command_file_names_uses_pathext_on_windows() {
@@ -180,5 +225,23 @@ mod tests {
         } else {
             assert_eq!(names, vec!["codex".to_string()]);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn existing_file_requires_unix_executable_bit() {
+        let directory = temp_test_directory("unix-executable-bit");
+        let executable_path = directory.join("codex");
+        let non_executable_path = directory.join("claude");
+
+        fs::create_dir_all(&directory).expect("test directory should be creatable");
+        fs::write(&executable_path, "").expect("test executable should be writable");
+        fs::write(&non_executable_path, "").expect("test file should be writable");
+        set_executable(&executable_path);
+
+        assert!(is_existing_file(&executable_path));
+        assert!(!is_existing_file(&non_executable_path));
+
+        let _ = fs::remove_dir_all(directory);
     }
 }

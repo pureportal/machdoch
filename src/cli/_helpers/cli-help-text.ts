@@ -84,7 +84,7 @@ Options:
                           Override the per-executor model turn limit.
   --autopilot-iterations <count>
                           Override the Machdoch continuation limit.
-  --infinite              Disable executor turn and Machdoch continuation limits. The wall-clock safety timeout still applies.
+  --infinite              Disable executor turn and Machdoch continuation limits. The inactivity safety timeout still applies.
   --conversation-context-file <path>
                           Load conversation history and memory context from a JSON file.
   --context <path>        Add a file or folder path as task context. Repeat for multiple paths.

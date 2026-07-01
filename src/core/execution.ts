@@ -147,9 +147,11 @@ const createManagedExecutionSignal = (
   maxDurationMs: number,
 ): {
   signal: AbortSignal;
+  resetTimeout: () => void;
   cleanup: () => void;
 } => {
   const abortController = new AbortController();
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const forwardAbort = (): void => {
     if (!abortController.signal.aborted) {
       abortController.abort(sourceSignal?.reason);
@@ -162,22 +164,73 @@ const createManagedExecutionSignal = (
     sourceSignal.addEventListener("abort", forwardAbort, { once: true });
   }
 
-  const timeoutHandle = setTimeout(() => {
-    if (!abortController.signal.aborted) {
-      abortController.abort(createTaskExecutionTimeoutReason(maxDurationMs));
+  const scheduleTimeout = (): void => {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
     }
-  }, maxDurationMs);
-  unrefTimer(timeoutHandle);
+
+    timeoutHandle = setTimeout(() => {
+      timeoutHandle = undefined;
+
+      if (!abortController.signal.aborted) {
+        abortController.abort(createTaskExecutionTimeoutReason(maxDurationMs));
+      }
+    }, maxDurationMs);
+    unrefTimer(timeoutHandle);
+  };
+
+  if (!abortController.signal.aborted) {
+    scheduleTimeout();
+  }
+
+  const resetTimeout = (): void => {
+    if (!abortController.signal.aborted) {
+      scheduleTimeout();
+    }
+  };
 
   return {
     signal: abortController.signal,
+    resetTimeout,
     cleanup: (): void => {
-      clearTimeout(timeoutHandle);
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+        timeoutHandle = undefined;
+      }
 
       if (sourceSignal) {
         sourceSignal.removeEventListener("abort", forwardAbort);
       }
     },
+  };
+};
+
+const createActivityAwareExecutionOptions = (
+  options: TaskExecutionOptions,
+  managedSignal: ReturnType<typeof createManagedExecutionSignal>,
+): TaskExecutionOptions => {
+  const onStateChange = options.onStateChange;
+  const onActionOutput = options.onActionOutput;
+
+  return {
+    ...options,
+    signal: managedSignal.signal,
+    ...(onStateChange
+      ? {
+          onStateChange: async (progress): Promise<void> => {
+            managedSignal.resetTimeout();
+            await onStateChange(progress);
+          },
+        }
+      : {}),
+    ...(onActionOutput
+      ? {
+          onActionOutput: async (output): Promise<void> => {
+            managedSignal.resetTimeout();
+            await onActionOutput(output);
+          },
+        }
+      : {}),
   };
 };
 
@@ -580,10 +633,7 @@ export const createTaskExecutionController = (
           task,
           config,
           customizations,
-          {
-            ...options,
-            signal: managedSignal.signal,
-          },
+          createActivityAwareExecutionOptions(options, managedSignal),
         );
 
         return await consolidateTaskExecutionMemory(
@@ -616,10 +666,7 @@ export const executeTask = async (
       task,
       config,
       customizations,
-      {
-        ...options,
-        signal: managedSignal.signal,
-      },
+      createActivityAwareExecutionOptions(options, managedSignal),
     );
 
     return await consolidateTaskExecutionMemory(

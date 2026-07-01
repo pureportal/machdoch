@@ -456,13 +456,14 @@ export const ConversationFeed = ({
                       </Button>
                     ) : null}
 
-                    {message.role === "agent" ? (
-                      <MessageMarkdown content={renderedContent} />
-                    ) : (
-                      <div className="app-user-message-text whitespace-pre-wrap wrap-break-word">
-                        {renderedContent}
-                      </div>
-                    )}
+                    <MessageMarkdown
+                      content={renderedContent}
+                      className={
+                        message.role === "user"
+                          ? "app-user-message-text"
+                          : undefined
+                      }
+                    />
                   </div>
                 ) : null}
 

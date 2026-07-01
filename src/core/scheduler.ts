@@ -60,6 +60,9 @@ import {
   getSchedulerStatefulTriggerSkipReason,
   getSchedulerTriggerCooldownSkipReason,
   getSchedulerTriggerRateLimitSkipReason,
+  inferSchedulerEventTriggerKind,
+  isSchedulerEventTriggerFiringMode,
+  isSchedulerEventTriggerState,
   normalizeSchedulerEventPayload,
   schedulerEventFiltersMatch,
   schedulerEventTypeMatches,
@@ -760,42 +763,6 @@ const isRecordValue = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
-const isScheduledEventTriggerKind = (
-  value: string | undefined,
-): value is ScheduledEventTriggerKind => {
-  return (
-    value === "manual" ||
-    value === "app" ||
-    value === "workspace-file" ||
-    value === "git" ||
-    value === "job-event" ||
-    value === "webhook" ||
-    value === "poll" ||
-    value === "system" ||
-    value === "calendar" ||
-    value === "clipboard" ||
-    value === "integration"
-  );
-};
-
-const isScheduledTriggerFiringMode = (
-  value: string | undefined,
-): value is ScheduledTriggerFiringMode => {
-  return value === "event" || value === "state";
-};
-
-const isScheduledTriggerState = (
-  value: string | undefined,
-): value is ScheduledTriggerState => {
-  return value === "idle" || value === "active";
-};
-
-const inferEventTriggerKind = (eventType: string): ScheduledEventTriggerKind => {
-  const prefix = eventType.split(".")[0];
-
-  return isScheduledEventTriggerKind(prefix) ? prefix : "manual";
-};
-
 const getPrimaryTimeTrigger = (
   triggers: ScheduledJobTrigger[],
 ): ScheduledTimeTrigger | undefined => {
@@ -1089,9 +1056,9 @@ const normalizeTriggerCommon = (
   const filters = cloneRecord(input.filters);
   const recoveryFilters = cloneRecord(input.recoveryFilters);
   const guards = normalizeTriggerGuards(input.guards);
-  const firingMode = isScheduledTriggerFiringMode(input.firingMode)
+  const firingMode = isSchedulerEventTriggerFiringMode(input.firingMode)
     ? input.firingMode
-    : isScheduledTriggerFiringMode(existingTrigger?.firingMode)
+    : isSchedulerEventTriggerFiringMode(existingTrigger?.firingMode)
       ? existingTrigger.firingMode
       : recoveryFilters || repeatIntervalMs !== undefined
         ? "state"
@@ -1146,7 +1113,7 @@ const normalizeTriggerCommon = (
     ...(existingTrigger?.lastSkippedAt !== undefined
       ? { lastSkippedAt: existingTrigger.lastSkippedAt }
       : {}),
-    ...(isScheduledTriggerState(existingTrigger?.lastState)
+    ...(isSchedulerEventTriggerState(existingTrigger?.lastState)
       ? { lastState: existingTrigger.lastState }
       : {}),
     ...(existingTrigger?.lastStateChangedAt !== undefined
@@ -2216,7 +2183,7 @@ const normalizeTriggerEventInput = (
     typeof input.occurredAt === "number" && Number.isFinite(input.occurredAt)
       ? Math.trunc(input.occurredAt)
       : timestamp;
-  const kind = input.kind ?? inferEventTriggerKind(type);
+  const kind = input.kind ?? inferSchedulerEventTriggerKind(type);
 
   return {
     id: createEventId(),

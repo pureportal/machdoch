@@ -207,7 +207,7 @@ export const AgentLimitsSettingsPanel = ({
       <div className="grid gap-0">
         <SettingPanel
           label="Limit mode"
-          detail="The wall-clock safety timeout still applies."
+          detail="The inactivity safety timeout still applies."
         >
           <ChoiceButtons
             value={draft.infinite ? "infinite" : "finite"}

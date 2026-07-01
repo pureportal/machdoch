@@ -4,6 +4,18 @@ const DEFAULT_STATEFUL_TRIGGER_REPEAT_MS = 60 * 60_000;
 
 export type SchedulerEventTriggerFiringMode = "event" | "state";
 export type SchedulerEventTriggerState = "idle" | "active";
+export type SchedulerEventTriggerKind =
+  | "manual"
+  | "app"
+  | "workspace-file"
+  | "git"
+  | "job-event"
+  | "webhook"
+  | "poll"
+  | "system"
+  | "calendar"
+  | "clipboard"
+  | "integration";
 
 export interface SchedulerEventTriggerRateLimitPolicy {
   maxEvents: number;
@@ -60,6 +72,44 @@ export const normalizeSchedulerEventPayload = (
 
 const isRecordValue = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+export const isSchedulerEventTriggerKind = (
+  value: string | undefined,
+): value is SchedulerEventTriggerKind => {
+  return (
+    value === "manual" ||
+    value === "app" ||
+    value === "workspace-file" ||
+    value === "git" ||
+    value === "job-event" ||
+    value === "webhook" ||
+    value === "poll" ||
+    value === "system" ||
+    value === "calendar" ||
+    value === "clipboard" ||
+    value === "integration"
+  );
+};
+
+export const isSchedulerEventTriggerFiringMode = (
+  value: string | undefined,
+): value is SchedulerEventTriggerFiringMode => {
+  return value === "event" || value === "state";
+};
+
+export const isSchedulerEventTriggerState = (
+  value: string | undefined,
+): value is SchedulerEventTriggerState => {
+  return value === "idle" || value === "active";
+};
+
+export const inferSchedulerEventTriggerKind = (
+  eventType: string,
+): SchedulerEventTriggerKind => {
+  const prefix = eventType.split(".")[0];
+
+  return isSchedulerEventTriggerKind(prefix) ? prefix : "manual";
 };
 
 const getPathValue = (
