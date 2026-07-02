@@ -14,6 +14,7 @@ import type {
 export type CommandName =
   | "run"
   | "chat"
+  | "interview"
   | "ralph"
   | "scheduler"
   | "mcp"
@@ -180,6 +181,14 @@ export interface RalphCliOptions {
   watchJsonFile?: string;
 }
 
+export interface TaskInterviewCliOptions {
+  prompt?: string;
+  promptFile?: string;
+  inputJson?: string;
+  inputJsonFile?: string;
+  maxRounds?: number;
+}
+
 export interface McpCliOptions {
   action: McpCliAction;
   serverId?: string;
@@ -215,6 +224,7 @@ export interface InstructionCliOptions {
 export interface ParsedCliArgs {
   command: CommandName;
   task?: string;
+  interview?: TaskInterviewCliOptions;
   ralph?: RalphCliOptions;
   scheduler?: SchedulerCliOptions;
   mcp?: McpCliOptions;

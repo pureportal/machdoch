@@ -1,6 +1,8 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
 
+const RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
+
 const securityFixLoopFlow: RalphFlow = {
   schemaVersion: 1,
   id: "starter-security-fix-loop",
@@ -140,7 +142,7 @@ const securityFixLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Research current primary-source security guidance for {{projectStack:text=auto-detect}} and these standards: {{securityStandards:text=OWASP Top 10, OWASP ASVS}}. Keep the research concise and focus on the configured scope root {{scopeRoot:path=.}} and fix threshold {{severityThreshold:text=high}}. Include source links, relevant checks, and assumptions.",
+        "Use content enrichment before the security review. If search_web is available, run focused searches for current primary-source security guidance, standards, advisories, framework hardening docs, and relevant changelogs for {{projectStack:text=auto-detect}} and these standards: {{securityStandards:text=OWASP Top 10, OWASP ASVS}}. Use fetch_url on official standards, vendor, maintainer, or advisory pages before relying on them. Keep the research concise and focus on the configured scope root {{scopeRoot:path=.}} and fix threshold {{severityThreshold:text=high}}. Include source links, standard versions/requirement ids when available, relevant checks, exploitability notes, and assumptions. If web search is unavailable, say so and use local package/config evidence plus any provided URLs.",
     },
     {
       id: "scan-scopes",
@@ -315,6 +317,7 @@ const securityFixLoopFlow: RalphFlow = {
         type: "RUN_CHECK",
         command: "{{verificationCommand:text=}}",
         fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        timeoutSeconds: RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS,
       },
     },
     {
@@ -458,7 +461,7 @@ const securityFixLoopFlow: RalphFlow = {
 
 export const securityReviewFixLoopStarterFlow = {
   id: "security-fix-loop",
-  version: 4,
+  version: 5,
   defaultAlias: "security-review-fix-loop",
   category: "Security",
   tags: ["review", "fix", "tests"],

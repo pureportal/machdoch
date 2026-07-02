@@ -1,3 +1,5 @@
+use std::fs;
+
 use axum::http::{HeaderMap, HeaderValue};
 use serde_json::json;
 
@@ -8,8 +10,9 @@ use super::{
     },
     now_millis,
     status::{create_snapshot_locked, create_status_locked, create_token_hint},
+    test_support::{temp_test_directory, use_user_config_dir},
     RemoteControlCommandEvent, RemoteControlInner, RemoteControlPairedDevice, RemoteControlState,
-    WEB_SESSION_COOKIE_NAME, WEB_SESSION_TTL_MS,
+    DEFAULT_REMOTE_CONTROL_PORT, WEB_SESSION_COOKIE_NAME, WEB_SESSION_TTL_MS,
 };
 
 #[test]
@@ -64,6 +67,71 @@ fn state_changing_requests_require_custom_remote_header() {
 
     assert!(!state_changing_headers_allowed(&missing_header));
     assert!(state_changing_headers_allowed(&same_origin));
+}
+
+#[test]
+fn state_status_loads_default_config_when_file_is_missing() {
+    let directory = temp_test_directory("default-config");
+    let _env = use_user_config_dir(&directory);
+    let state = RemoteControlState::default();
+
+    let status = state.status().expect("status should load default config");
+
+    assert!(!status.enabled);
+    assert_eq!(status.port, DEFAULT_REMOTE_CONTROL_PORT);
+    assert_eq!(status.paired_device_count, 0);
+    assert!(state.shared.inner.lock().expect("state lock").config_loaded);
+
+    let _ = fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn state_status_loads_stored_pairings_from_config_file() {
+    let directory = temp_test_directory("stored-pairings");
+    fs::create_dir_all(&directory).expect("config directory should be created");
+    fs::write(
+        directory.join("remote-control.json"),
+        format!(
+            r#"{{
+  "version": 0,
+  "port": 43188,
+  "enabled": false,
+  "pairedDevices": [
+    {{
+      "id": "device-1",
+      "name": "Test browser",
+      "tokenHash": "token-hash",
+      "createdAt": 1,
+      "lastSeenAt": 2,
+      "expiresAt": {}
+    }}
+  ]
+}}
+"#,
+            now_millis().saturating_add(WEB_SESSION_TTL_MS)
+        ),
+    )
+    .expect("remote control config should be written");
+    let _env = use_user_config_dir(&directory);
+    let state = RemoteControlState::default();
+
+    let status = state.status().expect("status should load stored config");
+
+    assert_eq!(status.port, 43188);
+    assert_eq!(status.paired_device_count, 1);
+    assert_eq!(
+        state
+            .shared
+            .inner
+            .lock()
+            .expect("state lock")
+            .config
+            .paired_devices[0]
+            .id,
+        "device-1"
+    );
+
+    let _ = fs::remove_dir_all(&directory);
 }
 
 #[test]
@@ -158,6 +226,7 @@ fn snapshots_return_newest_commands_first() {
         provider: None,
         model: None,
         mode: None,
+        reasoning: None,
         workspace: None,
         enabled: None,
         attachment_id: None,
@@ -178,6 +247,7 @@ fn snapshots_return_newest_commands_first() {
         provider: None,
         model: None,
         mode: None,
+        reasoning: None,
         workspace: None,
         enabled: None,
         attachment_id: None,
@@ -208,6 +278,136 @@ fn snapshots_return_newest_commands_first() {
             .and_then(serde_json::Value::as_str),
         Some("command-1")
     );
+}
+
+#[test]
+fn shell_snapshot_preserves_reasoning_fields_after_sanitization() {
+    let directory = temp_test_directory("shell-reasoning");
+    let _env = use_user_config_dir(&directory);
+    let state = RemoteControlState::default();
+    let snapshot = serde_json::from_value(json!({
+        "version": 1,
+        "capturedAt": 123,
+        "activeSessionId": "session-1",
+        "sessions": [{
+            "id": "session-1",
+            "title": "Reasoning session",
+            "status": "idle",
+            "workspace": "C:/workspace",
+            "provider": "openai",
+            "model": "gpt-5.5",
+            "mode": "ask",
+            "effectiveMode": "machdoch",
+            "reasoning": " high ",
+            "effectiveReasoning": " max ",
+            "createdAt": 1,
+            "updatedAt": 2,
+            "archivedAt": null,
+            "pinnedAt": null,
+            "tags": [],
+            "messageCount": 0,
+            "promptHistoryCount": 0,
+            "attachmentCount": 0,
+            "runningTaskId": null,
+            "canRename": true,
+            "canDelete": true,
+            "canArchive": true,
+            "canPin": true,
+            "canDuplicate": true,
+            "canBranch": true,
+            "specialKind": null
+        }],
+        "composer": {
+            "sessionId": "session-1",
+            "draft": "",
+            "provider": "openai",
+            "model": "gpt-5.5",
+            "mode": "machdoch",
+            "defaultMode": "machdoch",
+            "reasoning": "medium",
+            "defaultReasoning": "low",
+            "workspace": "C:/workspace",
+            "workspaceLabel": "workspace",
+            "canSend": true,
+            "sendDisabledReason": null,
+            "isExecuting": false,
+            "sessionMemoryEnabled": true,
+            "globalMemoryAvailable": true,
+            "globalMemoryEnabled": true,
+            "uiControlAvailable": true,
+            "uiControlEnabled": false,
+            "uiControlDescription": "available",
+            "attachments": [],
+            "chooserProviders": ["openai"],
+            "matchedContextPackIds": ["pack-1"]
+        },
+        "runtime": {
+            "loading": false,
+            "error": null,
+            "hasAnyProvider": true,
+            "providerStatuses": [{
+                "provider": "openai",
+                "available": true,
+                "reason": null
+            }],
+            "mode": "machdoch",
+            "reasoning": "xhigh",
+            "uiControl": {
+                "available": true,
+                "reason": null
+            },
+            "webSearch": {
+                "available": true,
+                "reason": null
+            }
+        },
+        "contextPacks": [{
+            "id": "pack-1",
+            "name": "Pack",
+            "workspace": "C:/workspace",
+            "instructionsPreview": "Use project conventions.",
+            "promptPreview": "Build carefully.",
+            "attachmentCount": 0,
+            "variables": [],
+            "matched": true,
+            "provider": "openai",
+            "model": "gpt-5.5",
+            "mode": "machdoch",
+            "reasoning": "minimal"
+        }]
+    }))
+    .expect("shell snapshot should deserialize");
+
+    state
+        .update_shell_snapshot(snapshot)
+        .expect("shell snapshot should update");
+
+    let inner = state.shared.inner.lock().expect("state lock");
+    let payload = serde_json::to_value(
+        create_snapshot_locked(&inner)
+            .shell
+            .expect("shell snapshot should be stored"),
+    )
+    .expect("shell snapshot should serialize");
+
+    assert_eq!(payload["sessions"][0]["reasoning"].as_str(), Some("high"));
+    assert_eq!(
+        payload["sessions"][0]["effectiveReasoning"].as_str(),
+        Some("max")
+    );
+    assert_eq!(payload["composer"]["reasoning"].as_str(), Some("medium"));
+    assert_eq!(
+        payload["composer"]["defaultReasoning"].as_str(),
+        Some("low")
+    );
+    assert_eq!(payload["runtime"]["reasoning"].as_str(), Some("xhigh"));
+    assert_eq!(
+        payload["contextPacks"][0]["reasoning"].as_str(),
+        Some("minimal")
+    );
+
+    drop(inner);
+    let _ = fs::remove_dir_all(&directory);
 }
 
 #[test]

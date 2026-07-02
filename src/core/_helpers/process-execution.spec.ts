@@ -15,6 +15,8 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 import {
   executeLocalCommand,
+  formatLocalCommandError,
+  getLocalCommandErrorDetails,
   normalizeLocalCommandCwd,
 } from "./process-execution.ts";
 import type { ExecException } from "node:child_process";
@@ -105,7 +107,36 @@ describe("executeLocalCommand", () => {
       message: "Command timed out",
       stdout: "partial stdout",
       stderr: "partial stderr",
+      timedOut: true,
+      timeoutMs: commandOptions.timeoutMs,
     });
+  });
+
+  it("formats timeout details distinctly from ordinary command failures", () => {
+    const error = Object.assign(new Error("Command failed: pnpm test"), {
+      stdout: "partial stdout\r\n",
+      stderr: "",
+      timedOut: true,
+      timeoutMs: 120_000,
+      signal: "SIGTERM",
+    });
+
+    expect(getLocalCommandErrorDetails(error)).toEqual({
+      stdout: "partial stdout",
+      stderr: "",
+      signal: "SIGTERM",
+      timedOut: true,
+      timeoutMs: 120_000,
+    });
+    expect(formatLocalCommandError("Run Verification failed.", error)).toBe(
+      [
+        "Run Verification failed.",
+        "timed out after 120000ms",
+        "signal: SIGTERM",
+        "stdout: partial stdout",
+        "stderr: Command failed: pnpm test",
+      ].join("\n"),
+    );
   });
 });
 

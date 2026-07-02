@@ -6,7 +6,7 @@ import type {
 
 type ActiveWebSearchProvider = Exclude<WebSearchProvider, "none">;
 
-const DEFAULT_MAX_RESULTS = 5;
+const DEFAULT_MAX_RESULTS = 8;
 const MAX_RESULTS_LIMIT = 10;
 const PERPLEXITY_SEARCH_URL = "https://api.perplexity.ai/search";
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
@@ -121,8 +121,7 @@ const runTavilySearch = async (
     },
     body: JSON.stringify({
       query,
-      topic: "general",
-      search_depth: "basic",
+      auto_parameters: true,
       max_results: maxResults,
       include_answer: true,
       include_raw_content: false,

@@ -7,6 +7,7 @@ use std::{
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
+use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
 use crate::runtime_snapshot::get_user_config_directory;
 
 use super::{
@@ -83,6 +84,13 @@ pub(super) fn write_remote_control_config_file(
 ) -> Result<(), String> {
     let config_path = remote_control_config_path()?;
 
+    write_remote_control_config_file_at_path(config, &config_path)
+}
+
+fn write_remote_control_config_file_at_path(
+    config: &RemoteControlConfigFile,
+    config_path: &Path,
+) -> Result<(), String> {
     if let Some(config_directory) = config_path.parent() {
         fs::create_dir_all(config_directory)
             .map_err(|error| format!("Failed to create {}: {error}", config_directory.display()))?;
@@ -91,9 +99,14 @@ pub(super) fn write_remote_control_config_file(
 
     let serialized = serde_json::to_string_pretty(config)
         .map_err(|error| format!("Failed to serialize Mission Control settings: {error}"))?;
-    fs::write(&config_path, format!("{serialized}\n"))
-        .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))?;
-    secure_remote_control_config_file(&config_path)
+    let raw = format!("{serialized}\n");
+    write_file_atomic(
+        config_path,
+        raw.as_bytes(),
+        AtomicWriteOptions::with_unix_mode(0o600),
+    )
+    .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))?;
+    secure_remote_control_config_file(config_path)
 }
 
 fn secure_remote_control_config_directory(path: &Path) -> Result<(), String> {
@@ -140,6 +153,24 @@ pub(super) fn prune_expired_paired_devices_locked(config: &mut RemoteControlConf
 mod tests {
     use super::*;
     use crate::remote_control::RemoteControlPairedDevice;
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn temp_test_directory(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after the Unix epoch")
+            .as_nanos();
+
+        std::env::temp_dir().join(format!("machdoch-remote-control-config-{name}-{unique}"))
+    }
+
+    fn cleanup(path: &Path) {
+        let _ = fs::remove_dir_all(path);
+    }
 
     #[test]
     fn normalize_config_resets_invalid_port_and_keeps_recent_devices_first() {
@@ -209,5 +240,37 @@ mod tests {
             validate_remote_control_port(MIN_REMOTE_CONTROL_PORT),
             Ok(MIN_REMOTE_CONTROL_PORT)
         );
+    }
+
+    #[test]
+    fn remote_control_config_overwrite_keeps_pretty_json_and_trailing_newline() {
+        let directory = temp_test_directory("overwrite");
+        let config_path = directory.join("remote-control.json");
+        let first_config = RemoteControlConfigFile {
+            enabled: true,
+            ..RemoteControlConfigFile::default()
+        };
+        let second_config = RemoteControlConfigFile {
+            enabled: false,
+            port: DEFAULT_REMOTE_CONTROL_PORT + 1,
+            ..RemoteControlConfigFile::default()
+        };
+
+        write_remote_control_config_file_at_path(&first_config, &config_path)
+            .expect("initial Mission Control config should write");
+        write_remote_control_config_file_at_path(&second_config, &config_path)
+            .expect("replacement Mission Control config should write");
+
+        let raw =
+            fs::read_to_string(&config_path).expect("Mission Control config should be readable");
+        let parsed = serde_json::from_str::<RemoteControlConfigFile>(&raw)
+            .expect("Mission Control config should remain valid JSON");
+
+        assert!(raw.ends_with('\n'));
+        assert!(raw.contains("  \"port\": 43188"));
+        assert_eq!(parsed.port, DEFAULT_REMOTE_CONTROL_PORT + 1);
+        assert!(!parsed.enabled);
+
+        cleanup(&directory);
     }
 }

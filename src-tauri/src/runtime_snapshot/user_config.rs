@@ -6,6 +6,8 @@ use std::{
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
+use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
+
 use super::{get_user_config_directory, settings_types::UserConfigFile};
 
 const USER_CONFIG_FILE_NAME: &str = "user-config.json";
@@ -42,8 +44,13 @@ pub(super) fn write_user_config_file(
     let serialized = serde_json::to_string_pretty(config)
         .map_err(|error| format!("Failed to serialize user config: {error}"))?;
 
-    fs::write(config_path, format!("{serialized}\n"))
-        .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))?;
+    let raw = format!("{serialized}\n");
+    write_file_atomic(
+        config_path,
+        raw.as_bytes(),
+        AtomicWriteOptions::with_unix_mode(0o600),
+    )
+    .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))?;
     secure_user_config_file(config_path)
 }
 

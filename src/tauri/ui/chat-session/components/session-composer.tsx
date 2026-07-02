@@ -2,6 +2,7 @@ import {
   Brain,
   BrainCircuit,
   LoaderCircle,
+  MessageSquare,
   Mic,
   Monitor,
   Square,
@@ -51,9 +52,12 @@ export interface SessionComposerProps {
   sessionMemoryDescription: string;
   globalMemoryDescription: string;
   uiControlDescription: string;
+  interviewDescription: string;
   isGlobalMemoryAvailable: boolean;
   isGlobalMemoryActive: boolean;
   isUiControlAvailable: boolean;
+  interviewEnabled: boolean;
+  interviewDisabled: boolean;
   contextAttachments: ChatSessionContextAttachment[];
   contextPacks: SmartContextPack[];
   matchedContextPackIds: string[];
@@ -81,6 +85,7 @@ export interface SessionComposerProps {
   onSessionMemoryEnabledChange: (enabled: boolean) => void;
   onUseGlobalMemoryChange: (enabled: boolean) => void;
   onUiControlEnabledChange: (enabled: boolean) => void;
+  onInterviewEnabledChange: (enabled: boolean) => void;
   onSelectContextFiles: () => Promise<void>;
   onSelectContextFolders: () => Promise<void>;
   onSelectContextImages: () => Promise<void>;
@@ -138,9 +143,12 @@ export const SessionComposer = ({
   sessionMemoryDescription,
   globalMemoryDescription,
   uiControlDescription,
+  interviewDescription,
   isGlobalMemoryAvailable,
   isGlobalMemoryActive,
   isUiControlAvailable,
+  interviewEnabled,
+  interviewDisabled,
   contextAttachments,
   contextPacks,
   matchedContextPackIds,
@@ -160,6 +168,7 @@ export const SessionComposer = ({
   onSessionMemoryEnabledChange,
   onUseGlobalMemoryChange,
   onUiControlEnabledChange,
+  onInterviewEnabledChange,
   onSelectContextFiles,
   onSelectContextFolders,
   onSelectContextImages,
@@ -269,6 +278,19 @@ export const SessionComposer = ({
   }
 
   toggles.push(
+    {
+      id: "interview",
+      label: "Interview",
+      description: interviewDescription,
+      icon: <MessageSquare className="h-4 w-4" />,
+      pressed: interviewEnabled,
+      disabled: interviewDisabled,
+      onPressedChange: onInterviewEnabledChange,
+      activeClassName:
+        "border-cyan-500/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/15 hover:text-white",
+      unavailableClassName:
+        "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
+    },
     {
       id: "global-memory",
       label: "Global memory",

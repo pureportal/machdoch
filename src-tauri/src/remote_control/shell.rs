@@ -40,6 +40,8 @@ pub(super) struct RemoteShellSession {
     pub(super) model: String,
     pub(super) mode: Option<String>,
     pub(super) effective_mode: String,
+    pub(super) reasoning: Option<String>,
+    pub(super) effective_reasoning: String,
     pub(super) created_at: u64,
     pub(super) updated_at: u64,
     pub(super) archived_at: Option<u64>,
@@ -122,6 +124,8 @@ pub(super) struct RemoteShellComposer {
     pub(super) model: String,
     pub(super) mode: String,
     pub(super) default_mode: String,
+    pub(super) reasoning: String,
+    pub(super) default_reasoning: String,
     pub(super) workspace: Option<String>,
     pub(super) workspace_label: String,
     pub(super) can_send: bool,
@@ -146,6 +150,7 @@ pub(super) struct RemoteShellRuntime {
     pub(super) has_any_provider: bool,
     pub(super) provider_statuses: Vec<RemoteShellProviderStatus>,
     pub(super) mode: Option<String>,
+    pub(super) reasoning: Option<String>,
     pub(super) ui_control: Option<RemoteShellRuntimeCapability>,
     pub(super) web_search: Option<RemoteShellRuntimeCapability>,
 }
@@ -221,6 +226,7 @@ pub(super) struct RemoteShellContextPack {
     pub(super) provider: Option<String>,
     pub(super) model: Option<String>,
     pub(super) mode: Option<String>,
+    pub(super) reasoning: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

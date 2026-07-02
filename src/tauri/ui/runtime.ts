@@ -23,6 +23,10 @@ import type {
   RalphGenerationInterviewStatus,
 } from "../../core/ralph-generation.js";
 import type {
+  TaskInterviewSession,
+  TaskInterviewStatus,
+} from "../../core/task-interview.js";
+import type {
   RalphFlow,
   RalphFlowDeleteResult,
   RalphFlowScope,
@@ -1001,6 +1005,31 @@ export interface RalphGenerationInterviewInput {
 export interface RalphGenerationInterviewResult {
   status: RalphGenerationInterviewStatus;
   session: RalphGenerationInterviewSession;
+  fields: RalphInputField[];
+  summary: string;
+  finalPrompt?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  result?: Pick<TaskExecutionResult, "status" | "summary" | "reason" | "executedTools"> | null;
+}
+
+export interface TaskInterviewInput {
+  prompt: string;
+  maxTurns?: number;
+  session?: TaskInterviewSession;
+  contextNotes?: string[];
+  answers?: Record<string, RalphInputValue>;
+  answerComments?: Record<string, string>;
+  mode?: RunMode;
+  provider?: RuntimeProvider;
+  model?: string;
+  reasoning?: RuntimeSnapshot["reasoning"];
+  taskId?: string;
+}
+
+export interface TaskInterviewResult {
+  status: TaskInterviewStatus;
+  session: TaskInterviewSession;
   fields: RalphInputField[];
   summary: string;
   finalPrompt?: string | null;
@@ -3418,6 +3447,10 @@ const assertRalphDesktopAvailable = (): never => {
   throw new Error("Ralph flow management is only available in the desktop app.");
 };
 
+const assertTaskInterviewDesktopAvailable = (): never => {
+  throw new Error("Task interviews are only available in the desktop app.");
+};
+
 const assertMcpDesktopAvailable = (): never => {
   throw new Error("MCP management is only available in the desktop app.");
 };
@@ -3439,6 +3472,12 @@ const normalizeMcpCommandWorkspace = (
 };
 
 const normalizeRalphCommandWorkspace = (
+  workspaceRoot: string | null | undefined,
+): string => {
+  return normalizeWorkspaceRoot(workspaceRoot) ?? "";
+};
+
+const normalizeTaskInterviewCommandWorkspace = (
   workspaceRoot: string | null | undefined,
 ): string => {
   return normalizeWorkspaceRoot(workspaceRoot) ?? "";
@@ -3813,6 +3852,27 @@ const runRalphCommand = async <Result>(
   }
 };
 
+const runTaskInterviewCommand = async <Result>(
+  workspaceRoot: string | null | undefined,
+  argumentsList: string[],
+  fallback: () => Result,
+): Promise<Result> => {
+  if (!canInvokeTauriCommands()) {
+    return fallback();
+  }
+
+  try {
+    return await tauriCore.invoke<Result>("run_task_interview_command", {
+      request: {
+        workspaceRoot: normalizeTaskInterviewCommandWorkspace(workspaceRoot),
+        arguments: argumentsList,
+      },
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
 const createRalphRunArguments = (
   input: RalphRunFlowInput,
 ): string[] => {
@@ -3937,6 +3997,43 @@ const createRalphGenerationInterviewArguments = (
   if (input.session || input.answers || answerComments) {
     appendSchedulerOption(argumentsList, "--input-json", JSON.stringify({
       ...(input.session ? { session: input.session } : {}),
+      ...(input.answers ? { answers: input.answers } : {}),
+      ...(answerComments ? { answerComments } : {}),
+    }));
+  }
+
+  return argumentsList;
+};
+
+const createTaskInterviewArguments = (
+  input: TaskInterviewInput,
+): string[] => {
+  const prompt = input.prompt.trim();
+
+  if (!prompt) {
+    throw new Error("Expected a prompt before starting a task interview.");
+  }
+
+  const argumentsList = ["--prompt", prompt];
+
+  appendSchedulerOption(argumentsList, "--mode", input.mode);
+  appendSchedulerOption(argumentsList, "--runtime-provider", input.provider);
+  appendSchedulerOption(argumentsList, "--model", normalizeSchedulerCliString(input.model));
+  appendSchedulerOption(argumentsList, "--reasoning", input.reasoning);
+  appendSchedulerOption(argumentsList, "--max-rounds", input.maxTurns);
+  const answerComments =
+    input.answerComments && Object.keys(input.answerComments).length > 0
+      ? input.answerComments
+      : undefined;
+
+  const contextNotes = (input.contextNotes ?? []).filter(
+    (note) => note.trim().length > 0,
+  );
+
+  if (input.session || contextNotes.length > 0 || input.answers || answerComments) {
+    appendSchedulerOption(argumentsList, "--input-json", JSON.stringify({
+      ...(input.session ? { session: input.session } : {}),
+      ...(contextNotes.length > 0 ? { contextNotes } : {}),
       ...(input.answers ? { answers: input.answers } : {}),
       ...(answerComments ? { answerComments } : {}),
     }));
@@ -4157,6 +4254,17 @@ export const runRalphGenerationInterview = async (
     createRalphGenerationInterviewArguments(input),
     assertRalphDesktopAvailable,
     input.taskId ? { taskId: input.taskId } : undefined,
+  );
+};
+
+export const runTaskInterview = async (
+  workspaceRoot: string | null | undefined,
+  input: TaskInterviewInput,
+): Promise<TaskInterviewResult> => {
+  return runTaskInterviewCommand(
+    workspaceRoot,
+    createTaskInterviewArguments(input),
+    assertTaskInterviewDesktopAvailable,
   );
 };
 

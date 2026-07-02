@@ -24,6 +24,7 @@ const autonomousRefactoringFlow: RalphFlow = {
     { name: "maxFileLines", type: "number", default: "500", required: false },
     { name: "helperPlacementPolicy", type: "text", default: "Follow existing module-local and shared helper conventions.", required: false },
     { name: "testFramework", type: "text", default: "auto-detect", required: false },
+    { name: "enableOnlineResearch", type: "boolean", default: "true", required: false },
     { name: "validationCommand", type: "text", default: "", required: false },
     { name: "excludePaths", type: "text", default: "node_modules, dist, build, coverage, target, .next, .nuxt, .turbo, .cache, vendor, generated", required: false },
     { name: "allowPublicApiChanges", type: "boolean", default: "false", required: false },
@@ -138,6 +139,37 @@ const autonomousRefactoringFlow: RalphFlow = {
       },
     },
     {
+      id: "research-decision",
+      title: "Use Online Research?",
+      position: { x: 2060, y: -420 },
+      size: { width: 256, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          style: "javascript",
+          expression: 'variables.enableOnlineResearch === "true"',
+        },
+      },
+    },
+    {
+      id: "refactor-research",
+      title: "Refactor Research",
+      position: { x: 2400, y: -420 },
+      size: { width: 300, height: 210 },
+      settings: {
+        workspace: { mode: "default" },
+        reasoning: "medium",
+        webAccess: true,
+        attachments: [],
+        packs: [],
+        maxIterations: 1,
+      },
+      type: "PROMPT",
+      prompt:
+        "Use content enrichment before planning refactors. If search_web is available, run focused searches for current framework/library refactor guidance, official migration/deprecation notes, testing guidance, codemod recommendations, lint/type-check guidance, and architecture conventions relevant to selected JSON scope {{result:select-scope}} and detected conventions {{data:detect-conventions:output}}. Use fetch_url on the best official or maintainer pages before relying on them, and inspect local package/config metadata for version assumptions. Keep findings concise with source links, version/date assumptions, safe refactor constraints, and anti-patterns to avoid. If web search is unavailable, say so and base findings on local repository evidence plus any provided URLs.",
+    },
+    {
       id: "audit-against-policy",
       title: "Audit Against Policy",
       position: { x: 2060, y: 0 },
@@ -178,7 +210,7 @@ const autonomousRefactoringFlow: RalphFlow = {
           },
         },
         prompt:
-          "Audit selected JSON scope {{result:select-scope}} against detected conventions {{data:detect-conventions:output}} and this template policy: objective {{refactorObjective:text=Improve maintainability while preserving behavior.}}, file naming {{fileNamingPolicy:text=Follow existing framework and repository conventions.}}, max file lines {{maxFileLines:number=500}}, helper placement {{helperPlacementPolicy:text=Follow existing module-local and shared helper conventions.}}, test framework {{testFramework:text=auto-detect}}, public API changes allowed {{allowPublicApiChanges:boolean=false}}. Produce a prioritized, bounded refactor pass plan. Note exceptions in {{notesFile:path=.machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md}} when useful. Do not change files. Return only schema-valid JSON.",
+          "Audit selected JSON scope {{result:select-scope}} against detected conventions {{data:detect-conventions:output}}, content-enriched refactor research {{summary:refactor-research}}, and this template policy: objective {{refactorObjective:text=Improve maintainability while preserving behavior.}}, file naming {{fileNamingPolicy:text=Follow existing framework and repository conventions.}}, max file lines {{maxFileLines:number=500}}, helper placement {{helperPlacementPolicy:text=Follow existing module-local and shared helper conventions.}}, test framework {{testFramework:text=auto-detect}}, public API changes allowed {{allowPublicApiChanges:boolean=false}}. Produce a prioritized, bounded refactor pass plan that applies source-backed guidance only when it matches the local versions and selected scope. Note exceptions in {{notesFile:path=.machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md}} when useful. Do not change files. Return only schema-valid JSON.",
       },
     },
     {
@@ -372,9 +404,14 @@ const autonomousRefactoringFlow: RalphFlow = {
     { id: "detect-commands-to-conventions", from: "detect-project-commands", fromOutput: "SUCCESS", to: "detect-conventions" },
     { id: "detect-commands-empty-to-conventions", from: "detect-project-commands", fromOutput: "EMPTY", to: "detect-conventions" },
     { id: "detect-commands-error-to-conventions", from: "detect-project-commands", fromOutput: "ERROR", to: "detect-conventions" },
-    { id: "detect-to-audit", from: "detect-conventions", fromOutput: "SUCCESS", to: "audit-against-policy" },
+    { id: "detect-to-research-decision", from: "detect-conventions", fromOutput: "SUCCESS", to: "research-decision" },
     { id: "detect-invalid", from: "detect-conventions", fromOutput: "INVALID", to: "blocked" },
     { id: "detect-error", from: "detect-conventions", fromOutput: "ERROR", to: "blocked" },
+    { id: "research-decision-run", from: "research-decision", fromOutput: "MATCH", to: "refactor-research" },
+    { id: "research-decision-skip", from: "research-decision", fromOutput: "NO_MATCH", to: "audit-against-policy" },
+    { id: "research-decision-error", from: "research-decision", fromOutput: "ERROR", to: "audit-against-policy" },
+    { id: "research-to-audit", from: "refactor-research", fromOutput: "SUCCESS", to: "audit-against-policy" },
+    { id: "research-error-to-audit", from: "refactor-research", fromOutput: "ERROR", to: "audit-against-policy" },
     { id: "audit-to-snapshot", from: "audit-against-policy", fromOutput: "SUCCESS", to: "git-snapshot-before" },
     { id: "audit-invalid", from: "audit-against-policy", fromOutput: "INVALID", to: "blocked" },
     { id: "audit-error", from: "audit-against-policy", fromOutput: "ERROR", to: "blocked" },
@@ -413,7 +450,7 @@ const autonomousRefactoringFlow: RalphFlow = {
 
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 5,
+  version: 6,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],

@@ -1,122 +1,6 @@
 use std::collections::HashMap;
 
-use serde::Serialize;
-
 use crate::runtime_contract_generated::{REASONING_MODES, VALID_MODEL_PROVIDERS};
-use crate::ui_control::UiControlAvailability;
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RuntimeSnapshot {
-    workspace_root: String,
-    workspace_config_path: Option<String>,
-    default_mode: String,
-    default_reasoning: String,
-    mode: String,
-    provider: String,
-    model: String,
-    reasoning: String,
-    offline: bool,
-    agent_limits: RuntimeAgentLimits,
-    compatibility: RuntimeCompatibilityConfig,
-    provider_availability: Vec<ProviderAvailability>,
-    web_search: RuntimeWebSearchConfig,
-    review_model: RuntimeReviewModelConfig,
-    ui_control: UiControlAvailability,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RuntimeCompatibilityConfig {
-    discover_github_customizations: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RuntimeAgentLimits {
-    executor_turns: Option<u32>,
-    autopilot_executor_iterations: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProviderAvailability {
-    provider: String,
-    configured: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProviderModelCatalogSnapshot {
-    generated_at: u64,
-    providers: Vec<ProviderModelCatalogProvider>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProviderModelCatalogProvider {
-    provider: String,
-    source: String,
-    available: bool,
-    error: Option<String>,
-    models: Vec<ProviderRuntimeModel>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProviderRuntimeModel {
-    id: String,
-    label: Option<String>,
-    stage: Option<String>,
-    release_date: Option<String>,
-    description: Option<String>,
-    recommended_for: Vec<String>,
-    capabilities: ProviderRuntimeModelCapabilities,
-    warnings: Vec<String>,
-    source: String,
-}
-
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProviderRuntimeModelCapabilities {
-    image_input: Option<bool>,
-    tool_use: Option<bool>,
-    reasoning: Option<bool>,
-    streaming: Option<bool>,
-    context_window_tokens: Option<u64>,
-    max_output_tokens: Option<u64>,
-    voice: Option<bool>,
-    computer_use: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebSearchProviderAvailability {
-    provider: String,
-    configured: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AudioProviderAvailability {
-    provider: String,
-    configured: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RuntimeWebSearchConfig {
-    active_provider: String,
-    provider_availability: Vec<WebSearchProviderAvailability>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RuntimeReviewModelConfig {
-    mode: String,
-    provider: Option<String>,
-    model: Option<String>,
-}
 mod collect;
 mod desktop_settings_commands;
 mod env;
@@ -128,6 +12,7 @@ mod model_catalog;
 mod settings;
 mod settings_commands;
 mod settings_types;
+mod types;
 mod user_config;
 mod workspace;
 
@@ -165,6 +50,12 @@ pub(crate) use settings_types::UserDesktopLaunchPreferences;
 pub use settings_types::{
     McpConfigDocument, UserAgentLimitsSettings, UserDesktopSettings, UserMemorySettings,
     UserReviewModelSettings, UserSpeechToTextSettings, UserVoiceSettings, UserWebSearchSettings,
+};
+pub use types::{
+    AudioProviderAvailability, ProviderAvailability, ProviderModelCatalogProvider,
+    ProviderModelCatalogSnapshot, ProviderRuntimeModel, ProviderRuntimeModelCapabilities,
+    RuntimeAgentLimits, RuntimeCompatibilityConfig, RuntimeReviewModelConfig, RuntimeSnapshot,
+    RuntimeWebSearchConfig, WebSearchProviderAvailability,
 };
 pub(crate) use workspace::{get_user_config_directory, resolve_workspace_root_path};
 use workspace::{save_workspace_default_mode_value, save_workspace_reasoning_mode_value};

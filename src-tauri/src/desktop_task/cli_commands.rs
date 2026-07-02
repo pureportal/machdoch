@@ -1,6 +1,7 @@
 use std::{
+    io,
     io::Read,
-    process::{Command, ExitStatus, Stdio},
+    process::{Child, Command, ExitStatus, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -17,9 +18,11 @@ use crate::runtime_snapshot::resolve_workspace_root_path;
 
 use super::{
     diagnostics::{format_command_failure, format_timeout_duration},
+    payload::cleanup_temporary_files,
+    payload_files::rewrite_task_interview_payload_arguments,
     process::{hide_child_process_window, terminate_child_process_tree},
-    InstructionCommandRequest, McpCommandRequest, SchedulerCommandRequest, DESKTOP_TASK_TIMEOUT_MS,
-    DESKTOP_TASK_WAIT_POLL_MS,
+    InstructionCommandRequest, McpCommandRequest, SchedulerCommandRequest,
+    TaskInterviewCommandRequest, DESKTOP_TASK_TIMEOUT_MS, DESKTOP_TASK_WAIT_POLL_MS,
 };
 
 #[cfg(target_os = "windows")]
@@ -54,6 +57,27 @@ fn join_auxiliary_cli_output(
         .map_err(|_| "The shared CLI stderr worker terminated unexpectedly.".to_string())??;
 
     Ok((stdout_text, stderr_text))
+}
+
+fn stop_auxiliary_cli_after_wait_error(
+    error: io::Error,
+    child: &mut Child,
+    stdout_worker: thread::JoinHandle<Result<String, String>>,
+    stderr_worker: thread::JoinHandle<Result<String, String>>,
+    command_name: &str,
+) -> String {
+    terminate_child_process_tree(child);
+    let _ = child.wait();
+
+    let cleanup_result = join_auxiliary_cli_output(stdout_worker, stderr_worker);
+    let message = format!("Failed to wait for the {command_name} CLI to finish: {error}");
+
+    match cleanup_result {
+        Ok(_) => message,
+        Err(cleanup_error) => {
+            format!("{message}. Additionally failed to collect {command_name} CLI output during cleanup: {cleanup_error}")
+        }
+    }
 }
 
 fn run_bounded_auxiliary_cli_command(
@@ -106,11 +130,18 @@ fn run_bounded_auxiliary_cli_command(
     let stderr_worker = thread::spawn(move || read_cli_stream_text(stderr, "stderr"));
     let started_at = Instant::now();
     let status = loop {
-        match child.try_wait().map_err(|error| {
-            format!("Failed to wait for the {command_name} CLI to finish: {error}")
-        })? {
-            Some(status) => break status,
-            None => {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Err(error) => {
+                return Err(stop_auxiliary_cli_after_wait_error(
+                    error,
+                    &mut child,
+                    stdout_worker,
+                    stderr_worker,
+                    command_name,
+                ));
+            }
+            Ok(None) => {
                 if started_at.elapsed() >= Duration::from_millis(timeout_ms) {
                     terminate_child_process_tree(&mut child);
                     let _ = child.wait();
@@ -163,6 +194,16 @@ fn parse_instruction_command_response(stdout: &str) -> Result<Value, String> {
     serde_json::from_str::<Value>(trimmed_stdout).map_err(|error| {
         format!(
             "Failed to parse the instruction CLI JSON response: {error}. Output: {trimmed_stdout}"
+        )
+    })
+}
+
+fn parse_task_interview_command_response(stdout: &str) -> Result<Value, String> {
+    let trimmed_stdout = stdout.trim();
+
+    serde_json::from_str::<Value>(trimmed_stdout).map_err(|error| {
+        format!(
+            "Failed to parse the task interview CLI JSON response: {error}. Output: {trimmed_stdout}"
         )
     })
 }
@@ -281,6 +322,61 @@ pub(super) fn execute_instruction_command(
     }
 
     parse_instruction_command_response(&stdout_text)
+}
+
+pub(super) fn execute_task_interview_command(
+    request: TaskInterviewCommandRequest,
+) -> Result<Value, String> {
+    let workspace_path = resolve_workspace_root_path(&request.workspace_root)?;
+    let normalized_workspace_root = workspace_path.display().to_string();
+    let (arguments, payload_paths) =
+        rewrite_task_interview_payload_arguments(&normalized_workspace_root, request.arguments)?;
+    let mut cli_args = vec![
+        "--json".to_string(),
+        "--cwd".to_string(),
+        normalized_workspace_root,
+        "interview".to_string(),
+    ];
+
+    for argument in arguments {
+        let normalized = argument.trim();
+
+        if !normalized.is_empty() {
+            cli_args.push(normalized.to_string());
+        }
+    }
+
+    let mut cli_command = match crate::shared_cli::create_shared_cli_command(&cli_args) {
+        Ok(command) => command,
+        Err(error) => {
+            cleanup_temporary_files(&payload_paths);
+            return Err(error);
+        }
+    };
+
+    let output = match run_bounded_auxiliary_cli_command(
+        &mut cli_command.command,
+        "task interview",
+        DESKTOP_TASK_TIMEOUT_MS,
+    ) {
+        Ok(output) => output,
+        Err(error) => {
+            cleanup_temporary_files(&payload_paths);
+            return Err(error);
+        }
+    };
+    cleanup_temporary_files(&payload_paths);
+    let stdout_text = output.stdout;
+    let stderr_text = output.stderr;
+
+    if !output.status.success() {
+        return Err(format!(
+            "The task interview CLI command failed. {}",
+            format_command_failure(&stderr_text, &stdout_text)
+        ));
+    }
+
+    parse_task_interview_command_response(&stdout_text)
 }
 
 #[cfg(test)]

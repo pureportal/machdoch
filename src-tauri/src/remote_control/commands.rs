@@ -2,54 +2,12 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{Deserialize, Serialize};
 
 use super::{
+    command_kinds::{
+        command_requirements, is_supported_command, is_supported_reasoning,
+        supported_reasoning_modes_label,
+    },
     now_millis, MAX_COMMAND_TEXT_CHARS, MAX_REMOTE_SHORT_TEXT_CHARS, MAX_REMOTE_TEXT_CHARS,
 };
-
-const TASK_ID_COMMANDS: &[&str] = &["cancel", "retry", "continue"];
-
-const SESSION_ID_COMMANDS: &[&str] = &[
-    "activate-session",
-    "archive-session",
-    "pin-session",
-    "duplicate-session",
-    "branch-session",
-    "delete-session",
-    "rename-session",
-    "tag-session",
-    "clear-session-history",
-    "update-draft",
-    "set-session-model",
-    "set-session-mode",
-    "set-session-memory",
-    "set-global-memory",
-    "set-ui-control",
-    "remove-attachment",
-    "clear-attachments",
-    "apply-context-pack",
-    "save-message-context-pack",
-    "speak-message",
-];
-
-const SESSION_MUTATION_COMMANDS: &[&str] = &[
-    "follow-up",
-    "create-session",
-    "stop-speaking",
-    "delete-context-pack",
-];
-
-const ENABLED_COMMANDS: &[&str] = &["set-session-memory", "set-global-memory", "set-ui-control"];
-
-const CONTEXT_PACK_ID_COMMANDS: &[&str] = &["apply-context-pack", "delete-context-pack"];
-const MESSAGE_ID_COMMANDS: &[&str] = &["save-message-context-pack", "speak-message"];
-
-const JOB_ID_COMMANDS: &[&str] = &[
-    "scheduler-trigger",
-    "scheduler-pause",
-    "scheduler-resume",
-    "scheduler-delete",
-];
-
-const RUN_ID_COMMANDS: &[&str] = &["scheduler-retry-run", "scheduler-cancel-run"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,6 +31,8 @@ pub struct RemoteControlCommandEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) reasoning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) workspace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) enabled: Option<bool>,
@@ -92,19 +52,19 @@ pub struct RemoteControlCommandEvent {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct RemoteCommandRecord {
-    command_id: String,
-    kind: String,
+    pub(super) command_id: String,
+    pub(super) kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    task_id: Option<String>,
+    pub(super) task_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    session_id: Option<String>,
+    pub(super) session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    prompt_preview: Option<String>,
+    pub(super) prompt_preview: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    title: Option<String>,
+    pub(super) title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    target_preview: Option<String>,
-    created_at: u64,
+    pub(super) target_preview: Option<String>,
+    pub(super) created_at: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,6 +79,7 @@ pub(super) struct RemoteCommandRequest {
     pub(super) provider: Option<String>,
     pub(super) model: Option<String>,
     pub(super) mode: Option<String>,
+    pub(super) reasoning: Option<String>,
     pub(super) workspace: Option<String>,
     pub(super) enabled: Option<bool>,
     pub(super) attachment_id: Option<String>,
@@ -137,6 +98,7 @@ struct NormalizedCommandFields {
     provider: Option<String>,
     model: Option<String>,
     mode: Option<String>,
+    reasoning: Option<String>,
     workspace: Option<String>,
     enabled: Option<bool>,
     attachment_id: Option<String>,
@@ -168,6 +130,7 @@ pub(super) fn normalize_command(
         provider: fields.provider,
         model: fields.model,
         mode: fields.mode,
+        reasoning: fields.reasoning,
         workspace: fields.workspace,
         enabled: fields.enabled,
         attachment_id: fields.attachment_id,
@@ -183,17 +146,18 @@ fn normalize_command_fields(
     kind: &str,
     request: RemoteCommandRequest,
 ) -> Result<NormalizedCommandFields, String> {
+    let requirements = command_requirements(kind);
     let task_id = optional_trimmed_string(request.task_id.as_deref());
     let session_id = optional_trimmed_string(request.session_id.as_deref());
 
     require_value(
-        requires_task_id(kind),
+        requirements.task_id,
         &task_id,
         "This Mission Control command requires a taskId.",
     )?;
 
     require_value(
-        requires_session_id(kind),
+        requirements.session_id,
         &session_id,
         "This Mission Control command requires a sessionId.",
     )?;
@@ -225,9 +189,18 @@ fn normalize_command_fields(
         return Err("Session mode must be ask or machdoch.".to_string());
     }
 
+    let reasoning =
+        optional_truncated_text(request.reasoning.as_deref(), MAX_REMOTE_SHORT_TEXT_CHARS);
+    if kind == "set-session-reasoning" && !is_supported_reasoning(reasoning.as_deref()) {
+        return Err(format!(
+            "Session reasoning must be one of {}.",
+            supported_reasoning_modes_label()
+        ));
+    }
+
     let workspace = optional_truncated_text(request.workspace.as_deref(), MAX_REMOTE_TEXT_CHARS);
     require_value(
-        requires_enabled(kind),
+        requirements.enabled,
         &request.enabled,
         "This Mission Control command requires an enabled value.",
     )?;
@@ -239,28 +212,28 @@ fn normalize_command_fields(
 
     let context_pack_id = optional_trimmed_string(request.context_pack_id.as_deref());
     require_value(
-        requires_context_pack_id(kind),
+        requirements.context_pack_id,
         &context_pack_id,
         "This Mission Control command requires a contextPackId.",
     )?;
 
     let message_id = optional_trimmed_string(request.message_id.as_deref());
     require_value(
-        requires_message_id(kind),
+        requirements.message_id,
         &message_id,
         "This Mission Control command requires a messageId.",
     )?;
 
     let job_id = optional_trimmed_string(request.job_id.as_deref());
     require_value(
-        requires_job_id(kind),
+        requirements.job_id,
         &job_id,
         "This Mission Control command requires a jobId.",
     )?;
 
     let run_id = optional_trimmed_string(request.run_id.as_deref());
     require_value(
-        requires_run_id(kind),
+        requirements.run_id,
         &run_id,
         "This Mission Control command requires a runId.",
     )?;
@@ -274,6 +247,7 @@ fn normalize_command_fields(
         provider,
         model,
         mode,
+        reasoning,
         workspace,
         enabled: request.enabled,
         attachment_id,
@@ -306,50 +280,6 @@ pub(super) fn truncate_chars(value: &str, max_chars: usize) -> String {
     }
 
     value.chars().take(max_chars).collect::<String>()
-}
-
-fn is_supported_command(kind: &str) -> bool {
-    [
-        TASK_ID_COMMANDS,
-        SESSION_ID_COMMANDS,
-        SESSION_MUTATION_COMMANDS,
-        JOB_ID_COMMANDS,
-        RUN_ID_COMMANDS,
-    ]
-    .into_iter()
-    .any(|commands| includes_command(commands, kind))
-}
-
-fn includes_command(commands: &[&str], kind: &str) -> bool {
-    commands.contains(&kind)
-}
-
-fn requires_task_id(kind: &str) -> bool {
-    includes_command(TASK_ID_COMMANDS, kind)
-}
-
-fn requires_session_id(kind: &str) -> bool {
-    includes_command(SESSION_ID_COMMANDS, kind)
-}
-
-fn requires_enabled(kind: &str) -> bool {
-    includes_command(ENABLED_COMMANDS, kind)
-}
-
-fn requires_context_pack_id(kind: &str) -> bool {
-    includes_command(CONTEXT_PACK_ID_COMMANDS, kind)
-}
-
-fn requires_message_id(kind: &str) -> bool {
-    includes_command(MESSAGE_ID_COMMANDS, kind)
-}
-
-fn requires_job_id(kind: &str) -> bool {
-    includes_command(JOB_ID_COMMANDS, kind)
-}
-
-fn requires_run_id(kind: &str) -> bool {
-    includes_command(RUN_ID_COMMANDS, kind)
 }
 
 fn require_value<T>(required: bool, value: &Option<T>, message: &str) -> Result<(), String> {
@@ -427,106 +357,13 @@ fn create_command_id() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::super::MAX_COMMAND_TEXT_CHARS;
-    use super::{create_command_record, normalize_command, truncate_chars, RemoteCommandRequest};
-
-    fn command_request(kind: &str) -> RemoteCommandRequest {
-        RemoteCommandRequest {
-            kind: kind.to_string(),
-            task_id: None,
-            session_id: None,
-            prompt: None,
-            title: None,
-            tags: None,
-            provider: None,
-            model: None,
-            mode: None,
-            workspace: None,
-            enabled: None,
-            attachment_id: None,
-            context_pack_id: None,
-            message_id: None,
-            job_id: None,
-            run_id: None,
-        }
-    }
-
-    #[test]
-    fn follow_up_commands_require_prompt_text() {
-        let result = normalize_command(RemoteCommandRequest {
-            task_id: Some("task-1".to_string()),
-            prompt: Some("   ".to_string()),
-            ..command_request("follow-up")
-        });
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn approval_decision_commands_are_not_supported() {
-        let result = normalize_command(RemoteCommandRequest {
-            task_id: Some("task-1".to_string()),
-            prompt: None,
-            ..command_request("approval-decision")
-        });
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn set_session_mode_accepts_only_supported_modes() {
-        let invalid = normalize_command(RemoteCommandRequest {
-            session_id: Some("session-1".to_string()),
-            mode: Some("auto".to_string()),
-            ..command_request("set-session-mode")
-        });
-
-        assert!(invalid
-            .expect_err("invalid session mode should be rejected")
-            .contains("ask or machdoch"));
-
-        let allowed = normalize_command(RemoteCommandRequest {
-            session_id: Some("session-1".to_string()),
-            mode: Some("ask".to_string()),
-            ..command_request("set-session-mode")
-        })
-        .expect("supported session mode should normalize");
-
-        assert_eq!(allowed.mode.as_deref(), Some("ask"));
-    }
-
-    #[test]
-    fn follow_up_prompts_are_trimmed_and_truncated() {
-        let prompt = format!("  {}  ", "x".repeat(MAX_COMMAND_TEXT_CHARS + 1));
-        let event = normalize_command(RemoteCommandRequest {
-            task_id: Some("task-1".to_string()),
-            prompt: Some(prompt),
-            ..command_request("follow-up")
-        })
-        .expect("valid follow-up command should normalize");
-
-        assert_eq!(
-            event.prompt.expect("prompt").chars().count(),
-            MAX_COMMAND_TEXT_CHARS
-        );
-    }
-
-    #[test]
-    fn command_records_prefer_session_target_preview() {
-        let event = normalize_command(RemoteCommandRequest {
-            session_id: Some("session-1".to_string()),
-            prompt: Some("queued prompt".to_string()),
-            ..command_request("update-draft")
-        })
-        .expect("valid session command should normalize");
-        let record = create_command_record(&event);
-
-        assert_eq!(record.target_preview.as_deref(), Some("session:session-1"));
-        assert_eq!(record.prompt_preview.as_deref(), Some("queued prompt"));
-    }
+    use super::truncate_chars;
 
     #[test]
     fn truncate_chars_preserves_character_boundaries() {
-        assert_eq!(truncate_chars("åßçdé", 3), "åßç");
+        assert_eq!(
+            truncate_chars("\u{00e5}\u{00df}\u{00e7}d\u{00e9}", 3),
+            "\u{00e5}\u{00df}\u{00e7}"
+        );
     }
 }

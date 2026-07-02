@@ -59,6 +59,7 @@ export type {
   RalphWatchCliAction,
   SchedulerCliAction,
   SchedulerCliOptions,
+  TaskInterviewCliOptions,
 } from "./cli-args-types.js";
 import type {
   InstructionCliAction,
@@ -71,6 +72,7 @@ import type {
   RalphCliScope,
   RalphWatchCliAction,
   SchedulerCliAction,
+  TaskInterviewCliOptions,
 } from "./cli-args-types.js";
 
 export { getHelpText };
@@ -947,6 +949,50 @@ export const parseCliArgs = (
     (rawInstructionRalphFlow || rawInstructionRalphFlowScope)
   ) {
     fail("--ralph-flow and --flow-scope are only valid for `machdoch instructions`.");
+  }
+
+  if (first === "interview") {
+    if (quickRunRequested || rawTask) {
+      fail("`machdoch interview` cannot be combined with --quick or --task.");
+    }
+
+    assertNoAdditionalPositionals(first, rest);
+
+    if (!rawSchedulerPrompt && !rawSchedulerPromptFile) {
+      fail("`machdoch interview` expects --prompt or --prompt-file.");
+    }
+
+    if (rawSchedulerPrompt && rawSchedulerPromptFile) {
+      fail("Use either --prompt or --prompt-file for `machdoch interview`, not both.");
+    }
+
+    if (rawRalphInputJson && rawRalphInputJsonFile) {
+      fail("Use either --input-json or --input-json-file for `machdoch interview`, not both.");
+    }
+
+    const interviewMaxRounds = parseOptionalPositiveInteger(
+      rawRalphMaxRounds,
+      "--max-rounds",
+    );
+    const interview: TaskInterviewCliOptions = {
+      ...(rawSchedulerPrompt ? { prompt: rawSchedulerPrompt } : {}),
+      ...(rawSchedulerPromptFile ? { promptFile: rawSchedulerPromptFile } : {}),
+      ...(rawRalphInputJson ? { inputJson: rawRalphInputJson } : {}),
+      ...(rawRalphInputJsonFile ? { inputJsonFile: rawRalphInputJsonFile } : {}),
+      ...(interviewMaxRounds !== undefined
+        ? { maxRounds: interviewMaxRounds }
+        : {}),
+    };
+
+    return createParsedArgs(
+      {
+        ...sharedOptions,
+        command: "interview",
+      },
+      {
+        interview,
+      },
+    );
   }
 
   if (first === "mcp") {

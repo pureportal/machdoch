@@ -1,11 +1,12 @@
 import type { ModelProvider, ReasoningMode, RuntimeAgentLimitOverrides, RunMode, UserApiProvider } from "../../core/runtime-contract.generated.js";
-import type { InstructionCliOptions, McpCliOptions, ParsedCliArgs, RalphCliOptions, SchedulerCliOptions } from "./cli-args-types.js";
+import type { InstructionCliOptions, McpCliOptions, ParsedCliArgs, RalphCliOptions, SchedulerCliOptions, TaskInterviewCliOptions } from "./cli-args-types.js";
 
 export const createParsedArgs = (
   base: Omit<
     ParsedCliArgs,
     | "mode"
     | "task"
+    | "interview"
     | "ralph"
     | "scheduler"
     | "mcp"
@@ -43,6 +44,7 @@ export const createParsedArgs = (
     conversationContextFile?: string;
     contextPaths?: string[];
     imagePaths?: string[];
+    interview?: TaskInterviewCliOptions;
     ralph?: RalphCliOptions;
     scheduler?: SchedulerCliOptions;
     mcp?: McpCliOptions;
@@ -83,6 +85,7 @@ export const createParsedArgs = (
       ? { imagePaths: options.imagePaths }
       : {}),
     ...(options?.task ? { task: options.task } : {}),
+    ...(options?.interview ? { interview: options.interview } : {}),
     ...(options?.ralph ? { ralph: options.ralph } : {}),
     ...(options?.scheduler ? { scheduler: options.scheduler } : {}),
     ...(options?.mcp ? { mcp: options.mcp } : {}),

@@ -1562,6 +1562,87 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "runs the chat interview before submitting the enriched task",
+    async () => {
+      const finalPrompt = [
+        "Implement a billing settings panel.",
+        "",
+        "Interview context for this task:",
+        "Use account-level settings.",
+      ].join("\n");
+      const runTaskInterviewSpy = vi
+        .spyOn(runtime, "runTaskInterview")
+        .mockResolvedValue({
+          status: "complete",
+          session: {
+            id: "task-interview-1",
+            prompt: "Implement a billing settings panel.",
+            turn: 1,
+            maxTurns: 5,
+            findings: ["Settings page exists."],
+            assumptions: [],
+            relevantFiles: ["src/settings.tsx"],
+            finalSummary: "Use account-level settings.",
+            transcript: [],
+          },
+          fields: [],
+          summary: "Ready to start.",
+          finalPrompt,
+          provider: "openai",
+          model: "gpt-5.5",
+          result: null,
+        });
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockResolvedValue({
+          execution: createMockExecutionFixture(
+            finalPrompt,
+            "/mocked/tauri/path",
+          ),
+        });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      fireEvent.click(screen.getByRole("button", { name: "Interview" }));
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: "Implement a billing settings panel." },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runTaskInterviewSpy).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      expect(runTaskInterviewSpy).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({
+          prompt: "Implement a billing settings panel.",
+          mode: "machdoch",
+          provider: "openai",
+          model: "gpt-5.5",
+          maxTurns: 5,
+        }),
+      );
+      expect(runDesktopTaskSpy.mock.calls[0]?.[1]).toBe(finalPrompt);
+      expect(
+        screen.getAllByText("Implement a billing settings panel.").length,
+      ).toBeGreaterThan(0);
+
+      runTaskInterviewSpy.mockRestore();
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "selects a folder via Tauri dialog",
     async () => {
       render(<ChatSession />);

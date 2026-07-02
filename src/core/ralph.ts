@@ -135,6 +135,7 @@ import {
 import {
   executeLocalCommand,
   formatLocalCommandError,
+  getLocalCommandErrorDetails,
   normalizeLocalCommandCwd,
 } from "./_helpers/process-execution.js";
 import {
@@ -192,6 +193,7 @@ const RALPH_BLOCK_PROGRESS_TRUNCATION_MARKER = `\n[Ralph block progress truncate
 
 const DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES = 1_000_000;
 const DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS = 120_000;
+const DEFAULT_RALPH_UTILITY_CHECK_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_RALPH_MODEL_BLOCK_TIMEOUT_MS = 60 * 60 * 1_000;
 const DEFAULT_RALPH_UTILITY_POLL_INTERVAL_SECONDS = 30;
 const DEFAULT_RALPH_UTILITY_MAX_SEARCH_RESULTS = 100;
@@ -1860,7 +1862,10 @@ const resolveVariableValues = (
   for (const variable of variables) {
     const suppliedValue = supplied[variable.name];
 
-    if (suppliedValue !== undefined) {
+    if (
+      suppliedValue !== undefined &&
+      !(suppliedValue === "" && variable.default !== undefined)
+    ) {
       values[variable.name] = suppliedValue;
       continue;
     }
@@ -1885,7 +1890,11 @@ const resolvePlaceholder = (
   context: RalphResultContext,
 ): string => {
   if (placeholder.variable) {
-    return context.variables[placeholder.variable.name] ?? "";
+    const value = context.variables[placeholder.variable.name];
+
+    return value !== undefined && value !== ""
+      ? value
+      : placeholder.variable.default ?? "";
   }
 
   if (placeholder.builtin === "lastResult") {
@@ -3742,7 +3751,9 @@ const executeCommandUtilityBlock = async (
         cwd,
         timeoutMs: getUtilityTimeoutMs(
           utility,
-          DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
+          checkMode
+            ? DEFAULT_RALPH_UTILITY_CHECK_TIMEOUT_MS
+            : DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
         ),
         maxBufferBytes:
           utility.maxOutputBytes ?? DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
@@ -3774,6 +3785,11 @@ const executeCommandUtilityBlock = async (
       block,
       "ERROR",
       formatLocalCommandError(`${block.title} failed.`, error),
+      {
+        command: executableCommand,
+        cwd,
+        ...getLocalCommandErrorDetails(error),
+      },
     );
   }
 };

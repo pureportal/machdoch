@@ -8,7 +8,9 @@ import { executeWebSearch } from "./web-search.ts";
 const workspacesToClean: string[] = [];
 const originalEnvironment = new Map<string, string | undefined>();
 const ISOLATED_ENV_KEYS = [
+  "PERPLEXITY_API_KEY",
   "SERPER_API_KEY",
+  "TAVILY_API_KEY",
   "MACHDOCH_USER_CONFIG_DIR",
 ] as const;
 
@@ -56,6 +58,75 @@ afterEach(async () => {
 });
 
 describe("executeWebSearch", () => {
+  it("runs Tavily searches with automatic query parameters and explicit response limits", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+    process.env.TAVILY_API_KEY = "tavily-test-key-1234567890";
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          answer: "Tavily returned a concise answer.",
+          results: [
+            {
+              title: "Tavily search docs",
+              url: "https://docs.tavily.com/documentation/api-reference/endpoint/search",
+              content: "Tavily search endpoint parameters.",
+              published_date: "2026-06-01",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeWebSearch(
+      workspaceRoot,
+      "tavily",
+      "  Tavily API automatic search parameters  ",
+    );
+    const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+
+    expect(result).toEqual({
+      provider: "tavily",
+      query: "Tavily API automatic search parameters",
+      summary: "Tavily returned a concise answer.",
+      results: [
+        {
+          title: "Tavily search docs",
+          url: "https://docs.tavily.com/documentation/api-reference/endpoint/search",
+          snippet: "Tavily search endpoint parameters.",
+          date: "2026-06-01",
+        },
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.tavily.com/search",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          Authorization: "Bearer tavily-test-key-1234567890",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(JSON.parse(String(requestInit?.body))).toEqual({
+      query: "Tavily API automatic search parameters",
+      auto_parameters: true,
+      max_results: 8,
+      include_answer: true,
+      include_raw_content: false,
+      include_images: false,
+      include_favicon: false,
+    });
+  });
+
   it("runs Serper searches and normalizes organic result snippets", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();

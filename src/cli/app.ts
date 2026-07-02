@@ -14,6 +14,7 @@ import {
   runInteractiveChat,
 } from "./_helpers/cli-task-run.js";
 import { printInstructionSummary } from "./_helpers/cli-instruction-commands.js";
+import { printTaskInterviewSummary } from "./_helpers/cli-interview-commands.js";
 import { printMcpSummary } from "./_helpers/cli-mcp-commands.js";
 import { printRalphSummary } from "./_helpers/cli-ralph-commands.js";
 import { printSchedulerSummary } from "./_helpers/cli-scheduler-commands.js";
@@ -48,6 +49,10 @@ export const runCli = async (argv: string[]): Promise<void> => {
     }
     case "chat": {
       await runInteractiveChat(args);
+      return;
+    }
+    case "interview": {
+      await printTaskInterviewSummary(args);
       return;
     }
     case "inspect": {

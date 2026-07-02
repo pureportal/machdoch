@@ -22,6 +22,7 @@ Usage:
   machdoch instructions create [name] --prompt <text> [--scope <user|workspace|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--apply-to <glob>] [--json]
   machdoch instructions save [name] --prompt <text> [--path <file>] [--scope <user|workspace|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--apply-to <glob>] [--json]
   machdoch instructions generate [name] --prompt <wish> [--path <file>] [--scope <user|workspace|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--apply-to <glob>] [--max-rounds <n>] [--json]
+  machdoch interview --prompt <text> [--input-json <json>] [--max-rounds <n>] [--json]
   machdoch ralph list [--scope <user|workspace>] [--json]
   machdoch ralph show|validate|delete <flow> [--scope <user|workspace>] [--json]
   machdoch ralph revisions <flow> [--scope <user|workspace>] [--json]
@@ -162,11 +163,11 @@ Options:
   --generation-mode <mode>
                           Ralph generation style: do-it or interview.
   --param <name=value>    Set a Ralph flow variable for \`ralph run\`. Repeat for multiple variables.
-  --input-json <json>     Submit answers for \`ralph resume\`. Use either a values object or a full input response.
+  --input-json <json>     Submit answers for \`ralph resume\`, \`ralph interview\`, or \`interview\`.
   --input-json-file <path>
-                          Read Ralph resume answers from a JSON file.
+                          Read interview or Ralph resume answers from a JSON file.
   --retry-current         Resume a recoverable blocked Ralph run by retrying its checkpoint block.
-  --max-rounds <n>        Maximum rounds for \`ralph create\`, \`ralph interview\`, or \`instructions generate\`.
+  --max-rounds <n>        Maximum rounds for \`interview\`, \`ralph create\`, \`ralph interview\`, or \`instructions generate\`.
   --max-transitions <n>   Stop a Ralph run or resume after this many graph transitions.
   --trace                 Show the detailed JSONL trace for \`ralph log\`.
   --include-disabled      Include disabled preset and configured MCP servers in \`mcp servers\`.

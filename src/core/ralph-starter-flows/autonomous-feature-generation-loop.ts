@@ -1,6 +1,8 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
 
+const RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
+
 const autonomousFeatureGenerationLoopFlow: RalphFlow = {
   schemaVersion: 1,
   id: "starter-autonomous-feature-generation-loop",
@@ -254,7 +256,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Research current and comparable products, open-source alternatives, new platform capabilities, state-of-the-art UX, and emerging/hyped ideas relevant to this project. Inspiration sources: {{inspirationSources:text=}}. Produce a concise opportunity map with links. Project profile: {{data:understand-project:output}}.",
+        "Use content enrichment to find better feature opportunities before drafting a goal. If search_web is available, run focused searches for current comparable products, open-source alternatives, platform capabilities, state-of-the-art UX patterns, release notes, and emerging/hyped ideas relevant to this project. Use fetch_url on the best official, product, standards, or maintainer pages before relying on them. Inspiration sources: {{inspirationSources:text=}}. Produce a concise opportunity map with source links, freshness/version assumptions, likely fit, implementation leverage, and risks. If web search is unavailable, say so and ground the opportunity map in local repository evidence plus any provided URLs. Project profile: {{data:understand-project:output}}.",
     },
     {
       id: "draft-feature-goal",
@@ -270,7 +272,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Define one concrete new feature goal for autonomous implementation. Use project profile {{data:understand-project:output}}, research {{summary:research-inspiration}}, projectVision={{projectVision:text=}}, featureStrategy={{featureStrategy:text=}}, riskTolerance={{riskTolerance:text=moderate}}, excludedAreas={{excludedAreas:text=}}, completed goals history at {{completedGoalsFile:path=.machdoch/autonomous-features/completed-goals.jsonl}}, and detected commands {{result:detect-project-commands}}. Choose a feature that is valuable, coherent with the codebase, shippable in a bounded loop, testable, and not merely cleanup. Avoid duplicating already completed work. Include acceptance criteria, non-goals, dependencies, likely files, verification plan, visual review needs, and a task checklist.",
+        "Define one concrete new feature goal for autonomous implementation. Use project profile {{data:understand-project:output}}, research {{summary:research-inspiration}}, projectVision={{projectVision:text=}}, featureStrategy={{featureStrategy:text=}}, riskTolerance={{riskTolerance:text=moderate}}, excludedAreas={{excludedAreas:text=}}, completed goals history at {{completedGoalsFile:path=.machdoch/autonomous-features/completed-goals.jsonl}}, and detected commands {{result:detect-project-commands}}. Choose a feature that is valuable, coherent with the codebase, source-backed or clearly supported by local product evidence, shippable in a bounded loop, testable, and not merely cleanup. Avoid duplicating already completed work. Include acceptance criteria, non-goals, source/content-enrichment notes, dependencies, likely files, verification plan, visual review needs, and a task checklist.",
     },
     {
       id: "improve-feature-goal",
@@ -410,6 +412,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
         type: "RUN_CHECK",
         command: "{{verificationCommand:text=}}",
         fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        timeoutSeconds: RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS,
       },
     },
     {
@@ -638,7 +641,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
 
 export const autonomousFeatureGenerationLoopStarterFlow = {
   id: "autonomous-feature-generation-loop",
-  version: 4,
+  version: 5,
   defaultAlias: "autonomous-feature-generation-loop",
   category: "Implementation",
   tags: ["autonomous", "feature", "loop"],

@@ -1,6 +1,8 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
 
+const RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
+
 const autonomousCodeImprovementLoopFlow: RalphFlow = {
   schemaVersion: 1,
   id: "starter-autonomous-code-improvement-loop",
@@ -182,7 +184,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Research current primary-source guidance only when it materially affects the selected improvement scope. Focus on framework/library behavior, accessibility guidance, performance recommendations, testing approaches, and security regression risks relevant to scope analysis {{data:analyze-selected-scope:output}}. Keep findings concise with source links and practical implications. Do not research broadly just to find extra work.",
+        "Use content enrichment to sharpen the selected improvement scope. If search_web is available, run focused searches for current primary-source framework/library behavior, changelogs, release notes, accessibility guidance, performance recommendations, testing approaches, security advisories, and standards relevant to scope analysis {{data:analyze-selected-scope:output}}. Use fetch_url on the best official or maintainer pages before relying on them, and inspect local package/config metadata for version assumptions. Keep findings concise with source links, freshness/version notes, practical implications, and explicit non-findings. If web search is unavailable, say so and rely on local evidence plus provided URLs. Do not research broadly just to find extra work.",
     },
     {
       id: "choose-improvement",
@@ -214,7 +216,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Select exactly one autonomous code improvement for selected scope {{result:select-scope}}, or decide STOP. Use scope analysis {{data:analyze-selected-scope:output}}, research {{summary:improvement-research}}, completed history {{result:read-completed-improvements}}, latest completed append {{result:append-completed-improvement}}, and policy {{improvementPolicy:text=}}. Return decision IMPLEMENT only when the candidate has concrete evidence, user or maintainer value, bounded scope, a clear currentBehavior and proposedBehavior, acceptanceCriteria, risk assessment, affectedFiles, verificationPlan, and rollbackNotes. Behavior changes are allowed only when they improve correctness, UX, accessibility, reliability, performance, error handling, or maintainability and can be verified. Return STOP when remaining ideas are speculative, tiny nits, cosmetic churn, premature abstractions, broad rewrites, duplicate of completed history, require product/domain approval, require unsafe schema/dependency changes, or fail threshold {{meaningfulThreshold:text=}}. Do not dig for weak work to keep the loop busy. If decision is STOP, selectedCandidate must be {} and stopReason must explain the evidence-backed reason. Return only schema-valid JSON.",
+          "Select exactly one autonomous code improvement for selected scope {{result:select-scope}}, or decide STOP. Use scope analysis {{data:analyze-selected-scope:output}}, research {{summary:improvement-research}}, completed history {{result:read-completed-improvements}}, latest completed append {{result:append-completed-improvement}}, and policy {{improvementPolicy:text=}}. Return decision IMPLEMENT only when the candidate has concrete evidence, source-backed or local user/maintainer value, bounded scope, a clear currentBehavior and proposedBehavior, acceptanceCriteria, risk assessment, affectedFiles, verificationPlan, and rollbackNotes. Behavior changes are allowed only when they improve correctness, UX, accessibility, reliability, performance, error handling, or maintainability and can be verified. Return STOP when remaining ideas are speculative, tiny nits, cosmetic churn, premature abstractions, broad rewrites, duplicate of completed history, require product/domain approval, require unsafe schema/dependency changes, or fail threshold {{meaningfulThreshold:text=}}. Do not dig for weak work to keep the loop busy. If decision is STOP, selectedCandidate must be {} and stopReason must explain the evidence-backed reason. Return only schema-valid JSON.",
       },
     },
     {
@@ -298,6 +300,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "RUN_CHECK",
         command: "{{verificationCommand:text=}}",
         fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        timeoutSeconds: RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS,
       },
     },
     {
@@ -609,7 +612,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
 
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 5,
+  version: 6,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "behavior-change", "validation"],

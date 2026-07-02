@@ -21,6 +21,9 @@ import type {
   TaskExecutionProgress,
 } from "../../../../core/types.js";
 import type {
+  RalphInputValue,
+} from "../../../../core/ralph.js";
+import type {
   ReasoningMode,
   RunMode,
 } from "../../../../core/runtime-contract.generated.js";
@@ -61,10 +64,12 @@ import {
   openWorkspacePath,
   resolveAttachedImagePreviewSource,
   resolveDroppedPaths,
+  runTaskInterview,
   saveInstruction,
   saveClipboardImageAttachment,
   type InstructionMutationInput,
   type InstructionRegistryResult,
+  type TaskInterviewResult,
 } from "../../runtime";
 import {
   DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
@@ -111,6 +116,17 @@ import {
   removeSessionModeOverride,
   RUN_MODE_META,
 } from "./session-shell";
+import {
+  createDefaultRalphInputValues,
+  validateRalphInputFieldValues,
+} from "../../ralph/_helpers/validate-ralph-input-field-values.helper";
+import {
+  createLocalTaskInterviewPrompt,
+  createTaskInterviewContextNotes,
+  getTrimmedTaskInterviewAnswerComments,
+  type ChatInterviewDialogState,
+  type ChatInterviewStartContext,
+} from "./chat-interview";
 import {
   createExecutionFromTerminalProgress,
   createExecutionMessageContent,
@@ -273,6 +289,9 @@ export const useChatSessionController = (
   const [queuedSessionMessages, setQueuedSessionMessages] = useState<
     QueuedSessionMessage[]
   >([]);
+  const [chatInterviewEnabled, setChatInterviewEnabled] = useState(false);
+  const [chatInterview, setChatInterview] =
+    useState<ChatInterviewDialogState | null>(null);
   const dispatchingQueuedMessageIdsRef = useRef<Set<string>>(new Set());
   const composerState = useSessionComposerState(state);
   const runtime = useChatSessionRuntime({
@@ -544,10 +563,13 @@ export const useChatSessionController = (
           state.activeSession.model,
         )
       : null;
+  const chatInterviewBusy =
+    chatInterview?.status === "loading" || chatInterview?.status === "starting";
   const canSendMessage =
     Boolean(state.activeSession.draft.trim()) &&
     !speechInput.recording &&
     !speechInput.transcribing &&
+    !chatInterviewBusy &&
     !activeSessionImageInputError;
   const uiControlAvailability = runtime.runtimeSnapshot?.uiControl;
   const isUiControlAvailable = uiControlAvailability?.available === true;
@@ -3016,6 +3038,354 @@ export const useChatSessionController = (
     });
   }, [quickTaskSession, state.applyShellState]);
 
+  const submitTaskFromInterview = (
+    context: ChatInterviewStartContext,
+    finalPrompt: string,
+  ): void => {
+    const submitted = taskSubmission.submitTaskToSession({
+      sessionSnapshot: context.sessionSnapshot,
+      task: finalPrompt,
+      contextAttachments: context.contextAttachments,
+      clearDraft: true,
+      activateSession: true,
+      visibleMessageContent: context.task,
+      promptHistoryContent: context.task,
+    });
+
+    if (submitted) {
+      setChatInterview(null);
+      return;
+    }
+
+    setChatInterview((current) =>
+      current?.context === context
+        ? {
+            ...current,
+            status: "blocked",
+            summary: "The task could not start because the session is already running.",
+            error: "The task could not start because the session is already running.",
+          }
+        : current,
+    );
+  };
+
+  const applyChatInterviewResult = async (
+    context: ChatInterviewStartContext,
+    taskId: string,
+    result: TaskInterviewResult,
+  ): Promise<void> => {
+    const fields = result.fields ?? [];
+    const nextValues = createDefaultRalphInputValues(fields);
+    const findings = result.session.findings ?? [];
+    const assumptions = result.session.assumptions ?? [];
+    const relevantFiles = result.session.relevantFiles ?? [];
+
+    if (result.status === "questions") {
+      setChatInterview((current) =>
+        current?.taskId === taskId
+          ? {
+              ...current,
+              status: "ready",
+              session: result.session,
+              fields,
+              values: nextValues,
+              answerComments: {},
+              expandedCommentFieldIds: [],
+              skippedFieldIds: [],
+              validationErrors: {},
+              summary: result.summary,
+              findings,
+              assumptions,
+              relevantFiles,
+              provider: result.provider,
+              model: result.model,
+              error: undefined,
+            }
+          : current,
+      );
+      return;
+    }
+
+    if (result.status === "blocked") {
+      setChatInterview((current) =>
+        current?.taskId === taskId
+          ? {
+              ...current,
+              status: "blocked",
+              session: result.session,
+              fields,
+              values: nextValues,
+              answerComments: {},
+              expandedCommentFieldIds: [],
+              skippedFieldIds: [],
+              validationErrors: {},
+              summary: result.summary,
+              findings,
+              assumptions,
+              relevantFiles,
+              provider: result.provider,
+              model: result.model,
+              error: result.summary,
+            }
+          : current,
+      );
+      return;
+    }
+
+    const finalPrompt =
+      result.finalPrompt ??
+      createLocalTaskInterviewPrompt(context, result.session, [], {});
+
+    setChatInterview((current) =>
+      current?.taskId === taskId
+        ? {
+            ...current,
+            status: "starting",
+            session: result.session,
+            fields: [],
+            values: {},
+            answerComments: {},
+            expandedCommentFieldIds: [],
+            skippedFieldIds: [],
+            validationErrors: {},
+            summary: result.summary,
+            findings,
+            assumptions,
+            relevantFiles,
+            finalPrompt,
+            provider: result.provider,
+            model: result.model,
+          }
+        : current,
+    );
+    submitTaskFromInterview(context, finalPrompt);
+  };
+
+  const requestChatInterviewRound = async (
+    context: ChatInterviewStartContext,
+    session?: ChatInterviewDialogState["session"],
+    answers?: Record<string, RalphInputValue>,
+    answerComments?: Record<string, string>,
+  ): Promise<void> => {
+    const taskId = `task-interview-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    setChatInterview((current) => ({
+      context,
+      status: "loading",
+      session: session ?? current?.session,
+      fields: current?.fields ?? [],
+      values: current?.values ?? {},
+      answerComments: current?.answerComments ?? {},
+      expandedCommentFieldIds: current?.expandedCommentFieldIds ?? [],
+      skippedFieldIds: current?.skippedFieldIds ?? [],
+      validationErrors: {},
+      summary: session ? "Reviewing answers" : "Preparing questions",
+      findings: current?.findings ?? [],
+      assumptions: current?.assumptions ?? [],
+      relevantFiles: current?.relevantFiles ?? [],
+      taskId,
+    }));
+
+    try {
+      const result = await runTaskInterview(context.sessionSnapshot.workspace, {
+        prompt: context.task,
+        mode: context.mode,
+        provider: context.provider,
+        model: context.model,
+        contextNotes: createTaskInterviewContextNotes(
+          context,
+          aiContextMessageLimit,
+        ),
+        ...(context.reasoning ? { reasoning: context.reasoning } : {}),
+        maxTurns: 5,
+        taskId,
+        ...(session ? { session } : {}),
+        ...(answers ? { answers } : {}),
+        ...(answerComments && Object.keys(answerComments).length > 0
+          ? { answerComments }
+          : {}),
+      });
+
+      await applyChatInterviewResult(context, taskId, result);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      setChatInterview((current) =>
+        current?.taskId === taskId
+          ? {
+              ...current,
+              status: "blocked",
+              summary: errorMessage,
+              error: errorMessage,
+            }
+          : current,
+      );
+    }
+  };
+
+  const startChatInterview = (task: string): void => {
+    const context: ChatInterviewStartContext = {
+      sessionSnapshot: state.activeSession,
+      task,
+      contextAttachments: state.activeSession.draftContextAttachments.map(
+        (attachment) => ({ ...attachment }),
+      ),
+      mode: activeRunMode,
+      provider: state.activeSession.provider,
+      model: state.activeSession.model,
+      ...(state.activeSession.reasoning
+        ? { reasoning: state.activeSession.reasoning }
+        : {}),
+    };
+
+    void requestChatInterviewRound(context);
+  };
+
+  const updateChatInterviewValue = (
+    fieldId: string,
+    value: RalphInputValue,
+  ): void => {
+    setChatInterview((current) =>
+      current
+        ? {
+            ...current,
+            values: {
+              ...current.values,
+              [fieldId]: value,
+            },
+            skippedFieldIds: current.skippedFieldIds.filter((id) => id !== fieldId),
+            validationErrors: {
+              ...current.validationErrors,
+              [fieldId]: "",
+            },
+          }
+        : current,
+    );
+  };
+
+  const updateChatInterviewComment = (
+    fieldId: string,
+    comment: string,
+  ): void => {
+    setChatInterview((current) =>
+      current
+        ? {
+            ...current,
+            answerComments: {
+              ...current.answerComments,
+              [fieldId]: comment,
+            },
+          }
+        : current,
+    );
+  };
+
+  const toggleChatInterviewComment = (fieldId: string): void => {
+    setChatInterview((current) =>
+      current
+        ? {
+            ...current,
+            expandedCommentFieldIds: current.expandedCommentFieldIds.includes(fieldId)
+              ? current.expandedCommentFieldIds.filter((id) => id !== fieldId)
+              : [...current.expandedCommentFieldIds, fieldId],
+          }
+        : current,
+    );
+  };
+
+  const skipChatInterviewField = (fieldId: string): void => {
+    setChatInterview((current) =>
+      current
+        ? {
+            ...current,
+            values: {
+              ...current.values,
+              [fieldId]: null,
+            },
+            skippedFieldIds: current.skippedFieldIds.includes(fieldId)
+              ? current.skippedFieldIds
+              : [...current.skippedFieldIds, fieldId],
+            validationErrors: {
+              ...current.validationErrors,
+              [fieldId]: "",
+            },
+          }
+        : current,
+    );
+  };
+
+  const submitChatInterviewAnswers = async (): Promise<void> => {
+    if (!chatInterview?.session || chatInterview.status !== "ready") {
+      return;
+    }
+
+    const validationErrors = validateRalphInputFieldValues(
+      chatInterview.fields,
+      chatInterview.values,
+    );
+
+    if (Object.keys(validationErrors).length > 0) {
+      setChatInterview((current) =>
+        current ? { ...current, validationErrors } : current,
+      );
+      return;
+    }
+
+    const answerComments = getTrimmedTaskInterviewAnswerComments(
+      chatInterview.answerComments,
+    );
+
+    await requestChatInterviewRound(
+      chatInterview.context,
+      chatInterview.session,
+      chatInterview.values,
+      answerComments,
+    );
+  };
+
+  const startTaskFromChatInterviewNow = (): void => {
+    if (!chatInterview) {
+      return;
+    }
+
+    const validationErrors = validateRalphInputFieldValues(
+      chatInterview.fields,
+      chatInterview.values,
+    );
+
+    if (Object.keys(validationErrors).length > 0) {
+      setChatInterview((current) =>
+        current ? { ...current, validationErrors } : current,
+      );
+      return;
+    }
+
+    const answerComments = getTrimmedTaskInterviewAnswerComments(
+      chatInterview.answerComments,
+    );
+    const finalPrompt =
+      chatInterview.finalPrompt ??
+      createLocalTaskInterviewPrompt(
+        chatInterview.context,
+        chatInterview.session,
+        chatInterview.fields,
+        chatInterview.values,
+        answerComments,
+      );
+
+    setChatInterview((current) =>
+      current
+        ? {
+            ...current,
+            status: "starting",
+            summary: "Starting task with interview context.",
+            finalPrompt,
+          }
+        : current,
+    );
+    submitTaskFromInterview(chatInterview.context, finalPrompt);
+  };
+
   const handleSend = (): void => {
     const task = state.activeSession.draft.trim();
 
@@ -3040,6 +3410,11 @@ export const useChatSessionController = (
           queueActiveSessionMessage("back");
           return;
       }
+    }
+
+    if (chatInterviewEnabled) {
+      startChatInterview(task);
+      return;
     }
 
     taskSubmission.submitTaskToSession({
@@ -3192,6 +3567,16 @@ export const useChatSessionController = (
         }
       },
     },
+    chatInterview: {
+      state: chatInterview,
+      onClose: () => setChatInterview(null),
+      onValueChange: updateChatInterviewValue,
+      onToggleComment: toggleChatInterviewComment,
+      onCommentChange: updateChatInterviewComment,
+      onSkipField: skipChatInterviewField,
+      onStartNow: startTaskFromChatInterviewNow,
+      onSubmitAnswers: () => void submitChatInterviewAnswers(),
+    },
     composer: {
       activeSession: state.activeSession,
       chooserProviders: providerChooserState.chooserProviders,
@@ -3212,6 +3597,11 @@ export const useChatSessionController = (
       isGlobalMemoryAvailable: memorySummaryState.isGlobalMemoryAvailable,
       isGlobalMemoryActive: memorySummaryState.isGlobalMemoryActive,
       isUiControlAvailable,
+      interviewEnabled: chatInterviewEnabled,
+      interviewDisabled: !isDesktop || chatInterviewBusy,
+      interviewDescription: isDesktop
+        ? "Ask focused precheck questions before starting the task."
+        : "Task interviews are available in the desktop app.",
       contextAttachments: state.activeSession.draftContextAttachments,
       contextPacks: workspaceContextPacks,
       matchedContextPackIds,
@@ -3249,6 +3639,7 @@ export const useChatSessionController = (
       onSessionMemoryEnabledChange: settingsActions.setSessionMemoryEnabled,
       onUseGlobalMemoryChange: settingsActions.setUseGlobalMemory,
       onUiControlEnabledChange: settingsActions.setUiControlEnabled,
+      onInterviewEnabledChange: setChatInterviewEnabled,
       onSelectContextFiles: () =>
         handleSelectAttachments("active-session", "files"),
       onSelectContextFolders: () =>

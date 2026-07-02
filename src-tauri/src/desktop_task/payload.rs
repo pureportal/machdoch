@@ -6,6 +6,8 @@ use std::{
 
 use serde_json::{Map, Value};
 
+use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
+
 use super::progress::create_progress_timestamp;
 
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -78,7 +80,12 @@ pub(super) fn write_conversation_context_file(
     let serialized = serde_json::to_string(conversation_context)
         .map_err(|error| format!("Failed to serialize conversation context: {error}"))?;
 
-    fs::write(&file_path, serialized).map_err(|error| {
+    write_file_atomic(
+        &file_path,
+        serialized.as_bytes(),
+        AtomicWriteOptions::with_unix_mode(0o600),
+    )
+    .map_err(|error| {
         format!(
             "Failed to write the desktop conversation context file {}: {error}",
             file_path.display()
@@ -98,108 +105,6 @@ pub(super) fn cleanup_temporary_files(paths: &[PathBuf]) {
     for path in paths {
         cleanup_temporary_file(Some(path));
     }
-}
-
-fn write_workspace_payload_file(
-    workspace_root: &str,
-    label: &str,
-    contents: &str,
-) -> Result<PathBuf, String> {
-    let unique_id = TEMP_FILE_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let directory = Path::new(workspace_root)
-        .join(".machdoch")
-        .join("ralph")
-        .join("payloads");
-    let file_path = directory.join(format!(
-        ".machdoch-ralph-{label}-{}-{}-{}.tmp",
-        std::process::id(),
-        create_progress_timestamp(),
-        unique_id
-    ));
-
-    fs::create_dir_all(&directory).map_err(|error| {
-        format!(
-            "Failed to prepare the Ralph payload directory {}: {error}",
-            directory.display()
-        )
-    })?;
-    fs::write(&file_path, contents).map_err(|error| {
-        format!(
-            "Failed to write the Ralph payload file {}: {error}",
-            file_path.display()
-        )
-    })?;
-
-    Ok(file_path)
-}
-
-pub(super) fn rewrite_ralph_payload_arguments(
-    workspace_root: &str,
-    arguments: Vec<String>,
-) -> Result<(Vec<String>, Vec<PathBuf>), String> {
-    let mut rewritten = Vec::new();
-    let mut payload_paths = Vec::new();
-    let mut params = Vec::new();
-    let mut index = 0;
-
-    while index < arguments.len() {
-        let argument = &arguments[index];
-        let replacement_flag = match argument.as_str() {
-            "--prompt" => Some(("--prompt-file", "prompt")),
-            "--flow-json" => Some(("--flow-json-file", "flow-json")),
-            "--existing-flow-json" => Some(("--existing-flow-json-file", "existing-flow-json")),
-            _ => None,
-        };
-
-        if let Some((flag, label)) = replacement_flag {
-            let Some(value) = arguments.get(index + 1) else {
-                cleanup_temporary_files(&payload_paths);
-                return Err(format!("Expected {argument} to include a value."));
-            };
-            let path = match write_workspace_payload_file(workspace_root, label, value) {
-                Ok(path) => path,
-                Err(error) => {
-                    cleanup_temporary_files(&payload_paths);
-                    return Err(error);
-                }
-            };
-            rewritten.push(flag.to_string());
-            rewritten.push(path.display().to_string());
-            payload_paths.push(path);
-            index += 2;
-            continue;
-        }
-
-        if argument == "--param" {
-            let Some(value) = arguments.get(index + 1) else {
-                cleanup_temporary_files(&payload_paths);
-                return Err("Expected --param to include a value.".to_string());
-            };
-            params.push(value.clone());
-            index += 2;
-            continue;
-        }
-
-        rewritten.push(argument.clone());
-        index += 1;
-    }
-
-    if !params.is_empty() {
-        let serialized = serde_json::to_string(&params)
-            .map_err(|error| format!("Failed to serialize Ralph params: {error}"))?;
-        let path = match write_workspace_payload_file(workspace_root, "params", &serialized) {
-            Ok(path) => path,
-            Err(error) => {
-                cleanup_temporary_files(&payload_paths);
-                return Err(error);
-            }
-        };
-        rewritten.push("--params-file".to_string());
-        rewritten.push(path.display().to_string());
-        payload_paths.push(path);
-    }
-
-    Ok((rewritten, payload_paths))
 }
 
 pub(super) fn enrich_ui_control_conversation_context(
@@ -251,12 +156,25 @@ pub(super) fn enrich_ui_control_conversation_context(
 mod tests {
     use std::fs;
 
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
     use serde_json::json;
 
     use super::{
-        build_cli_args, cleanup_temporary_file, cleanup_temporary_files,
-        rewrite_ralph_payload_arguments, write_conversation_context_file, CliCommandOptions,
+        build_cli_args, cleanup_temporary_file, write_conversation_context_file, CliCommandOptions,
     };
+
+    #[cfg(unix)]
+    fn assert_private_file_mode(path: &std::path::Path) {
+        let mode = fs::metadata(path)
+            .expect("payload metadata should be readable")
+            .permissions()
+            .mode()
+            & 0o777;
+
+        assert_eq!(mode, 0o600);
+    }
 
     #[test]
     fn desktop_cli_args_force_one_shot_json_execution() {
@@ -314,46 +232,18 @@ mod tests {
             .expect("second context file should be created");
 
         assert_ne!(first_path, second_path);
+        assert_eq!(
+            fs::read_to_string(&first_path).expect("first context should be readable"),
+            r#"{"history":[]}"#
+        );
+
+        #[cfg(unix)]
+        {
+            assert_private_file_mode(&first_path);
+            assert_private_file_mode(&second_path);
+        }
 
         cleanup_temporary_file(Some(&first_path));
         cleanup_temporary_file(Some(&second_path));
-    }
-
-    #[test]
-    fn ralph_payload_rewrite_moves_inline_payloads_to_files() {
-        let workspace = std::env::temp_dir().join(format!(
-            "machdoch-ralph-payload-test-{}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&workspace).expect("workspace should be created");
-
-        let (arguments, payload_paths) = rewrite_ralph_payload_arguments(
-            workspace.to_string_lossy().as_ref(),
-            vec![
-                "run".to_string(),
-                "--prompt".to_string(),
-                "hello".to_string(),
-                "--param".to_string(),
-                "a=1".to_string(),
-                "--param".to_string(),
-                "b=2".to_string(),
-            ],
-        )
-        .expect("payload arguments should rewrite");
-
-        assert!(arguments.contains(&"--prompt-file".to_string()));
-        assert!(arguments.contains(&"--params-file".to_string()));
-        assert_eq!(payload_paths.len(), 2);
-        assert_eq!(
-            fs::read_to_string(&payload_paths[0]).expect("prompt payload should be readable"),
-            "hello"
-        );
-        assert_eq!(
-            fs::read_to_string(&payload_paths[1]).expect("params payload should be readable"),
-            r#"["a=1","b=2"]"#
-        );
-
-        cleanup_temporary_files(&payload_paths);
-        let _ = fs::remove_dir_all(workspace);
     }
 }

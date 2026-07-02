@@ -7,6 +7,7 @@ import { useAppearanceSettings } from "./chat-session/_helpers/use-appearance-se
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
 import { AttachmentImagePreviewDialog } from "./chat-session/components/attachment-image-preview-dialog";
+import { ChatInterviewDialog } from "./chat-session/components/chat-interview-dialog";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { MissionControlPanel } from "./chat-session/components/mission-control-panel";
 import { OnboardingWizard } from "./chat-session/components/onboarding-wizard";
@@ -420,6 +421,8 @@ export const ChatSession = (): JSX.Element => {
         preview={controller.attachmentImagePreview.preview}
         onOpenChange={controller.attachmentImagePreview.onOpenChange}
       />
+
+      <ChatInterviewDialog {...controller.chatInterview} />
     </TooltipProvider>
   );
 };

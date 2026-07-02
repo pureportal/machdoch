@@ -530,6 +530,53 @@ describe("parseCliArgs", () => {
     ).toThrow("--apply is only valid for `machdoch mcp cleanup`.");
   });
 
+  it("parses task interview commands", () => {
+    expect(
+      parseCliArgs(
+        [
+          "--json",
+          "--cwd",
+          "C:/repo",
+          "interview",
+          "--prompt",
+          "Refine billing settings.",
+          "--input-json",
+          '{"answers":{"scope":"billing"}}',
+          "--max-rounds",
+          "3",
+          "--mode",
+          "machdoch",
+          "--runtime-provider",
+          "openai",
+          "--model",
+          "gpt-5.5",
+        ],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toEqual({
+      command: "interview",
+      mode: "machdoch",
+      runtimeProvider: "openai",
+      model: "gpt-5.5",
+      interview: {
+        prompt: "Refine billing settings.",
+        inputJson: '{"answers":{"scope":"billing"}}',
+        maxRounds: 3,
+      },
+      json: true,
+      verbose: false,
+      workspaceRoot: "C:/repo",
+    });
+
+    expect(() =>
+      parseCliArgs(["interview"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("`machdoch interview` expects --prompt or --prompt-file.");
+  });
+
   it("parses instruction management commands", () => {
     expect(
       parseCliArgs(

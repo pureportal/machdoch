@@ -13,9 +13,12 @@ use provider_api::{
 
 mod codex_cli;
 mod command;
+#[cfg(test)]
+mod command_tests;
 mod copilot_cli;
 mod normalize;
 mod provider_api;
+mod provider_api_types;
 #[cfg(test)]
 mod tests;
 

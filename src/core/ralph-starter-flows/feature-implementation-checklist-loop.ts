@@ -1,13 +1,15 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
 
+const RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
+
 const fullFeatureImplementationFlow: RalphFlow = {
   schemaVersion: 1,
   id: "starter-full-feature-implementation",
   alias: "feature-implementation-checklist-loop",
   name: "Feature Implementation Checklist Loop",
   description:
-    "Configurable, resumable feature implementation loop with optional research, interview, verification, and visual review.",
+    "Configurable, resumable feature implementation loop with content-enriched research, interview, verification, and visual review.",
   settings: {
     maxTransitions: 70,
   },
@@ -22,7 +24,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
     { name: "gitDiffFile", type: "path", default: ".machdoch/feature-implementation/git-diff.json", required: false },
     { name: "featureReportFile", type: "path", default: ".machdoch/feature-implementation/final-report.json", required: false },
     { name: "featureReportMarkdown", type: "path", default: ".machdoch/feature-implementation/final-report.md", required: false },
-    { name: "enableOnlineResearch", type: "boolean", default: "false", required: false },
+    { name: "enableOnlineResearch", type: "boolean", default: "true", required: false },
     { name: "enableInterview", type: "boolean", default: "true", required: false },
     { name: "enableVisualReview", type: "boolean", default: "false", required: false },
     { name: "targetUrl", type: "url", default: "", required: false },
@@ -122,7 +124,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Research current primary-source documentation and implementation guidance relevant to this feature brief: {{summary:prepare-feature-brief}}. Keep findings concise with links, risks, version assumptions, and implementation implications.",
+        "Use content enrichment before implementation. If search_web is available, run focused searches for current primary-source documentation, changelogs, release notes, standards, accessibility/security guidance, and comparable implementation examples relevant to this feature brief: {{summary:prepare-feature-brief}}. Use fetch_url on the best official or maintainer pages before relying on them. Also inspect local package/config metadata when it affects version assumptions. Keep findings concise with source links, risks, version/date assumptions, and implementation implications. If web search is unavailable, say so and base findings on local package docs/config plus any provided URLs.",
     },
     {
       id: "interview-decision",
@@ -202,7 +204,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
           },
         },
         prompt:
-          "Create or update the canonical JSON implementation checklist at {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}. Preserve completed tasks when resuming from {{result:read-checklist}}. Include feature request, acceptance criteria, implementation guide, test plan, optional visual review plan, auth notes, design guidelines, resume notes, and actionable tasks with stable ids and status values todo/in_progress/done/blocked. Inputs: brief {{summary:prepare-feature-brief}}, research {{summary:initial-research}}, interview {{featureInterviewSummary:text=}}, detected commands {{result:detect-project-commands}}. Return only schema-valid JSON.",
+          "Create or update the canonical JSON implementation checklist at {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}. Preserve completed tasks when resuming from {{result:read-checklist}}. Include feature request, acceptance criteria, implementation guide, content-enrichment notes with source links/version assumptions when research is present, test plan, optional visual review plan, auth notes, design guidelines, resume notes, and actionable tasks with stable ids and status values todo/in_progress/done/blocked. Inputs: brief {{summary:prepare-feature-brief}}, research {{summary:initial-research}}, interview {{featureInterviewSummary:text=}}, detected commands {{result:detect-project-commands}}. Return only schema-valid JSON.",
       },
     },
     {
@@ -245,7 +247,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Implement selected checklist task {{data:select-next-task:task}} from JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}} using checklist content {{data:specification-checklist:output}} or resumed checklist {{data:read-checklist:json}}, git baseline {{result:git-snapshot-before}}, and detected commands {{result:detect-project-commands}}. Keep changes scoped to {{implementationScope:text=auto-detect}}, follow existing project patterns, apply design guidelines {{designGuidelines:text=}}, follow auth instructions {{authInstructions:text=}}, update tests when relevant, and update the selected task/checklist JSON statuses and resume notes only when work is actually done. Use latest validation feedback {{lastResult}}.",
+        "Implement selected checklist task {{data:select-next-task:task}} from JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}} using checklist content {{data:specification-checklist:output}} or resumed checklist {{data:read-checklist:json}}, research {{summary:initial-research}}, git baseline {{result:git-snapshot-before}}, and detected commands {{result:detect-project-commands}}. Apply source-backed guidance for version-sensitive APIs or standards, keep changes scoped to {{implementationScope:text=auto-detect}}, follow existing project patterns, apply design guidelines {{designGuidelines:text=}}, follow auth instructions {{authInstructions:text=}}, update tests when relevant, and update the selected task/checklist JSON statuses and resume notes only when work is actually done. Use latest validation feedback {{lastResult}}.",
     },
     {
       id: "verification-decision",
@@ -272,6 +274,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         type: "RUN_CHECK",
         command: "{{verificationCommand:text=}}",
         fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        timeoutSeconds: RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS,
       },
     },
     {
@@ -443,7 +446,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 4,
+  version: 5,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],

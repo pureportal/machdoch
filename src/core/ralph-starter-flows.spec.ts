@@ -33,6 +33,23 @@ describe("Ralph starter flows", () => {
     }
   });
 
+  it("gives starter flow verification checks enough time for full workspace commands", () => {
+    for (const starterFlow of STARTER_RALPH_FLOWS) {
+      let runCheckCount = 0;
+
+      for (const block of starterFlow.flow.blocks) {
+        if (block.type !== "UTILITY" || block.utility.type !== "RUN_CHECK") {
+          continue;
+        }
+
+        runCheckCount += 1;
+        expect(block.utility.timeoutSeconds).toBeGreaterThanOrEqual(1_800);
+      }
+
+      expect(runCheckCount).toBeGreaterThan(0);
+    }
+  });
+
   it("keeps generated template note and history files under the machdoch workspace directory", () => {
     const expectedMachdochFiles = [
       {
@@ -433,6 +450,66 @@ describe("Ralph starter flows", () => {
           waitUntil: "domcontentloaded",
         },
       });
+    }
+  });
+
+  it("defaults starter flows to online content enrichment with explicit web-search guidance", () => {
+    const researchBlocks = [
+      {
+        starterFlowId: "security-fix-loop",
+        minimumVersion: 5,
+        researchBlockId: "security-research",
+      },
+      {
+        starterFlowId: "autonomous-refactoring-flow",
+        minimumVersion: 6,
+        researchBlockId: "refactor-research",
+      },
+      {
+        starterFlowId: "full-feature-implementation",
+        minimumVersion: 5,
+        researchBlockId: "initial-research",
+      },
+      {
+        starterFlowId: "autonomous-feature-generation-loop",
+        minimumVersion: 5,
+        researchBlockId: "research-inspiration",
+      },
+      {
+        starterFlowId: "autonomous-code-improvement-loop",
+        minimumVersion: 6,
+        researchBlockId: "improvement-research",
+      },
+    ] as const;
+
+    for (const { starterFlowId, minimumVersion, researchBlockId } of researchBlocks) {
+      const starterFlow = getRalphStarterFlow(starterFlowId);
+      const flow = starterFlow?.flow;
+      const enableOnlineResearch = flow?.variables?.find(
+        (variable) => variable.name === "enableOnlineResearch",
+      );
+      const researchBlock = flow?.blocks.find(
+        (block) => block.id === researchBlockId,
+      );
+      const serializedResearchBlock = JSON.stringify(researchBlock);
+
+      expect(starterFlow?.version).toBeGreaterThanOrEqual(minimumVersion);
+      expect(enableOnlineResearch).toMatchObject({
+        type: "boolean",
+        default: "true",
+      });
+      expect(researchBlock).toMatchObject({
+        settings: {
+          webAccess: true,
+        },
+      });
+      expect(serializedResearchBlock).toContain("search_web");
+      expect(serializedResearchBlock).toContain("fetch_url");
+      expect(serializedResearchBlock).toContain("source links");
+      expect(serializedResearchBlock.toLowerCase()).toContain("official");
+      expect(serializedResearchBlock.toLowerCase()).toContain(
+        "if web search is unavailable",
+      );
     }
   });
 

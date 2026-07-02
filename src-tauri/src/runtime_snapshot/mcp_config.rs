@@ -6,6 +6,8 @@ use std::{
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
+use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
+
 use super::{
     get_user_config_directory, resolve_workspace_root_path, settings_types::McpConfigDocument,
 };
@@ -105,7 +107,13 @@ pub(super) fn save_mcp_config_document(
         }
     }
 
-    fs::write(&config_path, &normalized_raw)
+    let write_options = if scope == "user" {
+        AtomicWriteOptions::with_unix_mode(0o600)
+    } else {
+        AtomicWriteOptions::default()
+    };
+
+    write_file_atomic(&config_path, normalized_raw.as_bytes(), write_options)
         .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))?;
 
     if scope == "user" {

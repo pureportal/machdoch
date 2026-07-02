@@ -1128,6 +1128,77 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("keeps inline numeric defaults when callers submit blank variable values", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-counter-default-"));
+
+    try {
+      const result = await runRalphFlow(
+        createFlow({
+          variables: [
+            { name: "maxPasses", type: "number", default: "1", required: false },
+          ],
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "counter-one",
+              type: "UTILITY",
+              title: "Counter One",
+              utility: {
+                type: "LOOP_COUNTER",
+                path: "state/counters.json",
+                counterName: "blank-default",
+                counterKey: "active",
+                maxAttempts: "{{maxPasses:number=1}}",
+              },
+            },
+            {
+              id: "counter-two",
+              type: "UTILITY",
+              title: "Counter Two",
+              utility: {
+                type: "LOOP_COUNTER",
+                path: "state/counters.json",
+                counterName: "blank-default",
+                counterKey: "active",
+                maxAttempts: "{{maxPasses:number=1}}",
+              },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            { id: "start-to-counter-one", from: "start", fromOutput: "SUCCESS", to: "counter-one" },
+            { id: "counter-one-to-counter-two", from: "counter-one", fromOutput: "CONTINUE", to: "counter-two" },
+            { id: "counter-two-to-success", from: "counter-two", fromOutput: "LIMIT_REACHED", to: "success" },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        {
+          maxTransitions: 10,
+          variableValues: { maxPasses: "" },
+        },
+      );
+
+      expect(result.status).toBe("completed");
+      expect(result.blockResults).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            blockId: "counter-one",
+            output: "CONTINUE",
+            data: expect.objectContaining({ limit: 1 }),
+          }),
+          expect.objectContaining({
+            blockId: "counter-two",
+            output: "LIMIT_REACHED",
+            data: expect.objectContaining({ limit: 1 }),
+          }),
+        ]),
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("runs JSONL history and JSON task utilities", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-json-task-"));
 

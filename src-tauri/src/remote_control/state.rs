@@ -1,5 +1,4 @@
 use std::{
-    collections::VecDeque,
     net::{Ipv4Addr, SocketAddr, TcpListener},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -9,25 +8,19 @@ use std::{
 
 use serde_json::Value;
 
+use super::MAX_COMMAND_ENTRIES;
 use super::{
-    commands::{create_command_record, truncate_chars},
-    config::{
-        ensure_remote_control_port_available, load_remote_control_config_file,
-        validate_remote_control_port, write_remote_control_config_file,
-    },
+    commands::create_command_record,
+    config::{ensure_remote_control_port_available, validate_remote_control_port},
     create_qr_svg, create_secure_token, detect_lan_ip, push_bounded,
     sanitize::sanitize_shell_snapshot,
     session::create_remote_web_session_token,
+    state_progress::record_progress_update,
+    state_store::persist_config_locked,
     status::create_status_locked,
-    string_field,
     web::run_http_server,
     RemoteControlCommandEvent, RemoteControlInner, RemoteControlServerInfo, RemoteControlShared,
-    RemoteControlState, RemoteControlStatus, RemoteLogEntry, RemoteShellSnapshot,
-    RemoteTaskSession, RemoteTimelineEntry, REMOTE_CONTROL_CONFIG_VERSION,
-};
-use super::{
-    MAX_COMMAND_ENTRIES, MAX_COMMAND_TEXT_CHARS, MAX_LOG_ENTRIES, MAX_SESSIONS,
-    MAX_TIMELINE_ENTRIES,
+    RemoteControlState, RemoteControlStatus, RemoteShellSnapshot,
 };
 
 impl Default for RemoteControlState {
@@ -84,13 +77,9 @@ impl RemoteControlState {
             .local_addr()
             .map_err(|error| format!("Unable to inspect Mission Control listener: {error}"))?
             .port();
-        let local_url = format!("http://127.0.0.1:{port}/#pair={token}");
-        let lan_url = detect_lan_ip().map(|ip| format!("http://{ip}:{port}/#pair={token}"));
-        let display_url = lan_url.clone().unwrap_or_else(|| local_url.clone());
-        let qr_svg = create_qr_svg(&display_url)?;
         let started_at = super::now_millis();
         let shutdown = Arc::new(AtomicBool::new(false));
-        let bind_address = format!("0.0.0.0:{port}");
+        let server = create_server_info(port, token, started_at, shutdown.clone())?;
 
         {
             let mut inner = self
@@ -102,26 +91,14 @@ impl RemoteControlState {
             if inner.server.is_some() {
                 if !inner.config.enabled {
                     inner.config.enabled = true;
-                    inner.config.version = REMOTE_CONTROL_CONFIG_VERSION;
-                    write_remote_control_config_file(&inner.config)?;
+                    persist_config_locked(&mut inner)?;
                 }
                 return Ok(create_status_locked(&inner));
             }
 
             inner.config.enabled = true;
-            inner.config.version = REMOTE_CONTROL_CONFIG_VERSION;
-            write_remote_control_config_file(&inner.config)?;
-            inner.server = Some(RemoteControlServerInfo {
-                token: token.clone(),
-                port,
-                local_url,
-                lan_url,
-                display_url,
-                qr_svg,
-                started_at,
-                bind_address,
-                shutdown: shutdown.clone(),
-            });
+            persist_config_locked(&mut inner)?;
+            inner.server = Some(server);
             inner.event_id = inner.event_id.saturating_add(1);
             self.shared.updates.notify_all();
         }
@@ -152,8 +129,7 @@ impl RemoteControlState {
 
         if inner.config.enabled {
             inner.config.enabled = false;
-            inner.config.version = REMOTE_CONTROL_CONFIG_VERSION;
-            write_remote_control_config_file(&inner.config)?;
+            persist_config_locked(&mut inner)?;
             changed = true;
         }
 
@@ -166,21 +142,7 @@ impl RemoteControlState {
     }
 
     pub(super) fn record_progress(&self, task_id: &str, progress: &Value, timestamp: u64) {
-        let normalized_task_id = task_id.trim();
-
-        if normalized_task_id.is_empty() {
-            return;
-        }
-
-        let Ok(mut inner) = self.shared.inner.lock() else {
-            return;
-        };
-
-        let session = progress_session(&mut inner, normalized_task_id, timestamp);
-        apply_progress_fields(session, progress, timestamp);
-        record_action_output(session, progress, timestamp);
-        record_timeline_event(session, progress, timestamp);
-        notify_state_changed(&self.shared, &mut inner);
+        record_progress_update(&self.shared, task_id, progress, timestamp);
     }
 
     pub(super) fn record_command(&self, event: &RemoteControlCommandEvent) {
@@ -262,8 +224,7 @@ impl RemoteControlState {
             }
 
             inner.config.port = port;
-            inner.config.version = REMOTE_CONTROL_CONFIG_VERSION;
-            write_remote_control_config_file(&inner.config)?;
+            persist_config_locked(&mut inner)?;
 
             let should_restart = if let Some(server) = inner.server.take() {
                 server.shutdown.store(true, Ordering::SeqCst);
@@ -298,49 +259,11 @@ impl RemoteControlState {
         }
 
         inner.config.paired_devices.clear();
-        inner.config.version = REMOTE_CONTROL_CONFIG_VERSION;
-        write_remote_control_config_file(&inner.config)?;
+        persist_config_locked(&mut inner)?;
         inner.event_id = inner.event_id.saturating_add(1);
         self.shared.updates.notify_all();
 
         Ok(create_status_locked(&inner))
-    }
-
-    fn ensure_config_loaded(&self) -> Result<(), String> {
-        let already_loaded = self
-            .shared
-            .inner
-            .lock()
-            .map_err(|_| "Unable to inspect Mission Control settings.".to_string())?
-            .config_loaded;
-
-        if already_loaded {
-            return Ok(());
-        }
-
-        let config = load_remote_control_config_file()?;
-        let mut inner = self
-            .shared
-            .inner
-            .lock()
-            .map_err(|_| "Unable to load Mission Control settings.".to_string())?;
-
-        if !inner.config_loaded {
-            inner.config = config;
-            inner.config_loaded = true;
-        }
-
-        Ok(())
-    }
-
-    fn configured_port(&self) -> Result<u16, String> {
-        let inner = self
-            .shared
-            .inner
-            .lock()
-            .map_err(|_| "Unable to inspect Mission Control settings.".to_string())?;
-
-        validate_remote_control_port(inner.config.port)
     }
 
     pub(super) fn enable_if_configured(&self, app_handle: tauri::AppHandle) -> Result<(), String> {
@@ -362,139 +285,27 @@ impl RemoteControlState {
     }
 }
 
-fn progress_session<'a>(
-    inner: &'a mut RemoteControlInner,
-    task_id: &str,
-    timestamp: u64,
-) -> &'a mut RemoteTaskSession {
-    remove_stale_session_if_needed(inner, task_id);
+fn create_server_info(
+    port: u16,
+    token: String,
+    started_at: u64,
+    shutdown: Arc<AtomicBool>,
+) -> Result<RemoteControlServerInfo, String> {
+    let local_url = format!("http://127.0.0.1:{port}/#pair={token}");
+    let lan_url = detect_lan_ip().map(|ip| format!("http://{ip}:{port}/#pair={token}"));
+    let display_url = lan_url.clone().unwrap_or_else(|| local_url.clone());
+    let qr_svg = create_qr_svg(&display_url)?;
+    let bind_address = format!("0.0.0.0:{port}");
 
-    inner
-        .sessions
-        .entry(task_id.to_string())
-        .or_insert_with(|| RemoteTaskSession {
-            task_id: task_id.to_string(),
-            task: task_id.to_string(),
-            mode: "machdoch".to_string(),
-            state: "starting".to_string(),
-            message: "Task started.".to_string(),
-            cancellable: true,
-            started_at: timestamp,
-            updated_at: timestamp,
-            progress_count: 0,
-            logs: VecDeque::new(),
-            timeline: VecDeque::new(),
-        })
-}
-
-fn remove_stale_session_if_needed(inner: &mut RemoteControlInner, task_id: &str) {
-    if inner.sessions.len() < MAX_SESSIONS || inner.sessions.contains_key(task_id) {
-        return;
-    }
-
-    if let Some(stale_task_id) = inner
-        .sessions
-        .values()
-        .min_by_key(|session| session.updated_at)
-        .map(|session| session.task_id.clone())
-    {
-        inner.sessions.remove(&stale_task_id);
-    }
-}
-
-fn apply_progress_fields(session: &mut RemoteTaskSession, progress: &Value, timestamp: u64) {
-    session.progress_count = session.progress_count.saturating_add(1);
-    session.updated_at = timestamp;
-
-    if let Some(task) = string_field(progress, "task").filter(|value| !value.is_empty()) {
-        session.task = task;
-    }
-
-    if let Some(mode) = string_field(progress, "mode").filter(|value| !value.is_empty()) {
-        session.mode = mode;
-    }
-
-    if let Some(state) = string_field(progress, "state").filter(|value| !value.is_empty()) {
-        session.state = state;
-    }
-
-    if let Some(message) = string_field(progress, "message") {
-        session.message = message;
-    }
-
-    if let Some(cancellable) = progress.get("cancellable").and_then(Value::as_bool) {
-        session.cancellable = cancellable;
-    }
-}
-
-fn record_action_output(session: &mut RemoteTaskSession, progress: &Value, timestamp: u64) {
-    let Some(action_output) = progress.get("actionOutput").and_then(Value::as_object) else {
-        return;
-    };
-    let Some(chunk) = action_output.get("chunk").and_then(Value::as_str) else {
-        return;
-    };
-
-    if chunk.is_empty() {
-        return;
-    }
-
-    push_bounded(
-        &mut session.logs,
-        RemoteLogEntry {
-            created_at: timestamp,
-            stream: action_output
-                .get("stream")
-                .and_then(Value::as_str)
-                .unwrap_or("stdout")
-                .to_string(),
-            tool_name: action_output
-                .get("toolName")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            chunk: truncate_chars(chunk, MAX_COMMAND_TEXT_CHARS),
-        },
-        MAX_LOG_ENTRIES,
-    );
-}
-
-fn record_timeline_event(session: &mut RemoteTaskSession, progress: &Value, timestamp: u64) {
-    let Some(timeline_event) = progress.get("timelineEvent").and_then(Value::as_object) else {
-        return;
-    };
-    let (Some(kind), Some(phase), Some(label)) = (
-        timeline_event.get("kind").and_then(Value::as_str),
-        timeline_event.get("phase").and_then(Value::as_str),
-        timeline_event.get("label").and_then(Value::as_str),
-    ) else {
-        return;
-    };
-
-    push_bounded(
-        &mut session.timeline,
-        RemoteTimelineEntry {
-            created_at: timestamp,
-            kind: kind.to_string(),
-            phase: phase.to_string(),
-            label: label.to_string(),
-            detail: timeline_event
-                .get("detail")
-                .and_then(Value::as_str)
-                .map(|value| truncate_chars(value, 1_000)),
-            tone: timeline_event
-                .get("tone")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            tool_name: timeline_event
-                .get("toolName")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-        },
-        MAX_TIMELINE_ENTRIES,
-    );
-}
-
-fn notify_state_changed(shared: &RemoteControlShared, inner: &mut RemoteControlInner) {
-    inner.event_id = inner.event_id.saturating_add(1);
-    shared.updates.notify_all();
+    Ok(RemoteControlServerInfo {
+        token,
+        port,
+        local_url,
+        lan_url,
+        display_url,
+        qr_svg,
+        started_at,
+        bind_address,
+        shutdown,
+    })
 }

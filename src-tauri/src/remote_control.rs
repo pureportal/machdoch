@@ -13,6 +13,9 @@ use serde_json::Value;
 use tauri::Manager;
 
 mod auth;
+mod command_kinds;
+#[cfg(test)]
+mod command_tests;
 mod commands;
 mod config;
 mod mission_control_html;
@@ -22,7 +25,11 @@ mod sanitize;
 mod session;
 mod shell;
 mod state;
+mod state_progress;
+mod state_store;
 mod status;
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;
 mod web;

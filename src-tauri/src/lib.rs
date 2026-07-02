@@ -1,3 +1,4 @@
+mod atomic_file;
 mod desktop_shell;
 mod desktop_task;
 mod launcher;
@@ -128,6 +129,7 @@ pub fn run() {
             desktop_task::run_mcp_command,
             desktop_task::run_ralph_command,
             desktop_task::run_scheduler_command,
+            desktop_task::run_task_interview_command,
             desktop_task::run_desktop_task,
             desktop_task::save_clipboard_image_attachment,
             remote_control::disable_remote_control_server,

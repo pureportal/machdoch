@@ -78,6 +78,9 @@ fn sanitize_shell_session(mut session: RemoteShellSession) -> Option<RemoteShell
     session.model = sanitize_text(session.model, MAX_REMOTE_SHORT_TEXT_CHARS);
     session.mode = sanitize_optional_text(session.mode, MAX_REMOTE_SHORT_TEXT_CHARS);
     session.effective_mode = sanitize_text(session.effective_mode, MAX_REMOTE_SHORT_TEXT_CHARS);
+    session.reasoning = sanitize_optional_text(session.reasoning, MAX_REMOTE_SHORT_TEXT_CHARS);
+    session.effective_reasoning =
+        sanitize_text(session.effective_reasoning, MAX_REMOTE_SHORT_TEXT_CHARS);
     session.tags = session
         .tags
         .into_iter()
@@ -174,6 +177,9 @@ fn sanitize_shell_composer(mut composer: RemoteShellComposer) -> Option<RemoteSh
     composer.model = sanitize_text(composer.model, MAX_REMOTE_SHORT_TEXT_CHARS);
     composer.mode = sanitize_text(composer.mode, MAX_REMOTE_SHORT_TEXT_CHARS);
     composer.default_mode = sanitize_text(composer.default_mode, MAX_REMOTE_SHORT_TEXT_CHARS);
+    composer.reasoning = sanitize_text(composer.reasoning, MAX_REMOTE_SHORT_TEXT_CHARS);
+    composer.default_reasoning =
+        sanitize_text(composer.default_reasoning, MAX_REMOTE_SHORT_TEXT_CHARS);
     composer.workspace = sanitize_optional_text(composer.workspace, MAX_REMOTE_TEXT_CHARS);
     composer.workspace_label = sanitize_text(composer.workspace_label, MAX_REMOTE_SHORT_TEXT_CHARS);
     composer.send_disabled_reason =
@@ -218,6 +224,7 @@ fn sanitize_shell_runtime(mut runtime: RemoteShellRuntime) -> RemoteShellRuntime
         .take(12)
         .collect();
     runtime.mode = sanitize_optional_text(runtime.mode, MAX_REMOTE_SHORT_TEXT_CHARS);
+    runtime.reasoning = sanitize_optional_text(runtime.reasoning, MAX_REMOTE_SHORT_TEXT_CHARS);
     runtime.ui_control = runtime.ui_control.map(sanitize_shell_runtime_capability);
     runtime.web_search = runtime.web_search.map(sanitize_shell_runtime_capability);
     runtime
@@ -300,6 +307,7 @@ fn sanitize_shell_context_pack(mut pack: RemoteShellContextPack) -> Option<Remot
     pack.provider = sanitize_optional_text(pack.provider, MAX_REMOTE_SHORT_TEXT_CHARS);
     pack.model = sanitize_optional_text(pack.model, MAX_REMOTE_SHORT_TEXT_CHARS);
     pack.mode = sanitize_optional_text(pack.mode, MAX_REMOTE_SHORT_TEXT_CHARS);
+    pack.reasoning = sanitize_optional_text(pack.reasoning, MAX_REMOTE_SHORT_TEXT_CHARS);
     Some(pack)
 }
 

@@ -1,9 +1,10 @@
 use std::{
+    io,
     path::PathBuf,
-    process::Stdio,
+    process::{Child, Stdio},
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
-    thread,
+    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
@@ -19,7 +20,8 @@ use crate::runtime_snapshot::resolve_workspace_root_path;
 
 use super::{
     diagnostics::{format_command_failure, format_timeout_duration},
-    payload::{cleanup_temporary_files, rewrite_ralph_payload_arguments},
+    payload::cleanup_temporary_files,
+    payload_files::rewrite_ralph_payload_arguments,
     process::{
         create_desktop_task_activity, join_cli_output_and_cleanup, read_stderr, read_stdout,
         terminate_child_process_tree,
@@ -50,6 +52,28 @@ fn normalize_ralph_flow_scope(scope: Option<&str>) -> Result<Option<String>, Str
             "Expected Ralph flow scope to be `workspace` or `user`, got `{value}`."
         )),
         None => Ok(None),
+    }
+}
+
+fn stop_ralph_cli_after_wait_error(
+    error: io::Error,
+    child: &mut Child,
+    stdout_worker: JoinHandle<Result<String, String>>,
+    stderr_worker: JoinHandle<Result<Vec<String>, String>>,
+    payload_paths: &[PathBuf],
+) -> String {
+    terminate_child_process_tree(child);
+    let _ = child.wait();
+
+    let cleanup_result = join_cli_output_and_cleanup(stdout_worker, stderr_worker, None);
+    cleanup_temporary_files(payload_paths);
+    let message = format!("Failed to wait for the Ralph CLI to finish: {error}");
+
+    match cleanup_result {
+        Ok(_) => message,
+        Err(cleanup_error) => {
+            format!("{message}. Additionally failed to collect Ralph CLI output during cleanup: {cleanup_error}")
+        }
     }
 }
 
@@ -151,12 +175,18 @@ pub(super) fn execute_ralph_command(
 
     let started_at = Instant::now();
     let status = loop {
-        match child
-            .try_wait()
-            .map_err(|error| format!("Failed to wait for the Ralph CLI to finish: {error}"))?
-        {
-            Some(status) => break status,
-            None => {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Err(error) => {
+                return Err(stop_ralph_cli_after_wait_error(
+                    error,
+                    &mut child,
+                    stdout_worker,
+                    stderr_worker,
+                    &payload_paths,
+                ));
+            }
+            Ok(None) => {
                 if cancel_flag.load(Ordering::SeqCst) {
                     emit_progress_event(
                         &progress_app_handle,

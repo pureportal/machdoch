@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
+
 use super::settings_types::WorkspaceConfigFile;
 use super::{is_valid_mode, is_valid_reasoning_mode, normalize_optional_string};
 
@@ -157,7 +159,8 @@ fn write_workspace_config_json(
     let serialized = serde_json::to_string_pretty(&serde_json::Value::Object(config.clone()))
         .map_err(|error| format!("Failed to serialize workspace config: {error}"))?;
 
-    fs::write(config_path, format!("{serialized}\n"))
+    let raw = format!("{serialized}\n");
+    write_file_atomic(config_path, raw.as_bytes(), AtomicWriteOptions::default())
         .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))
 }
 

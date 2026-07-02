@@ -1,8 +1,11 @@
 use std::{
+    io,
+    path::PathBuf,
+    process::Child,
     process::Stdio,
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
-    thread,
+    thread::{self, JoinHandle},
     time::Duration,
 };
 
@@ -38,6 +41,28 @@ fn parse_desktop_task_response(stdout: &str) -> Result<DesktopTaskRunResponse, S
     serde_json::from_str::<DesktopTaskRunResponse>(trimmed_stdout).map_err(|error| {
         format!("Failed to parse the shared CLI JSON response: {error}. Output: {trimmed_stdout}")
     })
+}
+
+fn stop_shared_cli_after_wait_error(
+    error: io::Error,
+    child: &mut Child,
+    stdout_worker: JoinHandle<Result<String, String>>,
+    stderr_worker: JoinHandle<Result<Vec<String>, String>>,
+    conversation_context_path: Option<&PathBuf>,
+) -> String {
+    terminate_child_process_tree(child);
+    let _ = child.wait();
+
+    let cleanup_result =
+        join_cli_output_and_cleanup(stdout_worker, stderr_worker, conversation_context_path);
+    let message = format!("Failed to wait for the shared CLI to finish: {error}");
+
+    match cleanup_result {
+        Ok(_) => message,
+        Err(cleanup_error) => {
+            format!("{message}. Additionally failed to collect shared CLI output during cleanup: {cleanup_error}")
+        }
+    }
 }
 
 pub(super) fn execute_desktop_task(
@@ -156,12 +181,18 @@ pub(super) fn execute_desktop_task(
     });
 
     let status = loop {
-        match child
-            .try_wait()
-            .map_err(|error| format!("Failed to wait for the shared CLI to finish: {error}"))?
-        {
-            Some(status) => break status,
-            None => {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Err(error) => {
+                return Err(stop_shared_cli_after_wait_error(
+                    error,
+                    &mut child,
+                    stdout_worker,
+                    stderr_worker,
+                    conversation_context_path.as_ref(),
+                ));
+            }
+            Ok(None) => {
                 if cancel_flag.load(Ordering::SeqCst) {
                     emit_progress_event(
                         &progress_app_handle,
@@ -246,4 +277,81 @@ pub(super) fn execute_desktop_task(
     }
 
     parse_desktop_task_response(&stdout_text)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        env, fs,
+        io::{self, Read},
+        process::{Command, Stdio},
+        thread,
+    };
+
+    use serde_json::json;
+
+    use super::stop_shared_cli_after_wait_error;
+    use crate::desktop_task::payload::write_conversation_context_file;
+
+    const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_DESKTOP_TASK_WAIT_ERROR_TEST_CHILD_MODE";
+
+    #[test]
+    fn desktop_task_wait_error_cleanup_child_entrypoint() {
+        if env::var(TEST_CHILD_MODE_ENV).as_deref() != Ok("hold-pipes") {
+            return;
+        }
+
+        println!("child stdout before wait error cleanup");
+        eprintln!("child stderr before wait error cleanup");
+        loop {
+            thread::park();
+        }
+    }
+
+    #[test]
+    fn wait_error_cleanup_removes_context_file_and_joins_output_workers() {
+        let context_path = write_conversation_context_file(&json!({ "history": [] }))
+            .expect("context file should be created");
+        let mut command = Command::new(env::current_exe().expect("test executable should resolve"));
+
+        command
+            .arg("--exact")
+            .arg("desktop_task::commands::tests::desktop_task_wait_error_cleanup_child_entrypoint")
+            .arg("--nocapture")
+            .env(TEST_CHILD_MODE_ENV, "hold-pipes")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = command.spawn().expect("test child should start");
+        let mut stdout = child.stdout.take().expect("stdout should be piped");
+        let mut stderr = child.stderr.take().expect("stderr should be piped");
+        let stdout_worker = thread::spawn(move || {
+            let mut output = String::new();
+            stdout
+                .read_to_string(&mut output)
+                .map_err(|error| format!("stdout read failed: {error}"))?;
+
+            Ok(output)
+        });
+        let stderr_worker = thread::spawn(move || {
+            let mut output = String::new();
+            stderr
+                .read_to_string(&mut output)
+                .map_err(|error| format!("stderr read failed: {error}"))?;
+
+            Ok(output.lines().map(str::to_string).collect::<Vec<_>>())
+        });
+
+        let error = stop_shared_cli_after_wait_error(
+            io::Error::new(io::ErrorKind::Other, "simulated wait failure"),
+            &mut child,
+            stdout_worker,
+            stderr_worker,
+            Some(&context_path),
+        );
+
+        assert!(error.contains("Failed to wait for the shared CLI to finish"));
+        assert!(!context_path.exists());
+        let _ = fs::remove_file(context_path);
+    }
 }

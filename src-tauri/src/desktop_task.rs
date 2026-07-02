@@ -8,29 +8,34 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod attachment_paths;
 mod attachments;
 mod cli_commands;
 mod commands;
 mod diagnostics;
+mod dropped_paths;
 mod paths;
 mod payload;
+mod payload_files;
 mod process;
 mod progress;
 mod ralph;
 mod registry;
 
+use attachment_paths::resolve_attached_path;
 use attachments::{
     remember_attachment_path_grant, remember_dropped_path_grants,
     save_clipboard_image_attachment_sync,
 };
-use cli_commands::{execute_instruction_command, execute_mcp_command, execute_scheduler_command};
+use cli_commands::{
+    execute_instruction_command, execute_mcp_command, execute_scheduler_command,
+    execute_task_interview_command,
+};
 use commands::execute_desktop_task;
 #[cfg(test)]
 use diagnostics::format_timeout_duration;
-use paths::{
-    format_path_for_ui, resolve_attached_path, resolve_dropped_paths_sync,
-    resolve_workspace_relative_path,
-};
+use dropped_paths::resolve_dropped_paths_sync;
+use paths::{format_path_for_ui, resolve_workspace_relative_path};
 use process::open_path_in_system_shell;
 use progress::create_progress_timestamp;
 use ralph::{execute_ralph_command, resolve_ralph_flow_path_for_open};
@@ -129,6 +134,13 @@ pub struct McpCommandRequest {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstructionCommandRequest {
+    workspace_root: String,
+    arguments: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskInterviewCommandRequest {
     workspace_root: String,
     arguments: Vec<String>,
 }
@@ -338,6 +350,17 @@ pub async fn run_instruction_command(request: InstructionCommandRequest) -> Resu
     tauri::async_runtime::spawn_blocking(move || execute_instruction_command(request))
         .await
         .map_err(|error| format!("The instruction command bridge stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn run_task_interview_command(
+    request: TaskInterviewCommandRequest,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || execute_task_interview_command(request))
+        .await
+        .map_err(|error| {
+            format!("The task interview command bridge stopped unexpectedly. {error}")
+        })?
 }
 
 #[cfg(test)]

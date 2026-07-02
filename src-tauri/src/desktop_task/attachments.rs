@@ -7,10 +7,15 @@ use std::{
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 
+use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
+
 use super::{
     format_path_for_ui, AttachmentPathGrantMap, ClipboardImageAttachmentRequest,
     DroppedPathsResolution, MAX_ATTACHMENT_PATH_GRANTS, MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES,
 };
+
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 
 static CLIPBOARD_IMAGE_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -85,6 +90,52 @@ pub(super) fn attachment_path_is_granted(
 
 pub(super) fn clipboard_image_attachment_directory() -> PathBuf {
     env::temp_dir().join("machdoch").join("clipboard-images")
+}
+
+#[cfg(unix)]
+fn create_clipboard_image_attachment_directory(output_directory: &Path) -> Result<(), String> {
+    let mut directory_builder = fs::DirBuilder::new();
+    directory_builder.recursive(true);
+    directory_builder.mode(0o700);
+    directory_builder
+        .create(output_directory)
+        .map_err(|error| {
+            format!(
+                "Failed to create clipboard image directory {}: {error}",
+                output_directory.display()
+            )
+        })?;
+
+    secure_clipboard_image_attachment_directory(output_directory)
+}
+
+#[cfg(not(unix))]
+fn create_clipboard_image_attachment_directory(output_directory: &Path) -> Result<(), String> {
+    fs::create_dir_all(output_directory).map_err(|error| {
+        format!(
+            "Failed to create clipboard image directory {}: {error}",
+            output_directory.display()
+        )
+    })
+}
+
+#[cfg(unix)]
+fn secure_clipboard_image_attachment_directory(output_directory: &Path) -> Result<(), String> {
+    let mut permissions = fs::metadata(output_directory)
+        .map_err(|error| {
+            format!(
+                "Failed to inspect clipboard image directory {}: {error}",
+                output_directory.display()
+            )
+        })?
+        .permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(output_directory, permissions).map_err(|error| {
+        format!(
+            "Failed to secure clipboard image directory {}: {error}",
+            output_directory.display()
+        )
+    })
 }
 
 fn clipboard_image_extension(media_type: &str) -> Option<&'static str> {
@@ -195,12 +246,7 @@ pub(super) fn save_clipboard_image_attachment_sync(
     }
 
     let output_directory = clipboard_image_attachment_directory();
-    fs::create_dir_all(&output_directory).map_err(|error| {
-        format!(
-            "Failed to create clipboard image directory {}: {error}",
-            output_directory.display()
-        )
-    })?;
+    create_clipboard_image_attachment_directory(&output_directory)?;
 
     let timestamp_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -215,7 +261,12 @@ pub(super) fn save_clipboard_image_attachment_sync(
         extension,
     );
 
-    fs::write(&output_path, image_bytes).map_err(|error| {
+    write_file_atomic(
+        &output_path,
+        &image_bytes,
+        AtomicWriteOptions::with_unix_mode(0o600),
+    )
+    .map_err(|error| {
         format!(
             "Failed to save clipboard image attachment {}: {error}",
             output_path.display()
@@ -318,6 +369,44 @@ mod tests {
 
         let _ = fs::remove_file(first_path);
         let _ = fs::remove_file(second_path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn clipboard_image_attachment_save_uses_private_unix_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let data_base64 = base64::engine::general_purpose::STANDARD.encode([0_u8, 1_u8, 2_u8]);
+        let saved_path = save_clipboard_image_attachment_sync(ClipboardImageAttachmentRequest {
+            data_base64,
+            media_type: "image/png".to_string(),
+            file_name: Some("private.png".to_string()),
+        })
+        .expect("clipboard image attachment should be saved");
+        let saved_path = PathBuf::from(saved_path);
+
+        assert_eq!(
+            fs::metadata(&saved_path)
+                .expect("saved image should be inspectable")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(
+                saved_path
+                    .parent()
+                    .expect("saved image should have an output directory")
+            )
+            .expect("clipboard image directory should be inspectable")
+            .permissions()
+            .mode()
+                & 0o777,
+            0o700
+        );
+
+        let _ = fs::remove_file(saved_path);
     }
 
     #[test]
