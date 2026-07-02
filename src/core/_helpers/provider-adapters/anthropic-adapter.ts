@@ -15,7 +15,10 @@ import type {
   AgentModelToolSpec,
   AgentModelTurn,
 } from "../../types.js";
-import type { ReasoningMode } from "../../runtime-contract.generated.js";
+import type {
+  ModelProvider,
+  ReasoningMode,
+} from "../../runtime-contract.generated.js";
 import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
 import { hasImageInputs } from "./image-inputs.js";
@@ -135,12 +138,18 @@ const createAnthropicToolResultContent = (
 export class AnthropicMessagesAdapter implements AgentModelAdapter {
   private readonly client: Anthropic;
   private readonly tools: AgentModelToolSpec[];
+  private readonly provider: ModelProvider;
   private readonly messages: AnthropicMessageParam[] = [];
   private startParams?: AgentModelStartParams;
 
-  constructor(client: Anthropic, tools: AgentModelToolSpec[]) {
+  constructor(
+    client: Anthropic,
+    tools: AgentModelToolSpec[],
+    provider: ModelProvider = "anthropic",
+  ) {
     this.client = client;
     this.tools = tools;
+    this.provider = provider;
   }
 
   async startTurn(params: AgentModelStartParams): Promise<AgentModelTurn> {
@@ -153,7 +162,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
 
     const message = await withProviderRequest(
       {
-        provider: "anthropic",
+        provider: this.provider,
         operation: "startTurn",
         signal: params.signal,
       },
@@ -213,13 +222,13 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
 
     emitToolResultStreamEvents(
       params.onStreamEvent,
-      "anthropic",
+      this.provider,
       params.toolResults,
     );
 
     const message = await withProviderRequest(
       {
-        provider: "anthropic",
+        provider: this.provider,
         operation: "continueTurn",
         signal: params.signal,
       },
@@ -267,7 +276,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
   ): Promise<AnthropicMessage> {
     emitProviderStreamStatus(
       onStreamEvent,
-      "anthropic",
+      this.provider,
       "starting",
       "Anthropic message stream started.",
     );
@@ -286,7 +295,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
       stream.on("text", (textDelta) => {
         emitProviderStreamEvent(onStreamEvent, {
           type: "text-delta",
-          provider: "anthropic",
+          provider: this.provider,
           delta: textDelta,
         });
       });
@@ -294,14 +303,14 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
         if (event.type === "message_start") {
           emitProviderStreamStatus(
             onStreamEvent,
-            "anthropic",
+            this.provider,
             "in-progress",
             "Anthropic message stream in progress.",
             event.type,
           );
           emitUsageStreamEvent(
             onStreamEvent,
-            "anthropic",
+            this.provider,
             normalizeAnthropicUsage(event.message.usage),
           );
           return;
@@ -314,7 +323,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
           toolCallsByIndex.set(event.index, event.content_block);
           emitProviderStreamEvent(onStreamEvent, {
             type: "tool-call-start",
-            provider: "anthropic",
+            provider: this.provider,
             id: event.content_block.id,
             name: event.content_block.name,
           });
@@ -333,7 +342,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
           toolArgumentSnapshotsByIndex.set(event.index, snapshot);
           emitProviderStreamEvent(onStreamEvent, {
             type: "tool-call-arguments-delta",
-            provider: "anthropic",
+            provider: this.provider,
             ...(toolCall ? { id: toolCall.id, name: toolCall.name } : {}),
             delta: event.delta.partial_json,
             snapshot,
@@ -347,7 +356,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
         ) {
           emitProviderStreamEvent(onStreamEvent, {
             type: "reasoning-delta",
-            provider: "anthropic",
+            provider: this.provider,
             delta: event.delta.thinking,
           });
           return;
@@ -359,7 +368,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
         ) {
           emitProviderStreamEvent(onStreamEvent, {
             type: "reasoning-delta",
-            provider: "anthropic",
+            provider: this.provider,
             delta: "",
             signature: event.delta.signature,
           });
@@ -375,7 +384,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
 
           emitProviderStreamEvent(onStreamEvent, {
             type: "tool-call-done",
-            provider: "anthropic",
+            provider: this.provider,
             id: toolCall.id,
             name: toolCall.name,
             argumentsText:
@@ -388,7 +397,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
         if (event.type === "message_delta") {
           emitUsageStreamEvent(
             onStreamEvent,
-            "anthropic",
+            this.provider,
             normalizeAnthropicUsage(event.usage),
           );
           return;
@@ -397,7 +406,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
         if (event.type === "message_stop") {
           emitProviderStreamStatus(
             onStreamEvent,
-            "anthropic",
+            this.provider,
             "completed",
             "Anthropic message stream completed.",
             event.type,
@@ -407,7 +416,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
 
       return await stream.finalMessage();
     } catch (error) {
-      emitProviderStreamError(onStreamEvent, "anthropic", error);
+      emitProviderStreamError(onStreamEvent, this.provider, error);
       throw error;
     } finally {
       requestSignal?.removeEventListener("abort", abortStream);

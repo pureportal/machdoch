@@ -18,6 +18,9 @@ describe("ralph starter flow presentation helper", () => {
     expect(getStarterFlowById("security-fix-loop")?.id).toBe(
       "security-fix-loop",
     );
+    expect(getStarterFlowById("autonomous-ui-improvement-loop")?.id).toBe(
+      "autonomous-ui-improvement-loop",
+    );
     expect(getStarterFlowById("missing")).toBeUndefined();
   });
 

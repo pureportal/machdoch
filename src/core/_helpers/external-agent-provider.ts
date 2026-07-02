@@ -324,31 +324,53 @@ const unrefTimer = (handle: ReturnType<typeof setTimeout>): void => {
   candidate.unref?.();
 };
 
-const terminateExternalAgentProcessTree = (child: ChildProcess): void => {
+const terminateExternalAgentProcessTree = async (
+  child: ChildProcess,
+): Promise<void> => {
   if (process.platform === "win32" && typeof child.pid === "number") {
-    const killer = spawn(
-      "taskkill",
-      ["/PID", String(child.pid), "/T", "/F"],
-      {
-        stdio: "ignore",
-        windowsHide: true,
-      },
-    );
-    const timeoutHandle = setTimeout(() => {
-      killer.kill();
-      child.kill();
-    }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS);
+    await new Promise<void>((resolve) => {
+      const killer = spawn(
+        "taskkill",
+        ["/PID", String(child.pid), "/T", "/F"],
+        {
+          stdio: "ignore",
+          windowsHide: true,
+        },
+      );
+      let settled = false;
+      const settle = (): void => {
+        if (settled) {
+          return;
+        }
 
-    unrefTimer(timeoutHandle);
-    killer.once("close", () => {
-      clearTimeout(timeoutHandle);
-    });
-    killer.once("error", () => {
-      clearTimeout(timeoutHandle);
-      child.kill();
+        settled = true;
+        clearTimeout(timeoutHandle);
+        resolve();
+      };
+      const timeoutHandle = setTimeout(() => {
+        killer.kill();
+        child.kill();
+        settle();
+      }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS);
+
+      unrefTimer(timeoutHandle);
+      killer.once("close", settle);
+      killer.once("error", () => {
+        child.kill();
+        settle();
+      });
     });
 
     return;
+  }
+
+  if (typeof child.pid === "number") {
+    try {
+      process.kill(-child.pid, "SIGTERM");
+      return;
+    } catch {
+      // Fall back to killing the direct child if it was not placed in a group.
+    }
   }
 
   child.kill();
@@ -551,6 +573,7 @@ const runExternalAgentCommand = async (
     const child = spawn(executable, args, {
       cwd,
       env: createChildEnv(provider),
+      detached: process.platform !== "win32",
       shell: shouldUseShellForExecutable(executable),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
@@ -558,9 +581,15 @@ const runExternalAgentCommand = async (
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let abortError: Error | undefined;
+    let abortSettlementHandle: ReturnType<typeof setTimeout> | undefined;
 
     const cleanup = (): void => {
       signal?.removeEventListener("abort", handleAbort);
+      if (abortSettlementHandle) {
+        clearTimeout(abortSettlementHandle);
+        abortSettlementHandle = undefined;
+      }
     };
 
     const rejectOnce = (error: Error): void => {
@@ -592,8 +621,22 @@ const runExternalAgentCommand = async (
     };
 
     function handleAbort(): void {
-      rejectOnce(signal ? createAbortError(signal) : new Error("Execution cancelled."));
-      terminateExternalAgentProcessTree(child);
+      if (settled || abortError) {
+        return;
+      }
+
+      abortError = signal
+        ? createAbortError(signal)
+        : new Error("Execution cancelled.");
+      void terminateExternalAgentProcessTree(child).catch(() => {
+        child.kill();
+      });
+
+      abortSettlementHandle = setTimeout(() => {
+        child.kill();
+        rejectOnce(abortError ?? new Error("Execution cancelled."));
+      }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS + 1_000);
+      unrefTimer(abortSettlementHandle);
     }
 
     child.stdout?.setEncoding("utf8");
@@ -607,15 +650,24 @@ const runExternalAgentCommand = async (
       emitActionOutput(onActionOutput, "stderr", chunk);
     });
     child.on("error", (error) => {
-      rejectOnce(error);
+      rejectOnce(abortError ?? error);
     });
     child.on("close", (exitCode, exitSignal) => {
+      if (abortError) {
+        rejectOnce(abortError);
+        return;
+      }
+
       resolveOnce(exitCode, exitSignal);
     });
 
     signal?.addEventListener("abort", handleAbort, { once: true });
 
-    if (input !== undefined) {
+    if (signal?.aborted) {
+      handleAbort();
+    }
+
+    if (input !== undefined && !abortError) {
       child.stdin?.write(input);
     }
 

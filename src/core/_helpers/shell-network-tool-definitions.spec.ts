@@ -361,6 +361,73 @@ describe("run_shell_command", () => {
     }
   });
 
+  it("terminates the process tree when a streaming shell command is aborted", async () => {
+    const processKillSpy = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw new Error("missing process group");
+    });
+    const stdout = new EventEmitter();
+    const stderr = new EventEmitter();
+    const child = new EventEmitter() as EventEmitter & {
+      pid: number;
+      stdout: EventEmitter;
+      stderr: EventEmitter;
+      killed: boolean;
+      kill: ReturnType<typeof vi.fn>;
+    };
+    const taskkillChild = new EventEmitter();
+    const controller = new AbortController();
+    const tool = createShellNetworkToolDefinitions(createRuntimeConfig()).find(
+      (definition) => definition.spec.name === "run_shell_command",
+    );
+
+    child.pid = 5252;
+    child.stdout = stdout;
+    child.stderr = stderr;
+    child.killed = false;
+    child.kill = vi.fn(() => {
+      child.killed = true;
+      return true;
+    });
+    spawnMock.mockImplementation((command: string) =>
+      command === "taskkill" ? taskkillChild : child,
+    );
+
+    if (!tool) {
+      throw new Error("Expected run_shell_command to be registered.");
+    }
+
+    const resultPromise = tool.execute(
+      { command: "node slow.js" },
+      {
+        ...createToolContext(),
+        signal: controller.signal,
+      },
+    );
+
+    controller.abort("User requested cancellation.");
+    child.emit("close", null, "SIGTERM");
+
+    const result = await resultPromise;
+
+    expect(result.toolResult.isError).toBe(true);
+    expect(result.toolResult.output).toContain("User requested cancellation.");
+
+    if (process.platform === "win32") {
+      expect(spawnMock).toHaveBeenCalledWith(
+        "taskkill",
+        ["/PID", "5252", "/T", "/F"],
+        expect.objectContaining({
+          stdio: "ignore",
+          windowsHide: true,
+        }),
+      );
+      expect(child.kill).not.toHaveBeenCalled();
+    } else {
+      expect(processKillSpy).toHaveBeenCalledWith(-5252, "SIGTERM");
+      expect(child.kill).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it("reports commands that terminate from a signal as failures", async () => {
     const stdout = new EventEmitter();
     const stderr = new EventEmitter();

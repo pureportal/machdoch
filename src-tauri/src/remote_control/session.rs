@@ -4,9 +4,12 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 
 use super::commands::truncate_chars;
 use super::{
-    auth::hash_remote_control_token, config::prune_expired_paired_devices_locked,
-    config::write_remote_control_config_file, create_secure_token, now_millis,
-    refresh_server_pairing_url, RemoteControlPairedDevice, RemoteControlShared, MAX_PAIRED_DEVICES,
+    auth::hash_remote_control_token,
+    config::prune_expired_paired_devices_locked,
+    config::write_remote_control_config_file,
+    now_millis,
+    pairing::{create_secure_token, refresh_server_pairing_url},
+    RemoteControlPairedDevice, RemoteControlShared, MAX_PAIRED_DEVICES,
     REMOTE_CONTROL_CONFIG_VERSION, WEB_SESSION_TTL_MS,
 };
 

@@ -247,7 +247,20 @@ const fullFeatureImplementationFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Implement selected checklist task {{data:select-next-task:task}} from JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}} using checklist content {{data:specification-checklist:output}} or resumed checklist {{data:read-checklist:json}}, research {{summary:initial-research}}, git baseline {{result:git-snapshot-before}}, and detected commands {{result:detect-project-commands}}. Apply source-backed guidance for version-sensitive APIs or standards, keep changes scoped to {{implementationScope:text=auto-detect}}, follow existing project patterns, apply design guidelines {{designGuidelines:text=}}, follow auth instructions {{authInstructions:text=}}, update tests when relevant, and update the selected task/checklist JSON statuses and resume notes only when work is actually done. Use latest validation feedback {{lastResult}}.",
+        "Implement selected checklist task {{data:select-next-task:task}} from JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}} using checklist content {{data:specification-checklist:output}} or resumed checklist {{data:read-checklist:json}}, research {{summary:initial-research}}, git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-implementation-pass}}, and latest validation feedback {{result:validate-progress}}. Apply source-backed guidance for version-sensitive APIs or standards, keep changes scoped to {{implementationScope:text=auto-detect}}, follow existing project patterns, apply design guidelines {{designGuidelines:text=}}, follow auth instructions {{authInstructions:text=}}, update tests when relevant, and update the selected task/checklist JSON statuses and resume notes only when work is actually done.",
+    },
+    {
+      id: "count-implementation-pass",
+      title: "Count Implementation Pass",
+      position: { x: 2720, y: 240 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "LOOP_COUNTER",
+        counterName:
+          "feature-implementation-checklist-loop.implementation-pass.{{data:select-next-task:task.id}}.{{data:select-next-task:index}}",
+        maxAttempts: "{{maxImplementationPasses:number=8}}",
+      },
     },
     {
       id: "verification-decision",
@@ -415,8 +428,11 @@ const fullFeatureImplementationFlow: RalphFlow = {
     { id: "select-task-not-found", from: "select-next-task", fromOutput: "NOT_FOUND", to: "blocked" },
     { id: "select-task-invalid", from: "select-next-task", fromOutput: "INVALID", to: "blocked" },
     { id: "select-task-error", from: "select-next-task", fromOutput: "ERROR", to: "blocked" },
-    { id: "snapshot-to-implementation", from: "git-snapshot-before", fromOutput: "SUCCESS", to: "implement-feature" },
-    { id: "snapshot-error-to-implementation", from: "git-snapshot-before", fromOutput: "ERROR", to: "implement-feature" },
+    { id: "snapshot-to-count-implementation-pass", from: "git-snapshot-before", fromOutput: "SUCCESS", to: "count-implementation-pass" },
+    { id: "snapshot-error-to-count-implementation-pass", from: "git-snapshot-before", fromOutput: "ERROR", to: "count-implementation-pass" },
+    { id: "count-implementation-pass-continue", from: "count-implementation-pass", fromOutput: "CONTINUE", to: "implement-feature" },
+    { id: "count-implementation-pass-limit", from: "count-implementation-pass", fromOutput: "LIMIT_REACHED", to: "blocked" },
+    { id: "count-implementation-pass-error", from: "count-implementation-pass", fromOutput: "ERROR", to: "blocked" },
     { id: "implementation-to-verification-decision", from: "implement-feature", fromOutput: "SUCCESS", to: "verification-decision" },
     { id: "implementation-error", from: "implement-feature", fromOutput: "ERROR", to: "blocked" },
     { id: "verification-decision-run", from: "verification-decision", fromOutput: "MATCH", to: "run-configured-checks" },
@@ -446,7 +462,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 5,
+  version: 6,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],

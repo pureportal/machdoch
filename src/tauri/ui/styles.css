@@ -638,16 +638,6 @@ body {
     opacity: 1;
 }
 
-.quick-chat-bubble-badge {
-    background: var(--app-sky-500) !important;
-    color: var(--app-slate-950) !important;
-    animation: quick-chat-bubble-badge-pop var(--quick-motion-long) var(--quick-ease-emphasized) both;
-}
-
-:root[data-theme="light"] .quick-chat-bubble-badge {
-    color: white !important;
-}
-
 .quick-chat-voice-button {
     border-color: color-mix(in srgb, var(--app-violet-300) 54%, transparent) !important;
     background:
@@ -843,23 +833,6 @@ body {
     }
 }
 
-@keyframes quick-chat-bubble-badge-pop {
-    0% {
-        transform: scale(0.72);
-        opacity: 0;
-    }
-
-    70% {
-        transform: scale(1.08);
-        opacity: 1;
-    }
-
-    100% {
-        transform: scale(1);
-        opacity: 1;
-    }
-}
-
 @keyframes quick-chat-bubble-spark {
     0%,
     100% {
@@ -876,7 +849,6 @@ body {
     .quick-chat-bubble::before,
     .quick-chat-bubble::after,
     .quick-chat-bubble-aura,
-    .quick-chat-bubble-badge,
     .quick-chat-bubble-icon,
     .quick-chat-bubble-surface,
     .quick-chat-bubble-zap,

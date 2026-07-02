@@ -20,6 +20,7 @@ const STARTER_RALPH_FLOW_EMOJIS = {
   "full-feature-implementation": "🚀",
   "autonomous-feature-generation-loop": "✨",
   "autonomous-code-improvement-loop": "🛠️",
+  "autonomous-ui-improvement-loop": "🎨",
 } as const satisfies Record<RalphStarterFlowSummary["id"], string>;
 
 export const getStarterFlowById = (

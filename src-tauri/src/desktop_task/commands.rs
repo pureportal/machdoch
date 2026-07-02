@@ -203,7 +203,7 @@ pub(super) fn execute_desktop_task(
                             normalized_mode.as_deref(),
                             "cancelled",
                             "Cancelled by user; stopping the task.",
-                            true,
+                            false,
                         ),
                     );
 

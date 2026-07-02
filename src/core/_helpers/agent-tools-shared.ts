@@ -44,6 +44,7 @@ export interface ConversationMemoryRuntime {
 export interface AgentToolExecutionContext {
   workspaceRoot: string;
   runId?: string;
+  signal?: AbortSignal;
   memory: ConversationMemoryRuntime;
   uiControl?: UiControlRuntimeInfo;
   onOutput?: (

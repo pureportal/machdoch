@@ -662,6 +662,45 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "renders desktop cancellation rejections as cancelled executions",
+    async () => {
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockRejectedValue(new Error("The task was cancelled."));
+
+      const { container } = render(<ChatSession />);
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: "cancel this task" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(
+        () => {
+          expect(
+            screen.getByText(
+              /Execution was cancelled before the task completed\./i,
+            ),
+          ).toBeDefined();
+        },
+        { timeout: SLOW_UI_TEST_TIMEOUT_MS },
+      );
+
+      expect(screen.queryByText(/Desktop handoff failed/i)).toBeNull();
+      expect(container.querySelector(".animate-spin")).toBeNull();
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "renders terminal progress for a recovered active desktop task",
     async () => {
       const now = Date.now();
@@ -745,6 +784,117 @@ describe("ChatSession component", () => {
         ),
       ).toBeDefined();
       expect(screen.queryByText(/\*\*Task crashed\.\*\*/i)).toBeNull();
+
+      loadActiveDesktopTasksSpy.mockRestore();
+      loadActiveDesktopTaskIdsSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "marks recovered running sessions crashed when the backend task disappears",
+    async () => {
+      vi.useFakeTimers();
+
+      const now = Date.now();
+      const activeTaskId = "dropped-active-task";
+      const recoveredSession = createSession({
+        id: "dropped-active-session",
+        manualTitle: "Dropped active session",
+        updatedAt: now - 1_000,
+        messages: [
+          {
+            id: "dropped-active-user",
+            taskId: activeTaskId,
+            role: "user",
+            content: "Continue dropped active task",
+            createdAt: now - 1_100,
+          },
+          {
+            id: "dropped-active-thinking",
+            taskId: activeTaskId,
+            role: "agent",
+            content: "",
+            createdAt: now - 1_000,
+            source: {
+              kind: "thinking",
+              thinking: createInitialThinkingTrace("ask", now - 1_000),
+            },
+          },
+        ],
+      });
+
+      storeShellState({
+        ...createInitialShellState(),
+        activeSessionId: recoveredSession.id,
+        sessions: [recoveredSession],
+      });
+
+      const loadActiveDesktopTaskIdsSpy = vi
+        .spyOn(runtime, "loadActiveDesktopTaskIds")
+        .mockResolvedValueOnce([activeTaskId])
+        .mockResolvedValue([]);
+      const loadActiveDesktopTasksSpy = vi
+        .spyOn(runtime, "loadActiveDesktopTasks")
+        .mockResolvedValue([
+          {
+            id: activeTaskId,
+            kind: "desktop",
+            workspaceRoot: "/mocked/tauri/path",
+            arguments: [],
+            startedAt: now - 900,
+          },
+        ]);
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(loadActiveDesktopTaskIdsSpy).toHaveBeenCalled();
+      expect(loadActiveDesktopTasksSpy).toHaveBeenCalled();
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(
+        screen.getByText(/no longer sees an active desktop task/i),
+      ).toBeDefined();
+      expect(
+        within(getSessionRow("Dropped active session")).getByLabelText(
+          "Session status: Crashed",
+        ),
+      ).toBeDefined();
+
+      emitDesktopTaskProgress({
+        taskId: activeTaskId,
+        timestamp: now + 1,
+        progress: {
+          task: "Continue dropped active task",
+          mode: "ask",
+          state: "completed",
+          message: "Late task completed.",
+          executedTools: [],
+          outputSections: [],
+          assistantText: "Late final response.",
+          cancellable: false,
+        },
+      });
+
+      expect(screen.queryByText("Late final response.")).toBeNull();
+      expect(
+        within(getSessionRow("Dropped active session")).getByLabelText(
+          "Session status: Crashed",
+        ),
+      ).toBeDefined();
 
       loadActiveDesktopTasksSpy.mockRestore();
       loadActiveDesktopTaskIdsSpy.mockRestore();

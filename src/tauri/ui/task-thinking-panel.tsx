@@ -251,7 +251,7 @@ export const TaskThinkingPanel = ({
   const [timeoutActivityStartedAt, setTimeoutActivityStartedAt] = useState(
     latestRecordedActivityAt,
   );
-  const previousThinkingRef = useRef<TaskThinkingTrace | null>(null);
+  const previousRecordedActivityAtRef = useRef(latestRecordedActivityAt);
   const elapsedMs = Math.max(
     0,
     (isRunning
@@ -320,30 +320,24 @@ export const TaskThinkingPanel = ({
   }, [isRunning]);
 
   useEffect(() => {
-    const previousThinking = previousThinkingRef.current;
-    previousThinkingRef.current = thinking;
-
     if (!isRunning) {
+      previousRecordedActivityAtRef.current = latestRecordedActivityAt;
       setTimeoutActivityStartedAt(latestRecordedActivityAt);
       return;
     }
 
-    if (previousThinking === null) {
-      setTimeoutActivityStartedAt(latestRecordedActivityAt);
-      return;
-    }
+    const previousRecordedActivityAt = previousRecordedActivityAtRef.current;
 
-    if (previousThinking !== thinking) {
-      setTimeoutActivityStartedAt(
-        Math.max(Date.now(), latestRecordedActivityAt),
-      );
+    previousRecordedActivityAtRef.current = latestRecordedActivityAt;
+
+    if (latestRecordedActivityAt <= previousRecordedActivityAt) {
       return;
     }
 
     setTimeoutActivityStartedAt((current) =>
       Math.max(current, latestRecordedActivityAt),
     );
-  }, [isRunning, latestRecordedActivityAt, thinking]);
+  }, [isRunning, latestRecordedActivityAt]);
 
   useEffect(() => {
     setIsCollapsed(!isRunning);

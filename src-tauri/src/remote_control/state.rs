@@ -12,15 +12,16 @@ use super::MAX_COMMAND_ENTRIES;
 use super::{
     commands::create_command_record,
     config::{ensure_remote_control_port_available, validate_remote_control_port},
-    create_qr_svg, create_secure_token, detect_lan_ip, push_bounded,
+    pairing::{create_secure_token, create_server_info},
+    push_bounded,
     sanitize::sanitize_shell_snapshot,
     session::create_remote_web_session_token,
     state_progress::record_progress_update,
     state_store::persist_config_locked,
     status::create_status_locked,
     web::run_http_server,
-    RemoteControlCommandEvent, RemoteControlInner, RemoteControlServerInfo, RemoteControlShared,
-    RemoteControlState, RemoteControlStatus, RemoteShellSnapshot,
+    RemoteControlCommandEvent, RemoteControlInner, RemoteControlShared, RemoteControlState,
+    RemoteControlStatus, RemoteShellSnapshot,
 };
 
 impl Default for RemoteControlState {
@@ -283,29 +284,4 @@ impl RemoteControlState {
 
         Ok(())
     }
-}
-
-fn create_server_info(
-    port: u16,
-    token: String,
-    started_at: u64,
-    shutdown: Arc<AtomicBool>,
-) -> Result<RemoteControlServerInfo, String> {
-    let local_url = format!("http://127.0.0.1:{port}/#pair={token}");
-    let lan_url = detect_lan_ip().map(|ip| format!("http://{ip}:{port}/#pair={token}"));
-    let display_url = lan_url.clone().unwrap_or_else(|| local_url.clone());
-    let qr_svg = create_qr_svg(&display_url)?;
-    let bind_address = format!("0.0.0.0:{port}");
-
-    Ok(RemoteControlServerInfo {
-        token,
-        port,
-        local_url,
-        lan_url,
-        display_url,
-        qr_svg,
-        started_at,
-        bind_address,
-        shutdown,
-    })
 }

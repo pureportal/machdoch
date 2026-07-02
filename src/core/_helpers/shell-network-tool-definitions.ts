@@ -243,6 +243,20 @@ const createCommandProcessError = (
   return error;
 };
 
+const getAbortReasonMessage = (signal: AbortSignal | undefined): string => {
+  const reason = signal?.reason;
+
+  if (reason instanceof Error && reason.message.trim().length > 0) {
+    return reason.message;
+  }
+
+  if (typeof reason === "string" && reason.trim().length > 0) {
+    return reason;
+  }
+
+  return "Execution cancelled by user.";
+};
+
 const terminateChildProcessTree = (child: ChildProcess): void => {
   const pid = child.pid;
 
@@ -290,11 +304,19 @@ const runStreamingShellCommand = async (
     cwd: string;
     timeoutMs: number;
     maxBufferBytes: number;
+    signal?: AbortSignal;
     onOutput?: (
       output: { stream: "stdout" | "stderr"; chunk: string },
     ) => void | Promise<void>;
   },
 ): Promise<ShellCommandResult> => {
+  if (options.signal?.aborted) {
+    throw createCommandProcessError(getAbortReasonMessage(options.signal), {
+      stdout: "",
+      stderr: "",
+    });
+  }
+
   return new Promise((resolve, reject) => {
     const cwd = normalizeLocalCommandCwd(options.cwd);
     const child = spawn(shellExecutable, shellArgs, {
@@ -310,6 +332,7 @@ const runStreamingShellCommand = async (
     let outputBytes = 0;
     let settled = false;
     let timedOut = false;
+    let aborted = false;
     let exceededBuffer = false;
     let outputHandlerError: unknown;
 
@@ -318,15 +341,35 @@ const runStreamingShellCommand = async (
       terminateChildProcessTree(child);
     }, options.timeoutMs);
 
+    const cleanup = (): void => {
+      clearTimeout(timeoutHandle);
+      options.signal?.removeEventListener("abort", handleAbort);
+    };
+
     const settle = (callback: () => void): void => {
       if (settled) {
         return;
       }
 
       settled = true;
-      clearTimeout(timeoutHandle);
+      cleanup();
       callback();
     };
+
+    function handleAbort(): void {
+      if (settled || aborted) {
+        return;
+      }
+
+      aborted = true;
+      terminateChildProcessTree(child);
+    }
+
+    options.signal?.addEventListener("abort", handleAbort, { once: true });
+
+    if (options.signal?.aborted) {
+      handleAbort();
+    }
 
     const appendOutput = (
       stream: "stdout" | "stderr",
@@ -379,6 +422,16 @@ const runStreamingShellCommand = async (
               `Command timed out after ${options.timeoutMs}ms.`,
               { stdout, stderr },
             ),
+          );
+          return;
+        }
+
+        if (aborted) {
+          reject(
+            createCommandProcessError(getAbortReasonMessage(options.signal), {
+              stdout,
+              stderr,
+            }),
           );
           return;
         }
@@ -487,6 +540,7 @@ export const createShellNetworkToolDefinitions = (
               cwd,
               timeoutMs: SHELL_TIMEOUT_MS,
               maxBufferBytes: 1_000_000,
+              ...(context.signal ? { signal: context.signal } : {}),
               ...(context.onOutput ? { onOutput: context.onOutput } : {}),
             },
           );
@@ -715,7 +769,7 @@ export const createShellNetworkToolDefinitions = (
       backingTool: "network",
       riskLevel: "medium",
       effect: "external-read",
-      execute: async (args) => {
+      execute: async (args, context) => {
         const url = coerceString(args, "url");
 
         if (!url) {
@@ -747,6 +801,20 @@ export const createShellNetworkToolDefinitions = (
         }
 
         const abortController = new AbortController();
+        const forwardContextAbort = (): void => {
+          if (!abortController.signal.aborted) {
+            abortController.abort(context.signal?.reason);
+          }
+        };
+
+        if (context.signal?.aborted) {
+          forwardContextAbort();
+        } else {
+          context.signal?.addEventListener("abort", forwardContextAbort, {
+            once: true,
+          });
+        }
+
         const timeoutHandle = setTimeout(() => {
           abortController.abort();
         }, FETCH_URL_TIMEOUT_MS);
@@ -769,6 +837,7 @@ export const createShellNetworkToolDefinitions = (
           );
         } finally {
           clearTimeout(timeoutHandle);
+          context.signal?.removeEventListener("abort", forwardContextAbort);
         }
 
         const contentType = response.headers.get("content-type") ?? "unknown";

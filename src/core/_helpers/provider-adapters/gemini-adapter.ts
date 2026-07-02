@@ -17,7 +17,10 @@ import type {
   AgentModelToolSpec,
   AgentModelTurn,
 } from "../../types.js";
-import type { ReasoningMode } from "../../runtime-contract.generated.js";
+import type {
+  ModelProvider,
+  ReasoningMode,
+} from "../../runtime-contract.generated.js";
 import { normalizeReasoningModeForProviderModel } from "../../reasoning-modes.js";
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
 import { hasImageInputs } from "./image-inputs.js";
@@ -261,6 +264,7 @@ const isAgentModelTurn = (value: unknown): value is AgentModelTurn => {
 export class GeminiChatAdapter implements AgentModelAdapter {
   private readonly chat: ReturnType<GoogleGenAI["chats"]["create"]>;
   private readonly tools: AgentModelToolSpec[];
+  private readonly provider: ModelProvider;
   private startParams?: AgentModelStartParams;
 
   private createConfig(model: string, tools: AgentModelToolSpec[]) {
@@ -286,8 +290,14 @@ export class GeminiChatAdapter implements AgentModelAdapter {
     };
   }
 
-  constructor(client: GoogleGenAI, model: string, tools: AgentModelToolSpec[]) {
+  constructor(
+    client: GoogleGenAI,
+    model: string,
+    tools: AgentModelToolSpec[],
+    provider: ModelProvider = "google",
+  ) {
     this.tools = tools;
+    this.provider = provider;
     this.chat = client.chats.create({
       model,
       config: this.createConfig(model, tools),
@@ -299,7 +309,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
 
     const response = await withProviderRequest(
       {
-        provider: "google",
+        provider: this.provider,
         operation: "startTurn",
         signal: params.signal,
       },
@@ -342,13 +352,13 @@ export class GeminiChatAdapter implements AgentModelAdapter {
 
     emitToolResultStreamEvents(
       params.onStreamEvent,
-      "google",
+      this.provider,
       params.toolResults,
     );
 
     const response = await withProviderRequest(
       {
-        provider: "google",
+        provider: this.provider,
         operation: "continueTurn",
         signal: params.signal,
       },
@@ -402,7 +412,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
   ): Promise<AgentModelTurn> {
     emitProviderStreamStatus(
       onStreamEvent,
-      "google",
+      this.provider,
       "starting",
       "Gemini content stream started.",
     );
@@ -418,7 +428,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
           didEmitInProgress = true;
           emitProviderStreamStatus(
             onStreamEvent,
-            "google",
+            this.provider,
             "in-progress",
             "Gemini content stream in progress.",
           );
@@ -426,7 +436,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
 
         emitUsageStreamEvent(
           onStreamEvent,
-          "google",
+          this.provider,
           normalizeGeminiUsage(
             (chunk as { usageMetadata?: unknown }).usageMetadata,
           ),
@@ -436,7 +446,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
           if (typeof part.text === "string" && part.thought === true) {
             emitProviderStreamEvent(onStreamEvent, {
               type: "reasoning-delta",
-              provider: "google",
+              provider: this.provider,
               delta: part.text,
             });
             continue;
@@ -446,7 +456,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
             text += part.text;
             emitProviderStreamEvent(onStreamEvent, {
               type: "text-delta",
-              provider: "google",
+              provider: this.provider,
               delta: part.text,
             });
           }
@@ -469,7 +479,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
           if (!toolCallsByKey.has(key)) {
             emitProviderStreamEvent(onStreamEvent, {
               type: "tool-call-start",
-              provider: "google",
+              provider: this.provider,
               id,
               name,
             });
@@ -477,7 +487,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
 
           emitProviderStreamEvent(onStreamEvent, {
             type: "tool-call-done",
-            provider: "google",
+            provider: this.provider,
             id,
             name,
             argumentsText: rawArguments,
@@ -491,13 +501,13 @@ export class GeminiChatAdapter implements AgentModelAdapter {
         }
       }
     } catch (error) {
-      emitProviderStreamError(onStreamEvent, "google", error);
+      emitProviderStreamError(onStreamEvent, this.provider, error);
       throw error;
     }
 
     emitProviderStreamStatus(
       onStreamEvent,
-      "google",
+      this.provider,
       "completed",
       "Gemini content stream completed.",
     );

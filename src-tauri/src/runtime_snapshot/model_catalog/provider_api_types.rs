@@ -12,22 +12,117 @@ use super::{
 const LANGDOCK_DEFAULT_REGION: &str = "eu";
 const LANGDOCK_SUPPORTED_REGIONS: [&str; 2] = ["eu", "us"];
 
+#[derive(Clone, Copy)]
+pub(super) enum LangdockApiFamily {
+    Anthropic,
+    Google,
+    OpenAi,
+}
+
 fn strip_trailing_slashes(value: &str) -> String {
     value.trim_end_matches('/').to_string()
 }
 
-pub(super) fn resolve_langdock_base_url(env: &HashMap<String, String>) -> String {
-    if let Some(base_url) = env
-        .get("LANGDOCK_BASE_URL")
-        .map(String::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        return strip_trailing_slashes(base_url);
+fn strip_known_langdock_endpoint_suffix(value: &str) -> String {
+    let mut normalized = strip_trailing_slashes(value.trim());
+
+    for suffix in ["/chat/completions", "/messages", "/fim/completions"] {
+        if normalized
+            .to_ascii_lowercase()
+            .ends_with(&suffix.to_ascii_lowercase())
+        {
+            let new_len = normalized.len() - suffix.len();
+            normalized.truncate(new_len);
+            return strip_trailing_slashes(&normalized);
+        }
     }
 
-    let region = env
-        .get("LANGDOCK_REGION")
+    let lower = normalized.to_ascii_lowercase();
+
+    if let Some(models_index) = lower.rfind("/models") {
+        let suffix = &lower[models_index..];
+
+        if suffix == "/models"
+            || (suffix.starts_with("/models/")
+                && (suffix.ends_with(":generatecontent")
+                    || suffix.ends_with(":streamgeneratecontent")))
+        {
+            normalized.truncate(models_index);
+        }
+    }
+
+    strip_trailing_slashes(&normalized)
+}
+
+fn langdock_origin(url: &reqwest::Url) -> Option<String> {
+    let host = url.host_str()?;
+    let port = url
+        .port()
+        .map(|value| format!(":{value}"))
+        .unwrap_or_default();
+
+    Some(format!("{}://{host}{port}", url.scheme()))
+}
+
+fn create_langdock_root(url: &reqwest::Url, root_segments: &[&str]) -> Option<String> {
+    let origin = langdock_origin(url)?;
+
+    if root_segments.is_empty() {
+        return Some(origin);
+    }
+
+    Some(format!("{origin}/{}", root_segments.join("/")))
+}
+
+fn parse_langdock_configured_base_url(value: &str) -> Option<(String, Option<String>)> {
+    let normalized = strip_known_langdock_endpoint_suffix(value);
+    let url = reqwest::Url::parse(&normalized).ok()?;
+    let segments = url
+        .path()
+        .trim_end_matches('/')
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+
+    if segments.is_empty() {
+        return Some((create_langdock_root(&url, &[])?, None));
+    }
+
+    if segments.as_slice() == ["api", "public"] {
+        return Some((create_langdock_root(&url, &segments)?, None));
+    }
+
+    for (index, segment) in segments.iter().enumerate() {
+        let protocol = segment.to_ascii_lowercase();
+        let Some(region) = segments
+            .get(index + 1)
+            .map(|value| value.to_ascii_lowercase())
+        else {
+            continue;
+        };
+
+        if !["openai", "anthropic", "google", "mistral"].contains(&protocol.as_str()) {
+            continue;
+        }
+
+        if !LANGDOCK_SUPPORTED_REGIONS
+            .iter()
+            .any(|supported_region| *supported_region == region)
+        {
+            continue;
+        }
+
+        return Some((
+            create_langdock_root(&url, &segments[..index])?,
+            Some(region),
+        ));
+    }
+
+    None
+}
+
+fn resolve_langdock_region(env: &HashMap<String, String>) -> String {
+    env.get("LANGDOCK_REGION")
         .map(String::as_str)
         .map(str::trim)
         .map(str::to_ascii_lowercase)
@@ -36,9 +131,59 @@ pub(super) fn resolve_langdock_base_url(env: &HashMap<String, String>) -> String
                 .iter()
                 .any(|region| *region == value.as_str())
         })
-        .unwrap_or_else(|| LANGDOCK_DEFAULT_REGION.to_string());
+        .unwrap_or_else(|| LANGDOCK_DEFAULT_REGION.to_string())
+}
 
-    format!("https://api.langdock.com/openai/{region}/v1")
+fn append_langdock_api_path(root: &str, family: LangdockApiFamily, region: &str) -> String {
+    let root = strip_trailing_slashes(root);
+
+    match family {
+        LangdockApiFamily::Anthropic => format!("{root}/anthropic/{region}/v1"),
+        LangdockApiFamily::Google => format!("{root}/google/{region}/v1beta"),
+        LangdockApiFamily::OpenAi => format!("{root}/openai/{region}/v1"),
+    }
+}
+
+pub(super) fn resolve_langdock_api_base_url(
+    env: &HashMap<String, String>,
+    family: LangdockApiFamily,
+) -> String {
+    if let Some(base_url) = env
+        .get("LANGDOCK_BASE_URL")
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let normalized_base_url = strip_known_langdock_endpoint_suffix(base_url);
+
+        if let Some((root, embedded_region)) =
+            parse_langdock_configured_base_url(&normalized_base_url)
+        {
+            let region = embedded_region.unwrap_or_else(|| resolve_langdock_region(env));
+
+            return append_langdock_api_path(&root, family, &region);
+        }
+
+        if matches!(family, LangdockApiFamily::OpenAi) {
+            return normalized_base_url;
+        }
+
+        return append_langdock_api_path(
+            &normalized_base_url,
+            family,
+            &resolve_langdock_region(env),
+        );
+    }
+
+    append_langdock_api_path(
+        "https://api.langdock.com",
+        family,
+        &resolve_langdock_region(env),
+    )
+}
+
+pub(super) fn resolve_langdock_base_url(env: &HashMap<String, String>) -> String {
+    resolve_langdock_api_base_url(env, LangdockApiFamily::OpenAi)
 }
 
 pub(super) fn create_openai_runtime_model(

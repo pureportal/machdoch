@@ -18,9 +18,10 @@ import {
   type MouseEvent,
   type RefObject,
 } from "react";
-import type {
-  ChatSessionContextAttachment,
-  ChatSessionMessage,
+import {
+  INTERRUPTED_TASK_CRASH_PREFIX,
+  type ChatSessionContextAttachment,
+  type ChatSessionMessage,
 } from "../../chat-session.model";
 import { Avatar } from "../../components/ui/avatar";
 import { Button } from "../../components/ui/button";
@@ -58,7 +59,6 @@ export interface ConversationFeedProps {
   };
 }
 
-const RECOVERED_TASK_CRASH_PREFIX = "**Task crashed.**";
 const MESSAGE_CONTEXT_MENU_WIDTH = 196;
 const MESSAGE_CONTEXT_MENU_HEADER_HEIGHT = 44;
 const MESSAGE_CONTEXT_MENU_ITEM_HEIGHT = 32;
@@ -78,7 +78,7 @@ const isRecoveredTaskCrashMessage = (message: ChatSessionMessage): boolean => {
   return (
     message.role === "agent" &&
     !message.source &&
-    message.content.startsWith(RECOVERED_TASK_CRASH_PREFIX)
+    message.content.startsWith(INTERRUPTED_TASK_CRASH_PREFIX)
   );
 };
 

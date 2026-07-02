@@ -205,6 +205,51 @@ const createLogEntry = (
   return entry;
 };
 
+const getErrorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : String(error);
+};
+
+const isNoBodyProviderError = (error: unknown): boolean => {
+  const status = getNumericStatus(error);
+  const message = getErrorMessage(error);
+
+  if (!/\bNo body\b/i.test(message)) {
+    return false;
+  }
+
+  return (
+    status === 400 ||
+    (status === undefined && /\b400\s+No body\b/i.test(message))
+  );
+};
+
+const createNoBodyDiagnostic = (provider: string): string => {
+  const normalizedProvider = provider.toLowerCase();
+  const baseMessage = `The ${provider} provider returned "400 No body", which means the configured API endpoint reported that it received an empty HTTP request body. Machdoch had already constructed the provider payload before calling the SDK, so verify the provider base URL and any proxy between Machdoch and the provider.`;
+
+  if (normalizedProvider === "langdock") {
+    return `${baseMessage} If LANGDOCK_BASE_URL is set, use either the Langdock API root, for example https://api.langdock.com or https://<your-domain>/api/public for a dedicated deployment, or one of Langdock's documented provider bases such as https://api.langdock.com/openai/eu/v1, https://api.langdock.com/anthropic/eu/v1, or https://api.langdock.com/google/eu/v1beta. Machdoch normalizes recognized roots and provider URLs with LANGDOCK_REGION before calling Langdock.`;
+  }
+
+  return baseMessage;
+};
+
+const normalizeProviderRequestError = (
+  options: ProviderRequestOptions,
+  error: unknown,
+): unknown => {
+  if (!isNoBodyProviderError(error)) {
+    return error;
+  }
+
+  return new Error(
+    `${createNoBodyDiagnostic(options.provider)} Original error: ${getErrorMessage(
+      error,
+    )}`,
+    { cause: error },
+  );
+};
+
 export const withProviderRequest = async <T>(
   options: ProviderRequestOptions,
   execute: (requestSignal: AbortSignal | undefined) => Promise<T>,
@@ -230,7 +275,7 @@ export const withProviderRequest = async <T>(
         attempt >= maxAttempts ||
         !isRetryableProviderRequestError(error)
       ) {
-        throw error;
+        throw normalizeProviderRequestError(options, error);
       }
     } finally {
       requestSignal.cleanup();

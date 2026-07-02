@@ -7,7 +7,8 @@ mod model_catalog_parser_tests {
         provider_api_types::{
             create_anthropic_runtime_model, create_google_runtime_model,
             create_openai_runtime_model, parse_anthropic_model_catalog, parse_google_model_catalog,
-            parse_openai_model_catalog, resolve_langdock_base_url,
+            parse_openai_model_catalog, resolve_langdock_api_base_url, resolve_langdock_base_url,
+            LangdockApiFamily,
         },
     };
     use std::collections::HashMap;
@@ -304,11 +305,37 @@ mod model_catalog_parser_tests {
 
         env.insert(
             "LANGDOCK_BASE_URL".to_string(),
-            " https://example.test/openai/v1/// ".to_string(),
+            " https://example.test/api/public/// ".to_string(),
         );
         assert_eq!(
             resolve_langdock_base_url(&env),
-            "https://example.test/openai/v1"
+            "https://example.test/api/public/openai/us/v1"
+        );
+        assert_eq!(
+            resolve_langdock_api_base_url(&env, LangdockApiFamily::Anthropic),
+            "https://example.test/api/public/anthropic/us/v1"
+        );
+        assert_eq!(
+            resolve_langdock_api_base_url(&env, LangdockApiFamily::Google),
+            "https://example.test/api/public/google/us/v1beta"
+        );
+
+        env.insert(
+            "LANGDOCK_BASE_URL".to_string(),
+            "https://api.langdock.com/google/eu/v1beta/models/gemini-2.5-pro:generateContent"
+                .to_string(),
+        );
+        assert_eq!(
+            resolve_langdock_base_url(&env),
+            "https://api.langdock.com/openai/eu/v1"
+        );
+        assert_eq!(
+            resolve_langdock_api_base_url(&env, LangdockApiFamily::Anthropic),
+            "https://api.langdock.com/anthropic/eu/v1"
+        );
+        assert_eq!(
+            resolve_langdock_api_base_url(&env, LangdockApiFamily::Google),
+            "https://api.langdock.com/google/eu/v1beta"
         );
     }
 }

@@ -41,6 +41,7 @@ import {
   MAX_SMART_CONTEXT_PACKS,
   normalizeSessionTags,
   QUICK_VOICE_SESSION_KIND,
+  recoverInactiveRunningTasks,
   rememberRecentWorkspace,
   removeRecentWorkspace,
   type ChatSessionContextAttachment,
@@ -57,6 +58,7 @@ import {
   cancelDesktopTask,
   createInstruction,
   generateInstruction,
+  loadActiveDesktopTaskIds,
   loadActiveDesktopTasks,
   listInstructions,
   openAttachedPath,
@@ -244,6 +246,7 @@ const CLIPBOARD_IMAGE_MEDIA_TYPES: readonly AgentModelImageMediaType[] = [
   "image/png",
   "image/webp",
 ];
+const ACTIVE_DESKTOP_TASK_RECONCILE_INTERVAL_MS = 15_000;
 
 const getInstructionCommandErrorMessage = (
   error: unknown,
@@ -269,6 +272,7 @@ export const useChatSessionController = (
   const state = useChatSessionShellState({
     isolateActiveSession: options.isolateActiveSession,
   });
+  const shellStateRef = useRef(state.shellState);
   const activeDesktopTasksRef = useRef<Map<string, string>>(new Map());
   const ignoredDesktopTaskIdsRef = useRef<Set<string>>(new Set());
   const desktopTaskProgressHandlersRef = useRef<
@@ -379,6 +383,13 @@ export const useChatSessionController = (
     return state.shellState.sessions.some(
       (session) => getSessionOverviewStatus(session) === "running",
     );
+  }, [state.shellState.sessions]);
+  const runningTaskIdsSignature = useMemo(() => {
+    return state.shellState.sessions
+      .map((session) => getLatestRunningTaskId(session))
+      .filter((taskId): taskId is string => Boolean(taskId))
+      .sort()
+      .join("\0");
   }, [state.shellState.sessions]);
   const activeSessionQueuedMessages = useMemo(() => {
     return queuedSessionMessages.filter(
@@ -618,6 +629,10 @@ export const useChatSessionController = (
   );
 
   useEffect(() => {
+    shellStateRef.current = state.shellState;
+  }, [state.shellState]);
+
+  useEffect(() => {
     let cancelled = false;
 
     void loadRunningTaskMessageAction()
@@ -825,6 +840,75 @@ export const useChatSessionController = (
       cancelled = true;
     };
   }, [state.hasHydrated, state.shellState.sessions]);
+
+  useEffect(() => {
+    if (!state.hasHydrated || !runningTaskIdsSignature) {
+      return;
+    }
+
+    let disposed = false;
+
+    const reconcileInactiveRunningTasks = async (): Promise<void> => {
+      const activeTaskIds = await loadActiveDesktopTaskIds();
+
+      if (disposed || activeTaskIds === null) {
+        return;
+      }
+
+      const activeTaskIdSet = new Set(
+        activeTaskIds
+          .map((taskId) => taskId.trim())
+          .filter((taskId) => taskId.length > 0),
+      );
+      const currentInactiveRunningTaskIds = shellStateRef.current.sessions
+        .map((session) => getLatestRunningTaskId(session))
+        .filter((taskId): taskId is string => {
+          return taskId !== null && !activeTaskIdSet.has(taskId);
+        });
+
+      if (currentInactiveRunningTaskIds.length === 0) {
+        return;
+      }
+
+      state.applyShellState((prev) => {
+        const inactiveRunningTaskIds = prev.sessions
+          .map((session) => getLatestRunningTaskId(session))
+          .filter((taskId): taskId is string => {
+            return taskId !== null && !activeTaskIdSet.has(taskId);
+          });
+
+        if (inactiveRunningTaskIds.length === 0) {
+          return prev;
+        }
+
+        const nextState = recoverInactiveRunningTasks(
+          prev,
+          activeTaskIdSet,
+          Date.now(),
+        );
+
+        if (nextState === prev) {
+          return prev;
+        }
+
+        for (const taskId of inactiveRunningTaskIds) {
+          activeDesktopTasksRef.current.delete(taskId);
+          ignoredDesktopTaskIdsRef.current.add(taskId);
+        }
+
+        return nextState;
+      });
+    };
+
+    const intervalId = window.setInterval(() => {
+      void reconcileInactiveRunningTasks();
+    }, ACTIVE_DESKTOP_TASK_RECONCILE_INTERVAL_MS);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [runningTaskIdsSignature, state.applyShellState, state.hasHydrated]);
 
   const handleUnhandledDesktopTaskProgress = useCallback(
     (

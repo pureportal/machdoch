@@ -1,13 +1,9 @@
 use std::{
     collections::{HashMap, VecDeque},
-    net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
-    process::Command,
     sync::{atomic::AtomicBool, Arc, Condvar, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use qrcode::{render::svg, QrCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::Manager;
@@ -21,6 +17,7 @@ mod config;
 mod mission_control_html;
 mod mission_control_script_events;
 mod mission_control_script_render;
+mod pairing;
 mod sanitize;
 mod session;
 mod shell;
@@ -36,11 +33,9 @@ mod web;
 
 use commands::RemoteCommandRecord;
 pub use commands::RemoteControlCommandEvent;
+use pairing::open_url_in_system_browser;
 pub use shell::RemoteShellSnapshot;
 pub use status::RemoteControlStatus;
-
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
 
 const REMOTE_CONTROL_COMMAND_EVENT: &str = "remote-control-command";
 const MAX_SESSIONS: usize = 128;
@@ -65,9 +60,6 @@ const WEB_SESSION_COOKIE_NAME: &str = "machdoch_mc";
 const WEB_SESSION_TTL_MS: u64 = 365 * 24 * 60 * 60 * 1_000;
 const SSE_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
 const SERVER_ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(200);
-
-#[cfg(target_os = "windows")]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Clone)]
 pub struct RemoteControlState {
@@ -246,65 +238,6 @@ pub fn record_task_progress(
     state.record_progress(task_id, progress, timestamp);
 }
 
-fn refresh_server_pairing_url(
-    server: &mut RemoteControlServerInfo,
-    token: String,
-) -> Result<(), String> {
-    let port = server.port;
-    let local_url = format!("http://127.0.0.1:{port}/#pair={token}");
-    let lan_url = detect_lan_ip().map(|ip| format!("http://{ip}:{port}/#pair={token}"));
-    let display_url = lan_url.clone().unwrap_or_else(|| local_url.clone());
-    let qr_svg = create_qr_svg(&display_url)?;
-
-    server.token = token;
-    server.local_url = local_url;
-    server.lan_url = lan_url;
-    server.display_url = display_url;
-    server.qr_svg = qr_svg;
-
-    Ok(())
-}
-
-fn open_url_in_system_browser(url: &str) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        let mut command = Command::new("cmd");
-        command
-            .arg("/C")
-            .arg("start")
-            .arg("")
-            .arg(url)
-            .creation_flags(CREATE_NO_WINDOW);
-
-        return command.spawn().map(|_| ()).map_err(|error| {
-            format!("Mission Control could not be opened in your browser: {error}")
-        });
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let mut command = Command::new("open");
-        command.arg(url);
-
-        return command.spawn().map(|_| ()).map_err(|error| {
-            format!("Mission Control could not be opened in your browser: {error}")
-        });
-    }
-
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let mut command = Command::new("xdg-open");
-        command.arg(url);
-
-        return command.spawn().map(|_| ()).map_err(|error| {
-            format!("Mission Control could not be opened in your browser: {error}")
-        });
-    }
-
-    #[allow(unreachable_code)]
-    Err("Opening Mission Control is not supported on this platform.".to_string())
-}
-
 fn string_field(value: &Value, field: &str) -> Option<String> {
     value.get(field).and_then(Value::as_str).map(str::to_string)
 }
@@ -315,37 +248,6 @@ fn push_bounded<T>(items: &mut VecDeque<T>, item: T, max_items: usize) {
     }
 
     items.push_back(item);
-}
-
-fn create_secure_token() -> Result<String, String> {
-    let mut bytes = [0_u8; 32];
-    getrandom::fill(&mut bytes)
-        .map_err(|error| format!("Unable to create a secure Mission Control token: {error}"))?;
-    Ok(URL_SAFE_NO_PAD.encode(bytes))
-}
-
-fn create_qr_svg(url: &str) -> Result<String, String> {
-    let code = QrCode::new(url.as_bytes())
-        .map_err(|error| format!("Unable to create Mission Control QR code: {error}"))?;
-
-    Ok(code
-        .render::<svg::Color>()
-        .min_dimensions(220, 220)
-        .dark_color(svg::Color("#0f172a"))
-        .light_color(svg::Color("#ffffff"))
-        .build())
-}
-
-fn detect_lan_ip() -> Option<IpAddr> {
-    let socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0))).ok()?;
-    socket.connect("8.8.8.8:80").ok()?;
-    let ip = socket.local_addr().ok()?.ip();
-
-    if ip.is_loopback() {
-        return None;
-    }
-
-    Some(ip)
 }
 
 fn now_millis() -> u64 {

@@ -405,14 +405,6 @@ export const AssistantBubbleShell = () => {
           <span aria-hidden="true" className="quick-chat-bubble-surface" />
           <MessageSquareMore className="quick-chat-bubble-icon relative z-10 h-6 w-6 text-sky-100 transition-colors group-hover:text-white" />
           <Zap className="quick-chat-bubble-zap absolute right-3 top-3 z-10 h-3 w-3 text-sky-300" />
-
-          {activeSessionSummary.pendingCount > 0 ? (
-            <span className="quick-chat-bubble-badge absolute -right-1 -top-1 z-20 flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold text-slate-950">
-              {activeSessionSummary.pendingCount > 9
-                ? "9+"
-                : activeSessionSummary.pendingCount}
-            </span>
-          ) : null}
         </button>
 
         <button

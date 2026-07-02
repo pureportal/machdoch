@@ -491,6 +491,133 @@ describe("useChatSessionShellState", () => {
     ).toBe("Submitted before hydration");
   });
 
+  it("keeps first-submit messages when a newer empty new-session snapshot is merged", () => {
+    const baseState = createInitialShellState();
+    const task = "Investigate disappearing submit";
+    const newSession = createSession({
+      id: "new-session-submit-race",
+      updatedAt: 100,
+      lastReadAt: 100,
+    });
+    const userMessage = {
+      id: "submitted-user-message",
+      taskId: "submitted-task",
+      role: "user" as const,
+      content: task,
+      createdAt: 200,
+    };
+    const thinkingMessage = {
+      id: "submitted-thinking-message",
+      taskId: "submitted-task",
+      role: "agent" as const,
+      content: "",
+      createdAt: 200,
+      source: {
+        kind: "thinking" as const,
+        thinking: createInitialThinkingTrace("machdoch", 200),
+      },
+    };
+    const submittedSession = {
+      ...newSession,
+      updatedAt: 200,
+      messages: [userMessage, thinkingMessage],
+      promptHistory: [task],
+    };
+    const emptyNewerSession = {
+      ...newSession,
+      lastReadAt: 300,
+    };
+
+    const mergedState = mergeShellStateForPersistence(
+      {
+        ...baseState,
+        activeSessionId: newSession.id,
+        sessions: [emptyNewerSession, ...baseState.sessions],
+      },
+      baseState,
+      {
+        ...baseState,
+        activeSessionId: newSession.id,
+        sessions: [submittedSession, ...baseState.sessions],
+      },
+    );
+    const mergedSession = mergedState.sessions.find(
+      (session) => session.id === newSession.id,
+    );
+
+    expect(mergedState.activeSessionId).toBe(newSession.id);
+    expect(mergedSession?.messages.map((message) => message.id)).toEqual([
+      userMessage.id,
+      thinkingMessage.id,
+    ]);
+    expect(mergedSession?.promptHistory).toEqual([task]);
+  });
+
+  it("keeps a settled local running submit when an external update is empty", () => {
+    const baseState = createInitialShellState();
+    const task = "Keep the running user anchor";
+    const newSession = createSession({
+      id: "settled-running-submit",
+      updatedAt: 100,
+      lastReadAt: 100,
+    });
+    const userMessage = {
+      id: "running-user-message",
+      taskId: "running-task",
+      role: "user" as const,
+      content: task,
+      createdAt: 200,
+    };
+    const thinkingMessage = {
+      id: "running-thinking-message",
+      taskId: "running-task",
+      role: "agent" as const,
+      content: "",
+      createdAt: 200,
+      source: {
+        kind: "thinking" as const,
+        thinking: createInitialThinkingTrace("machdoch", 200),
+      },
+    };
+    const runningSession = {
+      ...newSession,
+      updatedAt: 200,
+      messages: [userMessage, thinkingMessage],
+      promptHistory: [task],
+    };
+    const externalEmptySession = {
+      ...newSession,
+      lastReadAt: 300,
+    };
+    const currentState = {
+      ...baseState,
+      activeSessionId: newSession.id,
+      sessions: [runningSession, ...baseState.sessions],
+    };
+    const externalState = {
+      ...baseState,
+      activeSessionId: newSession.id,
+      sessions: [externalEmptySession, ...baseState.sessions],
+    };
+
+    const mergedState = mergeShellStateFromExternalUpdate(
+      currentState,
+      currentState,
+      externalState,
+      false,
+    );
+    const mergedSession = mergedState.sessions.find(
+      (session) => session.id === newSession.id,
+    );
+
+    expect(mergedState.activeSessionId).toBe(newSession.id);
+    expect(mergedSession?.messages.map((message) => message.id)).toEqual([
+      userMessage.id,
+      thinkingMessage.id,
+    ]);
+    expect(mergedSession?.promptHistory).toEqual([task]);
+  });
+
   it("merges same-id message updates from concurrent thinking and final-response saves", () => {
     const baseState = createInitialShellState();
     const task = "Summarize the workspace";

@@ -1724,6 +1724,63 @@ describe("executeTask", () => {
     expect(streamProgressCallbacks).toBeGreaterThan(0);
   });
 
+  it("surfaces provider failure details in blocked model-driven results", async () => {
+    const workspaceRoot = await createWorkspace();
+    const progress: TaskExecutionProgress[] = [];
+    const providerError = Object.assign(
+      new Error(
+        "The langdock provider returned 400 No body. Check LANGDOCK_BASE_URL.",
+      ),
+      {
+        status: 400,
+        code: "bad_request",
+        request_id: "req_langdock_123",
+      },
+    );
+    const failingAdapter: AgentModelAdapter = {
+      startTurn: async () => {
+        throw providerError;
+      },
+      continueTurn: async (): Promise<never> => {
+        throw new Error("The failing adapter should not continue.");
+      },
+    };
+
+    const result = await executeTask(
+      "Run a model-driven task.",
+      createConfig(workspaceRoot, "machdoch", {
+        provider: "langdock",
+        model: "gpt-5-mini",
+      }),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: failingAdapter,
+        onStateChange: (nextProgress) => {
+          progress.push(nextProgress);
+        },
+      },
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.summary).toContain(
+      "provider langdock with model gpt-5-mini",
+    );
+    expect(result.summary).toContain("400 No body");
+    expect(progress.at(-1)?.message).toBe(result.summary);
+    expect(
+      result.outputSections.find(
+        (section) => section.title === "Model runtime error",
+      )?.lines,
+    ).toEqual([
+      "Provider: langdock",
+      "Model: gpt-5-mini",
+      "Status: 400",
+      "Code: bad_request",
+      "Request ID: req_langdock_123",
+      "Error: The langdock provider returned 400 No body. Check LANGDOCK_BASE_URL.",
+    ]);
+  });
+
   it("emits structured timeline telemetry for model usage and tool calls", async () => {
     const workspaceRoot = await createWorkspace();
     const timelineEvents: NonNullable<

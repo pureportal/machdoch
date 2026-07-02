@@ -172,7 +172,7 @@ describe("AssistantBubbleShell", () => {
       expect(bubble.getAttribute("data-has-notification")).toBe("true");
     });
 
-    expect(screen.getByText("1")).toBeDefined();
+    expect(screen.queryByText("1")).toBeNull();
   });
 
   it("syncs the transparent bubble window size for shadow padding", async () => {

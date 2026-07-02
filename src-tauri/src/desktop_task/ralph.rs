@@ -197,7 +197,7 @@ pub(super) fn execute_ralph_command(
                             Some("machdoch"),
                             "cancelled",
                             "Cancelled by user; stopping the Ralph command.",
-                            true,
+                            false,
                         ),
                     );
 

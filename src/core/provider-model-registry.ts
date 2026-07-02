@@ -91,6 +91,15 @@ export const OPENAI_IMAGE_MEDIA_TYPES = [
   "image/webp",
 ] as const satisfies readonly AgentModelImageMediaType[];
 
+export const LANGDOCK_IMAGE_MEDIA_TYPES = [
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const satisfies readonly AgentModelImageMediaType[];
+
 export const PROVIDER_MODEL_MODES: Record<
   ConfiguredModelProvider,
   readonly ProviderModelMode[]
@@ -100,7 +109,12 @@ export const PROVIDER_MODEL_MODES: Record<
   "codex-cli": ["external-agent-cli"],
   "copilot-cli": ["external-agent-cli"],
   google: ["gemini-chat", "gemini-function-calling-any"],
-  langdock: ["openai-chat-completions"],
+  langdock: [
+    "anthropic-messages",
+    "gemini-chat",
+    "gemini-function-calling-any",
+    "openai-chat-completions",
+  ],
   openai: ["openai-responses"],
 };
 
@@ -162,7 +176,7 @@ const createLangdockCapabilities = (
   createCapabilities("langdock", {
     imageInput: true,
     reasoning: true,
-    supportedImageMediaTypes: OPENAI_IMAGE_MEDIA_TYPES,
+    supportedImageMediaTypes: LANGDOCK_IMAGE_MEDIA_TYPES,
     ...overrides,
   });
 
@@ -215,9 +229,9 @@ export const PROVIDER_CATALOG_METADATA: readonly ProviderCatalogMetadata[] = [
   },
   {
     provider: "langdock",
-    docsUrl: "https://docs.langdock.com/en/developer/completion-api/openai",
+    docsUrl: "https://docs.langdock.com/en/developer/overview/api-introduction",
     note:
-      "Langdock runtime model discovery returns the models accepted by the API key account on the OpenAI-compatible chat endpoint.",
+      "Langdock exposes provider-specific completion APIs; Machdoch routes GPT and OpenAI-compatible chat models through OpenAI Chat Completions, Claude models through Anthropic Messages, and Gemini models through Google generateContent.",
   },
   {
     provider: "codex-cli",

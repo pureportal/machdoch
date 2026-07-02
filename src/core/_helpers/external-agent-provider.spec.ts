@@ -430,18 +430,20 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     controller.abort("Execution stopped after exceeding the safety timeout of 25ms.");
 
-    await expect(resultPromise).rejects.toThrow(
-      "Execution stopped after exceeding the safety timeout of 25ms.",
-    );
-
     if (process.platform === "win32") {
       expect(spawnCalls[1]).toMatchObject({
         executable: "taskkill",
         args: ["/PID", String(call?.child.pid), "/T", "/F"],
       });
     } else {
-      expect(call?.child.kill).toHaveBeenCalled();
+      expect(call?.options.detached).toBe(true);
     }
+
+    call?.child.emit("close", null, "SIGTERM");
+
+    await expect(resultPromise).rejects.toThrow(
+      "Execution stopped after exceeding the safety timeout of 25ms.",
+    );
   });
 
   it("summarizes codex quota failures without echoing the delegated prompt", async () => {

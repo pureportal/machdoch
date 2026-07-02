@@ -121,6 +121,7 @@ export const executeToolCall = async (
   call: AgentModelToolCall,
   onActionOutput?: TaskActionOutputHandler,
   runId?: string,
+  signal?: AbortSignal,
 ): Promise<{
   result?: AgentToolExecutionResult;
 }> => {
@@ -161,6 +162,7 @@ export const executeToolCall = async (
   const result = await toolDefinition.execute(call.arguments, {
     workspaceRoot: config.workspaceRoot,
     ...(runId ? { runId } : {}),
+    ...(signal ? { signal } : {}),
     memory,
     ...(uiControl !== undefined ? { uiControl } : {}),
     ...(onActionOutput

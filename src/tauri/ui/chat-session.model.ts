@@ -132,6 +132,8 @@ export type SessionOverviewStatus =
   | "failed"
   | "crashed";
 
+export const INTERRUPTED_TASK_CRASH_PREFIX = "**Task crashed.**";
+
 export interface ShellPersistedState {
   version: 1;
   activeSessionId: string;
@@ -2018,17 +2020,26 @@ const getInterruptedTaskIds = (
   return interruptedTaskIds;
 };
 
+type InterruptedTaskCrashReason = "restart" | "inactive";
+
+const INTERRUPTED_TASK_CRASH_CONTENT_BY_REASON = {
+  restart:
+    "machdoch restarted before this AI task finished, so it was marked as crashed.",
+  inactive:
+    "machdoch no longer sees an active desktop task before a final response was produced, so it was marked as crashed.",
+} satisfies Record<InterruptedTaskCrashReason, string>;
+
 const createInterruptedTaskCrashMessage = (
   taskId: string,
   timestamp: number,
   index: number,
+  reason: InterruptedTaskCrashReason,
 ): ChatSessionMessage => {
   return {
     id: `interrupted-${taskId}-${timestamp}-${index}`,
     taskId,
     role: "agent",
-    content:
-      "**Task crashed.** machdoch restarted before this AI task finished, so it was marked as crashed.",
+    content: `${INTERRUPTED_TASK_CRASH_PREFIX} ${INTERRUPTED_TASK_CRASH_CONTENT_BY_REASON[reason]}`,
     createdAt: timestamp,
   };
 };
@@ -2037,6 +2048,7 @@ const recoverInterruptedSessionTasks = (
   session: ChatSessionRecord,
   timestamp: number,
   activeTaskIds: ReadonlySet<string>,
+  reason: InterruptedTaskCrashReason,
 ): ChatSessionRecord => {
   const interruptedTaskIds = getInterruptedTaskIds(
     session.messages,
@@ -2095,6 +2107,7 @@ const recoverInterruptedSessionTasks = (
           taskId,
           timestamp,
           crashMessageIndex,
+          reason,
         ),
       );
       crashMessageIndex += 1;
@@ -2130,6 +2143,7 @@ export const recoverInterruptedTasksForLaunch = (
       session,
       timestamp,
       activeTaskIdSet,
+      "restart",
     );
 
     if (recoveredSession !== session) {
@@ -2143,6 +2157,38 @@ export const recoverInterruptedTasksForLaunch = (
     ...state,
     lastRecoveredLaunchId: normalizedLaunchId,
     sessions: didRecoverInterruptedTasks ? sessions : state.sessions,
+  };
+};
+
+export const recoverInactiveRunningTasks = (
+  state: ShellPersistedState,
+  activeTaskIds: Iterable<string>,
+  timestamp = Date.now(),
+): ShellPersistedState => {
+  const activeTaskIdSet = normalizeTaskIdSet(activeTaskIds);
+  let didRecoverInterruptedTasks = false;
+  const sessions = state.sessions.map((session) => {
+    const recoveredSession = recoverInterruptedSessionTasks(
+      session,
+      timestamp,
+      activeTaskIdSet,
+      "inactive",
+    );
+
+    if (recoveredSession !== session) {
+      didRecoverInterruptedTasks = true;
+    }
+
+    return recoveredSession;
+  });
+
+  if (!didRecoverInterruptedTasks) {
+    return state;
+  }
+
+  return {
+    ...state,
+    sessions,
   };
 };
 

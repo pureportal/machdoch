@@ -385,7 +385,20 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Implement the selected active-goal task {{data:select-next-task:task}} from {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}. Use git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, and latest validation feedback {{lastResult}}. Preserve existing behavior, follow local patterns, keep changes scoped, avoid excluded areas {{excludedAreas:text=}}, use authInstructions={{authInstructions:text=}} and designGuidelines={{designGuidelines:text=}}, add or update tests where appropriate, and update the selected task plus goal JSON checklist with completed items and resume notes.",
+        "Implement the selected active-goal task {{data:select-next-task:task}} from {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}. Use git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-implementation-pass}}, and latest validation feedback {{result:validate-goal}}. Preserve existing behavior, follow local patterns, keep changes scoped, avoid excluded areas {{excludedAreas:text=}}, use authInstructions={{authInstructions:text=}} and designGuidelines={{designGuidelines:text=}}, add or update tests where appropriate, and update the selected task plus goal JSON checklist with completed items and resume notes.",
+    },
+    {
+      id: "count-implementation-pass",
+      title: "Count Implementation Pass",
+      position: { x: 3100, y: 250 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "LOOP_COUNTER",
+        counterName:
+          "autonomous-feature-generation-loop.implementation-pass.{{data:select-next-task:task.id}}.{{data:select-next-task:index}}",
+        maxAttempts: "{{maxImplementationPasses:number=10}}",
+      },
     },
     {
       id: "verification-decision",
@@ -597,8 +610,11 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
     { id: "select-task-not-found", from: "select-next-task", fromOutput: "NOT_FOUND", to: "blocked" },
     { id: "select-task-invalid", from: "select-next-task", fromOutput: "INVALID", to: "blocked" },
     { id: "select-task-error", from: "select-next-task", fromOutput: "ERROR", to: "blocked" },
-    { id: "snapshot-to-implement", from: "git-snapshot-before", fromOutput: "SUCCESS", to: "implement-feature" },
-    { id: "snapshot-error-to-implement", from: "git-snapshot-before", fromOutput: "ERROR", to: "implement-feature" },
+    { id: "snapshot-to-count-implementation-pass", from: "git-snapshot-before", fromOutput: "SUCCESS", to: "count-implementation-pass" },
+    { id: "snapshot-error-to-count-implementation-pass", from: "git-snapshot-before", fromOutput: "ERROR", to: "count-implementation-pass" },
+    { id: "count-implementation-pass-continue", from: "count-implementation-pass", fromOutput: "CONTINUE", to: "implement-feature" },
+    { id: "count-implementation-pass-limit", from: "count-implementation-pass", fromOutput: "LIMIT_REACHED", to: "blocked" },
+    { id: "count-implementation-pass-error", from: "count-implementation-pass", fromOutput: "ERROR", to: "blocked" },
     { id: "implementation-to-verification-decision", from: "implement-feature", fromOutput: "SUCCESS", to: "verification-decision" },
     { id: "implementation-error", from: "implement-feature", fromOutput: "ERROR", to: "blocked" },
     { id: "verification-decision-run", from: "verification-decision", fromOutput: "MATCH", to: "run-verification" },
@@ -641,7 +657,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
 
 export const autonomousFeatureGenerationLoopStarterFlow = {
   id: "autonomous-feature-generation-loop",
-  version: 5,
+  version: 6,
   defaultAlias: "autonomous-feature-generation-loop",
   category: "Implementation",
   tags: ["autonomous", "feature", "loop"],

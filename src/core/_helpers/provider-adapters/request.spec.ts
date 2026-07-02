@@ -106,4 +106,46 @@ describe("withProviderRequest", () => {
 
     expect(attempts).toBe(1);
   });
+
+  it("adds Langdock endpoint guidance to 400 No body provider errors", async () => {
+    const providerError = Object.assign(new Error("400 No body"), {
+      status: 400,
+    });
+
+    await expect(
+      withProviderRequest(
+        {
+          provider: "langdock",
+          operation: "startTurn",
+          maxAttempts: 2,
+          retryDelayMs: () => 0,
+        },
+        async () => {
+          throw providerError;
+        },
+      ),
+    ).rejects.toThrow(
+      /LANGDOCK_BASE_URL.*https:\/\/api\.langdock\.com\/openai\/eu\/v1.*Original error: 400 No body/s,
+    );
+  });
+
+  it("preserves unrelated non-retryable provider errors", async () => {
+    const providerError = Object.assign(new Error("invalid model"), {
+      status: 400,
+    });
+
+    await expect(
+      withProviderRequest(
+        {
+          provider: "openai",
+          operation: "startTurn",
+          maxAttempts: 2,
+          retryDelayMs: () => 0,
+        },
+        async () => {
+          throw providerError;
+        },
+      ),
+    ).rejects.toBe(providerError);
+  });
 });

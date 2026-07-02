@@ -2,17 +2,16 @@ import type {
   TaskExecutionProgress,
   TaskExecutionResult,
 } from "../../../../core/types.js";
-import type {
-  ChatSessionMessage,
-  ChatSessionRecord,
+import {
+  INTERRUPTED_TASK_CRASH_PREFIX,
+  type ChatSessionMessage,
+  type ChatSessionRecord,
 } from "../../chat-session.model";
 import { getExecutionMessageContent } from "./execution-message.tsx";
 import {
   compactPromptText,
   getConciseTaskObjective,
 } from "./task-action-prompts";
-
-const RECOVERED_TASK_CRASH_PREFIX = "**Task crashed.**";
 
 const TERMINAL_PROGRESS_STATUS_BY_STATE: Partial<
   Record<TaskExecutionProgress["state"], TaskExecutionResult["status"]>
@@ -81,7 +80,7 @@ export const isRecoveredTaskCrashMessage = (
   return (
     message.role === "agent" &&
     !message.source &&
-    message.content.startsWith(RECOVERED_TASK_CRASH_PREFIX)
+    message.content.startsWith(INTERRUPTED_TASK_CRASH_PREFIX)
   );
 };
 
@@ -116,7 +115,7 @@ export const createRecoveredRetryTaskPrompt = (
   const objective = getConciseTaskObjective(recoveredTask);
 
   return [
-    "Retry the task that was interrupted by an app restart.",
+    "Retry the task that was interrupted before it finished.",
     "",
     "Context:",
     `Objective: ${objective}`,
@@ -134,7 +133,7 @@ export const createRecoveredContinueTaskPrompt = (
   const objective = getConciseTaskObjective(recoveredTask);
 
   return [
-    "Continue the task that was interrupted by an app restart.",
+    "Continue the task that was interrupted before it finished.",
     "",
     "Context:",
     `Objective: ${objective}`,

@@ -35,6 +35,41 @@ struct AuxiliaryCliOutput {
     stderr: String,
 }
 
+struct AuxiliaryCliSpec {
+    subcommand: &'static str,
+    command_name: &'static str,
+    parse_name: &'static str,
+    failure_name: &'static str,
+}
+
+const SCHEDULER_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
+    subcommand: "scheduler",
+    command_name: "scheduler",
+    parse_name: "scheduler",
+    failure_name: "scheduler",
+};
+
+const MCP_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
+    subcommand: "mcp",
+    command_name: "MCP",
+    parse_name: "MCP",
+    failure_name: "MCP",
+};
+
+const INSTRUCTION_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
+    subcommand: "instructions",
+    command_name: "instruction",
+    parse_name: "instruction",
+    failure_name: "instruction",
+};
+
+const TASK_INTERVIEW_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
+    subcommand: "interview",
+    command_name: "task interview",
+    parse_name: "task interview",
+    failure_name: "task interview",
+};
+
 fn read_cli_stream_text(mut stream: impl Read, stream_name: &str) -> Result<String, String> {
     let mut output = Vec::new();
 
@@ -170,158 +205,102 @@ fn run_bounded_auxiliary_cli_command(
     })
 }
 
-fn parse_scheduler_command_response(stdout: &str) -> Result<Value, String> {
+fn build_auxiliary_cli_args(
+    workspace_root: &str,
+    subcommand: &str,
+    arguments: impl IntoIterator<Item = String>,
+) -> Result<Vec<String>, String> {
+    let workspace_path = resolve_workspace_root_path(workspace_root)?;
+    let normalized_workspace_root = workspace_path.display().to_string();
+    let mut cli_args = vec![
+        "--json".to_string(),
+        "--cwd".to_string(),
+        normalized_workspace_root,
+        subcommand.to_string(),
+    ];
+
+    append_normalized_arguments(&mut cli_args, arguments);
+
+    Ok(cli_args)
+}
+
+fn append_normalized_arguments(
+    cli_args: &mut Vec<String>,
+    arguments: impl IntoIterator<Item = String>,
+) {
+    for argument in arguments {
+        let normalized = argument.trim();
+
+        if !normalized.is_empty() {
+            cli_args.push(normalized.to_string());
+        }
+    }
+}
+
+fn parse_auxiliary_command_response(stdout: &str, parse_name: &str) -> Result<Value, String> {
     let trimmed_stdout = stdout.trim();
 
     serde_json::from_str::<Value>(trimmed_stdout).map_err(|error| {
         format!(
-            "Failed to parse the scheduler CLI JSON response: {error}. Output: {trimmed_stdout}"
+            "Failed to parse the {parse_name} CLI JSON response: {error}. Output: {trimmed_stdout}"
         )
     })
 }
 
-fn parse_mcp_command_response(stdout: &str) -> Result<Value, String> {
-    let trimmed_stdout = stdout.trim();
+fn finish_auxiliary_command_response(
+    output: AuxiliaryCliOutput,
+    spec: &AuxiliaryCliSpec,
+) -> Result<Value, String> {
+    let stdout_text = output.stdout;
+    let stderr_text = output.stderr;
 
-    serde_json::from_str::<Value>(trimmed_stdout).map_err(|error| {
-        format!("Failed to parse the MCP CLI JSON response: {error}. Output: {trimmed_stdout}")
-    })
+    if !output.status.success() {
+        return Err(format!(
+            "The {} CLI command failed. {}",
+            spec.failure_name,
+            format_command_failure(&stderr_text, &stdout_text)
+        ));
+    }
+
+    parse_auxiliary_command_response(&stdout_text, spec.parse_name)
 }
 
-fn parse_instruction_command_response(stdout: &str) -> Result<Value, String> {
-    let trimmed_stdout = stdout.trim();
+fn run_auxiliary_json_command(
+    workspace_root: &str,
+    arguments: impl IntoIterator<Item = String>,
+    spec: &AuxiliaryCliSpec,
+) -> Result<Value, String> {
+    let cli_args = build_auxiliary_cli_args(workspace_root, spec.subcommand, arguments)?;
+    let mut cli_command = crate::shared_cli::create_shared_cli_command(&cli_args)?;
+    let output = run_bounded_auxiliary_cli_command(
+        &mut cli_command.command,
+        spec.command_name,
+        DESKTOP_TASK_TIMEOUT_MS,
+    )?;
 
-    serde_json::from_str::<Value>(trimmed_stdout).map_err(|error| {
-        format!(
-            "Failed to parse the instruction CLI JSON response: {error}. Output: {trimmed_stdout}"
-        )
-    })
-}
-
-fn parse_task_interview_command_response(stdout: &str) -> Result<Value, String> {
-    let trimmed_stdout = stdout.trim();
-
-    serde_json::from_str::<Value>(trimmed_stdout).map_err(|error| {
-        format!(
-            "Failed to parse the task interview CLI JSON response: {error}. Output: {trimmed_stdout}"
-        )
-    })
+    finish_auxiliary_command_response(output, spec)
 }
 
 pub(super) fn execute_scheduler_command(request: SchedulerCommandRequest) -> Result<Value, String> {
-    let workspace_path = resolve_workspace_root_path(&request.workspace_root)?;
-    let normalized_workspace_root = workspace_path.display().to_string();
-    let mut cli_args = vec![
-        "--json".to_string(),
-        "--cwd".to_string(),
-        normalized_workspace_root,
-        "scheduler".to_string(),
-    ];
-
-    for argument in request.arguments {
-        let normalized = argument.trim();
-
-        if !normalized.is_empty() {
-            cli_args.push(normalized.to_string());
-        }
-    }
-
-    let mut cli_command = crate::shared_cli::create_shared_cli_command(&cli_args)?;
-
-    let output = run_bounded_auxiliary_cli_command(
-        &mut cli_command.command,
-        "scheduler",
-        DESKTOP_TASK_TIMEOUT_MS,
-    )?;
-    let stdout_text = output.stdout;
-    let stderr_text = output.stderr;
-
-    if !output.status.success() {
-        return Err(format!(
-            "The scheduler CLI command failed. {}",
-            format_command_failure(&stderr_text, &stdout_text)
-        ));
-    }
-
-    parse_scheduler_command_response(&stdout_text)
+    run_auxiliary_json_command(
+        &request.workspace_root,
+        request.arguments,
+        &SCHEDULER_CLI_SPEC,
+    )
 }
 
 pub(super) fn execute_mcp_command(request: McpCommandRequest) -> Result<Value, String> {
-    let workspace_path = resolve_workspace_root_path(&request.workspace_root)?;
-    let normalized_workspace_root = workspace_path.display().to_string();
-    let mut cli_args = vec![
-        "--json".to_string(),
-        "--cwd".to_string(),
-        normalized_workspace_root,
-        "mcp".to_string(),
-    ];
-
-    for argument in request.arguments {
-        let normalized = argument.trim();
-
-        if !normalized.is_empty() {
-            cli_args.push(normalized.to_string());
-        }
-    }
-
-    let mut cli_command = crate::shared_cli::create_shared_cli_command(&cli_args)?;
-
-    let output = run_bounded_auxiliary_cli_command(
-        &mut cli_command.command,
-        "MCP",
-        DESKTOP_TASK_TIMEOUT_MS,
-    )?;
-    let stdout_text = output.stdout;
-    let stderr_text = output.stderr;
-
-    if !output.status.success() {
-        return Err(format!(
-            "The MCP CLI command failed. {}",
-            format_command_failure(&stderr_text, &stdout_text)
-        ));
-    }
-
-    parse_mcp_command_response(&stdout_text)
+    run_auxiliary_json_command(&request.workspace_root, request.arguments, &MCP_CLI_SPEC)
 }
 
 pub(super) fn execute_instruction_command(
     request: InstructionCommandRequest,
 ) -> Result<Value, String> {
-    let workspace_path = resolve_workspace_root_path(&request.workspace_root)?;
-    let normalized_workspace_root = workspace_path.display().to_string();
-    let mut cli_args = vec![
-        "--json".to_string(),
-        "--cwd".to_string(),
-        normalized_workspace_root,
-        "instructions".to_string(),
-    ];
-
-    for argument in request.arguments {
-        let normalized = argument.trim();
-
-        if !normalized.is_empty() {
-            cli_args.push(normalized.to_string());
-        }
-    }
-
-    let mut cli_command = crate::shared_cli::create_shared_cli_command(&cli_args)?;
-
-    let output = run_bounded_auxiliary_cli_command(
-        &mut cli_command.command,
-        "instruction",
-        DESKTOP_TASK_TIMEOUT_MS,
-    )?;
-    let stdout_text = output.stdout;
-    let stderr_text = output.stderr;
-
-    if !output.status.success() {
-        return Err(format!(
-            "The instruction CLI command failed. {}",
-            format_command_failure(&stderr_text, &stdout_text)
-        ));
-    }
-
-    parse_instruction_command_response(&stdout_text)
+    run_auxiliary_json_command(
+        &request.workspace_root,
+        request.arguments,
+        &INSTRUCTION_CLI_SPEC,
+    )
 }
 
 pub(super) fn execute_task_interview_command(
@@ -335,16 +314,9 @@ pub(super) fn execute_task_interview_command(
         "--json".to_string(),
         "--cwd".to_string(),
         normalized_workspace_root,
-        "interview".to_string(),
+        TASK_INTERVIEW_CLI_SPEC.subcommand.to_string(),
     ];
-
-    for argument in arguments {
-        let normalized = argument.trim();
-
-        if !normalized.is_empty() {
-            cli_args.push(normalized.to_string());
-        }
-    }
+    append_normalized_arguments(&mut cli_args, arguments);
 
     let mut cli_command = match crate::shared_cli::create_shared_cli_command(&cli_args) {
         Ok(command) => command,
@@ -356,7 +328,7 @@ pub(super) fn execute_task_interview_command(
 
     let output = match run_bounded_auxiliary_cli_command(
         &mut cli_command.command,
-        "task interview",
+        TASK_INTERVIEW_CLI_SPEC.command_name,
         DESKTOP_TASK_TIMEOUT_MS,
     ) {
         Ok(output) => output,
@@ -366,17 +338,8 @@ pub(super) fn execute_task_interview_command(
         }
     };
     cleanup_temporary_files(&payload_paths);
-    let stdout_text = output.stdout;
-    let stderr_text = output.stderr;
 
-    if !output.status.success() {
-        return Err(format!(
-            "The task interview CLI command failed. {}",
-            format_command_failure(&stderr_text, &stdout_text)
-        ));
-    }
-
-    parse_task_interview_command_response(&stdout_text)
+    finish_auxiliary_command_response(output, &TASK_INTERVIEW_CLI_SPEC)
 }
 
 #[cfg(test)]

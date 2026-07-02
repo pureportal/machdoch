@@ -241,7 +241,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Apply one cohesive refactor pass in selected JSON scope {{result:select-scope}} using structured conventions {{data:detect-conventions:output}}, refactor plan {{data:audit-against-policy:output}}, git baseline {{result:git-snapshot-before}}, and latest validation feedback {{lastResult}}. Follow objective {{refactorObjective:text=Improve maintainability while preserving behavior.}}, naming policy {{fileNamingPolicy:text=Follow existing framework and repository conventions.}}, max lines {{maxFileLines:number=500}}, helper placement {{helperPlacementPolicy:text=Follow existing module-local and shared helper conventions.}}, and test framework {{testFramework:text=auto-detect}}. Do not change public APIs unless allowPublicApiChanges={{allowPublicApiChanges:boolean=false}} and the reason is documented. Keep changes scoped to the selected paths/globs, update imports/exports/tests, and avoid broad formatting sweeps.",
+        "Apply one cohesive refactor pass in selected JSON scope {{result:select-scope}} using structured conventions {{data:detect-conventions:output}}, refactor plan {{data:audit-against-policy:output}}, git baseline {{result:git-snapshot-before}}, pass count {{result:count-refactor-pass}}, and latest validation feedback {{result:final-refactor-scan}}. Follow objective {{refactorObjective:text=Improve maintainability while preserving behavior.}}, naming policy {{fileNamingPolicy:text=Follow existing framework and repository conventions.}}, max lines {{maxFileLines:number=500}}, helper placement {{helperPlacementPolicy:text=Follow existing module-local and shared helper conventions.}}, and test framework {{testFramework:text=auto-detect}}. Do not change public APIs unless allowPublicApiChanges={{allowPublicApiChanges:boolean=false}} and the reason is documented. Keep changes scoped to the selected paths/globs, update imports/exports/tests, and avoid broad formatting sweeps.",
     },
     {
       id: "count-refactor-pass",
@@ -450,7 +450,7 @@ const autonomousRefactoringFlow: RalphFlow = {
 
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 6,
+  version: 7,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],

@@ -12,6 +12,7 @@ import {
   createInitialShellState,
   createVisibleConversationMessages,
   getLatestCompletedSessionResponseAt,
+  getLatestRunningTaskId,
   getSessionTitle,
   markSessionRead,
   mergeRecentWorkspacesForPersistence,
@@ -307,6 +308,112 @@ const mergeSessionConcurrentFields = (
   };
 };
 
+const createNewSessionConcurrentBase = (
+  session: ChatSessionRecord,
+): ChatSessionRecord => {
+  return {
+    ...session,
+    draft: "",
+    draftContextAttachments: [],
+    messages: [],
+    promptHistory: [],
+    promptContextHistory: [],
+  };
+};
+
+const mergeNewSessionConcurrentFields = (
+  primarySession: ChatSessionRecord,
+  localSession: ChatSessionRecord,
+  latestSession: ChatSessionRecord,
+): ChatSessionRecord => {
+  return mergeSessionConcurrentFields(
+    primarySession,
+    localSession,
+    createNewSessionConcurrentBase(primarySession),
+    latestSession,
+  );
+};
+
+const getMessageTaskId = (message: ChatSessionMessage): string => {
+  return message.taskId ?? message.id;
+};
+
+const hasUserMessageForTask = (
+  session: ChatSessionRecord,
+  taskId: string,
+): boolean => {
+  return session.messages.some(
+    (message) =>
+      message.role === "user" && getMessageTaskId(message) === taskId,
+  );
+};
+
+const preserveCurrentRunningSessions = (
+  currentState: ShellPersistedState,
+  externalState: ShellPersistedState,
+): ShellPersistedState => {
+  const externalSessionsById = new Map(
+    externalState.sessions.map((session) => [session.id, session]),
+  );
+  const protectedSessions = new Map<string, ChatSessionRecord>();
+
+  for (const currentSession of currentState.sessions) {
+    const runningTaskId = getLatestRunningTaskId(currentSession);
+
+    if (!runningTaskId) {
+      continue;
+    }
+
+    const externalSession = externalSessionsById.get(currentSession.id);
+
+    if (
+      externalSession &&
+      hasUserMessageForTask(externalSession, runningTaskId)
+    ) {
+      continue;
+    }
+
+    protectedSessions.set(
+      currentSession.id,
+      externalSession
+        ? mergeNewSessionConcurrentFields(
+            {
+              ...externalSession,
+              updatedAt: Math.max(
+                externalSession.updatedAt,
+                currentSession.updatedAt,
+              ),
+            },
+            currentSession,
+            externalSession,
+          )
+        : currentSession,
+    );
+  }
+
+  if (protectedSessions.size === 0) {
+    return externalState;
+  }
+
+  const nextSessionsById = new Map(
+    externalState.sessions.map((session) => [session.id, session]),
+  );
+
+  for (const [sessionId, session] of protectedSessions) {
+    nextSessionsById.set(sessionId, session);
+  }
+
+  const activeSessionId = protectedSessions.has(currentState.activeSessionId)
+    ? currentState.activeSessionId
+    : externalState.activeSessionId;
+
+  return {
+    ...externalState,
+    activeSessionId,
+    sessions: sortSessionsByUpdatedAt([...nextSessionsById.values()]),
+  };
+};
+
 const getContextPackPersistenceTimestamp = (
   pack: SmartContextPack,
 ): number => {
@@ -450,7 +557,14 @@ export const mergeShellStateForPersistence = (
       localTimestamp >= latestTimestamp ? localSession : latestSession;
 
     if (!baseSession) {
-      mergedSessionsById.set(sessionId, primarySession);
+      mergedSessionsById.set(
+        sessionId,
+        mergeNewSessionConcurrentFields(
+          primarySession,
+          localSession,
+          latestSession,
+        ),
+      );
       continue;
     }
 
@@ -566,7 +680,7 @@ export const mergeShellStateFromExternalUpdate = (
 ): ShellPersistedState => {
   return hasUnpersistedLocalChanges
     ? mergeShellStateForPersistence(currentState, baseState, externalState)
-    : externalState;
+    : preserveCurrentRunningSessions(currentState, externalState);
 };
 
 export interface ChatSessionShellStateController {

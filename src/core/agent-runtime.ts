@@ -43,7 +43,11 @@ import { maybeExecuteExternalAgentProviderTask } from "./_helpers/external-agent
 import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
 import { createProviderAdapter } from "./_helpers/provider-adapters.js";
 import { resolveReviewModelRuntimeConfig } from "./review-model.js";
-import { compactTraceText, stringifyUnknown } from "./_helpers/runtime-text.js";
+import {
+  compactTraceText,
+  limitText,
+  stringifyUnknown,
+} from "./_helpers/runtime-text.js";
 import { randomUUID } from "node:crypto";
 import type {
   AgentModelAdapter,
@@ -66,6 +70,7 @@ import type { RuntimeConfig } from "./runtime-contract.generated.js";
 
 const MODEL_STREAM_PROGRESS_INTERVAL_MS = 250;
 const MODEL_STREAM_CONTENT_LIMIT = 4_000;
+const MODEL_RUNTIME_ERROR_SUMMARY_LIMIT = 700;
 
 type ProgressTimelineEvent = NonNullable<
   TaskExecutionProgress["timelineEvent"]
@@ -144,6 +149,105 @@ const createProgressMetadata = (
   );
 
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+};
+
+const getErrorRecord = (
+  error: unknown,
+): Record<string, unknown> | undefined => {
+  return typeof error === "object" && error !== null
+    ? (error as Record<string, unknown>)
+    : undefined;
+};
+
+const getRuntimeErrorMessage = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.replace(/\s+/g, " ").trim();
+
+  return normalized.length > 0 ? normalized : "Unknown model runtime error.";
+};
+
+const getRuntimeErrorMetadataValue = (
+  error: unknown,
+  ...fieldNames: string[]
+): string | number | undefined => {
+  const record = getErrorRecord(error);
+
+  for (const fieldName of fieldNames) {
+    const value = record?.[fieldName];
+
+    if (
+      typeof value === "string" ||
+      (typeof value === "number" && Number.isFinite(value))
+    ) {
+      return value;
+    }
+  }
+
+  return undefined;
+};
+
+const createModelRuntimeFailureSummary = (
+  config: RuntimeConfig,
+  error: unknown,
+): string => {
+  const message = getRuntimeErrorMessage(error);
+  const model = config.model.trim() || "(unset)";
+  const summary = `Model-driven execution failed while calling provider ${config.provider} with model ${model}: ${message}`;
+
+  return summary.length <= MODEL_RUNTIME_ERROR_SUMMARY_LIMIT
+    ? summary
+    : `${summary.slice(0, MODEL_RUNTIME_ERROR_SUMMARY_LIMIT)}...`;
+};
+
+const createModelRuntimeErrorSection = (
+  config: RuntimeConfig,
+  error: unknown,
+): TaskExecutionSection => {
+  const lines = [
+    `Provider: ${config.provider}`,
+    `Model: ${config.model.trim() || "(unset)"}`,
+  ];
+  const status = getRuntimeErrorMetadataValue(error, "status", "statusCode");
+  const code = getRuntimeErrorMetadataValue(error, "code");
+  const type = getRuntimeErrorMetadataValue(error, "type");
+  const requestId = getRuntimeErrorMetadataValue(
+    error,
+    "request_id",
+    "requestID",
+    "requestId",
+  );
+
+  if (status !== undefined) {
+    lines.push(`Status: ${status}`);
+  }
+
+  if (code !== undefined) {
+    lines.push(`Code: ${code}`);
+  }
+
+  if (type !== undefined) {
+    lines.push(`Type: ${type}`);
+  }
+
+  if (requestId !== undefined) {
+    lines.push(`Request ID: ${requestId}`);
+  }
+
+  lines.push(`Error: ${limitText(getRuntimeErrorMessage(error), 4_000)}`);
+
+  if (error instanceof Error && error.cause !== undefined) {
+    const errorMessage = getRuntimeErrorMessage(error);
+    const causeMessage = getRuntimeErrorMessage(error.cause);
+
+    if (!errorMessage.includes(causeMessage)) {
+      lines.push(`Cause: ${limitText(causeMessage, 4_000)}`);
+    }
+  }
+
+  return {
+    title: "Model runtime error",
+    lines,
+  };
 };
 
 const createModelStreamProgressEmitter = (
@@ -1295,7 +1399,10 @@ const runExecutorCycle = async (
         call,
         onActionOutput,
         runId,
+        signal,
       );
+
+      throwIfExecutionAborted(signal);
 
       const result = executionOutcome.result;
 
@@ -1798,22 +1905,19 @@ export const maybeExecuteModelDrivenTask = async (
       params.runId ?? `task-${randomUUID()}`,
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getRuntimeErrorMessage(error);
+    const summary = createModelRuntimeFailureSummary(params.config, error);
 
     return createExecutionResult(
       {
         task: params.task,
         mode: params.config.mode,
         status: "blocked",
-        summary:
-          "Model-driven execution could not start or continue because the provider request failed.",
+        summary,
         executedTools: [],
         outputSections: [
           ...params.contextSections,
-          {
-            title: "Model runtime error",
-            lines: [message],
-          },
+          createModelRuntimeErrorSection(params.config, error),
         ],
       },
       message,

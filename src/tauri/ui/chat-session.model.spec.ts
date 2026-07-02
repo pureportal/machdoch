@@ -16,6 +16,7 @@ import {
   normalizeShellState,
   rememberRecentWorkspace,
   removeRecentWorkspace,
+  recoverInactiveRunningTasks,
   recoverInterruptedTasksForLaunch,
   QUICK_VOICE_SESSION_KIND,
   sortSessionsByUpdatedAt,
@@ -1087,6 +1088,57 @@ describe("recoverInterruptedTasksForLaunch", () => {
       "task-1-user",
       "task-1-thinking",
     ]);
+  });
+
+  it("marks inactive running tasks as crashed without changing launch recovery state", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-with-inactive-task",
+      messages: [
+        {
+          id: "task-1-user",
+          taskId: "task-1",
+          role: "user",
+          content: "answer the inactive task",
+          createdAt: 1,
+        },
+        {
+          id: "task-1-thinking",
+          taskId: "task-1",
+          role: "agent",
+          content: "",
+          createdAt: 2,
+          source: {
+            kind: "thinking",
+            thinking: createInitialThinkingTrace("ask", 2),
+          },
+        },
+      ],
+    });
+
+    const recovered = recoverInactiveRunningTasks(
+      {
+        ...baseState,
+        activeSessionId: session.id,
+        lastRecoveredLaunchId: "launch-current",
+        sessions: [session],
+      },
+      [],
+      100,
+    );
+    const recoveredSession = recovered.sessions[0];
+
+    expect(recovered.lastRecoveredLaunchId).toBe("launch-current");
+    expect(recoveredSession).toBeDefined();
+    expect(getSessionOverviewStatus(recoveredSession!)).toBe("crashed");
+    expect(
+      recoveredSession!.messages.some(
+        (message) => message.id === "task-1-thinking",
+      ),
+    ).toBe(false);
+    expect(recoveredSession!.messages.at(-1)?.content).toBe(
+      "**Task crashed.** machdoch no longer sees an active desktop task before a final response was produced, so it was marked as crashed.",
+    );
   });
 
   it("marks stale running tasks even after the launch was already recovered when no active task remains", () => {

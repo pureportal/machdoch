@@ -279,19 +279,6 @@ export const SessionComposer = ({
 
   toggles.push(
     {
-      id: "interview",
-      label: "Interview",
-      description: interviewDescription,
-      icon: <MessageSquare className="h-4 w-4" />,
-      pressed: interviewEnabled,
-      disabled: interviewDisabled,
-      onPressedChange: onInterviewEnabledChange,
-      activeClassName:
-        "border-cyan-500/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/15 hover:text-white",
-      unavailableClassName:
-        "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
-    },
-    {
       id: "global-memory",
       label: "Global memory",
       description: globalMemoryDescription,
@@ -301,6 +288,19 @@ export const SessionComposer = ({
       onPressedChange: onUseGlobalMemoryChange,
       activeClassName:
         "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
+      unavailableClassName:
+        "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
+    },
+    {
+      id: "interview",
+      label: "Interview",
+      description: interviewDescription,
+      icon: <MessageSquare className="h-4 w-4" />,
+      pressed: interviewEnabled,
+      disabled: interviewDisabled,
+      onPressedChange: onInterviewEnabledChange,
+      activeClassName:
+        "border-cyan-500/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/15 hover:text-white",
       unavailableClassName:
         "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
     },
