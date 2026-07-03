@@ -21,13 +21,13 @@ import {
 import type { ModelProvider, RuntimeConfig } from "./runtime-contract.generated.js";
 import type {
   CustomizationDiscoveryResult,
+  TaskActionOutputHandler,
   TaskExecutionProgressHandler,
   TaskExecutionResult,
 } from "./types.js";
 
 export const DEFAULT_TASK_INTERVIEW_MAX_TURNS = 5;
 export const MAX_TASK_INTERVIEW_MAX_TURNS = 5;
-const DEFAULT_TASK_INTERVIEW_TIMEOUT_MS = 3 * 60 * 1_000;
 const TASK_INTERVIEW_STRING_ARRAY_SCHEMA = {
   type: "array",
   items: { type: "string" },
@@ -77,6 +77,7 @@ export interface TaskInterviewOptions {
   answers?: Record<string, RalphInputValue>;
   answerComments?: Record<string, string>;
   onStateChange?: TaskExecutionProgressHandler;
+  onActionOutput?: TaskActionOutputHandler;
   runId?: string;
   signal?: AbortSignal;
 }
@@ -529,11 +530,12 @@ export const createTaskInterviewWithAgent = async (
     {
       ...(options.runId ? { runId: options.runId } : {}),
       ...(options.onStateChange ? { onStateChange: options.onStateChange } : {}),
+      ...(options.onActionOutput ? { onActionOutput: options.onActionOutput } : {}),
       ...(options.signal ? { signal: options.signal } : {}),
       additionalToolDefinitions: createTaskInterviewToolDefinitions(),
       systemPromptSections: [createTaskInterviewSystemPrompt()],
       instructionAudience: "executor",
-      maxDurationMs: DEFAULT_TASK_INTERVIEW_TIMEOUT_MS,
+      maxDurationMs: null,
     },
   );
 

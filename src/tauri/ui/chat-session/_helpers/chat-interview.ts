@@ -12,6 +12,7 @@ import type {
   ChatSessionContextAttachment,
   ChatSessionRecord,
 } from "../../chat-session.model";
+import type { TaskThinkingTrace } from "../../task-thinking.model";
 import { createAiContextHistory } from "./ai-context-window";
 
 const MAX_TASK_INTERVIEW_CONTEXT_NOTE_LENGTH = 1_500;
@@ -19,6 +20,7 @@ const MAX_TASK_INTERVIEW_CONTEXT_NOTE_LENGTH = 1_500;
 export interface ChatInterviewStartContext {
   sessionSnapshot: ChatSessionRecord;
   task: string;
+  originalTask?: string;
   contextAttachments: ChatSessionContextAttachment[];
   mode: RunMode;
   provider: RuntimeProvider;
@@ -51,6 +53,7 @@ export interface ChatInterviewDialogState {
   model?: string | null;
   error?: string;
   taskId?: string;
+  thinking?: TaskThinkingTrace;
 }
 
 export const getTrimmedTaskInterviewAnswerComments = (
@@ -112,7 +115,8 @@ export const createTaskInterviewContextNotes = (
   context: Pick<
     ChatInterviewStartContext,
     "contextAttachments" | "sessionSnapshot"
-  >,
+  > &
+    Partial<Pick<ChatInterviewStartContext, "originalTask" | "task">>,
   maxHistoryMessages?: number,
 ): string[] => {
   const attachmentNotes = context.contextAttachments.flatMap((attachment) => {
@@ -134,6 +138,15 @@ export const createTaskInterviewContextNotes = (
       context.sessionSnapshot,
       maxHistoryMessages,
     ),
+    ...(context.originalTask &&
+    context.task &&
+    context.originalTask.trim() !== context.task.trim()
+      ? [
+          `Original user request before enhancement: ${truncateTaskInterviewContextNote(
+            context.originalTask,
+          )}`,
+        ]
+      : []),
     ...attachmentNotes,
   ];
 };

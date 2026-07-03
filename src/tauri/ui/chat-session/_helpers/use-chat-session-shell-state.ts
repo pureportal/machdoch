@@ -20,6 +20,7 @@ import {
   recoverInterruptedTasksForLaunch,
   sortSessionsByUpdatedAt,
   type ChatSessionMessage,
+  type ChatSessionQueuedMessage,
   type ChatSessionRecord,
   type SmartContextPack,
   type ShellPersistedState,
@@ -493,6 +494,138 @@ const mergeContextPacksForPersistence = (
   return sortContextPacksForPersistence([...mergedPacksById.values()]);
 };
 
+const getQueuedMessagePersistenceTimestamp = (
+  message: ChatSessionQueuedMessage,
+): number => {
+  return Math.max(message.updatedAt, message.createdAt);
+};
+
+const getQueuedMessagesPersistenceTimestamp = (
+  messages: readonly ChatSessionQueuedMessage[],
+): number => {
+  return messages.reduce(
+    (timestamp, message) =>
+      Math.max(timestamp, getQueuedMessagePersistenceTimestamp(message)),
+    0,
+  );
+};
+
+const mergeQueuedMessageVersionForPersistence = (
+  localMessage: ChatSessionQueuedMessage,
+  baseMessage: ChatSessionQueuedMessage | undefined,
+  latestMessage: ChatSessionQueuedMessage,
+): ChatSessionQueuedMessage => {
+  const localChanged =
+    !baseMessage || !areShellFragmentsEqual(localMessage, baseMessage);
+  const latestChanged =
+    !baseMessage || !areShellFragmentsEqual(latestMessage, baseMessage);
+
+  if (localChanged && !latestChanged) {
+    return localMessage;
+  }
+
+  if (!localChanged && latestChanged) {
+    return latestMessage;
+  }
+
+  return getQueuedMessagePersistenceTimestamp(localMessage) >=
+    getQueuedMessagePersistenceTimestamp(latestMessage)
+    ? localMessage
+    : latestMessage;
+};
+
+const mergeQueuedSessionMessagesForPersistence = (
+  localMessages: ChatSessionQueuedMessage[],
+  baseMessages: ChatSessionQueuedMessage[],
+  latestMessages: ChatSessionQueuedMessage[],
+  sessionIds: ReadonlySet<string>,
+): ChatSessionQueuedMessage[] => {
+  const localMessagesById = new Map(
+    localMessages.map((message) => [message.id, message]),
+  );
+  const baseMessagesById = new Map(
+    baseMessages.map((message) => [message.id, message]),
+  );
+  const latestMessagesById = new Map(
+    latestMessages.map((message) => [message.id, message]),
+  );
+  const deletedMessageIds = new Set<string>();
+
+  for (const messageId of baseMessagesById.keys()) {
+    if (
+      !localMessagesById.has(messageId) ||
+      !latestMessagesById.has(messageId)
+    ) {
+      deletedMessageIds.add(messageId);
+    }
+  }
+
+  const mergedMessagesById = new Map<string, ChatSessionQueuedMessage>();
+
+  for (const messageId of new Set([
+    ...latestMessagesById.keys(),
+    ...localMessagesById.keys(),
+  ])) {
+    if (deletedMessageIds.has(messageId)) {
+      continue;
+    }
+
+    const localMessage = localMessagesById.get(messageId);
+    const latestMessage = latestMessagesById.get(messageId);
+
+    if (!localMessage) {
+      if (latestMessage && sessionIds.has(latestMessage.sessionId)) {
+        mergedMessagesById.set(messageId, latestMessage);
+      }
+      continue;
+    }
+
+    if (!latestMessage) {
+      if (sessionIds.has(localMessage.sessionId)) {
+        mergedMessagesById.set(messageId, localMessage);
+      }
+      continue;
+    }
+
+    const mergedMessage = mergeQueuedMessageVersionForPersistence(
+      localMessage,
+      baseMessagesById.get(messageId),
+      latestMessage,
+    );
+
+    if (sessionIds.has(mergedMessage.sessionId)) {
+      mergedMessagesById.set(messageId, mergedMessage);
+    }
+  }
+
+  const localTimestamp = getQueuedMessagesPersistenceTimestamp(localMessages);
+  const latestTimestamp = getQueuedMessagesPersistenceTimestamp(latestMessages);
+  const orderSource =
+    localTimestamp >= latestTimestamp ? localMessages : latestMessages;
+  const orderById = new Map(
+    orderSource.map((message, index) => [message.id, index]),
+  );
+
+  return [...mergedMessagesById.values()].sort((left, right) => {
+    const leftOrder = orderById.get(left.id);
+    const rightOrder = orderById.get(right.id);
+
+    if (leftOrder !== undefined && rightOrder !== undefined) {
+      return leftOrder - rightOrder;
+    }
+
+    if (leftOrder !== undefined) {
+      return -1;
+    }
+
+    if (rightOrder !== undefined) {
+      return 1;
+    }
+
+    return left.createdAt - right.createdAt;
+  });
+};
+
 export const mergeShellStateForPersistence = (
   localState: ShellPersistedState,
   baseState: ShellPersistedState,
@@ -615,6 +748,12 @@ export const mergeShellStateForPersistence = (
     version: 1,
     activeSessionId: activeSessionId ?? latestState.activeSessionId,
     sessions,
+    queuedSessionMessages: mergeQueuedSessionMessagesForPersistence(
+      localState.queuedSessionMessages,
+      baseState.queuedSessionMessages,
+      latestState.queuedSessionMessages,
+      sessionIds,
+    ),
     contextPacks: mergeContextPacksForPersistence(
       localState.contextPacks,
       baseState.contextPacks,
@@ -753,6 +892,7 @@ export const useChatSessionShellState = (
     initialShellStateRef.current.activeSessionId,
   );
   const [hasHydrated, setHasHydrated] = useState(false);
+  const [persistenceSignal, setPersistenceSignal] = useState(0);
   const [sessionScopeFilter, setSessionScopeFilter] =
     useState<SessionScopeFilter>("open");
   const [sessionStatusFilters, setSessionStatusFilters] =
@@ -1069,7 +1209,7 @@ export const useChatSessionShellState = (
     };
 
     void persistShellState();
-  }, [hasHydrated, shellState]);
+  }, [hasHydrated, persistenceSignal, shellState]);
 
   useEffect(() => {
     let disposed = false;
@@ -1102,10 +1242,22 @@ export const useChatSessionShellState = (
           hasUnpersistedLocalChanges,
         );
 
+        const nextStateNeedsPersistence = !areShellFragmentsEqual(
+          nextShellState,
+          normalizedShellState,
+        );
+
         lastPersistedShellStateRef.current = normalizedShellState;
 
+        if (nextStateNeedsPersistence) {
+          localMutationRevisionRef.current += 1;
+        }
+
         if (!areShellFragmentsEqual(shellStateRef.current, nextShellState)) {
+          shellStateRef.current = nextShellState;
           setShellState(nextShellState);
+        } else if (nextStateNeedsPersistence) {
+          setPersistenceSignal((revision) => revision + 1);
         }
       });
     }).then((unlisten) => {

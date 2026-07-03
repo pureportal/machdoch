@@ -1,7 +1,22 @@
-import type { JSX } from "react";
+import { Check, Clipboard } from "lucide-react";
+import {
+  isValidElement,
+  useEffect,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode,
+} from "react";
 import type { Components } from "react-markdown";
 import type { TaskExecutionResult } from "../../../../core/types.js";
 import type { ChatSessionMessage } from "../../chat-session.model";
+import { Button } from "../../components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../../components/ui/tooltip";
 import type { TaskThinkingTrace } from "../../task-thinking.model";
 import { stripContextAttachmentsTaskBlock } from "./session-context-attachments";
 import { getTaskActionDisplayContent } from "./task-action-prompts";
@@ -121,6 +136,128 @@ export const getSpeechMessageContent = (
   message: ChatSessionMessage,
 ): string => {
   return normalizeMarkdownForSpeech(getRenderedMessageContent(message));
+};
+
+const getReactNodeText = (node: ReactNode): string => {
+  if (node === null || node === undefined || typeof node === "boolean") {
+    return "";
+  }
+
+  if (
+    typeof node === "string" ||
+    typeof node === "number" ||
+    typeof node === "bigint"
+  ) {
+    return String(node);
+  }
+
+  if (Array.isArray(node)) {
+    return node.map(getReactNodeText).join("");
+  }
+
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return getReactNodeText(node.props.children);
+  }
+
+  return "";
+};
+
+const copyTextToClipboard = async (text: string): Promise<void> => {
+  if (globalThis.navigator?.clipboard?.writeText) {
+    await globalThis.navigator.clipboard.writeText(text);
+    return;
+  }
+
+  if (typeof document === "undefined") {
+    throw new Error("Clipboard API is unavailable.");
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-9999px";
+  textarea.style.left = "-9999px";
+
+  document.body.append(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  try {
+    if (!document.execCommand("copy")) {
+      throw new Error("Copy command was rejected.");
+    }
+  } finally {
+    textarea.remove();
+  }
+};
+
+const CopyableCodeBlock = ({ children }: { children?: ReactNode }): JSX.Element => {
+  const [hasCopied, setHasCopied] = useState(false);
+  const resetCopiedTimeout = useRef<number | null>(null);
+  const codeBlockText = getReactNodeText(children).replace(/\n$/, "");
+
+  useEffect(() => {
+    return () => {
+      if (resetCopiedTimeout.current !== null) {
+        window.clearTimeout(resetCopiedTimeout.current);
+      }
+    };
+  }, []);
+
+  const handleCopy = async (): Promise<void> => {
+    try {
+      await copyTextToClipboard(codeBlockText);
+      setHasCopied(true);
+
+      if (resetCopiedTimeout.current !== null) {
+        window.clearTimeout(resetCopiedTimeout.current);
+      }
+
+      resetCopiedTimeout.current = window.setTimeout(() => {
+        setHasCopied(false);
+        resetCopiedTimeout.current = null;
+      }, 1_500);
+    } catch {
+      setHasCopied(false);
+    }
+  };
+
+  return (
+    <div className="group relative min-w-0">
+      <pre className="m-0 max-w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 pr-12 text-xs leading-6 text-slate-200">
+        {children}
+      </pre>
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={
+                hasCopied
+                  ? "Copied code block"
+                  : "Copy code block to clipboard"
+              }
+              title="Copy to Clipboard"
+              onClick={handleCopy}
+              className="absolute right-2 top-2 size-7 border border-slate-700/70 bg-slate-900/90 p-0 text-slate-300 shadow-sm opacity-90 hover:bg-slate-800 hover:text-sky-100 focus-visible:ring-sky-400/40"
+            >
+              {hasCopied ? (
+                <Check className="size-3.5" aria-hidden="true" />
+              ) : (
+                <Clipboard className="size-3.5" aria-hidden="true" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">
+            {hasCopied ? "Copied" : "Copy to Clipboard"}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+  );
 };
 
 const createExecutionThinkingTone = (
@@ -276,9 +413,7 @@ export const markdownComponents: Components = {
     </blockquote>
   ),
   pre: ({ children }): JSX.Element => (
-    <pre className="m-0 max-w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-xs leading-6 text-slate-200">
-      {children}
-    </pre>
+    <CopyableCodeBlock>{children}</CopyableCodeBlock>
   ),
   code: ({ children, className, ...props }): JSX.Element => (
     <code

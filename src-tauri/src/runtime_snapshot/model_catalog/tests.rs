@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod model_catalog_parser_tests {
     use super::super::{
+        claude_cli::parse_claude_cli_model_catalog,
         codex_cli::parse_codex_cli_model_catalog,
         copilot_cli::parse_copilot_cli_model_catalog,
         provider_api::parse_langdock_model_catalog,
@@ -14,11 +15,16 @@ mod model_catalog_parser_tests {
     use std::collections::HashMap;
 
     #[test]
-    fn codex_cli_model_catalog_parser_extracts_slugs_and_cross_provider_models() {
+    fn codex_cli_model_catalog_parser_keeps_only_codex_runtime_models() {
         let raw = r#"
         {
             "models": [
                 { "slug": "gpt-5.5", "display_name": "GPT-5.5" },
+                { "slug": "gpt-5.6-preview", "display_name": "GPT-5.6 Preview" },
+                { "slug": "gpt-5.3-codex-spark", "display_name": "GPT-5.3 Codex Spark" },
+                { "slug": "gpt-5.3-codex", "display_name": "GPT-5.3 Codex" },
+                { "slug": "gpt-5.2", "display_name": "GPT-5.2" },
+                { "slug": "gpt-5.1", "display_name": "GPT-5.1", "status": "deprecated" },
                 { "slug": "claude-opus-4-8", "display_name": "Claude Opus 4.8" },
                 { "slug": "gemini-3.1-pro-preview", "display_name": "Gemini 3.1 Pro" },
                 { "slug": "codex-auto-review", "display_name": "Codex Auto Review" },
@@ -34,7 +40,7 @@ mod model_catalog_parser_tests {
 
         assert_eq!(
             model_ids,
-            vec!["claude-opus-4-8", "gemini-3.1-pro-preview", "gpt-5.5"]
+            vec!["gpt-5.3-codex-spark", "gpt-5.5", "gpt-5.6-preview"]
         );
     }
 
@@ -68,6 +74,39 @@ mod model_catalog_parser_tests {
         assert!(!model_ids
             .iter()
             .any(|model_id| model_id.contains("github.copilot")));
+    }
+
+    #[test]
+    fn claude_cli_help_parser_extracts_documented_aliases_and_current_models() {
+        let help_output = r#"
+            --model Sets the model for the current session with an alias for the latest model
+            (sonnet, opus, haiku, or fable) or a model's full name.
+            Examples: claude --model claude-sonnet-5
+            /model supports sonnet[1m], opus[1m], and opusplan for long sessions.
+            Older examples may mention claude-3-7-sonnet-20250219.
+        "#;
+        let model_ids = parse_claude_cli_model_catalog(help_output)
+            .expect("help output should include supported Claude CLI model IDs")
+            .into_iter()
+            .map(|model| model.id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            model_ids,
+            vec![
+                "sonnet",
+                "opus",
+                "haiku",
+                "fable",
+                "sonnet[1m]",
+                "opus[1m]",
+                "opusplan",
+                "claude-sonnet-5"
+            ]
+        );
+        assert!(!model_ids
+            .iter()
+            .any(|model_id| model_id.starts_with("claude-3")));
     }
 
     #[test]
@@ -196,6 +235,8 @@ mod model_catalog_parser_tests {
 
         let anthropic_payload = serde_json::json!({
             "data": [
+                { "id": "claude-sonnet-5" },
+                { "id": "claude-fable-5" },
                 { "id": "claude-sonnet-4-5" },
                 { "id": "embedding-model" },
                 { "id": "claude-opus-4-8" }
@@ -206,7 +247,12 @@ mod model_catalog_parser_tests {
                 .into_iter()
                 .map(|model| model.id)
                 .collect::<Vec<_>>(),
-            vec!["claude-opus-4-8", "claude-sonnet-4-5"]
+            vec![
+                "claude-fable-5",
+                "claude-opus-4-8",
+                "claude-sonnet-4-5",
+                "claude-sonnet-5"
+            ]
         );
 
         let google_payload = serde_json::json!({
@@ -222,6 +268,18 @@ mod model_catalog_parser_tests {
                 {
                     "name": "models/gemini-3.1-pro-preview",
                     "supportedGenerationMethods": ["generateContent"]
+                },
+                {
+                    "name": "models/gemini-3.1-flash-latest",
+                    "supportedGenerationMethods": ["generateContent"]
+                },
+                {
+                    "name": "models/gemini-3.5-flash-preview-09-2025",
+                    "supportedGenerationMethods": ["generateContent"]
+                },
+                {
+                    "name": "models/gemini-flash-latest",
+                    "supportedGenerationMethods": ["generateContent"]
                 }
             ]
         });
@@ -230,7 +288,12 @@ mod model_catalog_parser_tests {
                 .into_iter()
                 .map(|model| model.id)
                 .collect::<Vec<_>>(),
-            vec!["gemini-3.1-pro-preview"]
+            vec![
+                "gemini-3.1-flash-latest",
+                "gemini-3.1-pro-preview",
+                "gemini-3.5-flash-preview-09-2025",
+                "gemini-flash-latest"
+            ]
         );
     }
 

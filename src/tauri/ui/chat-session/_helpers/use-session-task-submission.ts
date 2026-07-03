@@ -49,6 +49,7 @@ import {
   getEffectiveSessionMode,
   removeSessionArchiveFlag,
 } from "./session-shell";
+import { normalizeSessionReasoningOverride } from "./session-reasoning";
 import {
   CONTINUE_TASK_DISPLAY_CONTENT,
   RETRY_TASK_DISPLAY_CONTENT,
@@ -174,10 +175,20 @@ export const useSessionTaskSubmission = (options: {
         return false;
       }
 
-      const { sessionSnapshot } = submitOptions;
+      const submittedSessionSnapshot = submitOptions.sessionSnapshot;
+      const sessionId = submittedSessionSnapshot.id;
+      const sessionSnapshot =
+        options.state.shellState.sessions.find(
+          (session) => session.id === sessionId,
+        ) ?? submittedSessionSnapshot;
+      const sessionSnapshotReasoning = normalizeSessionReasoningOverride(
+        sessionSnapshot.reasoning,
+        sessionSnapshot.provider,
+        sessionSnapshot.model,
+      );
       const hasActiveTaskForSession = [
         ...options.activeDesktopTasksRef.current.values(),
-      ].includes(sessionSnapshot.id);
+      ].includes(sessionId);
 
       if (
         hasActiveTaskForSession ||
@@ -215,7 +226,6 @@ export const useSessionTaskSubmission = (options: {
           ? { contextAttachments: userMessageContextAttachments }
           : {}),
       };
-      const sessionId = sessionSnapshot.id;
       const sessionWorkspace = sessionSnapshot.workspace;
       const sessionMode = submitOptions.modeOverride ?? sessionSnapshot.mode;
       const taskConversationContext = createConversationContextFromSession(
@@ -548,8 +558,8 @@ export const useSessionTaskSubmission = (options: {
             delete nextSession.mode;
           }
 
-          if (sessionSnapshot.reasoning) {
-            nextSession.reasoning = sessionSnapshot.reasoning;
+          if (sessionSnapshotReasoning) {
+            nextSession.reasoning = sessionSnapshotReasoning;
           } else {
             delete nextSession.reasoning;
           }
@@ -625,8 +635,8 @@ export const useSessionTaskSubmission = (options: {
         ...(imagePaths.length > 0 ? { imagePaths } : {}),
         model: sessionSnapshot.model,
         provider: sessionSnapshot.provider,
-        ...(sessionSnapshot.reasoning
-          ? { reasoning: sessionSnapshot.reasoning }
+        ...(sessionSnapshotReasoning
+          ? { reasoning: sessionSnapshotReasoning }
           : {}),
         ...(sessionMode ? { mode: sessionMode } : {}),
         taskId,

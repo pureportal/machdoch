@@ -16,7 +16,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
-import { TASK_EXECUTION_TIMEOUT_MS } from "../../core/_helpers/agent-runtime-types.js";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { cn } from "./lib/utils";
 import type { TaskPanelTone } from "./task-panel";
@@ -51,6 +50,9 @@ type VisibleModelStreamKind = Exclude<
   TaskThinkingModelStream["kind"],
   "assistant"
 >;
+type VisibleModelStream = TaskThinkingModelStream & {
+  kind: VisibleModelStreamKind;
+};
 
 type PanelView = "timeline" | "streams" | "replay";
 
@@ -240,18 +242,11 @@ export const TaskThinkingPanel = ({
     [thinking.entries, thinking.startedAt, thinking.timelineEvents],
   );
   const latestTimelineEvent = timelineEvents.at(-1);
-  const latestActionOutputLine = actionOutputLines.at(-1);
-  const latestRecordedActivityAt = Math.max(
-    thinking.startedAt,
-    latestTimelineEvent?.timestamp ?? 0,
-    latestEntry?.timestamp ?? 0,
-    latestActionOutputLine?.timestamp ?? 0,
-  );
+  const visibleModelStream: VisibleModelStream | undefined =
+    modelStream && modelStream.kind !== "assistant"
+      ? (modelStream as VisibleModelStream)
+      : undefined;
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
-  const [timeoutActivityStartedAt, setTimeoutActivityStartedAt] = useState(
-    latestRecordedActivityAt,
-  );
-  const previousRecordedActivityAtRef = useRef(latestRecordedActivityAt);
   const elapsedMs = Math.max(
     0,
     (isRunning
@@ -259,24 +254,6 @@ export const TaskThinkingPanel = ({
       : thinking.completedAt ?? latestTimelineEvent?.timestamp ?? thinking.startedAt) -
       thinking.startedAt,
   );
-  const timeoutElapsedMs = isRunning
-    ? Math.max(0, currentTimeMs - timeoutActivityStartedAt)
-    : 0;
-  const timeoutProgress = Math.min(
-    1,
-    timeoutElapsedMs / TASK_EXECUTION_TIMEOUT_MS,
-  );
-  const timeoutProgressPercent = Math.round(timeoutProgress * 100);
-  const timeoutRemainingMs = Math.max(
-    0,
-    TASK_EXECUTION_TIMEOUT_MS - timeoutElapsedMs,
-  );
-  const timeoutProgressFillClassName =
-    timeoutProgress >= 0.9
-      ? "bg-rose-300/70"
-      : timeoutProgress >= 0.75
-        ? "bg-amber-300/75"
-        : "bg-sky-400/70";
   const replayExport = useMemo(
     () => createReplayExport(thinking, timelineEvents),
     [thinking, timelineEvents],
@@ -318,26 +295,6 @@ export const TaskThinkingPanel = ({
       window.clearInterval(intervalId);
     };
   }, [isRunning]);
-
-  useEffect(() => {
-    if (!isRunning) {
-      previousRecordedActivityAtRef.current = latestRecordedActivityAt;
-      setTimeoutActivityStartedAt(latestRecordedActivityAt);
-      return;
-    }
-
-    const previousRecordedActivityAt = previousRecordedActivityAtRef.current;
-
-    previousRecordedActivityAtRef.current = latestRecordedActivityAt;
-
-    if (latestRecordedActivityAt <= previousRecordedActivityAt) {
-      return;
-    }
-
-    setTimeoutActivityStartedAt((current) =>
-      Math.max(current, latestRecordedActivityAt),
-    );
-  }, [isRunning, latestRecordedActivityAt]);
 
   useEffect(() => {
     setIsCollapsed(!isRunning);
@@ -428,7 +385,12 @@ export const TaskThinkingPanel = ({
                   >
                     Execution timeline
                   </CardTitle>
-                  {!isCollapsed ? (
+                  {isCollapsed ? (
+                    <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-slate-500">
+                      <Clock3 className="h-2.5 w-2.5" />
+                      <span>{formatElapsedTime(elapsedMs)}</span>
+                    </div>
+                  ) : (
                     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
                       <span className="inline-flex items-center gap-1 rounded-full border border-slate-800 bg-slate-950/45 px-2 py-0.5">
                         <Clock3 className="h-3 w-3" />
@@ -442,7 +404,7 @@ export const TaskThinkingPanel = ({
                         {formatTokenUsage(thinking.tokenUsage)}
                       </span>
                     </div>
-                  ) : null}
+                  )}
                 </div>
                 <button
                   type="button"
@@ -499,6 +461,31 @@ export const TaskThinkingPanel = ({
                 </button>
               ))}
             </div>
+
+            {visibleModelStream ? (
+              <div className="border-b border-slate-800/80 px-5 py-3">
+                <div className="app-thinking-detail-block min-w-0 rounded-xl border border-violet-500/15 bg-violet-500/5 px-3 py-2">
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <p className="m-0 text-[11px] font-semibold tracking-[0.16em] text-violet-200 uppercase">
+                      {modelStreamPanelCopy[visibleModelStream.kind].title}
+                    </p>
+                    <span className="shrink-0 rounded-full border border-violet-400/20 px-2 py-0.5 text-[10px] text-violet-100">
+                      {visibleModelStream.complete
+                        ? modelStreamPanelCopy[visibleModelStream.kind].badge
+                        : "streaming"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs font-medium text-violet-100 wrap-break-word">
+                    {visibleModelStream.label}
+                  </p>
+                  {visibleModelStream.content.trim() ? (
+                    <pre className="app-thinking-code mt-2 max-h-24 max-w-full overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950/80 px-3 py-2 text-xs leading-5 text-slate-300 wrap-break-word">
+                      {visibleModelStream.content}
+                    </pre>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
 
             <div
               ref={scrollContainerRef}
@@ -704,25 +691,6 @@ export const TaskThinkingPanel = ({
               ) : null}
             </div>
           </CardContent>
-        ) : null}
-        {isRunning ? (
-          <div
-            role="progressbar"
-            aria-label="AI chat timeout progress"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={timeoutProgressPercent}
-            aria-valuetext={`${formatElapsedTime(timeoutRemainingMs)} until timeout if no further activity`}
-            className="app-thinking-timeout-progress pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden bg-slate-800/80"
-          >
-            <div
-              className={cn(
-                "h-full transition-[width,background-color] duration-500",
-                timeoutProgressFillClassName,
-              )}
-              style={{ width: `${timeoutProgressPercent}%` }}
-            />
-          </div>
         ) : null}
       </Card>
     </div>

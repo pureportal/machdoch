@@ -15,6 +15,7 @@ import {
 import {
   useCallback,
   useEffect,
+  Fragment,
   useRef,
   useState,
   type JSX,
@@ -156,6 +157,10 @@ const createSessionDropdownMenuPosition = (
       window.innerHeight,
     ),
   };
+};
+
+const isSessionPinnedInSidebar = (session: ChatSessionRecord): boolean => {
+  return isQuickVoiceSession(session) || typeof session.pinnedAt === "number";
 };
 
 const createSessionActionItems = ({
@@ -327,6 +332,10 @@ export const SessionsSidebar = ({
     filteredSessions.length === totalSessions
       ? `${totalSessions} saved session${totalSessions === 1 ? "" : "s"}`
       : `${filteredSessions.length} of ${totalSessions} saved sessions`;
+  const pinnedSessionCount = filteredSessions.filter(isSessionPinnedInSidebar)
+    .length;
+  const showPinnedSeparator =
+    pinnedSessionCount > 0 && pinnedSessionCount < filteredSessions.length;
   const showSessionProjectFilter = sessionProjectFacets.length > 1;
   const sessionProjectCount = sessionProjectFacets.reduce(
     (count, project) => count + project.count,
@@ -452,9 +461,7 @@ export const SessionsSidebar = ({
   const contextMenuSessionActions = contextMenuSession
     ? createSessionActionItems({
         sessionId: contextMenuSession.id,
-        isPinned:
-          contextMenuSessionIsQuick ||
-          typeof contextMenuSession.pinnedAt === "number",
+        isPinned: isSessionPinnedInSidebar(contextMenuSession),
         isQuickSession: contextMenuSessionIsQuick,
         showArchiveAction: canArchiveSession(contextMenuSession),
         onArchiveSession,
@@ -675,7 +682,7 @@ export const SessionsSidebar = ({
               No sessions match the current filters.
             </div>
           ) : (
-            filteredSessions.map((session) => {
+            filteredSessions.map((session, index) => {
               const isActive = session.id === activeSessionId;
               const archived = isSessionArchived(session);
               const sessionStatus = getSessionOverviewStatus(session);
@@ -683,8 +690,7 @@ export const SessionsSidebar = ({
               const SessionStatusIcon = statusMeta.icon;
               const showArchiveAction = canArchiveSession(session);
               const isQuickSession = isQuickVoiceSession(session);
-              const isPinned =
-                isQuickSession || typeof session.pinnedAt === "number";
+              const isPinned = isSessionPinnedInSidebar(session);
               const hasUnreadCompletion =
                 !isActive &&
                 !archived &&
@@ -712,21 +718,32 @@ export const SessionsSidebar = ({
               const hasSessionActionMenu = sessionActionItems.length > 0;
 
               return (
-                <div
-                  key={session.id}
-                  onContextMenu={(event) =>
-                    openSessionContextMenu(event, session, sessionActionItems)
-                  }
-                  className={cn(
-                    "app-session-card group relative flex min-h-[3.15rem] items-start overflow-hidden rounded-lg border px-2.5 pt-1.5 pb-2 transition-colors",
-                    hasUnreadCompletion && "app-session-card--needs-read",
-                    isActive
-                      ? "border-sky-500/30 bg-sky-500/10 shadow-lg shadow-sky-950/20"
-                      : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-950",
-                    archived &&
-                      (isActive ? "border-dashed" : "border-dashed opacity-80"),
-                  )}
-                >
+                <Fragment key={session.id}>
+                  {showPinnedSeparator && index === pinnedSessionCount ? (
+                    <div className="app-session-pin-separator -my-1 flex items-center gap-2 px-1">
+                      <span className="h-px flex-1 bg-gradient-to-r from-slate-800/20 via-slate-800 to-slate-800/20" />
+                      <span className="text-[10px] font-semibold tracking-[0.18em] text-slate-500 uppercase">
+                        Unpinned
+                      </span>
+                      <span className="h-px flex-1 bg-gradient-to-r from-slate-800/20 via-slate-800 to-slate-800/20" />
+                    </div>
+                  ) : null}
+                  <div
+                    onContextMenu={(event) =>
+                      openSessionContextMenu(event, session, sessionActionItems)
+                    }
+                    className={cn(
+                      "app-session-card group relative flex min-h-[3.15rem] items-start overflow-hidden rounded-lg border px-2.5 pt-1.5 pb-2 transition-colors",
+                      hasUnreadCompletion && "app-session-card--needs-read",
+                      isActive
+                        ? "border-sky-500/30 bg-sky-500/10 shadow-lg shadow-sky-950/20"
+                        : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-950",
+                      archived &&
+                        (isActive
+                          ? "border-dashed"
+                          : "border-dashed opacity-80"),
+                    )}
+                  >
                   <button
                     type="button"
                     aria-label={`Open session ${sessionTitle}${
@@ -871,7 +888,8 @@ export const SessionsSidebar = ({
                       />
                     </div>
                   ) : null}
-                </div>
+                  </div>
+                </Fragment>
               );
             })
           )}

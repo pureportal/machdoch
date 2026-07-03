@@ -81,11 +81,11 @@ pub const WEB_SEARCH_ENV_KEYS: [(&str, &str); 3] = [
 pub const DEFAULT_MODEL_PROVIDER: &str = "openai";
 pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); 7] = [
     ("openai", "gpt-5.5"),
-    ("anthropic", "claude-sonnet-4-6"),
+    ("anthropic", "claude-sonnet-5"),
     ("google", "gemini-3.5-flash"),
     ("langdock", "gpt-5.5"),
     ("codex-cli", "gpt-5.5"),
-    ("claude-cli", "claude-sonnet-4-6"),
+    ("claude-cli", "sonnet"),
     ("copilot-cli", "auto"),
 ];
 pub const DEFAULT_USER_REVIEW_MODEL_MODE: &str = "base";

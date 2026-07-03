@@ -1,6 +1,8 @@
-import { render, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import type { ReasoningMode } from "../../../../core/runtime-contract.generated.js";
 import type { ChatSessionRecord } from "../../chat-session.model";
 import { TooltipProvider } from "../../components/ui/tooltip";
+import type { RuntimeProvider } from "../../model-catalog";
 import { RUN_MODE_META } from "../_helpers/session-shell";
 import { SessionComposer } from "./session-composer";
 
@@ -37,21 +39,31 @@ const createSession = (
   ...overrides,
 });
 
-const renderSessionComposer = (
-  activeSession: ChatSessionRecord = createSession(),
-): void => {
+const renderSessionComposer = ({
+  activeSession = createSession(),
+  chooserProviders = ["openai"],
+  activeReasoning = activeSession.reasoning ?? "default",
+  defaultReasoning = "default",
+  isUsingWorkspaceDefaultReasoning = !activeSession.reasoning,
+}: {
+  activeSession?: ChatSessionRecord;
+  chooserProviders?: RuntimeProvider[];
+  activeReasoning?: ReasoningMode;
+  defaultReasoning?: ReasoningMode;
+  isUsingWorkspaceDefaultReasoning?: boolean;
+} = {}): void => {
   render(
     <TooltipProvider>
       <SessionComposer
         activeSession={activeSession}
-        chooserProviders={["openai"]}
+        chooserProviders={chooserProviders}
         activeRunMode="machdoch"
         activeRunModeMeta={RUN_MODE_META.machdoch}
         defaultRunMode="machdoch"
-        defaultReasoning="default"
-        activeReasoning="default"
+        defaultReasoning={defaultReasoning}
+        activeReasoning={activeReasoning}
         isUsingWorkspaceDefaultMode
-        isUsingWorkspaceDefaultReasoning
+        isUsingWorkspaceDefaultReasoning={isUsingWorkspaceDefaultReasoning}
         hasActiveWorkspace
         workspaceLocked={false}
         recentWorkspaces={[]}
@@ -65,6 +77,10 @@ const renderSessionComposer = (
         isUiControlAvailable
         interviewEnabled={false}
         interviewDisabled={false}
+        promptEnhancementMode="off"
+        promptEnhancementWebSearchAvailable
+        promptEnhancementWebSearchUnavailableReason="Configure web search."
+        statusMessage={null}
         contextAttachments={[]}
         contextPacks={[]}
         matchedContextPackIds={[]}
@@ -93,6 +109,7 @@ const renderSessionComposer = (
         onUseGlobalMemoryChange={vi.fn()}
         onUiControlEnabledChange={vi.fn()}
         onInterviewEnabledChange={vi.fn()}
+        onPromptEnhancementModeChange={vi.fn()}
         onSelectContextFiles={vi.fn().mockResolvedValue(undefined)}
         onSelectContextFolders={vi.fn().mockResolvedValue(undefined)}
         onSelectContextImages={vi.fn().mockResolvedValue(undefined)}
@@ -124,6 +141,76 @@ const renderSessionComposer = (
 };
 
 describe("SessionComposer", () => {
+  it("places the reasoning icon next to the selected session model", () => {
+    renderSessionComposer();
+
+    const toolbar = document.querySelector(".app-composer-toolbar");
+    expect(toolbar).not.toBeNull();
+
+    const buttonNames = within(toolbar as HTMLElement)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"));
+
+    expect(buttonNames[0]).toMatch(/^Session model: OpenAI /u);
+    expect(buttonNames[1]).toBe("Reasoning mode: Provider default");
+    expect(buttonNames[2]).toBe("Execution mode: Machdoch");
+    expect(buttonNames[3]).toBe("Prompt enhancement: Off");
+  });
+
+  it("filters session reasoning choices for the selected provider and model", () => {
+    renderSessionComposer({
+      activeSession: createSession({
+        provider: "google",
+        model: "gemini-2.5-pro",
+      }),
+      chooserProviders: ["openai", "google"],
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reasoning mode: Provider default" }),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Choose XHigh reasoning" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Choose High reasoning" }),
+    ).toBeTruthy();
+  });
+
+  it("shows OpenAI-only XHigh reasoning for GPT-5.5 sessions", () => {
+    renderSessionComposer({
+      activeSession: createSession({
+        provider: "openai",
+        model: "gpt-5.5",
+      }),
+      chooserProviders: ["openai", "google"],
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reasoning mode: Provider default" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Choose XHigh reasoning" }),
+    ).toBeTruthy();
+  });
+
+  it("lets you choose prompt enhancement mode from the composer", () => {
+    renderSessionComposer();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prompt enhancement: Off" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Choose Simple enhance" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Choose Enhance with web search" }),
+    ).toBeTruthy();
+  });
+
   it("renders the two memory toolbar toggles side by side", () => {
     renderSessionComposer();
 

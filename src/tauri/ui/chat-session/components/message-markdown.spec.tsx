@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MessageMarkdown } from "./message-markdown";
 
 afterEach(() => {
@@ -113,5 +119,33 @@ describe("MessageMarkdown", () => {
 
     expect(screen.getByText("bad")).toBeDefined();
     expect(screen.queryByRole("link", { name: "bad" })).toBeNull();
+  });
+
+  it("copies fenced code block content from the icon button", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(
+      <MessageMarkdown content={"```ts\nconst value = 1;\nconsole.log(value);\n```"} />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Copy code block to clipboard",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(
+        "const value = 1;\nconsole.log(value);",
+      );
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Copied code block" }),
+    ).toBeDefined();
   });
 });

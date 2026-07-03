@@ -47,11 +47,11 @@ export type UserReviewModelMode = (typeof USER_REVIEW_MODEL_MODES)[number];
 export const DEFAULT_MODEL_PROVIDER = "openai" as const satisfies ConfiguredModelProvider;
 export const DEFAULT_MODEL_BY_PROVIDER = {
   "openai": "gpt-5.5",
-  "anthropic": "claude-sonnet-4-6",
+  "anthropic": "claude-sonnet-5",
   "google": "gemini-3.5-flash",
   "langdock": "gpt-5.5",
   "codex-cli": "gpt-5.5",
-  "claude-cli": "claude-sonnet-4-6",
+  "claude-cli": "sonnet",
   "copilot-cli": "auto"
 } as const satisfies Record<ConfiguredModelProvider, string>;
 

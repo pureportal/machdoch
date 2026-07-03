@@ -21,6 +21,7 @@ import {
 import { cn } from "../../lib/utils";
 import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import type { RuntimeProvider } from "../../model-catalog";
+import type { PromptEnhancementMode } from "../_helpers/prompt-enhancement";
 import type { AttachmentSelectionKind } from "../_helpers/session-context-attachments";
 import type { SaveSmartContextPackInput } from "../_helpers/smart-context-packs";
 import type { RUN_MODE_META } from "../_helpers/session-shell";
@@ -31,6 +32,7 @@ import {
   type AgentComposerToggle,
 } from "./agent-composer";
 import { SessionModePicker } from "./session-mode-picker";
+import { SessionPromptEnhancementPicker } from "./session-prompt-enhancement-picker";
 import { SessionReasoningPicker } from "./session-reasoning-picker";
 import { SmartContextPackPicker } from "./smart-context-packs";
 import { WorkspacePicker } from "./workspace-picker";
@@ -58,6 +60,13 @@ export interface SessionComposerProps {
   isUiControlAvailable: boolean;
   interviewEnabled: boolean;
   interviewDisabled: boolean;
+  promptEnhancementMode: PromptEnhancementMode;
+  promptEnhancementWebSearchAvailable: boolean;
+  promptEnhancementWebSearchUnavailableReason: string;
+  statusMessage?: {
+    text: string;
+    tone: "success" | "error" | "info" | null;
+  } | null;
   contextAttachments: ChatSessionContextAttachment[];
   contextPacks: SmartContextPack[];
   matchedContextPackIds: string[];
@@ -86,6 +95,7 @@ export interface SessionComposerProps {
   onUseGlobalMemoryChange: (enabled: boolean) => void;
   onUiControlEnabledChange: (enabled: boolean) => void;
   onInterviewEnabledChange: (enabled: boolean) => void;
+  onPromptEnhancementModeChange: (mode: PromptEnhancementMode) => void;
   onSelectContextFiles: () => Promise<void>;
   onSelectContextFolders: () => Promise<void>;
   onSelectContextImages: () => Promise<void>;
@@ -149,6 +159,10 @@ export const SessionComposer = ({
   isUiControlAvailable,
   interviewEnabled,
   interviewDisabled,
+  promptEnhancementMode,
+  promptEnhancementWebSearchAvailable,
+  promptEnhancementWebSearchUnavailableReason,
+  statusMessage,
   contextAttachments,
   contextPacks,
   matchedContextPackIds,
@@ -169,6 +183,7 @@ export const SessionComposer = ({
   onUseGlobalMemoryChange,
   onUiControlEnabledChange,
   onInterviewEnabledChange,
+  onPromptEnhancementModeChange,
   onSelectContextFiles,
   onSelectContextFolders,
   onSelectContextImages,
@@ -214,6 +229,15 @@ export const SessionComposer = ({
   );
   const toolbarControls = (
     <>
+      <SessionReasoningPicker
+        provider={activeSession.provider}
+        model={activeSession.model}
+        activeReasoning={activeReasoning}
+        defaultReasoning={defaultReasoning}
+        isUsingWorkspaceDefaultReasoning={isUsingWorkspaceDefaultReasoning}
+        onSessionReasoningSelection={onSessionReasoningSelection}
+      />
+
       <SessionModePicker
         activeRunMode={activeRunMode}
         activeRunModeMeta={activeRunModeMeta}
@@ -222,13 +246,13 @@ export const SessionComposer = ({
         onSessionModeSelection={onSessionModeSelection}
       />
 
-      <SessionReasoningPicker
-        provider={activeSession.provider}
-        model={activeSession.model}
-        activeReasoning={activeReasoning}
-        defaultReasoning={defaultReasoning}
-        isUsingWorkspaceDefaultReasoning={isUsingWorkspaceDefaultReasoning}
-        onSessionReasoningSelection={onSessionReasoningSelection}
+      <SessionPromptEnhancementPicker
+        mode={promptEnhancementMode}
+        webSearchAvailable={promptEnhancementWebSearchAvailable}
+        webSearchUnavailableReason={
+          promptEnhancementWebSearchUnavailableReason
+        }
+        onModeChange={onPromptEnhancementModeChange}
       />
 
       <WorkspacePicker
@@ -361,12 +385,13 @@ export const SessionComposer = ({
       runningTaskMessageAction={runningTaskMessageAction}
       queuedMessages={queuedMessages}
       statusMessage={
-        speechInput.statusText
+        statusMessage ??
+        (speechInput.statusText
           ? {
               text: speechInput.statusText,
               tone: speechInput.statusTone,
             }
-          : null
+          : null)
       }
       onModelSelection={onSessionModelSelection}
       onSelectContextFiles={onSelectContextFiles}

@@ -56,7 +56,6 @@ export interface ProviderModelMetadata {
   label: string;
   lifecycle: ProviderModelLifecycle;
   releaseDate: string;
-  description: string;
   recommendedFor: readonly ProviderModelUseCase[];
   capabilities: ProviderModelCapabilityMetadata;
   warnings: readonly string[];
@@ -213,13 +212,13 @@ export const PROVIDER_CATALOG_METADATA: readonly ProviderCatalogMetadata[] = [
     provider: "openai",
     docsUrl: "https://developers.openai.com/api/docs/models",
     note:
-      "OpenAI recommends GPT-5.5 for complex reasoning and coding, with GPT-5.4 mini/nano for lower latency and cost.",
+      "OpenAI model availability is discovered through the Models API and filtered to current GPT text-generation families.",
   },
   {
     provider: "anthropic",
     docsUrl: "https://platform.claude.com/docs/en/about-claude/models/overview",
     note:
-      "Anthropic recommends Opus 4.8 for the most complex work, Sonnet 4.6 for the best speed/intelligence blend, and Haiku 4.5 for fastest lower-cost work.",
+      "Anthropic model availability is discovered through the Models API and filtered to current Claude text-generation families.",
   },
   {
     provider: "google",
@@ -237,7 +236,7 @@ export const PROVIDER_CATALOG_METADATA: readonly ProviderCatalogMetadata[] = [
     provider: "codex-cli",
     docsUrl: "https://developers.openai.com/codex/models",
     note:
-      "Codex CLI runs through `codex exec`; recommended GPT models can be discovered from `codex debug models`, and custom provider models can be selected with the CLI `--model` flag when configured locally.",
+      "Codex CLI runs through `codex exec`; supported GPT models can be discovered from `codex debug models`.",
   },
   {
     provider: "claude-cli",
@@ -261,8 +260,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.5",
     lifecycle: "stable",
     releaseDate: "2026-05-01",
-    description:
-      "Latest flagship frontier model for complex reasoning, coding, and professional agent workflows.",
     recommendedFor: ["coding", "vision", "computer-use"],
     capabilities: createOpenAiCapabilities({
       contextWindowTokens: 1_050_000,
@@ -277,8 +274,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.4",
     lifecycle: "stable",
     releaseDate: "2026-03-05",
-    description:
-      "More affordable frontier model for coding and professional work.",
     recommendedFor: ["coding", "vision", "computer-use"],
     capabilities: createOpenAiCapabilities({
       contextWindowTokens: 1_050_000,
@@ -293,8 +288,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.4 mini",
     lifecycle: "stable",
     releaseDate: "2026-03-17",
-    description:
-      "Strong mini model for coding, subagents, and lower-latency workflows.",
     recommendedFor: ["coding", "fast", "cheap", "vision", "computer-use"],
     capabilities: createOpenAiCapabilities({
       contextWindowTokens: 400_000,
@@ -309,8 +302,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.4 nano",
     lifecycle: "stable",
     releaseDate: "2026-03-17",
-    description:
-      "Smallest GPT-5.4 family model for high-volume structured work.",
     recommendedFor: ["fast", "cheap", "vision"],
     capabilities: createOpenAiCapabilities({
       contextWindowTokens: 400_000,
@@ -326,11 +317,37 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5",
     lifecycle: "stable",
     releaseDate: "2025-08-07",
-    description:
-      "Previous-generation GPT-5 frontier model for reasoning, coding, and agent workflows.",
     recommendedFor: ["coding", "vision", "computer-use"],
     capabilities: createOpenAiCapabilities({
       contextWindowTokens: 400_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [],
+    source: "curated-fallback",
+  },
+  {
+    provider: "anthropic",
+    id: "claude-sonnet-5",
+    label: "Claude Sonnet 5",
+    lifecycle: "stable",
+    releaseDate: "2026-06-01",
+    recommendedFor: ["coding", "fast", "vision"],
+    capabilities: createAnthropicCapabilities({
+      contextWindowTokens: 1_000_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [],
+    source: "curated-fallback",
+  },
+  {
+    provider: "anthropic",
+    id: "claude-fable-5",
+    label: "Claude Fable 5",
+    lifecycle: "stable",
+    releaseDate: "2026-06-01",
+    recommendedFor: ["coding", "vision"],
+    capabilities: createAnthropicCapabilities({
+      contextWindowTokens: 1_000_000,
       maxOutputTokens: 128_000,
     }),
     warnings: [],
@@ -342,8 +359,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "Claude Opus 4.8",
     lifecycle: "stable",
     releaseDate: "2026-05-28",
-    description:
-      "Most capable Claude model for complex reasoning and agentic coding.",
     recommendedFor: ["coding", "vision"],
     capabilities: createAnthropicCapabilities({
       contextWindowTokens: 1_000_000,
@@ -354,27 +369,10 @@ export const PROVIDER_MODEL_METADATA = [
   },
   {
     provider: "anthropic",
-    id: "claude-sonnet-4-6",
-    label: "Claude Sonnet 4.6",
-    lifecycle: "stable",
-    releaseDate: "2026-02-17",
-    description:
-      "Fast, balanced Claude model with excellent coding and reasoning performance.",
-    recommendedFor: ["coding", "fast", "vision"],
-    capabilities: createAnthropicCapabilities({
-      contextWindowTokens: 1_000_000,
-      maxOutputTokens: 64_000,
-    }),
-    warnings: [],
-    source: "curated-fallback",
-  },
-  {
-    provider: "anthropic",
     id: "claude-haiku-4-5",
     label: "Claude Haiku 4.5",
     lifecycle: "stable",
     releaseDate: "2025-10-15",
-    description: "Fastest Claude tier with near-frontier intelligence.",
     recommendedFor: ["fast", "cheap", "vision"],
     capabilities: createAnthropicCapabilities({
       contextWindowTokens: 200_000,
@@ -389,8 +387,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "Gemini 3.5 Flash",
     lifecycle: "stable",
     releaseDate: "2026-05-19",
-    description:
-      "Current Gemini Flash model for sustained frontier performance on agentic and coding tasks.",
     recommendedFor: ["coding", "fast", "vision"],
     capabilities: createGoogleCapabilities({
       contextWindowTokens: 1_000_000,
@@ -405,8 +401,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "Gemini 3.1 Flash-Lite",
     lifecycle: "stable",
     releaseDate: "2026-05-19",
-    description:
-      "Fast stable Gemini 3.1 model for high-volume multimodal tasks.",
     recommendedFor: ["fast", "cheap", "vision"],
     capabilities: createGoogleCapabilities({
       contextWindowTokens: 1_000_000,
@@ -421,8 +415,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "Gemini 3.1 Pro",
     lifecycle: "preview",
     releaseDate: "2026-02-01",
-    description:
-      "Preview Gemini 3.1 Pro model with advanced intelligence and coding capabilities.",
     recommendedFor: ["coding", "vision"],
     capabilities: createGoogleCapabilities({
       contextWindowTokens: 1_000_000,
@@ -437,8 +429,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "Gemini 3 Flash",
     lifecycle: "preview",
     releaseDate: "2025-12-01",
-    description:
-      "Preview Flash model aimed at lower-cost speed on the newest Gemini generation.",
     recommendedFor: ["coding", "fast", "cheap", "vision", "computer-use"],
     capabilities: createGoogleCapabilities({
       contextWindowTokens: 1_000_000,
@@ -454,8 +444,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "Gemini 2.5 Flash-Lite",
     lifecycle: "stable",
     releaseDate: "2025-07-22",
-    description:
-      "Fastest stable Gemini 2.5 workhorse for cost-sensitive throughput.",
     recommendedFor: ["fast", "cheap", "vision"],
     capabilities: createGoogleCapabilities({
       contextWindowTokens: 1_000_000,
@@ -470,8 +458,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "Gemini 2.5 Pro",
     lifecycle: "stable",
     releaseDate: "2025-06-17",
-    description:
-      "Google's advanced stable Gemini 2.5 model for reasoning and multimodal work.",
     recommendedFor: ["coding", "vision"],
     capabilities: createGoogleCapabilities({
       contextWindowTokens: 1_000_000,
@@ -486,8 +472,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "Gemini 2.5 Flash",
     lifecycle: "stable",
     releaseDate: "2025-06-17",
-    description:
-      "Stable Gemini 2.5 model for fast reasoning-heavy multimodal work.",
     recommendedFor: ["fast", "cheap", "vision"],
     capabilities: createGoogleCapabilities({
       contextWindowTokens: 1_000_000,
@@ -502,8 +486,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.5",
     lifecycle: "stable",
     releaseDate: "2026-05-01",
-    description:
-      "Default Langdock OpenAI-compatible model option for coding and agent workflows.",
     recommendedFor: ["coding", "vision"],
     capabilities: createLangdockCapabilities({
       contextWindowTokens: null,
@@ -520,8 +502,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.4",
     lifecycle: "stable",
     releaseDate: "2026-03-05",
-    description:
-      "Langdock OpenAI-compatible frontier model option for coding and agent workflows.",
     recommendedFor: ["coding", "vision"],
     capabilities: createLangdockCapabilities({
       contextWindowTokens: null,
@@ -538,8 +518,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.4 mini",
     lifecycle: "stable",
     releaseDate: "2026-03-17",
-    description:
-      "Lower-latency Langdock OpenAI-compatible model option for coding and agent workflows.",
     recommendedFor: ["coding", "fast", "cheap", "vision"],
     capabilities: createLangdockCapabilities({
       contextWindowTokens: null,
@@ -556,8 +534,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.2 Pro",
     lifecycle: "stable",
     releaseDate: "2025-08-07",
-    description:
-      "Langdock OpenAI-compatible model option for high-capability coding and agent workflows.",
     recommendedFor: ["coding", "vision"],
     capabilities: createLangdockCapabilities({
       contextWindowTokens: null,
@@ -574,8 +550,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.5",
     lifecycle: "stable",
     releaseDate: "2026-05-01",
-    description:
-      "Recommended Codex CLI model for complex coding and local agent workflows.",
     recommendedFor: ["coding", "vision"],
     capabilities: createCodexCliCapabilities({
       contextWindowTokens: 1_050_000,
@@ -592,8 +566,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.4",
     lifecycle: "stable",
     releaseDate: "2026-03-05",
-    description:
-      "Flagship Codex CLI model for professional coding, reasoning, and local agent workflows.",
     recommendedFor: ["coding", "vision"],
     capabilities: createCodexCliCapabilities({
       contextWindowTokens: 1_050_000,
@@ -610,8 +582,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.4 mini",
     lifecycle: "stable",
     releaseDate: "2026-03-17",
-    description:
-      "Faster Codex CLI model option for lower-latency coding tasks.",
     recommendedFor: ["coding", "fast", "cheap", "vision"],
     capabilities: createCodexCliCapabilities({
       contextWindowTokens: 400_000,
@@ -628,8 +598,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.3 Codex Spark",
     lifecycle: "preview",
     releaseDate: "2026-01-01",
-    description:
-      "Text-only Codex CLI research preview model for near-instant coding iteration.",
     recommendedFor: ["coding", "fast"],
     capabilities: createCodexCliCapabilities({
       imageInput: false,
@@ -644,116 +612,15 @@ export const PROVIDER_MODEL_METADATA = [
     source: "curated-fallback",
   },
   {
-    provider: "codex-cli",
-    id: "claude-opus-4-8",
-    label: "Claude Opus 4.8",
-    lifecycle: "stable",
-    releaseDate: "2026-05-28",
-    description:
-      "Claude Opus option for Codex CLI workflows backed by a compatible local model provider configuration.",
-    recommendedFor: ["coding", "vision"],
-    capabilities: createCodexCliCapabilities({
-      contextWindowTokens: 1_000_000,
-      maxOutputTokens: 128_000,
-      supportedImageMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
-      computerUse: false,
-    }),
-    warnings: [
-      "Requires the local Codex CLI to be configured with a compatible model_provider and credentials for this model.",
-    ],
-    source: "curated-fallback",
-  },
-  {
-    provider: "codex-cli",
-    id: "claude-sonnet-4-6",
-    label: "Claude Sonnet 4.6",
-    lifecycle: "stable",
-    releaseDate: "2026-02-17",
-    description:
-      "Balanced Claude option for Codex CLI workflows backed by a compatible local model provider configuration.",
-    recommendedFor: ["coding", "fast", "vision"],
-    capabilities: createCodexCliCapabilities({
-      contextWindowTokens: 1_000_000,
-      maxOutputTokens: 64_000,
-      supportedImageMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
-      computerUse: false,
-    }),
-    warnings: [
-      "Requires the local Codex CLI to be configured with a compatible model_provider and credentials for this model.",
-    ],
-    source: "curated-fallback",
-  },
-  {
-    provider: "codex-cli",
-    id: "gemini-3.1-pro-preview",
-    label: "Gemini 3.1 Pro",
-    lifecycle: "preview",
-    releaseDate: "2026-02-01",
-    description:
-      "Gemini Pro option for Codex CLI workflows backed by a compatible local model provider configuration.",
-    recommendedFor: ["coding", "vision"],
-    capabilities: createCodexCliCapabilities({
-      contextWindowTokens: 1_000_000,
-      maxOutputTokens: 65_536,
-      supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
-      computerUse: false,
-    }),
-    warnings: [
-      "Preview model: verify behavior and availability before production use.",
-      "Requires the local Codex CLI to be configured with a compatible model_provider and credentials for this model.",
-    ],
-    source: "curated-fallback",
-  },
-  {
-    provider: "codex-cli",
-    id: "gemini-3.5-flash",
-    label: "Gemini 3.5 Flash",
-    lifecycle: "stable",
-    releaseDate: "2026-05-19",
-    description:
-      "Fast Gemini option for Codex CLI workflows backed by a compatible local model provider configuration.",
-    recommendedFor: ["coding", "fast", "vision"],
-    capabilities: createCodexCliCapabilities({
-      contextWindowTokens: 1_000_000,
-      maxOutputTokens: 65_536,
-      supportedImageMediaTypes: GOOGLE_IMAGE_MEDIA_TYPES,
-      computerUse: false,
-    }),
-    warnings: [
-      "Requires the local Codex CLI to be configured with a compatible model_provider and credentials for this model.",
-    ],
-    source: "curated-fallback",
-  },
-  {
     provider: "claude-cli",
-    id: "claude-opus-4-8",
-    label: "Claude Opus 4.8",
+    id: "sonnet",
+    label: "Sonnet",
     lifecycle: "stable",
-    releaseDate: "2026-05-28",
-    description:
-      "Most capable Claude CLI model option for complex delegated coding work.",
-    recommendedFor: ["coding"],
-    capabilities: createClaudeCliCapabilities({
-      contextWindowTokens: 1_000_000,
-      maxOutputTokens: 128_000,
-    }),
-    warnings: [
-      "Runs through the locally installed Claude CLI; availability depends on Claude authentication and CLI configuration.",
-    ],
-    source: "curated-fallback",
-  },
-  {
-    provider: "claude-cli",
-    id: "claude-sonnet-4-6",
-    label: "Claude Sonnet 4.6",
-    lifecycle: "stable",
-    releaseDate: "2026-02-17",
-    description:
-      "Default Claude CLI model for delegated local Claude Code agent execution.",
+    releaseDate: "2026-01-01",
     recommendedFor: ["coding", "fast"],
     capabilities: createClaudeCliCapabilities({
-      contextWindowTokens: 1_000_000,
-      maxOutputTokens: 64_000,
+      contextWindowTokens: null,
+      maxOutputTokens: null,
     }),
     warnings: [
       "Runs through the locally installed Claude CLI; availability depends on Claude authentication and CLI configuration.",
@@ -762,16 +629,46 @@ export const PROVIDER_MODEL_METADATA = [
   },
   {
     provider: "claude-cli",
-    id: "claude-haiku-4-5",
-    label: "Claude Haiku 4.5",
+    id: "opus",
+    label: "Opus",
     lifecycle: "stable",
-    releaseDate: "2025-10-15",
-    description:
-      "Fast Claude CLI model option for lightweight delegated passes.",
+    releaseDate: "2026-01-01",
+    recommendedFor: ["coding"],
+    capabilities: createClaudeCliCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Runs through the locally installed Claude CLI; availability depends on Claude authentication and CLI configuration.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "claude-cli",
+    id: "haiku",
+    label: "Haiku",
+    lifecycle: "stable",
+    releaseDate: "2026-01-01",
     recommendedFor: ["fast", "cheap"],
     capabilities: createClaudeCliCapabilities({
-      contextWindowTokens: 200_000,
-      maxOutputTokens: 64_000,
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Runs through the locally installed Claude CLI; availability depends on Claude authentication and CLI configuration.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "claude-cli",
+    id: "fable",
+    label: "Fable",
+    lifecycle: "stable",
+    releaseDate: "2026-01-01",
+    recommendedFor: ["coding"],
+    capabilities: createClaudeCliCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
     }),
     warnings: [
       "Runs through the locally installed Claude CLI; availability depends on Claude authentication and CLI configuration.",
@@ -784,8 +681,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "Auto",
     lifecycle: "stable",
     releaseDate: "2026-01-01",
-    description:
-      "Lets Copilot CLI select the model through its own default model selection.",
     recommendedFor: ["coding"],
     capabilities: createCopilotCliCapabilities({
       contextWindowTokens: null,
@@ -802,8 +697,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "Claude Sonnet 4.6",
     lifecycle: "stable",
     releaseDate: "2026-02-17",
-    description:
-      "Default general-purpose coding model exposed through GitHub Copilot CLI model selection.",
     recommendedFor: ["coding", "fast"],
     capabilities: createCopilotCliCapabilities({
       contextWindowTokens: null,
@@ -820,8 +713,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.4",
     lifecycle: "stable",
     releaseDate: "2026-03-05",
-    description:
-      "Copilot CLI model for complex reasoning and implementation tasks.",
     recommendedFor: ["coding"],
     capabilities: createCopilotCliCapabilities({
       contextWindowTokens: null,
@@ -838,8 +729,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "Claude Haiku 4.5",
     lifecycle: "stable",
     releaseDate: "2025-10-15",
-    description:
-      "Fast Claude Haiku option exposed through GitHub Copilot CLI model selection.",
     recommendedFor: ["fast", "cheap"],
     capabilities: createCopilotCliCapabilities({
       contextWindowTokens: null,
@@ -856,8 +745,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-5.3 Codex",
     lifecycle: "stable",
     releaseDate: "2026-01-01",
-    description:
-      "Copilot CLI code-focused model option for complex debugging and refactoring tasks.",
     recommendedFor: ["coding"],
     capabilities: createCopilotCliCapabilities({
       contextWindowTokens: null,
@@ -874,8 +761,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "Gemini 3.1 Pro",
     lifecycle: "preview",
     releaseDate: "2026-02-01",
-    description:
-      "Google Gemini reasoning model exposed through GitHub Copilot CLI model selection.",
     recommendedFor: ["coding"],
     capabilities: createCopilotCliCapabilities({
       contextWindowTokens: null,
@@ -892,8 +777,6 @@ export const PROVIDER_MODEL_METADATA = [
     label: "Gemini 3.5 Flash",
     lifecycle: "stable",
     releaseDate: "2026-05-19",
-    description:
-      "Fast Google Gemini model exposed through GitHub Copilot CLI model selection.",
     recommendedFor: ["coding", "fast"],
     capabilities: createCopilotCliCapabilities({
       contextWindowTokens: null,

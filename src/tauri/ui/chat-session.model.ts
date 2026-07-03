@@ -125,6 +125,17 @@ export interface SmartContextPack {
   useCount: number;
 }
 
+export interface ChatSessionQueuedMessage {
+  id: string;
+  sessionId: string;
+  task: string;
+  visibleMessageContent?: string;
+  promptHistoryContent?: string;
+  contextAttachments: ChatSessionContextAttachment[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 export type SessionOverviewStatus =
   | "empty"
   | "running"
@@ -138,6 +149,7 @@ export interface ShellPersistedState {
   version: 1;
   activeSessionId: string;
   sessions: ChatSessionRecord[];
+  queuedSessionMessages: ChatSessionQueuedMessage[];
   contextPacks: SmartContextPack[];
   recentWorkspaces: string[];
   voice: ShellVoiceSettings;
@@ -896,6 +908,7 @@ export const createInitialShellState = (): ShellPersistedState => {
     version: 1,
     activeSessionId: initialSession.id,
     sessions: [initialSession],
+    queuedSessionMessages: [],
     contextPacks: [],
     recentWorkspaces: [],
     voice: createDefaultShellVoiceSettings(),
@@ -1549,6 +1562,86 @@ const deriveRecentWorkspacesFromSessions = (
   );
 };
 
+const getSessionNormalizationTimestamp = (
+  session: ChatSessionRecord,
+): number => {
+  let timestamp = Math.max(
+    session.updatedAt,
+    session.lastReadAt ?? 0,
+    session.archivedAt ?? 0,
+    session.pinnedAt ?? 0,
+  );
+
+  for (const message of session.messages) {
+    timestamp = Math.max(timestamp, message.createdAt ?? 0);
+  }
+
+  return timestamp;
+};
+
+const normalizeQueuedSessionMessages = (
+  value: unknown,
+  sessions: readonly ChatSessionRecord[],
+): ChatSessionQueuedMessage[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const sessionIds = new Set(sessions.map((session) => session.id));
+  const seenMessageIds = new Set<string>();
+  const queuedMessages: ChatSessionQueuedMessage[] = [];
+
+  for (const [index, entry] of value.entries()) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const sessionId = normalizeString(entry.sessionId).trim();
+    const task = normalizeString(entry.task).trim();
+
+    if (!sessionIds.has(sessionId) || !task) {
+      continue;
+    }
+
+    const idCandidate = normalizeString(entry.id).trim();
+    const id = idCandidate || `queued-message-${index}`;
+
+    if (seenMessageIds.has(id)) {
+      continue;
+    }
+
+    seenMessageIds.add(id);
+
+    const visibleMessageContent = normalizeString(
+      entry.visibleMessageContent,
+    ).trim();
+    const promptHistoryContent = normalizeString(
+      entry.promptHistoryContent,
+    ).trim();
+    const createdAt = normalizeFiniteNumber(entry.createdAt, index);
+    const updatedAt = Math.max(
+      createdAt,
+      normalizeFiniteNumber(entry.updatedAt, createdAt),
+    );
+
+    queuedMessages.push({
+      id,
+      sessionId,
+      task,
+      ...(visibleMessageContent ? { visibleMessageContent } : {}),
+      ...(promptHistoryContent ? { promptHistoryContent } : {}),
+      contextAttachments: normalizeContextAttachments(
+        entry.contextAttachments,
+        `queued-context-${id}`,
+      ),
+      createdAt,
+      updatedAt,
+    });
+  }
+
+  return queuedMessages;
+};
+
 export const normalizeShellState = (value: unknown): ShellPersistedState => {
   const fallback = createInitialShellState();
 
@@ -1558,6 +1651,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
 
   const candidate = value as Partial<ShellPersistedState>;
   const sessions: ChatSessionRecord[] = [];
+  const sessionIndexById = new Map<string, number>();
 
   if (Array.isArray(candidate.sessions)) {
     for (const session of candidate.sessions) {
@@ -1569,7 +1663,26 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
         continue;
       }
 
-      sessions.push(normalizeSessionRecord(session as ChatSessionRecord));
+      const normalizedSession = normalizeSessionRecord(
+        session as ChatSessionRecord,
+      );
+      const existingSessionIndex = sessionIndexById.get(normalizedSession.id);
+
+      if (existingSessionIndex === undefined) {
+        sessionIndexById.set(normalizedSession.id, sessions.length);
+        sessions.push(normalizedSession);
+        continue;
+      }
+
+      const existingSession = sessions[existingSessionIndex];
+
+      if (
+        existingSession &&
+        getSessionNormalizationTimestamp(normalizedSession) >=
+          getSessionNormalizationTimestamp(existingSession)
+      ) {
+        sessions[existingSessionIndex] = normalizedSession;
+      }
     }
   }
 
@@ -1642,6 +1755,10 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
       ? (candidate.activeSessionId as string)
       : normalizedSessions[0].id,
     sessions: normalizedSessions,
+    queuedSessionMessages: normalizeQueuedSessionMessages(
+      candidate.queuedSessionMessages,
+      normalizedSessions,
+    ),
     contextPacks: normalizeSmartContextPacks(candidate.contextPacks),
     recentWorkspaces,
     voice: normalizedVoice,
@@ -1869,15 +1986,21 @@ const getSessionAttentionSortGroup = (session: ChatSessionRecord): number => {
     return 0;
   }
 
-  if (getSessionOverviewStatus(session) === "running") {
+  const status = getSessionOverviewStatus(session);
+
+  if (status === "running") {
     return 1;
   }
 
-  if (typeof session.pinnedAt === "number" || isQuickVoiceSession(session)) {
+  if (status === "failed" || status === "crashed") {
     return 2;
   }
 
-  return 3;
+  if (status === "done") {
+    return 3;
+  }
+
+  return 4;
 };
 
 export const compareSessionsByAttention = (
@@ -1889,6 +2012,13 @@ export const compareSessionsByAttention = (
 
   if (leftIsQuickTaskSession !== rightIsQuickTaskSession) {
     return leftIsQuickTaskSession ? -1 : 1;
+  }
+
+  const leftIsPinned = typeof left.pinnedAt === "number";
+  const rightIsPinned = typeof right.pinnedAt === "number";
+
+  if (leftIsPinned !== rightIsPinned) {
+    return leftIsPinned ? -1 : 1;
   }
 
   const leftSortGroup = getSessionAttentionSortGroup(left);

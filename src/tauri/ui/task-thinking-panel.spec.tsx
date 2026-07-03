@@ -7,7 +7,6 @@ import {
   it,
   vi,
 } from "vitest";
-import { TASK_EXECUTION_TIMEOUT_MS } from "../../core/_helpers/agent-runtime-types.js";
 import { TaskThinkingPanel } from "./task-thinking-panel";
 import type { TaskThinkingTrace } from "./task-thinking.model";
 
@@ -53,17 +52,32 @@ describe("TaskThinkingPanel", () => {
     expect(screen.getByText("1m 01s")).toBeDefined();
   });
 
-  it("renders a bottom fill bar for progress toward the activity timeout", () => {
-    const startedAt = Date.now() - TASK_EXECUTION_TIMEOUT_MS / 2;
+  it("does not render a timeout progress bar while thinking is running", () => {
+    render(<TaskThinkingPanel thinking={createRunningTrace(Date.now())} />);
 
-    render(<TaskThinkingPanel thinking={createRunningTrace(startedAt)} />);
+    expect(
+      screen.queryByRole("progressbar", {
+        name: "AI chat timeout progress",
+      }),
+    ).toBeNull();
+  });
 
-    const progressbar = screen.getByRole("progressbar", {
-      name: "AI chat timeout progress",
-    });
-    const fill = progressbar.firstElementChild;
+  it("surfaces the latest provider reasoning stream in the default view", () => {
+    render(
+      <TaskThinkingPanel
+        thinking={createRunningTrace(Date.now(), {
+          modelStream: {
+            kind: "reasoning",
+            label: "Model reasoning",
+            content: "Inspecting the workspace before asking a question.",
+          },
+        })}
+      />,
+    );
 
-    expect(progressbar.getAttribute("aria-valuenow")).toBe("50");
-    expect(fill?.getAttribute("style")).toContain("width: 50%");
+    expect(screen.getByText("Live reasoning")).toBeDefined();
+    expect(
+      screen.getByText("Inspecting the workspace before asking a question."),
+    ).toBeDefined();
   });
 });

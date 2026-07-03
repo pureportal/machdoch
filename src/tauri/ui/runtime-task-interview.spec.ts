@@ -70,6 +70,7 @@ describe("task interview runtime bridge", () => {
     expect(invokeMock).toHaveBeenCalledWith("run_task_interview_command", {
       request: {
         workspaceRoot: "C:\\Project",
+        taskId: "task-interview-local-id",
         arguments: [
           "--prompt",
           "Improve chat composer",

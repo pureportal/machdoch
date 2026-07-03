@@ -9,6 +9,7 @@ import {
 } from "../../core/task-interview.js";
 import { createDiscoveryOptions } from "./cli-output.js";
 import {
+  createStructuredActionOutputReporter,
   createVerboseProgressReporter,
   writeStderrLine,
   writeStdoutLine,
@@ -231,6 +232,19 @@ export const printTaskInterviewSummary = async (
     args.workspaceRoot,
     createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
   );
+  const onStateChange = args.verbose
+    ? createVerboseProgressReporter(writeStderrLine, {
+        structured: args.json,
+      })
+    : undefined;
+  const onActionOutput =
+    args.json && args.verbose
+      ? createStructuredActionOutputReporter(
+          prompt,
+          config.mode,
+          writeStderrLine,
+        )
+      : undefined;
   const result = await createTaskInterviewWithAgent(args.workspaceRoot, {
     prompt,
     config,
@@ -240,9 +254,8 @@ export const printTaskInterviewSummary = async (
     ...(input.contextNotes ? { contextNotes: input.contextNotes } : {}),
     ...(input.answers ? { answers: input.answers } : {}),
     ...(input.answerComments ? { answerComments: input.answerComments } : {}),
-    ...(args.verbose
-      ? { onStateChange: createVerboseProgressReporter(writeStderrLine) }
-      : {}),
+    ...(onStateChange ? { onStateChange } : {}),
+    ...(onActionOutput ? { onActionOutput } : {}),
   });
 
   if (args.json) {

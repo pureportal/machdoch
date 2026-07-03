@@ -66,7 +66,6 @@ pub struct ProviderRuntimeModel {
     pub(super) label: Option<String>,
     pub(super) stage: Option<String>,
     pub(super) release_date: Option<String>,
-    pub(super) description: Option<String>,
     pub(super) recommended_for: Vec<String>,
     pub(super) capabilities: ProviderRuntimeModelCapabilities,
     pub(super) warnings: Vec<String>,

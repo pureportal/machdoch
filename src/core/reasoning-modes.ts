@@ -126,7 +126,10 @@ const isOpenAiGpt5Model = (model: string): boolean =>
   /^gpt-5(?:-(?:mini|nano))?(?:-|$)/u.test(model);
 
 const isAnthropicOpus47PlusModel = (model: string): boolean =>
-  /^claude-(?:opus-4-[78]|4-[78]-opus)(?:-|$)/u.test(model);
+  /^(?:sonnet|opus|fable|sonnet\[1m\]|opus\[1m\]|opusplan)$/u.test(model) ||
+  /^claude-(?:(?:fable|sonnet)-5|5-(?:fable|sonnet)|opus-4-[78]|4-[78]-opus)(?:-|$)/u.test(
+    model,
+  );
 
 const isAnthropicMaxEffortModel = (model: string): boolean =>
   /^claude-(?:opus-4-[56]|4-[56]-opus|sonnet-4-6|4-6-sonnet)(?:-|$)/u.test(
@@ -177,7 +180,11 @@ const getAnthropicReasoningModes = (
     return ANTHROPIC_MAX_REASONING_MODES;
   }
 
-  if (model.includes("haiku-4-5") || model.includes("4-5-haiku")) {
+  if (
+    model === "haiku" ||
+    model.includes("haiku-4-5") ||
+    model.includes("4-5-haiku")
+  ) {
     return DEFAULT_ONLY_REASONING_MODES;
   }
 

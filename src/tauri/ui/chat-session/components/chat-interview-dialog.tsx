@@ -29,6 +29,7 @@ import {
   getDefaultRalphInputValue,
 } from "../../ralph/_helpers/validate-ralph-input-field-values.helper";
 import { RalphInputControl } from "../../ralph/components/ralph-input-controls";
+import { TaskThinkingPanel } from "../../task-thinking-panel";
 import type { ChatInterviewDialogState } from "../_helpers/chat-interview";
 
 interface ChatInterviewDialogProps {
@@ -135,7 +136,11 @@ export const ChatInterviewDialog = ({
           <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] bg-slate-950">
             <ScrollArea className="min-h-0 bg-slate-950" type="always">
               <div className="grid gap-4 p-5">
-                {state.status === "loading" ? (
+                {state.thinking ? (
+                  <TaskThinkingPanel thinking={state.thinking} />
+                ) : null}
+
+                {state.status === "loading" && !state.thinking ? (
                   <div className="grid min-h-80 place-items-center">
                     <div className="grid justify-items-center gap-4">
                       <LoaderCircle className="h-7 w-7 animate-spin text-cyan-300" />
@@ -146,7 +151,7 @@ export const ChatInterviewDialog = ({
                   </div>
                 ) : null}
 
-                {state.status === "starting" ? (
+                {state.status === "starting" && !state.thinking ? (
                   <div className="grid min-h-80 place-items-center">
                     <div className="grid justify-items-center gap-4">
                       <LoaderCircle className="h-7 w-7 animate-spin text-emerald-300" />

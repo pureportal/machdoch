@@ -28,6 +28,7 @@ import { useChatSessionController } from "./chat-session/_helpers/use-chat-sessi
 import { useNewestMessageScroll } from "./chat-session/_helpers/use-newest-message-scroll";
 import { AgentComposer } from "./chat-session/components/agent-composer";
 import { AttachmentImagePreviewDialog } from "./chat-session/components/attachment-image-preview-dialog";
+import { ChatInputNeededDialog } from "./chat-session/components/chat-input-needed-dialog";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { MessageMarkdown } from "./chat-session/components/message-markdown";
 import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
@@ -440,6 +441,7 @@ export const AssistantPopupShell = (): JSX.Element => {
         preview={controller.attachmentImagePreview.preview}
         onOpenChange={controller.attachmentImagePreview.onOpenChange}
       />
+      <ChatInputNeededDialog {...controller.inputNeeded} />
     </>
   );
 };

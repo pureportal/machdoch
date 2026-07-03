@@ -207,7 +207,7 @@ describe("loadRuntimeConfig", () => {
     );
 
     expect(config.provider).toBe("claude-cli");
-    expect(config.model).toBe("claude-sonnet-4-6");
+    expect(config.model).toBe("sonnet");
     expect(
       config.providerAvailability.find(
         (entry) => entry.provider === "claude-cli",

@@ -2,37 +2,64 @@ use std::{collections::HashMap, time::Duration};
 
 use super::super::normalize_optional_string;
 use super::{
-    command::run_agent_cli_command, resolve_agent_cli_binary, ProviderRuntimeModel,
-    ProviderRuntimeModelCapabilities,
+    command::run_agent_cli_command,
+    normalize::{is_anthropic_runtime_model, runtime_model_stage},
+    resolve_agent_cli_binary, ProviderRuntimeModel, ProviderRuntimeModelCapabilities,
 };
 
-fn is_copilot_cli_runtime_model(model_id: &str) -> bool {
-    let normalized = model_id.to_ascii_lowercase();
+const CLAUDE_CLI_ALIAS_MODELS: [&str; 7] = [
+    "sonnet",
+    "opus",
+    "haiku",
+    "fable",
+    "sonnet[1m]",
+    "opus[1m]",
+    "opusplan",
+];
 
-    if normalized == "auto" {
-        return true;
-    }
-
-    normalized.starts_with("gpt-")
-        || normalized.starts_with("claude-")
-        || normalized.starts_with("gemini-")
+fn is_claude_cli_alias_model(model_id: &str) -> bool {
+    CLAUDE_CLI_ALIAS_MODELS
+        .iter()
+        .any(|alias| *alias == model_id)
 }
 
-fn create_copilot_cli_runtime_model(model_id: &str) -> ProviderRuntimeModel {
+fn is_claude_cli_runtime_model(model_id: &str) -> bool {
     let normalized = model_id.to_ascii_lowercase();
-    let mut recommended_for = vec!["coding".to_string()];
+
+    is_claude_cli_alias_model(&normalized) || is_anthropic_runtime_model(&normalized)
+}
+
+fn claude_cli_model_sort_rank(model_id: &str) -> usize {
+    CLAUDE_CLI_ALIAS_MODELS
+        .iter()
+        .position(|alias| *alias == model_id)
+        .unwrap_or(CLAUDE_CLI_ALIAS_MODELS.len())
+}
+
+fn create_claude_cli_runtime_model(model_id: &str) -> ProviderRuntimeModel {
+    let normalized = model_id.to_ascii_lowercase();
+    let mut recommended_for = Vec::new();
+
+    if normalized.contains("sonnet")
+        || normalized.contains("opus")
+        || normalized.contains("fable")
+        || normalized.starts_with("claude-")
+    {
+        recommended_for.push("coding".to_string());
+    }
+
+    if normalized.contains("sonnet") || normalized.contains("haiku") {
+        recommended_for.push("fast".to_string());
+    }
 
     if normalized.contains("haiku") {
-        recommended_for.push("fast".to_string());
         recommended_for.push("cheap".to_string());
-    } else if normalized.contains("sonnet") || normalized.contains("gpt-5.2") {
-        recommended_for.push("fast".to_string());
     }
 
     ProviderRuntimeModel {
-        id: normalized,
+        id: normalized.clone(),
         label: None,
-        stage: Some("stable".to_string()),
+        stage: runtime_model_stage(&normalized).or_else(|| Some("stable".to_string())),
         release_date: None,
         recommended_for,
         capabilities: ProviderRuntimeModelCapabilities {
@@ -45,15 +72,12 @@ fn create_copilot_cli_runtime_model(model_id: &str) -> ProviderRuntimeModel {
             voice: Some(false),
             computer_use: Some(false),
         },
-        warnings: vec![
-            "Model availability depends on GitHub Copilot plan and organization policy."
-                .to_string(),
-        ],
+        warnings: Vec::new(),
         source: "provider-probe".to_string(),
     }
 }
 
-fn collect_copilot_cli_help_model_ids(raw: &str) -> Vec<String> {
+fn collect_claude_cli_help_model_ids(raw: &str) -> Vec<String> {
     let mut by_id = HashMap::<String, ()>::new();
     let mut token = String::new();
     let flush_token = |token: &mut String, by_id: &mut HashMap<String, ()>| {
@@ -62,10 +86,16 @@ fn collect_copilot_cli_help_model_ids(raw: &str) -> Vec<String> {
         }
 
         let normalized = token
-            .trim_matches(|character: char| !character.is_ascii_alphanumeric())
+            .trim_matches(|character: char| {
+                !character.is_ascii_alphanumeric()
+                    && character != '-'
+                    && character != '.'
+                    && character != '['
+                    && character != ']'
+            })
             .to_ascii_lowercase();
 
-        if is_copilot_cli_runtime_model(&normalized) {
+        if is_claude_cli_runtime_model(&normalized) {
             by_id.entry(normalized).or_insert(());
         }
 
@@ -73,7 +103,12 @@ fn collect_copilot_cli_help_model_ids(raw: &str) -> Vec<String> {
     };
 
     for character in raw.chars() {
-        if character.is_ascii_alphanumeric() || character == '-' || character == '.' {
+        if character.is_ascii_alphanumeric()
+            || character == '-'
+            || character == '.'
+            || character == '['
+            || character == ']'
+        {
             token.push(character);
         } else {
             flush_token(&mut token, &mut by_id);
@@ -84,41 +119,40 @@ fn collect_copilot_cli_help_model_ids(raw: &str) -> Vec<String> {
 
     let mut ids = by_id.into_keys().collect::<Vec<_>>();
     ids.sort_by(|left, right| {
-        let left_rank = if left == "auto" { 0 } else { 1 };
-        let right_rank = if right == "auto" { 0 } else { 1 };
-
-        left_rank.cmp(&right_rank).then_with(|| left.cmp(right))
+        claude_cli_model_sort_rank(left)
+            .cmp(&claude_cli_model_sort_rank(right))
+            .then_with(|| left.cmp(right))
     });
 
     ids
 }
 
-pub(super) fn parse_copilot_cli_model_catalog(
+pub(super) fn parse_claude_cli_model_catalog(
     raw: &str,
 ) -> Result<Vec<ProviderRuntimeModel>, String> {
-    let ids = collect_copilot_cli_help_model_ids(raw);
+    let ids = collect_claude_cli_help_model_ids(raw);
 
     if ids.is_empty() {
-        return Err("Copilot CLI help output did not include any model IDs.".to_string());
+        return Err("Claude CLI help output did not include any model IDs or aliases.".to_string());
     }
 
     Ok(ids
         .into_iter()
-        .map(|id| create_copilot_cli_runtime_model(&id))
+        .map(|id| create_claude_cli_runtime_model(&id))
         .collect())
 }
 
-pub(super) fn fetch_copilot_cli_model_catalog(
+pub(super) fn fetch_claude_cli_model_catalog(
     env: &HashMap<String, String>,
 ) -> Result<Vec<ProviderRuntimeModel>, String> {
-    let Some(binary) = resolve_agent_cli_binary("copilot-cli", env) else {
+    let Some(binary) = resolve_agent_cli_binary("claude-cli", env) else {
         return Err(
-            "Copilot CLI binary was not found. Configure MACHDOCH_COPILOT_CLI_PATH or install `copilot` on PATH."
+            "Claude CLI binary was not found. Configure MACHDOCH_CLAUDE_CLI_PATH or install `claude` on PATH."
                 .to_string(),
         );
     };
     let attempts: [(&[&str], &str); 2] =
-        [(&["help"], "copilot help"), (&["--help"], "copilot --help")];
+        [(&["--help"], "claude --help"), (&["help"], "claude help")];
     let mut failures = Vec::new();
 
     for (args, label) in attempts {
@@ -126,7 +160,7 @@ pub(super) fn fetch_copilot_cli_model_catalog(
             Ok(output) if output.exit_code == Some(0) => {
                 let combined_output = format!("{}\n{}", output.stdout, output.stderr);
 
-                match parse_copilot_cli_model_catalog(&combined_output) {
+                match parse_claude_cli_model_catalog(&combined_output) {
                     Ok(models) => return Ok(models),
                     Err(error) => failures.push(format!("{label}: {error}")),
                 }
@@ -151,7 +185,7 @@ pub(super) fn fetch_copilot_cli_model_catalog(
     }
 
     Err(format!(
-        "Copilot CLI model discovery failed. {}",
+        "Claude CLI model discovery failed. {}",
         failures.join(" ")
     ))
 }

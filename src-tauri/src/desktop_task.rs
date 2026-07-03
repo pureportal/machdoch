@@ -147,6 +147,7 @@ pub struct InstructionCommandRequest {
 pub struct TaskInterviewCommandRequest {
     workspace_root: String,
     arguments: Vec<String>,
+    task_id: Option<String>,
 }
 
 #[tauri::command]
@@ -383,13 +384,17 @@ pub async fn run_instruction_command(request: InstructionCommandRequest) -> Resu
 
 #[tauri::command]
 pub async fn run_task_interview_command(
+    app_handle: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     request: TaskInterviewCommandRequest,
 ) -> Result<Value, String> {
-    tauri::async_runtime::spawn_blocking(move || execute_task_interview_command(request))
-        .await
-        .map_err(|error| {
-            format!("The task interview command bridge stopped unexpectedly. {error}")
-        })?
+    let window_label = window.label().to_string();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        execute_task_interview_command(app_handle, window_label, request)
+    })
+    .await
+    .map_err(|error| format!("The task interview command bridge stopped unexpectedly. {error}"))?
 }
 
 #[cfg(test)]

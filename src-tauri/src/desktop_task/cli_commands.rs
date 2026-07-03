@@ -20,7 +20,11 @@ use super::{
     diagnostics::{format_command_failure, format_timeout_duration},
     payload::cleanup_temporary_files,
     payload_files::rewrite_task_interview_payload_arguments,
-    process::{hide_child_process_window, terminate_child_process_tree},
+    process::{
+        create_desktop_task_activity, hide_child_process_window, read_stderr,
+        terminate_child_process_tree,
+    },
+    registry::normalize_task_id,
     InstructionCommandRequest, McpCommandRequest, SchedulerCommandRequest,
     TaskInterviewCommandRequest, DESKTOP_TASK_TIMEOUT_MS, DESKTOP_TASK_WAIT_POLL_MS,
 };
@@ -40,6 +44,12 @@ struct AuxiliaryCliSpec {
     command_name: &'static str,
     parse_name: &'static str,
     failure_name: &'static str,
+}
+
+struct AuxiliaryCliProgressContext {
+    app_handle: tauri::AppHandle,
+    window_label: String,
+    task_id: Option<String>,
 }
 
 const SCHEDULER_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
@@ -118,7 +128,8 @@ fn stop_auxiliary_cli_after_wait_error(
 fn run_bounded_auxiliary_cli_command(
     command: &mut Command,
     command_name: &str,
-    timeout_ms: u64,
+    timeout_ms: Option<u64>,
+    progress_context: Option<AuxiliaryCliProgressContext>,
 ) -> Result<AuxiliaryCliOutput, String> {
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     hide_child_process_window(command);
@@ -162,7 +173,23 @@ fn run_bounded_auxiliary_cli_command(
     };
 
     let stdout_worker = thread::spawn(move || read_cli_stream_text(stdout, "stdout"));
-    let stderr_worker = thread::spawn(move || read_cli_stream_text(stderr, "stderr"));
+    let stderr_worker = match progress_context {
+        Some(context) => {
+            let activity = create_desktop_task_activity();
+
+            thread::spawn(move || {
+                read_stderr(
+                    stderr,
+                    context.app_handle,
+                    context.window_label,
+                    context.task_id,
+                    activity,
+                )
+                .map(|lines| lines.join("\n"))
+            })
+        }
+        None => thread::spawn(move || read_cli_stream_text(stderr, "stderr")),
+    };
     let started_at = Instant::now();
     let status = loop {
         match child.try_wait() {
@@ -177,13 +204,17 @@ fn run_bounded_auxiliary_cli_command(
                 ));
             }
             Ok(None) => {
-                if started_at.elapsed() >= Duration::from_millis(timeout_ms) {
+                if timeout_ms
+                    .map(|timeout_ms| started_at.elapsed() >= Duration::from_millis(timeout_ms))
+                    .unwrap_or(false)
+                {
                     terminate_child_process_tree(&mut child);
                     let _ = child.wait();
 
                     let (stdout_text, stderr_text) =
                         join_auxiliary_cli_output(stdout_worker, stderr_worker)?;
                     let failure_tail = format_command_failure(&stderr_text, &stdout_text);
+                    let timeout_ms = timeout_ms.unwrap_or_default();
 
                     return Err(format!(
                         "The {command_name} CLI exceeded the desktop safety timeout of {} and was stopped. {}",
@@ -275,7 +306,8 @@ fn run_auxiliary_json_command(
     let output = run_bounded_auxiliary_cli_command(
         &mut cli_command.command,
         spec.command_name,
-        DESKTOP_TASK_TIMEOUT_MS,
+        Some(DESKTOP_TASK_TIMEOUT_MS),
+        None,
     )?;
 
     finish_auxiliary_command_response(output, spec)
@@ -304,14 +336,18 @@ pub(super) fn execute_instruction_command(
 }
 
 pub(super) fn execute_task_interview_command(
+    app_handle: tauri::AppHandle,
+    window_label: String,
     request: TaskInterviewCommandRequest,
 ) -> Result<Value, String> {
     let workspace_path = resolve_workspace_root_path(&request.workspace_root)?;
     let normalized_workspace_root = workspace_path.display().to_string();
+    let task_id = normalize_task_id(request.task_id.as_deref());
     let (arguments, payload_paths) =
         rewrite_task_interview_payload_arguments(&normalized_workspace_root, request.arguments)?;
     let mut cli_args = vec![
         "--json".to_string(),
+        "--verbose".to_string(),
         "--cwd".to_string(),
         normalized_workspace_root,
         TASK_INTERVIEW_CLI_SPEC.subcommand.to_string(),
@@ -329,7 +365,12 @@ pub(super) fn execute_task_interview_command(
     let output = match run_bounded_auxiliary_cli_command(
         &mut cli_command.command,
         TASK_INTERVIEW_CLI_SPEC.command_name,
-        DESKTOP_TASK_TIMEOUT_MS,
+        None,
+        Some(AuxiliaryCliProgressContext {
+            app_handle,
+            window_label,
+            task_id,
+        }),
     ) {
         Ok(output) => output,
         Err(error) => {
@@ -377,8 +418,9 @@ mod tests {
     #[test]
     fn bounded_auxiliary_cli_command_captures_success_output() {
         let mut command = test_child_command("json");
-        let output = run_bounded_auxiliary_cli_command(&mut command, "scheduler", 5_000)
-            .expect("bounded command should finish");
+        let output =
+            run_bounded_auxiliary_cli_command(&mut command, "scheduler", Some(5_000), None)
+                .expect("bounded command should finish");
 
         assert!(output.status.success());
         assert!(output.stdout.contains(r#"{"ok":true}"#));
@@ -388,7 +430,7 @@ mod tests {
     #[test]
     fn bounded_auxiliary_cli_command_times_out_and_stops_child() {
         let mut command = test_child_command("hang");
-        let error = run_bounded_auxiliary_cli_command(&mut command, "scheduler", 1_000)
+        let error = run_bounded_auxiliary_cli_command(&mut command, "scheduler", Some(1_000), None)
             .expect_err("hanging command should time out");
 
         assert!(error.contains("The scheduler CLI exceeded the desktop safety timeout"));

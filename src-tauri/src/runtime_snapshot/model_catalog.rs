@@ -4,6 +4,7 @@ use super::{
     env::{has_configured_value, resolve_agent_cli_binary},
     ProviderModelCatalogProvider,
 };
+use claude_cli::fetch_claude_cli_model_catalog;
 use codex_cli::fetch_codex_cli_model_catalog;
 use copilot_cli::fetch_copilot_cli_model_catalog;
 use provider_api::{
@@ -11,6 +12,7 @@ use provider_api::{
     fetch_openai_model_catalog,
 };
 
+mod claude_cli;
 mod codex_cli;
 mod command;
 #[cfg(test)]
@@ -135,12 +137,20 @@ pub(super) async fn fetch_provider_model_catalog(
                 return provider_model_catalog_unavailable(provider, &error);
             }
         },
-        "claude-cli" => {
-            return provider_model_catalog_unavailable(
-                provider,
-                "Model catalog discovery is delegated to the external CLI and is not queried by Machdoch.",
-            );
-        }
+        "claude-cli" => match fetch_claude_cli_model_catalog(env) {
+            Ok(models) => {
+                return ProviderModelCatalogProvider {
+                    provider: provider.to_string(),
+                    source: "provider-probe".to_string(),
+                    available: true,
+                    error: None,
+                    models,
+                };
+            }
+            Err(error) => {
+                return provider_model_catalog_unavailable(provider, &error);
+            }
+        },
         _ => {
             return provider_model_catalog_unavailable(provider, "Unsupported provider.");
         }

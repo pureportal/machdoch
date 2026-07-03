@@ -530,6 +530,156 @@ describe("ChatSession component", () => {
     expect(container.querySelector("main")?.className).toContain("min-w-0");
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
+  it("reuses an already blank active session when New is clicked repeatedly", async () => {
+    render(<ChatSession />);
+    await flushShellHydration();
+
+    fireEvent.click(screen.getByRole("button", { name: /^New$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^New$/i }));
+
+    await waitFor(() => {
+      expect(
+        getVisibleSessionButtonLabels().filter(
+          (label) => label === "Open session New session",
+        ),
+      ).toHaveLength(1);
+    });
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("persists queued follow-up messages for running sessions", async () => {
+    const baseState = createInitialShellState();
+    const runningSession = createSession({
+      id: "running-queue-session",
+      manualTitle: "Running queue session",
+      updatedAt: 1_713_260_010_000,
+      messages: [
+        {
+          id: "running-queue-user",
+          taskId: "running-queue-task",
+          role: "user",
+          content: "Keep working",
+          createdAt: 1_713_260_000_000,
+        },
+      ],
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: runningSession.id,
+      sessions: [runningSession],
+    });
+
+    render(<ChatSession />);
+
+    const input = await screen.findByPlaceholderText(
+      /What should machdoch do next\?/i,
+    );
+
+    fireEvent.change(input, {
+      target: { value: "Run this after the current task" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+
+    await waitFor(() => {
+      const storedState = JSON.parse(
+        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "null",
+      ) as ShellPersistedState | null;
+
+      expect(storedState?.queuedSessionMessages[0]?.task).toBe(
+        "Run this after the current task",
+      );
+      expect(storedState?.queuedSessionMessages[0]?.sessionId).toBe(
+        runningSession.id,
+      );
+    });
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("collects repeated input-needed placeholders before submitting", async () => {
+    const runDesktopTaskSpy = vi
+      .spyOn(runtime, "runDesktopTask")
+      .mockImplementation(
+        () => new Promise<DesktopTaskRunResponse>(() => {}),
+      );
+
+    render(<ChatSession />);
+
+    const input = screen.getByPlaceholderText(
+      /What should machdoch do next\?/i,
+    );
+
+    fireEvent.change(input, {
+      target: {
+        value: "Update the [[SCOPE]] docs, then validate [[ scope ]].",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    const valueInput = await screen.findByRole("textbox", {
+      name: "Value for SCOPE",
+    });
+
+    fireEvent.change(valueInput, {
+      target: { value: "release checklist" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    await waitFor(() => {
+      expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(runDesktopTaskSpy.mock.calls[0]?.[1]).toBe(
+      "Update the release checklist docs, then validate release checklist.",
+    );
+
+    runDesktopTaskSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("uses input-needed choices and defaults before submitting", async () => {
+    const runDesktopTaskSpy = vi
+      .spyOn(runtime, "runDesktopTask")
+      .mockImplementation(
+        () => new Promise<DesktopTaskRunResponse>(() => {}),
+      );
+
+    render(<ChatSession />);
+
+    const input = screen.getByPlaceholderText(
+      /What should machdoch do next\?/i,
+    );
+
+    fireEvent.change(input, {
+      target: {
+        value: "Deploy [[ENV=staging|dev,staging,prod]] with [[SCOPE=docs]].",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    const environmentSelect = await screen.findByRole("combobox", {
+      name: "Value for ENV",
+    });
+
+    expect(environmentSelect).toHaveProperty("value", "staging");
+    fireEvent.change(environmentSelect, {
+      target: { value: "prod" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    const scopeInput = await screen.findByRole("textbox", {
+      name: "Value for SCOPE",
+    });
+
+    expect(scopeInput).toHaveProperty("value", "docs");
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    await waitFor(() => {
+      expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(runDesktopTaskSpy.mock.calls[0]?.[1]).toBe(
+      "Deploy prod with docs.",
+    );
+
+    runDesktopTaskSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
   it(
     "shows live thinking updates with a running spinner before the final response arrives",
     async () => {
@@ -1857,6 +2007,171 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "enhances the request before submitting the task",
+    async () => {
+      const originalPrompt = "scan setup";
+      const enhancedPrompt =
+        "Scan this workspace and explain the setup. Include key files and verification notes.";
+      const enhancementExecution = createMockExecutionFixture(
+        "inspect workspace",
+        "/mock/home/path",
+        { mode: "ask" },
+      );
+
+      enhancementExecution.response = {
+        ...enhancementExecution.response,
+        markdown: `<machdoch_enhanced_prompt>${enhancedPrompt}</machdoch_enhanced_prompt>`,
+      };
+
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(async (_workspaceRoot, task, context) => {
+          if (String(task).includes("Enhance the user's Machdoch chat request")) {
+            return {
+              execution: enhancementExecution,
+            };
+          }
+
+          return {
+            execution: createMockExecutionFixture(
+              String(task),
+              "/mock/home/path",
+              { mode: context?.mode },
+            ),
+          };
+        });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prompt enhancement: Off" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Choose Simple enhance" }),
+      );
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: originalPrompt },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(2);
+      });
+
+      expect(runDesktopTaskSpy.mock.calls[0]?.[1]).toContain(
+        "Original user request:\nscan setup",
+      );
+      expect(runDesktopTaskSpy.mock.calls[0]?.[2]).toEqual(
+        expect.objectContaining({ mode: "ask" }),
+      );
+      expect(runDesktopTaskSpy.mock.calls[1]?.[1]).toBe(enhancedPrompt);
+      expect(screen.getAllByText(originalPrompt).length).toBeGreaterThan(0);
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "enhances the request with web search before submitting the task",
+    async () => {
+      const originalPrompt = "compare current auth options";
+      const enhancedPrompt =
+        "Compare current authentication options for this workspace. Include relevant source links that affect the recommendation.";
+      const enhancementExecution = createMockExecutionFixture(
+        "inspect current auth options",
+        "/mock/home/path",
+        { mode: "ask" },
+      );
+
+      enhancementExecution.response = {
+        ...enhancementExecution.response,
+        markdown: `<machdoch_enhanced_prompt>${enhancedPrompt}</machdoch_enhanced_prompt>`,
+      };
+
+      const loadWorkspaceRuntimeSnapshotSpy = vi
+        .spyOn(runtime, "loadWorkspaceRuntimeSnapshot")
+        .mockResolvedValue(
+          createRuntimeSnapshot({
+            providerAvailability: [{ provider: "openai", configured: true }],
+            webSearch: {
+              activeProvider: "perplexity",
+              providerAvailability: [
+                { provider: "perplexity", configured: true },
+                { provider: "tavily", configured: false },
+                { provider: "serper", configured: false },
+              ],
+            },
+          }),
+        );
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(async (_workspaceRoot, task, context) => {
+          if (String(task).includes("Enhance the user's Machdoch chat request")) {
+            return {
+              execution: enhancementExecution,
+            };
+          }
+
+          return {
+            execution: createMockExecutionFixture(
+              String(task),
+              "/mock/home/path",
+              { mode: context?.mode },
+            ),
+          };
+        });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prompt enhancement: Off" }),
+      );
+
+      const webSearchOption = await screen.findByRole("button", {
+        name: "Choose Enhance with web search",
+      });
+
+      expect(webSearchOption).toHaveProperty("disabled", false);
+      fireEvent.click(webSearchOption);
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: originalPrompt },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(2);
+      });
+
+      expect(runDesktopTaskSpy.mock.calls[0]?.[1]).toContain(
+        "Use focused web search",
+      );
+      expect(runDesktopTaskSpy.mock.calls[0]?.[1]).toContain(
+        "Original user request:\ncompare current auth options",
+      );
+      expect(runDesktopTaskSpy.mock.calls[0]?.[2]).toEqual(
+        expect.objectContaining({ mode: "ask" }),
+      );
+      expect(runDesktopTaskSpy.mock.calls[1]?.[1]).toBe(enhancedPrompt);
+      expect(screen.getAllByText(originalPrompt).length).toBeGreaterThan(0);
+
+      loadWorkspaceRuntimeSnapshotSpy.mockRestore();
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "runs the chat interview before submitting the enriched task",
     async () => {
       const finalPrompt = [
@@ -1930,6 +2245,109 @@ describe("ChatSession component", () => {
       expect(
         screen.getAllByText("Implement a billing settings panel.").length,
       ).toBeGreaterThan(0);
+
+      runTaskInterviewSpy.mockRestore();
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "enhances the request before starting chat interview mode",
+    async () => {
+      const originalPrompt = "billing settings";
+      const enhancedPrompt =
+        "Implement a billing settings panel with account-level controls and focused verification.";
+      const finalPrompt = [
+        enhancedPrompt,
+        "",
+        "Interview context for this task:",
+        "Use account-level settings.",
+      ].join("\n");
+      const enhancementExecution = createMockExecutionFixture(
+        "inspect workspace",
+        "/mocked/tauri/path",
+        { mode: "ask" },
+      );
+
+      enhancementExecution.response = {
+        ...enhancementExecution.response,
+        markdown: `<machdoch_enhanced_prompt>${enhancedPrompt}</machdoch_enhanced_prompt>`,
+      };
+
+      const runTaskInterviewSpy = vi
+        .spyOn(runtime, "runTaskInterview")
+        .mockResolvedValue({
+          status: "complete",
+          session: {
+            id: "task-interview-enhanced",
+            prompt: enhancedPrompt,
+            turn: 1,
+            maxTurns: 5,
+            findings: [],
+            assumptions: [],
+            relevantFiles: [],
+            finalSummary: "Use account-level settings.",
+            transcript: [],
+          },
+          fields: [],
+          summary: "Ready to start.",
+          finalPrompt,
+          provider: "openai",
+          model: "gpt-5.5",
+          result: null,
+        });
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(async (_workspaceRoot, task) => {
+          if (String(task).includes("Enhance the user's Machdoch chat request")) {
+            return {
+              execution: enhancementExecution,
+            };
+          }
+
+          return {
+            execution: createMockExecutionFixture(
+              String(task),
+              "/mocked/tauri/path",
+            ),
+          };
+        });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      fireEvent.click(screen.getByRole("button", { name: "Interview" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prompt enhancement: Off" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Choose Simple enhance" }),
+      );
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: originalPrompt },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runTaskInterviewSpy).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(2);
+      });
+
+      expect(runTaskInterviewSpy).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({
+          prompt: enhancedPrompt,
+        }),
+      );
+      expect(runDesktopTaskSpy.mock.calls[1]?.[1]).toBe(finalPrompt);
+      expect(screen.getAllByText(originalPrompt).length).toBeGreaterThan(0);
 
       runTaskInterviewSpy.mockRestore();
       runDesktopTaskSpy.mockRestore();
@@ -4265,6 +4683,84 @@ describe("ChatSession component", () => {
     SLOW_UI_TEST_TIMEOUT_MS,
   );
 
+  it(
+    "keeps pinned sessions above unpinned sessions before status sorting",
+    async () => {
+      const baseState = createInitialShellState();
+      const now = Date.now();
+      const pinnedDoneSession = createSession({
+        id: "pinned-done-sidebar-session",
+        manualTitle: "Pinned done session",
+        pinnedAt: now - 500,
+        updatedAt: now - 10_000,
+        messages: [
+          {
+            id: "pinned-done-user",
+            taskId: "pinned-done-task",
+            role: "user",
+            content: "Finish pinned task",
+            createdAt: now - 10_100,
+          },
+          {
+            id: "pinned-done-agent",
+            taskId: "pinned-done-task",
+            role: "agent",
+            content: "Pinned task finished",
+            createdAt: now - 10_000,
+            source: {
+              kind: "execution",
+              execution: createMockExecutionFixture(
+                "Finish pinned task",
+                "/mocked/tauri/path",
+              ),
+            },
+          },
+        ],
+      });
+      const runningSession = createSession({
+        id: "unpinned-running-sidebar-session",
+        manualTitle: "Unpinned running session",
+        updatedAt: now,
+        messages: [
+          {
+            id: "unpinned-running-user",
+            taskId: "unpinned-running-task",
+            role: "user",
+            content: "Keep running",
+            createdAt: now,
+          },
+        ],
+      });
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: runningSession.id,
+        sessions: [runningSession, pinnedDoneSession],
+      });
+
+      render(<ChatSession />);
+
+      await waitFor(() => {
+        expect(getVisibleSessionButtonLabels()).toEqual([
+          "Open session Pinned done session",
+          "Open session Unpinned running session",
+        ]);
+      });
+      expect(screen.getByText("Unpinned")).toBeDefined();
+      expect(
+        within(getSessionRow("Pinned done session")).getByLabelText(
+          "Session status: Done",
+        ),
+      ).toBeDefined();
+      expect(
+        within(getSessionRow("Unpinned running session")).getByLabelText(
+          "Session status: Running",
+        ),
+      ).toBeDefined();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
   it("opens session actions from the row menu and right click", async () => {
     storeShellState(createStoredShellState());
 
@@ -5899,15 +6395,18 @@ describe("ChatSession component", () => {
       }),
     );
     expect(
-      await screen.findByText(
-        /Latest flagship frontier model for complex reasoning/i,
-      ),
+      await screen.findByRole("button", {
+        name: /Choose OpenAI GPT-5.5/i,
+      }),
     ).toBeDefined();
+    expect(
+      screen.queryByText(/Latest flagship frontier model for complex reasoning/i),
+    ).toBeNull();
     expect(
       screen.queryByText(/Best for:/i),
     ).toBeNull();
     fireEvent.click(
-      await screen.findByRole("button", {
+      screen.getByRole("button", {
         name: /Choose OpenAI GPT-5.5/i,
       }),
     );

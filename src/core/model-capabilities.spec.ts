@@ -37,7 +37,7 @@ describe("model image input capabilities", () => {
 
   it("recognizes configured vision-capable runtime models", () => {
     expect(modelSupportsImageInput("openai", "gpt-5.5")).toBe(true);
-    expect(modelSupportsImageInput("anthropic", "claude-sonnet-4-6")).toBe(
+    expect(modelSupportsImageInput("anthropic", "claude-sonnet-5")).toBe(
       true,
     );
     expect(modelSupportsImageInput("google", "gemini-2.5-flash")).toBe(true);
@@ -57,7 +57,7 @@ describe("model image input capabilities", () => {
       contextWindowTokens: 1_000_000,
     });
     expect(profile?.providerModes).toContain("gemini-function-calling-any");
-    expect(getModelContextWindowTokens("anthropic", "claude-sonnet-4-6")).toBe(
+    expect(getModelContextWindowTokens("anthropic", "claude-sonnet-5")).toBe(
       1_000_000,
     );
   });

@@ -48,7 +48,13 @@ const unrefTimer = (handle: ReturnType<typeof setTimeout>): void => {
   candidate.unref?.();
 };
 
-const normalizeMaxDurationMs = (value: number | undefined): number => {
+const normalizeMaxDurationMs = (
+  value: number | null | undefined,
+): number | undefined => {
+  if (value === null) {
+    return undefined;
+  }
+
   if (!Number.isFinite(value) || value === undefined || value <= 0) {
     return TASK_EXECUTION_TIMEOUT_MS;
   }
@@ -144,7 +150,7 @@ const createLiveExecutionUnavailableMessage = (
 
 const createManagedExecutionSignal = (
   sourceSignal: AbortSignal | undefined,
-  maxDurationMs: number,
+  maxDurationMs: number | undefined,
 ): {
   signal: AbortSignal;
   resetTimeout: () => void;
@@ -165,6 +171,10 @@ const createManagedExecutionSignal = (
   }
 
   const scheduleTimeout = (): void => {
+    if (maxDurationMs === undefined) {
+      return;
+    }
+
     if (timeoutHandle) {
       clearTimeout(timeoutHandle);
     }
@@ -179,12 +189,12 @@ const createManagedExecutionSignal = (
     unrefTimer(timeoutHandle);
   };
 
-  if (!abortController.signal.aborted) {
+  if (!abortController.signal.aborted && maxDurationMs !== undefined) {
     scheduleTimeout();
   }
 
   const resetTimeout = (): void => {
-    if (!abortController.signal.aborted) {
+    if (!abortController.signal.aborted && maxDurationMs !== undefined) {
       scheduleTimeout();
     }
   };

@@ -39,10 +39,17 @@ fn is_numeric_model_version(value: &str) -> bool {
         .all(|part| !part.is_empty() && part.chars().all(|character| character.is_ascii_digit()))
 }
 
+fn is_deprecated_codex_cli_model(model_id: &str) -> bool {
+    matches!(model_id, "gpt-5.2" | "gpt-5.3-codex")
+}
+
 fn is_codex_cli_runtime_model(model_id: &str) -> bool {
     let normalized = model_id.to_ascii_lowercase();
 
-    if normalized == "auto" || looks_like_dated_snapshot(&normalized) {
+    if normalized == "auto"
+        || is_deprecated_codex_cli_model(&normalized)
+        || looks_like_dated_snapshot(&normalized)
+    {
         return false;
     }
 
@@ -60,29 +67,33 @@ fn is_codex_cli_runtime_model(model_id: &str) -> bool {
 
         return match suffix_parts.as_slice() {
             [] => true,
+            ["preview"] => true,
             ["mini"] | ["nano"] => true,
+            ["mini" | "nano", "preview"] => true,
             ["codex", ..] => true,
             _ => false,
         };
     }
 
-    if normalized.starts_with("claude-") {
-        return true;
-    }
+    false
+}
 
-    normalized.starts_with("gemini-")
-        && ![
-            "aqa",
-            "audio",
-            "embedding",
-            "imagen",
-            "image",
-            "live",
-            "tts",
-            "veo",
-        ]
-        .iter()
-        .any(|part| normalized.contains(part))
+fn entry_marks_model_deprecated(entry: Option<&serde_json::Value>) -> bool {
+    entry
+        .and_then(|entry| {
+            json_string_from_keys(
+                entry,
+                &[
+                    "stage",
+                    "lifecycle",
+                    "status",
+                    "availability",
+                    "releaseStage",
+                    "release_stage",
+                ],
+            )
+        })
+        .is_some_and(|value| value.to_ascii_lowercase().contains("deprecated"))
 }
 
 fn create_codex_cli_runtime_model(
@@ -96,8 +107,6 @@ fn create_codex_cli_runtime_model(
         || normalized.contains("haiku")
         || normalized.contains("flash");
     let is_text_only_preview = normalized.contains("codex-spark");
-    let is_cross_provider_model =
-        normalized.starts_with("claude-") || normalized.starts_with("gemini-");
     let computer_use = normalized.starts_with("gpt-5.5") || normalized.starts_with("gpt-5.4");
     let mut recommended_for = vec!["coding".to_string()];
 
@@ -132,14 +141,11 @@ fn create_codex_cli_runtime_model(
             .or_else(|| json_date_prefix(entry, "createdAt"))
             .or_else(|| json_date_prefix(entry, "created_at"))
     });
-    let description = entry.and_then(|entry| json_string(entry, "description"));
-
     ProviderRuntimeModel {
         id: normalized,
         label,
         stage,
         release_date,
-        description,
         recommended_for,
         capabilities: ProviderRuntimeModelCapabilities {
             image_input: Some(!is_text_only_preview),
@@ -176,11 +182,6 @@ fn create_codex_cli_runtime_model(
                 "Research preview model; verify local Codex CLI availability before production use."
                     .to_string(),
             ]
-        } else if is_cross_provider_model {
-            vec![
-                "Non-OpenAI Codex CLI models require matching Codex model_provider configuration and credentials."
-                    .to_string(),
-            ]
         } else {
             Vec::new()
         },
@@ -199,6 +200,10 @@ fn add_codex_cli_catalog_model(
     let normalized = normalized.to_ascii_lowercase();
 
     if !is_codex_cli_runtime_model(&normalized) {
+        return;
+    }
+
+    if entry_marks_model_deprecated(entry) {
         return;
     }
 

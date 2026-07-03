@@ -43,6 +43,9 @@ describe("provider model reasoning modes", () => {
       getReasoningModesForProviderModel("anthropic", "claude-opus-4-8"),
     ).toEqual(["default", "low", "medium", "high", "xhigh", "max"]);
     expect(
+      getReasoningModesForProviderModel("anthropic", "claude-sonnet-5"),
+    ).toEqual(["default", "low", "medium", "high", "xhigh", "max"]);
+    expect(
       getReasoningModesForProviderModel("anthropic", "claude-sonnet-4-6"),
     ).toEqual(["default", "low", "medium", "high", "max"]);
     expect(
@@ -74,8 +77,8 @@ describe("provider model reasoning modes", () => {
       "xhigh",
     ]);
     expect(
-      getReasoningModesForProviderModel("claude-cli", "claude-sonnet-4-6"),
-    ).toEqual(["default", "low", "medium", "high", "max"]);
+      getReasoningModesForProviderModel("claude-cli", "sonnet"),
+    ).toEqual(["default", "low", "medium", "high", "xhigh", "max"]);
     expect(getReasoningModesForProviderModel("copilot-cli", "auto")).toEqual([
       "default",
       "low",

@@ -523,7 +523,7 @@ export interface TaskExecutionOptions {
   instructionAudience?: InstructionTargetAudience;
   conversationContext?: TaskConversationContext;
   imageInputs?: AgentModelImageInput[];
-  maxDurationMs?: number;
+  maxDurationMs?: number | null;
 }
 
 export interface TaskExecutionResult {

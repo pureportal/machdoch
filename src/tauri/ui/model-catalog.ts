@@ -11,13 +11,11 @@ export type CatalogProviderId = RuntimeProvider;
 export interface CatalogModel {
   id: string;
   label: string;
-  description?: string;
 }
 
 export interface RuntimeCatalogModel {
   id: string;
   label?: string;
-  description?: string;
   stage?: string;
   releaseDate?: string;
 }
@@ -59,12 +57,12 @@ export const PROVIDER_LABELS: Record<RuntimeProvider, string> = {
   "copilot-cli": "Copilot CLI",
 };
 
-const MAX_MODELS_PER_PROVIDER = 8;
-const MAX_CODEX_CLI_MODELS = 12;
+const MAX_MODELS_PER_PROVIDER = Number.MAX_SAFE_INTEGER;
+const MAX_CODEX_CLI_MODELS = Number.MAX_SAFE_INTEGER;
 const MAX_LANGDOCK_MODELS = Number.MAX_SAFE_INTEGER;
 
 const OPENAI_RUNTIME_MODEL_PATTERN =
-  /^gpt-\d+(?:\.\d+)?(?:-(?:mini|nano))?$/u;
+  /^gpt-(\d+)(?:\.\d+)?(?:-(?:mini|nano))?(?:-preview)?$/u;
 
 const OPENAI_EXCLUDED_MODEL_ID_PARTS = [
   "audio",
@@ -151,22 +149,6 @@ const looksLikeDatedSnapshot = (modelId: string): boolean => {
   return /(?:^|-)\d{8}$/u.test(modelId);
 };
 
-const inferReleaseDateFromModelId = (modelId: string): string | undefined => {
-  const hyphenatedDate = modelId.match(/(?:^|-)(\d{4})-(\d{2})-(\d{2})$/u);
-
-  if (hyphenatedDate) {
-    return `${hyphenatedDate[1]}-${hyphenatedDate[2]}-${hyphenatedDate[3]}`;
-  }
-
-  const compactDate = modelId.match(/(?:^|-)(\d{4})(\d{2})(\d{2})$/u);
-
-  if (compactDate) {
-    return `${compactDate[1]}-${compactDate[2]}-${compactDate[3]}`;
-  }
-
-  return undefined;
-};
-
 const parseReleaseTime = (date: string | undefined): number | null => {
   if (!date) {
     return null;
@@ -177,32 +159,94 @@ const parseReleaseTime = (date: string | undefined): number | null => {
   return Number.isFinite(time) ? time : null;
 };
 
-const getReleaseTime = (model: RuntimeCatalogModel): number | null => {
-  return (
-    parseReleaseTime(model.releaseDate) ??
-    parseReleaseTime(inferReleaseDateFromModelId(model.id))
+const parseVersionRank = (version: string): number | null => {
+  const parts = version.split(".");
+
+  if (
+    parts.length === 0 ||
+    parts.some(
+      (part) =>
+        part.length === 0 ||
+        !part.split("").every((character) => /\d/u.test(character)),
+    )
+  ) {
+    return null;
+  }
+
+  return parts.reduce(
+    (rank, part, index) =>
+      rank + Number.parseInt(part, 10) / Math.max(1, 100 ** index),
+    0,
   );
 };
 
-const isModernOpenAiRuntimeModel = (modelId: string): boolean => {
+const getModelVersionRank = (modelId: string): number | null => {
   const normalized = normalizeModelId(modelId);
 
+  const openAiMatch = normalized.match(/^gpt-(\d+(?:\.\d+)?)/u);
+
+  if (openAiMatch) {
+    return parseVersionRank(openAiMatch[1] ?? "");
+  }
+
+  const googleMatch = normalized.match(/^gemini-(\d+(?:\.\d+)?)/u);
+
+  if (googleMatch) {
+    return parseVersionRank(googleMatch[1] ?? "");
+  }
+
+  const anthropicCanonicalMatch = normalized.match(
+    /^claude-(?:fable|opus|sonnet|haiku)-(\d+)(?:-(\d+))?/u,
+  );
+
+  if (anthropicCanonicalMatch) {
+    return (
+      Number.parseInt(anthropicCanonicalMatch[1] ?? "0", 10) +
+      Number.parseInt(anthropicCanonicalMatch[2] ?? "0", 10) / 100
+    );
+  }
+
+  const anthropicAlternateMatch = normalized.match(
+    /^claude-(\d+)(?:-(\d+))?-(?:fable|opus|sonnet|haiku)/u,
+  );
+
+  if (anthropicAlternateMatch) {
+    return (
+      Number.parseInt(anthropicAlternateMatch[1] ?? "0", 10) +
+      Number.parseInt(anthropicAlternateMatch[2] ?? "0", 10) / 100
+    );
+  }
+
+  return null;
+};
+
+const getReleaseTime = (model: RuntimeCatalogModel): number | null =>
+  parseReleaseTime(model.releaseDate);
+
+const isModernOpenAiRuntimeModel = (modelId: string): boolean => {
+  const normalized = normalizeModelId(modelId);
+  const match = normalized.match(OPENAI_RUNTIME_MODEL_PATTERN);
+
   if (
+    !match ||
     looksLikeDatedSnapshot(normalized) ||
     OPENAI_EXCLUDED_MODEL_ID_PARTS.some((part) => normalized.includes(part))
   ) {
     return false;
   }
 
-  return OPENAI_RUNTIME_MODEL_PATTERN.test(normalized);
+  return Number.parseInt(match[1] ?? "0", 10) >= 5;
 };
 
 const isModernAnthropicRuntimeModel = (modelId: string): boolean => {
   const normalized = normalizeModelId(modelId);
 
   return (
+    /^claude-(?:fable|sonnet)-5(?:-\d{8})?$/u.test(normalized) ||
     /^claude-(?:opus|sonnet|haiku)-4-\d+(?:-\d{8})?$/u.test(normalized) ||
-    /^claude-4-\d+-(?:opus|sonnet|haiku)(?:-\d{8})?$/u.test(normalized)
+    /^claude-(?:5|4-\d+)-(?:fable|opus|sonnet|haiku)(?:-\d{8})?$/u.test(
+      normalized,
+    )
   );
 };
 
@@ -217,27 +261,97 @@ const isModernGoogleRuntimeModel = (modelId: string): boolean => {
     return false;
   }
 
-  return /^gemini-\d+(?:\.\d+)?-(?:pro|flash|flash-lite)(?:-preview)?$/u.test(
-    normalized,
+  return (
+    /^gemini-\d+(?:\.\d+)?-(?:pro|flash|flash-lite)(?:-(?:preview|latest)(?:-\d{2}-\d{4})?)?$/u.test(
+      normalized,
+    ) || /^gemini-(?:pro|flash|flash-lite)-latest$/u.test(normalized)
   );
 };
 
 const isModernLangdockRuntimeModel = (modelId: string): boolean => {
   const normalized = normalizeModelId(modelId);
 
-  return (
-    normalized.length > 0 &&
-    !LANGDOCK_EXCLUDED_MODEL_ID_PARTS.some((part) =>
-      normalized.includes(part),
-    )
-  );
+  if (
+    normalized.length === 0 ||
+    looksLikeDatedSnapshot(normalized) ||
+    LANGDOCK_EXCLUDED_MODEL_ID_PARTS.some((part) => normalized.includes(part))
+  ) {
+    return false;
+  }
+
+  return ![
+    /^gpt-[34](?:[.-]|$)/u,
+    /^claude-(?:[123]|(?:opus|sonnet|haiku)-[123])(?:-|$)/u,
+    /^gemini-(?:1|2(?:\.0|\.1)?)(?:-|$)/u,
+  ].some((pattern) => pattern.test(normalized));
+};
+
+const isNumericModelVersion = (version: string): boolean => {
+  return version
+    .split(".")
+    .every(
+      (part) =>
+        part.length > 0 &&
+        part.split("").every((character) => /\d/u.test(character)),
+    );
+};
+
+const isModernCodexCliRuntimeModel = (modelId: string): boolean => {
+  const normalized = normalizeModelId(modelId);
+
+  if (
+    normalized === "auto" ||
+    normalized === "gpt-5.2" ||
+    normalized === "gpt-5.3-codex" ||
+    looksLikeDatedSnapshot(normalized)
+  ) {
+    return false;
+  }
+
+  const suffix = normalized.startsWith("gpt-")
+    ? normalized.slice("gpt-".length)
+    : null;
+
+  if (!suffix) {
+    return false;
+  }
+
+  const [version, ...suffixParts] = suffix.split("-");
+
+  if (!version || !isNumericModelVersion(version)) {
+    return false;
+  }
+
+  const majorVersion = Number.parseInt(version.split(".")[0] ?? "0", 10);
+
+  if (majorVersion < 5) {
+    return false;
+  }
+
+  if (suffixParts.length === 0) {
+    return true;
+  }
+
+  if (suffixParts.length === 1) {
+    return ["mini", "nano", "preview"].includes(suffixParts[0] ?? "");
+  }
+
+  if (
+    suffixParts.length === 2 &&
+    ["mini", "nano"].includes(suffixParts[0] ?? "") &&
+    suffixParts[1] === "preview"
+  ) {
+    return true;
+  }
+
+  return suffixParts[0] === "codex";
 };
 
 const isModernRuntimeModel = (
   provider: RuntimeProvider,
   model: RuntimeCatalogModel,
 ): boolean => {
-  if (model.stage === "deprecated") {
+  if (model.stage?.trim().toLowerCase().includes("deprecated")) {
     return false;
   }
 
@@ -251,6 +365,7 @@ const isModernRuntimeModel = (
     case "langdock":
       return isModernLangdockRuntimeModel(model.id);
     case "codex-cli":
+      return isModernCodexCliRuntimeModel(model.id);
     case "claude-cli":
     case "copilot-cli":
       return true;
@@ -263,7 +378,6 @@ const toCatalogModel = (model: RuntimeCatalogModel): CatalogModel => {
   return {
     id,
     label: model.label?.trim() || formatModelLabel(id),
-    ...(model.description?.trim() ? { description: model.description.trim() } : {}),
   };
 };
 
@@ -279,22 +393,6 @@ const getModelLimitForProvider = (provider: RuntimeProvider): number => {
   return MAX_MODELS_PER_PROVIDER;
 };
 
-const mergeCatalogModels = (
-  models: readonly CatalogModel[],
-  fallbackModels: readonly CatalogModel[],
-  limit: number,
-): CatalogModel[] => {
-  const byId = new Map<string, CatalogModel>();
-
-  for (const model of [...models, ...fallbackModels]) {
-    if (!byId.has(model.id)) {
-      byId.set(model.id, model);
-    }
-  }
-
-  return [...byId.values()].slice(0, limit);
-};
-
 const getStaticCatalogModelsForProvider = (
   provider: RuntimeProvider,
 ): CatalogModel[] => {
@@ -302,7 +400,6 @@ const getStaticCatalogModelsForProvider = (
     .map((model) => ({
       id: model.id,
       label: model.label,
-      description: model.description,
     }))
     .slice(0, getModelLimitForProvider(provider));
 };
@@ -346,6 +443,23 @@ const getRuntimeCatalogModelsForProvider = (
         }
       }
 
+      const leftVersionRank = getModelVersionRank(left.id);
+      const rightVersionRank = getModelVersionRank(right.id);
+
+      if (leftVersionRank !== null || rightVersionRank !== null) {
+        if (leftVersionRank === null) {
+          return 1;
+        }
+
+        if (rightVersionRank === null) {
+          return -1;
+        }
+
+        if (leftVersionRank !== rightVersionRank) {
+          return rightVersionRank - leftVersionRank;
+        }
+      }
+
       const leftRank = staticOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER;
       const rightRank = staticOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER;
 
@@ -379,14 +493,6 @@ export const getCatalogModelsForProvider = (
     );
 
     if (liveModels.length > 0) {
-      if (provider === "codex-cli") {
-        return mergeCatalogModels(
-          liveModels,
-          staticModels,
-          getModelLimitForProvider(provider),
-        );
-      }
-
       return liveModels;
     }
   }

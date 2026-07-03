@@ -185,15 +185,10 @@ export const SessionModelPicker = ({
                         {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
                       </span>
 
-                      <span className="grid min-w-0 gap-1">
+                      <span className="grid min-w-0">
                         <span className="min-w-0 truncate text-sm font-semibold text-slate-100">
                           {model.label}
                         </span>
-                        {model.description ? (
-                          <span className="text-xs leading-5 text-slate-500">
-                            {model.description}
-                          </span>
-                        ) : null}
                       </span>
                     </button>
                   );

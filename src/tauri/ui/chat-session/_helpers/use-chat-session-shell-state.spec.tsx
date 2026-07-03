@@ -807,6 +807,90 @@ describe("useChatSessionShellState", () => {
     expect(mergedSession?.pinnedAt).toBe(300);
   });
 
+  it("keeps queued messages when merging with external session metadata", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-queued-merge",
+      manualTitle: "Queued merge",
+      updatedAt: 100,
+    });
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    };
+    const queuedMessage = {
+      id: "queued-follow-up",
+      sessionId: session.id,
+      task: "Run the queued follow-up",
+      contextAttachments: [],
+      createdAt: 200,
+      updatedAt: 200,
+    };
+    const mergedState = mergeShellStateForPersistence(
+      {
+        ...storedBaseState,
+        queuedSessionMessages: [queuedMessage],
+      },
+      storedBaseState,
+      {
+        ...storedBaseState,
+        sessions: [
+          {
+            ...session,
+            pinnedAt: 300,
+            updatedAt: 300,
+          },
+        ],
+      },
+    );
+
+    expect(mergedState.queuedSessionMessages).toEqual([queuedMessage]);
+    expect(mergedState.sessions[0]?.pinnedAt).toBe(300);
+  });
+
+  it("does not resurrect queued messages that were removed during dispatch", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-queued-dispatch",
+      manualTitle: "Queued dispatch",
+      updatedAt: 100,
+    });
+    const queuedMessage = {
+      id: "queued-dispatched",
+      sessionId: session.id,
+      task: "Dispatch me once",
+      contextAttachments: [],
+      createdAt: 200,
+      updatedAt: 200,
+    };
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+      queuedSessionMessages: [queuedMessage],
+    };
+    const mergedState = mergeShellStateForPersistence(
+      {
+        ...storedBaseState,
+        queuedSessionMessages: [],
+      },
+      storedBaseState,
+      {
+        ...storedBaseState,
+        queuedSessionMessages: [
+          {
+            ...queuedMessage,
+            task: "Edited elsewhere",
+            updatedAt: 300,
+          },
+        ],
+      },
+    );
+
+    expect(mergedState.queuedSessionMessages).toEqual([]);
+  });
+
   it("keeps the window-local active session stable when persisted activeSessionId changes", async () => {
     const baseState = createInitialShellState();
     const firstSession = createSession({

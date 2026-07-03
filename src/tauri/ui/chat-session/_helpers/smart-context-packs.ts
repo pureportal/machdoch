@@ -152,6 +152,13 @@ export const extractSmartContextPackVariables = (
 
   for (const value of values) {
     for (const match of value.matchAll(variablePattern)) {
+      const startIndex = match.index ?? 0;
+      const endIndex = startIndex + (match[0]?.length ?? 0);
+
+      if (value[startIndex - 1] === "{" || value[endIndex] === "}") {
+        continue;
+      }
+
       const name = normalizeVariableName(match[1] ?? "");
       const key = name.toLowerCase();
 
@@ -193,16 +200,29 @@ const replaceSmartContextPackVariables = (
   variables: SmartContextPackVariable[],
   variableValues: Record<string, string>,
 ): string => {
-  return variables.reduce((current, variable) => {
+  const replacementByName = new Map<string, string>();
+
+  for (const variable of variables) {
     const valueForVariable =
       variableValues[variable.name]?.trim() ?? variable.defaultValue ?? "";
 
-    if (!valueForVariable) {
-      return current;
+    if (valueForVariable) {
+      replacementByName.set(variable.name, valueForVariable);
     }
+  }
 
-    return current.replaceAll(`{${variable.name}}`, valueForVariable);
-  }, value);
+  return value.replace(
+    /\{([A-Za-z][A-Za-z0-9_-]{0,39})\}/gu,
+    (raw, name: string, offset: number, fullValue: string) => {
+      const endIndex = offset + raw.length;
+
+      if (fullValue[offset - 1] === "{" || fullValue[endIndex] === "}") {
+        return raw;
+      }
+
+      return replacementByName.get(name) ?? raw;
+    },
+  );
 };
 
 export const getSmartContextPackMissingVariableNames = (

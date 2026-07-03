@@ -5,7 +5,7 @@ import {
 } from "./model-catalog";
 
 describe("provider model catalog", () => {
-  it("shows curated Codex CLI fallback models without Copilot CLI auto selection", () => {
+  it("shows curated Codex CLI fallback models without cross-provider choices", () => {
     expect(
       getCatalogModelsForProvider("codex-cli").map((model) => model.id),
     ).toEqual([
@@ -13,10 +13,6 @@ describe("provider model catalog", () => {
       "gpt-5.4",
       "gpt-5.4-mini",
       "gpt-5.3-codex-spark",
-      "claude-opus-4-8",
-      "claude-sonnet-4-6",
-      "gemini-3.1-pro-preview",
-      "gemini-3.5-flash",
     ]);
 
     expect(
@@ -26,11 +22,7 @@ describe("provider model catalog", () => {
     ).toBe(false);
     expect(
       getCatalogModelsForProvider("claude-cli").map((model) => model.id),
-    ).toEqual([
-      "claude-opus-4-8",
-      "claude-sonnet-4-6",
-      "claude-haiku-4-5",
-    ]);
+    ).toEqual(["sonnet", "opus", "haiku", "fable"]);
     expect(
       getCatalogModelsForProvider("copilot-cli").map((model) => model.id),
     ).toEqual([
@@ -44,7 +36,7 @@ describe("provider model catalog", () => {
     ]);
   });
 
-  it("keeps live Codex CLI models while appending curated custom-provider options", () => {
+  it("treats live Codex CLI models as authoritative", () => {
     const snapshot = {
       generatedAt: 1,
       providers: [
@@ -56,6 +48,17 @@ describe("provider model catalog", () => {
             { id: "gpt-5.5", label: "GPT-5.5" },
             { id: "gpt-5.4", label: "GPT-5.4" },
             { id: "gpt-5.4-mini", label: "GPT-5.4 mini" },
+            { id: "gpt-5.6-preview", label: "GPT-5.6 Preview" },
+            { id: "gpt-5.3-codex-spark", label: "GPT-5.3 Codex Spark" },
+            { id: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
+            { id: "gpt-5.2", label: "GPT-5.2" },
+            {
+              id: "gpt-5.1",
+              label: "GPT-5.1",
+              stage: "legacy-deprecated",
+            },
+            { id: "claude-opus-4-8", label: "Claude Opus 4.8" },
+            { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
           ],
         },
       ],
@@ -66,14 +69,11 @@ describe("provider model catalog", () => {
         (model) => model.id,
       ),
     ).toEqual([
+      "gpt-5.6-preview",
       "gpt-5.5",
       "gpt-5.4",
       "gpt-5.4-mini",
       "gpt-5.3-codex-spark",
-      "claude-opus-4-8",
-      "claude-sonnet-4-6",
-      "gemini-3.1-pro-preview",
-      "gemini-3.5-flash",
     ]);
   });
 
@@ -90,6 +90,8 @@ describe("provider model catalog", () => {
             { id: "gpt-4o-realtime-preview" },
             { id: "gpt-5.5-audio-preview" },
             { id: "computer-use-preview" },
+            { id: "gpt-4.1" },
+            { id: "gpt-5.6-preview", releaseDate: "2026-06-01" },
             { id: "o4-mini" },
           ],
         },
@@ -98,7 +100,40 @@ describe("provider model catalog", () => {
 
     expect(
       getCatalogModelsForProvider("openai", snapshot).map((model) => model.id),
-    ).toEqual(["gpt-5.4-mini"]);
+    ).toEqual(["gpt-5.6-preview", "gpt-5.4-mini"]);
+  });
+
+  it("keeps current Anthropic runtime models including Claude 5 families", () => {
+    const snapshot = {
+      generatedAt: 1,
+      providers: [
+        {
+          provider: "anthropic",
+          source: "provider-api",
+          available: true,
+          models: [
+            { id: "claude-3-7-sonnet-20250219" },
+            { id: "claude-sonnet-5" },
+            { id: "claude-fable-5" },
+            { id: "claude-opus-4-8" },
+            { id: "claude-haiku-4-5" },
+            { id: "claude-sonnet-4-5-20250929" },
+          ],
+        },
+      ],
+    } satisfies ProviderModelCatalogSnapshot;
+
+    expect(
+      getCatalogModelsForProvider("anthropic", snapshot).map(
+        (model) => model.id,
+      ),
+    ).toEqual([
+      "claude-sonnet-5",
+      "claude-fable-5",
+      "claude-opus-4-8",
+      "claude-haiku-4-5",
+      "claude-sonnet-4-5-20250929",
+    ]);
   });
 
   it("caps Google live catalogs to the newest mainline Gemini models", () => {
@@ -115,9 +150,12 @@ describe("provider model catalog", () => {
             { id: "gemini-2.5-flash" },
             { id: "gemini-2.5-flash-lite" },
             { id: "gemini-3-flash-preview" },
+            { id: "gemini-3.5-flash-preview-09-2025" },
             { id: "gemini-3.1-pro-preview" },
+            { id: "gemini-3.1-flash-latest" },
             { id: "gemini-3.1-flash-lite" },
             { id: "gemini-3.5-flash" },
+            { id: "gemini-flash-latest" },
             { id: "gemini-3.5-flash-tts-preview" },
             { id: "gemini-live-2.5-flash-preview" },
           ],
@@ -129,12 +167,15 @@ describe("provider model catalog", () => {
       getCatalogModelsForProvider("google", snapshot).map((model) => model.id),
     ).toEqual([
       "gemini-3.5-flash",
+      "gemini-3.5-flash-preview-09-2025",
       "gemini-3.1-flash-lite",
       "gemini-3.1-pro-preview",
+      "gemini-3.1-flash-latest",
       "gemini-3-flash-preview",
       "gemini-2.5-flash-lite",
       "gemini-2.5-pro",
       "gemini-2.5-flash",
+      "gemini-flash-latest",
     ]);
   });
 
@@ -152,8 +193,10 @@ describe("provider model catalog", () => {
             { id: "gpt-5.4" },
             { id: "gpt-5.4-mini" },
             { id: "gpt-5.2-pro" },
+            { id: "gpt-4.1" },
             { id: "o4-mini" },
             { id: "langdock-llama-3.3-70b-2" },
+            { id: "claude-3-7-sonnet-20250219" },
             { id: "langdock-image-generator" },
           ],
         },

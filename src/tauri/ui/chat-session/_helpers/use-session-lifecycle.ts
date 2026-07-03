@@ -6,10 +6,12 @@ import {
   isQuickVoiceSession,
   normalizeSessionTags,
   sortSessionsByUpdatedAt,
+  type ChatSessionRecord,
 } from "../../chat-session.model";
 import {
   getDefaultModelForProvider,
 } from "../../model-catalog";
+import { normalizeSessionReasoningOverride } from "./session-reasoning";
 import {
   createSessionExportPayload,
   duplicateSessionRecord,
@@ -30,6 +32,22 @@ export interface SessionLifecycleActions {
   importSessions: (file: File) => void;
 }
 
+const isReusableNewSession = (session: ChatSessionRecord): boolean => {
+  return (
+    !isQuickVoiceSession(session) &&
+    typeof session.archivedAt !== "number" &&
+    typeof session.pinnedAt !== "number" &&
+    !session.manualTitle?.trim() &&
+    session.tags.length === 0 &&
+    session.messages.length === 0 &&
+    session.draft.trim().length === 0 &&
+    session.draftContextAttachments.length === 0 &&
+    session.promptHistory.length === 0 &&
+    session.promptContextHistory.length === 0 &&
+    session.sessionMemory.length === 0
+  );
+};
+
 export const useSessionLifecycle = (options: {
   state: ChatSessionShellStateController;
   providerChooserState: ProviderChooserState;
@@ -41,32 +59,65 @@ export const useSessionLifecycle = (options: {
   return useMemo(
     () => ({
       createNewSession: (): void => {
-        const provider =
-          providerChooserState.chooserProviders.find(
-            (entry) => entry === state.shellState.lastSelectedProvider,
-          ) ??
-          providerChooserState.chooserProviders[0] ??
-            state.shellState.lastSelectedProvider;
-        const session = createSession({
-          workspace: defaultNewSessionWorkspace,
-          provider,
-          ...(state.shellState.lastSelectedMode
-            ? { mode: state.shellState.lastSelectedMode }
-            : {}),
-          ...(state.shellState.lastSelectedReasoning
-            ? { reasoning: state.shellState.lastSelectedReasoning }
-            : {}),
-          model:
-            state.shellState.lastSelectedModelByProvider[provider] ??
-            getDefaultModelForProvider(provider),
-        });
+        let nextActiveSessionId = state.activeSessionId;
 
-        state.applyShellState((prev) => ({
-          ...prev,
-          activeSessionId: session.id,
-          sessions: [session, ...prev.sessions],
-        }));
-        state.setActiveSessionId(session.id);
+        state.applyShellState((prev) => {
+          const currentActiveSession =
+            prev.sessions.find((session) => session.id === state.activeSessionId) ??
+            prev.sessions.find((session) => session.id === prev.activeSessionId);
+          const reusableSession =
+            (currentActiveSession && isReusableNewSession(currentActiveSession)
+              ? currentActiveSession
+              : undefined) ??
+            sortSessionsByUpdatedAt(prev.sessions).find(isReusableNewSession);
+
+          if (reusableSession) {
+            nextActiveSessionId = reusableSession.id;
+
+            if (prev.activeSessionId === reusableSession.id) {
+              return prev;
+            }
+
+            return {
+              ...prev,
+              activeSessionId: reusableSession.id,
+            };
+          }
+
+          const provider =
+            providerChooserState.chooserProviders.find(
+              (entry) => entry === prev.lastSelectedProvider,
+            ) ??
+            providerChooserState.chooserProviders[0] ??
+              prev.lastSelectedProvider;
+          const model =
+            prev.lastSelectedModelByProvider[provider] ??
+            getDefaultModelForProvider(provider);
+          const reasoning = normalizeSessionReasoningOverride(
+            prev.lastSelectedReasoning,
+            provider,
+            model,
+          );
+          const session = createSession({
+            workspace:
+              prev.recentWorkspaces[0] ??
+              currentActiveSession?.workspace ??
+              defaultNewSessionWorkspace,
+            provider,
+            ...(prev.lastSelectedMode ? { mode: prev.lastSelectedMode } : {}),
+            ...(reasoning ? { reasoning } : {}),
+            model,
+          });
+
+          nextActiveSessionId = session.id;
+
+          return {
+            ...prev,
+            activeSessionId: session.id,
+            sessions: [session, ...prev.sessions],
+          };
+        });
+        state.setActiveSessionId(nextActiveSessionId);
       },
       deleteSession: (sessionId: string): void => {
         let nextActiveSessionId = state.activeSessionId;
@@ -85,16 +136,21 @@ export const useSessionLifecycle = (options: {
           );
 
           if (remainingSessions.length === 0) {
+            const provider = prev.lastSelectedProvider;
+            const model =
+              prev.lastSelectedModelByProvider[provider] ??
+              getDefaultModelForProvider(provider);
+            const reasoning = normalizeSessionReasoningOverride(
+              prev.lastSelectedReasoning,
+              provider,
+              model,
+            );
             const replacement = createSession({
               workspace: defaultNewSessionWorkspace,
-              provider: prev.lastSelectedProvider,
+              provider,
               ...(prev.lastSelectedMode ? { mode: prev.lastSelectedMode } : {}),
-              ...(prev.lastSelectedReasoning
-                ? { reasoning: prev.lastSelectedReasoning }
-                : {}),
-              model:
-                prev.lastSelectedModelByProvider[prev.lastSelectedProvider] ??
-                getDefaultModelForProvider(prev.lastSelectedProvider),
+              ...(reasoning ? { reasoning } : {}),
+              model,
             });
             nextActiveSessionId = replacement.id;
 

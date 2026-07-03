@@ -47,6 +47,7 @@ import {
   removeRecentWorkspace,
   type ChatSessionContextAttachment,
   type ChatSessionMessage,
+  type ChatSessionQueuedMessage,
   type ChatSessionRecord,
   type ShellPersistedState,
   type SmartContextPack,
@@ -55,6 +56,7 @@ import {
 import {
   type RuntimeProvider,
 } from "../../model-catalog";
+import { normalizeReasoningModeForProvider } from "../../reasoning-options";
 import {
   cancelDesktopTask,
   createInstruction,
@@ -68,6 +70,7 @@ import {
   openWorkspacePath,
   resolveAttachedImagePreviewSource,
   resolveDroppedPaths,
+  runDesktopTask,
   runTaskInterview,
   saveInstruction,
   saveClipboardImageAttachment,
@@ -117,10 +120,19 @@ import {
   type SaveSmartContextPackInput,
 } from "./smart-context-packs";
 import {
+  createConversationContextFromSession,
   getEffectiveSessionMode,
   removeSessionModeOverride,
   RUN_MODE_META,
 } from "./session-shell";
+import {
+  createPromptEnhancementTask,
+  extractEnhancedPrompt,
+  PROMPT_ENHANCEMENT_LABELS,
+  type ActivePromptEnhancementMode,
+  type PromptEnhancementMode,
+} from "./prompt-enhancement";
+import { normalizeSessionReasoningOverride } from "./session-reasoning";
 import {
   createDefaultRalphInputValues,
   validateRalphInputFieldValues,
@@ -132,6 +144,11 @@ import {
   type ChatInterviewDialogState,
   type ChatInterviewStartContext,
 } from "./chat-interview";
+import {
+  extractChatInputNeededPlaceholders,
+  replaceChatInputNeededPlaceholders,
+  type ChatInputNeededPlaceholder,
+} from "./chat-input-needed-placeholders";
 import {
   createExecutionFromTerminalProgress,
   createExecutionMessageContent,
@@ -160,16 +177,56 @@ import { useSessionWindowControls } from "./use-session-window-controls";
 import { useSpeechInputDevices } from "./use-speech-input-devices";
 import type { SettingsStatusMessage } from "../components/settings-dialog-panels/types";
 
-interface QueuedSessionMessage {
-  id: string;
-  sessionId: string;
-  task: string;
-  contextAttachments: ChatSessionContextAttachment[];
-  createdAt: number;
+type ChatInputNeededSubmission =
+  | {
+      kind: "active-session";
+      sessionSnapshot: ChatSessionRecord;
+      task: string;
+      contextAttachments: ChatSessionContextAttachment[];
+      runningAction: RunningTaskMessageAction | null;
+    }
+  | {
+      kind: "quick-task";
+      task: string;
+      contextAttachments: ChatSessionContextAttachment[];
+    };
+
+interface ChatInputNeededState {
+  submission: ChatInputNeededSubmission;
+  placeholders: ChatInputNeededPlaceholder[];
+  valuesByLookupKey: Record<string, string>;
+  currentIndex: number;
+}
+
+interface ComposerStatusMessage {
+  text: string;
+  tone: "success" | "error" | "info" | null;
 }
 
 const getMessageTaskId = (message: ChatSessionMessage): string => {
   return message.taskId ?? message.id;
+};
+
+const PROMPT_ENHANCEMENT_WEB_SEARCH_UNAVAILABLE_REASON =
+  "Configure an active web search provider in settings before using web-search enhancement.";
+
+const getPromptEnhancementErrorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : String(error);
+};
+
+const isPromptEnhancementWebSearchAvailable = (
+  snapshot: ReturnType<typeof useChatSessionRuntime>["runtimeSnapshot"],
+): boolean => {
+  const webSearch = snapshot?.webSearch;
+
+  return Boolean(
+    webSearch &&
+      webSearch.activeProvider !== "none" &&
+      webSearch.providerAvailability.some(
+        (entry) =>
+          entry.provider === webSearch.activeProvider && entry.configured,
+      ),
+  );
 };
 
 const hasUserMessageForTask = (
@@ -182,10 +239,10 @@ const hasUserMessageForTask = (
 };
 
 const reorderQueuedMessagesWithinSession = (
-  messages: QueuedSessionMessage[],
+  messages: ChatSessionQueuedMessage[],
   messageId: string,
   targetIndex: number,
-): QueuedSessionMessage[] => {
+): ChatSessionQueuedMessage[] => {
   const movingMessage = messages.find((message) => message.id === messageId);
 
   if (!movingMessage) {
@@ -218,6 +275,8 @@ const reorderQueuedMessagesWithinSession = (
 
   let nextSessionMessageIndex = 0;
 
+  const reorderedAt = Date.now();
+
   return messages.map((message) => {
     if (message.sessionId !== movingMessage.sessionId) {
       return message;
@@ -226,7 +285,7 @@ const reorderQueuedMessagesWithinSession = (
     const replacement = reorderedSessionMessages[nextSessionMessageIndex];
     nextSessionMessageIndex += 1;
 
-    return replacement ?? message;
+    return replacement ? { ...replacement, updatedAt: reorderedAt } : message;
   });
 };
 
@@ -337,13 +396,39 @@ export const useChatSessionController = (
     useState<RunningTaskMessageAction>(DEFAULT_RUNNING_TASK_MESSAGE_ACTION);
   const [runningTaskMessageActionLoaded, setRunningTaskMessageActionLoaded] =
     useState(false);
-  const [queuedSessionMessages, setQueuedSessionMessages] = useState<
-    QueuedSessionMessage[]
-  >([]);
   const [chatInterviewEnabled, setChatInterviewEnabled] = useState(false);
+  const [promptEnhancementMode, setPromptEnhancementMode] =
+    useState<PromptEnhancementMode>("off");
+  const [promptEnhancementBusy, setPromptEnhancementBusy] = useState(false);
+  const [promptEnhancementStatus, setPromptEnhancementStatus] =
+    useState<ComposerStatusMessage | null>(null);
   const [chatInterview, setChatInterview] =
     useState<ChatInterviewDialogState | null>(null);
+  const [chatInputNeeded, setChatInputNeeded] =
+    useState<ChatInputNeededState | null>(null);
   const dispatchingQueuedMessageIdsRef = useRef<Set<string>>(new Set());
+  const queuedSessionMessages = state.shellState.queuedSessionMessages;
+  const updateQueuedSessionMessages = useCallback(
+    (
+      updater: (
+        messages: ChatSessionQueuedMessage[],
+      ) => ChatSessionQueuedMessage[],
+    ): void => {
+      state.applyShellState((prev) => {
+        const nextQueuedMessages = updater(prev.queuedSessionMessages);
+
+        if (nextQueuedMessages === prev.queuedSessionMessages) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          queuedSessionMessages: nextQueuedMessages,
+        };
+      });
+    },
+    [state.applyShellState],
+  );
   const composerState = useSessionComposerState(state);
   const runtime = useChatSessionRuntime({
     catalogOpen: state.catalogOpen,
@@ -460,11 +545,25 @@ export const useChatSessionController = (
   const workspaceDefaultRunMode =
     runtime.runtimeSnapshot?.defaultMode ?? defaultRunMode;
   const effectiveReasoning = runtime.runtimeSnapshot?.reasoning ?? "default";
-  const workspaceDefaultReasoning =
-    runtime.runtimeSnapshot?.defaultReasoning ?? effectiveReasoning;
-  const activeReasoning = state.activeSession.reasoning ?? effectiveReasoning;
+  const normalizedEffectiveReasoning = normalizeReasoningModeForProvider(
+    effectiveReasoning,
+    state.activeSession.provider,
+    state.activeSession.model,
+  );
+  const workspaceDefaultReasoning = normalizeReasoningModeForProvider(
+    runtime.runtimeSnapshot?.defaultReasoning ?? effectiveReasoning,
+    state.activeSession.provider,
+    state.activeSession.model,
+  );
+  const activeSessionReasoningOverride = normalizeSessionReasoningOverride(
+    state.activeSession.reasoning,
+    state.activeSession.provider,
+    state.activeSession.model,
+  );
+  const activeReasoning =
+    activeSessionReasoningOverride ?? normalizedEffectiveReasoning;
   const isUsingWorkspaceDefaultMode = !state.activeSession.mode;
-  const isUsingWorkspaceDefaultReasoning = !state.activeSession.reasoning;
+  const isUsingWorkspaceDefaultReasoning = !activeSessionReasoningOverride;
   const hasActiveWorkspace = state.activeSession.workspace !== null;
   const workspaceLocked = isSessionWorkspaceLocked(state.activeSession);
   const workspaceContextPacks = useMemo(
@@ -623,11 +722,24 @@ export const useChatSessionController = (
       : null;
   const chatInterviewBusy =
     chatInterview?.status === "loading" || chatInterview?.status === "starting";
+  const promptEnhancementWebSearchAvailable =
+    isPromptEnhancementWebSearchAvailable(runtime.runtimeSnapshot);
+  const promptEnhancementUnavailableReason =
+    promptEnhancementMode === "web-search" &&
+    !promptEnhancementWebSearchAvailable
+      ? PROMPT_ENHANCEMENT_WEB_SEARCH_UNAVAILABLE_REASON
+      : null;
+  const activeSessionSendDisabledReason =
+    promptEnhancementBusy
+      ? "Prompt enhancement is still running."
+      : (promptEnhancementUnavailableReason ?? activeSessionImageInputError);
   const canSendMessage =
     Boolean(state.activeSession.draft.trim()) &&
     !speechInput.recording &&
     !speechInput.transcribing &&
     !chatInterviewBusy &&
+    !promptEnhancementBusy &&
+    !promptEnhancementUnavailableReason &&
     !activeSessionImageInputError;
   const uiControlAvailability = runtime.runtimeSnapshot?.uiControl;
   const isUiControlAvailable = uiControlAvailability?.available === true;
@@ -673,6 +785,13 @@ export const useChatSessionController = (
     );
   const aiContextMessageLimit = clampAiContextMessageLimit(
     runtime.userDesktopSettings.aiContextMaxMessages,
+  );
+  const handlePromptEnhancementModeChange = useCallback(
+    (mode: PromptEnhancementMode): void => {
+      setPromptEnhancementMode(mode);
+      setPromptEnhancementStatus(null);
+    },
+    [],
   );
 
   useEffect(() => {
@@ -1424,24 +1543,54 @@ export const useChatSessionController = (
     provider: RuntimeProvider,
     model: string,
   ): void => {
-    state.applyShellState((prev) => ({
-      ...prev,
-      lastSelectedProvider: provider,
-      lastSelectedModelByProvider: {
-        ...prev.lastSelectedModelByProvider,
-        [provider]: model,
-      },
-      sessions: prev.sessions.map((session) =>
-        session.id === state.activeSessionId
-          ? {
-              ...session,
-              provider,
-              model,
-              updatedAt: Date.now(),
-            }
-          : session,
-      ),
-    }));
+    state.applyShellState((prev) => {
+      const nextState: ShellPersistedState = {
+        ...prev,
+        lastSelectedProvider: provider,
+        lastSelectedModelByProvider: {
+          ...prev.lastSelectedModelByProvider,
+          [provider]: model,
+        },
+        sessions: prev.sessions.map((session) => {
+          if (session.id !== state.activeSessionId) {
+            return session;
+          }
+
+          const nextSession: ChatSessionRecord = {
+            ...session,
+            provider,
+            model,
+            updatedAt: Date.now(),
+          };
+          const nextReasoning = normalizeSessionReasoningOverride(
+            session.reasoning,
+            provider,
+            model,
+          );
+
+          if (nextReasoning) {
+            nextSession.reasoning = nextReasoning;
+          } else {
+            delete nextSession.reasoning;
+          }
+
+          return nextSession;
+        }),
+      };
+      const nextLastSelectedReasoning = normalizeSessionReasoningOverride(
+        prev.lastSelectedReasoning,
+        provider,
+        model,
+      );
+
+      if (nextLastSelectedReasoning) {
+        nextState.lastSelectedReasoning = nextLastSelectedReasoning;
+      } else {
+        delete nextState.lastSelectedReasoning;
+      }
+
+      return nextState;
+    });
   };
 
   const handleSessionModeSelection = (mode: RunMode | null): void => {
@@ -1485,6 +1634,11 @@ export const useChatSessionController = (
   ): void => {
     state.applyShellState((prev) => {
       const nextUpdatedAt = Date.now();
+      const normalizedReasoning = normalizeSessionReasoningOverride(
+        reasoning,
+        state.activeSession.provider,
+        state.activeSession.model,
+      );
       const nextSessions = prev.sessions.map((session) => {
         if (session.id !== state.activeSessionId) {
           return session;
@@ -1495,8 +1649,8 @@ export const useChatSessionController = (
           updatedAt: nextUpdatedAt,
         };
 
-        if (reasoning) {
-          nextSession.reasoning = reasoning;
+        if (normalizedReasoning) {
+          nextSession.reasoning = normalizedReasoning;
         } else {
           delete nextSession.reasoning;
         }
@@ -1508,8 +1662,8 @@ export const useChatSessionController = (
         sessions: nextSessions,
       };
 
-      if (reasoning) {
-        nextState.lastSelectedReasoning = reasoning;
+      if (normalizedReasoning) {
+        nextState.lastSelectedReasoning = normalizedReasoning;
       } else {
         delete nextState.lastSelectedReasoning;
       }
@@ -1676,8 +1830,8 @@ export const useChatSessionController = (
           provider: state.activeSession.provider,
           model: state.activeSession.model,
           ...(state.activeSession.mode ? { mode: state.activeSession.mode } : {}),
-          ...(state.activeSession.reasoning
-            ? { reasoning: state.activeSession.reasoning }
+          ...(activeSessionReasoningOverride
+            ? { reasoning: activeSessionReasoningOverride }
             : {}),
           useGlobalMemory: state.activeSession.useGlobalMemory,
           uiControlEnabled: state.activeSession.uiControlEnabled,
@@ -1694,7 +1848,11 @@ export const useChatSessionController = (
       };
 
       const mode = baseSession.mode ?? state.activeSession.mode;
-      const reasoning = baseSession.reasoning ?? state.activeSession.reasoning;
+      const reasoning = normalizeSessionReasoningOverride(
+        baseSession.reasoning ?? activeSessionReasoningOverride,
+        nextSession.provider,
+        nextSession.model,
+      );
 
       if (mode) {
         nextSession.mode = mode;
@@ -1717,7 +1875,7 @@ export const useChatSessionController = (
       state.activeSession.mode,
       state.activeSession.model,
       state.activeSession.provider,
-      state.activeSession.reasoning,
+      activeSessionReasoningOverride,
       state.activeSession.uiControlEnabled,
       state.activeSession.useGlobalMemory,
       state.activeSession.workspace,
@@ -2240,8 +2398,16 @@ export const useChatSessionController = (
               nextSession.mode = pack.mode;
             }
 
-            if (pack.reasoning) {
-              nextSession.reasoning = pack.reasoning;
+            const nextReasoning = normalizeSessionReasoningOverride(
+              pack.reasoning ?? nextSession.reasoning,
+              nextSession.provider,
+              nextSession.model,
+            );
+
+            if (nextReasoning) {
+              nextSession.reasoning = nextReasoning;
+            } else {
+              delete nextSession.reasoning;
             }
 
             return nextSession;
@@ -2260,8 +2426,23 @@ export const useChatSessionController = (
           nextState.lastSelectedMode = pack.mode;
         }
 
-        if (pack.reasoning) {
-          nextState.lastSelectedReasoning = pack.reasoning;
+        if (pack.reasoning || savedModelSelection) {
+          const reasoningProvider =
+            savedModelSelection?.provider ?? prev.lastSelectedProvider;
+          const reasoningModel =
+            savedModelSelection?.model ??
+            prev.lastSelectedModelByProvider[reasoningProvider];
+          const nextLastSelectedReasoning = normalizeSessionReasoningOverride(
+            pack.reasoning ?? prev.lastSelectedReasoning,
+            reasoningProvider,
+            reasoningModel,
+          );
+
+          if (nextLastSelectedReasoning) {
+            nextState.lastSelectedReasoning = nextLastSelectedReasoning;
+          } else {
+            delete nextState.lastSelectedReasoning;
+          }
         }
 
         return nextState;
@@ -2504,6 +2685,127 @@ export const useChatSessionController = (
     updateThinkingTrace,
   });
 
+  const enhancePromptForSubmission = useCallback(
+    async (
+      submission: Extract<ChatInputNeededSubmission, { kind: "active-session" }>,
+      prompt: string,
+    ): Promise<string> => {
+      const normalizedPrompt = prompt.trim();
+
+      if (!normalizedPrompt || promptEnhancementMode === "off") {
+        return normalizedPrompt;
+      }
+
+      if (
+        promptEnhancementMode === "web-search" &&
+        !promptEnhancementWebSearchAvailable
+      ) {
+        const error = PROMPT_ENHANCEMENT_WEB_SEARCH_UNAVAILABLE_REASON;
+        setPromptEnhancementStatus({ tone: "error", text: error });
+        throw new Error(error);
+      }
+
+      const activeMode = promptEnhancementMode as ActivePromptEnhancementMode;
+      const taskId = `prompt-enhancement-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      const sessionSnapshot = submission.sessionSnapshot;
+      const reasoning = normalizeSessionReasoningOverride(
+        sessionSnapshot.reasoning,
+        sessionSnapshot.provider,
+        sessionSnapshot.model,
+      );
+
+      setPromptEnhancementBusy(true);
+      setPromptEnhancementStatus({
+        tone: "info",
+        text: `${PROMPT_ENHANCEMENT_LABELS[activeMode]} is refining the request.`,
+      });
+
+      try {
+        const taskRun = await runDesktopTask(
+          sessionSnapshot.workspace,
+          createPromptEnhancementTask({
+            mode: activeMode,
+            prompt: normalizedPrompt,
+            contextAttachments: submission.contextAttachments,
+          }),
+          {
+            conversationContext: createConversationContextFromSession(
+              sessionSnapshot,
+              runtime.userMemorySettings.globalEnabled,
+              uiControlAvailability,
+              aiContextMessageLimit,
+            ),
+            mode: "ask",
+            provider: sessionSnapshot.provider,
+            model: sessionSnapshot.model,
+            ...(reasoning ? { reasoning } : {}),
+            taskId,
+          },
+        );
+        const responseText =
+          taskRun.execution.response?.markdown ?? taskRun.execution.summary;
+        const enhancedPrompt = extractEnhancedPrompt(responseText);
+
+        if (!enhancedPrompt) {
+          throw new Error("Prompt enhancement did not return an enhanced prompt.");
+        }
+
+        if (taskRun.execution.status === "blocked") {
+          throw new Error(taskRun.execution.reason ?? taskRun.execution.summary);
+        }
+
+        setPromptEnhancementStatus({
+          tone: "success",
+          text:
+            enhancedPrompt === normalizedPrompt
+              ? "Prompt enhancement kept the request unchanged."
+              : "Prompt enhancement refined the request.",
+        });
+
+        return enhancedPrompt;
+      } catch (error) {
+        const message = getPromptEnhancementErrorMessage(error);
+
+        setPromptEnhancementStatus({
+          tone: "error",
+          text: `Prompt enhancement failed: ${message}`,
+        });
+        throw error instanceof Error ? error : new Error(message);
+      } finally {
+        setPromptEnhancementBusy(false);
+      }
+    },
+    [
+      aiContextMessageLimit,
+      promptEnhancementMode,
+      promptEnhancementWebSearchAvailable,
+      runtime.userMemorySettings.globalEnabled,
+      uiControlAvailability,
+    ],
+  );
+
+  const requestChatInputNeededValues = useCallback(
+    (submission: ChatInputNeededSubmission): boolean => {
+      const placeholders = extractChatInputNeededPlaceholders(submission.task);
+
+      if (placeholders.length === 0) {
+        return false;
+      }
+
+      setChatInputNeeded({
+        submission,
+        placeholders,
+        valuesByLookupKey: {},
+        currentIndex: 0,
+      });
+
+      return true;
+    },
+    [],
+  );
+
   const clearActiveSessionComposer = useCallback((): void => {
     composerState.resetDraftHistoryState();
     state.setDraftValue("");
@@ -2529,24 +2831,41 @@ export const useChatSessionController = (
   ]);
 
   const queueActiveSessionMessage = useCallback(
-    (placement: "front" | "back"): QueuedSessionMessage | null => {
-      const task = state.activeSession.draft.trim();
+    (
+      placement: "front" | "back",
+      input?: {
+        sessionId: string;
+        task: string;
+        visibleMessageContent?: string;
+        promptHistoryContent?: string;
+        contextAttachments: ChatSessionContextAttachment[];
+      },
+    ): ChatSessionQueuedMessage | null => {
+      const task = (input?.task ?? state.activeSession.draft).trim();
 
       if (!task || activeSessionImageInputError) {
         return null;
       }
 
-      const queuedMessage: QueuedSessionMessage = {
+      const now = Date.now();
+      const queuedMessage: ChatSessionQueuedMessage = {
         id: crypto.randomUUID(),
-        sessionId: state.activeSession.id,
+        sessionId: input?.sessionId ?? state.activeSession.id,
         task,
-        contextAttachments: state.activeSession.draftContextAttachments.map(
-          (attachment) => ({ ...attachment }),
-        ),
-        createdAt: Date.now(),
+        ...(input?.visibleMessageContent?.trim()
+          ? { visibleMessageContent: input.visibleMessageContent.trim() }
+          : {}),
+        ...(input?.promptHistoryContent?.trim()
+          ? { promptHistoryContent: input.promptHistoryContent.trim() }
+          : {}),
+        contextAttachments: (
+          input?.contextAttachments ?? state.activeSession.draftContextAttachments
+        ).map((attachment) => ({ ...attachment })),
+        createdAt: now,
+        updatedAt: now,
       };
 
-      setQueuedSessionMessages((current) =>
+      updateQueuedSessionMessages((current) =>
         placement === "front"
           ? [queuedMessage, ...current]
           : [...current, queuedMessage],
@@ -2559,81 +2878,94 @@ export const useChatSessionController = (
       activeSessionImageInputError,
       clearActiveSessionComposer,
       state.activeSession,
+      updateQueuedSessionMessages,
     ],
   );
 
-  const appendSteeringMessageToRunningTask = useCallback((): boolean => {
-    const task = state.activeSession.draft.trim();
+  const appendSteeringMessageToRunningTask = useCallback(
+    (input?: {
+      sessionSnapshot: ChatSessionRecord;
+      task: string;
+      contextAttachments: ChatSessionContextAttachment[];
+    }): boolean => {
+      const sessionSnapshot = input?.sessionSnapshot ?? state.activeSession;
+      const task = (input?.task ?? state.activeSession.draft).trim();
 
-    if (!task || activeSessionImageInputError) {
-      return false;
-    }
+      if (!task || activeSessionImageInputError) {
+        return false;
+      }
 
-    const targetTaskId =
-      getActiveDesktopTaskIdForSession(state.activeSession.id) ??
-      getLatestRunningTaskId(state.activeSession);
+      const targetTaskId =
+        getActiveDesktopTaskIdForSession(sessionSnapshot.id) ??
+        getLatestRunningTaskId(sessionSnapshot);
 
-    if (!targetTaskId) {
-      return false;
-    }
+      if (!targetTaskId) {
+        return false;
+      }
 
-    const createdAt = Date.now();
-    const contextAttachments =
-      state.activeSession.draftContextAttachments.map((attachment) => ({
+      const createdAt = Date.now();
+      const contextAttachments = (
+        input?.contextAttachments ?? state.activeSession.draftContextAttachments
+      ).map((attachment) => ({
         ...attachment,
       }));
 
-    state.updateActiveSession((session) => {
-      const promptHistory = createPromptHistoryUpdate(
-        session,
-        task,
-        contextAttachments,
-      );
+      state.updateSessionById(sessionSnapshot.id, (session) => {
+        const promptHistory = createPromptHistoryUpdate(
+          session,
+          task,
+          contextAttachments,
+        );
 
-      return applySessionMessageLimit({
-        ...session,
-        updatedAt: createdAt,
-        draft: "",
-        draftContextAttachments: [],
-        promptHistory: promptHistory.promptHistory,
-        promptContextHistory: promptHistory.promptContextHistory,
+        return applySessionMessageLimit({
+          ...session,
+          updatedAt: createdAt,
+          draft: "",
+          draftContextAttachments: [],
+          promptHistory: promptHistory.promptHistory,
+          promptContextHistory: promptHistory.promptContextHistory,
+        });
       });
-    });
 
-    state.setDraftValue("");
-    composerState.resetDraftHistoryState();
-    updateThinkingTrace(state.activeSession.id, targetTaskId, (trace) => {
-      const progress: TaskExecutionProgress = {
-        task: trace.task ?? "",
-        mode: trace.mode,
-        state: "executing",
-        message: "Steering note received.",
-        executedTools: [],
-        outputSections: [],
-        cancellable: true,
-        timelineEvent: {
-          kind: "state",
-          phase: "started",
-          label: "Steering note",
-          detail: appendContextAttachmentsToTask(task, contextAttachments),
-          tone: "info",
-        },
-      };
+      if (sessionSnapshot.id === state.activeSession.id) {
+        state.setDraftValue("");
+        composerState.resetDraftHistoryState();
+      }
 
-      return appendThinkingProgress(trace, progress);
-    });
+      updateThinkingTrace(sessionSnapshot.id, targetTaskId, (trace) => {
+        const progress: TaskExecutionProgress = {
+          task: trace.task ?? "",
+          mode: trace.mode,
+          state: "executing",
+          message: "Steering note received.",
+          executedTools: [],
+          outputSections: [],
+          cancellable: true,
+          timelineEvent: {
+            kind: "state",
+            phase: "started",
+            label: "Steering note",
+            detail: appendContextAttachmentsToTask(task, contextAttachments),
+            tone: "info",
+          },
+        };
 
-    return true;
-  }, [
-    activeSessionImageInputError,
-    applySessionMessageLimit,
-    composerState,
-    getActiveDesktopTaskIdForSession,
-    state.activeSession,
-    state.setDraftValue,
-    state.updateActiveSession,
-    updateThinkingTrace,
-  ]);
+        return appendThinkingProgress(trace, progress);
+      });
+
+      return true;
+    },
+    [
+      activeSessionImageInputError,
+      applySessionMessageLimit,
+      composerState,
+      getActiveDesktopTaskIdForSession,
+      state.activeSession,
+      state.setDraftValue,
+      state.updateSessionById,
+      updateThinkingTrace,
+    ],
+  );
 
   const dispatchNextQueuedMessageForSession = useCallback(
     (session: ChatSessionRecord): void => {
@@ -2656,12 +2988,14 @@ export const useChatSessionController = (
         contextAttachments: nextQueuedMessage.contextAttachments,
         clearDraft: false,
         activateSession: true,
-        visibleMessageContent: nextQueuedMessage.task,
-        promptHistoryContent: nextQueuedMessage.task,
+        visibleMessageContent:
+          nextQueuedMessage.visibleMessageContent ?? nextQueuedMessage.task,
+        promptHistoryContent:
+          nextQueuedMessage.promptHistoryContent ?? nextQueuedMessage.task,
       });
 
       if (didSubmit) {
-        setQueuedSessionMessages((current) =>
+        updateQueuedSessionMessages((current) =>
           current.filter(
             (message) =>
               message.id !== nextQueuedMessage.id &&
@@ -2675,7 +3009,7 @@ export const useChatSessionController = (
 
       dispatchingQueuedMessageIdsRef.current.delete(nextQueuedMessage.id);
     },
-    [queuedSessionMessages, taskSubmission],
+    [queuedSessionMessages, taskSubmission, updateQueuedSessionMessages],
   );
 
   useEffect(() => {
@@ -2698,18 +3032,31 @@ export const useChatSessionController = (
 
   const handleQueuedMessageChange = useCallback(
     (messageId: string, content: string): void => {
-      setQueuedSessionMessages((current) =>
-        current.map((message) =>
-          message.id === messageId ? { ...message, task: content } : message,
-        ),
+      updateQueuedSessionMessages((current) =>
+        current.map((message) => {
+          if (message.id !== messageId) {
+            return message;
+          }
+
+          const updatedAt = Date.now();
+
+          return {
+            id: message.id,
+            sessionId: message.sessionId,
+            task: content,
+            contextAttachments: message.contextAttachments,
+            createdAt: message.createdAt,
+            updatedAt,
+          };
+        }),
       );
     },
-    [],
+    [updateQueuedSessionMessages],
   );
 
   const handleQueuedMessageMove = useCallback(
     (messageId: string, direction: -1 | 1): void => {
-      setQueuedSessionMessages((current) => {
+      updateQueuedSessionMessages((current) => {
         const movingMessage = current.find((message) => message.id === messageId);
 
         if (!movingMessage) {
@@ -2727,23 +3074,23 @@ export const useChatSessionController = (
         );
       });
     },
-    [],
+    [updateQueuedSessionMessages],
   );
 
   const handleQueuedMessageReorder = useCallback(
     (messageId: string, targetIndex: number): void => {
-      setQueuedSessionMessages((current) =>
+      updateQueuedSessionMessages((current) =>
         reorderQueuedMessagesWithinSession(current, messageId, targetIndex),
       );
     },
-    [],
+    [updateQueuedSessionMessages],
   );
 
   const handleQueuedMessageRemove = useCallback((messageId: string): void => {
-    setQueuedSessionMessages((current) =>
+    updateQueuedSessionMessages((current) =>
       current.filter((message) => message.id !== messageId),
     );
-  }, []);
+  }, [updateQueuedSessionMessages]);
 
   const handleAttachQueuedMessagePaths = useCallback(
     async (messageId: string, paths: string[]): Promise<void> => {
@@ -2754,7 +3101,7 @@ export const useChatSessionController = (
         return;
       }
 
-      setQueuedSessionMessages((current) =>
+      updateQueuedSessionMessages((current) =>
         current.map((message) =>
           message.id === messageId
             ? {
@@ -2763,12 +3110,13 @@ export const useChatSessionController = (
                   message.contextAttachments,
                   attachments,
                 ),
+                updatedAt: Date.now(),
               }
             : message,
         ),
       );
     },
-    [],
+    [updateQueuedSessionMessages],
   );
 
   const handleSelectQueuedMessageAttachments = useCallback(
@@ -2857,7 +3205,7 @@ export const useChatSessionController = (
 
   const handleQueuedMessageRemoveContextAttachment = useCallback(
     (messageId: string, attachmentId: string): void => {
-      setQueuedSessionMessages((current) =>
+      updateQueuedSessionMessages((current) =>
         current.map((message) =>
           message.id === messageId
             ? {
@@ -2865,29 +3213,31 @@ export const useChatSessionController = (
                 contextAttachments: message.contextAttachments.filter(
                   (attachment) => attachment.id !== attachmentId,
                 ),
+                updatedAt: Date.now(),
               }
             : message,
         ),
       );
     },
-    [],
+    [updateQueuedSessionMessages],
   );
 
   const handleQueuedMessageClearContextAttachments = useCallback(
     (messageId: string): void => {
-      setQueuedSessionMessages((current) =>
+      updateQueuedSessionMessages((current) =>
         current.map((message) =>
           message.id === messageId &&
           message.contextAttachments.length > 0
             ? {
                 ...message,
                 contextAttachments: [],
+                updatedAt: Date.now(),
               }
             : message,
         ),
       );
     },
-    [],
+    [updateQueuedSessionMessages],
   );
 
   const handleRemoteRenameSession = useCallback(
@@ -3040,6 +3390,8 @@ export const useChatSessionController = (
   const handleRemoteSetSessionReasoning = useCallback(
     (sessionId: string, reasoning: ReasoningMode | null): void => {
       state.applyShellState((prev) => {
+        let normalizedReasoning: ReasoningMode | undefined;
+        let sessionFound = false;
         const nextState: ShellPersistedState = {
           ...prev,
           sessions: prev.sessions.map((session) => {
@@ -3047,13 +3399,19 @@ export const useChatSessionController = (
               return session;
             }
 
+            sessionFound = true;
+            normalizedReasoning = normalizeSessionReasoningOverride(
+              reasoning,
+              session.provider,
+              session.model,
+            );
             const nextSession: ChatSessionRecord = {
               ...session,
               updatedAt: Date.now(),
             };
 
-            if (reasoning) {
-              nextSession.reasoning = reasoning;
+            if (normalizedReasoning) {
+              nextSession.reasoning = normalizedReasoning;
             } else {
               delete nextSession.reasoning;
             }
@@ -3062,8 +3420,12 @@ export const useChatSessionController = (
           }),
         };
 
-        if (reasoning) {
-          nextState.lastSelectedReasoning = reasoning;
+        if (!sessionFound) {
+          return prev;
+        }
+
+        if (normalizedReasoning) {
+          nextState.lastSelectedReasoning = normalizedReasoning;
         } else {
           delete nextState.lastSelectedReasoning;
         }
@@ -3172,8 +3534,16 @@ export const useChatSessionController = (
               nextSession.mode = pack.mode;
             }
 
-            if (pack.reasoning) {
-              nextSession.reasoning = pack.reasoning;
+            const nextReasoning = normalizeSessionReasoningOverride(
+              pack.reasoning ?? nextSession.reasoning,
+              nextSession.provider,
+              nextSession.model,
+            );
+
+            if (nextReasoning) {
+              nextSession.reasoning = nextReasoning;
+            } else {
+              delete nextSession.reasoning;
             }
 
             return nextSession;
@@ -3192,8 +3562,23 @@ export const useChatSessionController = (
           nextState.lastSelectedMode = pack.mode;
         }
 
-        if (pack.reasoning) {
-          nextState.lastSelectedReasoning = pack.reasoning;
+        if (pack.reasoning || savedModelSelection) {
+          const reasoningProvider =
+            savedModelSelection?.provider ?? prev.lastSelectedProvider;
+          const reasoningModel =
+            savedModelSelection?.model ??
+            prev.lastSelectedModelByProvider[reasoningProvider];
+          const nextLastSelectedReasoning = normalizeSessionReasoningOverride(
+            pack.reasoning ?? prev.lastSelectedReasoning,
+            reasoningProvider,
+            reasoningModel,
+          );
+
+          if (nextLastSelectedReasoning) {
+            nextState.lastSelectedReasoning = nextLastSelectedReasoning;
+          } else {
+            delete nextState.lastSelectedReasoning;
+          }
         }
 
         return nextState;
@@ -3225,7 +3610,7 @@ export const useChatSessionController = (
     isUiControlAvailable,
     uiControlDescription,
     canSendMessage,
-    sendDisabledReason: activeSessionImageInputError,
+    sendDisabledReason: activeSessionSendDisabledReason,
     workspaceContextPacks,
     matchedContextPackIds,
     quickTaskSession,
@@ -3312,13 +3697,28 @@ export const useChatSessionController = (
       return;
     }
 
-    submitQuickVoiceCommand(normalizedDraft, quickTaskContextAttachments);
+    const contextAttachments = quickTaskContextAttachments.map((attachment) => ({
+      ...attachment,
+    }));
+
+    if (
+      requestChatInputNeededValues({
+        kind: "quick-task",
+        task: normalizedDraft,
+        contextAttachments,
+      })
+    ) {
+      return;
+    }
+
+    submitQuickVoiceCommand(normalizedDraft, contextAttachments);
     setQuickTaskDraft("");
     setQuickTaskContextAttachments([]);
   }, [
     quickTaskContextAttachments,
     quickTaskDraft,
     quickTaskImageInputError,
+    requestChatInputNeededValues,
     submitQuickVoiceCommand,
   ]);
 
@@ -3409,15 +3809,23 @@ export const useChatSessionController = (
   const submitTaskFromInterview = (
     context: ChatInterviewStartContext,
     finalPrompt: string,
+    interviewTaskId?: string,
   ): void => {
+    if (interviewTaskId) {
+      activeDesktopTasksRef.current.delete(interviewTaskId);
+      desktopTaskProgressHandlersRef.current.delete(interviewTaskId);
+      ignoredDesktopTaskIdsRef.current.delete(interviewTaskId);
+    }
+
+    const visibleTask = context.originalTask ?? context.task;
     const submitted = taskSubmission.submitTaskToSession({
       sessionSnapshot: context.sessionSnapshot,
       task: finalPrompt,
       contextAttachments: context.contextAttachments,
       clearDraft: true,
       activateSession: true,
-      visibleMessageContent: context.task,
-      promptHistoryContent: context.task,
+      visibleMessageContent: visibleTask,
+      promptHistoryContent: visibleTask,
     });
 
     if (submitted) {
@@ -3526,7 +3934,7 @@ export const useChatSessionController = (
           }
         : current,
     );
-    submitTaskFromInterview(context, finalPrompt);
+    submitTaskFromInterview(context, finalPrompt, taskId);
   };
 
   const requestChatInterviewRound = async (
@@ -3536,6 +3944,25 @@ export const useChatSessionController = (
     answerComments?: Record<string, string>,
   ): Promise<void> => {
     const taskId = `task-interview-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const initialThinking = createInitialThinkingTrace(context.mode, Date.now());
+
+    activeDesktopTasksRef.current.set(taskId, context.sessionSnapshot.id);
+    desktopTaskProgressHandlersRef.current.set(taskId, (progress, timestamp) => {
+      setChatInterview((current) => {
+        if (current?.taskId !== taskId) {
+          return current;
+        }
+
+        return {
+          ...current,
+          thinking: appendThinkingProgress(
+            current.thinking ?? initialThinking,
+            progress,
+            timestamp,
+          ),
+        };
+      });
+    });
 
     setChatInterview((current) => ({
       context,
@@ -3552,6 +3979,7 @@ export const useChatSessionController = (
       assumptions: current?.assumptions ?? [],
       relevantFiles: current?.relevantFiles ?? [],
       taskId,
+      thinking: initialThinking,
     }));
 
     try {
@@ -3585,25 +4013,52 @@ export const useChatSessionController = (
               status: "blocked",
               summary: errorMessage,
               error: errorMessage,
+              thinking: appendThinkingProgress(
+                current.thinking ?? initialThinking,
+                {
+                  task: context.task,
+                  mode: context.mode,
+                  state: "blocked",
+                  message: errorMessage,
+                  executedTools: [],
+                  outputSections: [],
+                  cancellable: false,
+                },
+              ),
             }
           : current,
       );
+    } finally {
+      desktopTaskProgressHandlersRef.current.delete(taskId);
+      activeDesktopTasksRef.current.delete(taskId);
+      ignoredDesktopTaskIdsRef.current.delete(taskId);
     }
   };
 
-  const startChatInterview = (task: string): void => {
+  const startChatInterview = (
+    task: string,
+    sessionSnapshot = state.activeSession,
+    contextAttachments = state.activeSession.draftContextAttachments,
+    originalTask?: string,
+  ): void => {
+    const reasoning = normalizeSessionReasoningOverride(
+      sessionSnapshot.reasoning,
+      sessionSnapshot.provider,
+      sessionSnapshot.model,
+    );
     const context: ChatInterviewStartContext = {
-      sessionSnapshot: state.activeSession,
+      sessionSnapshot,
       task,
-      contextAttachments: state.activeSession.draftContextAttachments.map(
-        (attachment) => ({ ...attachment }),
-      ),
-      mode: activeRunMode,
-      provider: state.activeSession.provider,
-      model: state.activeSession.model,
-      ...(state.activeSession.reasoning
-        ? { reasoning: state.activeSession.reasoning }
+      ...(originalTask && originalTask.trim() !== task.trim()
+        ? { originalTask: originalTask.trim() }
         : {}),
+      contextAttachments: contextAttachments.map((attachment) => ({
+        ...attachment,
+      })),
+      mode: activeRunMode,
+      provider: sessionSnapshot.provider,
+      model: sessionSnapshot.model,
+      ...(reasoning ? { reasoning } : {}),
     };
 
     void requestChatInterviewRound(context);
@@ -3754,50 +4209,194 @@ export const useChatSessionController = (
     submitTaskFromInterview(chatInterview.context, finalPrompt);
   };
 
+  const submitResolvedChatInputNeededSubmission = useCallback(
+    (
+      submission: ChatInputNeededSubmission,
+      resolvedTask: string,
+    ): void => {
+      if (submission.kind === "quick-task") {
+        submitQuickVoiceCommand(resolvedTask, submission.contextAttachments);
+        setQuickTaskDraft("");
+        setQuickTaskContextAttachments([]);
+        return;
+      }
+
+      const submitActiveSessionTask = (task: string): void => {
+        if (submission.runningAction) {
+          switch (submission.runningAction) {
+            case "steer":
+              appendSteeringMessageToRunningTask({
+                sessionSnapshot: submission.sessionSnapshot,
+                task: resolvedTask,
+                contextAttachments: submission.contextAttachments,
+              });
+              return;
+            case "stop-and-send": {
+              const queuedMessage = queueActiveSessionMessage("front", {
+                sessionId: submission.sessionSnapshot.id,
+                task,
+                visibleMessageContent: resolvedTask,
+                promptHistoryContent: resolvedTask,
+                contextAttachments: submission.contextAttachments,
+              });
+
+              if (queuedMessage) {
+                requestTaskCancellation(submission.sessionSnapshot);
+              }
+              return;
+            }
+            case "queue":
+              queueActiveSessionMessage("back", {
+                sessionId: submission.sessionSnapshot.id,
+                task,
+                visibleMessageContent: resolvedTask,
+                promptHistoryContent: resolvedTask,
+                contextAttachments: submission.contextAttachments,
+              });
+              return;
+          }
+        }
+
+        if (chatInterviewEnabled) {
+          startChatInterview(
+            task,
+            submission.sessionSnapshot,
+            submission.contextAttachments,
+            resolvedTask,
+          );
+          return;
+        }
+
+        taskSubmission.submitTaskToSession({
+          sessionSnapshot: submission.sessionSnapshot,
+          task,
+          contextAttachments: submission.contextAttachments,
+          clearDraft: true,
+          activateSession: true,
+          visibleMessageContent: resolvedTask,
+          promptHistoryContent: resolvedTask,
+        });
+      };
+
+      if (
+        promptEnhancementMode === "off" ||
+        submission.runningAction === "steer"
+      ) {
+        submitActiveSessionTask(resolvedTask);
+        return;
+      }
+
+      void (async (): Promise<void> => {
+        let task: string;
+
+        try {
+          task = await enhancePromptForSubmission(submission, resolvedTask);
+        } catch {
+          return;
+        }
+
+        submitActiveSessionTask(task);
+      })();
+    },
+    [
+      appendSteeringMessageToRunningTask,
+      chatInterviewEnabled,
+      enhancePromptForSubmission,
+      promptEnhancementMode,
+      queueActiveSessionMessage,
+      requestTaskCancellation,
+      startChatInterview,
+      submitQuickVoiceCommand,
+      taskSubmission,
+    ],
+  );
+
+  const cancelChatInputNeeded = useCallback((): void => {
+    setChatInputNeeded(null);
+  }, []);
+
+  const submitChatInputNeededValue = useCallback(
+    (value: string): void => {
+      if (!chatInputNeeded) {
+        return;
+      }
+
+      const currentPlaceholder =
+        chatInputNeeded.placeholders[chatInputNeeded.currentIndex];
+
+      if (!currentPlaceholder) {
+        setChatInputNeeded(null);
+        return;
+      }
+
+      const nextValuesByLookupKey = {
+        ...chatInputNeeded.valuesByLookupKey,
+        [currentPlaceholder.lookupKey]: value,
+      };
+      const nextIndex = chatInputNeeded.currentIndex + 1;
+
+      if (nextIndex < chatInputNeeded.placeholders.length) {
+        setChatInputNeeded({
+          ...chatInputNeeded,
+          valuesByLookupKey: nextValuesByLookupKey,
+          currentIndex: nextIndex,
+        });
+        return;
+      }
+
+      const resolvedTask = replaceChatInputNeededPlaceholders(
+        chatInputNeeded.submission.task,
+        nextValuesByLookupKey,
+      );
+
+      setChatInputNeeded(null);
+      submitResolvedChatInputNeededSubmission(
+        chatInputNeeded.submission,
+        resolvedTask,
+      );
+    },
+    [chatInputNeeded, submitResolvedChatInputNeededSubmission],
+  );
+
   const handleSend = (): void => {
     const task = state.activeSession.draft.trim();
 
-    if (!task || activeSessionImageInputError) {
+    if (
+      !task ||
+      activeSessionImageInputError ||
+      promptEnhancementBusy ||
+      promptEnhancementUnavailableReason
+    ) {
       return;
     }
 
-    if (getSessionOverviewStatus(state.activeSession) === "running") {
-      switch (runningTaskMessageAction) {
-        case "steer":
-          appendSteeringMessageToRunningTask();
-          return;
-        case "stop-and-send": {
-          const queuedMessage = queueActiveSessionMessage("front");
-
-          if (queuedMessage) {
-            requestTaskCancellation(state.activeSession);
-          }
-          return;
-        }
-        case "queue":
-          queueActiveSessionMessage("back");
-          return;
-      }
-    }
-
-    if (chatInterviewEnabled) {
-      startChatInterview(task);
-      return;
-    }
-
-    taskSubmission.submitTaskToSession({
+    const contextAttachments = state.activeSession.draftContextAttachments.map(
+      (attachment) => ({ ...attachment }),
+    );
+    const submission: ChatInputNeededSubmission = {
+      kind: "active-session",
       sessionSnapshot: state.activeSession,
       task,
-      contextAttachments: state.activeSession.draftContextAttachments,
-      clearDraft: true,
-      activateSession: true,
-    });
+      contextAttachments,
+      runningAction:
+        getSessionOverviewStatus(state.activeSession) === "running"
+          ? runningTaskMessageAction
+          : null,
+    };
+
+    if (requestChatInputNeededValues(submission)) {
+      return;
+    }
+
+    submitResolvedChatInputNeededSubmission(submission, task);
   };
 
   const instructionRegistryInstructions: DiscoveredInstruction[] =
     instructionRegistry?.instructions ?? [];
   const instructionRegistryDiagnostics: CustomizationDiagnostic[] =
     instructionRegistry?.diagnostics ?? [];
+  const currentChatInputNeededPlaceholder =
+    chatInputNeeded?.placeholders[chatInputNeeded.currentIndex] ?? null;
 
   return {
     isDesktop,
@@ -3945,6 +4544,18 @@ export const useChatSessionController = (
       onStartNow: startTaskFromChatInterviewNow,
       onSubmitAnswers: () => void submitChatInterviewAnswers(),
     },
+    inputNeeded: {
+      request:
+        chatInputNeeded && currentChatInputNeededPlaceholder
+          ? {
+              placeholder: currentChatInputNeededPlaceholder,
+              currentIndex: chatInputNeeded.currentIndex,
+              totalCount: chatInputNeeded.placeholders.length,
+            }
+          : null,
+      onCancel: cancelChatInputNeeded,
+      onSubmitValue: submitChatInputNeededValue,
+    },
     composer: {
       activeSession: state.activeSession,
       chooserProviders: providerChooserState.chooserProviders,
@@ -3970,6 +4581,11 @@ export const useChatSessionController = (
       interviewDescription: isDesktop
         ? "Ask focused precheck questions before starting the task."
         : "Task interviews are available in the desktop app.",
+      promptEnhancementMode,
+      promptEnhancementWebSearchAvailable,
+      promptEnhancementWebSearchUnavailableReason:
+        PROMPT_ENHANCEMENT_WEB_SEARCH_UNAVAILABLE_REASON,
+      statusMessage: promptEnhancementStatus,
       contextAttachments: state.activeSession.draftContextAttachments,
       contextPacks: workspaceContextPacks,
       matchedContextPackIds,
@@ -3990,11 +4606,11 @@ export const useChatSessionController = (
         onAction: handleSpeechInputAction,
       },
       canSendMessage,
-      sendDisabledReason: activeSessionImageInputError,
+      sendDisabledReason: activeSessionSendDisabledReason,
       runningTaskMessageAction,
       queuedMessages: activeSessionQueuedMessages.map((message) => ({
         id: message.id,
-        content: message.task,
+        content: message.visibleMessageContent ?? message.task,
         attachments: message.contextAttachments,
         createdAt: message.createdAt,
       })),
@@ -4008,6 +4624,7 @@ export const useChatSessionController = (
       onUseGlobalMemoryChange: settingsActions.setUseGlobalMemory,
       onUiControlEnabledChange: settingsActions.setUiControlEnabled,
       onInterviewEnabledChange: setChatInterviewEnabled,
+      onPromptEnhancementModeChange: handlePromptEnhancementModeChange,
       onSelectContextFiles: () =>
         handleSelectAttachments("active-session", "files"),
       onSelectContextFolders: () =>

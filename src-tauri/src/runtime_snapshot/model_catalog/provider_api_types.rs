@@ -219,7 +219,6 @@ pub(super) fn create_openai_runtime_model(
         label: None,
         stage: runtime_model_stage(model_id),
         release_date,
-        description: None,
         recommended_for,
         capabilities: ProviderRuntimeModelCapabilities {
             image_input: Some(latest_text_model),
@@ -294,7 +293,6 @@ pub(super) fn create_anthropic_runtime_model(
         stage: runtime_model_stage(&id),
         release_date: json_date_prefix(entry, "created_at")
             .or_else(|| json_date_prefix(entry, "createdAt")),
-        description: None,
         recommended_for,
         capabilities: ProviderRuntimeModelCapabilities {
             image_input: Some(image_input),
@@ -317,12 +315,10 @@ pub(super) fn create_google_runtime_model(
     entry: &serde_json::Value,
 ) -> Option<ProviderRuntimeModel> {
     let resource_name = json_string(entry, "name")?;
-    let id = json_string(entry, "baseModelId").unwrap_or_else(|| {
-        resource_name
-            .strip_prefix("models/")
-            .unwrap_or(resource_name.as_str())
-            .to_string()
-    });
+    let id = resource_name
+        .strip_prefix("models/")
+        .unwrap_or(resource_name.as_str())
+        .to_string();
     let methods = entry
         .get("supportedGenerationMethods")
         .and_then(serde_json::Value::as_array)
@@ -373,7 +369,6 @@ pub(super) fn create_google_runtime_model(
         label: json_string(entry, "displayName"),
         stage: runtime_model_stage(&resource_name),
         release_date: None,
-        description: json_string(entry, "description"),
         recommended_for,
         capabilities: ProviderRuntimeModelCapabilities {
             image_input: Some(image_input),
@@ -397,7 +392,6 @@ fn create_langdock_runtime_model(entry: &serde_json::Value) -> Option<ProviderRu
         .get("supportsExtendedThinking")
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
-    let region = json_string(entry, "region");
     let image_input = normalized.starts_with("gpt-")
         || normalized.starts_with("claude-")
         || normalized.starts_with("gemini-");
@@ -440,7 +434,6 @@ fn create_langdock_runtime_model(entry: &serde_json::Value) -> Option<ProviderRu
         label: None,
         stage: runtime_model_stage(&normalized),
         release_date: json_u64(entry, "created").and_then(unix_milliseconds_to_utc_date),
-        description: region.map(|value| format!("Langdock model available in region {value}.")),
         recommended_for,
         capabilities: ProviderRuntimeModelCapabilities {
             image_input: Some(image_input),

@@ -126,6 +126,34 @@ describe("smart context packs", () => {
     );
   });
 
+  it("preserves input-needed placeholders when applying a pack", () => {
+    const result = applySmartContextPackToComposer(
+      "",
+      [],
+      createPack({
+        instructions: "Review [[SCOPE]] with {test_command}.",
+        prompt: "Then update [[ scope ]].",
+        contextAttachments: [],
+        variables: [
+          { name: "SCOPE", defaultValue: "docs" },
+          { name: "test_command", defaultValue: "npm test" },
+        ],
+      }),
+    );
+
+    expect(result.draft).toBe(
+      [
+        "## Context Pack: Review PR",
+        "",
+        "### Instructions",
+        "Review [[SCOPE]] with npm test.",
+        "",
+        "### Prompt",
+        "Then update [[ scope ]].",
+      ].join("\n"),
+    );
+  });
+
   it("reports only variables without values or defaults", () => {
     expect(
       getSmartContextPackMissingVariableNames(
@@ -145,6 +173,7 @@ describe("smart context packs", () => {
     expect(
       extractSmartContextPackVariables(
         "Review {target_file} then {target_file} for {ticket_id}.",
+        "Submit {{SCOPE}} later.",
       ),
     ).toEqual(["target_file", "ticket_id"]);
     expect(parseSmartContextPackListInput("frontend qa, debug build\nfrontend qa")).toEqual([

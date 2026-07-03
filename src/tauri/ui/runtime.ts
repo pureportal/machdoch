@@ -3902,6 +3902,7 @@ const runTaskInterviewCommand = async <Result>(
   workspaceRoot: string | null | undefined,
   argumentsList: string[],
   fallback: () => Result,
+  options?: { taskId?: string },
 ): Promise<Result> => {
   if (!canInvokeTauriCommands()) {
     return fallback();
@@ -3912,6 +3913,7 @@ const runTaskInterviewCommand = async <Result>(
       request: {
         workspaceRoot: normalizeTaskInterviewCommandWorkspace(workspaceRoot),
         arguments: argumentsList,
+        ...(options?.taskId ? { taskId: options.taskId } : {}),
       },
     });
   } catch (error) {
@@ -4311,6 +4313,7 @@ export const runTaskInterview = async (
     workspaceRoot,
     createTaskInterviewArguments(input),
     assertTaskInterviewDesktopAvailable,
+    input.taskId ? { taskId: input.taskId } : undefined,
   );
 };
 
