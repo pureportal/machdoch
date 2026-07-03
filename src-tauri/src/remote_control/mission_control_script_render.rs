@@ -16,6 +16,7 @@ pub(super) fn mission_control_script_render() -> &'static str {
     const providerSelect = document.getElementById("providerSelect");
     const modelInput = document.getElementById("modelInput");
     const modeSelect = document.getElementById("modeSelect");
+    const reasoningSelect = document.getElementById("reasoningSelect");
     const composerMeta = document.getElementById("composerMeta");
     const tasks = document.getElementById("tasks");
     const schedulerPanel = document.getElementById("schedulerPanel");
@@ -23,6 +24,7 @@ pub(super) fn mission_control_script_render() -> &'static str {
     const commands = document.getElementById("commands");
     const toast = document.getElementById("toast");
     const terminalStates = new Set(["completed", "planned", "blocked", "unsupported", "cancelled"]);
+    const supportedReasoningModes = ["default", "none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
     if (pairingToken) {
       history.replaceState(null, "", location.pathname);
@@ -88,6 +90,10 @@ pub(super) fn mission_control_script_render() -> &'static str {
       return shell.sessions.find((session) => session.id === selectedSessionId)
         || shell.sessions.find((session) => session.id === shell.activeSessionId)
         || shell.sessions[0];
+    }
+
+    function supportedReasoningValue(value, fallback = "default") {
+      return supportedReasoningModes.includes(value) ? value : fallback;
     }
 
     async function sendCommand(command) {
@@ -239,6 +245,11 @@ pub(super) fn mission_control_script_render() -> &'static str {
         sessionHeader.innerHTML = '<p class="empty">Select or create a session.</p>';
         return;
       }
+      const defaultReasoning = supportedReasoningValue(shell?.composer?.defaultReasoning, "default");
+      const effectiveReasoning = session.effectiveReasoning || defaultReasoning;
+      const reasoningSource = session.reasoning
+        ? `override: ${session.reasoning}`
+        : `default: ${defaultReasoning}`;
 
       sessionHeader.innerHTML = `
         <div class="row">
@@ -253,6 +264,8 @@ pub(super) fn mission_control_script_render() -> &'static str {
         <div class="meta">
           <span class="pill">${escapeHtml(session.status)}</span>
           <span class="pill">${escapeHtml(session.effectiveMode)}</span>
+          <span class="pill">reasoning ${escapeHtml(effectiveReasoning)}</span>
+          <span class="pill">${escapeHtml(reasoningSource)}</span>
           <span>${escapeHtml(session.workspace || "No workspace")}</span>
           ${(session.tags || []).map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("")}
         </div>
@@ -310,9 +323,15 @@ pub(super) fn mission_control_script_render() -> &'static str {
         modelInput.value = composer.model || "";
       }
       modeSelect.value = session.mode || composer.defaultMode || "machdoch";
+      const defaultReasoning = supportedReasoningValue(composer.defaultReasoning, "default");
+      const selectedReasoning = supportedReasoningValue(session.reasoning || "default", "default");
+      const effectiveReasoning = session.effectiveReasoning || composer.reasoning || defaultReasoning;
+      reasoningSelect.value = selectedReasoning;
       composerMeta.innerHTML = `
         <span class="pill ${composer.canSend ? "good" : "bad"}">${composer.canSend ? "ready" : "blocked"}</span>
         <span>${escapeHtml(composer.sendDisabledReason || composer.workspaceLabel || "No workspace")}</span>
+        <span class="pill">effective reasoning: ${escapeHtml(effectiveReasoning)}</span>
+        <span class="pill">${escapeHtml(session.reasoning ? `session override: ${session.reasoning}` : `default reasoning: ${defaultReasoning}`)}</span>
         <span class="pill ${composer.sessionMemoryEnabled ? "good" : ""}">session memory</span>
         <span class="pill ${composer.globalMemoryEnabled ? "good" : ""}">global memory</span>
         <span class="pill ${composer.uiControlEnabled ? "good" : ""}">UI control</span>

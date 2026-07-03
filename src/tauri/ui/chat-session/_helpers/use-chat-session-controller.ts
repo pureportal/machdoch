@@ -2753,6 +2753,7 @@ export const useChatSessionController = (
       state.updateSessionById,
     ],
   );
+
   const restorePromptEnhancementComposer = useCallback(
     (pending: PromptEnhancementPendingState): void => {
       restoreSessionComposerInput({

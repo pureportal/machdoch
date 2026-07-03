@@ -6,7 +6,7 @@ use serde_json::json;
 use super::{
     common::{
         create_upload_filename, get_required_api_key, normalize_language_code, normalize_text,
-        read_api_error, validate_audio_upload_size,
+        read_api_error, validate_audio_upload_size, validate_synthesized_audio_bytes,
     },
     SynthesizedVoiceAudio, TranscribedSpeechText,
 };
@@ -34,6 +34,16 @@ fn clamp_openai_speed(value: Option<f64>) -> f64 {
     };
 
     value.clamp(0.25, 4.0)
+}
+
+fn build_openai_synthesized_audio(audio_bytes: &[u8]) -> Result<SynthesizedVoiceAudio, String> {
+    validate_synthesized_audio_bytes(audio_bytes, "OpenAI")?;
+
+    Ok(SynthesizedVoiceAudio {
+        provider: "openai".to_string(),
+        mime_type: "audio/wav".to_string(),
+        audio_base64: BASE64_STANDARD.encode(audio_bytes),
+    })
 }
 
 pub(super) async fn synthesize_openai(
@@ -76,11 +86,7 @@ pub(super) async fn synthesize_openai(
         .await
         .map_err(|error| format!("Failed to read OpenAI speech audio: {error}"))?;
 
-    Ok(SynthesizedVoiceAudio {
-        provider: "openai".to_string(),
-        mime_type: "audio/wav".to_string(),
-        audio_base64: BASE64_STANDARD.encode(audio_bytes),
-    })
+    build_openai_synthesized_audio(audio_bytes.as_ref())
 }
 
 pub(super) async fn transcribe_openai(
@@ -153,5 +159,21 @@ mod tests {
         assert_eq!(clamp_openai_speed(Some(0.1)), 0.25);
         assert_eq!(clamp_openai_speed(Some(2.0)), 2.0);
         assert_eq!(clamp_openai_speed(Some(8.0)), 4.0);
+    }
+
+    #[test]
+    fn build_openai_synthesized_audio_rejects_empty_audio() {
+        let error = build_openai_synthesized_audio(&[]).unwrap_err();
+
+        assert_eq!(error, "OpenAI returned empty speech audio.");
+    }
+
+    #[test]
+    fn build_openai_synthesized_audio_encodes_non_empty_audio() {
+        let audio = build_openai_synthesized_audio(&[1, 2, 3]).expect("expected audio");
+
+        assert_eq!(audio.provider, "openai");
+        assert_eq!(audio.mime_type, "audio/wav");
+        assert_eq!(audio.audio_base64, "AQID");
     }
 }

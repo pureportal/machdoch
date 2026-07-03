@@ -138,6 +138,14 @@ pub(super) fn mission_control_script_events() -> &'static str {
           void sendCommand({ kind: "set-session-mode", sessionId: selected.id, mode: modeSelect.value })
             .catch((error) => { toast.textContent = error.message; });
         }
+        return;
+      }
+
+      if (event.target === reasoningSelect) {
+        if (supportedReasoningModes.includes(reasoningSelect.value)) {
+          void sendCommand({ kind: "set-session-reasoning", sessionId: selected.id, reasoning: reasoningSelect.value })
+            .catch((error) => { toast.textContent = error.message; });
+        }
       }
     });
 

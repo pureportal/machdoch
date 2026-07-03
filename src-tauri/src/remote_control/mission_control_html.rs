@@ -49,7 +49,7 @@ pub(super) fn mission_control_html() -> String {
     input, select, textarea { width: 100%; border: 1px solid #25405e; background: #020817; color: #f8fafc; border-radius: .4rem; padding: .55rem; }
     select, input { min-height: 2.2rem; }
     textarea { min-height: 5.5rem; resize: vertical; }
-    .field-grid { display: grid; gap: .55rem; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .field-grid { display: grid; gap: .55rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .stack { display: grid; gap: .55rem; }
     .scroll-list { display: grid; gap: .5rem; max-height: 19rem; overflow: auto; padding-right: .15rem; }
     .trace, .log, .event, .command { border: 1px solid #16283f; background: #020817; border-radius: .4rem; padding: .55rem; color: #cbd8e7; font-size: .78rem; line-height: 1.42; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -92,6 +92,16 @@ pub(super) fn mission_control_html() -> String {
             <select id="modeSelect" aria-label="Mode">
               <option value="ask">Ask</option>
               <option value="machdoch">Machdoch</option>
+            </select>
+            <select id="reasoningSelect" aria-label="Reasoning">
+              <option value="default">Default</option>
+              <option value="none">None</option>
+              <option value="minimal">Minimal</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="xhigh">Extra High</option>
+              <option value="max">Max</option>
             </select>
           </div>
           <div class="actions">

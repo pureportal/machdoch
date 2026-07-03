@@ -94,6 +94,17 @@ pub(super) fn decode_audio_base64(value: &str) -> Result<Vec<u8>, String> {
     Ok(decoded)
 }
 
+pub(super) fn validate_synthesized_audio_bytes(
+    audio_bytes: &[u8],
+    provider_label: &str,
+) -> Result<(), String> {
+    if audio_bytes.is_empty() {
+        return Err(format!("{provider_label} returned empty speech audio."));
+    }
+
+    Ok(())
+}
+
 pub(super) fn normalize_language_code(value: Option<&str>) -> Option<String> {
     normalize_optional_string(value)
 }

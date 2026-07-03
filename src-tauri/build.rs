@@ -22,6 +22,8 @@ fn find_node_binary() -> Option<PathBuf> {
 }
 
 fn main() {
+    configure_windows_common_controls_manifest();
+
     let manifest_dir = required_env_path("CARGO_MANIFEST_DIR");
     let cli_bundle_path = manifest_dir
         .join("..")
@@ -56,6 +58,18 @@ fn main() {
     }
 
     tauri_build::build()
+}
+
+fn configure_windows_common_controls_manifest() {
+    if !cfg!(windows) {
+        return;
+    }
+
+    println!(
+        "cargo:rustc-link-arg=/MANIFESTDEPENDENCY:type='win32' \
+         name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+         processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+    );
 }
 
 fn required_env_path(name: &str) -> PathBuf {

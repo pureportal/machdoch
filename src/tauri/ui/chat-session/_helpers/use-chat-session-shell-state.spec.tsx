@@ -618,6 +618,107 @@ describe("useChatSessionShellState", () => {
     expect(mergedSession?.promptHistory).toEqual([task]);
   });
 
+  it("keeps newer local running progress when an external update has only the user anchor", () => {
+    const baseState = createInitialShellState();
+    const task = "Keep active task progress";
+    const taskId = "running-task-progress";
+    const newSession = createSession({
+      id: "running-progress-session",
+      updatedAt: 100,
+      lastReadAt: 100,
+    });
+    const userMessage = {
+      id: "running-progress-user",
+      taskId,
+      role: "user" as const,
+      content: task,
+      createdAt: 200,
+    };
+    const initialThinking = createInitialThinkingTrace("machdoch", 210);
+    const staleThinkingMessage = {
+      id: "running-progress-thinking",
+      taskId,
+      role: "agent" as const,
+      content: "",
+      createdAt: 210,
+      source: {
+        kind: "thinking" as const,
+        thinking: initialThinking,
+      },
+    };
+    const currentThinkingMessage = {
+      ...staleThinkingMessage,
+      source: {
+        kind: "thinking" as const,
+        thinking: {
+          ...initialThinking,
+          entries: [
+            ...initialThinking.entries,
+            {
+              id: "running-progress-executing",
+              label: "Executing",
+              detail: "Executing the request.",
+              tone: "info" as const,
+              timestamp: 250,
+            },
+          ],
+        },
+      },
+    };
+    const currentState = {
+      ...baseState,
+      activeSessionId: newSession.id,
+      sessions: [
+        {
+          ...newSession,
+          updatedAt: 250,
+          messages: [userMessage, currentThinkingMessage],
+          promptHistory: [task],
+        },
+        ...baseState.sessions,
+      ],
+    };
+    const externalState = {
+      ...baseState,
+      activeSessionId: newSession.id,
+      sessions: [
+        {
+          ...newSession,
+          updatedAt: 300,
+          lastReadAt: 300,
+          messages: [userMessage, staleThinkingMessage],
+          promptHistory: [task],
+        },
+        ...baseState.sessions,
+      ],
+    };
+
+    const mergedState = mergeShellStateFromExternalUpdate(
+      currentState,
+      currentState,
+      externalState,
+      false,
+    );
+    const mergedSession = mergedState.sessions.find(
+      (session) => session.id === newSession.id,
+    );
+    const mergedThinking = mergedSession?.messages.find(
+      (message) => message.id === staleThinkingMessage.id,
+    );
+
+    expect(mergedState.activeSessionId).toBe(newSession.id);
+    expect(mergedSession?.lastReadAt).toBe(300);
+    expect(mergedSession?.messages.map((message) => message.id)).toEqual([
+      userMessage.id,
+      staleThinkingMessage.id,
+    ]);
+    expect(
+      mergedThinking?.source?.kind === "thinking"
+        ? mergedThinking.source.thinking.entries.map((entry) => entry.detail)
+        : [],
+    ).toContain("Executing the request.");
+  });
+
   it("merges same-id message updates from concurrent thinking and final-response saves", () => {
     const baseState = createInitialShellState();
     const task = "Summarize the workspace";

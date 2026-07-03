@@ -1,6 +1,6 @@
 [package]
 name = "machdoch"
-version = "0.27.1"
+version = "0.27.2"
 description = "Local-first OS AI agent desktop shell"
 authors = ["machdoch contributors"]
 edition = "2021"

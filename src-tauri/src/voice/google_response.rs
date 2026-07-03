@@ -1,6 +1,8 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use serde::Deserialize;
 
+use super::common::validate_synthesized_audio_bytes;
+
 const GOOGLE_PCM_SAMPLE_RATE_HZ: u32 = 24_000;
 const GOOGLE_PCM_CHANNELS: u16 = 1;
 const GOOGLE_PCM_BITS_PER_SAMPLE: u16 = 16;
@@ -152,6 +154,7 @@ pub(super) fn extract_google_audio(
     let decoded = BASE64_STANDARD
         .decode(inline_data.data)
         .map_err(|error| format!("Failed to decode Google Gemini audio: {error}"))?;
+    validate_synthesized_audio_bytes(&decoded, "Google Gemini")?;
 
     if mime_type.contains("wav") {
         return Ok(("audio/wav".to_string(), decoded));
@@ -260,5 +263,35 @@ mod tests {
         assert_eq!(&audio[8..12], b"WAVE");
         assert_eq!(&audio[40..44], &4u32.to_le_bytes());
         assert_eq!(&audio[44..], &[1, 0, 2, 0]);
+    }
+
+    #[test]
+    fn extract_google_audio_rejects_empty_wav_bytes() {
+        let response = response_with_candidate(candidate_with_parts(vec![GooglePart {
+            inline_data: Some(GoogleInlineData {
+                mime_type: Some("audio/wav".to_string()),
+                data: BASE64_STANDARD.encode([]),
+            }),
+            text: None,
+        }]));
+
+        let error = extract_google_audio(response).expect_err("expected empty audio error");
+
+        assert_eq!(error, "Google Gemini returned empty speech audio.");
+    }
+
+    #[test]
+    fn extract_google_audio_rejects_empty_pcm_before_wav_wrapping() {
+        let response = response_with_candidate(candidate_with_parts(vec![GooglePart {
+            inline_data: Some(GoogleInlineData {
+                mime_type: Some("audio/pcm".to_string()),
+                data: BASE64_STANDARD.encode([]),
+            }),
+            text: None,
+        }]));
+
+        let error = extract_google_audio(response).expect_err("expected empty audio error");
+
+        assert_eq!(error, "Google Gemini returned empty speech audio.");
     }
 }

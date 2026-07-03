@@ -335,17 +335,20 @@ const mergeNewSessionConcurrentFields = (
   );
 };
 
-const getMessageTaskId = (message: ChatSessionMessage): string => {
-  return message.taskId ?? message.id;
-};
+const mergeRunningSessionWithExternalSnapshot = (
+  currentSession: ChatSessionRecord,
+  externalSession: ChatSessionRecord,
+): ChatSessionRecord => {
+  const primarySession: ChatSessionRecord = {
+    ...externalSession,
+    updatedAt: Math.max(externalSession.updatedAt, currentSession.updatedAt),
+    messages: currentSession.messages,
+  };
 
-const hasUserMessageForTask = (
-  session: ChatSessionRecord,
-  taskId: string,
-): boolean => {
-  return session.messages.some(
-    (message) =>
-      message.role === "user" && getMessageTaskId(message) === taskId,
+  return mergeNewSessionConcurrentFields(
+    primarySession,
+    currentSession,
+    externalSession,
   );
 };
 
@@ -367,24 +370,10 @@ const preserveCurrentRunningSessions = (
 
     const externalSession = externalSessionsById.get(currentSession.id);
 
-    if (
-      externalSession &&
-      hasUserMessageForTask(externalSession, runningTaskId)
-    ) {
-      continue;
-    }
-
     protectedSessions.set(
       currentSession.id,
       externalSession
-        ? mergeNewSessionConcurrentFields(
-            {
-              ...externalSession,
-              updatedAt: Math.max(
-                externalSession.updatedAt,
-                currentSession.updatedAt,
-              ),
-            },
+        ? mergeRunningSessionWithExternalSnapshot(
             currentSession,
             externalSession,
           )
@@ -998,18 +987,21 @@ export const useChatSessionShellState = (
 
   const applyShellState = useCallback(
     (updater: SetStateAction<ShellPersistedState>): void => {
+      const previousState = shellStateRef.current;
+      const nextState =
+        typeof updater === "function" ? updater(previousState) : updater;
+
+      if (nextState === previousState) {
+        return;
+      }
+
       if (!hasHydrated) {
         didMutateBeforeHydrationRef.current = true;
       }
 
       localMutationRevisionRef.current += 1;
-      setShellState((prev) => {
-        const nextState =
-          typeof updater === "function" ? updater(prev) : updater;
-
-        shellStateRef.current = nextState;
-        return nextState;
-      });
+      shellStateRef.current = nextState;
+      setShellState(nextState);
     },
     [hasHydrated],
   );
@@ -1141,6 +1133,7 @@ export const useChatSessionShellState = (
           localMutationRevisionRef.current += 1;
         }
 
+        shellStateRef.current = recoveredShellState;
         setShellState(recoveredShellState);
       })
       .finally(() => {
@@ -1195,6 +1188,7 @@ export const useChatSessionShellState = (
             localMutationRevisionRef.current === targetRevision &&
             !areShellFragmentsEqual(shellStateRef.current, mergedShellState)
           ) {
+            shellStateRef.current = mergedShellState;
             setShellState(mergedShellState);
           }
 
