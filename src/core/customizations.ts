@@ -131,6 +131,14 @@ export const getUserInstructionDirectory = (): string => {
   return join(getUserCustomizationRoot(), "instructions");
 };
 
+export const getUserPromptDirectory = (): string => {
+  return join(getUserCustomizationRoot(), "prompts");
+};
+
+export const getUserSkillDirectory = (): string => {
+  return join(getUserCustomizationRoot(), "skills");
+};
+
 /**
  * Uses absolute paths for user-global instructions and workspace-relative paths
  * for repository-owned instruction files.
@@ -140,6 +148,21 @@ const toInstructionPath = (
   absolutePath: string,
   options?: {
     scope?: InstructionScope;
+    pathRoot?: "user" | "workspace";
+  },
+): string => {
+  if (options?.scope === "user" || options?.pathRoot === "user") {
+    return absolutePath;
+  }
+
+  return toWorkspaceRelativePath(workspaceRoot, absolutePath);
+};
+
+const toCustomizationPath = (
+  workspaceRoot: string,
+  absolutePath: string,
+  options?: {
+    scope?: "user" | "workspace" | "compatibility";
     pathRoot?: "user" | "workspace";
   },
 ): string => {
@@ -435,6 +458,10 @@ const loadInstruction = async (
 const loadPrompt = async (
   workspaceRoot: string,
   filePath: string,
+  options?: {
+    scope?: "user" | "workspace" | "compatibility";
+    pathRoot?: "user" | "workspace";
+  },
 ): Promise<DiscoveredPrompt> => {
   const content = await readFile(filePath, "utf8");
   const document = parseMarkdownDocument(content);
@@ -459,11 +486,12 @@ const loadPrompt = async (
     : [];
 
   return {
-    path: toWorkspaceRelativePath(workspaceRoot, filePath),
+    path: toCustomizationPath(workspaceRoot, filePath, options),
     name:
       typeof document.attributes.name === "string"
         ? document.attributes.name
         : deriveDocumentName(filePath, ".prompt.md"),
+    ...(options?.scope ? { scope: options.scope } : {}),
     ...(description ? { description } : {}),
     ...(agent ? { agent } : {}),
     ...(model ? { model } : {}),
@@ -480,11 +508,15 @@ const loadPrompt = async (
 const loadSkill = async (
   workspaceRoot: string,
   filePath: string,
+  options?: {
+    scope?: "user" | "workspace" | "compatibility";
+    pathRoot?: "user" | "workspace";
+  },
 ): Promise<DiscoveredSkill> => {
   const content = await readFile(filePath, "utf8");
   const document = parseMarkdownDocument(content);
-  const relativePath = toWorkspaceRelativePath(workspaceRoot, filePath);
-  const pathSegments = relativePath.split("/");
+  const displayPath = toCustomizationPath(workspaceRoot, filePath, options);
+  const pathSegments = displayPath.replace(/\\/gu, "/").split("/");
   const fallbackName = pathSegments.at(-2) ?? "skill";
   const argumentHint =
     typeof document.attributes["argument-hint"] === "string"
@@ -492,11 +524,12 @@ const loadSkill = async (
       : undefined;
 
   return {
-    path: relativePath,
+    path: displayPath,
     name:
       typeof document.attributes.name === "string"
         ? document.attributes.name
         : fallbackName,
+    ...(options?.scope ? { scope: options.scope } : {}),
     description:
       typeof document.attributes.description === "string"
         ? document.attributes.description
@@ -514,8 +547,8 @@ const loadSkill = async (
 };
 
 /**
- * Discovers workspace-level instructions, prompts, and skills from native
- * `.machdoch` folders and optional GitHub-compatible customization folders.
+ * Discovers workspace and user-level instructions, prompts, and skills from
+ * native `.machdoch` folders and optional GitHub-compatible customization folders.
  */
 export const discoverCustomizations = async (
   workspaceRoot: string,
@@ -531,6 +564,8 @@ export const discoverCustomizations = async (
     "instructions.md",
   );
   const userConditionalInstructionRoot = getUserInstructionDirectory();
+  const userPromptsRoot = getUserPromptDirectory();
+  const userSkillsRoot = getUserSkillDirectory();
   const alwaysOnInstructionPath = join(machdochRoot, "instructions.md");
   const conditionalInstructionRoot = join(machdochRoot, "instructions");
   const promptsRoot = join(machdochRoot, "prompts");
@@ -655,6 +690,16 @@ export const discoverCustomizations = async (
         filePath.endsWith(".instructions.md"),
       )
     : [];
+  const userPromptPaths = options?.discoverUserCustomizations
+    ? (await walkFiles(userPromptsRoot)).filter((filePath) =>
+        filePath.endsWith(".prompt.md"),
+      )
+    : [];
+  const userSkillPaths = options?.discoverUserCustomizations
+    ? (await walkFiles(userSkillsRoot)).filter(
+        (filePath) => basename(filePath) === "SKILL.md",
+      )
+    : [];
   const conditionalInstructionPaths = (
     await walkFiles(conditionalInstructionRoot)
   ).filter((filePath) => filePath.endsWith(".instructions.md"));
@@ -723,14 +768,38 @@ export const discoverCustomizations = async (
   }
 
   const prompts = await Promise.all(
-    [...promptPaths, ...githubPromptPaths]
-      .sort()
-      .map((filePath) => loadPrompt(workspaceRoot, filePath)),
+    [
+      ...promptPaths.sort().map((filePath) => ({ filePath })),
+      ...githubPromptPaths
+        .sort()
+        .map((filePath) => ({ filePath, scope: "compatibility" as const })),
+      ...userPromptPaths
+        .sort()
+        .map((filePath) => ({
+          filePath,
+          scope: "user" as const,
+          pathRoot: "user" as const,
+        })),
+    ].map(({ filePath, ...loadOptions }) =>
+      loadPrompt(workspaceRoot, filePath, loadOptions),
+    ),
   );
   const skills = await Promise.all(
-    [...skillPaths, ...githubSkillPaths]
-      .sort()
-      .map((filePath) => loadSkill(workspaceRoot, filePath)),
+    [
+      ...skillPaths.sort().map((filePath) => ({ filePath })),
+      ...githubSkillPaths
+        .sort()
+        .map((filePath) => ({ filePath, scope: "compatibility" as const })),
+      ...userSkillPaths
+        .sort()
+        .map((filePath) => ({
+          filePath,
+          scope: "user" as const,
+          pathRoot: "user" as const,
+        })),
+    ].map(({ filePath, ...loadOptions }) =>
+      loadSkill(workspaceRoot, filePath, loadOptions),
+    ),
   );
 
   return {

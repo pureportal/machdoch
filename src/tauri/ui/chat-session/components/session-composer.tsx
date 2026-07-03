@@ -23,7 +23,11 @@ import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import type { RuntimeProvider } from "../../model-catalog";
 import type { PromptEnhancementMode } from "../_helpers/prompt-enhancement";
 import type { AttachmentSelectionKind } from "../_helpers/session-context-attachments";
-import type { SaveSmartContextPackInput } from "../_helpers/smart-context-packs";
+import type {
+  SaveSmartContextPackInput,
+  SmartContextPackScope,
+  SmartContextPackScopeFilter,
+} from "../_helpers/smart-context-packs";
 import type { RUN_MODE_META } from "../_helpers/session-shell";
 import {
   AgentComposer,
@@ -113,8 +117,8 @@ export interface SessionComposerProps {
     variableValues?: Record<string, string>,
   ) => void | Promise<void>;
   onDeleteContextPack: (packId: string) => void;
-  onExportContextPacks: () => void;
-  onImportContextPacks: (file: File) => void;
+  onExportContextPacks: (scopeFilter: SmartContextPackScopeFilter) => void;
+  onImportContextPacks: (file: File, scope: SmartContextPackScope) => void;
   onDraftChange: (value: string) => void;
   onComposerHistoryNavigation: (
     event: KeyboardEvent<HTMLTextAreaElement>,

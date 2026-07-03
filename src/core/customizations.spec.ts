@@ -152,6 +152,71 @@ Skill body.
     ]);
   });
 
+  it("discovers user prompts and skills as global customizations", async () => {
+    const workspaceRoot = await createWorkspace();
+    const userConfigRoot = await createWorkspace();
+    process.env.MACHDOCH_USER_CONFIG_DIR = userConfigRoot;
+    const userPromptPath = join(
+      userConfigRoot,
+      "prompts",
+      "release-audit.prompt.md",
+    );
+    const userSkillPath = join(
+      userConfigRoot,
+      "skills",
+      "release-review",
+      "SKILL.md",
+    );
+
+    await mkdir(join(userConfigRoot, "prompts"), { recursive: true });
+    await mkdir(join(userConfigRoot, "skills", "release-review"), {
+      recursive: true,
+    });
+    await writeFile(
+      userPromptPath,
+      `---
+name: release-audit
+description: Review release notes
+---
+Audit release risk.
+`,
+    );
+    await writeFile(
+      userSkillPath,
+      `---
+description: Reviews release readiness
+---
+Skill body.
+`,
+    );
+
+    const customizations = await discoverCustomizations(workspaceRoot, {
+      discoverUserCustomizations: true,
+    });
+
+    expect(customizations.prompts).toEqual([
+      {
+        path: userPromptPath,
+        scope: "user",
+        name: "release-audit",
+        description: "Review release notes",
+        inputs: [],
+        tools: [],
+        body: "Audit release risk.",
+      },
+    ]);
+    expect(customizations.skills).toEqual([
+      {
+        path: userSkillPath,
+        scope: "user",
+        name: "release-review",
+        description: "Reviews release readiness",
+        userInvocable: true,
+        disableModelInvocation: false,
+      },
+    ]);
+  });
+
   it("derives fallback names and normalizes aliased prompt tools", async () => {
     const workspaceRoot = await createWorkspace();
 
@@ -303,6 +368,7 @@ Skill body.
     expect(withCompatibility.prompts).toEqual([
       {
         path: ".github/prompts/release.prompt.md",
+        scope: "compatibility",
         name: "release",
         inputs: [],
         tools: ["git"],
@@ -312,6 +378,7 @@ Skill body.
     expect(withCompatibility.skills).toEqual([
       {
         path: ".github/skills/repo-skill/SKILL.md",
+        scope: "compatibility",
         name: "repo-skill",
         description: "Repo skill",
         userInvocable: true,

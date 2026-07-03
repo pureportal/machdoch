@@ -22,6 +22,10 @@ import {
   getSessionTitle,
 } from "../../chat-session.model";
 import {
+  getSmartContextPackScope,
+  getSmartContextPackScopeLabel,
+} from "./smart-context-packs";
+import {
   cancelSchedulerRun,
   deleteSchedulerJob,
   disableRemoteControlServer,
@@ -362,20 +366,26 @@ const createSchedulerRunSnapshot = (
 const createContextPackSnapshot = (
   pack: SmartContextPack,
   matchedContextPackIds: string[],
-): RemoteShellContextPackSnapshot => ({
-  id: pack.id,
-  name: pack.name,
-  ...(pack.workspace ? { workspace: pack.workspace } : {}),
-  instructionsPreview: pack.instructions,
-  promptPreview: pack.prompt,
-  attachmentCount: pack.contextAttachments.length,
-  variables: pack.variables.map((variable) => variable.name),
-  matched: matchedContextPackIds.includes(pack.id),
-  ...(pack.provider ? { provider: pack.provider } : {}),
-  ...(pack.model ? { model: pack.model } : {}),
-  ...(pack.mode ? { mode: pack.mode } : {}),
-  ...(pack.reasoning ? { reasoning: pack.reasoning } : {}),
-});
+): RemoteShellContextPackSnapshot => {
+  const scope = getSmartContextPackScope(pack);
+
+  return {
+    id: pack.id,
+    name: pack.name,
+    scope,
+    scopeLabel: getSmartContextPackScopeLabel(scope),
+    ...(pack.workspace ? { workspace: pack.workspace } : {}),
+    instructionsPreview: pack.instructions,
+    promptPreview: pack.prompt,
+    attachmentCount: pack.contextAttachments.length,
+    variables: pack.variables.map((variable) => variable.name),
+    matched: matchedContextPackIds.includes(pack.id),
+    ...(pack.provider ? { provider: pack.provider } : {}),
+    ...(pack.model ? { model: pack.model } : {}),
+    ...(pack.mode ? { mode: pack.mode } : {}),
+    ...(pack.reasoning ? { reasoning: pack.reasoning } : {}),
+  };
+};
 
 const createRuntimeCapabilitySnapshot = (
   available: boolean,

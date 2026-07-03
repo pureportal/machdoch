@@ -78,6 +78,7 @@ describe("SmartContextPackPicker", () => {
         activeProvider="openai"
         activeModel="gpt-5.5"
         activeRunMode="machdoch"
+        activeReasoning="default"
         contextAttachments={[]}
         matchedContextPackIds={[]}
         imageInputSupported

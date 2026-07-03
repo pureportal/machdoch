@@ -71,6 +71,7 @@ const rankPromptSuggestions = (
         {
           name: prompt.name,
           path: prompt.path,
+          ...(prompt.scope ? { scope: prompt.scope } : {}),
           score,
           reason: createMatchReason(matchedTerms),
         },
@@ -109,6 +110,7 @@ const rankSkillSuggestions = (
         {
           name: skill.name,
           path: skill.path,
+          ...(skill.scope ? { scope: skill.scope } : {}),
           score,
           reason: createMatchReason(matchedTerms),
         },

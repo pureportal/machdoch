@@ -116,10 +116,13 @@ import {
   createSmartContextPackVariables,
   doesSmartContextPackMatchComposer,
   extractSmartContextPackVariables,
+  filterSmartContextPacksByScope,
   getSmartContextPacksForWorkspace,
   importSmartContextPacksIntoShellState,
   isSmartContextPackAppliedToDraft,
   type SaveSmartContextPackInput,
+  type SmartContextPackScope,
+  type SmartContextPackScopeFilter,
 } from "./smart-context-packs";
 import {
   createConversationContextFromSession,
@@ -2291,7 +2294,8 @@ export const useChatSessionController = (
         const now = Date.now();
         const pack: SmartContextPack = {
           id: crypto.randomUUID(),
-          workspace: state.activeSession.workspace,
+          workspace:
+            input.scope === "global" ? null : state.activeSession.workspace,
           name,
           instructions,
           prompt,
@@ -2486,29 +2490,43 @@ export const useChatSessionController = (
     [state.applyShellState],
   );
 
-  const handleExportContextPacks = useCallback((): void => {
-    if (workspaceContextPacks.length === 0) {
-      return;
-    }
+  const handleExportContextPacks = useCallback(
+    (scopeFilter: SmartContextPackScopeFilter): void => {
+      const packsToExport = filterSmartContextPacksByScope(
+        workspaceContextPacks,
+        scopeFilter,
+      );
 
-    const payload = createSmartContextPackExportPayload(workspaceContextPacks);
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    const date = new Date().toISOString().slice(0, 10);
+      if (packsToExport.length === 0) {
+        return;
+      }
 
-    anchor.href = url;
-    anchor.download = `machdoch-context-packs-${date}.json`;
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-  }, [workspaceContextPacks]);
+      const payload = createSmartContextPackExportPayload(packsToExport);
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const date = new Date().toISOString().slice(0, 10);
+      const scopeSuffix =
+        scopeFilter === "all" ? "" : `-${scopeFilter}`;
+
+      anchor.href = url;
+      anchor.download = `machdoch-context-packs${scopeSuffix}-${date}.json`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    },
+    [workspaceContextPacks],
+  );
 
   const handleImportContextPacks = useCallback(
-    (file: File): void => {
+    (file: File, scope: SmartContextPackScope): void => {
+      if (scope === "workspace" && !state.activeSession.workspace) {
+        return;
+      }
+
       void file
         .text()
         .then((text) => JSON.parse(text) as unknown)
@@ -2518,6 +2536,7 @@ export const useChatSessionController = (
               prev,
               payload,
               state.activeSession.workspace,
+              scope,
             ),
           );
         })

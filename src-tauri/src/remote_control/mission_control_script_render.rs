@@ -395,6 +395,7 @@ pub(super) fn mission_control_script_render() -> &'static str {
           <strong>${escapeHtml(pack.name)}</strong>
           <div>${escapeHtml(pack.promptPreview || pack.instructionsPreview || "")}</div>
           <div class="meta">
+            <span class="pill">${escapeHtml(pack.scopeLabel || pack.scope || (pack.workspace ? "Workspace" : "Global"))}</span>
             <span class="pill">${pack.attachmentCount} attachments</span>
             ${pack.matched ? '<span class="pill good">matched</span>' : ""}
           </div>

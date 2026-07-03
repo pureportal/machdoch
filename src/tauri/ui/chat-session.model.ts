@@ -965,12 +965,22 @@ const normalizeTaskSuggestions = (
 
   return value
     .filter(isRecord)
-    .map((entry, index) => ({
-      name: normalizeString(entry.name, `Suggestion ${index + 1}`),
-      path: normalizeString(entry.path),
-      score: normalizeFiniteNumber(entry.score),
-      reason: normalizeString(entry.reason),
-    }));
+    .map((entry, index) => {
+      const scope =
+        entry.scope === "user" ||
+        entry.scope === "workspace" ||
+        entry.scope === "compatibility"
+          ? entry.scope
+          : undefined;
+
+      return {
+        name: normalizeString(entry.name, `Suggestion ${index + 1}`),
+        path: normalizeString(entry.path),
+        ...(scope ? { scope } : {}),
+        score: normalizeFiniteNumber(entry.score),
+        reason: normalizeString(entry.reason),
+      };
+    });
 };
 
 const normalizeTaskPlanSteps = (

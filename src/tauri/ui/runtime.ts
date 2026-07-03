@@ -585,6 +585,8 @@ export interface RemoteShellSchedulerSnapshot {
 export interface RemoteShellContextPackSnapshot {
   id: string;
   name: string;
+  scope?: "workspace" | "global";
+  scopeLabel?: string;
   workspace?: string;
   instructionsPreview: string;
   promptPreview: string;

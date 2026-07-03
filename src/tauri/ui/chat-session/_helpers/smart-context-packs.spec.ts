@@ -10,6 +10,7 @@ import {
   createSmartContextPackPreview,
   doesSmartContextPackMatchComposer,
   extractSmartContextPackVariables,
+  filterSmartContextPacksByScope,
   getSmartContextPackMissingVariableNames,
   getSmartContextPacksForWorkspace,
   importSmartContextPacksIntoShellState,
@@ -50,7 +51,7 @@ const createPack = (
 };
 
 describe("smart context packs", () => {
-  it("matches Windows workspaces across casing and separators", () => {
+  it("matches global packs and Windows workspaces across casing and separators", () => {
     const packs = [
       createPack({ id: "windows-pack", workspace: "C:\\Project\\" }),
       createPack({ id: "other-pack", workspace: "C:\\Other" }),
@@ -61,10 +62,16 @@ describe("smart context packs", () => {
       getSmartContextPacksForWorkspace(packs, "c:/project").map(
         (pack) => pack.id,
       ),
-    ).toEqual(["windows-pack"]);
+    ).toEqual(["windows-pack", "null-pack"]);
     expect(
       getSmartContextPacksForWorkspace(packs, null).map((pack) => pack.id),
     ).toEqual(["null-pack"]);
+    expect(
+      filterSmartContextPacksByScope(packs, "global").map((pack) => pack.id),
+    ).toEqual(["null-pack"]);
+    expect(
+      filterSmartContextPacksByScope(packs, "workspace").map((pack) => pack.id),
+    ).toEqual(["windows-pack", "other-pack"]);
   });
 
   it("puts reusable instructions before the current task", () => {
@@ -124,6 +131,54 @@ describe("smart context packs", () => {
         "Run npm test.",
       ].join("\n"),
     );
+  });
+
+  it("summarizes prompt and skill files when applying a pack", () => {
+    const result = applySmartContextPackToComposer(
+      "Use the saved workflow",
+      [],
+      createPack({
+        instructions: "Prefer reusable workflow files.",
+        prompt: "",
+        contextAttachments: [
+          {
+            id: "prompt-file",
+            path: "C:\\Project\\.machdoch\\prompts\\debug-build.prompt.md",
+            kind: "file",
+            name: "debug-build.prompt.md",
+          },
+          {
+            id: "skill-file",
+            path: "C:\\Project\\.machdoch\\skills\\browser\\SKILL.md",
+            kind: "file",
+            name: "SKILL.md",
+          },
+        ],
+      }),
+    );
+
+    expect(result.draft).toContain("### Prompt files\n- /debug-build");
+    expect(result.draft).toContain("### Skill files\n- browser");
+    expect(
+      createContextPackSummary(
+        createPack({
+          contextAttachments: [
+            {
+              id: "prompt-file",
+              path: "C:\\Project\\.machdoch\\prompts\\debug-build.prompt.md",
+              kind: "file",
+              name: "debug-build.prompt.md",
+            },
+            {
+              id: "skill-file",
+              path: "C:\\Project\\.machdoch\\skills\\browser\\SKILL.md",
+              kind: "file",
+              name: "SKILL.md",
+            },
+          ],
+        }),
+      ),
+    ).toContain("1 prompt file");
   });
 
   it("preserves input-needed placeholders when applying a pack", () => {
@@ -302,6 +357,7 @@ describe("smart context packs", () => {
       },
       payload,
       "C:\\Imported",
+      "workspace",
       20,
     );
 
@@ -315,5 +371,27 @@ describe("smart context packs", () => {
     });
     expect(state.contextPacks[0]?.id).not.toBe("pack-1");
     expect(state.contextPacks[1]?.name).toBe("Existing");
+  });
+
+  it("imports packs into global scope when requested", () => {
+    const exportedPack = createPack({
+      id: "imported-global-pack",
+      name: "Imported Global",
+      workspace: "C:\\Source",
+    });
+    const payload = createSmartContextPackExportPayload([exportedPack], 15);
+    const state = importSmartContextPacksIntoShellState(
+      createInitialShellState(),
+      payload,
+      "C:\\Imported",
+      "global",
+      20,
+    );
+
+    expect(state.contextPacks[0]).toMatchObject({
+      name: "Imported Global",
+      workspace: null,
+      useCount: 0,
+    });
   });
 });

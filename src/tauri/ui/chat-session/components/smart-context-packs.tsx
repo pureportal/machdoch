@@ -1,6 +1,8 @@
 import {
   AlertTriangle,
   Download,
+  Folder,
+  Globe2,
   Layers,
   Play,
   Plus,
@@ -45,9 +47,13 @@ import {
   getContextPackReasoningLabel,
   getContextPackModeLabel,
   getSmartContextPackMissingVariableNames,
+  getSmartContextPackScope,
+  getSmartContextPackScopeLabel,
   getSmartContextPackSortTimestamp,
   parseSmartContextPackListInput,
   type SaveSmartContextPackInput,
+  type SmartContextPackScope,
+  type SmartContextPackScopeFilter,
 } from "../_helpers/smart-context-packs";
 
 export interface SmartContextPackPickerProps {
@@ -68,14 +74,15 @@ export interface SmartContextPackPickerProps {
     variableValues?: Record<string, string>,
   ) => void | Promise<void>;
   onDeleteContextPack: (packId: string) => void;
-  onExportContextPacks: () => void;
-  onImportContextPacks: (file: File) => void;
+  onExportContextPacks: (scopeFilter: SmartContextPackScopeFilter) => void;
+  onImportContextPacks: (file: File, scope: SmartContextPackScope) => void;
 }
 
 type SmartContextPackView = "apply" | "save" | "configure";
 
 interface SmartContextPackListItem {
   pack: SmartContextPack;
+  scope: SmartContextPackScope;
   summary: string[];
   preview: ReturnType<typeof createSmartContextPackPreview>;
   previewWarnings: string[];
@@ -115,6 +122,20 @@ const formatAttachmentToggleLabel = (
 };
 
 const formatListInputValue = (values: string[]): string => values.join(", ");
+
+const formatScopeFilterLabel = (
+  scopeFilter: SmartContextPackScopeFilter,
+): string => {
+  switch (scopeFilter) {
+    case "global":
+      return "Global";
+    case "workspace":
+      return "Workspace";
+    case "all":
+    default:
+      return "All";
+  }
+};
 
 const isVariablePreviewWarning = (warning: string): boolean => {
   return warning.endsWith(" variable") || warning.endsWith(" variables");
@@ -185,6 +206,7 @@ const SmartContextPackCard = ({
 }): JSX.Element => {
   const { pack, summary, preview, previewWarnings, isMatched, ralphFlowNames } =
     item;
+  const scopeLabel = getSmartContextPackScopeLabel(item.scope);
   const isPendingUsedPackDelete =
     pendingDeletePackId === pack.id && ralphFlowNames.length > 0;
 
@@ -207,6 +229,21 @@ const SmartContextPackCard = ({
                 Suggested
               </span>
             ) : null}
+            <span
+              className={cn(
+                "inline-flex h-5 items-center gap-1 rounded-full border px-1.5 text-[10px] font-semibold",
+                item.scope === "global"
+                  ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-100"
+                  : "border-slate-700 bg-slate-950/80 text-slate-300",
+              )}
+            >
+              {item.scope === "global" ? (
+                <Globe2 className="h-3 w-3" />
+              ) : (
+                <Folder className="h-3 w-3" />
+              )}
+              {scopeLabel}
+            </span>
           </div>
           <p className="mt-1 text-[11px] text-slate-500">
             {formatPackUsage(pack)}
@@ -247,6 +284,18 @@ const SmartContextPackCard = ({
           {preview.attachmentCount} path
           {preview.attachmentCount === 1 ? "" : "s"}
         </span>
+        {preview.promptFileCount > 0 ? (
+          <span className="rounded-full border border-violet-400/20 bg-violet-400/10 px-2 py-0.5 text-[10px] leading-4 text-violet-100">
+            {preview.promptFileCount} prompt file
+            {preview.promptFileCount === 1 ? "" : "s"}
+          </span>
+        ) : null}
+        {preview.skillFileCount > 0 ? (
+          <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 text-[10px] leading-4 text-cyan-100">
+            {preview.skillFileCount} skill file
+            {preview.skillFileCount === 1 ? "" : "s"}
+          </span>
+        ) : null}
         {previewWarnings.map((warning) => (
           <span
             key={warning}
@@ -307,6 +356,11 @@ export const SmartContextPackPicker = ({
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<SmartContextPackView>("apply");
   const [name, setName] = useState("");
+  const [scopeFilter, setScopeFilter] =
+    useState<SmartContextPackScopeFilter>("all");
+  const [saveScope, setSaveScope] = useState<SmartContextPackScope>(
+    workspaceRoot ? "workspace" : "global",
+  );
   const [instructions, setInstructions] = useState("");
   const [variablesInput, setVariablesInput] = useState("");
   const [triggerPhrasesInput, setTriggerPhrasesInput] = useState("");
@@ -352,6 +406,7 @@ export const SmartContextPackPicker = ({
 
       return {
         pack,
+        scope: getSmartContextPackScope(pack),
         summary: createContextPackSummary(pack),
         preview,
         previewWarnings: preview.warnings.filter(
@@ -362,6 +417,19 @@ export const SmartContextPackPicker = ({
       };
     });
   }, [imageInputSupported, matchedPackIds, ralphPackUsageById, sortedPacks]);
+  const filteredPackItems = useMemo(
+    () =>
+      packItems.filter(
+        (item) => scopeFilter === "all" || item.scope === scopeFilter,
+      ),
+    [packItems, scopeFilter],
+  );
+  const workspacePackCount = packItems.filter(
+    (item) => item.scope === "workspace",
+  ).length;
+  const globalPackCount = packItems.filter(
+    (item) => item.scope === "global",
+  ).length;
   const configuringPack =
     configuringPackId === null
       ? null
@@ -379,6 +447,9 @@ export const SmartContextPackPicker = ({
       includeReasoning);
 
   const openSaveView = (): void => {
+    const nextSaveScope =
+      !workspaceRoot || scopeFilter === "global" ? "global" : "workspace";
+
     setName(deriveContextPackName(activeDraft));
     setInstructions("");
     setIncludePrompt(hasPrompt);
@@ -389,11 +460,18 @@ export const SmartContextPackPicker = ({
     setVariablesInput(
       formatListInputValue(extractSmartContextPackVariables(activeDraft)),
     );
+    setSaveScope(nextSaveScope);
     setTriggerPhrasesInput("");
     setTriggerPathPatternsInput("");
     setAutoApply(false);
     setView("save");
   };
+
+  useEffect(() => {
+    if (!workspaceRoot && saveScope === "workspace") {
+      setSaveScope("global");
+    }
+  }, [saveScope, workspaceRoot]);
 
   const openConfigureView = (pack: SmartContextPack): void => {
     setConfiguringPackId(pack.id);
@@ -512,6 +590,7 @@ export const SmartContextPackPicker = ({
 
     onSaveContextPack({
       name,
+      scope: saveScope,
       instructions,
       variables: [
         ...parseSmartContextPackListInput(variablesInput),
@@ -573,7 +652,10 @@ export const SmartContextPackPicker = ({
     const [file] = Array.from(event.target.files ?? []);
 
     if (file) {
-      onImportContextPacks(file);
+      onImportContextPacks(
+        file,
+        workspaceRoot && scopeFilter !== "global" ? "workspace" : "global",
+      );
     }
 
     event.target.value = "";
@@ -622,6 +704,9 @@ export const SmartContextPackPicker = ({
               <p className="mt-1 truncate text-sm font-semibold text-slate-100">
                 {workspaceLabel}
               </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {globalPackCount} global / {workspacePackCount} workspace
+              </p>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
               <input
@@ -637,7 +722,11 @@ export const SmartContextPackPicker = ({
                 variant="outline"
                 size="icon-sm"
                 aria-label="Import context packs"
-                title="Import context packs"
+                title={`Import ${formatScopeFilterLabel(
+                  workspaceRoot && scopeFilter !== "global"
+                    ? "workspace"
+                    : "global",
+                ).toLowerCase()} context packs`}
                 onClick={() => importInputRef.current?.click()}
                 className="h-8 w-8 rounded-full border-slate-800 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100"
               >
@@ -648,9 +737,11 @@ export const SmartContextPackPicker = ({
                 variant="outline"
                 size="icon-sm"
                 aria-label="Export context packs"
-                title="Export context packs"
-                disabled={contextPacks.length === 0}
-                onClick={onExportContextPacks}
+                title={`Export ${formatScopeFilterLabel(
+                  scopeFilter,
+                ).toLowerCase()} context packs`}
+                disabled={filteredPackItems.length === 0}
+                onClick={() => onExportContextPacks(scopeFilter)}
                 className="h-8 w-8 rounded-full border-slate-800 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:text-slate-600"
               >
                 <Download className="h-3.5 w-3.5" />
@@ -667,11 +758,28 @@ export const SmartContextPackPicker = ({
               </Button>
             </div>
           </div>
+          <div className="mt-3 flex rounded-full border border-slate-800 bg-slate-900/55 p-0.5">
+            {(["all", "workspace", "global"] as const).map((scope) => (
+              <button
+                key={scope}
+                type="button"
+                onClick={() => setScopeFilter(scope)}
+                className={cn(
+                  "h-7 flex-1 rounded-full px-2 text-xs font-medium transition-colors",
+                  scopeFilter === scope
+                    ? "bg-slate-100 text-slate-950"
+                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                )}
+              >
+                {formatScopeFilterLabel(scope)}
+              </button>
+            ))}
+          </div>
         </div>
 
         {view === "apply" ? (
           <div className="grid max-h-[26rem] gap-2 overflow-y-auto p-3">
-            {packItems.length === 0 ? (
+            {filteredPackItems.length === 0 ? (
               <button
                 type="button"
                 onClick={openSaveView}
@@ -679,12 +787,13 @@ export const SmartContextPackPicker = ({
               >
                 <span className="text-sm font-semibold">Save current setup</span>
                 <span className="text-xs leading-5 text-slate-500">
-                  Prompt, instructions, paths, model, and mode.
+                  Prompt, instructions, paths, prompt files, skill files, model,
+                  and mode.
                 </span>
               </button>
             ) : null}
 
-            {packItems.map((item) => (
+            {filteredPackItems.map((item) => (
               <SmartContextPackCard
                 key={item.pack.id}
                 item={item}
@@ -711,6 +820,36 @@ export const SmartContextPackPicker = ({
                 className="h-9 rounded-xl border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
               />
             </label>
+
+            <div className="grid gap-1.5">
+              <span className="px-1 text-xs font-medium text-slate-400">
+                Scope
+              </span>
+              <div className="flex rounded-full border border-slate-800 bg-slate-900/55 p-0.5">
+                {(["workspace", "global"] as const).map((scope) => {
+                  const disabled = scope === "workspace" && !workspaceRoot;
+
+                  return (
+                    <button
+                      key={scope}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => setSaveScope(scope)}
+                      className={cn(
+                        "h-8 flex-1 rounded-full px-3 text-xs font-medium transition-colors",
+                        saveScope === scope
+                          ? "bg-slate-100 text-slate-950"
+                          : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                        disabled &&
+                          "cursor-not-allowed opacity-45 hover:bg-transparent",
+                      )}
+                    >
+                      {getSmartContextPackScopeLabel(scope)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             <label className="grid gap-1.5">
               <span className="px-1 text-xs font-medium text-slate-400">

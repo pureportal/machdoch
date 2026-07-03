@@ -66,6 +66,7 @@ export interface CustomizationDiagnostic {
 export interface DiscoveredPrompt {
   path: string;
   name: string;
+  scope?: Extract<InstructionScope, "user" | "workspace" | "compatibility">;
   description?: string;
   agent?: string;
   model?: string;
@@ -78,6 +79,7 @@ export interface DiscoveredPrompt {
 export interface DiscoveredSkill {
   path: string;
   name: string;
+  scope?: Extract<InstructionScope, "user" | "workspace" | "compatibility">;
   description: string;
   argumentHint?: string;
   userInvocable: boolean;
@@ -332,6 +334,7 @@ export interface TaskCustomizationMatch {
 export interface TaskSuggestion {
   name: string;
   path: string;
+  scope?: Extract<InstructionScope, "user" | "workspace" | "compatibility">;
   score: number;
   reason: string;
 }

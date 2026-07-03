@@ -6180,6 +6180,82 @@ describe("ChatSession component", () => {
     runDesktopTaskSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
+  it("shows and applies global context packs in a workspace", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "global-context-pack-session",
+      workspace: "C:\\Project",
+      draft: "Review auth changes",
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+      contextPacks: [
+        {
+          id: "global-review-pack",
+          workspace: null,
+          name: "Global Review",
+          instructions: "Use organization-wide review rules.",
+          prompt: "Check security and release risk.",
+          contextAttachments: [],
+          variables: [],
+          trigger: {
+            phrases: [],
+            pathPatterns: [],
+            autoApply: false,
+          },
+          createdAt: 1,
+          updatedAt: 2,
+          useCount: 0,
+        },
+        {
+          id: "other-workspace-pack",
+          workspace: "C:\\Other",
+          name: "Other Workspace",
+          instructions: "",
+          prompt: "Do not show this here.",
+          contextAttachments: [],
+          variables: [],
+          trigger: {
+            phrases: [],
+            pathPatterns: [],
+            autoApply: false,
+          },
+          createdAt: 1,
+          updatedAt: 1,
+          useCount: 0,
+        },
+      ],
+    });
+
+    render(<ChatSession />);
+    await flushShellHydration();
+
+    fireEvent.click(screen.getByRole("button", { name: "Context packs" }));
+
+    expect(await screen.findByText("Global Review")).toBeDefined();
+    expect(screen.getAllByText("Global").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Other Workspace")).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply context pack Global Review" }),
+    );
+
+    const input = screen.getByPlaceholderText(
+      /What should machdoch do next\?/i,
+    ) as HTMLTextAreaElement;
+
+    await waitFor(() => {
+      expect(input.value).toContain("## Context Pack: Global Review");
+      expect(input.value).toContain("Use organization-wide review rules.");
+      expect(input.value).toContain("## Current Task\nReview auth changes");
+    });
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
   it("saves the current composer setup as a workspace context pack", async () => {
     const baseState = createInitialShellState();
     const session = createSession({
@@ -6279,6 +6355,54 @@ describe("ChatSession component", () => {
           parent: "C:\\Project",
         },
       ]);
+    });
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("saves the current composer setup as a global context pack", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "save-global-context-pack-session",
+      workspace: "C:\\Project",
+      draft: "Audit every release note",
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    render(<ChatSession />);
+    await flushShellHydration();
+
+    fireEvent.click(screen.getByRole("button", { name: "Context packs" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Global" }).at(-1) as HTMLElement,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("Review PR"), {
+      target: { value: "Global Release Audit" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save pack" }));
+
+    await waitFor(() => {
+      const storedState = JSON.parse(
+        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+      ) as ShellPersistedState;
+      const savedPack = storedState.contextPacks.find(
+        (pack) => pack.name === "Global Release Audit",
+      );
+
+      expect(savedPack).toMatchObject({
+        workspace: null,
+        prompt: "Audit every release note",
+        provider: "openai",
+        model: "gpt-5.5",
+        mode: "machdoch",
+      });
     });
   }, SLOW_UI_TEST_TIMEOUT_MS);
 

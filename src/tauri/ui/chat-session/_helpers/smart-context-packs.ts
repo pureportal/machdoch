@@ -14,6 +14,7 @@ import { mergeContextAttachments } from "./session-context-attachments";
 
 export interface SaveSmartContextPackInput {
   name: string;
+  scope: SmartContextPackScope;
   instructions: string;
   variables: string[];
   triggerPhrases: string[];
@@ -38,9 +39,15 @@ export interface SmartContextPackMatchInput {
 
 export interface SmartContextPackPreview {
   attachmentCount: number;
+  promptFileCount: number;
+  skillFileCount: number;
   estimatedTokens: number;
   warnings: string[];
 }
+
+export type SmartContextPackScope = "workspace" | "global";
+
+export type SmartContextPackScopeFilter = SmartContextPackScope | "all";
 
 export interface SmartContextPackExportPayload {
   kind: "machdoch.context-packs";
@@ -96,9 +103,30 @@ export const getSmartContextPacksForWorkspace = (
   packs: SmartContextPack[],
   workspace: string | null,
 ): SmartContextPack[] => {
-  return packs.filter((pack) =>
-    areSmartContextPackWorkspacesEqual(pack.workspace, workspace),
+  return packs.filter(
+    (pack) =>
+      getSmartContextPackScope(pack) === "global" ||
+      areSmartContextPackWorkspacesEqual(pack.workspace, workspace),
   );
+};
+
+export const getSmartContextPackScope = (
+  pack: Pick<SmartContextPack, "workspace">,
+): SmartContextPackScope => (pack.workspace ? "workspace" : "global");
+
+export const getSmartContextPackScopeLabel = (
+  scope: SmartContextPackScope,
+): string => (scope === "global" ? "Global" : "Workspace");
+
+export const filterSmartContextPacksByScope = (
+  packs: SmartContextPack[],
+  scopeFilter: SmartContextPackScopeFilter,
+): SmartContextPack[] => {
+  if (scopeFilter === "all") {
+    return packs;
+  }
+
+  return packs.filter((pack) => getSmartContextPackScope(pack) === scopeFilter);
 };
 
 export const getContextPackModeLabel = (mode: RunMode): string => {
@@ -266,6 +294,33 @@ export const createSmartContextPackDraftBlock = (
     sections.push(`### Prompt\n${prompt}`);
   }
 
+  const promptFiles = pack.contextAttachments.filter(isPromptFileAttachment);
+  const skillFiles = pack.contextAttachments.filter(isSkillFileAttachment);
+
+  if (promptFiles.length > 0) {
+    sections.push(
+      [
+        "### Prompt files",
+        ...promptFiles.map(
+          (attachment) =>
+            `- ${getPromptFileInvocationLabel(attachment)} (${attachment.path})`,
+        ),
+      ].join("\n"),
+    );
+  }
+
+  if (skillFiles.length > 0) {
+    sections.push(
+      [
+        "### Skill files",
+        ...skillFiles.map(
+          (attachment) =>
+            `- ${getSkillFileDisplayName(attachment)} (${attachment.path})`,
+        ),
+      ].join("\n"),
+    );
+  }
+
   return sections.length > 1 ? sections.join("\n\n") : "";
 };
 
@@ -411,6 +466,46 @@ const hasSensitivePathSegment = (
   ) || /\.(pem|key|p12|pfx)$/u.test(normalizedPath);
 };
 
+const getNormalizedAttachmentPath = (
+  attachment: ChatSessionContextAttachment,
+): string => attachment.path.replace(/\\/gu, "/");
+
+export const isPromptFileAttachment = (
+  attachment: ChatSessionContextAttachment,
+): boolean => getNormalizedAttachmentPath(attachment).endsWith(".prompt.md");
+
+export const isSkillFileAttachment = (
+  attachment: ChatSessionContextAttachment,
+): boolean => /(^|\/)SKILL\.md$/u.test(getNormalizedAttachmentPath(attachment));
+
+const getFileNameWithoutSuffix = (name: string, suffix: string): string => {
+  return name.endsWith(suffix) ? name.slice(0, -suffix.length) : name;
+};
+
+export const getPromptFileInvocationLabel = (
+  attachment: ChatSessionContextAttachment,
+): string => {
+  const fallbackName =
+    getNormalizedAttachmentPath(attachment).split("/").at(-1) ?? "";
+  const normalizedName = getFileNameWithoutSuffix(
+    attachment.name || fallbackName,
+    ".prompt.md",
+  ).trim();
+
+  return normalizedName ? `/${normalizedName}` : attachment.path;
+};
+
+export const getSkillFileDisplayName = (
+  attachment: ChatSessionContextAttachment,
+): string => {
+  const pathParts = getNormalizedAttachmentPath(attachment)
+    .split("/")
+    .filter(Boolean);
+  const parentName = pathParts.at(-2);
+
+  return parentName?.trim() || attachment.name || attachment.path;
+};
+
 export const createSmartContextPackPreview = (
   pack: SmartContextPack,
   options: { imageInputSupported: boolean },
@@ -419,6 +514,8 @@ export const createSmartContextPackPreview = (
   let imageCount = 0;
   let hasDirectory = false;
   let hasSensitivePaths = false;
+  let promptFileCount = 0;
+  let skillFileCount = 0;
 
   for (const attachment of pack.contextAttachments) {
     attachmentPathChars += attachment.path.length + attachment.name.length;
@@ -433,6 +530,14 @@ export const createSmartContextPackPreview = (
 
     if (hasSensitivePathSegment(attachment)) {
       hasSensitivePaths = true;
+    }
+
+    if (isPromptFileAttachment(attachment)) {
+      promptFileCount += 1;
+    }
+
+    if (isSkillFileAttachment(attachment)) {
+      skillFileCount += 1;
     }
   }
 
@@ -467,6 +572,8 @@ export const createSmartContextPackPreview = (
 
   return {
     attachmentCount: pack.contextAttachments.length,
+    promptFileCount,
+    skillFileCount,
     estimatedTokens: Math.max(1, Math.ceil(textChars / 4)),
     warnings,
   };
@@ -492,6 +599,8 @@ export const createContextPackSummary = (
     folders: 0,
     images: 0,
     other: 0,
+    promptFiles: 0,
+    skillFiles: 0,
   };
 
   if (pack.prompt.trim()) {
@@ -509,6 +618,14 @@ export const createContextPackSummary = (
   }
 
   for (const attachment of pack.contextAttachments) {
+    if (isPromptFileAttachment(attachment)) {
+      attachmentCounts.promptFiles += 1;
+    }
+
+    if (isSkillFileAttachment(attachment)) {
+      attachmentCounts.skillFiles += 1;
+    }
+
     switch (attachment.kind) {
       case "file":
         attachmentCounts.files += 1;
@@ -529,6 +646,22 @@ export const createContextPackSummary = (
   if (attachmentCounts.files > 0) {
     summary.push(
       `${attachmentCounts.files} file${attachmentCounts.files === 1 ? "" : "s"}`,
+    );
+  }
+
+  if (attachmentCounts.promptFiles > 0) {
+    summary.push(
+      `${attachmentCounts.promptFiles} prompt file${
+        attachmentCounts.promptFiles === 1 ? "" : "s"
+      }`,
+    );
+  }
+
+  if (attachmentCounts.skillFiles > 0) {
+    summary.push(
+      `${attachmentCounts.skillFiles} skill file${
+        attachmentCounts.skillFiles === 1 ? "" : "s"
+      }`,
     );
   }
 
@@ -611,6 +744,7 @@ export const importSmartContextPacksIntoShellState = (
   state: ShellPersistedState,
   rawPayload: unknown,
   targetWorkspace: string | null,
+  targetScope: SmartContextPackScope = "workspace",
   timestamp = Date.now(),
 ): ShellPersistedState => {
   const payload = parseSmartContextPackExportPayload(rawPayload);
@@ -630,7 +764,7 @@ export const importSmartContextPacksIntoShellState = (
     return {
       ...pack,
       id,
-      workspace: targetWorkspace,
+      workspace: targetScope === "global" ? null : targetWorkspace,
       createdAt: timestamp + index,
       updatedAt: timestamp + index,
       useCount: 0,

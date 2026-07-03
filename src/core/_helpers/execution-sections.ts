@@ -401,7 +401,9 @@ export const createPromptFilesSection = (
   return {
     title: "Prompt files",
     lines: customizations.prompts.flatMap((prompt) => [
-      `${prompt.name} (${prompt.path})`,
+      `${prompt.name} (${prompt.path})${
+        prompt.scope ? ` [${prompt.scope}]` : ""
+      }`,
       ...(prompt.description ? [`  description: ${prompt.description}`] : []),
       ...(prompt.argumentHint
         ? [`  argument hint: ${prompt.argumentHint}`]
@@ -428,7 +430,9 @@ export const createSkillFilesSection = (
   return {
     title: "Skill files",
     lines: customizations.skills.flatMap((skill) => [
-      `${skill.name} (${skill.path})`,
+      `${skill.name} (${skill.path})${
+        skill.scope ? ` [${skill.scope}]` : ""
+      }`,
       `  description: ${skill.description}`,
       ...(skill.argumentHint ? [`  argument hint: ${skill.argumentHint}`] : []),
       `  user invocable: ${skill.userInvocable ? "true" : "false"}`,
