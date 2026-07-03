@@ -13,6 +13,8 @@ export interface SessionHeaderProps {
   canRenameSession: boolean;
   canDeleteSession: boolean;
   canEditSessionMetadata: boolean;
+  canPinSession: boolean;
+  canBranchSession: boolean;
   showClearSessionHistory: boolean;
   canClearSessionHistory: boolean;
   onTagCommit: (tags: string[]) => void;
@@ -35,6 +37,8 @@ export const SessionHeader = ({
   canRenameSession,
   canDeleteSession,
   canEditSessionMetadata,
+  canPinSession,
+  canBranchSession,
   showClearSessionHistory,
   canClearSessionHistory,
   onTagCommit,
@@ -114,7 +118,7 @@ export const SessionHeader = ({
             className="app-session-tags-input h-9 w-44 rounded-2xl border-slate-800 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
           />
         ) : null}
-        {canEditSessionMetadata ? (
+        {canPinSession ? (
           <Button
             type="button"
             variant="ghost"
@@ -131,7 +135,7 @@ export const SessionHeader = ({
             <Pin className="h-4 w-4" />
           </Button>
         ) : null}
-        {canEditSessionMetadata ? (
+        {canBranchSession ? (
           <Button
             type="button"
             variant="ghost"

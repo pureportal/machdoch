@@ -101,6 +101,7 @@ export interface ContextAttachmentMenuButtonProps {
   onSelectImages: () => Promise<void>;
   buttonLabel?: string;
   buttonTitle?: string;
+  disabled?: boolean;
   imageInputDisabled?: boolean;
   imageInputDisabledReason?: string | null;
   className?: string;
@@ -114,6 +115,7 @@ export const ContextAttachmentMenuButton = ({
   onSelectImages,
   buttonLabel = "Add context",
   buttonTitle = "Add context",
+  disabled = false,
   imageInputDisabled = false,
   imageInputDisabledReason,
   className,
@@ -129,6 +131,7 @@ export const ContextAttachmentMenuButton = ({
           size="icon"
           aria-label={buttonLabel}
           title={buttonTitle}
+          disabled={disabled}
           className={className}
         >
           <Plus className={iconClassName} />

@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import {
   canArchiveSession,
   canDeleteSession,
+  canDuplicateSession,
+  canPinSession,
   createSession,
   isQuickVoiceSession,
   normalizeSessionTags,
@@ -193,7 +195,7 @@ export const useSessionLifecycle = (options: {
       },
       togglePinnedSession: (sessionId: string): void => {
         state.updateSessionById(sessionId, (session) => {
-          if (isQuickVoiceSession(session)) {
+          if (!canPinSession(session)) {
             return session;
           }
 
@@ -219,7 +221,7 @@ export const useSessionLifecycle = (options: {
             (session) => session.id === sessionId,
           );
 
-          if (!sourceSession || isQuickVoiceSession(sourceSession)) {
+          if (!sourceSession || !canDuplicateSession(sourceSession)) {
             return prev;
           }
 

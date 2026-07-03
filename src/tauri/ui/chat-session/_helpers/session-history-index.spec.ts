@@ -80,4 +80,14 @@ describe("session history index", () => {
       "Quick Chat cannot be duplicated.",
     );
   });
+
+  it("does not duplicate empty sessions", () => {
+    const emptySession = createSession({
+      id: "empty-session",
+    });
+
+    expect(() => duplicateSessionRecord(emptySession, "duplicate")).toThrow(
+      "Empty sessions cannot be duplicated.",
+    );
+  });
 });

@@ -43,6 +43,14 @@ const createStaleStateController = (
       shellState =
         typeof updater === "function" ? updater(shellState) : updater;
     }),
+    updateSessionById: vi.fn((sessionId, updater) => {
+      shellState = {
+        ...shellState,
+        sessions: shellState.sessions.map((session) =>
+          session.id === sessionId ? updater(session) : session,
+        ),
+      };
+    }),
     setActiveSessionId: vi.fn(),
   } as Partial<ChatSessionShellStateController> as ChatSessionShellStateController;
 
@@ -92,5 +100,39 @@ describe("useSessionLifecycle", () => {
       ),
     ).toHaveLength(1);
     expect(state.shellState.sessions).toHaveLength(2);
+  });
+
+  it("leaves empty sessions unchanged for archive, pin, and duplicate actions", () => {
+    const baseState = createInitialShellState();
+    const emptySession = createSession({
+      id: "empty-action-session",
+      updatedAt: 100,
+    });
+    const state = createStaleStateController({
+      ...baseState,
+      activeSessionId: emptySession.id,
+      sessions: [emptySession],
+    });
+    const { result } = renderHook(() =>
+      useSessionLifecycle({
+        state: state.controller,
+        providerChooserState,
+      }),
+    );
+
+    act(() => {
+      result.current.archiveSession(emptySession.id);
+      result.current.togglePinnedSession(emptySession.id);
+      result.current.cloneSession(emptySession.id, "duplicate");
+    });
+
+    expect(state.shellState.sessions).toHaveLength(1);
+    expect(state.shellState.sessions[0]).toMatchObject({
+      id: emptySession.id,
+      updatedAt: emptySession.updatedAt,
+    });
+    expect(state.shellState.sessions[0]?.archivedAt).toBeUndefined();
+    expect(state.shellState.sessions[0]?.pinnedAt).toBeUndefined();
+    expect(state.controller.setActiveSessionId).not.toHaveBeenCalled();
   });
 });

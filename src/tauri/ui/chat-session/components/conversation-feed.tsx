@@ -40,9 +40,16 @@ import { createContextAttachmentsFromTaskBlock } from "../_helpers/session-conte
 import { MessageAttachmentsList } from "./context-attachments";
 import { ExecutionInsightRow } from "./execution-insight-row";
 import { MessageMarkdown } from "./message-markdown";
+import { PromptEnhancementPending } from "./prompt-enhancement-pending";
 
 export interface ConversationFeedProps {
   visibleMessages: ChatSessionMessage[];
+  promptEnhancementPending?: {
+    id: string;
+    content: string;
+    contextAttachments: ChatSessionContextAttachment[];
+    modeLabel: string;
+  } | null;
   workspaceRoot?: string | null;
   aiContextMessageLimit?: number;
   bottomRef: RefObject<HTMLDivElement | null>;
@@ -177,6 +184,7 @@ const saveMarkdownDownload = (content: string, fileName: string): void => {
 
 export const ConversationFeed = ({
   visibleMessages,
+  promptEnhancementPending = null,
   workspaceRoot,
   aiContextMessageLimit = DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
   bottomRef,
@@ -296,7 +304,7 @@ export const ConversationFeed = ({
     onSaveMessageAsContextPack?.(activeMenu.contextPackMessage);
   }, [messageContextMenu, onSaveMessageAsContextPack]);
 
-  if (visibleMessages.length === 0) {
+  if (visibleMessages.length === 0 && !promptEnhancementPending) {
     return (
       <div className="app-conversation-empty mx-auto flex min-h-full max-w-2xl flex-col items-center justify-center py-16">
         <div className="flex flex-col items-center gap-6 text-center">
@@ -517,6 +525,44 @@ export const ConversationFeed = ({
           </div>
         );
       })}
+      {promptEnhancementPending ? (
+        <div
+          key={promptEnhancementPending.id}
+          className="app-prompt-enhancement-pending-row contents"
+        >
+          <div className="app-message-row flex min-w-0 flex-row-reverse gap-4">
+            <Avatar className="app-message-avatar mt-1 h-10 w-10 shrink-0 border border-emerald-500/20 bg-emerald-500/20">
+              <div className="flex h-full w-full items-center justify-center">
+                <User className="h-5 w-5 text-emerald-100" />
+              </div>
+            </Avatar>
+
+            <div className="app-message-stack flex min-w-0 flex-1 flex-col items-end gap-3">
+              <div className="app-message-bubble app-user-message-bubble relative max-w-[90%] min-w-0 overflow-hidden rounded-[1.75rem] rounded-tr-md bg-slate-800 px-5 py-4 text-sm leading-7 text-slate-100 shadow-lg shadow-slate-950/20 wrap-break-word">
+                <MessageMarkdown
+                  content={promptEnhancementPending.content}
+                  workspaceRoot={workspaceRoot}
+                  onOpenWorkspaceFile={onOpenWorkspaceFile}
+                  className="app-user-message-text"
+                />
+              </div>
+
+              {promptEnhancementPending.contextAttachments.length > 0 ? (
+                <MessageAttachmentsList
+                  attachments={promptEnhancementPending.contextAttachments}
+                  onOpen={onOpenAttachment}
+                  align="end"
+                />
+              ) : null}
+
+              <PromptEnhancementPending
+                variant="bubble"
+                modeLabel={promptEnhancementPending.modeLabel}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
       {messageContextMenu ? (
         <div
           role="menu"

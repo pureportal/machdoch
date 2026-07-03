@@ -1905,6 +1905,18 @@ export const getSessionOverviewStatus = (
   return "done";
 };
 
+export const isSessionEmpty = (session: ChatSessionRecord): boolean => {
+  return getSessionOverviewStatus(session) === "empty";
+};
+
+export const canPinSession = (session: ChatSessionRecord): boolean => {
+  return !isQuickVoiceSession(session) && !isSessionEmpty(session);
+};
+
+export const canDuplicateSession = (session: ChatSessionRecord): boolean => {
+  return !isQuickVoiceSession(session) && !isSessionEmpty(session);
+};
+
 export const getLatestCompletedSessionResponseAt = (
   session: ChatSessionRecord,
 ): number | null => {
@@ -2019,6 +2031,15 @@ export const compareSessionsByAttention = (
 
   if (leftIsPinned !== rightIsPinned) {
     return leftIsPinned ? -1 : 1;
+  }
+
+  if (!leftIsPinned && !rightIsPinned) {
+    const leftIsEmpty = isSessionEmpty(left);
+    const rightIsEmpty = isSessionEmpty(right);
+
+    if (leftIsEmpty !== rightIsEmpty) {
+      return leftIsEmpty ? -1 : 1;
+    }
   }
 
   const leftSortGroup = getSessionAttentionSortGroup(left);
@@ -2323,10 +2344,13 @@ export const recoverInactiveRunningTasks = (
 };
 
 export const canArchiveSession = (session: ChatSessionRecord): boolean => {
+  const status = getSessionOverviewStatus(session);
+
   return (
     !isQuickVoiceSession(session) &&
     !isSessionArchived(session) &&
-    getSessionOverviewStatus(session) !== "running"
+    status !== "running" &&
+    status !== "empty"
   );
 };
 

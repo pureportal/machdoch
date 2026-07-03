@@ -2078,6 +2078,225 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "shows the submitted prompt bubble while non-interview enhancement is pending and lets Stop cancel it",
+    async () => {
+      const originalPrompt = "scan setup";
+      let rejectEnhancement:
+        | ((reason?: unknown) => void)
+        | undefined;
+      let enhancementTaskId: string | undefined;
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation((_workspaceRoot, task, context) => {
+          if (String(task).includes("Enhance the user's Machdoch chat request")) {
+            enhancementTaskId = context?.taskId;
+
+            return new Promise<DesktopTaskRunResponse>((_resolve, reject) => {
+              rejectEnhancement = reject;
+            });
+          }
+
+          return Promise.resolve({
+            execution: createMockExecutionFixture(
+              String(task),
+              "/mock/home/path",
+              { mode: context?.mode },
+            ),
+          });
+        });
+      const cancelDesktopTaskSpy = vi
+        .spyOn(runtime, "cancelDesktopTask")
+        .mockResolvedValue(undefined);
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prompt enhancement: Off" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Choose Simple enhance" }),
+      );
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: originalPrompt },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      const pendingStatus = screen.getByRole("status");
+
+      expect(screen.getByText(originalPrompt)).toBeTruthy();
+      expect(within(pendingStatus).getByText("Enhancing prompt")).toBeTruthy();
+      expect(within(pendingStatus).getByText("Simple enhance")).toBeTruthy();
+      expect(
+        screen.queryByText(/is refining the request|Prompt enhancement refined/u),
+      ).toBeNull();
+      expect(input).toHaveProperty("value", "");
+
+      fireEvent.click(screen.getByRole("button", { name: "Cancel task" }));
+
+      await waitFor(() => {
+        expect(cancelDesktopTaskSpy).toHaveBeenCalledWith(enhancementTaskId);
+      });
+
+      await act(async () => {
+        rejectEnhancement?.(new Error("cancelled"));
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByText("Enhancing prompt")).toBeNull();
+      });
+      expect(input).toHaveProperty("value", originalPrompt);
+
+      cancelDesktopTaskSpy.mockRestore();
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "blocks the composer with a prompt enhancement animation before interview mode starts",
+    async () => {
+      const originalPrompt = "billing settings";
+      const enhancedPrompt =
+        "Implement a billing settings panel with focused verification.";
+      const finalPrompt = [
+        enhancedPrompt,
+        "",
+        "Interview context for this task:",
+        "Use account-level settings.",
+      ].join("\n");
+      const enhancementExecution = createMockExecutionFixture(
+        "inspect workspace",
+        "/mocked/tauri/path",
+        { mode: "ask" },
+      );
+      let resolveEnhancement:
+        | ((value: DesktopTaskRunResponse) => void)
+        | undefined;
+
+      enhancementExecution.response = {
+        ...enhancementExecution.response,
+        markdown: `<machdoch_enhanced_prompt>${enhancedPrompt}</machdoch_enhanced_prompt>`,
+      };
+
+      const runTaskInterviewSpy = vi
+        .spyOn(runtime, "runTaskInterview")
+        .mockResolvedValue({
+          status: "complete",
+          session: {
+            id: "task-interview-enhanced",
+            prompt: enhancedPrompt,
+            turn: 1,
+            maxTurns: 5,
+            findings: [],
+            assumptions: [],
+            relevantFiles: [],
+            finalSummary: "Use account-level settings.",
+            transcript: [],
+          },
+          fields: [],
+          summary: "Ready to start.",
+          finalPrompt,
+          provider: "openai",
+          model: "gpt-5.5",
+          result: null,
+        });
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation((_workspaceRoot, task, context) => {
+          if (String(task).includes("Enhance the user's Machdoch chat request")) {
+            return new Promise<DesktopTaskRunResponse>((resolve) => {
+              resolveEnhancement = resolve;
+            });
+          }
+
+          return Promise.resolve({
+            execution: createMockExecutionFixture(
+              String(task),
+              "/mocked/tauri/path",
+              { mode: context?.mode },
+            ),
+          });
+        });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      fireEvent.click(screen.getByRole("button", { name: "Interview" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prompt enhancement: Off" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Choose Simple enhance" }),
+      );
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: originalPrompt },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      const pendingBlocker = document.querySelector(
+        ".app-prompt-enhancement-blocker",
+      );
+
+      expect(pendingBlocker).not.toBeNull();
+      expect(
+        screen
+          .queryAllByText(originalPrompt)
+          .some((element) => element.closest(".app-message-bubble")),
+      ).toBe(true);
+      expect(
+        within(pendingBlocker as HTMLElement).getByText("Enhancing prompt"),
+      ).toBeTruthy();
+      expect(
+        within(pendingBlocker as HTMLElement).getByText("Simple enhance"),
+      ).toBeTruthy();
+      expect(input).toHaveProperty("disabled", true);
+      expect(
+        screen.queryByText(/is refining the request|Prompt enhancement refined/u),
+      ).toBeNull();
+      expect(runTaskInterviewSpy).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveEnhancement?.({
+          execution: enhancementExecution,
+        });
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(runTaskInterviewSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(runTaskInterviewSpy).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({
+          prompt: enhancedPrompt,
+        }),
+      );
+
+      runTaskInterviewSpy.mockRestore();
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "enhances the request with web search before submitting the task",
     async () => {
       const originalPrompt = "compare current auth options";
@@ -4488,6 +4707,28 @@ describe("ChatSession component", () => {
         id: "retention-open-session",
         manualTitle: "Open retention session",
         updatedAt: now - 3 * SESSION_RETENTION_DAY_MS,
+        messages: [
+          {
+            id: "retention-open-user",
+            taskId: "retention-open-task",
+            role: "user",
+            content: "Summarize retention behavior",
+            createdAt: now - 3 * SESSION_RETENTION_DAY_MS - 1_000,
+          },
+          {
+            id: "retention-open-agent",
+            taskId: "retention-open-task",
+            role: "agent",
+            content: "Retention behavior summarized.",
+            createdAt: now - 3 * SESSION_RETENTION_DAY_MS,
+            source: {
+              kind: "execution",
+              execution: createMockExecutionFixture(
+                "Summarize retention behavior",
+              ),
+            },
+          },
+        ],
       });
       const archivedSession = createSession({
         id: "retention-archived-session",
@@ -4552,11 +4793,51 @@ describe("ChatSession component", () => {
         id: "fresh-retention-session",
         manualTitle: "Fresh retention session",
         updatedAt: now - 10_000,
+        messages: [
+          {
+            id: "fresh-retention-user",
+            taskId: "fresh-retention-task",
+            role: "user",
+            content: "Keep this fresh session",
+            createdAt: now - 11_000,
+          },
+          {
+            id: "fresh-retention-agent",
+            taskId: "fresh-retention-task",
+            role: "agent",
+            content: "Fresh session kept.",
+            createdAt: now - 10_000,
+            source: {
+              kind: "execution",
+              execution: createMockExecutionFixture("Keep this fresh session"),
+            },
+          },
+        ],
       });
       const staleOpenSession = createSession({
         id: "stale-open-retention-session",
         manualTitle: "Stale open retention session",
         updatedAt: now - 2 * SESSION_RETENTION_DAY_MS,
+        messages: [
+          {
+            id: "stale-open-retention-user",
+            taskId: "stale-open-retention-task",
+            role: "user",
+            content: "Archive this stale session",
+            createdAt: now - 2 * SESSION_RETENTION_DAY_MS - 1_000,
+          },
+          {
+            id: "stale-open-retention-agent",
+            taskId: "stale-open-retention-task",
+            role: "agent",
+            content: "Stale session ready for archive.",
+            createdAt: now - 2 * SESSION_RETENTION_DAY_MS,
+            source: {
+              kind: "execution",
+              execution: createMockExecutionFixture("Archive this stale session"),
+            },
+          },
+        ],
       });
       const expiredArchivedSession = createSession({
         id: "expired-archived-retention-session",
@@ -4756,6 +5037,119 @@ describe("ChatSession component", () => {
         within(getSessionRow("Unpinned running session")).getByLabelText(
           "Session status: Running",
         ),
+      ).toBeDefined();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "keeps empty sessions after pinned sessions without archive duplicate or pin actions",
+    async () => {
+      const baseState = createInitialShellState();
+      const now = Date.now();
+      const pinnedSession = createSession({
+        id: "pinned-empty-order-session",
+        manualTitle: "Pinned session",
+        pinnedAt: now - 500,
+        updatedAt: now - 10_000,
+        messages: [
+          {
+            id: "pinned-order-user",
+            taskId: "pinned-order-task",
+            role: "user",
+            content: "Finish pinned work",
+            createdAt: now - 10_100,
+          },
+          {
+            id: "pinned-order-agent",
+            taskId: "pinned-order-task",
+            role: "agent",
+            content: "Pinned work finished.",
+            createdAt: now - 10_000,
+            source: {
+              kind: "execution",
+              execution: createMockExecutionFixture("Finish pinned work"),
+            },
+          },
+        ],
+      });
+      const emptySession = createSession({
+        id: "empty-new-session",
+        updatedAt: now,
+      });
+      const normalSession = createSession({
+        id: "normal-empty-order-session",
+        manualTitle: "Normal session",
+        updatedAt: now - 1_000,
+        messages: [
+          {
+            id: "normal-order-user",
+            taskId: "normal-order-task",
+            role: "user",
+            content: "Finish normal work",
+            createdAt: now - 1_100,
+          },
+          {
+            id: "normal-order-agent",
+            taskId: "normal-order-task",
+            role: "agent",
+            content: "Normal work finished.",
+            createdAt: now - 1_000,
+            source: {
+              kind: "execution",
+              execution: createMockExecutionFixture("Finish normal work"),
+            },
+          },
+        ],
+      });
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: emptySession.id,
+        sessions: [normalSession, emptySession, pinnedSession],
+      });
+
+      render(<ChatSession />);
+
+      await waitFor(() => {
+        expect(getVisibleSessionButtonLabels()).toEqual([
+          "Open session Pinned session",
+          "Open session New session",
+          "Open session Normal session",
+        ]);
+      });
+
+      const emptyRow = getSessionRow("New session");
+
+      expect(
+        within(emptyRow).queryByRole("button", {
+          name: "Session actions for New session",
+        }),
+      ).toBeNull();
+
+      fireEvent.contextMenu(emptyRow, {
+        clientX: 96,
+        clientY: 128,
+      });
+
+      expect(document.querySelector(".app-session-context-menu")).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Pin session" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Branch session" }),
+      ).toBeNull();
+
+      const normalMenu = await openSessionActionsMenu("Normal session");
+
+      expect(
+        within(normalMenu).getByRole("menuitem", { name: "Pin" }),
+      ).toBeDefined();
+      expect(
+        within(normalMenu).getByRole("menuitem", { name: "Duplicate" }),
+      ).toBeDefined();
+      expect(
+        within(normalMenu).getByRole("menuitem", { name: "Archive" }),
       ).toBeDefined();
     },
     SLOW_UI_TEST_TIMEOUT_MS,

@@ -15,10 +15,11 @@ import type {
 import {
   canArchiveSession,
   canDeleteSession,
+  canDuplicateSession,
+  canPinSession,
   canRenameSession,
   getSessionOverviewStatus,
   getSessionTitle,
-  isQuickVoiceSession,
 } from "../../chat-session.model";
 import {
   cancelSchedulerRun,
@@ -272,9 +273,9 @@ const createSessionSnapshot = (
     canRename: canRenameSession(session),
     canDelete: canDeleteSession(session),
     canArchive: canArchiveSession(session),
-    canPin: !isQuickVoiceSession(session),
-    canDuplicate: !isQuickVoiceSession(session),
-    canBranch: !isQuickVoiceSession(session),
+    canPin: canPinSession(session),
+    canDuplicate: canDuplicateSession(session),
+    canBranch: canDuplicateSession(session),
     ...(specialKind ? { specialKind } : {}),
   };
 };

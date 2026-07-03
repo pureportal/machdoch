@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   applySessionRetentionPolicy,
+  canArchiveSession,
+  canDuplicateSession,
+  canPinSession,
   createInitialShellState,
   createSession,
   createVisibleConversationMessages,
@@ -9,6 +12,7 @@ import {
   getLatestRunningTaskId,
   getSessionOverviewStatus,
   hasUnreadCompletedSessionResponse,
+  isSessionEmpty,
   isSessionWorkspaceLocked,
   markSessionRead,
   mergeRecentWorkspacesForPersistence,
@@ -552,6 +556,26 @@ describe("applySessionRetentionPolicy", () => {
       id: "stale-open-session",
       updatedAt: now - 8 * SESSION_DAY_MS,
       manualTitle: "Stale open session",
+      messages: [
+        {
+          id: "stale-open-user",
+          taskId: "stale-open-task",
+          role: "user",
+          content: "Summarize the stale workspace",
+          createdAt: now - 8 * SESSION_DAY_MS - 1_000,
+        },
+        {
+          id: "stale-open-agent",
+          taskId: "stale-open-task",
+          role: "agent",
+          content: "Stale workspace summarized.",
+          createdAt: now - 8 * SESSION_DAY_MS,
+          source: {
+            kind: "execution",
+            execution: createMockExecutionFixture("Summarize the stale workspace"),
+          },
+        },
+      ],
     });
     const state = {
       ...baseState,
@@ -576,6 +600,32 @@ describe("applySessionRetentionPolicy", () => {
       archivedAt: now,
       updatedAt: staleSession.updatedAt,
     });
+  });
+
+  it("does not archive empty sessions", () => {
+    const baseState = createInitialShellState();
+    const now = Date.now();
+    const emptySession = createSession({
+      id: "empty-open-session",
+      updatedAt: now - 8 * SESSION_DAY_MS,
+      manualTitle: "Empty open session",
+    });
+    const state = {
+      ...baseState,
+      activeSessionId: emptySession.id,
+      sessions: [emptySession],
+    };
+
+    const nextState = applySessionRetentionPolicy(
+      state,
+      {
+        inactiveSessionArchiveDays: 7,
+        archivedSessionRetentionDays: 7,
+      },
+      now,
+    );
+
+    expect(nextState).toBe(state);
   });
 
   it("deletes expired archived sessions and falls back to a remaining session", () => {
@@ -854,6 +904,99 @@ describe("getSessionOverviewStatus", () => {
       "recent-requested-session",
       "older-requested-session",
     ]);
+  });
+
+  it("keeps unpinned empty sessions directly after pinned sessions", () => {
+    const now = Date.now();
+    const pinnedDoneSession = createSession({
+      id: "pinned-done-session",
+      pinnedAt: now - 1_000,
+      updatedAt: now - 5_000,
+      messages: [
+        {
+          id: "pinned-user",
+          taskId: "pinned-task",
+          role: "user",
+          content: "Finish pinned task",
+          createdAt: now - 5_100,
+        },
+        {
+          id: "pinned-agent",
+          taskId: "pinned-task",
+          role: "agent",
+          content: "Pinned task finished.",
+          createdAt: now - 5_000,
+          source: {
+            kind: "execution",
+            execution: createMockExecutionFixture("Finish pinned task"),
+          },
+        },
+      ],
+    });
+    const emptySession = createSession({
+      id: "empty-session",
+      updatedAt: now,
+    });
+    const runningSession = createSession({
+      id: "running-session",
+      updatedAt: now - 100,
+      messages: [
+        {
+          id: "running-user",
+          taskId: "running-task",
+          role: "user",
+          content: "Keep running",
+          createdAt: now - 100,
+        },
+      ],
+    });
+    const doneSession = createSession({
+      id: "done-session",
+      updatedAt: now - 50,
+      messages: [
+        {
+          id: "done-user",
+          taskId: "done-task",
+          role: "user",
+          content: "Finish normal task",
+          createdAt: now - 60,
+        },
+        {
+          id: "done-agent",
+          taskId: "done-task",
+          role: "agent",
+          content: "Normal task finished.",
+          createdAt: now - 50,
+          source: {
+            kind: "execution",
+            execution: createMockExecutionFixture("Finish normal task"),
+          },
+        },
+      ],
+    });
+
+    expect(
+      sortSessionsByUpdatedAt([
+        doneSession,
+        runningSession,
+        emptySession,
+        pinnedDoneSession,
+      ]).map((session) => session.id),
+    ).toEqual([
+      "pinned-done-session",
+      "empty-session",
+      "running-session",
+      "done-session",
+    ]);
+  });
+
+  it("does not allow archive, duplicate, or pin actions for empty sessions", () => {
+    const emptySession = createSession({ id: "empty-action-session" });
+
+    expect(isSessionEmpty(emptySession)).toBe(true);
+    expect(canArchiveSession(emptySession)).toBe(false);
+    expect(canDuplicateSession(emptySession)).toBe(false);
+    expect(canPinSession(emptySession)).toBe(false);
   });
 });
 

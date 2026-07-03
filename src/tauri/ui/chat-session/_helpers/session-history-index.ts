@@ -1,4 +1,5 @@
 import {
+  canDuplicateSession,
   compareSessionsByAttention,
   createSession,
   getSessionOverviewStatus,
@@ -413,6 +414,10 @@ export const duplicateSessionRecord = (
 ): ChatSessionRecord => {
   if (isQuickVoiceSession(session)) {
     throw new Error("Quick Chat cannot be duplicated.");
+  }
+
+  if (!canDuplicateSession(session)) {
+    throw new Error("Empty sessions cannot be duplicated.");
   }
 
   const title = getSessionTitle(session);

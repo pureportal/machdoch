@@ -1,11 +1,13 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { vi } from "vitest";
 import {
   createMcpDirectToolMappings,
   createMcpDirectToolName,
   createMcpToolDefinitions,
 } from "./tool-definitions.ts";
+import { mcpClientManager } from "./client.ts";
 import type { McpEffectiveConfig, McpServerDiscovery } from "./types.ts";
 
 const workspacesToClean: string[] = [];
@@ -67,6 +69,8 @@ const writeWorkspaceMcpConfig = async (workspaceRoot: string): Promise<void> => 
 };
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+
   if (originalUserConfigDir === undefined) {
     delete process.env.MACHDOCH_USER_CONFIG_DIR;
   } else {
@@ -292,6 +296,9 @@ describe("createMcpToolDefinitions", () => {
         {
           serverId: "github",
           name: "create_issue",
+          inputSchema: {
+            type: "object",
+          },
           inputSchemaHash: expect.stringMatching(/^sha256:/u),
           definitionHash: expect.stringMatching(/^sha256:/u),
         },
@@ -316,5 +323,120 @@ describe("createMcpToolDefinitions", () => {
       count: 1,
       prompts: [{ name: "summarize_issue" }],
     });
+  });
+
+  it("exposes the generic MCP call with non-strict object arguments", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    const mcpCallTool = createMcpToolDefinitions(workspaceRoot).find(
+      (definition) => definition.spec.name === "mcp_call_tool",
+    );
+
+    expect(mcpCallTool?.spec).toMatchObject({
+      strict: false,
+      inputSchema: {
+        required: ["serverId", "toolName", "arguments"],
+        properties: {
+          arguments: {
+            type: "object",
+            additionalProperties: true,
+          },
+        },
+      },
+    });
+  });
+
+  it("rejects invalid Linear get_issue arguments before remote MCP dispatch", async () => {
+    const workspaceRoot = await createWorkspace();
+    const context = createExecutionContext(workspaceRoot);
+    const callToolSpy = vi.spyOn(mcpClientManager, "callTool");
+    const mcpCallTool = createMcpToolDefinitions(workspaceRoot).find(
+      (definition) => definition.spec.name === "mcp_call_tool",
+    );
+
+    if (!mcpCallTool) {
+      throw new Error("Expected mcp_call_tool to be registered.");
+    }
+
+    const nullArgumentsResult = await mcpCallTool.execute(
+      {
+        serverId: "linear",
+        toolName: "get_issue",
+        arguments: null,
+      },
+      context,
+    );
+    const missingIdResult = await mcpCallTool.execute(
+      {
+        serverId: "linear",
+        toolName: "get_issue",
+        arguments: {},
+      },
+      context,
+    );
+
+    expect(nullArgumentsResult.toolResult).toMatchObject({
+      isError: true,
+    });
+    expect(nullArgumentsResult.toolResult.output).toContain(
+      "Expected `arguments` to be a JSON object",
+    );
+    expect(missingIdResult.toolResult).toMatchObject({
+      isError: true,
+    });
+    expect(missingIdResult.toolResult.output).toContain(
+      "requires `arguments.id`",
+    );
+    expect(callToolSpy).not.toHaveBeenCalled();
+  });
+
+  it("includes live discovery input schemas in capability summaries", async () => {
+    const workspaceRoot = await createWorkspace();
+    const context = createExecutionContext(workspaceRoot);
+    const discoverSpy = vi
+      .spyOn(mcpClientManager, "discoverServerById")
+      .mockResolvedValue({
+        discovery: {
+          serverId: "linear",
+          discoveredAt: "2026-07-03T00:00:00.000Z",
+          transportType: "streamable-http",
+          tools: [
+            {
+              name: "get_issue",
+              description: "Get a Linear issue.",
+              inputSchema: {
+                type: "object",
+                required: ["id"],
+                properties: {
+                  id: {
+                    type: "string",
+                  },
+                },
+              },
+            },
+          ],
+          resources: [],
+          resourceTemplates: [],
+          prompts: [],
+        },
+      });
+    const discoverTool = createMcpToolDefinitions(workspaceRoot).find(
+      (definition) => definition.spec.name === "mcp_discover_capabilities",
+    );
+
+    if (!discoverTool) {
+      throw new Error("Expected mcp_discover_capabilities to be registered.");
+    }
+
+    const result = await discoverTool.execute({ serverId: "linear" }, context);
+
+    expect(discoverSpy).toHaveBeenCalledWith(
+      workspaceRoot,
+      "linear",
+      expect.anything(),
+    );
+    expect(result.toolResult.output).toContain("- get_issue");
+    expect(result.toolResult.output).toContain("inputSchema");
+    expect(result.toolResult.output).toContain('"id"');
   });
 });

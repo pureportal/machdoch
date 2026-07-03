@@ -668,6 +668,10 @@ const createToolCallSignature = (
   return `${name}:${stableSerializeValue(args)}`;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
 const getStringArg = (
   args: Record<string, unknown>,
   key: string,
@@ -688,6 +692,101 @@ const getNumberArg = (
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : undefined;
+};
+
+const LINEAR_ISSUE_REFERENCE_PATTERNS = [
+  /\bLinear\s*:\s*([A-Z][A-Z0-9]+-\d+)\b/iu,
+  /\bLinear\s+(?:issue|ticket)\s+([A-Z][A-Z0-9]+-\d+)\b/iu,
+] as const;
+
+const extractLinearIssueReference = (
+  task: string,
+  taskContext: ResolvedTaskContext,
+): string | undefined => {
+  const candidateTexts =
+    taskContext.effectiveTask === task
+      ? [task]
+      : [task, taskContext.effectiveTask];
+
+  for (const candidateText of candidateTexts) {
+    for (const pattern of LINEAR_ISSUE_REFERENCE_PATTERNS) {
+      const match = pattern.exec(candidateText);
+
+      if (match?.[1]) {
+        return match[1].toUpperCase();
+      }
+    }
+  }
+
+  return undefined;
+};
+
+const isLinearMcpGetIssueCall = (call: AgentModelToolCall): boolean => {
+  if (call.name === "mcp_call_tool") {
+    return (
+      getStringArg(call.arguments, "serverId")?.toLowerCase() === "linear" &&
+      getStringArg(call.arguments, "toolName") === "get_issue"
+    );
+  }
+
+  return /(?:^|__)linear__get_issue$/u.test(call.name.toLowerCase());
+};
+
+const repairLinearIssueToolCallArguments = (
+  call: AgentModelToolCall,
+  task: string,
+  taskContext: ResolvedTaskContext,
+): { call: AgentModelToolCall; traceLine?: string } => {
+  if (!isLinearMcpGetIssueCall(call)) {
+    return { call };
+  }
+
+  const issueId = extractLinearIssueReference(task, taskContext);
+
+  if (!issueId) {
+    return { call };
+  }
+
+  if (call.name === "mcp_call_tool") {
+    const remoteArguments = isRecord(call.arguments.arguments)
+      ? call.arguments.arguments
+      : {};
+
+    if (getStringArg(remoteArguments, "id")) {
+      return { call };
+    }
+
+    return {
+      call: {
+        ...call,
+        arguments: {
+          ...call.arguments,
+          arguments: {
+            ...remoteArguments,
+            id: issueId,
+          },
+        },
+      },
+      traceLine:
+        `tool_args: populated linear.get_issue arguments.id from current task reference ${issueId}.`,
+    };
+  }
+
+  if (getStringArg(call.arguments, "id")) {
+    return { call };
+  }
+
+  return {
+    call: {
+      ...call,
+      arguments: {
+        ...call.arguments,
+        id: issueId,
+      },
+    },
+    traceLine:
+      `tool_args: populated linear.get_issue id from current task reference ${issueId}.`,
+  };
 };
 
 const formatToolName = (name: string): string => {
@@ -1300,8 +1399,15 @@ const runExecutorCycle = async (
 
     const toolResults: AgentModelToolResult[] = [];
 
-    for (const call of turn.toolCalls) {
+    for (const rawCall of turn.toolCalls) {
       throwIfExecutionAborted(signal);
+
+      const { call, traceLine: argumentRepairTraceLine } =
+        repairLinearIssueToolCallArguments(rawCall, task, taskContext);
+
+      if (argumentRepairTraceLine) {
+        loopState.traceLines.push(argumentRepairTraceLine);
+      }
 
       const callSignature = createToolCallSignature(call.name, call.arguments);
 

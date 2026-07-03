@@ -64,8 +64,11 @@ export const createLangdockTools = (
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: normalizeOpenAIStrictInputSchema(tool.inputSchema),
-      strict: true,
+      parameters:
+        tool.strict === false
+          ? tool.inputSchema
+          : normalizeOpenAIStrictInputSchema(tool.inputSchema),
+      strict: tool.strict !== false,
     },
   }));
 };

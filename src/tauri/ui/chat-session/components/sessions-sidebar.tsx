@@ -25,6 +25,8 @@ import {
 import { createPortal } from "react-dom";
 import {
   canArchiveSession,
+  canDuplicateSession,
+  canPinSession,
   getLatestSessionUserRequestAt,
   getSessionOverviewStatus,
   getSessionRetentionProgress,
@@ -165,6 +167,8 @@ const isSessionPinnedInSidebar = (session: ChatSessionRecord): boolean => {
 
 const createSessionActionItems = ({
   sessionId,
+  canDuplicate,
+  canPin,
   isPinned,
   isQuickSession,
   showArchiveAction,
@@ -173,6 +177,8 @@ const createSessionActionItems = ({
   onTogglePinnedSession,
 }: {
   sessionId: string;
+  canDuplicate: boolean;
+  canPin: boolean;
   isPinned: boolean;
   isQuickSession: boolean;
   showArchiveAction: boolean;
@@ -184,22 +190,27 @@ const createSessionActionItems = ({
     return [];
   }
 
-  const items: SessionActionItem[] = [
-    {
+  const items: SessionActionItem[] = [];
+
+  if (canPin) {
+    items.push({
       id: "pin",
       label: isPinned ? "Unpin" : "Pin",
       icon: Pin,
       iconClassName: isPinned ? "text-amber-300" : "text-slate-400",
       onSelect: () => onTogglePinnedSession(sessionId),
-    },
-    {
+    });
+  }
+
+  if (canDuplicate) {
+    items.push({
       id: "duplicate",
       label: "Duplicate",
       icon: Copy,
       iconClassName: "text-slate-400",
       onSelect: () => onDuplicateSession(sessionId),
-    },
-  ];
+    });
+  }
 
   if (showArchiveAction) {
     items.push({
@@ -461,6 +472,8 @@ export const SessionsSidebar = ({
   const contextMenuSessionActions = contextMenuSession
     ? createSessionActionItems({
         sessionId: contextMenuSession.id,
+        canDuplicate: canDuplicateSession(contextMenuSession),
+        canPin: canPinSession(contextMenuSession),
         isPinned: isSessionPinnedInSidebar(contextMenuSession),
         isQuickSession: contextMenuSessionIsQuick,
         showArchiveAction: canArchiveSession(contextMenuSession),
@@ -708,6 +721,8 @@ export const SessionsSidebar = ({
               const sessionTitle = getSessionTitle(session);
               const sessionActionItems = createSessionActionItems({
                 sessionId: session.id,
+                canDuplicate: canDuplicateSession(session),
+                canPin: canPinSession(session),
                 isPinned,
                 isQuickSession,
                 showArchiveAction,

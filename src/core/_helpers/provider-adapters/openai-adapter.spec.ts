@@ -9,6 +9,7 @@ import {
   OpenAIResponsesAdapter,
   createOpenAIReasoningConfig,
   createOpenAIResponseToolSelection,
+  createOpenAITools,
   createOpenAIStructuredOutputTextConfig,
   createOpenAIUserInput,
 } from "./openai-adapter.js";
@@ -39,6 +40,51 @@ describe("OpenAI Responses conformance", () => {
       parallel_tool_calls: false,
       tool_choice: "required",
     });
+  });
+
+  it("preserves non-strict tool schemas for arbitrary nested JSON arguments", () => {
+    expect(
+      createOpenAITools([
+        {
+          name: "mcp_call_tool",
+          description: "Call a remote MCP tool.",
+          strict: false,
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["serverId", "toolName", "arguments"],
+            properties: {
+              serverId: { type: "string" },
+              toolName: { type: "string" },
+              arguments: {
+                type: "object",
+                additionalProperties: true,
+              },
+            },
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        type: "function",
+        name: "mcp_call_tool",
+        description: "Call a remote MCP tool.",
+        strict: false,
+        parameters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["serverId", "toolName", "arguments"],
+          properties: {
+            serverId: { type: "string" },
+            toolName: { type: "string" },
+            arguments: {
+              type: "object",
+              additionalProperties: true,
+            },
+          },
+        },
+      },
+    ]);
   });
 
   it("normalizes reasoning effort for the selected OpenAI model", () => {

@@ -58,12 +58,45 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
-const coerceRecord = (
+const readOptionalRecord = (
   record: Record<string, unknown>,
   field: string,
-): Record<string, unknown> => {
+): { value: Record<string, unknown>; error?: string } => {
   const value = record[field];
-  return isRecord(value) ? value : {};
+
+  if (value === undefined) {
+    return { value: {} };
+  }
+
+  if (isRecord(value)) {
+    return { value };
+  }
+
+  return {
+    value: {},
+    error:
+      `Expected \`${field}\` to be a JSON object when provided. Pass \`${field}: {}\` for tools with no arguments, or inspect the MCP tool schema before calling it.`,
+  };
+};
+
+const isLinearGetIssueTool = (serverId: string, toolName: string): boolean => {
+  return serverId.toLowerCase() === "linear" && toolName === "get_issue";
+};
+
+const validateKnownMcpToolArguments = (
+  serverId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): string | undefined => {
+  if (!isLinearGetIssueTool(serverId, toolName)) {
+    return undefined;
+  }
+
+  if (coerceString(args, "id")) {
+    return undefined;
+  }
+
+  return "Linear MCP tool `get_issue` requires `arguments.id` to be a non-empty issue id/key, for example `{ \"id\": \"CLOUD-1781\" }`.";
 };
 
 const coerceStringRecord = (
@@ -413,6 +446,7 @@ const searchCachedTools = (
           name: tool.name,
           ...(tool.title ? { title: tool.title } : {}),
           ...(tool.description ? { description: tool.description } : {}),
+          inputSchema: tool.inputSchema,
           ...(tool.inputSchemaHash ? { inputSchemaHash: tool.inputSchemaHash } : {}),
           ...(tool.outputSchemaHash ? { outputSchemaHash: tool.outputSchemaHash } : {}),
           ...(tool.descriptionHash ? { descriptionHash: tool.descriptionHash } : {}),
@@ -773,7 +807,13 @@ const summarizeDiscovery = (
     "",
     discovery.tools.length > 0
       ? `Tools:\n${discovery.tools
-          .map((tool) => `- ${tool.name}${tool.description ? `: ${tool.description}` : ""}`)
+          .map(
+            (tool) =>
+              [
+                `- ${tool.name}${tool.description ? `: ${tool.description}` : ""}`,
+                `  inputSchema: ${formatJson(tool.inputSchema)}`,
+              ].join("\n"),
+          )
           .join("\n")}`
       : "Tools: none",
     discovery.resources.length > 0
@@ -863,12 +903,32 @@ const executeMcpCall = async (
     );
   }
 
+  const remoteArguments = readOptionalRecord(args, "arguments");
+
+  if (remoteArguments.error) {
+    return createToolErrorResult(randomUUID(), toolName, remoteArguments.error);
+  }
+
+  const argumentValidationError = validateKnownMcpToolArguments(
+    serverId,
+    remoteToolName,
+    remoteArguments.value,
+  );
+
+  if (argumentValidationError) {
+    return createToolErrorResult(
+      randomUUID(),
+      toolName,
+      argumentValidationError,
+    );
+  }
+
   try {
     const result = await mcpClientManager.callTool(
       context.workspaceRoot,
       serverId,
       remoteToolName,
-      coerceRecord(args, "arguments"),
+      remoteArguments.value,
       { onProgress: createProgressHandler(context) },
     );
     const formatted = formatCallToolOutput(result);
@@ -1630,7 +1690,7 @@ const createMetaToolDefinitions = (): AgentToolDefinition[] => [
       inputSchema: {
         type: "object",
         additionalProperties: false,
-        required: ["serverId", "toolName"],
+        required: ["serverId", "toolName", "arguments"],
         properties: {
           serverId: {
             type: "string",
@@ -1642,11 +1702,13 @@ const createMetaToolDefinitions = (): AgentToolDefinition[] => [
           },
           arguments: {
             type: "object",
-            description: "Arguments to pass to the remote MCP tool.",
+            description:
+              "Arguments to pass to the remote MCP tool. Always pass an object; use {} for tools with no arguments. For Linear get_issue, pass {\"id\":\"ISSUE-123\"}.",
             additionalProperties: true,
           },
         },
       },
+      strict: false,
     },
     backingTool: "mcp",
     riskLevel: "high",
@@ -1799,6 +1861,20 @@ const createDirectToolDefinition = (
     effect: mapping.effect,
     isReadOnlyInPlanMode: () => mapping.readOnlyInAskMode,
     execute: async (args, context) => {
+      const argumentValidationError = validateKnownMcpToolArguments(
+        mapping.serverId,
+        mapping.remoteName,
+        args,
+      );
+
+      if (argumentValidationError) {
+        return createToolErrorResult(
+          randomUUID(),
+          mapping.exposedName,
+          argumentValidationError,
+        );
+      }
+
       try {
         const result = await mcpClientManager.callTool(
           context.workspaceRoot,

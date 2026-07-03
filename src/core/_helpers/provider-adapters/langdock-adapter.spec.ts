@@ -8,6 +8,7 @@ import {
   LangdockChatCompletionsAdapter,
   createLangdockReasoningConfig,
   createLangdockToolSelection,
+  createLangdockTools,
 } from "./langdock-adapter.js";
 
 const tool: AgentModelToolSpec = {
@@ -36,6 +37,53 @@ describe("Langdock Chat Completions conformance", () => {
       tool_choice: "required",
     });
     expect(createLangdockToolSelection([])).toEqual({});
+  });
+
+  it("preserves non-strict tool schemas for arbitrary nested JSON arguments", () => {
+    expect(
+      createLangdockTools([
+        {
+          name: "mcp_call_tool",
+          description: "Call a remote MCP tool.",
+          strict: false,
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["serverId", "toolName", "arguments"],
+            properties: {
+              serverId: { type: "string" },
+              toolName: { type: "string" },
+              arguments: {
+                type: "object",
+                additionalProperties: true,
+              },
+            },
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        type: "function",
+        function: {
+          name: "mcp_call_tool",
+          description: "Call a remote MCP tool.",
+          strict: false,
+          parameters: {
+            type: "object",
+            additionalProperties: false,
+            required: ["serverId", "toolName", "arguments"],
+            properties: {
+              serverId: { type: "string" },
+              toolName: { type: "string" },
+              arguments: {
+                type: "object",
+                additionalProperties: true,
+              },
+            },
+          },
+        },
+      },
+    ]);
   });
 
   it("normalizes reasoning effort for Langdock-routed model families", () => {

@@ -1,11 +1,13 @@
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { vi } from "vitest";
 import {
   loadUserMemorySettings,
   saveUserGlobalMemoryEnabled,
 } from "./env.ts";
 import { executeTask } from "./execution.ts";
+import { mcpClientManager } from "./mcp/client.ts";
 import type {
   AgentModelAdapter,
   AgentModelToolCall,
@@ -139,6 +141,8 @@ const createFinalOnlyAdapter = (summary: string): AgentModelAdapter => ({
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+
   if (originalUserConfigDir === undefined) {
     delete process.env.MACHDOCH_USER_CONFIG_DIR;
   } else {
@@ -1682,6 +1686,142 @@ describe("executeTask", () => {
           ),
       ),
     ).toBe(true);
+  });
+
+  it("repairs Linear issue references before dispatching generic MCP get_issue calls", async () => {
+    const workspaceRoot = await createWorkspace();
+    const observedToolResults: Array<{ output: string; isError?: boolean }> = [];
+    const callToolSpy = vi
+      .spyOn(mcpClientManager, "callTool")
+      .mockResolvedValue({
+        content: [
+          {
+            type: "text",
+            text: "CLOUD-1781 issue details",
+          },
+        ],
+      });
+    const adapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "",
+        toolCalls: [
+          {
+            id: "call-1",
+            name: "mcp_call_tool",
+            arguments: {
+              serverId: "linear",
+              toolName: "get_issue",
+              arguments: null,
+            },
+          },
+        ],
+      }),
+      continueTurn: async ({ toolResults }) => {
+        observedToolResults.push(
+          ...toolResults.map((toolResult) => ({
+            output: toolResult.output,
+            ...(toolResult.isError ? { isError: true } : {}),
+          })),
+        );
+
+        return {
+          text: "",
+          toolCalls: [
+            createFinalResponseToolCall({
+              summary: "Implemented CLOUD-1781.",
+              markdown: "Implemented CLOUD-1781.",
+              verification: ["Fetched CLOUD-1781 from Linear."],
+            }),
+          ],
+        };
+      },
+    };
+
+    const result = await executeTask(
+      "Linear: CLOUD-1781\n\nImplement that feature!",
+      createConfig(workspaceRoot, "machdoch"),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: adapter,
+        monitorModelAdapter: createAcceptingMonitorAdapter(),
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(callToolSpy).toHaveBeenCalledTimes(1);
+    expect(callToolSpy).toHaveBeenCalledWith(
+      workspaceRoot,
+      "linear",
+      "get_issue",
+      { id: "CLOUD-1781" },
+      expect.anything(),
+    );
+    expect(observedToolResults).toEqual([
+      {
+        output: "CLOUD-1781 issue details",
+      },
+    ]);
+  });
+
+  it("guards repeated invalid MCP calls after local argument validation fails", async () => {
+    const workspaceRoot = await createWorkspace();
+    const observedToolOutputs: string[] = [];
+    const callToolSpy = vi.spyOn(mcpClientManager, "callTool");
+    let continueCount = 0;
+    const createInvalidMcpCall = (id: string): AgentModelToolCall => ({
+      id,
+      name: "mcp_call_tool",
+      arguments: {
+        serverId: "linear",
+        toolName: "get_issue",
+        arguments: null,
+      },
+    });
+    const adapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "",
+        toolCalls: [createInvalidMcpCall("call-1")],
+      }),
+      continueTurn: async ({ toolResults }) => {
+        observedToolOutputs.push(toolResults[0]?.output ?? "");
+        continueCount += 1;
+
+        if (continueCount < 3) {
+          return {
+            text: "",
+            toolCalls: [createInvalidMcpCall(`call-${continueCount + 1}`)],
+          };
+        }
+
+        return {
+          text: "",
+          toolCalls: [
+            createFinalResponseToolCall({
+              summary: "Stopped retrying invalid MCP calls.",
+              markdown: "Stopped retrying invalid MCP calls.",
+            }),
+          ],
+        };
+      },
+    };
+
+    const result = await executeTask(
+      "Fetch the Linear issue details.",
+      createConfig(workspaceRoot, "machdoch"),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: adapter,
+        monitorModelAdapter: createAcceptingMonitorAdapter(),
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(callToolSpy).not.toHaveBeenCalled();
+    expect(observedToolOutputs).toHaveLength(3);
+    expect(observedToolOutputs[0]).toContain(
+      "Expected `arguments` to be a JSON object",
+    );
+    expect(observedToolOutputs[2]).toContain("Do not retry it unchanged");
   });
 
   it("does not leak rejected model stream progress callbacks", async () => {

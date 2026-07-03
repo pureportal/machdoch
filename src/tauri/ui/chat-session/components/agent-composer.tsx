@@ -70,6 +70,7 @@ export interface AgentComposerProps {
   canSend: boolean;
   sendDisabledReason: string | null;
   isExecuting: boolean;
+  inputBlocked?: boolean;
   textareaRef?: Ref<HTMLTextAreaElement>;
   toolbarControls?: ReactNode;
   toggles?: AgentComposerToggle[];
@@ -272,6 +273,7 @@ export const AgentComposer = ({
   canSend,
   sendDisabledReason,
   isExecuting,
+  inputBlocked = false,
   textareaRef,
   toolbarControls,
   toggles = [],
@@ -315,7 +317,7 @@ export const AgentComposer = ({
   const queuePanelVisible = variant === "session" && queuedMessages.length > 0;
 
   const submit = (): void => {
-    if (canSend) {
+    if (!inputBlocked && canSend) {
       onSend();
     }
   };
@@ -358,6 +360,7 @@ export const AgentComposer = ({
       onSelectFiles={onSelectContextFiles}
       onSelectFolders={onSelectContextFolders}
       onSelectImages={onSelectContextImages}
+      disabled={inputBlocked}
       imageInputDisabled={!imageInputSupported}
       imageInputDisabledReason={imageInputDisabledReason}
       menuSide={styles.attachmentMenuSide}
@@ -374,14 +377,28 @@ export const AgentComposer = ({
       onKeyDown={handleTextareaKeyDown}
       onPaste={handleTextareaPaste}
       placeholder={placeholder}
+      disabled={inputBlocked}
       className={styles.textarea}
     />
   );
   const toggleButtons = toggles.map((toggle) =>
-    renderToggle(toggle, variant, styles.iconButton),
+    renderToggle(
+      {
+        ...toggle,
+        disabled: inputBlocked || toggle.disabled,
+      },
+      variant,
+      styles.iconButton,
+    ),
   );
   const actionButtons = actions.map((action) =>
-    renderAction(action, styles.iconButton),
+    renderAction(
+      {
+        ...action,
+        disabled: inputBlocked || action.disabled,
+      },
+      styles.iconButton,
+    ),
   );
   const runningTaskControls =
     variant === "session" && isExecuting ? (
@@ -404,9 +421,10 @@ export const AgentComposer = ({
                 key={action.id}
                 type="button"
                 aria-pressed={selected}
+                disabled={inputBlocked}
                 onClick={() => onRunningTaskMessageActionChange?.(action.id)}
                 className={cn(
-                  "inline-flex h-8 min-w-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100",
+                  "inline-flex h-8 min-w-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 disabled:cursor-not-allowed disabled:text-slate-600 disabled:hover:bg-transparent",
                   selected &&
                     "bg-sky-500/12 text-sky-100 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.2)]",
                 )}
@@ -453,8 +471,11 @@ export const AgentComposer = ({
       size={variant === "session" ? "icon" : undefined}
       aria-label={sendLabel}
       title={sendDisabledReason ?? sendLabel}
-      disabled={!canSend}
-      className={cn(styles.sendButton, canSend && styles.sendButtonActive)}
+      disabled={inputBlocked || !canSend}
+      className={cn(
+        styles.sendButton,
+        !inputBlocked && canSend && styles.sendButtonActive,
+      )}
     >
       <SendHorizonal className={styles.iconClassName} />
     </Button>
@@ -507,6 +528,8 @@ export const AgentComposer = ({
     <div
       className="app-agent-composer app-agent-composer-session rounded-[1.75rem] border border-slate-800/80 bg-slate-950/75 p-3 shadow-[0_18px_48px_rgba(2,6,23,0.42)]"
       data-variant={variant}
+      aria-busy={inputBlocked}
+      aria-disabled={inputBlocked}
     >
       <div className="app-composer-toolbar flex flex-wrap items-center gap-2 border-b border-slate-900/80 pb-3">
         <SessionModelPicker

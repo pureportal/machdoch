@@ -154,6 +154,7 @@ export interface AgentModelToolSpec {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  strict?: boolean;
 }
 
 export interface AgentModelToolCall {
