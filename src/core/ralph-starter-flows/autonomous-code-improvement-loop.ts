@@ -15,7 +15,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
   },
   variables: [
     { name: "scopeRoot", type: "path", default: ".", required: false },
-    { name: "scopeSelectionStrategy", type: "text", default: "round-robin", required: false },
+    { name: "scopeSelectionStrategy", type: "text", default: "priority", required: false },
     { name: "scopeRegistryFile", type: "path", default: ".machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json", required: false },
     { name: "scopeRegistryMarkdown", type: "path", default: ".machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md", required: false },
     { name: "improvementPolicy", type: "text", default: "Prefer high-confidence improvements to correctness, reliability, UX, accessibility, performance, error handling, tests, or maintainability. Behavior changes are allowed when they are intentional, bounded, documented, and verified.", required: false },
@@ -80,7 +80,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
           "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
         outputPath:
           "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
-        strategy: "{{scopeSelectionStrategy:text=round-robin}}",
+        strategy: "{{scopeSelectionStrategy:text=priority}}",
         includeMarkdown: true,
       },
     },
@@ -95,7 +95,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         flowAlias: "autonomous-code-improvement-loop",
         registryPath:
           "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
-        strategy: "{{scopeSelectionStrategy:text=round-robin}}",
+        strategy: "{{scopeSelectionStrategy:text=priority}}",
       },
     },
     {
@@ -222,7 +222,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Select exactly one autonomous code improvement for selected scope {{result:select-scope}}, or decide STOP. Use scope analysis {{data:analyze-selected-scope:output}}, research {{summary:improvement-research}}, completed history {{result:read-completed-improvements}}, latest completed append {{result:append-completed-improvement}}, and policy {{improvementPolicy:text=}}. Return decision IMPLEMENT only when the candidate has a stable kebab-case id, title, concrete evidence, source-backed or local user/maintainer value, bounded scope, a clear currentBehavior and proposedBehavior, acceptanceCriteria, risk assessment, affectedFiles, verificationPlan, and rollbackNotes. Behavior changes are allowed only when they improve correctness, UX, accessibility, reliability, performance, error handling, or maintainability and can be verified. Return STOP when remaining ideas are speculative, tiny nits, cosmetic churn, premature abstractions, broad rewrites, duplicate of completed history, require product/domain approval, require unsafe schema/dependency changes, or fail threshold {{meaningfulThreshold:text=}}. Do not dig for weak work to keep the loop busy. If decision is STOP, selectedCandidate must be {} and stopReason must explain the evidence-backed reason. Return only schema-valid JSON.",
+          "Select exactly one autonomous code improvement for selected scope {{result:select-scope}}, or decide STOP for this selected scope only. Use scope analysis {{data:analyze-selected-scope:output}}, research {{summary:improvement-research}}, completed history {{result:read-completed-improvements}}, latest completed append {{result:append-completed-improvement}}, and policy {{improvementPolicy:text=}}. Return decision IMPLEMENT only when the candidate has a stable kebab-case id, title, concrete evidence, source-backed or local user/maintainer value, bounded scope, a clear currentBehavior and proposedBehavior, acceptanceCriteria, risk assessment, affectedFiles, verificationPlan, and rollbackNotes. Behavior changes are allowed only when they improve correctness, UX, accessibility, reliability, performance, error handling, or maintainability and can be verified. Return STOP when this scope's remaining ideas are speculative, tiny nits, cosmetic churn, premature abstractions, broad rewrites, duplicate of completed history, require product/domain approval, require unsafe schema/dependency changes, or fail threshold {{meaningfulThreshold:text=}}. STOP means this scope is done for the current cycle; it does not mean the whole repository is done unless every active scope has received a pass. Do not dig for weak work to keep the loop busy. If decision is STOP, selectedCandidate must be {} and stopReason must explain the evidence-backed reason. Return only schema-valid JSON.",
       },
     },
     {
@@ -621,8 +621,8 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
     { id: "append-completed-to-archive", from: "append-completed-improvement", fromOutput: "SUCCESS", to: "archive-active-improvement" },
     { id: "append-completed-invalid", from: "append-completed-improvement", fromOutput: "INVALID", to: "blocked" },
     { id: "append-completed-error", from: "append-completed-improvement", fromOutput: "ERROR", to: "blocked" },
-    { id: "archive-success-to-history", from: "archive-active-improvement", fromOutput: "SUCCESS", to: "read-completed-improvements" },
-    { id: "archive-not-found-to-history", from: "archive-active-improvement", fromOutput: "NOT_FOUND", to: "read-completed-improvements" },
+    { id: "archive-success-to-mark-scope", from: "archive-active-improvement", fromOutput: "SUCCESS", to: "mark-scope-result" },
+    { id: "archive-not-found-to-mark-scope", from: "archive-active-improvement", fromOutput: "NOT_FOUND", to: "mark-scope-result" },
     { id: "archive-error", from: "archive-active-improvement", fromOutput: "ERROR", to: "blocked" },
     { id: "mark-scope-success", from: "mark-scope-result", fromOutput: "SUCCESS", to: "scope-cycle-complete" },
     { id: "mark-scope-not-found", from: "mark-scope-result", fromOutput: "NOT_FOUND", to: "blocked" },

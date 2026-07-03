@@ -19,6 +19,7 @@ import type {
   CustomizationDiagnostic,
   DiscoveredInstruction,
   TaskExecutionProgress,
+  TaskExecutionResult,
 } from "../../../../core/types.js";
 import type {
   RalphInputValue,
@@ -60,6 +61,7 @@ import {
   generateInstruction,
   loadActiveDesktopTaskIds,
   loadActiveDesktopTasks,
+  loadRecentDesktopTaskResults,
   listInstructions,
   openAttachedPath,
   openExternalUrl,
@@ -70,6 +72,7 @@ import {
   saveInstruction,
   saveClipboardImageAttachment,
   type InstructionMutationInput,
+  type RecentDesktopTaskResult,
   type InstructionRegistryResult,
   type TaskInterviewResult,
 } from "../../runtime";
@@ -132,6 +135,8 @@ import {
 import {
   createExecutionFromTerminalProgress,
   createExecutionMessageContent,
+  formatTaskExecutionError,
+  isRecoveredTaskCrashMessage,
 } from "./session-task-continuation";
 import {
   createMemorySummaryState,
@@ -247,6 +252,42 @@ const CLIPBOARD_IMAGE_MEDIA_TYPES: readonly AgentModelImageMediaType[] = [
   "image/webp",
 ];
 const ACTIVE_DESKTOP_TASK_RECONCILE_INTERVAL_MS = 15_000;
+const ACTIVE_DESKTOP_TASK_MISSING_GRACE_MS = 45_000;
+const ACTIVE_DESKTOP_TASK_MISSING_CONFIRMATION_COUNT = 3;
+const INACTIVE_DESKTOP_TASK_RECOVERY_ROUTE_TTL_MS = 2 * 60_000;
+
+type InactiveDesktopTaskObservation = {
+  firstMissingAt: number;
+  missCount: number;
+};
+
+type InactiveDesktopTaskRecoveryRoute = {
+  sessionId: string;
+  expiresAt: number;
+};
+
+const TERMINAL_PROGRESS_STATE_BY_STATUS = {
+  planned: "planned",
+  executed: "completed",
+  blocked: "blocked",
+  cancelled: "cancelled",
+  unsupported: "unsupported",
+} satisfies Record<TaskExecutionResult["status"], TaskExecutionProgress["state"]>;
+
+const createTerminalThinkingProgressFromExecution = (
+  execution: TaskExecutionResult,
+): TaskExecutionProgress => {
+  return {
+    task: execution.task,
+    mode: execution.mode,
+    state: TERMINAL_PROGRESS_STATE_BY_STATUS[execution.status],
+    message: execution.summary,
+    executedTools: execution.executedTools,
+    outputSections: execution.outputSections,
+    cancellable: false,
+    ...(execution.reason ? { reason: execution.reason } : {}),
+  };
+};
 
 const getInstructionCommandErrorMessage = (
   error: unknown,
@@ -275,6 +316,12 @@ export const useChatSessionController = (
   const shellStateRef = useRef(state.shellState);
   const activeDesktopTasksRef = useRef<Map<string, string>>(new Map());
   const ignoredDesktopTaskIdsRef = useRef<Set<string>>(new Set());
+  const inactiveDesktopTaskObservationsRef = useRef<
+    Map<string, InactiveDesktopTaskObservation>
+  >(new Map());
+  const inactiveDesktopTaskRecoveryRoutesRef = useRef<
+    Map<string, InactiveDesktopTaskRecoveryRoute>
+  >(new Map());
   const desktopTaskProgressHandlersRef = useRef<
     Map<string, HandleDesktopTaskProgress>
   >(new Map());
@@ -785,6 +832,132 @@ export const useChatSessionController = (
     [applySessionMessageLimit, runtime.runtimeSnapshot, state.updateSessionById],
   );
 
+  const applyCompletedDesktopTaskResult = useCallback(
+    (result: RecentDesktopTaskResult): boolean => {
+      const taskId = result.id.trim();
+
+      if (!taskId) {
+        return false;
+      }
+
+      let didApplyResult = false;
+
+      state.applyShellState((prev) => {
+        const timestamp =
+          Number.isFinite(result.finishedAt) && result.finishedAt > 0
+            ? result.finishedAt
+            : Date.now();
+        const sessions = prev.sessions.map((session) => {
+          if (getLatestRunningTaskId(session) !== taskId) {
+            return session;
+          }
+
+          const hasTerminalMessage = session.messages.some((message) => {
+            return (
+              getMessageTaskId(message) === taskId &&
+              message.role === "agent" &&
+              message.source?.kind === "execution"
+            );
+          });
+
+          if (hasTerminalMessage) {
+            return session;
+          }
+
+          didApplyResult = true;
+          const messagesWithoutRecoveredCrash = session.messages.filter(
+            (message) =>
+              getMessageTaskId(message) !== taskId ||
+              !isRecoveredTaskCrashMessage(message),
+          );
+
+          if (result.outcome.status === "failed") {
+            return applySessionMessageLimit({
+              ...session,
+              updatedAt: timestamp,
+              messages: [
+                ...messagesWithoutRecoveredCrash,
+                {
+                  id: crypto.randomUUID(),
+                  taskId,
+                  role: "agent",
+                  content: formatTaskExecutionError(result.outcome.error),
+                  createdAt: timestamp,
+                },
+              ],
+            });
+          }
+
+          const execution = result.outcome.response.execution;
+          const terminalProgress =
+            createTerminalThinkingProgressFromExecution(execution);
+          const nextMessages = messagesWithoutRecoveredCrash.map((message) => {
+            if (
+              getMessageTaskId(message) !== taskId ||
+              message.role !== "agent" ||
+              message.source?.kind !== "thinking"
+            ) {
+              return message;
+            }
+
+            return {
+              ...message,
+              source: {
+                kind: "thinking" as const,
+                thinking: appendThinkingProgress(
+                  message.source.thinking,
+                  terminalProgress,
+                  timestamp,
+                ),
+              },
+            };
+          });
+
+          return applySessionMessageLimit({
+            ...session,
+            updatedAt: timestamp,
+            messages: [
+              ...nextMessages,
+              {
+                id: crypto.randomUUID(),
+                taskId,
+                role: "agent",
+                content: createExecutionMessageContent(execution),
+                createdAt: timestamp,
+                source: {
+                  kind: "execution",
+                  execution,
+                },
+              },
+            ],
+          });
+        });
+
+        if (!didApplyResult) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          sessions,
+        };
+      });
+
+      if (didApplyResult) {
+        activeDesktopTasksRef.current.delete(taskId);
+        ignoredDesktopTaskIdsRef.current.delete(taskId);
+        inactiveDesktopTaskObservationsRef.current.delete(taskId);
+        inactiveDesktopTaskRecoveryRoutesRef.current.delete(taskId);
+      }
+
+      return didApplyResult;
+    },
+    [
+      applySessionMessageLimit,
+      state.applyShellState,
+    ],
+  );
+
   useEffect(() => {
     if (!state.hasHydrated) {
       return;
@@ -860,21 +1033,97 @@ export const useChatSessionController = (
           .map((taskId) => taskId.trim())
           .filter((taskId) => taskId.length > 0),
       );
-      const currentInactiveRunningTaskIds = shellStateRef.current.sessions
+      const runningTaskIds = shellStateRef.current.sessions
         .map((session) => getLatestRunningTaskId(session))
-        .filter((taskId): taskId is string => {
-          return taskId !== null && !activeTaskIdSet.has(taskId);
-        });
+        .filter((taskId): taskId is string => taskId !== null);
+      const currentInactiveRunningTaskIds = runningTaskIds.filter(
+        (taskId) => !activeTaskIdSet.has(taskId),
+      );
+
+      for (const taskId of runningTaskIds) {
+        if (activeTaskIdSet.has(taskId)) {
+          inactiveDesktopTaskObservationsRef.current.delete(taskId);
+          inactiveDesktopTaskRecoveryRoutesRef.current.delete(taskId);
+        }
+      }
 
       if (currentInactiveRunningTaskIds.length === 0) {
         return;
       }
 
+      const completedResults = await loadRecentDesktopTaskResults(
+        currentInactiveRunningTaskIds,
+      );
+
+      if (disposed) {
+        return;
+      }
+
+      const completedResultTaskIds = new Set<string>();
+
+      if (completedResults) {
+        for (const result of completedResults) {
+          if (applyCompletedDesktopTaskResult(result)) {
+            completedResultTaskIds.add(result.id.trim());
+          }
+        }
+      }
+
+      const now = Date.now();
+      const confirmedInactiveTaskIds: string[] = [];
+
+      for (const taskId of currentInactiveRunningTaskIds) {
+        if (activeTaskIdSet.has(taskId) || completedResultTaskIds.has(taskId)) {
+          continue;
+        }
+
+        const currentSession = shellStateRef.current.sessions.find(
+          (session) => getLatestRunningTaskId(session) === taskId,
+        );
+
+        if (!currentSession) {
+          inactiveDesktopTaskObservationsRef.current.delete(taskId);
+          continue;
+        }
+
+        const previousObservation =
+          inactiveDesktopTaskObservationsRef.current.get(taskId);
+        const observation: InactiveDesktopTaskObservation = previousObservation
+          ? {
+              firstMissingAt: previousObservation.firstMissingAt,
+              missCount: previousObservation.missCount + 1,
+            }
+          : {
+              firstMissingAt: now,
+              missCount: 1,
+            };
+
+        inactiveDesktopTaskObservationsRef.current.set(taskId, observation);
+
+        if (
+          observation.missCount >=
+            ACTIVE_DESKTOP_TASK_MISSING_CONFIRMATION_COUNT &&
+          now - observation.firstMissingAt >= ACTIVE_DESKTOP_TASK_MISSING_GRACE_MS
+        ) {
+          confirmedInactiveTaskIds.push(taskId);
+        }
+      }
+
+      if (confirmedInactiveTaskIds.length === 0) {
+        return;
+      }
+
+      const confirmedInactiveTaskIdSet = new Set(confirmedInactiveTaskIds);
+
       state.applyShellState((prev) => {
         const inactiveRunningTaskIds = prev.sessions
           .map((session) => getLatestRunningTaskId(session))
           .filter((taskId): taskId is string => {
-            return taskId !== null && !activeTaskIdSet.has(taskId);
+            return (
+              taskId !== null &&
+              !activeTaskIdSet.has(taskId) &&
+              confirmedInactiveTaskIdSet.has(taskId)
+            );
           });
 
         if (inactiveRunningTaskIds.length === 0) {
@@ -892,8 +1141,20 @@ export const useChatSessionController = (
         }
 
         for (const taskId of inactiveRunningTaskIds) {
+          const session = prev.sessions.find(
+            (entry) => getLatestRunningTaskId(entry) === taskId,
+          );
+
           activeDesktopTasksRef.current.delete(taskId);
-          ignoredDesktopTaskIdsRef.current.add(taskId);
+          inactiveDesktopTaskObservationsRef.current.delete(taskId);
+
+          if (session) {
+            inactiveDesktopTaskRecoveryRoutesRef.current.set(taskId, {
+              sessionId: session.id,
+              expiresAt:
+                Date.now() + INACTIVE_DESKTOP_TASK_RECOVERY_ROUTE_TTL_MS,
+            });
+          }
         }
 
         return nextState;
@@ -908,7 +1169,12 @@ export const useChatSessionController = (
       disposed = true;
       window.clearInterval(intervalId);
     };
-  }, [runningTaskIdsSignature, state.applyShellState, state.hasHydrated]);
+  }, [
+    applyCompletedDesktopTaskResult,
+    runningTaskIdsSignature,
+    state.applyShellState,
+    state.hasHydrated,
+  ]);
 
   const handleUnhandledDesktopTaskProgress = useCallback(
     (
@@ -955,12 +1221,17 @@ export const useChatSessionController = (
         }
 
         const timestamp = Date.now();
+        const messagesWithoutRecoveredCrash = session.messages.filter(
+          (message) =>
+            getMessageTaskId(message) !== taskId ||
+            !isRecoveredTaskCrashMessage(message),
+        );
 
         return applySessionMessageLimit({
           ...session,
           updatedAt: timestamp,
           messages: [
-            ...session.messages,
+            ...messagesWithoutRecoveredCrash,
             {
               id: crypto.randomUUID(),
               taskId,
@@ -977,12 +1248,25 @@ export const useChatSessionController = (
       });
 
       activeDesktopTasksRef.current.delete(taskId);
+      inactiveDesktopTaskObservationsRef.current.delete(taskId);
+      inactiveDesktopTaskRecoveryRoutesRef.current.delete(taskId);
     },
     [applySessionMessageLimit, state.updateSessionById],
   );
 
   const resolveSessionIdForDesktopTask = useCallback(
     (taskId: string): string | null => {
+      const inactiveRoute =
+        inactiveDesktopTaskRecoveryRoutesRef.current.get(taskId);
+
+      if (inactiveRoute) {
+        if (inactiveRoute.expiresAt > Date.now()) {
+          return inactiveRoute.sessionId;
+        }
+
+        inactiveDesktopTaskRecoveryRoutesRef.current.delete(taskId);
+      }
+
       for (const session of state.shellState.sessions) {
         if (getLatestRunningTaskId(session) === taskId) {
           return session.id;

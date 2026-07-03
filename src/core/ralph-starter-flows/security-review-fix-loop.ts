@@ -23,7 +23,7 @@ const securityFixLoopFlow: RalphFlow = {
     {
       name: "scopeSelectionStrategy",
       type: "text",
-      default: "round-robin",
+      default: "risk-first",
       required: false,
     },
     {
@@ -142,7 +142,7 @@ const securityFixLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Use content enrichment before the security review. If search_web is available, run focused searches for current primary-source security guidance, standards, advisories, framework hardening docs, and relevant changelogs for {{projectStack:text=auto-detect}} and these standards: {{securityStandards:text=OWASP Top 10, OWASP ASVS}}. Use fetch_url on official standards, vendor, maintainer, or advisory pages before relying on them. Keep the research concise and focus on the configured scope root {{scopeRoot:path=.}} and fix threshold {{severityThreshold:text=high}}. Include source links, standard versions/requirement ids when available, relevant checks, exploitability notes, and assumptions. If web search is unavailable, say so and use local package/config evidence plus any provided URLs.",
+          "Use content enrichment before the security review for selected JSON scope {{result:select-scope}}. If search_web is available, run focused searches for current primary-source security guidance, standards, advisories, framework hardening docs, and relevant changelogs for project stack {{projectStack:text=auto-detect}}, detected commands {{result:detect-project-commands}}, and these standards: {{securityStandards:text=OWASP Top 10, OWASP ASVS}}. Use fetch_url on official standards, vendor, maintainer, or advisory pages before relying on them. Keep the research concise and focus on the selected paths/globs, configured scope root {{scopeRoot:path=.}}, and fix threshold {{severityThreshold:text=high}}. Include source links, standard versions/requirement ids when available, relevant checks, exploitability notes, and assumptions. If web search is unavailable, say so and use local package/config evidence plus any provided URLs.",
     },
     {
       id: "scan-scopes",
@@ -172,7 +172,7 @@ const securityFixLoopFlow: RalphFlow = {
           "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
         outputPath:
           "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.md}}",
-        strategy: "{{scopeSelectionStrategy:text=round-robin}}",
+        strategy: "{{scopeSelectionStrategy:text=risk-first}}",
         includeMarkdown: true,
       },
     },
@@ -187,7 +187,7 @@ const securityFixLoopFlow: RalphFlow = {
         flowAlias: "security-review-fix-loop",
         registryPath:
           "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
-        strategy: "{{scopeSelectionStrategy:text=round-robin}}",
+        strategy: "{{scopeSelectionStrategy:text=risk-first}}",
       },
     },
     {
@@ -277,6 +277,19 @@ const securityFixLoopFlow: RalphFlow = {
       },
     },
     {
+      id: "count-fix-loop",
+      title: "Count Fix Loop",
+      position: { x: 3060, y: -190 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "LOOP_COUNTER",
+        counterName:
+          "security-review-fix-loop.fix-loop.{{data:select-scope:scope.id}}",
+        maxAttempts: "{{maxFixLoops:number=10}}",
+      },
+    },
+    {
       id: "fix-findings",
       title: "Fix Findings",
       position: { x: 3060, y: 0 },
@@ -340,7 +353,7 @@ const securityFixLoopFlow: RalphFlow = {
       size: { width: 300, height: 238 },
       type: "VALIDATOR",
       prompt:
-        "Validate the latest iteration since the previous validator for selected scope {{result:select-scope}}. Confirm whether the structured review {{result:security-check}} and git diff {{result:git-diff-summary}} show no remaining findings at or above {{severityThreshold:text=high}} in the selected scope, fixes followed schemaChangePolicy={{schemaChangePolicy:text=report-only}}, dependency changes followed allowDependencyChanges={{allowDependencyChanges:boolean=false}}, {{historyFile:path=.machdoch/ralph/security/RALPH_SECURITY_HISTORY.md}} was updated when changes were made, no servers were started or restarted, and verification result {{result:run-verification}} was considered when a command was configured. Ignore unrelated workspace changes outside the selected scope unless they directly break verification of this security fix. If this selected scope is done, end with RALPH_DECISION: DONE. If qualifying findings remain and fewer than {{maxFixLoops:number=10}} loops have been attempted for this scope, end with RALPH_DECISION: CONTINUE. If the last fix needs correction or verification rerun, end with RALPH_DECISION: RETRY. If blocked by missing credentials, unsafe schema work, unavailable tooling, or repeated failures, end with RALPH_DECISION: ERROR.",
+        "Validate the latest iteration since the previous validator for selected scope {{result:select-scope}}. Confirm whether the structured review {{result:security-check}} and git diff {{result:git-diff-summary}} show no remaining findings at or above {{severityThreshold:text=high}} in the selected scope, fixes followed schemaChangePolicy={{schemaChangePolicy:text=report-only}}, dependency changes followed allowDependencyChanges={{allowDependencyChanges:boolean=false}}, {{historyFile:path=.machdoch/ralph/security/RALPH_SECURITY_HISTORY.md}} was updated when changes were made, no servers were started or restarted, and verification result {{result:run-verification}} was considered when a command was configured. Ignore unrelated workspace changes outside the selected scope unless they directly break verification of this security fix. If this selected scope is done, end with RALPH_DECISION: DONE. If qualifying findings remain, end with RALPH_DECISION: CONTINUE; the flow counter enforces maxFixLoops={{maxFixLoops:number=10}} for this scope. If the last fix needs correction or verification rerun, end with RALPH_DECISION: RETRY. If blocked by missing credentials, unsafe schema work, unavailable tooling, or repeated failures, end with RALPH_DECISION: ERROR.",
       validationScope: {
         mode: "sinceLastValidator",
         blockIds: [],
@@ -408,12 +421,7 @@ const securityFixLoopFlow: RalphFlow = {
     },
   ],
   edges: [
-    { id: "start-to-research-decision", from: "start", fromOutput: "SUCCESS", to: "research-decision" },
-    { id: "research-decision-run", from: "research-decision", fromOutput: "MATCH", to: "security-research" },
-    { id: "research-decision-skip", from: "research-decision", fromOutput: "NO_MATCH", to: "scan-scopes" },
-    { id: "research-decision-error", from: "research-decision", fromOutput: "ERROR", to: "scan-scopes" },
-    { id: "research-to-scan-scopes", from: "security-research", fromOutput: "SUCCESS", to: "scan-scopes" },
-    { id: "research-error-to-scan-scopes", from: "security-research", fromOutput: "ERROR", to: "scan-scopes" },
+    { id: "start-to-scan-scopes", from: "start", fromOutput: "SUCCESS", to: "scan-scopes" },
     { id: "scan-scopes-to-update", from: "scan-scopes", fromOutput: "SUCCESS", to: "update-scope-registry" },
     { id: "scan-scopes-empty", from: "scan-scopes", fromOutput: "EMPTY", to: "blocked" },
     { id: "scan-scopes-error", from: "scan-scopes", fromOutput: "ERROR", to: "blocked" },
@@ -423,17 +431,25 @@ const securityFixLoopFlow: RalphFlow = {
     { id: "select-scope-to-detect-commands", from: "select-scope", fromOutput: "SELECTED", to: "detect-project-commands" },
     { id: "select-scope-empty", from: "select-scope", fromOutput: "EMPTY", to: "success" },
     { id: "select-scope-error", from: "select-scope", fromOutput: "ERROR", to: "blocked" },
-    { id: "detect-commands-to-snapshot", from: "detect-project-commands", fromOutput: "SUCCESS", to: "git-snapshot-before" },
-    { id: "detect-commands-empty-to-snapshot", from: "detect-project-commands", fromOutput: "EMPTY", to: "git-snapshot-before" },
-    { id: "detect-commands-error-to-snapshot", from: "detect-project-commands", fromOutput: "ERROR", to: "git-snapshot-before" },
+    { id: "detect-commands-to-research-decision", from: "detect-project-commands", fromOutput: "SUCCESS", to: "research-decision" },
+    { id: "detect-commands-empty-to-research-decision", from: "detect-project-commands", fromOutput: "EMPTY", to: "research-decision" },
+    { id: "detect-commands-error-to-research-decision", from: "detect-project-commands", fromOutput: "ERROR", to: "research-decision" },
+    { id: "research-decision-run", from: "research-decision", fromOutput: "MATCH", to: "security-research" },
+    { id: "research-decision-skip", from: "research-decision", fromOutput: "NO_MATCH", to: "git-snapshot-before" },
+    { id: "research-decision-error", from: "research-decision", fromOutput: "ERROR", to: "git-snapshot-before" },
+    { id: "research-to-snapshot", from: "security-research", fromOutput: "SUCCESS", to: "git-snapshot-before" },
+    { id: "research-error-to-snapshot", from: "security-research", fromOutput: "ERROR", to: "git-snapshot-before" },
     { id: "git-snapshot-to-security-check", from: "git-snapshot-before", fromOutput: "SUCCESS", to: "security-check" },
     { id: "git-snapshot-error-to-security-check", from: "git-snapshot-before", fromOutput: "ERROR", to: "security-check" },
     { id: "security-check-to-findings-present", from: "security-check", fromOutput: "SUCCESS", to: "findings-present" },
     { id: "security-check-invalid", from: "security-check", fromOutput: "INVALID", to: "blocked" },
     { id: "security-check-error", from: "security-check", fromOutput: "ERROR", to: "blocked" },
-    { id: "findings-present-fix", from: "findings-present", fromOutput: "MATCH", to: "fix-findings" },
+    { id: "findings-present-fix", from: "findings-present", fromOutput: "MATCH", to: "count-fix-loop" },
     { id: "findings-present-none", from: "findings-present", fromOutput: "NO_MATCH", to: "final-report" },
     { id: "findings-present-error", from: "findings-present", fromOutput: "ERROR", to: "blocked" },
+    { id: "count-fix-loop-continue", from: "count-fix-loop", fromOutput: "CONTINUE", to: "fix-findings" },
+    { id: "count-fix-loop-limit", from: "count-fix-loop", fromOutput: "LIMIT_REACHED", to: "blocked" },
+    { id: "count-fix-loop-error", from: "count-fix-loop", fromOutput: "ERROR", to: "blocked" },
     { id: "fix-findings-to-verification-decision", from: "fix-findings", fromOutput: "SUCCESS", to: "verification-decision" },
     { id: "fix-findings-error", from: "fix-findings", fromOutput: "ERROR", to: "blocked" },
     { id: "verification-decision-run", from: "verification-decision", fromOutput: "MATCH", to: "run-verification" },

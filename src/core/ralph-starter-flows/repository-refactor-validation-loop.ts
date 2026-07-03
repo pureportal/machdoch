@@ -16,7 +16,7 @@ const autonomousRefactoringFlow: RalphFlow = {
   },
   variables: [
     { name: "scopeRoot", type: "path", default: ".", required: false },
-    { name: "scopeSelectionStrategy", type: "text", default: "round-robin", required: false },
+    { name: "scopeSelectionStrategy", type: "text", default: "priority", required: false },
     { name: "scopeRegistryFile", type: "path", default: ".machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json", required: false },
     { name: "scopeRegistryMarkdown", type: "path", default: ".machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md", required: false },
     { name: "refactorObjective", type: "text", default: "Improve maintainability while preserving behavior.", required: false },
@@ -73,7 +73,7 @@ const autonomousRefactoringFlow: RalphFlow = {
           "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
         outputPath:
           "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md}}",
-        strategy: "{{scopeSelectionStrategy:text=round-robin}}",
+        strategy: "{{scopeSelectionStrategy:text=priority}}",
         includeMarkdown: true,
       },
     },
@@ -88,7 +88,7 @@ const autonomousRefactoringFlow: RalphFlow = {
         flowAlias: "repository-refactor-validation-loop",
         registryPath:
           "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
-        strategy: "{{scopeSelectionStrategy:text=round-robin}}",
+        strategy: "{{scopeSelectionStrategy:text=priority}}",
       },
     },
     {
@@ -210,7 +210,22 @@ const autonomousRefactoringFlow: RalphFlow = {
           },
         },
         prompt:
-          "Audit selected JSON scope {{result:select-scope}} against detected conventions {{data:detect-conventions:output}}, content-enriched refactor research {{summary:refactor-research}}, and this template policy: objective {{refactorObjective:text=Improve maintainability while preserving behavior.}}, file naming {{fileNamingPolicy:text=Follow existing framework and repository conventions.}}, max file lines {{maxFileLines:number=500}}, helper placement {{helperPlacementPolicy:text=Follow existing module-local and shared helper conventions.}}, test framework {{testFramework:text=auto-detect}}, public API changes allowed {{allowPublicApiChanges:boolean=false}}. Produce a prioritized, bounded refactor pass plan that applies source-backed guidance only when it matches the local versions and selected scope. Note exceptions in {{notesFile:path=.machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md}} when useful. Do not change files. Return only schema-valid JSON.",
+          "Audit selected JSON scope {{result:select-scope}} against detected conventions {{data:detect-conventions:output}}, content-enriched refactor research {{summary:refactor-research}}, and this template policy: objective {{refactorObjective:text=Improve maintainability while preserving behavior.}}, file naming {{fileNamingPolicy:text=Follow existing framework and repository conventions.}}, max file lines {{maxFileLines:number=500}}, helper placement {{helperPlacementPolicy:text=Follow existing module-local and shared helper conventions.}}, test framework {{testFramework:text=auto-detect}}, public API changes allowed {{allowPublicApiChanges:boolean=false}}. Produce a prioritized, bounded refactor pass plan that applies source-backed guidance only when it matches the local versions and selected scope. Return passes: [] when there is no evidence-backed, behavior-preserving refactor worth doing in this selected scope; do not invent cleanup, broad rewrites, formatting sweeps, or speculative abstractions just to keep the loop busy. Note exceptions in {{notesFile:path=.machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md}} when useful. Do not change files. Return only schema-valid JSON.",
+      },
+    },
+    {
+      id: "has-actionable-refactor",
+      title: "Actionable Refactor?",
+      position: { x: 2280, y: 180 },
+      size: { width: 256, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          style: "javascript",
+          expression:
+            "Array.isArray(lastData?.output?.passes) && lastData.output.passes.length > 0",
+        },
       },
     },
     {
@@ -413,9 +428,12 @@ const autonomousRefactoringFlow: RalphFlow = {
     { id: "research-decision-error", from: "research-decision", fromOutput: "ERROR", to: "audit-against-policy" },
     { id: "research-to-audit", from: "refactor-research", fromOutput: "SUCCESS", to: "audit-against-policy" },
     { id: "research-error-to-audit", from: "refactor-research", fromOutput: "ERROR", to: "audit-against-policy" },
-    { id: "audit-to-snapshot", from: "audit-against-policy", fromOutput: "SUCCESS", to: "git-snapshot-before" },
+    { id: "audit-to-actionable-refactor", from: "audit-against-policy", fromOutput: "SUCCESS", to: "has-actionable-refactor" },
     { id: "audit-invalid", from: "audit-against-policy", fromOutput: "INVALID", to: "blocked" },
     { id: "audit-error", from: "audit-against-policy", fromOutput: "ERROR", to: "blocked" },
+    { id: "actionable-refactor-to-snapshot", from: "has-actionable-refactor", fromOutput: "MATCH", to: "git-snapshot-before" },
+    { id: "no-actionable-refactor-to-mark", from: "has-actionable-refactor", fromOutput: "NO_MATCH", to: "mark-scope-result" },
+    { id: "actionable-refactor-error", from: "has-actionable-refactor", fromOutput: "ERROR", to: "mark-scope-result" },
     { id: "snapshot-to-count-refactor-pass", from: "git-snapshot-before", fromOutput: "SUCCESS", to: "count-refactor-pass" },
     { id: "snapshot-error-to-count-refactor-pass", from: "git-snapshot-before", fromOutput: "ERROR", to: "count-refactor-pass" },
     { id: "count-refactor-pass-continue", from: "count-refactor-pass", fromOutput: "CONTINUE", to: "refactor-pass" },

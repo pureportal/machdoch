@@ -24,6 +24,7 @@ import {
   loadActiveDesktopTaskIds,
   loadActiveDesktopTasks,
   loadDesktopLaunchId,
+  loadRecentDesktopTaskResults,
   listMcpCachedCapabilities,
   listMcpServers,
   listInstructions,
@@ -130,6 +131,44 @@ describe("desktop runtime fullscreen detection", () => {
       },
     ]);
     expect(invokeMock).toHaveBeenCalledWith("get_active_desktop_tasks");
+  });
+
+  it("loads recent desktop task results through the Tauri runtime", async () => {
+    const results = [
+      {
+        id: "task-123",
+        kind: "desktop",
+        workspaceRoot: "C:\\Docs",
+        arguments: [],
+        startedAt: 100,
+        finishedAt: 200,
+        outcome: {
+          status: "succeeded",
+          response: {
+            execution: {
+              task: "Inspect notes",
+              mode: "ask",
+              status: "executed",
+              summary: "Done.",
+              executedTools: [],
+              outputSections: [],
+            },
+          },
+        },
+      },
+    ];
+
+    invokeMock.mockResolvedValueOnce(results);
+
+    await expect(
+      loadRecentDesktopTaskResults([" task-123 ", "", "task-456"]),
+    ).resolves.toEqual(results);
+    expect(invokeMock).toHaveBeenCalledWith(
+      "get_recent_desktop_task_results",
+      {
+        taskIds: ["task-123", "task-456"],
+      },
+    );
   });
 
   it("loads the provider model catalog through the Tauri runtime", async () => {

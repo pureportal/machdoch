@@ -792,7 +792,7 @@ describe("ChatSession component", () => {
   );
 
   it(
-    "marks recovered running sessions crashed when the backend task disappears",
+    "accepts late terminal progress after a recovered backend task disappears",
     async () => {
       vi.useFakeTimers();
 
@@ -845,6 +845,9 @@ describe("ChatSession component", () => {
             startedAt: now - 900,
           },
         ]);
+      const loadRecentDesktopTaskResultsSpy = vi
+        .spyOn(runtime, "loadRecentDesktopTaskResults")
+        .mockResolvedValue([]);
 
       render(<ChatSession />);
       await flushShellHydration();
@@ -866,6 +869,24 @@ describe("ChatSession component", () => {
       });
 
       expect(
+        screen.queryByText(/no longer sees an active desktop task/i),
+      ).toBeNull();
+      expect(
+        within(getSessionRow("Dropped active session")).getByLabelText(
+          "Session status: Running",
+        ),
+      ).toBeDefined();
+
+      for (let index = 0; index < 3; index += 1) {
+        await act(async () => {
+          vi.advanceTimersByTime(15_000);
+          await Promise.resolve();
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+      }
+
+      expect(
         screen.getByText(/no longer sees an active desktop task/i),
       ).toBeDefined();
       expect(
@@ -874,28 +895,152 @@ describe("ChatSession component", () => {
         ),
       ).toBeDefined();
 
-      emitDesktopTaskProgress({
-        taskId: activeTaskId,
-        timestamp: now + 1,
-        progress: {
-          task: "Continue dropped active task",
-          mode: "ask",
-          state: "completed",
-          message: "Late task completed.",
-          executedTools: [],
-          outputSections: [],
-          assistantText: "Late final response.",
-          cancellable: false,
-        },
+      await act(async () => {
+        emitDesktopTaskProgress({
+          taskId: activeTaskId,
+          timestamp: now + 1,
+          progress: {
+            task: "Continue dropped active task",
+            mode: "ask",
+            state: "completed",
+            message: "Late task completed.",
+            executedTools: [],
+            outputSections: [],
+            assistantText: "Late final response.",
+            cancellable: false,
+          },
+        });
+        await Promise.resolve();
       });
 
-      expect(screen.queryByText("Late final response.")).toBeNull();
+      expect(screen.getByText("Late final response.")).toBeDefined();
+      expect(screen.queryByText(/Task crashed/i)).toBeNull();
       expect(
         within(getSessionRow("Dropped active session")).getByLabelText(
-          "Session status: Crashed",
+          "Session status: Done",
         ),
       ).toBeDefined();
 
+      loadRecentDesktopTaskResultsSpy.mockRestore();
+      loadActiveDesktopTasksSpy.mockRestore();
+      loadActiveDesktopTaskIdsSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "finalizes a missing recovered task from recent desktop task results",
+    async () => {
+      vi.useFakeTimers();
+
+      const now = Date.now();
+      const activeTaskId = "completed-recovered-task";
+      const recoveredSession = createSession({
+        id: "completed-recovered-session",
+        manualTitle: "Completed recovered session",
+        updatedAt: now - 1_000,
+        messages: [
+          {
+            id: "completed-recovered-user",
+            taskId: activeTaskId,
+            role: "user",
+            content: "Finish recovered task",
+            createdAt: now - 1_100,
+          },
+          {
+            id: "completed-recovered-thinking",
+            taskId: activeTaskId,
+            role: "agent",
+            content: "",
+            createdAt: now - 1_000,
+            source: {
+              kind: "thinking",
+              thinking: createInitialThinkingTrace("ask", now - 1_000),
+            },
+          },
+        ],
+      });
+      const execution = createMockExecutionFixture(
+        "Finish recovered task",
+        "/mocked/tauri/path",
+        {
+          mode: "ask",
+        },
+      );
+
+      storeShellState({
+        ...createInitialShellState(),
+        activeSessionId: recoveredSession.id,
+        sessions: [recoveredSession],
+      });
+
+      const loadActiveDesktopTaskIdsSpy = vi
+        .spyOn(runtime, "loadActiveDesktopTaskIds")
+        .mockResolvedValueOnce([activeTaskId])
+        .mockResolvedValue([]);
+      const loadActiveDesktopTasksSpy = vi
+        .spyOn(runtime, "loadActiveDesktopTasks")
+        .mockResolvedValue([
+          {
+            id: activeTaskId,
+            kind: "desktop",
+            workspaceRoot: "/mocked/tauri/path",
+            arguments: [],
+            startedAt: now - 900,
+          },
+        ]);
+      const loadRecentDesktopTaskResultsSpy = vi
+        .spyOn(runtime, "loadRecentDesktopTaskResults")
+        .mockResolvedValue([
+          {
+            id: activeTaskId,
+            kind: "desktop",
+            workspaceRoot: "/mocked/tauri/path",
+            arguments: [],
+            startedAt: now - 900,
+            finishedAt: now,
+            outcome: {
+              status: "succeeded",
+              response: {
+                execution: {
+                  ...execution,
+                  response: {
+                    ...(execution.response ?? {
+                      highlights: [],
+                      relatedFiles: [],
+                      verification: [],
+                      followUps: [],
+                    }),
+                    markdown: "Recovered cached final response.",
+                  },
+                },
+              },
+            },
+          },
+        ]);
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(loadRecentDesktopTaskResultsSpy).toHaveBeenCalledWith([
+        activeTaskId,
+      ]);
+      expect(screen.getByText("Recovered cached final response.")).toBeDefined();
+      expect(screen.queryByText(/Task crashed/i)).toBeNull();
+      expect(
+        within(getSessionRow("Completed recovered session")).getByLabelText(
+          "Session status: Done",
+        ),
+      ).toBeDefined();
+
+      loadRecentDesktopTaskResultsSpy.mockRestore();
       loadActiveDesktopTasksSpy.mockRestore();
       loadActiveDesktopTaskIdsSpy.mockRestore();
     },

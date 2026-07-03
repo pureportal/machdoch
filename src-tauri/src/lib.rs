@@ -120,6 +120,7 @@ pub fn run() {
             desktop_task::cancel_desktop_task,
             desktop_task::get_active_desktop_task_ids,
             desktop_task::get_active_desktop_tasks,
+            desktop_task::get_recent_desktop_task_results,
             desktop_task::open_attached_path,
             desktop_task::open_ralph_flow_in_explorer,
             desktop_task::open_workspace_path,

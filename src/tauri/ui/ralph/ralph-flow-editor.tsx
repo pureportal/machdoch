@@ -6236,6 +6236,7 @@ export const RalphFlowEditor = ({
                         <option value="least-recent">Least Recent</option>
                         <option value="priority">Priority</option>
                         <option value="risk-first">Risk First</option>
+                        <option value="ui-first">UI First</option>
                       </select>
                     </RalphInspectorField>
                   ) : (

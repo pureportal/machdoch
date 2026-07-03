@@ -372,7 +372,12 @@ export const useSessionTaskSubmission = (options: {
         options.state.updateSessionById(sessionId, (session) => {
           const timestamp = Date.now();
           const terminalProgress = createTerminalThinkingProgress(execution);
-          const nextMessages = session.messages.map((message) => {
+          const messagesWithoutRecoveredCrash = session.messages.filter(
+            (message) =>
+              (message.taskId ?? message.id) !== taskId ||
+              !isRecoveredTaskCrashMessage(message),
+          );
+          const nextMessages = messagesWithoutRecoveredCrash.map((message) => {
             if (
               message.taskId !== taskId ||
               message.role !== "agent" ||
@@ -695,7 +700,13 @@ export const useSessionTaskSubmission = (options: {
             )
               ? session.messages
               : [...session.messages, userMessage];
-            const nextMessages = messagesWithUserAnchor.map((message) => {
+            const messagesWithoutRecoveredCrash =
+              messagesWithUserAnchor.filter(
+                (message) =>
+                  (message.taskId ?? message.id) !== taskId ||
+                  !isRecoveredTaskCrashMessage(message),
+              );
+            const nextMessages = messagesWithoutRecoveredCrash.map((message) => {
               if (
                 message.taskId !== taskId ||
                 message.role !== "agent" ||

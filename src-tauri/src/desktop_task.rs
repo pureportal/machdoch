@@ -41,9 +41,13 @@ use progress::create_progress_timestamp;
 use ralph::{execute_ralph_command, resolve_ralph_flow_path_for_open};
 use registry::{
     active_task_ids, active_task_summaries, finish_active_task, normalize_task_id,
-    register_active_task, ActiveDesktopTaskRegistration,
+    recent_completed_task_results, register_active_task, remember_completed_task_result,
+    ActiveDesktopTaskRegistration,
 };
-pub use registry::{request_desktop_task_cancel, ActiveDesktopTaskSummary, DesktopTaskCancelMap};
+pub use registry::{
+    request_desktop_task_cancel, ActiveDesktopTaskSummary, DesktopTaskCancelMap,
+    RecentDesktopTaskResult,
+};
 
 const DESKTOP_TASK_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
 const RALPH_COMMAND_TIMEOUT_MS: u64 = 12 * 60 * 60 * 1_000;
@@ -169,6 +173,14 @@ pub async fn get_active_desktop_tasks(
 }
 
 #[tauri::command]
+pub async fn get_recent_desktop_task_results(
+    state: tauri::State<'_, DesktopTaskCancelMap>,
+    task_ids: Vec<String>,
+) -> Result<Vec<RecentDesktopTaskResult>, String> {
+    recent_completed_task_results(&state, &task_ids)
+}
+
+#[tauri::command]
 pub async fn run_desktop_task(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, DesktopTaskCancelMap>,
@@ -178,6 +190,8 @@ pub async fn run_desktop_task(
     let window_label = window.label().to_string();
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let task_id = normalize_task_id(request.task_id.as_deref());
+    let task_started_at = create_progress_timestamp();
+    let task_workspace_root = request.workspace_root.clone();
     request.task_id = task_id.clone();
 
     if let Some(id) = &task_id {
@@ -189,7 +203,7 @@ pub async fn run_desktop_task(
                 kind: "desktop".to_string(),
                 workspace_root: request.workspace_root.clone(),
                 arguments: Vec::new(),
-                started_at: create_progress_timestamp(),
+                started_at: task_started_at,
             },
         );
     }
@@ -198,11 +212,26 @@ pub async fn run_desktop_task(
         execute_desktop_task(app_handle, window_label, request, cancel_flag)
     })
     .await
-    .map_err(|error| format!("The desktop task bridge stopped unexpectedly. {error}"));
+    .map_err(|error| format!("The desktop task bridge stopped unexpectedly. {error}"))
+    .and_then(|task_result| task_result);
+
+    if let Some(id) = &task_id {
+        remember_completed_task_result(
+            &state,
+            RecentDesktopTaskResult::desktop(
+                id.clone(),
+                task_workspace_root,
+                Vec::new(),
+                task_started_at,
+                create_progress_timestamp(),
+                &result,
+            ),
+        );
+    }
 
     finish_active_task(&state, task_id.as_deref());
 
-    result?
+    result
 }
 
 #[tauri::command]

@@ -50,6 +50,96 @@ describe("Ralph starter flows", () => {
     }
   });
 
+  it("runs scoped starter-flow verification from the selected project root", () => {
+    const scopedFlows = [
+      {
+        starterFlowId: "autonomous-code-improvement-loop",
+        runCheckBlockId: "run-verification",
+        minimumVersion: 8,
+      },
+      {
+        starterFlowId: "autonomous-ui-improvement-loop",
+        runCheckBlockId: "run-verification",
+        minimumVersion: 5,
+      },
+      {
+        starterFlowId: "autonomous-refactoring-flow",
+        runCheckBlockId: "run-validation-checks",
+        minimumVersion: 8,
+      },
+      {
+        starterFlowId: "security-fix-loop",
+        runCheckBlockId: "run-verification",
+        minimumVersion: 6,
+      },
+    ] as const;
+
+    for (const { starterFlowId, runCheckBlockId, minimumVersion } of scopedFlows) {
+      const starterFlow = getRalphStarterFlow(starterFlowId);
+      const flow = starterFlow?.flow;
+      const detectCommands = flow?.blocks.find(
+        (block) => block.id === "detect-project-commands",
+      );
+      const runCheck = flow?.blocks.find((block) => block.id === runCheckBlockId);
+
+      expect(starterFlow?.version).toBeGreaterThanOrEqual(minimumVersion);
+      expect(detectCommands).toMatchObject({
+        type: "UTILITY",
+        utility: {
+          type: "DETECT_PROJECT_COMMANDS",
+          rootPath: "{{data:select-scope:scope.paths.0}}",
+        },
+      });
+      expect(runCheck).toMatchObject({
+        type: "UTILITY",
+        utility: {
+          type: "RUN_CHECK",
+          cwd: "{{data:detect-project-commands:rootPath}}",
+        },
+      });
+    }
+  });
+
+  it("runs feature verification from the detected project root", () => {
+    const featureFlows = [
+      {
+        starterFlowId: "autonomous-feature-generation-loop",
+        runCheckBlockId: "run-verification",
+        minimumVersion: 7,
+      },
+      {
+        starterFlowId: "full-feature-implementation",
+        runCheckBlockId: "run-configured-checks",
+        minimumVersion: 7,
+      },
+    ] as const;
+
+    for (const { starterFlowId, runCheckBlockId, minimumVersion } of featureFlows) {
+      const starterFlow = getRalphStarterFlow(starterFlowId);
+      const flow = starterFlow?.flow;
+      const detectCommands = flow?.blocks.find(
+        (block) => block.id === "detect-project-commands",
+      );
+      const runCheck = flow?.blocks.find((block) => block.id === runCheckBlockId);
+
+      expect(starterFlow?.version).toBeGreaterThanOrEqual(minimumVersion);
+      expect(detectCommands).toMatchObject({
+        type: "UTILITY",
+        utility: {
+          type: "DETECT_PROJECT_COMMANDS",
+          rootPath: ".",
+        },
+      });
+      expect(runCheck).toMatchObject({
+        type: "UTILITY",
+        utility: {
+          type: "RUN_CHECK",
+          cwd: "{{data:detect-project-commands:rootPath}}",
+        },
+      });
+    }
+  });
+
   it("keeps generated template note and history files under the machdoch workspace directory", () => {
     const expectedMachdochFiles = [
       {
@@ -116,7 +206,7 @@ describe("Ralph starter flows", () => {
     }
   });
 
-  it("includes an endless autonomous feature-generation loop", () => {
+  it("includes an autonomous feature-generation loop with bounded goal selection", () => {
     const starterFlow = getRalphStarterFlow("autonomous-feature-generation-loop");
     const flow = starterFlow?.flow;
     const passCounter = flow?.blocks.find(
@@ -125,9 +215,18 @@ describe("Ralph starter flows", () => {
     const implementFeature = flow?.blocks.find(
       (block) => block.id === "implement-feature",
     );
+    const readCompletedGoals = flow?.blocks.find(
+      (block) => block.id === "read-completed-goals",
+    );
+    const hasActionableGoal = flow?.blocks.find(
+      (block) => block.id === "has-actionable-goal",
+    );
+    const runVerification = flow?.blocks.find(
+      (block) => block.id === "run-verification",
+    );
 
     expect(starterFlow?.defaultAlias).toBe("autonomous-feature-generation-loop");
-    expect(starterFlow?.version).toBeGreaterThanOrEqual(6);
+    expect(starterFlow?.version).toBeGreaterThanOrEqual(7);
     expect(flow).toMatchObject({
       name: "Autonomous Feature Generation Loop",
       settings: { maxTransitions: 500 },
@@ -144,6 +243,19 @@ describe("Ralph starter flows", () => {
       type: "UTILITY",
       utility: { type: "ARCHIVE_FILE" },
     });
+    expect(readCompletedGoals).toMatchObject({
+      type: "UTILITY",
+      utility: { type: "READ_JSONL" },
+    });
+    expect(hasActionableGoal).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          expression: expect.stringContaining("no_action"),
+        },
+      },
+    });
     expect(passCounter).toMatchObject({
       type: "UTILITY",
       utility: {
@@ -158,8 +270,41 @@ describe("Ralph starter flows", () => {
       type: "PROMPT",
       prompt: expect.stringContaining("{{result:validate-goal}}"),
     });
+    expect(runVerification).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "RUN_CHECK",
+        cwd: "{{data:detect-project-commands:rootPath}}",
+      },
+    });
     expect(flow?.edges).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          from: "start",
+          to: "detect-project-commands",
+        }),
+        expect.objectContaining({
+          from: "detect-project-commands",
+          to: "find-active-goal",
+        }),
+        expect.objectContaining({
+          from: "find-active-goal",
+          fromOutput: "MISSING",
+          to: "read-completed-goals",
+        }),
+        expect.objectContaining({
+          from: "read-completed-goals",
+          to: "understand-project",
+        }),
+        expect.objectContaining({
+          from: "improve-feature-goal",
+          to: "has-actionable-goal",
+        }),
+        expect.objectContaining({
+          from: "has-actionable-goal",
+          fromOutput: "NO_MATCH",
+          to: "success",
+        }),
         expect.objectContaining({
           from: "git-snapshot-before",
           to: "count-implementation-pass",
@@ -176,12 +321,12 @@ describe("Ralph starter flows", () => {
         }),
         expect.objectContaining({
           from: "goals-per-run-counter",
-          to: "find-active-goal",
+          to: "detect-project-commands",
         }),
         expect.objectContaining({
-          from: "find-active-goal",
-          fromOutput: "MISSING",
-          to: "detect-project-commands",
+          from: "goals-per-run-counter",
+          fromOutput: "LIMIT_REACHED",
+          to: "success",
         }),
       ]),
     );
@@ -190,8 +335,10 @@ describe("Ralph starter flows", () => {
       (block: RalphFlowBlock) => block.type === "END",
     );
 
-    expect(endBlocks).toHaveLength(1);
-    expect(endBlocks[0]?.id).toBe("blocked");
+    expect(endBlocks.map((block) => block.id).sort()).toEqual([
+      "blocked",
+      "success",
+    ]);
   });
 
   it("enforces implementation pass limits in the feature checklist starter", () => {
@@ -203,8 +350,18 @@ describe("Ralph starter flows", () => {
     const implementFeature = flow?.blocks.find(
       (block) => block.id === "implement-feature",
     );
+    const enableInterview = flow?.variables?.find(
+      (variable) => variable.name === "enableInterview",
+    );
+    const runConfiguredChecks = flow?.blocks.find(
+      (block) => block.id === "run-configured-checks",
+    );
 
-    expect(starterFlow?.version).toBeGreaterThanOrEqual(6);
+    expect(starterFlow?.version).toBeGreaterThanOrEqual(7);
+    expect(enableInterview).toMatchObject({
+      type: "boolean",
+      default: "false",
+    });
     expect(passCounter).toMatchObject({
       type: "UTILITY",
       utility: {
@@ -218,6 +375,13 @@ describe("Ralph starter flows", () => {
     expect(implementFeature).toMatchObject({
       type: "PROMPT",
       prompt: expect.stringContaining("{{result:validate-progress}}"),
+    });
+    expect(runConfiguredChecks).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "RUN_CHECK",
+        cwd: "{{data:detect-project-commands:rootPath}}",
+      },
     });
     expect(flow?.edges).toEqual(
       expect.arrayContaining([
@@ -245,6 +409,15 @@ describe("Ralph starter flows", () => {
     const passCounter = flow?.blocks.find(
       (block) => block.id === "count-refactor-pass",
     );
+    const scopeSelectionStrategy = flow?.variables?.find(
+      (variable) => variable.name === "scopeSelectionStrategy",
+    );
+    const auditAgainstPolicy = flow?.blocks.find(
+      (block) => block.id === "audit-against-policy",
+    );
+    const hasActionableRefactor = flow?.blocks.find(
+      (block) => block.id === "has-actionable-refactor",
+    );
     const validationDecision = flow?.blocks.find(
       (block) => block.id === "validation-decision",
     );
@@ -262,7 +435,27 @@ describe("Ralph starter flows", () => {
     );
     const blocked = flow?.blocks.find((block) => block.id === "blocked");
 
-    expect(starterFlow?.version).toBeGreaterThanOrEqual(7);
+    expect(starterFlow?.version).toBeGreaterThanOrEqual(8);
+    expect(scopeSelectionStrategy).toMatchObject({
+      type: "text",
+      default: "priority",
+    });
+    expect(auditAgainstPolicy).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "PROMPT_JSON",
+        prompt: expect.stringContaining("Return passes: []"),
+      },
+    });
+    expect(hasActionableRefactor).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          expression: expect.stringContaining("passes.length > 0"),
+        },
+      },
+    });
     expect(passCounter).toMatchObject({
       type: "UTILITY",
       utility: {
@@ -284,6 +477,7 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "RUN_CHECK",
         fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        cwd: "{{data:detect-project-commands:rootPath}}",
         timeoutSeconds: 1800,
       },
     });
@@ -317,6 +511,21 @@ describe("Ralph starter flows", () => {
     expect(blocked).toMatchObject({ type: "END", status: "failed" });
     expect(flow?.edges).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          from: "audit-against-policy",
+          fromOutput: "SUCCESS",
+          to: "has-actionable-refactor",
+        }),
+        expect.objectContaining({
+          from: "has-actionable-refactor",
+          fromOutput: "MATCH",
+          to: "git-snapshot-before",
+        }),
+        expect.objectContaining({
+          from: "has-actionable-refactor",
+          fromOutput: "NO_MATCH",
+          to: "mark-scope-result",
+        }),
         expect.objectContaining({
           from: "git-snapshot-before",
           fromOutput: "SUCCESS",
@@ -361,6 +570,106 @@ describe("Ralph starter flows", () => {
     );
   });
 
+  it("runs security review after risk-first scope selection with bounded fix loops", () => {
+    const starterFlow = getRalphStarterFlow("security-fix-loop");
+    const flow = starterFlow?.flow;
+    const scopeSelectionStrategy = flow?.variables?.find(
+      (variable) => variable.name === "scopeSelectionStrategy",
+    );
+    const updateScopeRegistry = flow?.blocks.find(
+      (block) => block.id === "update-scope-registry",
+    );
+    const selectScope = flow?.blocks.find((block) => block.id === "select-scope");
+    const securityResearch = flow?.blocks.find(
+      (block) => block.id === "security-research",
+    );
+    const countFixLoop = flow?.blocks.find(
+      (block) => block.id === "count-fix-loop",
+    );
+    const verifyStopCondition = flow?.blocks.find(
+      (block) => block.id === "verify-stop-condition",
+    );
+
+    expect(starterFlow?.version).toBeGreaterThanOrEqual(6);
+    expect(scopeSelectionStrategy).toMatchObject({
+      type: "text",
+      default: "risk-first",
+    });
+    expect(updateScopeRegistry).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "UPDATE_SCOPE_REGISTRY",
+        strategy: "{{scopeSelectionStrategy:text=risk-first}}",
+      },
+    });
+    expect(selectScope).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "SELECT_SCOPE",
+        strategy: "{{scopeSelectionStrategy:text=risk-first}}",
+      },
+    });
+    expect(securityResearch).toMatchObject({
+      type: "PROMPT",
+      prompt: expect.stringContaining("selected JSON scope"),
+    });
+    expect(countFixLoop).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "LOOP_COUNTER",
+        counterName: expect.stringContaining("{{data:select-scope:scope.id}}"),
+        maxAttempts: "{{maxFixLoops:number=10}}",
+      },
+    });
+    expect(verifyStopCondition).toMatchObject({
+      type: "VALIDATOR",
+      prompt: expect.stringContaining("flow counter enforces"),
+    });
+    expect(flow?.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "start",
+          to: "scan-scopes",
+        }),
+        expect.objectContaining({
+          from: "detect-project-commands",
+          to: "research-decision",
+        }),
+        expect.objectContaining({
+          from: "security-research",
+          to: "git-snapshot-before",
+        }),
+        expect.objectContaining({
+          from: "findings-present",
+          fromOutput: "MATCH",
+          to: "count-fix-loop",
+        }),
+        expect.objectContaining({
+          from: "count-fix-loop",
+          fromOutput: "CONTINUE",
+          to: "fix-findings",
+        }),
+        expect.objectContaining({
+          from: "count-fix-loop",
+          fromOutput: "LIMIT_REACHED",
+          to: "blocked",
+        }),
+      ]),
+    );
+    expect(flow?.edges).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "start",
+          to: "research-decision",
+        }),
+        expect.objectContaining({
+          from: "security-research",
+          to: "scan-scopes",
+        }),
+      ]),
+    );
+  });
+
   it("includes an autonomous code improvement loop with evidence-backed stop behavior", () => {
     const starterFlow = getRalphStarterFlow(
       "autonomous-code-improvement-loop",
@@ -371,6 +680,9 @@ describe("Ralph starter flows", () => {
     );
     const actionableDecision = flow?.blocks.find(
       (block) => block.id === "has-actionable-improvement",
+    );
+    const scopeSelectionStrategy = flow?.variables?.find(
+      (variable) => variable.name === "scopeSelectionStrategy",
     );
     const passCounter = flow?.blocks.find(
       (block) => block.id === "count-improvement-pass",
@@ -389,6 +701,11 @@ describe("Ralph starter flows", () => {
       defaultAlias: "autonomous-code-improvement-loop",
       category: "Code Quality",
     });
+    expect(starterFlow?.version).toBeGreaterThanOrEqual(8);
+    expect(scopeSelectionStrategy).toMatchObject({
+      type: "text",
+      default: "priority",
+    });
     expect(flow).toMatchObject({
       name: "Autonomous Code Improvement Loop",
       settings: { maxTransitions: 500 },
@@ -403,6 +720,11 @@ describe("Ralph starter flows", () => {
     expect(chooseImprovement).toMatchObject({
       utility: {
         prompt: expect.stringContaining("Do not dig for weak work"),
+      },
+    });
+    expect(chooseImprovement).toMatchObject({
+      utility: {
+        prompt: expect.stringContaining("STOP means this scope is done"),
       },
     });
     expect(actionableDecision).toMatchObject({
@@ -458,7 +780,7 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "archive-active-improvement",
           fromOutput: "SUCCESS",
-          to: "read-completed-improvements",
+          to: "mark-scope-result",
         }),
         expect.objectContaining({
           from: "git-snapshot-before",
@@ -483,6 +805,14 @@ describe("Ralph starter flows", () => {
           from: "validate-improvement",
           fromOutput: "RETRY",
           to: "count-improvement-pass",
+        }),
+      ]),
+    );
+    expect(flow?.edges).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "archive-active-improvement",
+          to: "read-completed-improvements",
         }),
       ]),
     );
@@ -558,7 +888,7 @@ describe("Ralph starter flows", () => {
       defaultAlias: "autonomous-ui-improvement-loop",
       category: "Design Quality",
     });
-    expect(starterFlow?.version).toBeGreaterThanOrEqual(4);
+    expect(starterFlow?.version).toBeGreaterThanOrEqual(5);
     expect(flow).toMatchObject({
       name: "Autonomous UI Improvement Loop",
       settings: { maxTransitions: 500 },
@@ -775,7 +1105,7 @@ describe("Ralph starter flows", () => {
     const visualReviewBlocks = [
       {
         starterFlowId: "autonomous-code-improvement-loop",
-        minimumVersion: 7,
+        minimumVersion: 8,
         decisionBlockId: "visual-decision",
         analyzeBlockId: "visual-review",
         expectedTargetUrl: "{{targetUrl:url=}}",
@@ -791,7 +1121,7 @@ describe("Ralph starter flows", () => {
       },
       {
         starterFlowId: "autonomous-feature-generation-loop",
-        minimumVersion: 6,
+        minimumVersion: 7,
         decisionBlockId: "visual-decision",
         analyzeBlockId: "visual-review",
         expectedTargetUrl: "{{targetUrl:url=}}",
@@ -799,7 +1129,7 @@ describe("Ralph starter flows", () => {
       },
       {
         starterFlowId: "full-feature-implementation",
-        minimumVersion: 6,
+        minimumVersion: 7,
         decisionBlockId: "visual-decision",
         analyzeBlockId: "visual-analysis",
         expectedTargetUrl: "{{targetUrl:url=}}",
@@ -870,27 +1200,27 @@ describe("Ralph starter flows", () => {
     const researchBlocks = [
       {
         starterFlowId: "security-fix-loop",
-        minimumVersion: 5,
+        minimumVersion: 6,
         researchBlockId: "security-research",
       },
       {
         starterFlowId: "autonomous-refactoring-flow",
-        minimumVersion: 7,
+        minimumVersion: 8,
         researchBlockId: "refactor-research",
       },
       {
         starterFlowId: "full-feature-implementation",
-        minimumVersion: 6,
+        minimumVersion: 7,
         researchBlockId: "initial-research",
       },
       {
         starterFlowId: "autonomous-feature-generation-loop",
-        minimumVersion: 6,
+        minimumVersion: 7,
         researchBlockId: "research-inspiration",
       },
       {
         starterFlowId: "autonomous-code-improvement-loop",
-        minimumVersion: 7,
+        minimumVersion: 8,
         researchBlockId: "improvement-research",
       },
       {
@@ -933,12 +1263,12 @@ describe("Ralph starter flows", () => {
 
   it("starts bundled templates autonomously without ask-user gates", () => {
     const expectedStartTargets: Record<string, string> = {
-      "autonomous-feature-generation-loop": "find-active-goal",
+      "autonomous-feature-generation-loop": "detect-project-commands",
       "autonomous-code-improvement-loop": "scan-scopes",
       "autonomous-ui-improvement-loop": "scan-ui-scopes",
       "full-feature-implementation": "detect-project-commands",
       "autonomous-refactoring-flow": "scan-scopes",
-      "security-fix-loop": "research-decision",
+      "security-fix-loop": "scan-scopes",
     };
 
     for (const starterFlow of STARTER_RALPH_FLOWS) {

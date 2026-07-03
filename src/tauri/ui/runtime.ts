@@ -1116,6 +1116,26 @@ export interface ActiveDesktopTaskSummary {
   startedAt: number;
 }
 
+export type RecentDesktopTaskOutcome =
+  | {
+      status: "succeeded";
+      response: DesktopTaskRunResponse;
+    }
+  | {
+      status: "failed";
+      error: string;
+    };
+
+export interface RecentDesktopTaskResult {
+  id: string;
+  kind: string;
+  workspaceRoot: string;
+  arguments: string[];
+  startedAt: number;
+  finishedAt: number;
+  outcome: RecentDesktopTaskOutcome;
+}
+
 const DEFAULT_MOCK_WORKSPACE_ROOT = "/mock/home/path";
 const DESKTOP_TASK_PROGRESS_EVENT = "desktop-task-progress";
 const REMOTE_CONTROL_COMMAND_EVENT = "remote-control-command";
@@ -2838,6 +2858,32 @@ export const loadActiveDesktopTasks = async (): Promise<
     );
   } catch (error) {
     console.error("Failed to load active desktop tasks", error);
+    return null;
+  }
+};
+
+export const loadRecentDesktopTaskResults = async (
+  taskIds: readonly string[],
+): Promise<RecentDesktopTaskResult[] | null> => {
+  if (!canInvokeTauriCommands()) {
+    return null;
+  }
+
+  const normalizedTaskIds = taskIds
+    .map((taskId) => taskId.trim())
+    .filter((taskId) => taskId.length > 0);
+
+  if (normalizedTaskIds.length === 0) {
+    return [];
+  }
+
+  try {
+    return await tauriCore.invoke<RecentDesktopTaskResult[]>(
+      "get_recent_desktop_task_results",
+      { taskIds: normalizedTaskIds },
+    );
+  } catch (error) {
+    console.error("Failed to load recent desktop task results", error);
     return null;
   }
 };

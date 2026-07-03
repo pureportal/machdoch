@@ -1544,6 +1544,83 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("detects nested package commands from a selected source scope", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-project-scope-commands-"));
+
+    try {
+      await mkdir(join(workspace, "apps", "api", "src"), { recursive: true });
+      await writeFile(join(workspace, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");
+      await writeFile(
+        join(workspace, "apps", "api", "package.json"),
+        JSON.stringify({
+          scripts: {
+            typecheck: "tsc --noEmit",
+            lint: "eslint src",
+          },
+        }),
+        "utf8",
+      );
+
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "detect",
+              type: "UTILITY",
+              title: "Detect Commands",
+              utility: {
+                type: "DETECT_PROJECT_COMMANDS",
+                rootPath: "apps/api/src",
+              },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            { id: "start-to-detect", from: "start", fromOutput: "SUCCESS", to: "detect" },
+            { id: "detect-to-success", from: "detect", fromOutput: "SUCCESS", to: "success" },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10 },
+      );
+      const expectedVerificationCommand =
+        process.platform === "win32"
+          ? [
+              "pnpm typecheck",
+              "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
+              "pnpm lint",
+              "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
+            ].join("; ")
+          : "pnpm typecheck && pnpm lint";
+
+      expect(result.status).toBe("completed");
+      expect(result.blockResults.find((entry) => entry.blockId === "detect"))
+        .toMatchObject({
+          output: "SUCCESS",
+          data: expect.objectContaining({
+            rootPath: join(workspace, "apps", "api"),
+            requestedRootPath: join(workspace, "apps", "api", "src"),
+            commands: expect.arrayContaining([
+              expect.objectContaining({
+                kind: "typecheck",
+                command: "pnpm typecheck",
+              }),
+              expect.objectContaining({
+                kind: "lint",
+                command: "pnpm lint",
+              }),
+            ]),
+            verificationCommand: expectedVerificationCommand,
+          }),
+        });
+      expect(executeTask).not.toHaveBeenCalled();
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("records out-of-scope changed files as advisory by default", async () => {
     const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" });
 

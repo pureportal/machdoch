@@ -25,7 +25,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
     { name: "featureReportFile", type: "path", default: ".machdoch/feature-implementation/final-report.json", required: false },
     { name: "featureReportMarkdown", type: "path", default: ".machdoch/feature-implementation/final-report.md", required: false },
     { name: "enableOnlineResearch", type: "boolean", default: "true", required: false },
-    { name: "enableInterview", type: "boolean", default: "true", required: false },
+    { name: "enableInterview", type: "boolean", default: "false", required: false },
     { name: "enableVisualReview", type: "boolean", default: "false", required: false },
     { name: "targetUrl", type: "url", default: "", required: false },
     { name: "healthUrl", type: "url", default: "", required: false },
@@ -287,6 +287,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         type: "RUN_CHECK",
         command: "{{verificationCommand:text=}}",
         fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        cwd: "{{data:detect-project-commands:rootPath}}",
         timeoutSeconds: RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS,
       },
     },
@@ -462,7 +463,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 6,
+  version: 7,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],
