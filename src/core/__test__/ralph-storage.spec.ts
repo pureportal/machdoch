@@ -585,6 +585,87 @@ describe("Ralph flow storage", () => {
       content: expect.stringContaining("Detailed trace."),
     });
   });
+
+  it("lists partial run log directories and loads their logs without run records", async () => {
+    const workspaceRoot = await createWorkspace();
+    const flow = createFlow();
+    const logger = await createRalphRunLogger(workspaceRoot, flow, {
+      runId: "partial run",
+      variableValues: {
+        scope: "src/core",
+      },
+    });
+    logger.simple({
+      kind: "run-start",
+      message: `Started Ralph flow ${flow.name}.`,
+      flowId: flow.id,
+      flowName: flow.name,
+    });
+    logger.simple({
+      kind: "block-output",
+      message: "Partial block completed before interruption.",
+      flowId: flow.id,
+      flowName: flow.name,
+      blockId: "fix-tsc",
+      blockTitle: "Fix TSC",
+      blockType: "PROMPT",
+      output: "SUCCESS",
+      status: "completed",
+    });
+    logger.trace({
+      kind: "trace",
+      message: "Detailed partial trace.",
+      flowId: flow.id,
+      details: {
+        interrupted: true,
+      },
+    });
+    await logger.flush();
+
+    const paths = logger.paths;
+
+    if (!paths) {
+      throw new Error("Expected file-backed Ralph run logger paths.");
+    }
+
+    await expect(listRalphRunRecords(workspaceRoot)).resolves.toEqual([
+      expect.objectContaining({
+        id: "partial-run",
+        path: paths.directory,
+        flowId: flow.id,
+        flowName: flow.name,
+        status: "partial",
+        summary: expect.stringContaining("Partial block completed before interruption."),
+        simpleLogPath: paths.simpleMarkdownPath,
+        traceLogPath: paths.traceJsonlPath,
+        blockCount: 1,
+        eventCount: 2,
+      }),
+    ]);
+    await expect(
+      listRalphRunRecords(workspaceRoot, { flowId: flow.id }),
+    ).resolves.toHaveLength(1);
+    await expect(
+      listRalphRunRecords(workspaceRoot, { flowId: "missing-flow" }),
+    ).resolves.toEqual([]);
+    await expect(readRalphRunRecord(workspaceRoot, "partial-run")).rejects.toThrow(
+      "was not found",
+    );
+    await expect(readRalphRunLog(workspaceRoot, "partial-run")).resolves.toMatchObject({
+      id: "partial-run",
+      kind: "simple",
+      path: paths.simpleMarkdownPath,
+      content: expect.stringContaining("Partial block completed before interruption."),
+    });
+    await expect(
+      readRalphRunLog(workspaceRoot, "partial-run", "trace"),
+    ).resolves.toMatchObject({
+      id: "partial-run",
+      kind: "trace",
+      path: paths.traceJsonlPath,
+      content: expect.stringContaining("Detailed partial trace."),
+    });
+  });
 });
 
 

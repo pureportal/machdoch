@@ -118,6 +118,11 @@ describe("ralph-run-presentation helper", () => {
       icon: MessageSquare,
       chipClassName: "border-teal-400/30 bg-teal-500/10 text-teal-100",
     });
+    expect(getRunStatusPresentation("partial")).toMatchObject({
+      label: "Partial log",
+      icon: FileText,
+      chipClassName: "border-slate-700 bg-slate-900 text-slate-300",
+    });
     expect(getRunStatusPresentation("crashed")).toMatchObject({
       label: "Crashed",
       icon: Octagon,

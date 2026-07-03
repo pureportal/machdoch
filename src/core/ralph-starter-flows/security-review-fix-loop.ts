@@ -198,7 +198,7 @@ const securityFixLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "DETECT_PROJECT_COMMANDS",
-        rootPath: "{{scopeRoot:path=.}}",
+        rootPath: "{{data:select-scope:scope.paths.0}}",
         outputPath:
           "{{projectCommandsFile:path=.machdoch/ralph/security/project-commands.json}}",
       },
@@ -317,6 +317,7 @@ const securityFixLoopFlow: RalphFlow = {
         type: "RUN_CHECK",
         command: "{{verificationCommand:text=}}",
         fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        cwd: "{{data:detect-project-commands:rootPath}}",
         timeoutSeconds: RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS,
       },
     },
@@ -461,7 +462,7 @@ const securityFixLoopFlow: RalphFlow = {
 
 export const securityReviewFixLoopStarterFlow = {
   id: "security-fix-loop",
-  version: 5,
+  version: 6,
   defaultAlias: "security-review-fix-loop",
   category: "Security",
   tags: ["review", "fix", "tests"],

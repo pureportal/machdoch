@@ -10,7 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import type { RalphRunStatus } from "../../../../core/ralph.js";
+import type { RalphRunSummaryStatus } from "../../../../core/ralph.js";
 import type {
   ActiveRalphRun,
   ActiveRalphRunStatus,
@@ -85,7 +85,7 @@ export const getFlowStatusPresentation = (
 };
 
 export const getRunStatusPresentation = (
-  status: RalphRunStatus | ActiveRalphRunStatus,
+  status: RalphRunSummaryStatus | ActiveRalphRunStatus,
 ): RalphRunStatusPresentation => {
   switch (status) {
     case "running":
@@ -125,6 +125,13 @@ export const getRunStatusPresentation = (
         icon: MessageSquare,
         className: "text-teal-200",
         chipClassName: "border-teal-400/30 bg-teal-500/10 text-teal-100",
+      };
+    case "partial":
+      return {
+        label: "Partial log",
+        icon: FileText,
+        className: "text-slate-300",
+        chipClassName: "border-slate-700 bg-slate-900 text-slate-300",
       };
     case "crashed":
       return {

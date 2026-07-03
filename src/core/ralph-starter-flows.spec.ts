@@ -507,6 +507,9 @@ describe("Ralph starter flows", () => {
     const designPolicy = flow?.variables?.find(
       (variable) => variable.name === "designPolicy",
     );
+    const scopeSelectionStrategy = flow?.variables?.find(
+      (variable) => variable.name === "scopeSelectionStrategy",
+    );
     const riskTolerance = flow?.variables?.find(
       (variable) => variable.name === "riskTolerance",
     );
@@ -555,6 +558,7 @@ describe("Ralph starter flows", () => {
       defaultAlias: "autonomous-ui-improvement-loop",
       category: "Design Quality",
     });
+    expect(starterFlow?.version).toBeGreaterThanOrEqual(4);
     expect(flow).toMatchObject({
       name: "Autonomous UI Improvement Loop",
       settings: { maxTransitions: 500 },
@@ -584,6 +588,10 @@ describe("Ralph starter flows", () => {
       type: "text",
       default: "ambitious",
     });
+    expect(scopeSelectionStrategy).toMatchObject({
+      type: "text",
+      default: "ui-first",
+    });
     expect(enableVisualReview).toMatchObject({
       type: "boolean",
       default: "true",
@@ -605,6 +613,12 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "PROMPT_JSON",
         prompt: expect.stringContaining("uiScope={{uiScope:text=auto-detect}}"),
+      },
+    });
+    expect(analyzeScope).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        prompt: expect.stringContaining("mark only this scope complete"),
       },
     });
     expect(resolveRuntimeUrls).toMatchObject({
@@ -655,6 +669,8 @@ describe("Ralph starter flows", () => {
         prompt: expect.stringContaining("flow counter enforces"),
       },
     });
+    expect(serializedFlow).toContain("STOP means this scope is done");
+    expect(serializedFlow).toContain("{{scopeSelectionStrategy:text=ui-first}}");
     expect(flow?.edges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -681,6 +697,34 @@ describe("Ralph starter flows", () => {
           fromOutput: "RETRY",
           to: "count-ui-improvement-pass",
         }),
+        expect.objectContaining({
+          from: "archive-active-ui-improvement",
+          fromOutput: "SUCCESS",
+          to: "mark-scope-result",
+        }),
+        expect.objectContaining({
+          from: "archive-active-ui-improvement",
+          fromOutput: "NOT_FOUND",
+          to: "mark-scope-result",
+        }),
+        expect.objectContaining({
+          from: "mark-scope-result",
+          fromOutput: "SUCCESS",
+          to: "scope-cycle-complete",
+        }),
+        expect.objectContaining({
+          from: "scope-cycle-complete",
+          fromOutput: "NO_MATCH",
+          to: "select-scope",
+        }),
+      ]),
+    );
+    expect(flow?.edges).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "archive-active-ui-improvement",
+          to: "read-completed-ui-improvements",
+        }),
       ]),
     );
     expect(validateImprovement).toMatchObject({
@@ -693,6 +737,18 @@ describe("Ralph starter flows", () => {
     expect(serializedFlow).toContain("Do not start or restart servers");
     expect(serializedFlow).not.toContain("localhost");
     expect(serializedFlow).not.toContain("127.0.0.1");
+    expect(serializedFlow).not.toContain("npm run dev");
+    expect(serializedFlow).not.toContain("pnpm dev");
+    expect(serializedFlow).not.toContain("yarn dev");
+    expect(serializedFlow).not.toContain("next dev");
+    expect(serializedFlow).not.toContain("tauri dev");
+    if (visualReview?.type === "UTILITY") {
+      expect(visualReview.utility).toMatchObject({
+        type: "UI_ANALYZE",
+        server: { mode: "existing" },
+      });
+      expect(visualReview.utility.server?.command).toBeUndefined();
+    }
   });
 
   it("keeps bundled git-diff validators tolerant of shared workspace changes", () => {

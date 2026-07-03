@@ -27,7 +27,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
   variables: [
     { name: "scopeRoot", type: "path", default: ".", required: false },
     { name: "uiScope", type: "text", default: "auto-detect", required: false },
-    { name: "scopeSelectionStrategy", type: "text", default: "round-robin", required: false },
+    { name: "scopeSelectionStrategy", type: "text", default: "ui-first", required: false },
     { name: "scopeRegistryFile", type: "path", default: ".machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json", required: false },
     { name: "scopeRegistryMarkdown", type: "path", default: ".machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md", required: false },
     { name: "designPolicy", type: "text", default: ENRICHED_UI_DESIGN_POLICY, required: false },
@@ -93,7 +93,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
           "{{scopeRegistryFile:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
         outputPath:
           "{{scopeRegistryMarkdown:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md}}",
-        strategy: "{{scopeSelectionStrategy:text=round-robin}}",
+        strategy: "{{scopeSelectionStrategy:text=ui-first}}",
         includeMarkdown: true,
       },
     },
@@ -108,7 +108,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         flowAlias: "autonomous-ui-improvement-loop",
         registryPath:
           "{{scopeRegistryFile:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
-        strategy: "{{scopeSelectionStrategy:text=round-robin}}",
+        strategy: "{{scopeSelectionStrategy:text=ui-first}}",
       },
     },
     {
@@ -119,7 +119,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "DETECT_PROJECT_COMMANDS",
-        rootPath: "{{scopeRoot:path=.}}",
+        rootPath: "{{data:select-scope:scope.paths.0}}",
         outputPath:
           "{{projectCommandsFile:path=.machdoch/ralph/ui-improvements/project-commands.json}}",
       },
@@ -166,7 +166,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Inspect selected JSON scope {{result:select-scope}} without editing files. Apply uiScope={{uiScope:text=auto-detect}}, riskTolerance={{riskTolerance:text=ambitious}}, allowAmbitiousUiChanges={{allowAmbitiousUiChanges:boolean=true}}, designPolicy={{designPolicy:text=}}, detected commands {{result:detect-project-commands}}, completed history {{result:read-completed-ui-improvements}}, and excludePaths={{excludePaths:text=}}. Auto-detect UI-related files, routes, components, styles, design-system usage, accessibility surfaces, responsive layouts, tests, stories, screenshots, and user-facing copy. Identify concrete evidence for valuable UI improvements: clean minimalist design gaps, responsive/mobile issues, layout overflow, overlapping text, badge overuse, overexplained copy, weak icon usage, inaccessible controls, hydration or console issues, loading/empty/error/success state bugs, or inconsistency with existing UI conventions. Also identify stop signals: no UI-relevant scope, no evidence-backed candidate, only speculative redesign, only tiny cosmetic nits, or work already completed. Return only schema-valid JSON.",
+          "Inspect selected JSON scope {{result:select-scope}} without editing files. Apply uiScope={{uiScope:text=auto-detect}}, riskTolerance={{riskTolerance:text=ambitious}}, allowAmbitiousUiChanges={{allowAmbitiousUiChanges:boolean=true}}, designPolicy={{designPolicy:text=}}, detected commands {{result:detect-project-commands}}, completed history {{result:read-completed-ui-improvements}}, and excludePaths={{excludePaths:text=}}. Auto-detect UI-related files, routes, components, styles, design-system usage, accessibility surfaces, responsive layouts, tests, stories, screenshots, and user-facing copy. Identify concrete evidence for valuable UI improvements: clean minimalist design gaps, responsive/mobile issues, layout overflow, overlapping text, badge overuse, overexplained copy, weak icon usage, inaccessible controls, hydration or console issues, loading/empty/error/success state bugs, or inconsistency with existing UI conventions. Treat the selected scope as one pass in a full scope cycle: if it has no evidence-backed UI work left, say so clearly so the flow can mark only this scope complete and move to the next scope. Also identify stop signals: no UI-relevant scope, no evidence-backed candidate, only speculative redesign, only tiny cosmetic nits, or work already completed. Return only schema-valid JSON.",
       },
     },
     {
@@ -236,7 +236,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Select exactly one autonomous UI improvement for selected scope {{result:select-scope}}, or decide STOP. Use scope analysis {{data:analyze-selected-ui-scope:output}}, research {{summary:ui-research}}, completed history {{result:read-completed-ui-improvements}}, latest completed append {{result:append-completed-ui-improvement}}, uiImprovementPolicy={{uiImprovementPolicy:text=}}, designPolicy={{designPolicy:text=}}, riskTolerance={{riskTolerance:text=ambitious}}, and allowAmbitiousUiChanges={{allowAmbitiousUiChanges:boolean=true}}. Return decision IMPLEMENT only when the candidate has a stable kebab-case id, title, concrete UI evidence, user value, bounded scope, currentBehavior, proposedBehavior, acceptanceCriteria, affectedFiles, visualReviewPlan, verificationPlan, accessibility/responsive considerations, and rollbackNotes. Ambitious polish is allowed when configured and still preserves existing design-system conventions. Return STOP when remaining ideas are speculative, badge/copy/icon churn without evidence, broad redesigns requiring product approval, duplicate of completed history, unsafe dependency/schema changes, dev-server startup needs, or fail threshold {{meaningfulThreshold:text=}}. If decision is STOP, selectedCandidate must be {} and stopReason must explain the evidence-backed reason. Return only schema-valid JSON.",
+          "Select exactly one autonomous UI improvement for selected scope {{result:select-scope}}, or decide STOP for this selected scope only. Use scope analysis {{data:analyze-selected-ui-scope:output}}, research {{summary:ui-research}}, completed history {{result:read-completed-ui-improvements}}, latest completed append {{result:append-completed-ui-improvement}}, uiImprovementPolicy={{uiImprovementPolicy:text=}}, designPolicy={{designPolicy:text=}}, riskTolerance={{riskTolerance:text=ambitious}}, and allowAmbitiousUiChanges={{allowAmbitiousUiChanges:boolean=true}}. Return decision IMPLEMENT only when the candidate has a stable kebab-case id, title, concrete UI evidence, user value, bounded scope, currentBehavior, proposedBehavior, acceptanceCriteria, affectedFiles, visualReviewPlan, verificationPlan, accessibility/responsive considerations, and rollbackNotes. Ambitious polish is allowed when configured and still preserves existing design-system conventions. Return STOP when this scope's remaining ideas are speculative, badge/copy/icon churn without evidence, broad redesigns requiring product approval, duplicate of completed history, unsafe dependency/schema changes, dev-server startup needs, or fail threshold {{meaningfulThreshold:text=}}. STOP means this scope is done for the current cycle; it does not mean the whole repository is done unless every active scope has received a pass. If decision is STOP, selectedCandidate must be {} and stopReason must explain the evidence-backed reason. Return only schema-valid JSON.",
       },
     },
     {
@@ -332,6 +332,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         type: "RUN_CHECK",
         command: "{{verificationCommand:text=}}",
         fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        cwd: "{{data:detect-project-commands:rootPath}}",
         timeoutSeconds: RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS,
       },
     },
@@ -664,8 +665,8 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
     { id: "append-completed-to-archive", from: "append-completed-ui-improvement", fromOutput: "SUCCESS", to: "archive-active-ui-improvement" },
     { id: "append-completed-invalid", from: "append-completed-ui-improvement", fromOutput: "INVALID", to: "blocked" },
     { id: "append-completed-error", from: "append-completed-ui-improvement", fromOutput: "ERROR", to: "blocked" },
-    { id: "archive-success-to-history", from: "archive-active-ui-improvement", fromOutput: "SUCCESS", to: "read-completed-ui-improvements" },
-    { id: "archive-not-found-to-history", from: "archive-active-ui-improvement", fromOutput: "NOT_FOUND", to: "read-completed-ui-improvements" },
+    { id: "archive-success-to-mark-scope", from: "archive-active-ui-improvement", fromOutput: "SUCCESS", to: "mark-scope-result" },
+    { id: "archive-not-found-to-mark-scope", from: "archive-active-ui-improvement", fromOutput: "NOT_FOUND", to: "mark-scope-result" },
     { id: "archive-error", from: "archive-active-ui-improvement", fromOutput: "ERROR", to: "blocked" },
     { id: "mark-scope-success", from: "mark-scope-result", fromOutput: "SUCCESS", to: "scope-cycle-complete" },
     { id: "mark-scope-not-found", from: "mark-scope-result", fromOutput: "NOT_FOUND", to: "blocked" },
@@ -678,7 +679,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
 
 export const autonomousUiImprovementLoopStarterFlow = {
   id: "autonomous-ui-improvement-loop",
-  version: 2,
+  version: 5,
   defaultAlias: "autonomous-ui-improvement-loop",
   category: "Design Quality",
   tags: ["autonomous", "ui", "design", "visual-check"],

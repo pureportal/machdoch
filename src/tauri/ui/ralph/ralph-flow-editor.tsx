@@ -6455,6 +6455,7 @@ export const RalphFlowEditor = ({
                 <option value="least-validated">Least Validated</option>
                 <option value="priority">Priority</option>
                 <option value="risk-first">Risk First</option>
+                <option value="ui-first">UI First</option>
               </select>
             </RalphInspectorField>
             {selectedUtility.type === "UPDATE_SCOPE_REGISTRY" ? (
@@ -10365,6 +10366,7 @@ export const RalphFlowEditor = ({
                               const status = getRunStatusPresentation(run.status);
                               const StatusIcon = status.icon;
                               const isSelected = selectedRunId === run.id;
+                              const isPartial = run.status === "partial";
                               const duration =
                                 run.finishedAt && getTimestampMs(run.createdAt) !== null
                                   ? formatDurationMs(
@@ -10387,7 +10389,9 @@ export const RalphFlowEditor = ({
                                     <button
                                       type="button"
                                       onClick={() =>
-                                        void openRunDetail(run.id, selectedScope)
+                                        void (isPartial
+                                          ? openRunLog(run.id, "simple", selectedScope)
+                                          : openRunDetail(run.id, selectedScope))
                                       }
                                       className="min-w-0 flex-1 text-left"
                                     >
@@ -10427,7 +10431,7 @@ export const RalphFlowEditor = ({
                                       <Button
                                         type="button"
                                         variant="ghost"
-                                        disabled={runDetailLoading}
+                                        disabled={runDetailLoading || isPartial}
                                         onClick={() =>
                                           void openRunDetail(run.id, selectedScope)
                                         }

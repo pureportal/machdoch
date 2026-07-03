@@ -106,7 +106,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "DETECT_PROJECT_COMMANDS",
-        rootPath: "{{scopeRoot:path=.}}",
+        rootPath: "{{data:select-scope:scope.paths.0}}",
         outputPath:
           "{{projectCommandsFile:path=.machdoch/ralph/code-improvements/project-commands.json}}",
       },
@@ -319,6 +319,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "RUN_CHECK",
         command: "{{verificationCommand:text=}}",
         fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        cwd: "{{data:detect-project-commands:rootPath}}",
         timeoutSeconds: RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS,
       },
     },
@@ -634,7 +635,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
 
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 7,
+  version: 8,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "behavior-change", "validation"],

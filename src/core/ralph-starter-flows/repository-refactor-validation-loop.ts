@@ -99,7 +99,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "DETECT_PROJECT_COMMANDS",
-        rootPath: "{{scopeRoot:path=.}}",
+        rootPath: "{{data:select-scope:scope.paths.0}}",
         outputPath:
           "{{projectCommandsFile:path=.machdoch/ralph/refactor/project-commands.json}}",
       },
@@ -281,6 +281,7 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "RUN_CHECK",
         command: "{{validationCommand:text=}}",
         fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        cwd: "{{data:detect-project-commands:rootPath}}",
         timeoutSeconds: RALPH_REFACTOR_VALIDATION_COMMAND_TIMEOUT_SECONDS,
       },
     },
@@ -450,7 +451,7 @@ const autonomousRefactoringFlow: RalphFlow = {
 
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 7,
+  version: 8,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],

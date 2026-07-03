@@ -16,6 +16,7 @@ export const RALPH_SCOPE_SELECTION_STRATEGIES = [
   "least-validated",
   "priority",
   "risk-first",
+  "ui-first",
 ] as const;
 
 export type RalphScopeSelectionStrategy =
@@ -500,10 +501,13 @@ const isExcludedScopePath = (
 
   return excludePaths.some((excludePath) => {
     const normalizedExclude = normalizeRegistryPath(excludePath);
+    const nestedExclude = `/${normalizedExclude}/`;
 
     return (
       normalizedPath === normalizedExclude ||
-      normalizedPath.startsWith(`${normalizedExclude}/`)
+      normalizedPath.startsWith(`${normalizedExclude}/`) ||
+      normalizedPath.endsWith(`/${normalizedExclude}`) ||
+      normalizedPath.includes(nestedExclude)
     );
   });
 };
@@ -1052,6 +1056,154 @@ const riskRank: Record<RalphScopeRegistryRisk, number> = {
   low: 1,
 };
 
+const UI_SCOPE_TERMS = new Set([
+  "app",
+  "apps",
+  "asset",
+  "assets",
+  "astro",
+  "client",
+  "component",
+  "components",
+  "css",
+  "design",
+  "docs",
+  "frontend",
+  "html",
+  "layout",
+  "layouts",
+  "mobile",
+  "openapi",
+  "page",
+  "pages",
+  "public",
+  "rapidoc",
+  "responsive",
+  "route",
+  "routes",
+  "screen",
+  "screens",
+  "scss",
+  "style",
+  "styles",
+  "svelte",
+  "swagger",
+  "tailwind",
+  "theme",
+  "themes",
+  "ui",
+  "ux",
+  "view",
+  "views",
+  "vue",
+  "web",
+]);
+
+const NON_UI_SCOPE_TERMS = new Set([
+  "api",
+  "auth",
+  "backend",
+  "database",
+  "db",
+  "ipc",
+  "job",
+  "migration",
+  "queue",
+  "server",
+  "service",
+  "services",
+  "token",
+  "worker",
+]);
+
+const UI_EVIDENCE_EXTENSIONS = [
+  ".astro",
+  ".css",
+  ".html",
+  ".jsx",
+  ".less",
+  ".scss",
+  ".svelte",
+  ".tsx",
+  ".vue",
+] as const;
+
+const getScopeTerms = (scope: RalphScopeRegistryScope): Set<string> => {
+  return new Set(
+    [
+      scope.id,
+      scope.title,
+      scope.kind,
+      ...scope.paths,
+      ...scope.globs,
+      ...scope.tags,
+      ...scope.evidence,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .split(/[^a-z0-9]+/u)
+      .filter(Boolean),
+  );
+};
+
+const getUiEvidenceExtensionCount = (scope: RalphScopeRegistryScope): number => {
+  return scope.evidence.filter((entry) =>
+    UI_EVIDENCE_EXTENSIONS.some((extension) =>
+      entry.toLowerCase().endsWith(extension),
+    ),
+  ).length;
+};
+
+const getUiFirstScopeScore = (scope: RalphScopeRegistryScope): number => {
+  const terms = getScopeTerms(scope);
+  const kindScore: Record<RalphScopeRegistryKind, number> = {
+    app: 30,
+    "source-root": 24,
+    module: 18,
+    package: 12,
+    workspace: 8,
+    docs: 6,
+    config: -8,
+    test: -12,
+  };
+  const positiveTermScore = [...UI_SCOPE_TERMS].reduce(
+    (score, term) => score + (terms.has(term) ? 12 : 0),
+    0,
+  );
+  const negativeTermScore = [...NON_UI_SCOPE_TERMS].reduce(
+    (score, term) => score + (terms.has(term) ? 14 : 0),
+    0,
+  );
+
+  return (
+    kindScore[scope.kind] +
+    positiveTermScore +
+    getUiEvidenceExtensionCount(scope) * 10 -
+    negativeTermScore +
+    scope.priority / 100
+  );
+};
+
+const compareUiFirstScopes = (
+  a: RalphScopeRegistryScope,
+  b: RalphScopeRegistryScope,
+): number => {
+  const scoreDelta = getUiFirstScopeScore(b) - getUiFirstScopeScore(a);
+
+  if (scoreDelta !== 0) {
+    return scoreDelta;
+  }
+
+  const validatedDelta = a.validatedCount - b.validatedCount;
+  if (validatedDelta !== 0) {
+    return validatedDelta;
+  }
+
+  const priorityDelta = b.priority - a.priority;
+
+  return priorityDelta === 0 ? a.id.localeCompare(b.id) : priorityDelta;
+};
+
 const seededIndex = (
   scopes: readonly RalphScopeRegistryScope[],
   seed: string,
@@ -1104,6 +1256,11 @@ const pickScope = (
 
         return riskDelta === 0 ? a.id.localeCompare(b.id) : riskDelta;
       });
+
+      return { scope: sorted[0]!, cursor: registry.selection.cursor };
+    }
+    case "ui-first": {
+      const sorted = [...scopes].sort(compareUiFirstScopes);
 
       return { scope: sorted[0]!, cursor: registry.selection.cursor };
     }

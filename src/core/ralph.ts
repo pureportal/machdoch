@@ -305,6 +305,7 @@ export type RalphRunStatus =
   | "blocked"
   | "stopped"
   | "waiting-for-input";
+export type RalphRunSummaryStatus = RalphRunStatus | "partial";
 export type RalphUtilityWaitMode = "delay" | "until-time" | "condition" | "poll";
 export type RalphUtilityConditionStyle = "simple" | "json-path" | "javascript";
 export type RalphUiAnalyzeAdapter =
@@ -1041,7 +1042,7 @@ export interface RalphRunSummary {
   finishedAt?: string;
   flowId: string;
   flowName: string;
-  status: RalphRunStatus;
+  status: RalphRunSummaryStatus;
   summary: string;
   simpleLogPath?: string;
   traceLogPath?: string;
@@ -1730,6 +1731,120 @@ const readRalphRunRecordFile = async (
   }
 };
 
+const isRalphSimpleLogEntry = (value: unknown): value is RalphSimpleLogEntry => {
+  return (
+    isRecord(value) &&
+    typeof value.sequence === "number" &&
+    typeof value.createdAt === "string" &&
+    typeof value.runId === "string" &&
+    typeof value.kind === "string" &&
+    typeof value.message === "string"
+  );
+};
+
+const readRalphSimpleLogEntries = async (
+  path: string,
+): Promise<RalphSimpleLogEntry[]> => {
+  try {
+    const content = await readFile(path, "utf8");
+
+    return content
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .flatMap((line) => {
+        try {
+          const value = JSON.parse(line) as unknown;
+          return isRalphSimpleLogEntry(value) ? [value] : [];
+        } catch {
+          return [];
+        }
+      });
+  } catch {
+    return [];
+  }
+};
+
+const getPartialRalphRunLogPath = (
+  runDirectory: string,
+  runId: string,
+  kind: "simple" | "trace",
+): string | null => {
+  const directRunDirectory = join(runDirectory, runId);
+  const partialRunDirectory = existsSync(directRunDirectory)
+    ? directRunDirectory
+    : join(runDirectory, normalizeRunId(runId));
+
+  if (kind === "trace") {
+    const tracePath = join(partialRunDirectory, "trace.jsonl");
+    return existsSync(tracePath) ? tracePath : null;
+  }
+
+  const simpleMarkdownPath = join(partialRunDirectory, "simple.md");
+  if (existsSync(simpleMarkdownPath)) {
+    return simpleMarkdownPath;
+  }
+
+  const simpleJsonlPath = join(partialRunDirectory, "simple.jsonl");
+  return existsSync(simpleJsonlPath) ? simpleJsonlPath : null;
+};
+
+const createPartialRalphRunSummary = async (
+  directory: string,
+  id: string,
+): Promise<RalphRunSummary | null> => {
+  const simpleJsonlPath = join(directory, "simple.jsonl");
+  const simpleMarkdownPath = join(directory, "simple.md");
+  const traceJsonlPath = join(directory, "trace.jsonl");
+
+  if (
+    !existsSync(simpleJsonlPath) &&
+    !existsSync(simpleMarkdownPath) &&
+    !existsSync(traceJsonlPath)
+  ) {
+    return null;
+  }
+
+  const entries = existsSync(simpleJsonlPath)
+    ? await readRalphSimpleLogEntries(simpleJsonlPath)
+    : [];
+  const firstEntry = entries[0];
+  const lastEntry = entries[entries.length - 1];
+  const directoryStat = await stat(directory).catch(() => null);
+  const createdAt =
+    firstEntry?.createdAt ??
+    (directoryStat
+      ? new Date(directoryStat.birthtimeMs || directoryStat.mtimeMs).toISOString()
+      : createLogTimestamp());
+  const flowEntry = entries.find((entry) => entry.flowId || entry.flowName);
+  const blockCount = entries.filter((entry) => entry.kind === "block-output").length;
+  const lastBlockLabel =
+    lastEntry?.blockTitle ?? lastEntry?.blockId ?? lastEntry?.kind;
+  const summary = lastEntry
+    ? lastEntry.kind === "run-end"
+      ? `Partial Ralph run without run.json: ${lastEntry.message}`
+      : `Partial Ralph run without run.json; last log ${lastBlockLabel}: ${lastEntry.message}`
+    : "Partial Ralph run without run.json.";
+
+  return {
+    id,
+    path: directory,
+    createdAt,
+    flowId: flowEntry?.flowId ?? "unknown",
+    flowName: flowEntry?.flowName ?? "Unknown Ralph flow",
+    status: "partial",
+    summary,
+    ...(existsSync(simpleMarkdownPath)
+      ? { simpleLogPath: simpleMarkdownPath }
+      : existsSync(simpleJsonlPath)
+        ? { simpleLogPath: simpleJsonlPath }
+        : {}),
+    ...(existsSync(traceJsonlPath) ? { traceLogPath: traceJsonlPath } : {}),
+    blockCount,
+    eventCount: entries.length,
+  };
+};
+
 const resolveRalphRunRecordPath = async (
   workspaceRoot: string,
   runId: string,
@@ -1791,11 +1906,57 @@ export const listRalphRunRecords = async (
     : undefined;
 
   for (const entry of entries) {
-    const path = entry.isDirectory()
-      ? join(runDirectory, entry.name, "run.json")
-      : entry.isFile() && entry.name.endsWith(".json")
-        ? join(runDirectory, entry.name)
-        : undefined;
+    if (entry.isDirectory()) {
+      const directory = join(runDirectory, entry.name);
+      const path = join(directory, "run.json");
+
+      if (!existsSync(path)) {
+        const partialSummary = await createPartialRalphRunSummary(
+          directory,
+          entry.name,
+        );
+
+        if (
+          partialSummary &&
+          (!normalizedFlowId ||
+            normalizeFlowId(partialSummary.flowId) === normalizedFlowId)
+        ) {
+          summaries.push(partialSummary);
+        }
+
+        continue;
+      }
+
+      const record = await readRalphRunRecordFile(path);
+
+      if (!record) {
+        const partialSummary = await createPartialRalphRunSummary(
+          directory,
+          entry.name,
+        );
+
+        if (
+          partialSummary &&
+          (!normalizedFlowId ||
+            normalizeFlowId(partialSummary.flowId) === normalizedFlowId)
+        ) {
+          summaries.push(partialSummary);
+        }
+
+        continue;
+      }
+
+      if (normalizedFlowId && normalizeFlowId(record.flowId) !== normalizedFlowId) {
+        continue;
+      }
+
+      summaries.push(createRalphRunSummaryFromRecord(record, path));
+      continue;
+    }
+
+    const path = entry.isFile() && entry.name.endsWith(".json")
+      ? join(runDirectory, entry.name)
+      : undefined;
 
     if (!path || !existsSync(path)) {
       continue;
@@ -1825,29 +1986,47 @@ export const readRalphRunLog = async (
   kind: "simple" | "trace" = "simple",
   options: { scope?: RalphFlowScope } = {},
 ): Promise<RalphRunLogReadResult> => {
-  const { path: recordPath, record } = await readRalphRunRecord(workspaceRoot, runId, {
-    scope: options.scope ?? "workspace",
-  });
-  const logPath =
-    kind === "trace"
-      ? record.logPaths?.traceJsonlPath
-      : record.logPaths?.simpleMarkdownPath;
-  const fallbackPath =
-    kind === "trace"
-      ? join(dirname(recordPath), "trace.jsonl")
-      : join(dirname(recordPath), "simple.md");
-  const path = logPath && existsSync(logPath) ? logPath : fallbackPath;
+  const scope = options.scope ?? "workspace";
 
-  if (!existsSync(path)) {
-    throw new Error(`Ralph ${kind} log for run \`${runId}\` was not found.`);
+  try {
+    const { path: recordPath, record } = await readRalphRunRecord(workspaceRoot, runId, {
+      scope,
+    });
+    const logPath =
+      kind === "trace"
+        ? record.logPaths?.traceJsonlPath
+        : record.logPaths?.simpleMarkdownPath;
+    const fallbackPath =
+      kind === "trace"
+        ? join(dirname(recordPath), "trace.jsonl")
+        : join(dirname(recordPath), "simple.md");
+    const path = logPath && existsSync(logPath) ? logPath : fallbackPath;
+
+    if (!existsSync(path)) {
+      throw new Error(`Ralph ${kind} log for run \`${runId}\` was not found.`);
+    }
+
+    return {
+      id: record.id,
+      path,
+      kind,
+      content: await readFile(path, "utf8"),
+    };
+  } catch (error) {
+    const runDirectory = getRalphRunDirectory(workspaceRoot, scope);
+    const partialLogPath = getPartialRalphRunLogPath(runDirectory, runId, kind);
+
+    if (!partialLogPath) {
+      throw error;
+    }
+
+    return {
+      id: normalizeRunId(runId),
+      path: partialLogPath,
+      kind,
+      content: await readFile(partialLogPath, "utf8"),
+    };
   }
-
-  return {
-    id: record.id,
-    path,
-    kind,
-    content: await readFile(path, "utf8"),
-  };
 };
 
 const resolveVariableValues = (
@@ -7166,6 +7345,7 @@ const executeChangeScopeGuardUtilityBlock = async (
 const getPackageManagerCommand = (
   rootPath: string,
   packageJson: Record<string, unknown>,
+  workspaceRoot: string,
 ): string => {
   const packageManager = typeof packageJson.packageManager === "string"
     ? packageJson.packageManager.split("@")[0]
@@ -7175,16 +7355,31 @@ const getPackageManagerCommand = (
     return packageManager;
   }
 
-  if (existsSync(join(rootPath, "pnpm-lock.yaml"))) {
-    return "pnpm";
-  }
+  let currentPath = resolve(rootPath);
+  const normalizedWorkspaceRoot = resolve(workspaceRoot);
 
-  if (existsSync(join(rootPath, "yarn.lock"))) {
-    return "yarn";
-  }
+  while (isResolvedPathInsideWorkspace(currentPath, normalizedWorkspaceRoot)) {
+    if (existsSync(join(currentPath, "pnpm-lock.yaml"))) {
+      return "pnpm";
+    }
 
-  if (existsSync(join(rootPath, "package-lock.json"))) {
-    return "npm";
+    if (existsSync(join(currentPath, "yarn.lock"))) {
+      return "yarn";
+    }
+
+    if (existsSync(join(currentPath, "package-lock.json"))) {
+      return "npm";
+    }
+
+    if (currentPath === normalizedWorkspaceRoot) {
+      break;
+    }
+
+    const parentPath = dirname(currentPath);
+    if (parentPath === currentPath) {
+      break;
+    }
+    currentPath = parentPath;
   }
 
   return "npm";
@@ -7199,17 +7394,80 @@ const createPackageScriptCommand = (
     : `${packageManager} ${scriptName}`;
 };
 
+const PROJECT_COMMAND_MANIFESTS = [
+  "package.json",
+  "Cargo.toml",
+  "pyproject.toml",
+  "go.mod",
+] as const;
+
+const getExistingDirectoryForProjectCommandDetection = async (
+  path: string,
+): Promise<string> => {
+  const metadata = await stat(path).catch(() => null);
+
+  if (metadata?.isFile()) {
+    return dirname(path);
+  }
+
+  if (metadata?.isDirectory()) {
+    return path;
+  }
+
+  return path;
+};
+
+const findProjectCommandRoot = async (
+  requestedRootPath: string,
+  workspaceRoot: string,
+): Promise<string> => {
+  const normalizedWorkspaceRoot = resolve(workspaceRoot);
+  let currentPath = resolve(
+    await getExistingDirectoryForProjectCommandDetection(requestedRootPath),
+  );
+
+  while (isResolvedPathInsideWorkspace(currentPath, normalizedWorkspaceRoot)) {
+    if (
+      PROJECT_COMMAND_MANIFESTS.some((manifest) =>
+        existsSync(join(currentPath, manifest)),
+      )
+    ) {
+      return currentPath;
+    }
+
+    if (currentPath === normalizedWorkspaceRoot) {
+      break;
+    }
+
+    const parentPath = dirname(currentPath);
+    if (parentPath === currentPath) {
+      break;
+    }
+    currentPath = parentPath;
+  }
+
+  return resolve(requestedRootPath);
+};
+
 const executeDetectProjectCommandsUtilityBlock = async (
   block: RalphUtilityBlock,
   utility: RalphUtilityConfig,
   config: RuntimeConfig,
 ): Promise<RalphBlockExecutionResult> => {
-  const rootPath = resolveUtilityPath(
+  const requestedRootPath = resolveUtilityPath(
     utility.rootPath?.trim() || utility.cwd,
     config.workspaceRoot,
   );
 
   try {
+    if (!isResolvedPathInsideWorkspace(requestedRootPath, config.workspaceRoot)) {
+      throw new Error("Project command detection root must stay inside the workspace.");
+    }
+
+    const rootPath = await findProjectCommandRoot(
+      requestedRootPath,
+      config.workspaceRoot,
+    );
     const manifests: string[] = [];
     const commands: Array<{
       kind: "typecheck" | "lint" | "test" | "build" | "format";
@@ -7224,7 +7482,11 @@ const executeDetectProjectCommandsUtilityBlock = async (
       if (isRecord(packageJson)) {
         manifests.push("package.json");
         const scripts = isRecord(packageJson.scripts) ? packageJson.scripts : {};
-        const packageManager = getPackageManagerCommand(rootPath, packageJson);
+        const packageManager = getPackageManagerCommand(
+          rootPath,
+          packageJson,
+          config.workspaceRoot,
+        );
 
         for (const [kind, candidates] of [
           ["typecheck", ["typecheck", "check:types", "tsc"]],
@@ -7284,6 +7546,7 @@ const executeDetectProjectCommandsUtilityBlock = async (
       .map((entry) => entry.command);
     const data = {
       rootPath,
+      requestedRootPath,
       manifests,
       commands,
       verificationCommand: createVerificationCommand(verificationCommand),
