@@ -136,9 +136,12 @@ const capRalphRunRecordProgressEvents = (
       timestamp: event.timestamp,
       kind: event.kind,
       label: truncateRalphResultText(event.label),
+      ...(event.timelineKind ? { timelineKind: event.timelineKind } : {}),
       ...(event.streamKind ? { streamKind: event.streamKind } : {}),
       ...(event.phase ? { phase: event.phase } : {}),
       ...(event.tone ? { tone: event.tone } : {}),
+      ...(event.provider ? { provider: event.provider } : {}),
+      ...(event.model ? { model: truncateRalphResultText(event.model) } : {}),
       ...(event.complete !== undefined ? { complete: event.complete } : {}),
       ...(event.toolName
         ? { toolName: truncateRalphResultText(event.toolName) }
@@ -148,6 +151,8 @@ const capRalphRunRecordProgressEvents = (
         ? { content: truncateRalphResultText(event.content) }
         : {}),
       ...(event.detail ? { detail: truncateRalphResultText(event.detail) } : {}),
+      ...(event.tokenUsage ? { tokenUsage: event.tokenUsage } : {}),
+      ...(event.metadata ? { metadata: event.metadata } : {}),
     }));
 };
 
@@ -173,6 +178,9 @@ export const createRalphRunRecordBlock = (
     output: blockResult.output,
     status: blockResult.status,
     attempt: blockResult.attempt,
+    ...(blockResult.durationMs !== undefined
+      ? { durationMs: blockResult.durationMs }
+      : {}),
     ...(task ? { task } : {}),
     ...(blockResult.result?.status
       ? { executionStatus: blockResult.result.status }

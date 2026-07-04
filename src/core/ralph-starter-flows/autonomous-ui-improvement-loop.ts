@@ -136,40 +136,6 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       },
     },
     {
-      id: "analyze-selected-ui-scope",
-      title: "Analyze Selected UI Scope",
-      position: { x: 2060, y: 0 },
-      size: { width: 320, height: 230 },
-      settings: {
-        workspace: { mode: "default" },
-        reasoning: "high",
-        attachments: [],
-        packs: [],
-        maxIterations: 2,
-      },
-      type: "UTILITY",
-      utility: {
-        type: "PROMPT_JSON",
-        outputPath:
-          "{{scopeAnalysisFile:path=.machdoch/ralph/ui-improvements/scope-analysis.json}}",
-        maxAttempts: 2,
-        schema: {
-          type: "object",
-          required: ["scope", "uiSignals", "designSystem", "constraints", "verification", "stopSignals"],
-          properties: {
-            scope: { type: "object" },
-            uiSignals: { type: "array", items: { type: "string" } },
-            designSystem: { type: "array", items: { type: "string" } },
-            constraints: { type: "array", items: { type: "string" } },
-            verification: { type: "array", items: { type: "string" } },
-            stopSignals: { type: "array", items: { type: "string" } },
-          },
-        },
-        prompt:
-          "Inspect selected JSON scope {{result:select-scope}} without editing files. Apply uiScope={{uiScope:text=auto-detect}}, riskTolerance={{riskTolerance:text=ambitious}}, allowAmbitiousUiChanges={{allowAmbitiousUiChanges:boolean=true}}, designPolicy={{designPolicy:text=}}, detected commands {{result:detect-project-commands}}, completed history {{result:read-completed-ui-improvements}}, and excludePaths={{excludePaths:text=}}. Auto-detect UI-related files, routes, components, styles, design-system usage, accessibility surfaces, responsive layouts, tests, stories, screenshots, and user-facing copy. Identify concrete evidence for valuable UI improvements: clean minimalist design gaps, responsive/mobile issues, layout overflow, overlapping text, badge overuse, overexplained copy, weak icon usage, inaccessible controls, hydration or console issues, loading/empty/error/success state bugs, or inconsistency with existing UI conventions. Treat the selected scope as one pass in a full scope cycle: if it has no evidence-backed UI work left, say so clearly so the flow can mark only this scope complete and move to the next scope. Also identify stop signals: no UI-relevant scope, no evidence-backed candidate, only speculative redesign, only tiny cosmetic nits, or work already completed. Return only schema-valid JSON.",
-      },
-    },
-    {
       id: "research-decision",
       title: "Use Online Research?",
       position: { x: 2400, y: -150 },
@@ -179,7 +145,8 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         type: "CONDITION",
         condition: {
           style: "javascript",
-          expression: 'variables.enableOnlineResearch === "true"',
+          expression:
+            'variables.enableOnlineResearch === "true" && lastData?.output?.researchDecision?.needsResearch === true',
         },
       },
     },
@@ -198,11 +165,11 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Use content enrichment to sharpen the UI improvement scope. If search_web is available, run focused searches for current primary-source framework/library behavior, official design-system docs in this repo's stack, W3C/WAI WCAG guidance, MDN accessibility/responsive guidance, web.dev responsive guidance, browser/runtime notes, and testing approaches relevant to scope analysis {{data:analyze-selected-ui-scope:output}}. Use fetch_url on the best official or maintainer pages before relying on them. Keep findings concise with source links, freshness/version notes, practical UI implications, and explicit non-findings. If web search is unavailable, say so and rely on local evidence plus provided URLs. Do not research broadly just to find extra redesign work.",
+        "Use content enrichment only for the structured research decision in UI work package {{data:choose-ui-improvement:output.researchDecision}} and selected package {{data:choose-ui-improvement:output.selectedCandidate}}. If search_web is available, run focused searches for current primary-source framework/library behavior, official design-system docs in this repo's stack, W3C/WAI WCAG guidance, MDN accessibility/responsive guidance, web.dev responsive guidance, browser/runtime notes, and testing approaches relevant to the package. Use fetch_url on the best official or maintainer pages before relying on them. Keep findings concise with source links, freshness/version notes, practical UI implications, and explicit non-findings. If web search is unavailable, say so and rely on local evidence plus provided URLs. Do not research broadly just to find extra redesign work.",
     },
     {
       id: "choose-ui-improvement",
-      title: "Choose UI Improvement",
+      title: "Plan UI Improvement Package",
       position: { x: 3060, y: 0 },
       size: { width: 320, height: 250 },
       settings: {
@@ -220,15 +187,50 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         maxAttempts: 2,
         schema: {
           type: "object",
-          required: ["decision", "rationale", "selectedCandidate", "rejectedCandidates", "stopReason"],
+          required: [
+            "decision",
+            "rationale",
+            "scopeAnalysis",
+            "researchDecision",
+            "selectedCandidate",
+            "rejectedCandidates",
+            "stopReason",
+          ],
           properties: {
             decision: { type: "string" },
             rationale: { type: "string" },
+            scopeAnalysis: {
+              type: "object",
+              properties: {
+                scope: { type: "object" },
+                scopeCluster: { type: "object" },
+                uiSignals: { type: "array", items: { type: "string" } },
+                designSystem: { type: "array", items: { type: "string" } },
+                constraints: { type: "array", items: { type: "string" } },
+                stopSignals: { type: "array", items: { type: "string" } },
+              },
+            },
+            researchDecision: {
+              type: "object",
+              required: ["needsResearch", "reason", "queries"],
+              properties: {
+                needsResearch: { type: "boolean" },
+                reason: { type: "string" },
+                queries: { type: "array", items: { type: "string" } },
+              },
+            },
             selectedCandidate: {
               type: "object",
               properties: {
                 id: { type: "string" },
                 title: { type: "string" },
+                relatedChanges: { type: "array", items: { type: "object" } },
+                affectedFiles: { type: "array", items: { type: "string" } },
+                acceptanceCriteria: { type: "array", items: { type: "string" } },
+                visualReviewPlan: { type: "array", items: { type: "string" } },
+                verificationPlan: { type: "array", items: { type: "string" } },
+                verificationTier: { type: "string" },
+                reviewTier: { type: "string" },
               },
             },
             rejectedCandidates: { type: "array", items: { type: "object" } },
@@ -236,7 +238,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Select exactly one autonomous UI improvement for selected scope {{result:select-scope}}, or decide STOP for this selected scope only. Use scope analysis {{data:analyze-selected-ui-scope:output}}, research {{summary:ui-research}}, completed history {{result:read-completed-ui-improvements}}, latest completed append {{result:append-completed-ui-improvement}}, uiImprovementPolicy={{uiImprovementPolicy:text=}}, designPolicy={{designPolicy:text=}}, riskTolerance={{riskTolerance:text=ambitious}}, and allowAmbitiousUiChanges={{allowAmbitiousUiChanges:boolean=true}}. Return decision IMPLEMENT only when the candidate has a stable kebab-case id, title, concrete UI evidence, user value, bounded scope, currentBehavior, proposedBehavior, acceptanceCriteria, affectedFiles, visualReviewPlan, verificationPlan, accessibility/responsive considerations, and rollbackNotes. Ambitious polish is allowed when configured and still preserves existing design-system conventions. Return STOP when this scope's remaining ideas are speculative, badge/copy/icon churn without evidence, broad redesigns requiring product approval, duplicate of completed history, unsafe dependency/schema changes, dev-server startup needs, or fail threshold {{meaningfulThreshold:text=}}. STOP means this scope is done for the current cycle; it does not mean the whole repository is done unless every active scope has received a pass. If decision is STOP, selectedCandidate must be {} and stopReason must explain the evidence-backed reason. Return only schema-valid JSON.",
+          "Inspect selected JSON scope and dependency-aware scope cluster {{result:select-scope}} without editing files. Merge UI scope analysis, online-research decision, and UI improvement selection into one structured decision. Apply uiScope={{uiScope:text=auto-detect}}, riskTolerance={{riskTolerance:text=ambitious}}, allowAmbitiousUiChanges={{allowAmbitiousUiChanges:boolean=true}}, designPolicy={{designPolicy:text=}}, detected commands {{result:detect-project-commands}}, completed history {{result:read-completed-ui-improvements}}, latest completed append {{result:append-completed-ui-improvement}}, uiImprovementPolicy={{uiImprovementPolicy:text=}}, and excludePaths={{excludePaths:text=}}. Auto-detect UI-related files, routes, components, styles, design-system usage, accessibility surfaces, responsive layouts, tests, stories, screenshots, and user-facing copy. Return decision IMPLEMENT only for one cohesive UI work package, not one micro-change: select 2-5 tightly related UI changes when they share files, states, responsive/accessibility acceptance criteria, or visual review needs and are safer/productive to complete together. The package must have a stable kebab-case id, title, concrete UI evidence, user value, currentBehavior, proposedBehavior, relatedChanges with affected files, acceptanceCriteria, expectedOutcome, affectedFiles, visualReviewPlan, verificationPlan, verificationTier (focused, standard, or broad), reviewTier (validator-only or strict), accessibility/responsive considerations, rollbackNotes, and remainingRelatedWork. Prefer focused verification for localized low-risk UI copy/style/test changes; require broad verification, visual review when configured, and strict review for shared UI primitives, routing/data-fetching boundaries, hydration-sensitive code, accessibility semantics, IPC/API contracts, dependencies, schemas, or broad responsive behavior. Set researchDecision.needsResearch true only when the package depends on current external docs, browser/runtime behavior, accessibility standards, framework/library behavior, design-system docs, compatibility, or comparable product context; include focused queries. Set it false when local UI evidence and existing commands are enough. Ambitious polish is allowed when configured and still preserves existing design-system conventions. Return STOP when this scope cluster's remaining ideas are speculative, badge/copy/icon churn without evidence, broad redesigns requiring product approval, duplicate of completed history, unsafe dependency/schema changes, dev-server startup needs, or fail threshold {{meaningfulThreshold:text=}}. STOP means this scope is done for the current cycle only after no worthwhile related UI package remains in the scope cluster. If decision is STOP, selectedCandidate must be {} and stopReason must explain the evidence-backed reason. Return only schema-valid JSON.",
       },
     },
     {
@@ -250,7 +252,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         condition: {
           style: "javascript",
           expression:
-            'lastData?.output?.decision === "IMPLEMENT" && lastData.output.selectedCandidate && Object.keys(lastData.output.selectedCandidate).length > 0',
+            'context.resultsByBlock?.["choose-ui-improvement"]?.data?.output?.decision === "IMPLEMENT" && context.resultsByBlock?.["choose-ui-improvement"]?.data?.output?.selectedCandidate && Object.keys(context.resultsByBlock["choose-ui-improvement"].data.output.selectedCandidate).length > 0',
         },
       },
     },
@@ -305,7 +307,20 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Implement the active UI improvement at {{activeUiImprovementFile:path=.machdoch/ralph/ui-improvements/active-ui-improvement.json}} using candidate {{data:choose-ui-improvement:output.selectedCandidate}}, selected scope {{result:select-scope}}, scope analysis {{data:analyze-selected-ui-scope:output}}, research {{summary:ui-research}}, git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-ui-improvement-pass}}, latest validator feedback {{result:validate-ui-improvement}}, latest review feedback {{data:independent-ui-review:output}}, and designPolicy={{designPolicy:text=}}. Keep changes bounded to the selected UI scope and required adjacent tests/docs/imports. Preserve existing design-system conventions, components, icons, tokens, responsive patterns, and copy tone unless the candidate explicitly improves them. Prefer clean minimalist modern UI, responsive/mobile friendly layout, restrained badges, concise copy, useful icons, accessible controls, stable dimensions, no overlapping text, no overflow, no hydration or responsive UI bugs, and verified desktop/mobile states. Add or update meaningful tests when feasible. Do not start or restart servers. Do not hardcode target URLs; use targetUrl={{targetUrl:url=}} or env key {{targetUrlEnvKey:text=RALPH_UI_TARGET_URL}} supplied at runtime for visual review. Append a concise note to {{notesFile:path=.machdoch/ralph/ui-improvements/RALPH_UI_IMPROVEMENT_NOTES.md}} with UI behavior changes, verification, visual-review status, and remaining risks.",
+        "Implement the active UI improvement package at {{activeUiImprovementFile:path=.machdoch/ralph/ui-improvements/active-ui-improvement.json}} using package {{data:choose-ui-improvement:output.selectedCandidate}}, selected scope and scope cluster {{result:select-scope}}, scope analysis {{data:choose-ui-improvement:output.scopeAnalysis}}, research {{summary:ui-research}}, git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-ui-improvement-pass}}, latest validator feedback {{result:validate-ui-improvement}}, latest review feedback {{data:independent-ui-review:output}}, verification routing {{data:select-verification-command:output}}, and designPolicy={{designPolicy:text=}}. Complete the cohesive UI package before stopping; do not split tightly related responsive/accessibility/visual-state changes into separate future cycles unless blocked by risk or missing evidence. Keep changes bounded to the selected UI scope cluster and required adjacent tests/docs/imports. Preserve existing design-system conventions, components, icons, tokens, responsive patterns, and copy tone unless the package explicitly improves them. Prefer clean minimalist modern UI, responsive/mobile friendly layout, restrained badges, concise copy, useful icons, accessible controls, stable dimensions, no overlapping text, no overflow, no hydration or responsive UI bugs, and verified desktop/mobile states. Add or update meaningful tests when feasible. Do not start or restart servers. Do not hardcode target URLs; use targetUrl={{targetUrl:url=}} or env key {{targetUrlEnvKey:text=RALPH_UI_TARGET_URL}} supplied at runtime for visual review. Append a concise note to {{notesFile:path=.machdoch/ralph/ui-improvements/RALPH_UI_IMPROVEMENT_NOTES.md}} with UI package changes, verification tier, visual-review status, and remaining risks.",
+    },
+    {
+      id: "select-verification-command",
+      title: "Select Verification Tier",
+      position: { x: 4400, y: -140 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "TRANSFORM_JSON",
+        input: "{}",
+        expression:
+          "(() => { const candidate = context.resultsByBlock?.get?.('choose-ui-improvement')?.data?.output?.selectedCandidate ?? {}; const commands = context.resultsByBlock?.get?.('detect-project-commands')?.data ?? {}; const requestedTier = String(candidate.verificationTier ?? candidate.riskAssessment?.verificationTier ?? '').toLowerCase(); const requestedReviewTier = String(candidate.reviewTier ?? candidate.riskAssessment?.reviewTier ?? '').toLowerCase(); const riskText = JSON.stringify([candidate.risk, candidate.riskAssessment, candidate.affectedFiles, candidate.relatedChanges, candidate.visualReviewPlan, candidate.accessibility, candidate.responsive]).toLowerCase(); const highRisk = /(security|auth|token|secret|permission|database|migration|schema|ipc|api|dependency|package|lockfile|persistence|public api|contract|hydration|routing|accessibility|semantic|responsive|shared primitive|design system)/u.test(riskText); const tier = highRisk || requestedTier === 'broad' || requestedTier === 'strict' ? 'broad' : requestedTier === 'standard' ? 'standard' : 'focused'; const detectedCommand = tier === 'broad' ? commands.broadVerificationCommand : tier === 'standard' ? commands.standardVerificationCommand : commands.focusedVerificationCommand; const command = (variables.verificationCommand ?? '').trim() || detectedCommand || commands.verificationCommand || ''; const reviewTier = highRisk || requestedReviewTier === 'strict' || tier === 'broad' ? 'strict' : 'validator-only'; return { tier, command, reviewTier, highRisk, source: (variables.verificationCommand ?? '').trim() ? 'variable' : 'detected', focusedCommand: commands.focusedVerificationCommand || '', standardCommand: commands.standardVerificationCommand || '', broadCommand: commands.broadVerificationCommand || '' }; })()",
+      },
     },
     {
       id: "verification-decision",
@@ -318,7 +333,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         condition: {
           style: "javascript",
           expression:
-            "Boolean(variables.verificationCommand?.trim() || context.resultsByBlock?.['detect-project-commands']?.data?.verificationCommand?.trim())",
+            "Boolean(context.resultsByBlock?.['select-verification-command']?.data?.output?.command?.trim())",
         },
       },
     },
@@ -330,8 +345,8 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "RUN_CHECK",
-        command: "{{verificationCommand:text=}}",
-        fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        command: "{{data:select-verification-command:output.command}}",
+        fallbackCommand: "{{data:detect-project-commands:focusedVerificationCommand}}",
         cwd: "{{data:detect-project-commands:rootPath}}",
         timeoutSeconds: RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS,
       },
@@ -350,7 +365,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Fix verification failures from {{result:run-verification}} that were caused by the current UI improvement. Distinguish pre-existing failures from own regressions. Keep fixes scoped to active UI improvement {{data:choose-ui-improvement:output.selectedCandidate}} and selected scope {{result:select-scope}}. Do not broaden the improvement or start another candidate. Do not start or restart servers.",
+        "Fix verification failures from {{result:run-verification}} that were caused by the current UI improvement package. Distinguish pre-existing failures from own regressions. Keep fixes scoped to active UI package {{data:choose-ui-improvement:output.selectedCandidate}} and selected scope cluster {{result:select-scope}}. Do not broaden the package or start an unrelated package. Do not start or restart servers.",
     },
     {
       id: "resolve-runtime-urls",
@@ -426,6 +441,21 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       },
     },
     {
+      id: "review-tier-decision",
+      title: "Strict UI Review?",
+      position: { x: 6200, y: 230 },
+      size: { width: 256, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          style: "javascript",
+          expression:
+            'context.resultsByBlock?.["select-verification-command"]?.data?.output?.reviewTier === "strict"',
+        },
+      },
+    },
+    {
       id: "independent-ui-review",
       title: "Independent UI Review",
       position: { x: 6380, y: 40 },
@@ -455,7 +485,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Review the current UI improvement as a separate reviewer. Active improvement: {{data:choose-ui-improvement:output.selectedCandidate}}. Diff: {{result:git-diff-summary}}. Verification: {{result:run-verification}}. Runtime URL resolution: {{data:resolve-runtime-urls:output}}. Visual review: {{result:visual-review}}. Evaluate only the active candidate, selected UI scope, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that scope unless they directly break verification of this improvement. Check designPolicy={{designPolicy:text=}}, responsive/mobile behavior, accessibility, clean minimalist hierarchy, badge restraint, concise copy, useful icon usage, layout overflow, overlapping text, focus/keyboard states, console/network/hydration issues, design-system consistency, and security regressions at UI/API/IPC boundaries. Return decision PASS when the improvement is bounded, justified, verified or explicitly justified as unverified, and does not introduce regressions. Return FIX when specific issues remain. Return BLOCKED when unsafe, ambiguous, requires dev-server startup, or requires human/product approval. Return only schema-valid JSON.",
+          "Review the current UI improvement package as a separate reviewer because verification routing requested strict review. Active package: {{data:choose-ui-improvement:output.selectedCandidate}}. Scope cluster: {{result:select-scope}}. Diff: {{result:git-diff-summary}}. Verification routing: {{data:select-verification-command:output}}. Verification: {{result:run-verification}}. Runtime URL resolution: {{data:resolve-runtime-urls:output}}. Visual review: {{result:visual-review}}. Evaluate only the active package, selected UI scope cluster, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that scope unless they directly break verification of this package. Check designPolicy={{designPolicy:text=}}, responsive/mobile behavior, accessibility, clean minimalist hierarchy, badge restraint, concise copy, useful icon usage, layout overflow, overlapping text, focus/keyboard states, console/network/hydration issues, design-system consistency, and security regressions at UI/API/IPC boundaries. Return decision PASS when the package is cohesive, bounded, justified, verified or explicitly justified as unverified, and does not introduce regressions. Return FIX when specific issues remain. Return BLOCKED when unsafe, ambiguous, requires dev-server startup, or requires human/product approval. Return only schema-valid JSON.",
       },
     },
     {
@@ -486,7 +516,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Validate the latest autonomous UI improvement. Candidate: {{data:choose-ui-improvement:output.selectedCandidate}}. Review: {{data:independent-ui-review:output}}. Verification: {{result:run-verification}}. Runtime URL resolution: {{data:resolve-runtime-urls:output}}. Visual review: {{result:visual-review}}. Git diff: {{result:git-diff-summary}}. Notes file: {{notesFile:path=.machdoch/ralph/ui-improvements/RALPH_UI_IMPROVEMENT_NOTES.md}}. Judge only the active candidate, selected UI scope, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that scope unless they directly break verification of this improvement. Return DONE only when the improvement implements the selected candidate, preserves or improves the existing design system, satisfies designPolicy={{designPolicy:text=}}, has no obvious desktop/mobile overflow, overlapping text, badge overuse, copy bloat, icon misuse, accessibility regression, console/network/hydration regression, or unreviewed visual state, and verification is passing or skipped with a sound reason. Return CONTINUE only when the same candidate still needs bounded implementation work; the flow counter enforces maxUiImprovementPasses={{maxUiImprovementPasses:number=8}}. Return RETRY when validation/review found own regressions that should be corrected. Return ERROR when blocked by unsafe changes, ambiguous behavior, required human/product decision, unavailable credentials/tooling/URL, required dev-server startup, repeated failure, or work that no longer meets meaningfulThreshold={{meaningfulThreshold:text=}}.",
+          "Validate the latest autonomous UI improvement package. Package: {{data:choose-ui-improvement:output.selectedCandidate}}. Scope cluster: {{result:select-scope}}. Verification routing: {{data:select-verification-command:output}}. Strict review, when run: {{data:independent-ui-review:output}}. Verification: {{result:run-verification}}. Runtime URL resolution: {{data:resolve-runtime-urls:output}}. Visual review: {{result:visual-review}}. Git diff: {{result:git-diff-summary}}. Notes file: {{notesFile:path=.machdoch/ralph/ui-improvements/RALPH_UI_IMPROVEMENT_NOTES.md}}. Judge only the active package, selected UI scope cluster, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that scope unless they directly break verification of this package. For validator-only low-risk packages, avoid demanding a duplicate strict review when focused verification passed, visual review is not required or is satisfied, and the diff is localized. Return DONE only when the whole cohesive package is implemented, preserves or improves the existing design system, satisfies designPolicy={{designPolicy:text=}}, has no obvious desktop/mobile overflow, overlapping text, badge overuse, copy bloat, icon misuse, accessibility regression, console/network/hydration regression, or unreviewed required visual state, and verification is passing or skipped with a sound reason. Return CONTINUE only when the same package still needs bounded implementation work; the flow counter enforces maxUiImprovementPasses={{maxUiImprovementPasses:number=8}}. Return RETRY when validation/review found own regressions that should be corrected. Return ERROR when blocked by unsafe changes, ambiguous behavior, required human/product decision, unavailable credentials/tooling/URL, required dev-server startup, repeated failure, or work that no longer meets meaningfulThreshold={{meaningfulThreshold:text=}}.",
       },
     },
     {
@@ -600,22 +630,19 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
     { id: "detect-success-to-history", from: "detect-project-commands", fromOutput: "SUCCESS", to: "read-completed-ui-improvements" },
     { id: "detect-empty-to-history", from: "detect-project-commands", fromOutput: "EMPTY", to: "read-completed-ui-improvements" },
     { id: "detect-error-to-history", from: "detect-project-commands", fromOutput: "ERROR", to: "read-completed-ui-improvements" },
-    { id: "history-success-to-analysis", from: "read-completed-ui-improvements", fromOutput: "SUCCESS", to: "analyze-selected-ui-scope" },
-    { id: "history-empty-to-analysis", from: "read-completed-ui-improvements", fromOutput: "EMPTY", to: "analyze-selected-ui-scope" },
-    { id: "history-not-found-to-analysis", from: "read-completed-ui-improvements", fromOutput: "NOT_FOUND", to: "analyze-selected-ui-scope" },
-    { id: "history-invalid-to-analysis", from: "read-completed-ui-improvements", fromOutput: "INVALID", to: "analyze-selected-ui-scope" },
-    { id: "history-error-to-analysis", from: "read-completed-ui-improvements", fromOutput: "ERROR", to: "analyze-selected-ui-scope" },
-    { id: "analysis-success-to-research-decision", from: "analyze-selected-ui-scope", fromOutput: "SUCCESS", to: "research-decision" },
-    { id: "analysis-invalid", from: "analyze-selected-ui-scope", fromOutput: "INVALID", to: "blocked" },
-    { id: "analysis-error", from: "analyze-selected-ui-scope", fromOutput: "ERROR", to: "blocked" },
-    { id: "research-decision-run", from: "research-decision", fromOutput: "MATCH", to: "ui-research" },
-    { id: "research-decision-skip", from: "research-decision", fromOutput: "NO_MATCH", to: "choose-ui-improvement" },
-    { id: "research-decision-error", from: "research-decision", fromOutput: "ERROR", to: "choose-ui-improvement" },
-    { id: "research-to-choose", from: "ui-research", fromOutput: "SUCCESS", to: "choose-ui-improvement" },
-    { id: "research-error-to-choose", from: "ui-research", fromOutput: "ERROR", to: "choose-ui-improvement" },
-    { id: "choose-to-actionable", from: "choose-ui-improvement", fromOutput: "SUCCESS", to: "has-actionable-ui-improvement" },
+    { id: "history-success-to-choose", from: "read-completed-ui-improvements", fromOutput: "SUCCESS", to: "choose-ui-improvement" },
+    { id: "history-empty-to-choose", from: "read-completed-ui-improvements", fromOutput: "EMPTY", to: "choose-ui-improvement" },
+    { id: "history-not-found-to-choose", from: "read-completed-ui-improvements", fromOutput: "NOT_FOUND", to: "choose-ui-improvement" },
+    { id: "history-invalid-to-choose", from: "read-completed-ui-improvements", fromOutput: "INVALID", to: "choose-ui-improvement" },
+    { id: "history-error-to-choose", from: "read-completed-ui-improvements", fromOutput: "ERROR", to: "choose-ui-improvement" },
+    { id: "choose-to-research-decision", from: "choose-ui-improvement", fromOutput: "SUCCESS", to: "research-decision" },
     { id: "choose-invalid", from: "choose-ui-improvement", fromOutput: "INVALID", to: "blocked" },
     { id: "choose-error", from: "choose-ui-improvement", fromOutput: "ERROR", to: "blocked" },
+    { id: "research-decision-run", from: "research-decision", fromOutput: "MATCH", to: "ui-research" },
+    { id: "research-decision-skip", from: "research-decision", fromOutput: "NO_MATCH", to: "has-actionable-ui-improvement" },
+    { id: "research-decision-error", from: "research-decision", fromOutput: "ERROR", to: "has-actionable-ui-improvement" },
+    { id: "research-to-actionable", from: "ui-research", fromOutput: "SUCCESS", to: "has-actionable-ui-improvement" },
+    { id: "research-error-to-actionable", from: "ui-research", fromOutput: "ERROR", to: "has-actionable-ui-improvement" },
     { id: "actionable-to-write", from: "has-actionable-ui-improvement", fromOutput: "MATCH", to: "write-active-ui-improvement" },
     { id: "not-actionable-to-mark", from: "has-actionable-ui-improvement", fromOutput: "NO_MATCH", to: "mark-scope-result" },
     { id: "actionable-error", from: "has-actionable-ui-improvement", fromOutput: "ERROR", to: "mark-scope-result" },
@@ -627,8 +654,10 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
     { id: "count-ui-improvement-pass-continue", from: "count-ui-improvement-pass", fromOutput: "CONTINUE", to: "implement-ui-improvement" },
     { id: "count-ui-improvement-pass-limit", from: "count-ui-improvement-pass", fromOutput: "LIMIT_REACHED", to: "blocked" },
     { id: "count-ui-improvement-pass-error", from: "count-ui-improvement-pass", fromOutput: "ERROR", to: "blocked" },
-    { id: "implement-to-verification-decision", from: "implement-ui-improvement", fromOutput: "SUCCESS", to: "verification-decision" },
+    { id: "implement-to-verification-tier", from: "implement-ui-improvement", fromOutput: "SUCCESS", to: "select-verification-command" },
     { id: "implement-error", from: "implement-ui-improvement", fromOutput: "ERROR", to: "blocked" },
+    { id: "verification-tier-to-decision", from: "select-verification-command", fromOutput: "SUCCESS", to: "verification-decision" },
+    { id: "verification-tier-error", from: "select-verification-command", fromOutput: "ERROR", to: "verification-decision" },
     { id: "verification-decision-run", from: "verification-decision", fromOutput: "MATCH", to: "run-verification" },
     { id: "verification-decision-skip", from: "verification-decision", fromOutput: "NO_MATCH", to: "resolve-runtime-urls" },
     { id: "verification-decision-error", from: "verification-decision", fromOutput: "ERROR", to: "resolve-runtime-urls" },
@@ -645,9 +674,12 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
     { id: "visual-success-to-diff", from: "visual-review", fromOutput: "SUCCESS", to: "git-diff-summary" },
     { id: "visual-unavailable-to-diff", from: "visual-review", fromOutput: "UNAVAILABLE", to: "git-diff-summary" },
     { id: "visual-error-to-diff", from: "visual-review", fromOutput: "ERROR", to: "git-diff-summary" },
-    { id: "diff-success-to-review", from: "git-diff-summary", fromOutput: "SUCCESS", to: "independent-ui-review" },
-    { id: "diff-empty-to-review", from: "git-diff-summary", fromOutput: "EMPTY", to: "independent-ui-review" },
-    { id: "diff-error-to-review", from: "git-diff-summary", fromOutput: "ERROR", to: "independent-ui-review" },
+    { id: "diff-success-to-review-tier", from: "git-diff-summary", fromOutput: "SUCCESS", to: "review-tier-decision" },
+    { id: "diff-empty-to-review-tier", from: "git-diff-summary", fromOutput: "EMPTY", to: "review-tier-decision" },
+    { id: "diff-error-to-review-tier", from: "git-diff-summary", fromOutput: "ERROR", to: "review-tier-decision" },
+    { id: "review-tier-strict", from: "review-tier-decision", fromOutput: "MATCH", to: "independent-ui-review" },
+    { id: "review-tier-validator-only", from: "review-tier-decision", fromOutput: "NO_MATCH", to: "validate-ui-improvement" },
+    { id: "review-tier-error-to-validate", from: "review-tier-decision", fromOutput: "ERROR", to: "validate-ui-improvement" },
     { id: "review-to-validate", from: "independent-ui-review", fromOutput: "SUCCESS", to: "validate-ui-improvement" },
     { id: "review-invalid", from: "independent-ui-review", fromOutput: "INVALID", to: "blocked" },
     { id: "review-error", from: "independent-ui-review", fromOutput: "ERROR", to: "blocked" },
@@ -679,7 +711,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
 
 export const autonomousUiImprovementLoopStarterFlow = {
   id: "autonomous-ui-improvement-loop",
-  version: 5,
+  version: 6,
   defaultAlias: "autonomous-ui-improvement-loop",
   category: "Design Quality",
   tags: ["autonomous", "ui", "design", "visual-check"],

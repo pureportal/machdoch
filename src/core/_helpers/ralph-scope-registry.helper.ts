@@ -108,8 +108,19 @@ export interface RalphScopeRegistryUpdateResult {
 export interface RalphScopeRegistrySelectionResult {
   registry: RalphScopeRegistry;
   scope?: RalphScopeRegistryScope;
+  scopeCluster?: RalphScopeRegistryScopeCluster;
   reusedCurrentScope: boolean;
   cycleStarted: boolean;
+}
+
+export interface RalphScopeRegistryScopeCluster {
+  rootScopeId: string;
+  scopeIds: string[];
+  paths: string[];
+  globs: string[];
+  tags: string[];
+  risk: RalphScopeRegistryRisk;
+  rationale: string[];
 }
 
 export interface RalphScopeRegistryMarkResult {
@@ -1034,6 +1045,133 @@ const getActiveScopes = (
   return registry.scopes.filter((scope) => scope.status === "active");
 };
 
+const riskRank: Record<RalphScopeRegistryRisk, number> = {
+  high: 3,
+  medium: 2,
+  low: 1,
+};
+
+const firstPathSegment = (path: string): string => {
+  return getPathSegments(path)[0] ?? "";
+};
+
+const pathsAreRelated = (a: string, b: string): boolean => {
+  const left = normalizeRegistryPath(a);
+  const right = normalizeRegistryPath(b);
+
+  return (
+    left === right ||
+    left.startsWith(`${right}/`) ||
+    right.startsWith(`${left}/`)
+  );
+};
+
+const countSharedTerms = (
+  left: readonly string[],
+  right: readonly string[],
+): number => {
+  const leftTerms = new Set(left.map((term) => term.toLowerCase()));
+
+  return right.filter((term) => leftTerms.has(term.toLowerCase())).length;
+};
+
+const scoreRelatedScope = (
+  selected: RalphScopeRegistryScope,
+  candidate: RalphScopeRegistryScope,
+): { score: number; rationale: string[] } => {
+  const rationale: string[] = [];
+  let score = 0;
+
+  if (
+    selected.paths.some((selectedPath) =>
+      candidate.paths.some((candidatePath) =>
+        pathsAreRelated(selectedPath, candidatePath),
+      ),
+    )
+  ) {
+    score += 80;
+    rationale.push("path relationship");
+  }
+
+  const selectedPrefixes = new Set(selected.paths.map(firstPathSegment).filter(Boolean));
+  const sharedTopLevel = candidate.paths.some((path) =>
+    selectedPrefixes.has(firstPathSegment(path)),
+  );
+  if (sharedTopLevel) {
+    score += 42;
+    rationale.push("same top-level area");
+  }
+
+  const sharedTags = countSharedTerms(selected.tags, candidate.tags);
+  if (sharedTags > 0) {
+    score += sharedTags * 8;
+    rationale.push(`${sharedTags} shared tag${sharedTags === 1 ? "" : "s"}`);
+  }
+
+  if (
+    candidate.kind === "test" &&
+    ["app", "package", "source-root", "module"].includes(selected.kind)
+  ) {
+    score += sharedTopLevel ? 36 : 18;
+    rationale.push("adjacent tests");
+  }
+
+  if (candidate.kind === "config" && selected.kind !== "config") {
+    score += selected.risk === "high" ? 34 : 24;
+    rationale.push("shared project configuration");
+  }
+
+  if (candidate.kind === "docs" && sharedTopLevel) {
+    score += 18;
+    rationale.push("adjacent documentation");
+  }
+
+  return { score, rationale };
+};
+
+const createScopeCluster = (
+  registry: RalphScopeRegistry,
+  selectedScope: RalphScopeRegistryScope,
+): RalphScopeRegistryScopeCluster => {
+  const relatedScopes = getActiveScopes(registry)
+    .filter((scope) => scope.id !== selectedScope.id)
+    .map((scope) => ({ scope, relation: scoreRelatedScope(selectedScope, scope) }))
+    .filter((entry) => entry.relation.score >= 32)
+    .sort((a, b) => {
+      const scoreDelta = b.relation.score - a.relation.score;
+
+      return scoreDelta === 0
+        ? a.scope.id.localeCompare(b.scope.id)
+        : scoreDelta;
+    })
+    .slice(0, 3);
+  const scopes = [selectedScope, ...relatedScopes.map((entry) => entry.scope)];
+  const paths = normalizePathList(scopes.flatMap((scope) => scope.paths)).slice(0, 24);
+  const globs = normalizePathList(scopes.flatMap((scope) => scope.globs)).slice(0, 24);
+  const tags = normalizePathList(scopes.flatMap((scope) => scope.tags)).slice(0, 36);
+  const risk = scopes.reduce<RalphScopeRegistryRisk>(
+    (current, scope) => (riskRank[scope.risk] > riskRank[current] ? scope.risk : current),
+    selectedScope.risk,
+  );
+  const rationale = [
+    `${selectedScope.id}: selected scope`,
+    ...relatedScopes.map(
+      (entry) =>
+        `${entry.scope.id}: ${entry.relation.rationale.join(", ") || "related scope"}`,
+    ),
+  ];
+
+  return {
+    rootScopeId: selectedScope.id,
+    scopeIds: scopes.map((scope) => scope.id),
+    paths,
+    globs,
+    tags,
+    risk,
+    rationale,
+  };
+};
+
 const compareNullableIsoDates = (a?: string | null, b?: string | null): number => {
   if (!a && !b) {
     return 0;
@@ -1048,12 +1186,6 @@ const compareNullableIsoDates = (a?: string | null, b?: string | null): number =
   }
 
   return a.localeCompare(b);
-};
-
-const riskRank: Record<RalphScopeRegistryRisk, number> = {
-  high: 3,
-  medium: 2,
-  low: 1,
 };
 
 const UI_SCOPE_TERMS = new Set([
@@ -1321,6 +1453,7 @@ export const selectRalphScopeFromRegistry = (
         selection: { ...registry.selection, strategy },
       },
       scope: currentScope,
+      scopeCluster: createScopeCluster(registry, currentScope),
       reusedCurrentScope: true,
       cycleStarted: false,
     };
@@ -1386,6 +1519,7 @@ export const selectRalphScopeFromRegistry = (
     ? {
     registry: nextRegistry,
     scope: selectedScope,
+    scopeCluster: createScopeCluster(nextRegistry, selectedScope),
     reusedCurrentScope: false,
     cycleStarted,
       }

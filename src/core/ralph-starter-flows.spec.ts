@@ -224,9 +224,19 @@ describe("Ralph starter flows", () => {
     const runVerification = flow?.blocks.find(
       (block) => block.id === "run-verification",
     );
+    const selectNextTask = flow?.blocks.find(
+      (block) => block.id === "select-next-task",
+    );
+    const maxTasksPerImplementationPass = flow?.variables?.find(
+      (variable) => variable.name === "maxTasksPerImplementationPass",
+    );
 
     expect(starterFlow?.defaultAlias).toBe("autonomous-feature-generation-loop");
-    expect(starterFlow?.version).toBeGreaterThanOrEqual(7);
+    expect(starterFlow?.version).toBeGreaterThanOrEqual(8);
+    expect(maxTasksPerImplementationPass).toMatchObject({
+      type: "number",
+      default: "3",
+    });
     expect(flow).toMatchObject({
       name: "Autonomous Feature Generation Loop",
       settings: { maxTransitions: 500 },
@@ -266,9 +276,16 @@ describe("Ralph starter flows", () => {
         maxAttempts: "{{maxImplementationPasses:number=10}}",
       },
     });
+    expect(selectNextTask).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "SELECT_JSON_TASK",
+        maxTasks: "{{maxTasksPerImplementationPass:number=3}}",
+      },
+    });
     expect(implementFeature).toMatchObject({
       type: "PROMPT",
-      prompt: expect.stringContaining("{{result:validate-goal}}"),
+      prompt: expect.stringContaining("selected active-goal task batch"),
     });
     expect(runVerification).toMatchObject({
       type: "UTILITY",
@@ -356,11 +373,21 @@ describe("Ralph starter flows", () => {
     const runConfiguredChecks = flow?.blocks.find(
       (block) => block.id === "run-configured-checks",
     );
+    const selectNextTask = flow?.blocks.find(
+      (block) => block.id === "select-next-task",
+    );
+    const maxTasksPerImplementationPass = flow?.variables?.find(
+      (variable) => variable.name === "maxTasksPerImplementationPass",
+    );
 
-    expect(starterFlow?.version).toBeGreaterThanOrEqual(7);
+    expect(starterFlow?.version).toBeGreaterThanOrEqual(8);
     expect(enableInterview).toMatchObject({
       type: "boolean",
       default: "false",
+    });
+    expect(maxTasksPerImplementationPass).toMatchObject({
+      type: "number",
+      default: "3",
     });
     expect(passCounter).toMatchObject({
       type: "UTILITY",
@@ -372,9 +399,16 @@ describe("Ralph starter flows", () => {
         maxAttempts: "{{maxImplementationPasses:number=8}}",
       },
     });
+    expect(selectNextTask).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "SELECT_JSON_TASK",
+        maxTasks: "{{maxTasksPerImplementationPass:number=3}}",
+      },
+    });
     expect(implementFeature).toMatchObject({
       type: "PROMPT",
-      prompt: expect.stringContaining("{{result:validate-progress}}"),
+      prompt: expect.stringContaining("selected checklist task batch"),
     });
     expect(runConfiguredChecks).toMatchObject({
       type: "UTILITY",
@@ -415,6 +449,9 @@ describe("Ralph starter flows", () => {
     const auditAgainstPolicy = flow?.blocks.find(
       (block) => block.id === "audit-against-policy",
     );
+    const selectValidationCommand = flow?.blocks.find(
+      (block) => block.id === "select-validation-command",
+    );
     const hasActionableRefactor = flow?.blocks.find(
       (block) => block.id === "has-actionable-refactor",
     );
@@ -447,6 +484,12 @@ describe("Ralph starter flows", () => {
         prompt: expect.stringContaining("Return passes: []"),
       },
     });
+    expect(auditAgainstPolicy).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        prompt: expect.stringContaining("researchDecision.needsResearch"),
+      },
+    });
     expect(hasActionableRefactor).toMatchObject({
       type: "UTILITY",
       utility: {
@@ -468,15 +511,23 @@ describe("Ralph starter flows", () => {
       type: "UTILITY",
       utility: {
         condition: {
-          expression: expect.stringContaining("detect-project-commands"),
+          expression: expect.stringContaining("select-validation-command"),
         },
+      },
+    });
+    expect(selectValidationCommand).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "TRANSFORM_JSON",
+        expression: expect.stringContaining("focusedVerificationCommand"),
       },
     });
     expect(runValidation).toMatchObject({
       type: "UTILITY",
       utility: {
         type: "RUN_CHECK",
-        fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        command: "{{data:select-validation-command:output.command}}",
+        fallbackCommand: "{{data:detect-project-commands:focusedVerificationCommand}}",
         cwd: "{{data:detect-project-commands:rootPath}}",
         timeoutSeconds: 1800,
       },
@@ -514,6 +565,11 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "audit-against-policy",
           fromOutput: "SUCCESS",
+          to: "research-decision",
+        }),
+        expect.objectContaining({
+          from: "research-decision",
+          fromOutput: "NO_MATCH",
           to: "has-actionable-refactor",
         }),
         expect.objectContaining({
@@ -542,14 +598,14 @@ describe("Ralph starter flows", () => {
           to: "blocked",
         }),
         expect.objectContaining({
+          from: "refactor-pass",
+          fromOutput: "SUCCESS",
+          to: "select-validation-command",
+        }),
+        expect.objectContaining({
           from: "final-refactor-scan",
           fromOutput: "CONTINUE",
           to: "count-refactor-pass",
-        }),
-        expect.objectContaining({
-          from: "git-diff-summary",
-          fromOutput: "SUCCESS",
-          to: "final-refactor-scan",
         }),
       ]),
     );
@@ -733,7 +789,7 @@ describe("Ralph starter flows", () => {
         type: "CONDITION",
         condition: {
           expression: expect.stringContaining(
-            'lastData?.output?.decision === "IMPLEMENT"',
+            'context.resultsByBlock?.["choose-improvement"]',
           ),
         },
       },
@@ -855,8 +911,11 @@ describe("Ralph starter flows", () => {
     const healthUrlEnvKey = flow?.variables?.find(
       (variable) => variable.name === "healthUrlEnvKey",
     );
-    const analyzeScope = flow?.blocks.find(
-      (block) => block.id === "analyze-selected-ui-scope",
+    const chooseUiImprovement = flow?.blocks.find(
+      (block) => block.id === "choose-ui-improvement",
+    );
+    const selectVerificationCommand = flow?.blocks.find(
+      (block) => block.id === "select-verification-command",
     );
     const resolveRuntimeUrls = flow?.blocks.find(
       (block) => block.id === "resolve-runtime-urls",
@@ -938,17 +997,24 @@ describe("Ralph starter flows", () => {
       type: "text",
       default: "RALPH_UI_HEALTH_URL",
     });
-    expect(analyzeScope).toMatchObject({
+    expect(chooseUiImprovement).toMatchObject({
       type: "UTILITY",
       utility: {
         type: "PROMPT_JSON",
         prompt: expect.stringContaining("uiScope={{uiScope:text=auto-detect}}"),
       },
     });
-    expect(analyzeScope).toMatchObject({
+    expect(chooseUiImprovement).toMatchObject({
       type: "UTILITY",
       utility: {
-        prompt: expect.stringContaining("mark only this scope complete"),
+        prompt: expect.stringContaining("cohesive UI work package"),
+      },
+    });
+    expect(selectVerificationCommand).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "TRANSFORM_JSON",
+        expression: expect.stringContaining("focusedVerificationCommand"),
       },
     });
     expect(resolveRuntimeUrls).toMatchObject({
@@ -980,6 +1046,10 @@ describe("Ralph starter flows", () => {
     expect(implementImprovement).toMatchObject({
       type: "PROMPT",
       prompt: expect.stringContaining("{{data:independent-ui-review:output}}"),
+    });
+    expect(implementImprovement).toMatchObject({
+      type: "PROMPT",
+      prompt: expect.stringContaining("{{data:select-verification-command:output}}"),
     });
     expect(visualReview).toMatchObject({
       type: "UTILITY",
@@ -1016,6 +1086,11 @@ describe("Ralph starter flows", () => {
           from: "count-ui-improvement-pass",
           fromOutput: "LIMIT_REACHED",
           to: "blocked",
+        }),
+        expect.objectContaining({
+          from: "implement-ui-improvement",
+          fromOutput: "SUCCESS",
+          to: "select-verification-command",
         }),
         expect.objectContaining({
           from: "validate-ui-improvement",

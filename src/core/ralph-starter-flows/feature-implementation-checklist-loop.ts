@@ -35,6 +35,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
     { name: "designGuidelines", type: "text", default: "", required: false },
     { name: "implementationScope", type: "text", default: "auto-detect", required: false },
     { name: "maxImplementationPasses", type: "number", default: "8", required: false },
+    { name: "maxTasksPerImplementationPass", type: "number", default: "3", required: false },
   ],
   blocks: [
     {
@@ -204,7 +205,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
           },
         },
         prompt:
-          "Create or update the canonical JSON implementation checklist at {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}. Preserve completed tasks when resuming from {{result:read-checklist}}. Include feature request, acceptance criteria, implementation guide, content-enrichment notes with source links/version assumptions when research is present, test plan, optional visual review plan, auth notes, design guidelines, resume notes, and actionable tasks with stable ids and status values todo/in_progress/done/blocked. Inputs: brief {{summary:prepare-feature-brief}}, research {{summary:initial-research}}, interview {{featureInterviewSummary:text=}}, detected commands {{result:detect-project-commands}}. Return only schema-valid JSON.",
+          "Create or update the canonical JSON implementation checklist at {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}. Preserve completed tasks when resuming from {{result:read-checklist}}. Include feature request, acceptance criteria, implementation guide, content-enrichment notes with source links/version assumptions when research is present, test plan, optional visual review plan, auth notes, design guidelines, resume notes, and actionable tasks with stable ids and status values todo/in_progress/done/blocked. Shape tasks for meaningful autonomous batches: add optional batchKey for tasks that should travel together, optional dependsOn/dependencies for strict prerequisites, likelyFiles when known, and task sizes that let up to {{maxTasksPerImplementationPass:number=3}} compatible tasks be completed in one implementation pass. Inputs: brief {{summary:prepare-feature-brief}}, research {{summary:initial-research}}, interview {{featureInterviewSummary:text=}}, detected commands {{result:detect-project-commands}}. Return only schema-valid JSON.",
       },
     },
     {
@@ -231,6 +232,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         path: "{{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}",
         jsonPath: "tasks",
         strategy: "start-to-end",
+        maxTasks: "{{maxTasksPerImplementationPass:number=3}}",
       },
     },
     {
@@ -247,7 +249,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Implement selected checklist task {{data:select-next-task:task}} from JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}} using checklist content {{data:specification-checklist:output}} or resumed checklist {{data:read-checklist:json}}, research {{summary:initial-research}}, git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-implementation-pass}}, and latest validation feedback {{result:validate-progress}}. Apply source-backed guidance for version-sensitive APIs or standards, keep changes scoped to {{implementationScope:text=auto-detect}}, follow existing project patterns, apply design guidelines {{designGuidelines:text=}}, follow auth instructions {{authInstructions:text=}}, update tests when relevant, and update the selected task/checklist JSON statuses and resume notes only when work is actually done.",
+        "Implement the selected checklist task batch {{data:select-next-task:tasks}} from JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}; primary task for compatibility is {{data:select-next-task:task}}. Complete every compatible selected task in this pass unless blocked by a real dependency, risk, or failing evidence. Use checklist content {{data:specification-checklist:output}} or resumed checklist {{data:read-checklist:json}}, research {{summary:initial-research}}, git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-implementation-pass}}, and latest validation feedback {{result:validate-progress}}. Apply source-backed guidance for version-sensitive APIs or standards, keep changes scoped to {{implementationScope:text=auto-detect}}, follow existing project patterns, apply design guidelines {{designGuidelines:text=}}, follow auth instructions {{authInstructions:text=}}, update tests when relevant, and update the selected tasks/checklist JSON statuses and resume notes only when work is actually done.",
     },
     {
       id: "count-implementation-pass",
@@ -362,7 +364,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
         prompt:
-          "Validate implementation against JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}, selected task {{data:select-next-task:task}}, feature request, acceptance criteria, research, interview, verification result {{result:run-configured-checks}}, git diff {{result:git-diff-summary}}, and visual review {{result:visual-analysis}} when present. Judge only the active feature, selected task, checklist file, resume notes, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that feature/task unless they directly break verification or acceptance criteria. Confirm done tasks are truly implemented, tests are meaningful or justified, optional checks were skipped only because configuration disabled them or required inputs were blank, and resume notes are current. Return JSON decision DONE when all checklist tasks are done and acceptance criteria pass. Return CONTINUE when more work remains. Return RETRY when the last pass needs correction. Return ERROR when blocked by missing context, unsafe changes in the active feature/task, failing verification that cannot be fixed, or repeated ambiguity. Include confidence, summary, evidence, and remainingWork.",
+          "Validate implementation against JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}, selected task batch {{data:select-next-task:tasks}}, feature request, acceptance criteria, research, interview, verification result {{result:run-configured-checks}}, git diff {{result:git-diff-summary}}, and visual review {{result:visual-analysis}} when present. Judge only the active feature, selected task batch, checklist file, resume notes, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that feature/task batch unless they directly break verification or acceptance criteria. Confirm done tasks are truly implemented, tests are meaningful or justified, optional checks were skipped only because configuration disabled them or required inputs were blank, and resume notes are current. Return JSON decision DONE when all checklist tasks are done and acceptance criteria pass. Return CONTINUE when more work remains. Return RETRY when the last pass needs correction. Return ERROR when blocked by missing context, unsafe changes in the active feature/task batch, failing verification that cannot be fixed, or repeated ambiguity. Include confidence, summary, evidence, and remainingWork.",
       },
     },
     {
@@ -463,7 +465,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 7,
+  version: 8,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],

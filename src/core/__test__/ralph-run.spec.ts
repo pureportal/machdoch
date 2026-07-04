@@ -1320,6 +1320,106 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("selects a bounded compatible JSON task batch", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-json-task-batch-"));
+
+    try {
+      await mkdir(join(workspace, "state"), { recursive: true });
+      await writeFile(
+        join(workspace, "state", "tasks.json"),
+        JSON.stringify(
+          {
+            tasks: [
+              {
+                id: "task-1",
+                title: "Create service",
+                status: "todo",
+                batchKey: "service",
+              },
+              {
+                id: "task-2",
+                title: "Wire service tests",
+                status: "todo",
+                batchKey: "service",
+                dependsOn: ["task-1"],
+              },
+              {
+                id: "task-3",
+                title: "Update UI",
+                status: "todo",
+                batchKey: "ui",
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "select-task",
+              type: "UTILITY",
+              title: "Select Task",
+              utility: {
+                type: "SELECT_JSON_TASK",
+                path: "state/tasks.json",
+                jsonPath: "tasks",
+                strategy: "start-to-end",
+                maxTasks: 3,
+              },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            { id: "start-to-select", from: "start", fromOutput: "SUCCESS", to: "select-task" },
+            { id: "select-to-success", from: "select-task", fromOutput: "SELECTED", to: "success" },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 5 },
+      );
+
+      const selectResult = result.blockResults.find(
+        (entry) => entry.blockId === "select-task",
+      );
+      const storedTasks = JSON.parse(
+        await readFile(join(workspace, "state", "tasks.json"), "utf8"),
+      ) as { tasks: Array<{ id: string; status: string; attempts?: number }> };
+
+      expect(result.status).toBe("completed");
+      expect(selectResult).toMatchObject({
+        output: "SELECTED",
+        data: expect.objectContaining({
+          task: expect.objectContaining({ id: "task-1" }),
+          tasks: [
+            expect.objectContaining({ id: "task-1", status: "in_progress" }),
+            expect.objectContaining({ id: "task-2", status: "in_progress" }),
+          ],
+          indexes: [0, 1],
+          count: 2,
+          batch: expect.objectContaining({
+            taskIds: ["task-1", "task-2"],
+          }),
+        }),
+      });
+      expect(storedTasks.tasks.map((task) => [task.id, task.status, task.attempts]))
+        .toEqual([
+          ["task-1", "in_progress", 1],
+          ["task-2", "in_progress", 1],
+          ["task-3", "todo", undefined],
+        ]);
+      expect(executeTask).not.toHaveBeenCalled();
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("retries PROMPT_JSON until schema-valid JSON is produced", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-prompt-json-"));
 
@@ -1527,12 +1627,31 @@ describe("runRalphFlow", () => {
               "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
             ].join("; ")
           : "pnpm typecheck && pnpm lint && pnpm test";
+      const expectedFocusedVerificationCommand =
+        process.platform === "win32"
+          ? [
+              "pnpm typecheck",
+              "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
+            ].join("; ")
+          : "pnpm typecheck";
+      const expectedStandardVerificationCommand =
+        process.platform === "win32"
+          ? [
+              "pnpm typecheck",
+              "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
+              "pnpm lint",
+              "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
+            ].join("; ")
+          : "pnpm typecheck && pnpm lint";
 
       expect(result.status).toBe("completed");
       expect(result.blockResults.find((entry) => entry.blockId === "detect"))
         .toMatchObject({
           output: "SUCCESS",
           data: expect.objectContaining({
+            focusedVerificationCommand: expectedFocusedVerificationCommand,
+            standardVerificationCommand: expectedStandardVerificationCommand,
+            broadVerificationCommand: expectedVerificationCommand,
             verificationCommand: expectedVerificationCommand,
           }),
         });
@@ -1612,6 +1731,15 @@ describe("runRalphFlow", () => {
                 command: "pnpm lint",
               }),
             ]),
+            focusedVerificationCommand:
+              process.platform === "win32"
+                ? [
+                    "pnpm typecheck",
+                    "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
+                  ].join("; ")
+                : "pnpm typecheck",
+            standardVerificationCommand: expectedVerificationCommand,
+            broadVerificationCommand: expectedVerificationCommand,
             verificationCommand: expectedVerificationCommand,
           }),
         });
@@ -2560,7 +2688,8 @@ describe("runRalphFlow", () => {
               utility: {
                 type: "TRANSFORM_JSON",
                 input: "{{data:read:content}}",
-                expression: "({ doubled: input.value * 2 })",
+                expression:
+                  "({ doubled: input.value * 2, readOutput: context.resultsByBlock.get('read')?.output })",
               },
             },
             {
@@ -2668,7 +2797,9 @@ describe("runRalphFlow", () => {
           expect.objectContaining({
             blockId: "transform",
             output: "SUCCESS",
-            data: expect.objectContaining({ output: { doubled: 4 } }),
+            data: expect.objectContaining({
+              output: { doubled: 4, readOutput: "SUCCESS" },
+            }),
           }),
           expect.objectContaining({
             blockId: "validate-json",

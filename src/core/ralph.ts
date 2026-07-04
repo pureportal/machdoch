@@ -171,6 +171,8 @@ import type {
   TaskExecutionProgress,
   TaskExecutionProgressHandler,
   TaskExecutionResult,
+  TaskExecutionTimelineEventKind,
+  TaskExecutionTokenUsage,
 } from "./types.js";
 import type {
   ModelProvider,
@@ -491,6 +493,7 @@ export interface RalphUtilityConfig {
   pattern?: string;
   glob?: string;
   maxResults?: number;
+  maxTasks?: number | string;
   maxDepth?: number;
   excludePaths?: string;
   flowAlias?: string;
@@ -791,6 +794,7 @@ export interface RalphBlockExecutionResult {
   output: RalphExecutionOutput;
   status: "completed" | "error" | "skipped";
   attempt: number;
+  durationMs?: number;
   result?: TaskExecutionResult;
   progress?: RalphRunRecordBlockProgressEvent[];
   data?: unknown;
@@ -803,14 +807,19 @@ export interface RalphRunRecordBlockProgressEvent {
   timestamp: string;
   kind: "model-stream" | "timeline" | "action-output" | "message";
   label: string;
+  timelineKind?: TaskExecutionTimelineEventKind;
   streamKind?: NonNullable<TaskExecutionProgress["modelStream"]>["kind"];
   phase?: NonNullable<TaskExecutionProgress["timelineEvent"]>["phase"];
   tone?: NonNullable<TaskExecutionProgress["timelineEvent"]>["tone"];
+  provider?: ModelProvider;
+  model?: string;
   complete?: boolean;
   toolName?: string;
   stream?: TaskActionOutput["stream"];
   content?: string;
   detail?: string;
+  tokenUsage?: TaskExecutionTokenUsage;
+  metadata?: Record<string, string | number | boolean>;
 }
 
 export type RalphRunEvent =
@@ -971,6 +980,7 @@ export interface RalphRunRecordBlock {
   output: RalphExecutionOutput;
   status: RalphBlockExecutionResult["status"];
   attempt: number;
+  durationMs?: number;
   task?: string;
   executionStatus?: TaskExecutionResult["status"];
   reason?: string;
@@ -2499,8 +2509,15 @@ const createRalphBlockProgressEvent = (
       timestamp,
       kind: "timeline",
       label: progress.timelineEvent.label,
+      timelineKind: progress.timelineEvent.kind,
       phase: progress.timelineEvent.phase,
       ...(progress.timelineEvent.tone ? { tone: progress.timelineEvent.tone } : {}),
+      ...(progress.timelineEvent.provider
+        ? { provider: progress.timelineEvent.provider }
+        : {}),
+      ...(progress.timelineEvent.model
+        ? { model: progress.timelineEvent.model }
+        : {}),
       ...(progress.timelineEvent.toolName
         ? { toolName: progress.timelineEvent.toolName }
         : {}),
@@ -2508,6 +2525,12 @@ const createRalphBlockProgressEvent = (
         ? {
             detail: truncateRalphBlockProgressText(progress.timelineEvent.detail),
           }
+        : {}),
+      ...(progress.timelineEvent.tokenUsage
+        ? { tokenUsage: progress.timelineEvent.tokenUsage }
+        : {}),
+      ...(progress.timelineEvent.metadata
+        ? { metadata: progress.timelineEvent.metadata }
         : {}),
     };
   }
@@ -4526,42 +4549,132 @@ const getJsonTaskStatus = (task: Record<string, unknown>): string => {
   return typeof task.status === "string" ? task.status.toLowerCase() : "todo";
 };
 
+const getJsonTaskId = (task: Record<string, unknown>): string | undefined => {
+  return typeof task.id === "string" && task.id.trim()
+    ? task.id.trim()
+    : undefined;
+};
+
+const getJsonTaskStringList = (
+  task: Record<string, unknown>,
+  keys: readonly string[],
+): string[] => {
+  const values: string[] = [];
+
+  for (const key of keys) {
+    const value = task[key];
+
+    if (typeof value === "string" && value.trim()) {
+      values.push(value.trim());
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      values.push(
+        ...value.filter(
+          (entry): entry is string =>
+            typeof entry === "string" && entry.trim().length > 0,
+        ),
+      );
+    }
+  }
+
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+};
+
+const getJsonTaskDependencies = (task: Record<string, unknown>): string[] => {
+  return getJsonTaskStringList(task, [
+    "dependsOn",
+    "dependencies",
+    "prerequisites",
+  ]);
+};
+
+const getJsonTaskBatchKey = (
+  task: Record<string, unknown>,
+): string | undefined => {
+  const [batchKey] = getJsonTaskStringList(task, [
+    "batchKey",
+    "batch",
+    "phase",
+    "area",
+    "scope",
+    "epic",
+    "module",
+  ]);
+
+  return batchKey?.toLowerCase();
+};
+
+const getJsonTaskLikelyFiles = (task: Record<string, unknown>): string[] => {
+  return getJsonTaskStringList(task, [
+    "files",
+    "affectedFiles",
+    "likelyFiles",
+    "paths",
+  ]).map((value) => value.replace(/\\/gu, "/").toLowerCase());
+};
+
+const isCompletedJsonTask = (task: Record<string, unknown>): boolean => {
+  return ["done", "completed", "skipped"].includes(getJsonTaskStatus(task));
+};
+
+const isInProgressJsonTask = (task: Record<string, unknown>): boolean => {
+  return ["in_progress", "in-progress"].includes(getJsonTaskStatus(task));
+};
+
 const isSelectableJsonTask = (task: Record<string, unknown>): boolean => {
   return !["done", "completed", "skipped", "cancelled", "blocked"].includes(
     getJsonTaskStatus(task),
   );
 };
 
-const selectJsonTaskCandidate = (
-  tasks: Record<string, unknown>[],
+interface JsonTaskCandidate {
+  task: Record<string, unknown>;
+  index: number;
+}
+
+const haveSharedJsonTaskFiles = (
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): boolean => {
+  const leftFiles = new Set(getJsonTaskLikelyFiles(left));
+
+  return getJsonTaskLikelyFiles(right).some((file) => leftFiles.has(file));
+};
+
+const areJsonTaskDependenciesSatisfied = (
+  task: Record<string, unknown>,
+  doneIds: ReadonlySet<string>,
+  selectedIds: ReadonlySet<string> = new Set(),
+): boolean => {
+  return getJsonTaskDependencies(task).every(
+    (dependency) => doneIds.has(dependency) || selectedIds.has(dependency),
+  );
+};
+
+const sortJsonTaskCandidatesByStrategy = (
+  candidates: JsonTaskCandidate[],
   strategy: string | undefined,
-): { task: Record<string, unknown>; index: number } | undefined => {
-  const candidates = tasks
-    .map((task, index) => ({ task, index }))
-    .filter((candidate) => isSelectableJsonTask(candidate.task));
-
-  if (candidates.length === 0) {
-    return undefined;
-  }
-
+): JsonTaskCandidate[] => {
   switch (strategy) {
     case "random":
     case "random-seeded":
-      return candidates[Math.floor(Math.random() * candidates.length)];
+      return [...candidates];
     case "end-to-start":
-      return candidates[candidates.length - 1];
+      return [...candidates].sort((left, right) => right.index - left.index);
     case "priority":
       return [...candidates].sort(
         (left, right) =>
           Number(right.task.priority ?? 0) - Number(left.task.priority ?? 0),
-      )[0];
+      );
     case "least-recent":
     case "least-validated":
       return [...candidates].sort((left, right) =>
         String(left.task.updatedAt ?? left.task.selectedAt ?? "").localeCompare(
           String(right.task.updatedAt ?? right.task.selectedAt ?? ""),
         ),
-      )[0];
+      );
     case "risk-first": {
       const riskScore = (task: Record<string, unknown>): number => {
         switch (task.risk) {
@@ -4578,13 +4691,145 @@ const selectJsonTaskCandidate = (
 
       return [...candidates].sort(
         (left, right) => riskScore(right.task) - riskScore(left.task),
-      )[0];
+      );
     }
     case "start-to-end":
     case "round-robin":
     default:
-      return candidates[0];
+      return [...candidates].sort((left, right) => left.index - right.index);
   }
+};
+
+const selectJsonTaskCandidate = (
+  candidates: JsonTaskCandidate[],
+  strategy: string | undefined,
+): JsonTaskCandidate | undefined => {
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  if (strategy === "random" || strategy === "random-seeded") {
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  return sortJsonTaskCandidatesByStrategy(candidates, strategy)[0];
+};
+
+const getJsonTaskBatchCandidateOrder = (
+  candidates: JsonTaskCandidate[],
+  primary: JsonTaskCandidate,
+  strategy: string | undefined,
+): JsonTaskCandidate[] => {
+  if (strategy === "end-to-start") {
+    return candidates
+      .filter((candidate) => candidate.index < primary.index)
+      .sort((left, right) => right.index - left.index);
+  }
+
+  if (strategy === "start-to-end" || strategy === "round-robin" || !strategy) {
+    return candidates
+      .filter((candidate) => candidate.index > primary.index)
+      .sort((left, right) => left.index - right.index);
+  }
+
+  return sortJsonTaskCandidatesByStrategy(
+    candidates.filter((candidate) => candidate.index !== primary.index),
+    strategy,
+  );
+};
+
+const isJsonTaskBatchCompatible = (
+  primary: JsonTaskCandidate,
+  candidate: JsonTaskCandidate,
+  selected: readonly JsonTaskCandidate[],
+  strategy: string | undefined,
+): boolean => {
+  const primaryBatchKey = getJsonTaskBatchKey(primary.task);
+  const candidateBatchKey = getJsonTaskBatchKey(candidate.task);
+
+  if (primaryBatchKey || candidateBatchKey) {
+    return primaryBatchKey !== undefined && primaryBatchKey === candidateBatchKey;
+  }
+
+  if (haveSharedJsonTaskFiles(primary.task, candidate.task)) {
+    return true;
+  }
+
+  const lastSelected = selected.at(-1) ?? primary;
+  if (strategy === "end-to-start") {
+    return candidate.index === lastSelected.index - 1;
+  }
+
+  if (strategy === "start-to-end" || strategy === "round-robin" || !strategy) {
+    return candidate.index === lastSelected.index + 1;
+  }
+
+  return strategy === "priority" ||
+    strategy === "risk-first" ||
+    strategy === "least-recent" ||
+    strategy === "least-validated";
+};
+
+const selectJsonTaskCandidates = (
+  tasks: Record<string, unknown>[],
+  strategy: string | undefined,
+  maxTasks: number,
+): JsonTaskCandidate[] => {
+  const candidates = tasks
+    .map((task, index) => ({ task, index }))
+    .filter((candidate) => isSelectableJsonTask(candidate.task));
+  const doneIds = new Set(
+    tasks
+      .filter(isCompletedJsonTask)
+      .map(getJsonTaskId)
+      .filter((id): id is string => id !== undefined),
+  );
+  const primaryCandidates = candidates.filter((candidate) =>
+    areJsonTaskDependenciesSatisfied(candidate.task, doneIds),
+  );
+  const primary = selectJsonTaskCandidate(primaryCandidates, strategy);
+
+  if (!primary) {
+    return [];
+  }
+
+  const batchLimit = Math.max(1, Math.trunc(maxTasks));
+  if (batchLimit === 1 || isInProgressJsonTask(primary.task)) {
+    return [primary];
+  }
+
+  const selected: JsonTaskCandidate[] = [primary];
+  const selectedIds = new Set<string>();
+  const primaryId = getJsonTaskId(primary.task);
+  if (primaryId) {
+    selectedIds.add(primaryId);
+  }
+
+  for (const candidate of getJsonTaskBatchCandidateOrder(candidates, primary, strategy)) {
+    if (selected.length >= batchLimit) {
+      break;
+    }
+
+    if (isInProgressJsonTask(candidate.task)) {
+      continue;
+    }
+
+    if (!isJsonTaskBatchCompatible(primary, candidate, selected, strategy)) {
+      continue;
+    }
+
+    if (!areJsonTaskDependenciesSatisfied(candidate.task, doneIds, selectedIds)) {
+      continue;
+    }
+
+    selected.push(candidate);
+    const taskId = getJsonTaskId(candidate.task);
+    if (taskId) {
+      selectedIds.add(taskId);
+    }
+  }
+
+  return selected;
 };
 
 const executeSelectJsonTaskUtilityBlock = async (
@@ -4624,9 +4869,17 @@ const executeSelectJsonTaskUtilityBlock = async (
       );
     }
 
-    const selected = selectJsonTaskCandidate(taskArray.tasks, utility.strategy);
+    const maxTasks =
+      typeof utility.maxTasks === "number" && Number.isFinite(utility.maxTasks)
+        ? utility.maxTasks
+        : 1;
+    const selectedTasks = selectJsonTaskCandidates(
+      taskArray.tasks,
+      utility.strategy,
+      maxTasks,
+    );
 
-    if (!selected) {
+    if (selectedTasks.length === 0) {
       return createUtilityResult(
         block,
         "EMPTY",
@@ -4637,28 +4890,44 @@ const executeSelectJsonTaskUtilityBlock = async (
     }
 
     const now = new Date().toISOString();
-    const currentAttempts =
-      typeof selected.task.attempts === "number" ? selected.task.attempts : 0;
+    for (const selected of selectedTasks) {
+      const currentAttempts =
+        typeof selected.task.attempts === "number" ? selected.task.attempts : 0;
 
-    selected.task.status =
-      getJsonTaskStatus(selected.task) === "in_progress"
-        ? selected.task.status
-        : "in_progress";
-    selected.task.selectedAt = now;
-    selected.task.updatedAt = now;
-    selected.task.attempts = currentAttempts + 1;
+      selected.task.status =
+        isInProgressJsonTask(selected.task) ? selected.task.status : "in_progress";
+      selected.task.selectedAt = now;
+      selected.task.updatedAt = now;
+      selected.task.attempts = currentAttempts + 1;
+    }
 
     await writeUtilityJsonOutput(path, json);
+
+    const primary = selectedTasks[0]!;
+    const taskIds = selectedTasks.map((selected) =>
+      getJsonTaskId(selected.task) ?? String(selected.index),
+    );
 
     return createUtilityResult(
       block,
       "SELECTED",
-      `${block.title} selected ${String(selected.task.id ?? selected.index)}.`,
+      selectedTasks.length === 1
+        ? `${block.title} selected ${taskIds[0]}.`
+        : `${block.title} selected ${selectedTasks.length} task(s): ${taskIds.join(", ")}.`,
       {
         path,
         jsonPath: taskArray.normalizedPath,
-        task: selected.task,
-        index: selected.index,
+        task: primary.task,
+        index: primary.index,
+        tasks: selectedTasks.map((selected) => selected.task),
+        indexes: selectedTasks.map((selected) => selected.index),
+        count: selectedTasks.length,
+        maxTasks: Math.max(1, Math.trunc(maxTasks)),
+        batch: {
+          tasks: selectedTasks.map((selected) => selected.task),
+          indexes: selectedTasks.map((selected) => selected.index),
+          taskIds,
+        },
         remainingCount: taskArray.tasks.filter(isSelectableJsonTask).length,
         json,
       },
@@ -5336,6 +5605,7 @@ const executeSelectScopeUtilityBlock = async (
       {
         registryPath,
         scope: selection.scope,
+        ...(selection.scopeCluster ? { scopeCluster: selection.scopeCluster } : {}),
         strategy,
         reusedCurrentScope: selection.reusedCurrentScope,
         cycleStarted: selection.cycleStarted,
@@ -7537,19 +7807,50 @@ const executeDetectProjectCommandsUtilityBlock = async (
       );
     }
 
-    const verificationCommand = commands
+    const verificationCommands = commands
       .filter((entry) =>
         entry.kind === "typecheck" ||
         entry.kind === "lint" ||
         entry.kind === "test"
       )
       .map((entry) => entry.command);
+    const typecheckCommands = commands
+      .filter((entry) => entry.kind === "typecheck")
+      .map((entry) => entry.command);
+    const lintCommands = commands
+      .filter((entry) => entry.kind === "lint")
+      .map((entry) => entry.command);
+    const testCommands = commands
+      .filter((entry) => entry.kind === "test")
+      .map((entry) => entry.command);
+    const focusedVerificationCommands =
+      typecheckCommands.length > 0
+        ? typecheckCommands
+        : testCommands.length > 0
+          ? testCommands.slice(0, 1)
+          : verificationCommands.slice(0, 1);
+    const standardVerificationCommands = [
+      ...typecheckCommands,
+      ...(lintCommands.length > 0 ? lintCommands : testCommands.slice(0, 1)),
+    ];
+    const broadVerificationCommands = verificationCommands;
     const data = {
       rootPath,
       requestedRootPath,
       manifests,
       commands,
-      verificationCommand: createVerificationCommand(verificationCommand),
+      focusedVerificationCommand: createVerificationCommand(
+        focusedVerificationCommands,
+      ),
+      standardVerificationCommand: createVerificationCommand(
+        standardVerificationCommands.length > 0
+          ? standardVerificationCommands
+          : focusedVerificationCommands,
+      ),
+      broadVerificationCommand: createVerificationCommand(
+        broadVerificationCommands,
+      ),
+      verificationCommand: createVerificationCommand(broadVerificationCommands),
       detectedAt: new Date().toISOString(),
     };
     const outputPath = await maybeWriteJsonArtifact(
@@ -7570,6 +7871,202 @@ const executeDetectProjectCommandsUtilityBlock = async (
   }
 };
 
+const addTokenUsage = (
+  total: TaskExecutionTokenUsage,
+  usage: TaskExecutionTokenUsage | undefined,
+): TaskExecutionTokenUsage => {
+  if (!usage) {
+    return total;
+  }
+
+  return {
+    inputTokens: (total.inputTokens ?? 0) + (usage.inputTokens ?? 0),
+    outputTokens: (total.outputTokens ?? 0) + (usage.outputTokens ?? 0),
+    totalTokens: (total.totalTokens ?? 0) + (usage.totalTokens ?? 0),
+    cachedInputTokens:
+      (total.cachedInputTokens ?? 0) + (usage.cachedInputTokens ?? 0),
+    reasoningTokens:
+      (total.reasoningTokens ?? 0) + (usage.reasoningTokens ?? 0),
+  };
+};
+
+const omitEmptyTokenUsage = (
+  usage: TaskExecutionTokenUsage,
+): TaskExecutionTokenUsage | undefined => {
+  const entries = Object.entries(usage).filter(
+    ([, value]) => typeof value === "number" && value > 0,
+  );
+
+  return entries.length > 0
+    ? (Object.fromEntries(entries) as TaskExecutionTokenUsage)
+    : undefined;
+};
+
+const getNumericMetadata = (
+  metadata: Record<string, string | number | boolean> | undefined,
+  key: string,
+): number => {
+  const value = metadata?.[key];
+
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+};
+
+const createBlockPerformanceMetrics = (
+  result: RalphBlockExecutionResult,
+): Record<string, unknown> => {
+  const progress = result.progress ?? [];
+  let modelCallCount = 0;
+  let monitorPassCount = 0;
+  let modelCallDurationMs = 0;
+  let toolCallDurationMs = 0;
+  let tokenUsage: TaskExecutionTokenUsage = {};
+
+  for (const event of progress) {
+    if (event.timelineKind === "model-call" && event.phase === "started") {
+      modelCallCount += 1;
+    }
+
+    if (event.timelineKind === "validator" && event.phase === "started") {
+      monitorPassCount += 1;
+    }
+
+    if (
+      event.timelineKind === "model-call" &&
+      (event.phase === "completed" || event.phase === "failed")
+    ) {
+      modelCallDurationMs += getNumericMetadata(event.metadata, "durationMs");
+    }
+
+    if (
+      event.timelineKind === "tool-call" &&
+      (event.phase === "completed" || event.phase === "failed")
+    ) {
+      toolCallDurationMs += getNumericMetadata(event.metadata, "durationMs");
+    }
+
+    tokenUsage = addTokenUsage(tokenUsage, event.tokenUsage);
+  }
+
+  const metrics = {
+    ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+    ...(isRecord(result.data) && typeof result.data.command === "string"
+      ? { commandDurationMs: result.durationMs ?? 0 }
+      : {}),
+    ...(modelCallCount > 0 ? { modelCallCount } : {}),
+    ...(monitorPassCount > 0 ? { monitorPassCount } : {}),
+    ...(modelCallDurationMs > 0 ? { modelCallDurationMs } : {}),
+    ...(toolCallDurationMs > 0 ? { toolCallDurationMs } : {}),
+    ...(omitEmptyTokenUsage(tokenUsage)
+      ? { tokenUsage: omitEmptyTokenUsage(tokenUsage) }
+      : {}),
+  };
+
+  return metrics;
+};
+
+const getStringArrayLength = (
+  value: Record<string, unknown>,
+  key: string,
+): number => {
+  const entry = value[key];
+
+  return Array.isArray(entry)
+    ? entry.filter((item) => typeof item === "string").length
+    : 0;
+};
+
+const getChangedFileCount = (result: RalphBlockExecutionResult): number => {
+  if (!isRecord(result.data)) {
+    return 0;
+  }
+
+  const counts = [
+    getStringArrayLength(result.data, "changedFiles"),
+    getStringArrayLength(result.data, "changedSinceBaselineFiles"),
+    Array.isArray(result.data.files) ? result.data.files.length : 0,
+  ];
+
+  return Math.max(...counts);
+};
+
+const getOutputRecord = (
+  result: RalphBlockExecutionResult | undefined,
+): Record<string, unknown> | undefined => {
+  if (!isRecord(result?.data)) {
+    return undefined;
+  }
+
+  return isRecord(result.data.output) ? result.data.output : undefined;
+};
+
+const createFinalReportPerformanceSummary = (
+  blockResults: readonly RalphBlockExecutionResult[],
+): Record<string, unknown> => {
+  let totalDurationMs = 0;
+  let commandDurationMs = 0;
+  let modelCallCount = 0;
+  let monitorPassCount = 0;
+  let modelCallDurationMs = 0;
+  let toolCallDurationMs = 0;
+  let tokenUsage: TaskExecutionTokenUsage = {};
+  let changedFileCount = 0;
+  let validationTier = "";
+  let validationCommand = "";
+
+  for (const result of blockResults) {
+    const metrics = createBlockPerformanceMetrics(result);
+
+    totalDurationMs += result.durationMs ?? 0;
+    commandDurationMs +=
+      typeof metrics.commandDurationMs === "number"
+        ? metrics.commandDurationMs
+        : 0;
+    modelCallCount +=
+      typeof metrics.modelCallCount === "number" ? metrics.modelCallCount : 0;
+    monitorPassCount +=
+      typeof metrics.monitorPassCount === "number" ? metrics.monitorPassCount : 0;
+    modelCallDurationMs +=
+      typeof metrics.modelCallDurationMs === "number"
+        ? metrics.modelCallDurationMs
+        : 0;
+    toolCallDurationMs +=
+      typeof metrics.toolCallDurationMs === "number"
+        ? metrics.toolCallDurationMs
+        : 0;
+    tokenUsage = addTokenUsage(
+      tokenUsage,
+      isRecord(metrics.tokenUsage)
+        ? (metrics.tokenUsage as TaskExecutionTokenUsage)
+        : undefined,
+    );
+    changedFileCount = Math.max(changedFileCount, getChangedFileCount(result));
+
+    const output = getOutputRecord(result);
+    if (!validationTier && typeof output?.tier === "string") {
+      validationTier = output.tier;
+    }
+    if (!validationCommand && typeof output?.command === "string") {
+      validationCommand = output.command;
+    }
+  }
+
+  return {
+    blockCount: blockResults.length,
+    totalDurationMs,
+    commandDurationMs,
+    modelCallCount,
+    monitorPassCount,
+    modelCallDurationMs,
+    toolCallDurationMs,
+    changedFileCount,
+    ...(validationTier ? { validationTier } : {}),
+    ...(validationCommand ? { validationCommand } : {}),
+    ...(omitEmptyTokenUsage(tokenUsage)
+      ? { tokenUsage: omitEmptyTokenUsage(tokenUsage) }
+      : {}),
+  };
+};
+
 const createFinalReportMarkdown = (
   flow: RalphFlow,
   block: RalphUtilityBlock,
@@ -7585,6 +8082,12 @@ const createFinalReportMarkdown = (
     `- Run: ${String(report.runId ?? "")}`,
     `- Generated: ${String(report.generatedAt ?? "")}`,
     "",
+    "## Performance",
+    "",
+    "```json",
+    JSON.stringify(report.performance ?? null, null, 2),
+    "```",
+    "",
     "## Last Result",
     "",
     "```json",
@@ -7598,7 +8101,12 @@ const createFinalReportMarkdown = (
         return "- Unknown block result";
       }
 
-      return `- ${String(entry.blockId ?? "unknown")}: ${String(entry.output ?? "")} - ${String(entry.summary ?? "")}`;
+      const duration =
+        typeof entry.durationMs === "number"
+          ? ` (${entry.durationMs} ms)`
+          : "";
+
+      return `- ${String(entry.blockId ?? "unknown")}: ${String(entry.output ?? "")}${duration} - ${String(entry.summary ?? "")}`;
     }),
     "",
   ];
@@ -7614,12 +8122,15 @@ const executeFinalReportUtilityBlock = async (
   context: RalphResultContext,
 ): Promise<RalphBlockExecutionResult> => {
   try {
-    const blockResults = Array.from(context.resultsByBlock.values()).map((result) => ({
+    const rawBlockResults = Array.from(context.resultsByBlock.values());
+    const blockResults = rawBlockResults.map((result) => ({
       blockId: result.blockId,
       output: result.output,
       status: result.status,
+      durationMs: result.durationMs,
       summary: result.summary,
       error: result.error,
+      metrics: createBlockPerformanceMetrics(result),
     }));
     const report = {
       flowId: flow.id,
@@ -7628,6 +8139,7 @@ const executeFinalReportUtilityBlock = async (
       generatedAt: new Date().toISOString(),
       variables: context.variables,
       lastResult: context.lastResult,
+      performance: createFinalReportPerformanceSummary(rawBlockResults),
       blockResults,
       runLog: context.runLog,
     };
@@ -7704,13 +8216,15 @@ const executeTransformJsonUtilityBlock = (
       "input",
       "variables",
       "lastResult",
+      "context",
       `"use strict"; return (${utility.expression ?? "input"});`,
     ) as (
       input: unknown,
       variables: Record<string, string>,
       lastResult: RalphBlockExecutionResult | undefined,
+      context: RalphResultContext,
     ) => unknown;
-    const output = evaluator(input, context.variables, context.lastResult);
+    const output = evaluator(input, context.variables, context.lastResult, context);
 
     return createUtilityResult(block, "SUCCESS", `${block.title} transformed JSON.`, {
       input,
@@ -8957,7 +9471,11 @@ export const runRalphFlow = async (
       });
     }
 
-    const result = stepResult;
+    const blockDurationMs = Date.now() - blockStartedAt;
+    const result: RalphBlockExecutionResult = {
+      ...stepResult,
+      durationMs: blockDurationMs,
+    };
     const consumedInput = getPendingInputForBlock(block, options);
 
     if (
@@ -8990,7 +9508,6 @@ export const runRalphFlow = async (
 
     blockResults.push(result);
     updateResultContext(resultContext, result);
-    const blockDurationMs = Date.now() - blockStartedAt;
     logger?.simple({
       kind: "block-output",
       message: result.summary,

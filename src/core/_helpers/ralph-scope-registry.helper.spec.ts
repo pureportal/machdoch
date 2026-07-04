@@ -324,4 +324,89 @@ describe("Ralph scope registry helpers", () => {
     expect(nextSelection.scope?.id).toBe("app");
     expect(nextSelection.reusedCurrentScope).toBe(false);
   });
+
+  it("returns a controlled dependency-aware cluster with related tests and config", () => {
+    const registry = parseRalphScopeRegistry(
+      {
+        schema: "machdoch.ralph.scopeRegistry",
+        schemaVersion: 1,
+        flowAlias: "autonomous-code-improvement-loop",
+        selection: {
+          strategy: "start-to-end",
+          cursor: 0,
+          cycle: 1,
+          currentScopeId: null,
+          completedScopeIds: [],
+        },
+        scopes: [
+          {
+            id: "app-src",
+            title: "App Source",
+            kind: "source-root",
+            status: "active",
+            paths: ["app/src"],
+            globs: ["app/src/**/*"],
+            tags: ["app", "source-root"],
+            priority: 90,
+            risk: "high",
+            evidence: ["app/src/index.ts"],
+          },
+          {
+            id: "app-tests",
+            title: "App Tests",
+            kind: "test",
+            status: "active",
+            paths: ["app/tests"],
+            globs: ["app/tests/**/*"],
+            tags: ["app", "test"],
+            priority: 40,
+            risk: "low",
+            evidence: ["app/tests/index.spec.ts"],
+          },
+          {
+            id: "repository-configuration",
+            title: "Repository Configuration",
+            kind: "config",
+            status: "active",
+            paths: ["package.json", "tsconfig.json"],
+            globs: ["package.json", "tsconfig.json"],
+            tags: ["config", "workspace"],
+            priority: 35,
+            risk: "medium",
+            evidence: ["package.json"],
+          },
+        ],
+      },
+      {
+        flowAlias: "autonomous-code-improvement-loop",
+        strategy: "start-to-end",
+        now: "2026-07-03T07:00:00.000Z",
+      },
+    );
+
+    const selection = selectRalphScopeFromRegistry(registry, {
+      strategy: "start-to-end",
+      now: "2026-07-03T07:01:00.000Z",
+    });
+
+    expect(selection.scope?.id).toBe("app-src");
+    expect(selection.scopeCluster).toMatchObject({
+      rootScopeId: "app-src",
+      risk: "high",
+    });
+    expect(selection.scopeCluster?.scopeIds).toEqual([
+      "app-src",
+      "app-tests",
+      "repository-configuration",
+    ]);
+    expect(selection.scopeCluster?.paths).toEqual(
+      expect.arrayContaining(["app/src", "app/tests", "package.json"]),
+    );
+    expect(selection.scopeCluster?.rationale.join("\n")).toContain(
+      "adjacent tests",
+    );
+    expect(selection.scopeCluster?.rationale.join("\n")).toContain(
+      "shared project configuration",
+    );
+  });
 });

@@ -93,6 +93,7 @@ describe("createRalphRunRecord", () => {
       summary: longText,
       blockResults: [
         createBlockResult({
+          durationMs: 1234,
           summary: longText,
           markdown: longText,
           error: longText,
@@ -130,6 +131,17 @@ describe("createRalphRunRecord", () => {
               label: "Model reasoning",
               streamKind: "reasoning",
               content: longText,
+            },
+            {
+              timestamp: "2026-06-18T10:00:02.000Z",
+              kind: "timeline",
+              timelineKind: "model-call",
+              phase: "completed",
+              label: "Executor model call 1",
+              provider: "openai",
+              model: "gpt-5.2",
+              tokenUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+              metadata: { durationMs: 300, modelCall: 1 },
             },
           ],
         }),
@@ -190,6 +202,7 @@ describe("createRalphRunRecord", () => {
     expect(record.blockResults[0]).toMatchObject({
       blockId: "fix",
       executionStatus: "executed",
+      durationMs: 1234,
     });
     expect(record.blockResults[0]?.summary).toHaveLength(
       MAX_RALPH_RESULT_CHARS + TRUNCATION_MARKER.length,
@@ -220,6 +233,15 @@ describe("createRalphRunRecord", () => {
       kind: "model-stream",
       label: "Model reasoning",
       streamKind: "reasoning",
+    });
+    expect(record.blockResults[0]?.progress?.[1]).toMatchObject({
+      kind: "timeline",
+      timelineKind: "model-call",
+      phase: "completed",
+      provider: "openai",
+      model: "gpt-5.2",
+      tokenUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      metadata: { durationMs: 300, modelCall: 1 },
     });
     expect(record.blockResults[0]?.progress?.[0]?.content).toHaveLength(
       MAX_RALPH_RESULT_CHARS + TRUNCATION_MARKER.length,

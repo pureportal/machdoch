@@ -134,6 +134,12 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       default: "10",
       required: false,
     },
+    {
+      name: "maxTasksPerImplementationPass",
+      type: "number",
+      default: "3",
+      required: false,
+    },
   ],
   blocks: [
     {
@@ -325,7 +331,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Critique and improve the drafted feature goal from {{summary:draft-feature-goal}}. Strengthen product value, reduce ambiguity, make the scope implementable, remove risky or irrelevant work, add measurable acceptance criteria, include a resumable checklist, and ensure it fits featureStrategy={{featureStrategy:text=}}. If the draft does not contain a valuable, safe, non-duplicate feature, return status no_action with tasks [] and explain the reason in rationale instead of inventing work. Return JSON suitable for {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}} with stable task ids and status values todo/in_progress/done/blocked/no_action.",
+          "Critique and improve the drafted feature goal from {{summary:draft-feature-goal}}. Strengthen product value, reduce ambiguity, make the scope implementable, remove risky or irrelevant work, add measurable acceptance criteria, include a resumable checklist, and ensure it fits featureStrategy={{featureStrategy:text=}}. Shape tasks for meaningful autonomous batches: use stable task ids, status values todo/in_progress/done/blocked/no_action, optional batchKey for tasks that should travel together, optional dependsOn/dependencies for strict prerequisites, likelyFiles when known, and task sizes that let up to {{maxTasksPerImplementationPass:number=3}} compatible tasks be completed in one implementation pass. If the draft does not contain a valuable, safe, non-duplicate feature, return status no_action with tasks [] and explain the reason in rationale instead of inventing work. Return JSON suitable for {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}.",
       },
     },
     {
@@ -382,6 +388,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
         path: "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
         jsonPath: "tasks",
         strategy: "start-to-end",
+        maxTasks: "{{maxTasksPerImplementationPass:number=3}}",
       },
     },
     {
@@ -411,7 +418,34 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Implement the selected active-goal task {{data:select-next-task:task}} from {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}. Use git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-implementation-pass}}, and latest validation feedback {{result:validate-goal}}. Preserve existing behavior, follow local patterns, keep changes scoped, avoid excluded areas {{excludedAreas:text=}}, use authInstructions={{authInstructions:text=}} and designGuidelines={{designGuidelines:text=}}, add or update tests where appropriate, and update the selected task plus goal JSON checklist with completed items and resume notes.",
+        "Implement the selected active-goal task batch {{data:select-next-task:tasks}} from {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}; primary task for compatibility is {{data:select-next-task:task}}. Complete every compatible selected task in this pass unless blocked by a real dependency, risk, or failing evidence. Use git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-implementation-pass}}, latest validation feedback {{result:validate-goal}}, and latest work-yield analysis {{data:work-yield-analysis:output}}. Preserve existing behavior, follow local patterns, keep changes scoped, avoid excluded areas {{excludedAreas:text=}}, use authInstructions={{authInstructions:text=}} and designGuidelines={{designGuidelines:text=}}, add or update tests where appropriate, and update each selected task plus goal JSON checklist with completed items and resume notes. If no implementation files can be changed safely, leave the selected tasks unfinished and explain the blocker instead of only changing the goal JSON.",
+    },
+    {
+      id: "work-yield-analysis",
+      title: "Assess Work Yield",
+      position: { x: 3440, y: -190 },
+      size: { width: 300, height: 190 },
+      type: "UTILITY",
+      utility: {
+        type: "TRANSFORM_JSON",
+        input: "{}",
+        expression:
+          "(() => { const diffResult = context.resultsByBlock?.get?.('git-diff-summary'); const baselineResult = context.resultsByBlock?.get?.('git-snapshot-before'); const currentFiles = Array.isArray(diffResult?.data?.files) ? diffResult.data.files : []; const baselineFiles = Array.isArray(baselineResult?.data?.files) ? baselineResult.data.files : []; const normalize = (value) => String(value ?? '').replace(/\\\\/gu, '/').replace(/^\\.\\/+/, ''); const baseline = new Map(baselineFiles.filter((file) => file && typeof file.path === 'string').map((file) => [normalize(file.path), file.signature])); const changedSinceBaselineFiles = currentFiles.filter((file) => file && typeof file.path === 'string' && baseline.get(normalize(file.path)) !== file.signature).map((file) => normalize(file.path)); const stateFile = normalize(variables.goalFilePath || '.machdoch/autonomous-features/active-goal.json'); const implementationFiles = changedSinceBaselineFiles.filter((path) => path !== stateFile); const selectedTasks = context.resultsByBlock?.get?.('select-next-task')?.data?.tasks; const selectedTaskCount = Array.isArray(selectedTasks) ? selectedTasks.length : 1; const diffErrored = diffResult?.output === 'ERROR'; const onlyStateFileChanged = changedSinceBaselineFiles.length > 0 && implementationFiles.length === 0; const shouldVerify = diffErrored || implementationFiles.length > 0; return { shouldVerify, diffOutput: diffResult?.output ?? '', selectedTaskCount, stateFile, changedSinceBaselineCount: changedSinceBaselineFiles.length, changedSinceBaselineFiles, implementationFileCount: implementationFiles.length, implementationFiles, onlyStateFileChanged, baselineFileCount: baselineFiles.length, currentFileCount: currentFiles.length, reason: shouldVerify ? (diffErrored ? 'Git diff summary failed; keep verification path available.' : 'Implementation changed files beyond the flow state file since the pre-pass snapshot.') : (onlyStateFileChanged ? 'Only the active goal JSON changed; skip expensive verification and let validation request real implementation work.' : 'Implementation produced no file changes beyond the pre-pass snapshot; skip expensive verification and let validation request another implementation pass.') }; })()",
+      },
+    },
+    {
+      id: "work-yield-decision",
+      title: "Useful Work Produced?",
+      position: { x: 3440, y: 30 },
+      size: { width: 256, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          style: "javascript",
+          expression: "lastData?.shouldVerify === true",
+        },
+      },
     },
     {
       id: "count-implementation-pass",
@@ -526,7 +560,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
         prompt:
-          "Validate active goal JSON {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}} against implementation changes, selected task {{data:select-next-task:task}}, verification result {{result:run-verification}}, git diff {{result:git-diff-summary}}, visual review {{result:visual-review}}, and latest implementation summary. Judge only the active goal, selected task, goal file, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that goal/task unless they directly break verification of the active goal. Return JSON with decision DONE when the whole goal is completely implemented, verified or verification is explicitly skipped because no command is configured, and the goal file accurately records completion. Return CONTINUE when more tasks remain. Return RETRY when the last implementation pass needs correction. Return ERROR when blocked by missing context, unsafe changes in the active goal/task, failing verification that cannot be fixed, or repeated ambiguity. Include confidence, summary, evidence, and remainingWork.",
+          "Validate active goal JSON {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}} against implementation changes, selected task batch {{data:select-next-task:tasks}}, work-yield analysis {{data:work-yield-analysis:output}}, verification result {{result:run-verification}}, git diff {{result:git-diff-summary}}, visual review {{result:visual-review}}, and latest implementation summary. Judge only the active goal, selected task batch, goal file, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that goal/task batch unless they directly break verification of the active goal. If work-yield analysis reports no implementation files changed or only the active goal JSON changed, avoid DONE and request another implementation pass unless the selected task batch truly required no file changes. Return JSON with decision DONE when the whole goal is completely implemented, verified or verification is explicitly skipped because no command is configured or no implementation files changed, and the goal file accurately records completion. Return CONTINUE when more tasks remain. Return RETRY when the last implementation pass needs correction. Return ERROR when blocked by missing context, unsafe changes in the active goal/task batch, failing verification that cannot be fixed, or repeated ambiguity. Include confidence, summary, evidence, and remainingWork.",
       },
     },
     {
@@ -658,8 +692,16 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
     { id: "count-implementation-pass-continue", from: "count-implementation-pass", fromOutput: "CONTINUE", to: "implement-feature" },
     { id: "count-implementation-pass-limit", from: "count-implementation-pass", fromOutput: "LIMIT_REACHED", to: "blocked" },
     { id: "count-implementation-pass-error", from: "count-implementation-pass", fromOutput: "ERROR", to: "blocked" },
-    { id: "implementation-to-verification-decision", from: "implement-feature", fromOutput: "SUCCESS", to: "verification-decision" },
+    { id: "implementation-to-diff", from: "implement-feature", fromOutput: "SUCCESS", to: "git-diff-summary" },
     { id: "implementation-error", from: "implement-feature", fromOutput: "ERROR", to: "blocked" },
+    { id: "git-diff-success-to-work-yield", from: "git-diff-summary", fromOutput: "SUCCESS", to: "work-yield-analysis" },
+    { id: "git-diff-empty-to-work-yield", from: "git-diff-summary", fromOutput: "EMPTY", to: "work-yield-analysis" },
+    { id: "git-diff-error-to-work-yield", from: "git-diff-summary", fromOutput: "ERROR", to: "work-yield-analysis" },
+    { id: "work-yield-analysis-success", from: "work-yield-analysis", fromOutput: "SUCCESS", to: "work-yield-decision" },
+    { id: "work-yield-analysis-error", from: "work-yield-analysis", fromOutput: "ERROR", to: "verification-decision" },
+    { id: "work-yield-useful", from: "work-yield-decision", fromOutput: "MATCH", to: "verification-decision" },
+    { id: "work-yield-empty-to-validate", from: "work-yield-decision", fromOutput: "NO_MATCH", to: "validate-goal" },
+    { id: "work-yield-error-to-verification-decision", from: "work-yield-decision", fromOutput: "ERROR", to: "verification-decision" },
     { id: "verification-decision-run", from: "verification-decision", fromOutput: "MATCH", to: "run-verification" },
     { id: "verification-decision-skip", from: "verification-decision", fromOutput: "NO_MATCH", to: "visual-decision" },
     { id: "verification-decision-error", from: "verification-decision", fromOutput: "ERROR", to: "visual-decision" },
@@ -667,14 +709,11 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
     { id: "verification-failed-to-visual-decision", from: "run-verification", fromOutput: "FAILED", to: "visual-decision" },
     { id: "verification-error-to-visual-decision", from: "run-verification", fromOutput: "ERROR", to: "visual-decision" },
     { id: "visual-decision-run", from: "visual-decision", fromOutput: "MATCH", to: "visual-review" },
-    { id: "visual-decision-skip", from: "visual-decision", fromOutput: "NO_MATCH", to: "git-diff-summary" },
-    { id: "visual-decision-error", from: "visual-decision", fromOutput: "ERROR", to: "git-diff-summary" },
-    { id: "visual-success-to-diff", from: "visual-review", fromOutput: "SUCCESS", to: "git-diff-summary" },
-    { id: "visual-unavailable-to-diff", from: "visual-review", fromOutput: "UNAVAILABLE", to: "git-diff-summary" },
-    { id: "visual-error-to-diff", from: "visual-review", fromOutput: "ERROR", to: "git-diff-summary" },
-    { id: "git-diff-success-to-validate", from: "git-diff-summary", fromOutput: "SUCCESS", to: "validate-goal" },
-    { id: "git-diff-empty-to-validate", from: "git-diff-summary", fromOutput: "EMPTY", to: "validate-goal" },
-    { id: "git-diff-error-to-validate", from: "git-diff-summary", fromOutput: "ERROR", to: "validate-goal" },
+    { id: "visual-decision-skip", from: "visual-decision", fromOutput: "NO_MATCH", to: "validate-goal" },
+    { id: "visual-decision-error", from: "visual-decision", fromOutput: "ERROR", to: "validate-goal" },
+    { id: "visual-success-to-validate", from: "visual-review", fromOutput: "SUCCESS", to: "validate-goal" },
+    { id: "visual-unavailable-to-validate", from: "visual-review", fromOutput: "UNAVAILABLE", to: "validate-goal" },
+    { id: "visual-error-to-validate", from: "visual-review", fromOutput: "ERROR", to: "validate-goal" },
     { id: "validation-done-to-read-completed", from: "validate-goal", fromOutput: "DONE", to: "read-completed-goal" },
     { id: "validation-continue", from: "validate-goal", fromOutput: "CONTINUE", to: "select-next-task" },
     { id: "validation-retry", from: "validate-goal", fromOutput: "RETRY", to: "select-next-task" },
@@ -700,7 +739,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
 
 export const autonomousFeatureGenerationLoopStarterFlow = {
   id: "autonomous-feature-generation-loop",
-  version: 7,
+  version: 8,
   defaultAlias: "autonomous-feature-generation-loop",
   category: "Implementation",
   tags: ["autonomous", "feature", "loop"],

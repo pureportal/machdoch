@@ -123,39 +123,6 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       },
     },
     {
-      id: "analyze-selected-scope",
-      title: "Analyze Selected Scope",
-      position: { x: 2060, y: 0 },
-      size: { width: 300, height: 230 },
-      settings: {
-        workspace: { mode: "default" },
-        reasoning: "high",
-        attachments: [],
-        packs: [],
-        maxIterations: 2,
-      },
-      type: "UTILITY",
-      utility: {
-        type: "PROMPT_JSON",
-        outputPath:
-          "{{scopeAnalysisFile:path=.machdoch/ralph/code-improvements/scope-analysis.json}}",
-        maxAttempts: 2,
-        schema: {
-          type: "object",
-          required: ["scope", "signals", "constraints", "verification", "stopSignals"],
-          properties: {
-            scope: { type: "object" },
-            signals: { type: "array", items: { type: "string" } },
-            constraints: { type: "array", items: { type: "string" } },
-            verification: { type: "array", items: { type: "string" } },
-            stopSignals: { type: "array", items: { type: "string" } },
-          },
-        },
-        prompt:
-          "Inspect selected JSON scope {{result:select-scope}} without editing files. Use detected commands {{result:detect-project-commands}}, completed improvement history {{result:read-completed-improvements}}, implementationScope={{implementationScope:text=auto-detect}}, riskTolerance={{riskTolerance:text=moderate}}, and excludePaths={{excludePaths:text=}}. Identify concrete evidence for valuable code improvements: correctness defects, confusing behavior, reliability gaps, UX/accessibility issues, performance problems, weak error handling, missing tests, stale docs tied to behavior, or maintainability issues that block future changes. Also identify stop signals: no evidence-backed candidate, only speculative cleanup, only cosmetic churn, only premature abstractions, or work already completed. Return only schema-valid JSON.",
-      },
-    },
-    {
       id: "research-decision",
       title: "Use Online Research?",
       position: { x: 2400, y: -150 },
@@ -165,7 +132,8 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "CONDITION",
         condition: {
           style: "javascript",
-          expression: 'variables.enableOnlineResearch === "true"',
+          expression:
+            'variables.enableOnlineResearch === "true" && lastData?.output?.researchDecision?.needsResearch === true',
         },
       },
     },
@@ -184,11 +152,11 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Use content enrichment to sharpen the selected improvement scope. If search_web is available, run focused searches for current primary-source framework/library behavior, changelogs, release notes, accessibility guidance, performance recommendations, testing approaches, security advisories, and standards relevant to scope analysis {{data:analyze-selected-scope:output}}. Use fetch_url on the best official or maintainer pages before relying on them, and inspect local package/config metadata for version assumptions. Keep findings concise with source links, freshness/version notes, practical implications, and explicit non-findings. If web search is unavailable, say so and rely on local evidence plus provided URLs. Do not research broadly just to find extra work.",
+        "Use content enrichment only for the structured research decision in work package {{data:choose-improvement:output.researchDecision}} and selected package {{data:choose-improvement:output.selectedCandidate}}. If search_web is available, run focused searches for current primary-source framework/library behavior, changelogs, release notes, accessibility guidance, performance recommendations, testing approaches, security advisories, and standards relevant to the package. Use fetch_url on the best official or maintainer pages before relying on them, and inspect local package/config metadata for version assumptions. Keep findings concise with source links, freshness/version notes, practical implications, and explicit non-findings. If web search is unavailable, say so and rely on local evidence plus provided URLs. Do not research broadly just to find extra work.",
     },
     {
       id: "choose-improvement",
-      title: "Choose Improvement",
+      title: "Plan Improvement Package",
       position: { x: 3060, y: 0 },
       size: { width: 320, height: 250 },
       settings: {
@@ -206,15 +174,48 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         maxAttempts: 2,
         schema: {
           type: "object",
-          required: ["decision", "rationale", "selectedCandidate", "rejectedCandidates", "stopReason"],
+          required: [
+            "decision",
+            "rationale",
+            "scopeAnalysis",
+            "researchDecision",
+            "selectedCandidate",
+            "rejectedCandidates",
+            "stopReason",
+          ],
           properties: {
             decision: { type: "string" },
             rationale: { type: "string" },
+            scopeAnalysis: {
+              type: "object",
+              properties: {
+                scope: { type: "object" },
+                scopeCluster: { type: "object" },
+                signals: { type: "array", items: { type: "string" } },
+                constraints: { type: "array", items: { type: "string" } },
+                stopSignals: { type: "array", items: { type: "string" } },
+              },
+            },
+            researchDecision: {
+              type: "object",
+              required: ["needsResearch", "reason", "queries"],
+              properties: {
+                needsResearch: { type: "boolean" },
+                reason: { type: "string" },
+                queries: { type: "array", items: { type: "string" } },
+              },
+            },
             selectedCandidate: {
               type: "object",
               properties: {
                 id: { type: "string" },
                 title: { type: "string" },
+                relatedChanges: { type: "array", items: { type: "object" } },
+                affectedFiles: { type: "array", items: { type: "string" } },
+                acceptanceCriteria: { type: "array", items: { type: "string" } },
+                verificationPlan: { type: "array", items: { type: "string" } },
+                verificationTier: { type: "string" },
+                reviewTier: { type: "string" },
               },
             },
             rejectedCandidates: { type: "array", items: { type: "object" } },
@@ -222,7 +223,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Select exactly one autonomous code improvement for selected scope {{result:select-scope}}, or decide STOP for this selected scope only. Use scope analysis {{data:analyze-selected-scope:output}}, research {{summary:improvement-research}}, completed history {{result:read-completed-improvements}}, latest completed append {{result:append-completed-improvement}}, and policy {{improvementPolicy:text=}}. Return decision IMPLEMENT only when the candidate has a stable kebab-case id, title, concrete evidence, source-backed or local user/maintainer value, bounded scope, a clear currentBehavior and proposedBehavior, acceptanceCriteria, risk assessment, affectedFiles, verificationPlan, and rollbackNotes. Behavior changes are allowed only when they improve correctness, UX, accessibility, reliability, performance, error handling, or maintainability and can be verified. Return STOP when this scope's remaining ideas are speculative, tiny nits, cosmetic churn, premature abstractions, broad rewrites, duplicate of completed history, require product/domain approval, require unsafe schema/dependency changes, or fail threshold {{meaningfulThreshold:text=}}. STOP means this scope is done for the current cycle; it does not mean the whole repository is done unless every active scope has received a pass. Do not dig for weak work to keep the loop busy. If decision is STOP, selectedCandidate must be {} and stopReason must explain the evidence-backed reason. Return only schema-valid JSON.",
+          "Inspect selected JSON scope and dependency-aware scope cluster {{result:select-scope}} without editing files. Use detected commands {{result:detect-project-commands}}, completed improvement history {{result:read-completed-improvements}}, latest completed append {{result:append-completed-improvement}}, implementationScope={{implementationScope:text=auto-detect}}, riskTolerance={{riskTolerance:text=moderate}}, excludePaths={{excludePaths:text=}}, and policy {{improvementPolicy:text=}}. Merge scope analysis, online-research decision, and improvement selection into one structured decision. Return decision IMPLEMENT only for one cohesive work package, not one micro-change: select 2-5 tightly related changes when they share evidence, files, tests, or acceptance criteria and are safer/productive to complete together. The package must have a stable kebab-case id, title, concrete evidence, local or primary-source user/maintainer value, currentBehavior, proposedBehavior, relatedChanges with affected files, acceptanceCriteria, expectedOutcome, riskAssessment, verificationTier (focused, standard, or broad), reviewTier (validator-only or strict), verificationPlan, rollbackNotes, and remainingRelatedWork. Prefer focused verification for low-risk localized packages; require broad verification and strict review for shared contracts, security, persistence, IPC/API, schemas, dependencies, auth, config, or broad UI behavior. Set researchDecision.needsResearch true only when the package depends on current external docs, APIs, framework/library behavior, security guidance, compatibility, or comparable product context; include focused queries. Set it false when local evidence and existing commands are enough. Behavior changes are allowed only when they improve correctness, UX, accessibility, reliability, performance, error handling, tests, or maintainability and can be verified. Return STOP when this scope cluster's remaining ideas are speculative, tiny nits, cosmetic churn, premature abstractions, broad rewrites, duplicate of completed history, require product/domain approval, require unsafe schema/dependency changes, or fail threshold {{meaningfulThreshold:text=}}. STOP means this scope is done for the current cycle only after no worthwhile related package remains in the scope cluster. Do not dig for weak work to keep the loop busy. If decision is STOP, selectedCandidate must be {} and stopReason must explain the evidence-backed reason. Return only schema-valid JSON.",
       },
     },
     {
@@ -236,7 +237,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         condition: {
           style: "javascript",
           expression:
-            'lastData?.output?.decision === "IMPLEMENT" && lastData.output.selectedCandidate && Object.keys(lastData.output.selectedCandidate).length > 0',
+            'context.resultsByBlock?.["choose-improvement"]?.data?.output?.decision === "IMPLEMENT" && context.resultsByBlock?.["choose-improvement"]?.data?.output?.selectedCandidate && Object.keys(context.resultsByBlock["choose-improvement"].data.output.selectedCandidate).length > 0',
         },
       },
     },
@@ -292,7 +293,20 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Implement the active code improvement at {{activeImprovementFile:path=.machdoch/ralph/code-improvements/active-improvement.json}} using candidate {{data:choose-improvement:output.selectedCandidate}}, selected scope {{result:select-scope}}, scope analysis {{data:analyze-selected-scope:output}}, git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-improvement-pass}}, latest validator feedback {{result:validate-improvement}}, and latest review feedback {{data:independent-review:output}}. Behavior changes are allowed when tied to currentBehavior/proposedBehavior, acceptanceCriteria, and verificationPlan. Keep changes bounded to the selected scope and required adjacent tests/docs/imports. Add or update meaningful tests when feasible. Update docs only when behavior, commands, or user interaction changes. Do not perform broad formatting sweeps, speculative abstractions, unrelated cleanup, or extra candidates. Dependency changes require allowDependencyChanges={{allowDependencyChanges:boolean=false}} and a documented necessity. Schema or migration changes require allowSchemaChanges={{allowSchemaChanges:boolean=false}} and must be blocked if unsafe. Do not start or restart servers. Append a concise note to {{notesFile:path=.machdoch/ralph/code-improvements/RALPH_CODE_IMPROVEMENT_NOTES.md}} with behavior changes, verification, and remaining risks.",
+        "Implement the active code improvement package at {{activeImprovementFile:path=.machdoch/ralph/code-improvements/active-improvement.json}} using package {{data:choose-improvement:output.selectedCandidate}}, selected scope and scope cluster {{result:select-scope}}, scope analysis {{data:choose-improvement:output.scopeAnalysis}}, research {{summary:improvement-research}}, git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-improvement-pass}}, latest validator feedback {{result:validate-improvement}}, latest review feedback {{data:independent-review:output}}, and verification routing {{data:select-verification-command:output}}. Complete the cohesive package before stopping; do not split tightly related package changes into separate future cycles unless blocked by risk or missing evidence. Behavior changes are allowed when tied to currentBehavior/proposedBehavior, acceptanceCriteria, expectedOutcome, and verificationPlan. Keep changes bounded to the selected scope cluster and required adjacent tests/docs/imports. Add or update meaningful tests when feasible. Update docs only when behavior, commands, or user interaction changes. Do not perform broad formatting sweeps, speculative abstractions, unrelated cleanup, or extra unrelated packages. Dependency changes require allowDependencyChanges={{allowDependencyChanges:boolean=false}} and a documented necessity. Schema or migration changes require allowSchemaChanges={{allowSchemaChanges:boolean=false}} and must be blocked if unsafe. Do not start or restart servers. Append a concise note to {{notesFile:path=.machdoch/ralph/code-improvements/RALPH_CODE_IMPROVEMENT_NOTES.md}} with package changes, behavior changes, verification tier, verification command/status, and remaining risks.",
+    },
+    {
+      id: "select-verification-command",
+      title: "Select Verification Tier",
+      position: { x: 4400, y: -140 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "TRANSFORM_JSON",
+        input: "{}",
+        expression:
+          "(() => { const candidate = context.resultsByBlock?.get?.('choose-improvement')?.data?.output?.selectedCandidate ?? {}; const commands = context.resultsByBlock?.get?.('detect-project-commands')?.data ?? {}; const requestedTier = String(candidate.verificationTier ?? candidate.riskAssessment?.verificationTier ?? '').toLowerCase(); const requestedReviewTier = String(candidate.reviewTier ?? candidate.riskAssessment?.reviewTier ?? '').toLowerCase(); const riskText = JSON.stringify([candidate.risk, candidate.riskAssessment, candidate.affectedFiles, candidate.relatedChanges, candidate.acceptanceCriteria]).toLowerCase(); const highRisk = /(security|auth|token|secret|permission|database|migration|schema|ipc|api|dependency|package|lockfile|persistence|public api|contract|credential)/u.test(riskText); const tier = highRisk || requestedTier === 'broad' || requestedTier === 'strict' ? 'broad' : requestedTier === 'standard' ? 'standard' : 'focused'; const detectedCommand = tier === 'broad' ? commands.broadVerificationCommand : tier === 'standard' ? commands.standardVerificationCommand : commands.focusedVerificationCommand; const command = (variables.verificationCommand ?? '').trim() || detectedCommand || commands.verificationCommand || ''; const reviewTier = highRisk || requestedReviewTier === 'strict' || tier === 'broad' ? 'strict' : 'validator-only'; return { tier, command, reviewTier, highRisk, source: (variables.verificationCommand ?? '').trim() ? 'variable' : 'detected', focusedCommand: commands.focusedVerificationCommand || '', standardCommand: commands.standardVerificationCommand || '', broadCommand: commands.broadVerificationCommand || '' }; })()",
+      },
     },
     {
       id: "verification-decision",
@@ -305,7 +319,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         condition: {
           style: "javascript",
           expression:
-            "Boolean(variables.verificationCommand?.trim() || context.resultsByBlock?.['detect-project-commands']?.data?.verificationCommand?.trim())",
+            "Boolean(context.resultsByBlock?.['select-verification-command']?.data?.output?.command?.trim())",
         },
       },
     },
@@ -317,8 +331,8 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "RUN_CHECK",
-        command: "{{verificationCommand:text=}}",
-        fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        command: "{{data:select-verification-command:output.command}}",
+        fallbackCommand: "{{data:detect-project-commands:focusedVerificationCommand}}",
         cwd: "{{data:detect-project-commands:rootPath}}",
         timeoutSeconds: RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS,
       },
@@ -337,7 +351,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Fix validation failures from {{result:run-verification}} that were caused by the current code improvement. Distinguish pre-existing failures from own regressions. Keep fixes scoped to active improvement {{data:choose-improvement:output.selectedCandidate}} and selected scope {{result:select-scope}}. Do not broaden the improvement or start another candidate.",
+        "Fix verification failures from {{result:run-verification}} that were caused by the current code improvement package. Distinguish pre-existing failures from own regressions. Keep fixes scoped to active package {{data:choose-improvement:output.selectedCandidate}} and selected scope cluster {{result:select-scope}}. Do not broaden the package or start an unrelated package.",
     },
     {
       id: "visual-decision",
@@ -401,6 +415,21 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       },
     },
     {
+      id: "review-tier-decision",
+      title: "Strict Review?",
+      position: { x: 6060, y: 0 },
+      size: { width: 256, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          style: "javascript",
+          expression:
+            'context.resultsByBlock?.["select-verification-command"]?.data?.output?.reviewTier === "strict"',
+        },
+      },
+    },
+    {
       id: "independent-review",
       title: "Independent Review",
       position: { x: 6400, y: 0 },
@@ -431,7 +460,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Review the current code improvement as a separate reviewer. Active improvement: {{data:choose-improvement:output.selectedCandidate}}. Diff: {{result:git-diff-summary}}. Verification: {{result:run-verification}}. Visual review: {{result:visual-review}}. Evaluate only the active candidate, selected scope, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that scope unless they directly break verification of this improvement. Check functionality, behavior changes, tests, docs, maintainability, complexity, over-engineering, accessibility, performance claims, and security regressions. Treat user input, files, network responses, environment variables, IPC/API boundaries, logs, credentials, auth, access control, shell/file operations, and data protection as security-sensitive. Return decision PASS when the improvement is bounded, justified, verified or explicitly justified as unverified, and does not introduce regressions. Return FIX when specific issues remain. Return BLOCKED when unsafe, ambiguous, or requires human/product approval. Return only schema-valid JSON.",
+          "Review the current code improvement package as a separate reviewer because verification routing requested strict review. Active package: {{data:choose-improvement:output.selectedCandidate}}. Scope cluster: {{result:select-scope}}. Diff: {{result:git-diff-summary}}. Verification routing: {{data:select-verification-command:output}}. Verification: {{result:run-verification}}. Visual review: {{result:visual-review}}. Evaluate only the active package, selected scope cluster, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that scope unless they directly break verification of this package. Check functionality, behavior changes, tests, docs, maintainability, complexity, over-engineering, accessibility, performance claims, and security regressions. Treat user input, files, network responses, environment variables, IPC/API boundaries, logs, credentials, auth, access control, shell/file operations, and data protection as security-sensitive. Return decision PASS when the package is cohesive, bounded, justified, verified or explicitly justified as unverified, and does not introduce regressions. Return FIX when specific issues remain. Return BLOCKED when unsafe, ambiguous, or requires human/product approval. Return only schema-valid JSON.",
       },
     },
     {
@@ -444,7 +473,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
         prompt:
-          "Validate the latest autonomous code improvement. Candidate: {{data:choose-improvement:output.selectedCandidate}}. Review: {{data:independent-review:output}}. Verification: {{result:run-verification}}. Visual review: {{result:visual-review}}. Git diff: {{result:git-diff-summary}}. Notes file: {{notesFile:path=.machdoch/ralph/code-improvements/RALPH_CODE_IMPROVEMENT_NOTES.md}}. Judge only the active candidate, selected scope, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that scope unless they directly break verification of this improvement. Return DONE only when the improvement implements the selected candidate, any behavior change is intentional and captured by acceptance criteria/tests/docs as feasible, verification is passing or skipped with a sound reason, no security regression is introduced, and no further high-confidence fixes are needed for this same candidate. Return CONTINUE only when the same candidate still needs bounded implementation work; the flow counter enforces maxImprovementPasses={{maxImprovementPasses:number=8}}. Return RETRY when validation/review found own regressions that should be corrected. Return ERROR when blocked by unsafe changes, ambiguous behavior, required human/product decision, unavailable credentials/tooling, repeated failure, or work that no longer meets meaningfulThreshold={{meaningfulThreshold:text=}}.",
+          "Validate the latest autonomous code improvement package. Package: {{data:choose-improvement:output.selectedCandidate}}. Scope cluster: {{result:select-scope}}. Verification routing: {{data:select-verification-command:output}}. Strict review, when run: {{data:independent-review:output}}. Verification: {{result:run-verification}}. Visual review: {{result:visual-review}}. Git diff: {{result:git-diff-summary}}. Notes file: {{notesFile:path=.machdoch/ralph/code-improvements/RALPH_CODE_IMPROVEMENT_NOTES.md}}. Judge only the active package, selected scope cluster, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that scope unless they directly break verification of this package. For validator-only low-risk packages, avoid demanding a duplicate strict review when focused verification passed and the diff is localized. Return DONE only when the whole cohesive package is implemented, any behavior change is intentional and captured by acceptance criteria/tests/docs as feasible, verification is passing or skipped with a sound reason, no security regression is introduced, and no further worthwhile related work remains for this package. Return CONTINUE only when the same package still needs bounded implementation work; the flow counter enforces maxImprovementPasses={{maxImprovementPasses:number=8}}. Return RETRY when validation/review found own regressions that should be corrected. Return ERROR when blocked by unsafe changes, ambiguous behavior, required human/product decision, unavailable credentials/tooling, repeated failure, or work that no longer meets meaningfulThreshold={{meaningfulThreshold:text=}}.",
       },
     },
     {
@@ -558,22 +587,19 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
     { id: "detect-success-to-history", from: "detect-project-commands", fromOutput: "SUCCESS", to: "read-completed-improvements" },
     { id: "detect-empty-to-history", from: "detect-project-commands", fromOutput: "EMPTY", to: "read-completed-improvements" },
     { id: "detect-error-to-history", from: "detect-project-commands", fromOutput: "ERROR", to: "read-completed-improvements" },
-    { id: "history-success-to-analysis", from: "read-completed-improvements", fromOutput: "SUCCESS", to: "analyze-selected-scope" },
-    { id: "history-empty-to-analysis", from: "read-completed-improvements", fromOutput: "EMPTY", to: "analyze-selected-scope" },
-    { id: "history-not-found-to-analysis", from: "read-completed-improvements", fromOutput: "NOT_FOUND", to: "analyze-selected-scope" },
-    { id: "history-invalid-to-analysis", from: "read-completed-improvements", fromOutput: "INVALID", to: "analyze-selected-scope" },
-    { id: "history-error-to-analysis", from: "read-completed-improvements", fromOutput: "ERROR", to: "analyze-selected-scope" },
-    { id: "analysis-success-to-research-decision", from: "analyze-selected-scope", fromOutput: "SUCCESS", to: "research-decision" },
-    { id: "analysis-invalid", from: "analyze-selected-scope", fromOutput: "INVALID", to: "blocked" },
-    { id: "analysis-error", from: "analyze-selected-scope", fromOutput: "ERROR", to: "blocked" },
-    { id: "research-decision-run", from: "research-decision", fromOutput: "MATCH", to: "improvement-research" },
-    { id: "research-decision-skip", from: "research-decision", fromOutput: "NO_MATCH", to: "choose-improvement" },
-    { id: "research-decision-error", from: "research-decision", fromOutput: "ERROR", to: "choose-improvement" },
-    { id: "research-to-choose", from: "improvement-research", fromOutput: "SUCCESS", to: "choose-improvement" },
-    { id: "research-error-to-choose", from: "improvement-research", fromOutput: "ERROR", to: "choose-improvement" },
-    { id: "choose-to-actionable", from: "choose-improvement", fromOutput: "SUCCESS", to: "has-actionable-improvement" },
+    { id: "history-success-to-choose", from: "read-completed-improvements", fromOutput: "SUCCESS", to: "choose-improvement" },
+    { id: "history-empty-to-choose", from: "read-completed-improvements", fromOutput: "EMPTY", to: "choose-improvement" },
+    { id: "history-not-found-to-choose", from: "read-completed-improvements", fromOutput: "NOT_FOUND", to: "choose-improvement" },
+    { id: "history-invalid-to-choose", from: "read-completed-improvements", fromOutput: "INVALID", to: "choose-improvement" },
+    { id: "history-error-to-choose", from: "read-completed-improvements", fromOutput: "ERROR", to: "choose-improvement" },
+    { id: "choose-to-research-decision", from: "choose-improvement", fromOutput: "SUCCESS", to: "research-decision" },
     { id: "choose-invalid", from: "choose-improvement", fromOutput: "INVALID", to: "blocked" },
     { id: "choose-error", from: "choose-improvement", fromOutput: "ERROR", to: "blocked" },
+    { id: "research-decision-run", from: "research-decision", fromOutput: "MATCH", to: "improvement-research" },
+    { id: "research-decision-skip", from: "research-decision", fromOutput: "NO_MATCH", to: "has-actionable-improvement" },
+    { id: "research-decision-error", from: "research-decision", fromOutput: "ERROR", to: "has-actionable-improvement" },
+    { id: "research-to-actionable", from: "improvement-research", fromOutput: "SUCCESS", to: "has-actionable-improvement" },
+    { id: "research-error-to-actionable", from: "improvement-research", fromOutput: "ERROR", to: "has-actionable-improvement" },
     { id: "actionable-to-write", from: "has-actionable-improvement", fromOutput: "MATCH", to: "write-active-improvement" },
     { id: "not-actionable-to-mark", from: "has-actionable-improvement", fromOutput: "NO_MATCH", to: "mark-scope-result" },
     { id: "actionable-error", from: "has-actionable-improvement", fromOutput: "ERROR", to: "mark-scope-result" },
@@ -585,8 +611,10 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
     { id: "count-improvement-pass-continue", from: "count-improvement-pass", fromOutput: "CONTINUE", to: "implement-improvement" },
     { id: "count-improvement-pass-limit", from: "count-improvement-pass", fromOutput: "LIMIT_REACHED", to: "blocked" },
     { id: "count-improvement-pass-error", from: "count-improvement-pass", fromOutput: "ERROR", to: "blocked" },
-    { id: "implement-to-verification-decision", from: "implement-improvement", fromOutput: "SUCCESS", to: "verification-decision" },
+    { id: "implement-to-verification-tier", from: "implement-improvement", fromOutput: "SUCCESS", to: "select-verification-command" },
     { id: "implement-error", from: "implement-improvement", fromOutput: "ERROR", to: "blocked" },
+    { id: "verification-tier-to-decision", from: "select-verification-command", fromOutput: "SUCCESS", to: "verification-decision" },
+    { id: "verification-tier-error", from: "select-verification-command", fromOutput: "ERROR", to: "verification-decision" },
     { id: "verification-decision-run", from: "verification-decision", fromOutput: "MATCH", to: "run-verification" },
     { id: "verification-decision-skip", from: "verification-decision", fromOutput: "NO_MATCH", to: "visual-decision" },
     { id: "verification-decision-error", from: "verification-decision", fromOutput: "ERROR", to: "visual-decision" },
@@ -601,9 +629,12 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
     { id: "visual-success-to-diff", from: "visual-review", fromOutput: "SUCCESS", to: "git-diff-summary" },
     { id: "visual-unavailable-to-diff", from: "visual-review", fromOutput: "UNAVAILABLE", to: "git-diff-summary" },
     { id: "visual-error-to-diff", from: "visual-review", fromOutput: "ERROR", to: "git-diff-summary" },
-    { id: "diff-success-to-review", from: "git-diff-summary", fromOutput: "SUCCESS", to: "independent-review" },
-    { id: "diff-empty-to-review", from: "git-diff-summary", fromOutput: "EMPTY", to: "independent-review" },
-    { id: "diff-error-to-review", from: "git-diff-summary", fromOutput: "ERROR", to: "independent-review" },
+    { id: "diff-success-to-review-tier", from: "git-diff-summary", fromOutput: "SUCCESS", to: "review-tier-decision" },
+    { id: "diff-empty-to-review-tier", from: "git-diff-summary", fromOutput: "EMPTY", to: "review-tier-decision" },
+    { id: "diff-error-to-review-tier", from: "git-diff-summary", fromOutput: "ERROR", to: "review-tier-decision" },
+    { id: "review-tier-strict", from: "review-tier-decision", fromOutput: "MATCH", to: "independent-review" },
+    { id: "review-tier-validator-only", from: "review-tier-decision", fromOutput: "NO_MATCH", to: "validate-improvement" },
+    { id: "review-tier-error-to-validate", from: "review-tier-decision", fromOutput: "ERROR", to: "validate-improvement" },
     { id: "review-to-validate", from: "independent-review", fromOutput: "SUCCESS", to: "validate-improvement" },
     { id: "review-invalid", from: "independent-review", fromOutput: "INVALID", to: "blocked" },
     { id: "review-error", from: "independent-review", fromOutput: "ERROR", to: "blocked" },
@@ -635,7 +666,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
 
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 8,
+  version: 9,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "behavior-change", "validation"],

@@ -223,6 +223,29 @@ export const validateRalphUtilityBlock = (
     );
   }
 
+  const maxTasks =
+    typeof utility.maxTasks === "string"
+      ? utility.maxTasks.trim()
+        ? Number(utility.maxTasks)
+        : undefined
+      : utility.maxTasks;
+  const maxTasksIsPlaceholder =
+    typeof utility.maxTasks === "string" &&
+    hasRalphPlaceholders(utility.maxTasks);
+
+  if (
+    !maxTasksIsPlaceholder &&
+    maxTasks !== undefined &&
+    (!Number.isInteger(maxTasks) || maxTasks < 1)
+  ) {
+    addUtilityIssue(
+      errors,
+      "utility-max-tasks-invalid",
+      `${blockLabel} maxTasks must be an integer >= 1.`,
+      { blockId: block.id },
+    );
+  }
+
   validateUtilityCondition(blockLabel, block, errors);
 
   switch (utility.type) {

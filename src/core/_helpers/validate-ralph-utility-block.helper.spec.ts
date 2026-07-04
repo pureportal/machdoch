@@ -206,6 +206,10 @@ describe("validateRalphUtilityBlock", () => {
         utility: { type: "VALIDATE_JSON" },
         expectedCodes: ["utility-schema-required"],
       },
+      {
+        utility: { type: "SELECT_JSON_TASK", path: "tmp/tasks.json", maxTasks: 0 },
+        expectedCodes: ["utility-max-tasks-invalid"],
+      },
     ];
 
     for (const testCase of cases) {
