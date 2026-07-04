@@ -560,7 +560,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
         prompt:
-          "Validate active goal JSON {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}} against implementation changes, selected task batch {{data:select-next-task:tasks}}, work-yield analysis {{data:work-yield-analysis:output}}, verification result {{result:run-verification}}, git diff {{result:git-diff-summary}}, visual review {{result:visual-review}}, and latest implementation summary. Judge only the active goal, selected task batch, goal file, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that goal/task batch unless they directly break verification of the active goal. If work-yield analysis reports no implementation files changed or only the active goal JSON changed, avoid DONE and request another implementation pass unless the selected task batch truly required no file changes. Return JSON with decision DONE when the whole goal is completely implemented, verified or verification is explicitly skipped because no command is configured or no implementation files changed, and the goal file accurately records completion. Return CONTINUE when more tasks remain. Return RETRY when the last implementation pass needs correction. Return ERROR when blocked by missing context, unsafe changes in the active goal/task batch, failing verification that cannot be fixed, or repeated ambiguity. Include confidence, summary, evidence, and remainingWork.",
+          "Validate active goal JSON {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}} against implementation changes, selected task batch {{data:select-next-task:tasks}}, work-yield analysis {{data:work-yield-analysis:output}}, verification result {{result:run-verification}}, git diff {{result:git-diff-summary}}, visual review {{result:visual-review}}, and latest implementation summary. Judge only the active goal, selected task batch, goal file, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that goal/task batch unless they directly break verification of the active goal. If work-yield analysis reports no implementation files changed or only the active goal JSON changed, avoid DONE and request another implementation pass unless the selected task batch truly required no file changes. Return JSON with decision DONE when the whole goal is completely implemented, verified or verification is explicitly skipped because no command is configured, and the goal file accurately records completion. Return CONTINUE when more tasks remain. Return RETRY when the last implementation pass needs correction. Return ERROR when blocked by missing context, unsafe changes in the active goal/task batch, failing verification that cannot be fixed, or repeated ambiguity. Include confidence, summary, evidence, and remainingWork.",
       },
     },
     {
@@ -739,7 +739,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
 
 export const autonomousFeatureGenerationLoopStarterFlow = {
   id: "autonomous-feature-generation-loop",
-  version: 8,
+  version: 9,
   defaultAlias: "autonomous-feature-generation-loop",
   category: "Implementation",
   tags: ["autonomous", "feature", "loop"],

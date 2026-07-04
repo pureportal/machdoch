@@ -11,7 +11,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
   description:
     "Configurable, resumable feature implementation loop with content-enriched research, interview, verification, and visual review.",
   settings: {
-    maxTransitions: 70,
+    maxTransitions: 100,
   },
   variables: [
     { name: "featureId", type: "text", default: "current-feature", required: false },
@@ -249,7 +249,34 @@ const fullFeatureImplementationFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Implement the selected checklist task batch {{data:select-next-task:tasks}} from JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}; primary task for compatibility is {{data:select-next-task:task}}. Complete every compatible selected task in this pass unless blocked by a real dependency, risk, or failing evidence. Use checklist content {{data:specification-checklist:output}} or resumed checklist {{data:read-checklist:json}}, research {{summary:initial-research}}, git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-implementation-pass}}, and latest validation feedback {{result:validate-progress}}. Apply source-backed guidance for version-sensitive APIs or standards, keep changes scoped to {{implementationScope:text=auto-detect}}, follow existing project patterns, apply design guidelines {{designGuidelines:text=}}, follow auth instructions {{authInstructions:text=}}, update tests when relevant, and update the selected tasks/checklist JSON statuses and resume notes only when work is actually done.",
+        "Implement the selected checklist task batch {{data:select-next-task:tasks}} from JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}; primary task for compatibility is {{data:select-next-task:task}}. Complete every compatible selected task in this pass unless blocked by a real dependency, risk, or failing evidence. Use checklist content {{data:specification-checklist:output}} or resumed checklist {{data:read-checklist:json}}, research {{summary:initial-research}}, git baseline {{result:git-snapshot-before}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-implementation-pass}}, latest validation feedback {{result:validate-progress}}, and latest work-yield analysis {{data:work-yield-analysis:output}}. Apply source-backed guidance for version-sensitive APIs or standards, keep changes scoped to {{implementationScope:text=auto-detect}}, follow existing project patterns, apply design guidelines {{designGuidelines:text=}}, follow auth instructions {{authInstructions:text=}}, update tests when relevant, and update the selected tasks/checklist JSON statuses and resume notes only when work is actually done. If no implementation files can be changed safely, leave the selected tasks unfinished and explain the blocker instead of only changing the checklist JSON.",
+    },
+    {
+      id: "work-yield-analysis",
+      title: "Assess Work Yield",
+      position: { x: 3060, y: -190 },
+      size: { width: 300, height: 190 },
+      type: "UTILITY",
+      utility: {
+        type: "TRANSFORM_JSON",
+        input: "{}",
+        expression:
+          "(() => { const diffResult = context.resultsByBlock?.get?.('git-diff-summary'); const baselineResult = context.resultsByBlock?.get?.('git-snapshot-before'); const currentFiles = Array.isArray(diffResult?.data?.files) ? diffResult.data.files : []; const baselineFiles = Array.isArray(baselineResult?.data?.files) ? baselineResult.data.files : []; const normalize = (value) => String(value ?? '').replace(/\\\\/gu, '/').replace(/^\\.\\/+/, ''); const baseline = new Map(baselineFiles.filter((file) => file && typeof file.path === 'string').map((file) => [normalize(file.path), file.signature])); const changedSinceBaselineFiles = currentFiles.filter((file) => file && typeof file.path === 'string' && baseline.get(normalize(file.path)) !== file.signature).map((file) => normalize(file.path)); const stateFile = normalize(variables.checklistFile || '.machdoch/feature-implementation/current-feature.checklist.json'); const implementationFiles = changedSinceBaselineFiles.filter((path) => path !== stateFile); const selectedTasks = context.resultsByBlock?.get?.('select-next-task')?.data?.tasks; const selectedTaskCount = Array.isArray(selectedTasks) ? selectedTasks.length : 1; const diffErrored = diffResult?.output === 'ERROR'; const onlyStateFileChanged = changedSinceBaselineFiles.length > 0 && implementationFiles.length === 0; const shouldVerify = diffErrored || implementationFiles.length > 0; return { shouldVerify, diffOutput: diffResult?.output ?? '', selectedTaskCount, stateFile, changedSinceBaselineCount: changedSinceBaselineFiles.length, changedSinceBaselineFiles, implementationFileCount: implementationFiles.length, implementationFiles, onlyStateFileChanged, baselineFileCount: baselineFiles.length, currentFileCount: currentFiles.length, reason: shouldVerify ? (diffErrored ? 'Git diff summary failed; keep verification path available.' : 'Implementation changed files beyond the checklist state file since the pre-pass snapshot.') : (onlyStateFileChanged ? 'Only the checklist JSON changed; skip expensive verification and let validation request real implementation work.' : 'Implementation produced no file changes beyond the pre-pass snapshot; skip expensive verification and let validation request another implementation pass.') }; })()",
+      },
+    },
+    {
+      id: "work-yield-decision",
+      title: "Useful Work Produced?",
+      position: { x: 3060, y: 30 },
+      size: { width: 256, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          style: "javascript",
+          expression: "lastData?.shouldVerify === true",
+        },
+      },
     },
     {
       id: "count-implementation-pass",
@@ -364,7 +391,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         type: "VALIDATOR_JSON",
         maxAttempts: 2,
         prompt:
-          "Validate implementation against JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}, selected task batch {{data:select-next-task:tasks}}, feature request, acceptance criteria, research, interview, verification result {{result:run-configured-checks}}, git diff {{result:git-diff-summary}}, and visual review {{result:visual-analysis}} when present. Judge only the active feature, selected task batch, checklist file, resume notes, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that feature/task batch unless they directly break verification or acceptance criteria. Confirm done tasks are truly implemented, tests are meaningful or justified, optional checks were skipped only because configuration disabled them or required inputs were blank, and resume notes are current. Return JSON decision DONE when all checklist tasks are done and acceptance criteria pass. Return CONTINUE when more work remains. Return RETRY when the last pass needs correction. Return ERROR when blocked by missing context, unsafe changes in the active feature/task batch, failing verification that cannot be fixed, or repeated ambiguity. Include confidence, summary, evidence, and remainingWork.",
+          "Validate implementation against JSON checklist {{checklistFile:path=.machdoch/feature-implementation/current-feature.checklist.json}}, selected task batch {{data:select-next-task:tasks}}, work-yield analysis {{data:work-yield-analysis:output}}, feature request, acceptance criteria, research, interview, verification result {{result:run-configured-checks}}, git diff {{result:git-diff-summary}}, and visual review {{result:visual-analysis}} when present. Judge only the active feature, selected task batch, checklist file, resume notes, and required adjacent tests/docs/imports. Ignore unrelated workspace changes outside that feature/task batch unless they directly break verification or acceptance criteria. Confirm done tasks are truly implemented, tests are meaningful or justified, optional checks were skipped only because configuration disabled them or required inputs were blank, and resume notes are current. If work-yield analysis reports no implementation files changed or only the checklist JSON changed, avoid DONE and request another implementation pass unless the selected task batch truly required no file changes. Return JSON decision DONE when all checklist tasks are done and acceptance criteria pass. Return CONTINUE when more work remains. Return RETRY when the last pass needs correction. Return ERROR when blocked by missing context, unsafe changes in the active feature/task batch, failing verification that cannot be fixed, or repeated ambiguity. Include confidence, summary, evidence, and remainingWork.",
       },
     },
     {
@@ -436,8 +463,16 @@ const fullFeatureImplementationFlow: RalphFlow = {
     { id: "count-implementation-pass-continue", from: "count-implementation-pass", fromOutput: "CONTINUE", to: "implement-feature" },
     { id: "count-implementation-pass-limit", from: "count-implementation-pass", fromOutput: "LIMIT_REACHED", to: "blocked" },
     { id: "count-implementation-pass-error", from: "count-implementation-pass", fromOutput: "ERROR", to: "blocked" },
-    { id: "implementation-to-verification-decision", from: "implement-feature", fromOutput: "SUCCESS", to: "verification-decision" },
+    { id: "implementation-to-diff", from: "implement-feature", fromOutput: "SUCCESS", to: "git-diff-summary" },
     { id: "implementation-error", from: "implement-feature", fromOutput: "ERROR", to: "blocked" },
+    { id: "git-diff-success-to-work-yield", from: "git-diff-summary", fromOutput: "SUCCESS", to: "work-yield-analysis" },
+    { id: "git-diff-empty-to-work-yield", from: "git-diff-summary", fromOutput: "EMPTY", to: "work-yield-analysis" },
+    { id: "git-diff-error-to-work-yield", from: "git-diff-summary", fromOutput: "ERROR", to: "work-yield-analysis" },
+    { id: "work-yield-analysis-success", from: "work-yield-analysis", fromOutput: "SUCCESS", to: "work-yield-decision" },
+    { id: "work-yield-analysis-error", from: "work-yield-analysis", fromOutput: "ERROR", to: "verification-decision" },
+    { id: "work-yield-useful", from: "work-yield-decision", fromOutput: "MATCH", to: "verification-decision" },
+    { id: "work-yield-empty-to-validate", from: "work-yield-decision", fromOutput: "NO_MATCH", to: "validate-progress" },
+    { id: "work-yield-error-to-verification-decision", from: "work-yield-decision", fromOutput: "ERROR", to: "verification-decision" },
     { id: "verification-decision-run", from: "verification-decision", fromOutput: "MATCH", to: "run-configured-checks" },
     { id: "verification-decision-skip", from: "verification-decision", fromOutput: "NO_MATCH", to: "visual-decision" },
     { id: "verification-decision-error", from: "verification-decision", fromOutput: "ERROR", to: "visual-decision" },
@@ -445,14 +480,11 @@ const fullFeatureImplementationFlow: RalphFlow = {
     { id: "checks-failed-to-visual-decision", from: "run-configured-checks", fromOutput: "FAILED", to: "visual-decision" },
     { id: "checks-error-to-visual-decision", from: "run-configured-checks", fromOutput: "ERROR", to: "visual-decision" },
     { id: "visual-decision-run", from: "visual-decision", fromOutput: "MATCH", to: "visual-analysis" },
-    { id: "visual-decision-skip", from: "visual-decision", fromOutput: "NO_MATCH", to: "git-diff-summary" },
-    { id: "visual-decision-error", from: "visual-decision", fromOutput: "ERROR", to: "git-diff-summary" },
-    { id: "visual-success-to-diff", from: "visual-analysis", fromOutput: "SUCCESS", to: "git-diff-summary" },
-    { id: "visual-unavailable-to-diff", from: "visual-analysis", fromOutput: "UNAVAILABLE", to: "git-diff-summary" },
-    { id: "visual-error-to-diff", from: "visual-analysis", fromOutput: "ERROR", to: "git-diff-summary" },
-    { id: "git-diff-success-to-validate", from: "git-diff-summary", fromOutput: "SUCCESS", to: "validate-progress" },
-    { id: "git-diff-empty-to-validate", from: "git-diff-summary", fromOutput: "EMPTY", to: "validate-progress" },
-    { id: "git-diff-error-to-validate", from: "git-diff-summary", fromOutput: "ERROR", to: "validate-progress" },
+    { id: "visual-decision-skip", from: "visual-decision", fromOutput: "NO_MATCH", to: "validate-progress" },
+    { id: "visual-decision-error", from: "visual-decision", fromOutput: "ERROR", to: "validate-progress" },
+    { id: "visual-success-to-validate", from: "visual-analysis", fromOutput: "SUCCESS", to: "validate-progress" },
+    { id: "visual-unavailable-to-validate", from: "visual-analysis", fromOutput: "UNAVAILABLE", to: "validate-progress" },
+    { id: "visual-error-to-validate", from: "visual-analysis", fromOutput: "ERROR", to: "validate-progress" },
     { id: "validation-done", from: "validate-progress", fromOutput: "DONE", to: "final-report" },
     { id: "validation-continue", from: "validate-progress", fromOutput: "CONTINUE", to: "select-next-task" },
     { id: "validation-retry", from: "validate-progress", fromOutput: "RETRY", to: "select-next-task" },
@@ -465,7 +497,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 8,
+  version: 9,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],

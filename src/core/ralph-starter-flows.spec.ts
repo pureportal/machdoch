@@ -224,6 +224,15 @@ describe("Ralph starter flows", () => {
     const runVerification = flow?.blocks.find(
       (block) => block.id === "run-verification",
     );
+    const workYieldAnalysis = flow?.blocks.find(
+      (block) => block.id === "work-yield-analysis",
+    );
+    const workYieldDecision = flow?.blocks.find(
+      (block) => block.id === "work-yield-decision",
+    );
+    const validateGoal = flow?.blocks.find(
+      (block) => block.id === "validate-goal",
+    );
     const selectNextTask = flow?.blocks.find(
       (block) => block.id === "select-next-task",
     );
@@ -287,6 +296,39 @@ describe("Ralph starter flows", () => {
       type: "PROMPT",
       prompt: expect.stringContaining("selected active-goal task batch"),
     });
+    expect(implementFeature).toMatchObject({
+      type: "PROMPT",
+      prompt: expect.stringContaining("latest work-yield analysis"),
+    });
+    expect(workYieldAnalysis).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "TRANSFORM_JSON",
+        expression: expect.stringContaining("changedSinceBaselineFiles"),
+      },
+    });
+    expect(workYieldAnalysis).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        expression: expect.stringContaining("onlyStateFileChanged"),
+      },
+    });
+    expect(workYieldDecision).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          expression: "lastData?.shouldVerify === true",
+        },
+      },
+    });
+    expect(validateGoal).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "VALIDATOR_JSON",
+        prompt: expect.stringContaining("work-yield analysis"),
+      },
+    });
     expect(runVerification).toMatchObject({
       type: "UTILITY",
       utility: {
@@ -337,6 +379,36 @@ describe("Ralph starter flows", () => {
           to: "blocked",
         }),
         expect.objectContaining({
+          from: "implement-feature",
+          fromOutput: "SUCCESS",
+          to: "git-diff-summary",
+        }),
+        expect.objectContaining({
+          from: "git-diff-summary",
+          fromOutput: "SUCCESS",
+          to: "work-yield-analysis",
+        }),
+        expect.objectContaining({
+          from: "work-yield-analysis",
+          fromOutput: "SUCCESS",
+          to: "work-yield-decision",
+        }),
+        expect.objectContaining({
+          from: "work-yield-decision",
+          fromOutput: "MATCH",
+          to: "verification-decision",
+        }),
+        expect.objectContaining({
+          from: "work-yield-decision",
+          fromOutput: "NO_MATCH",
+          to: "validate-goal",
+        }),
+        expect.objectContaining({
+          from: "visual-decision",
+          fromOutput: "NO_MATCH",
+          to: "validate-goal",
+        }),
+        expect.objectContaining({
           from: "goals-per-run-counter",
           to: "detect-project-commands",
         }),
@@ -344,6 +416,19 @@ describe("Ralph starter flows", () => {
           from: "goals-per-run-counter",
           fromOutput: "LIMIT_REACHED",
           to: "success",
+        }),
+      ]),
+    );
+    expect(flow?.edges).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "implement-feature",
+          fromOutput: "SUCCESS",
+          to: "verification-decision",
+        }),
+        expect.objectContaining({
+          from: "visual-decision",
+          to: "git-diff-summary",
         }),
       ]),
     );
@@ -373,6 +458,15 @@ describe("Ralph starter flows", () => {
     const runConfiguredChecks = flow?.blocks.find(
       (block) => block.id === "run-configured-checks",
     );
+    const workYieldAnalysis = flow?.blocks.find(
+      (block) => block.id === "work-yield-analysis",
+    );
+    const workYieldDecision = flow?.blocks.find(
+      (block) => block.id === "work-yield-decision",
+    );
+    const validateProgress = flow?.blocks.find(
+      (block) => block.id === "validate-progress",
+    );
     const selectNextTask = flow?.blocks.find(
       (block) => block.id === "select-next-task",
     );
@@ -388,6 +482,9 @@ describe("Ralph starter flows", () => {
     expect(maxTasksPerImplementationPass).toMatchObject({
       type: "number",
       default: "3",
+    });
+    expect(flow).toMatchObject({
+      settings: { maxTransitions: 100 },
     });
     expect(passCounter).toMatchObject({
       type: "UTILITY",
@@ -409,6 +506,39 @@ describe("Ralph starter flows", () => {
     expect(implementFeature).toMatchObject({
       type: "PROMPT",
       prompt: expect.stringContaining("selected checklist task batch"),
+    });
+    expect(implementFeature).toMatchObject({
+      type: "PROMPT",
+      prompt: expect.stringContaining("latest work-yield analysis"),
+    });
+    expect(workYieldAnalysis).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "TRANSFORM_JSON",
+        expression: expect.stringContaining("changedSinceBaselineFiles"),
+      },
+    });
+    expect(workYieldAnalysis).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        expression: expect.stringContaining("onlyStateFileChanged"),
+      },
+    });
+    expect(workYieldDecision).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          expression: "lastData?.shouldVerify === true",
+        },
+      },
+    });
+    expect(validateProgress).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "VALIDATOR_JSON",
+        prompt: expect.stringContaining("work-yield analysis"),
+      },
     });
     expect(runConfiguredChecks).toMatchObject({
       type: "UTILITY",
@@ -432,6 +562,49 @@ describe("Ralph starter flows", () => {
           from: "count-implementation-pass",
           fromOutput: "LIMIT_REACHED",
           to: "blocked",
+        }),
+        expect.objectContaining({
+          from: "implement-feature",
+          fromOutput: "SUCCESS",
+          to: "git-diff-summary",
+        }),
+        expect.objectContaining({
+          from: "git-diff-summary",
+          fromOutput: "SUCCESS",
+          to: "work-yield-analysis",
+        }),
+        expect.objectContaining({
+          from: "work-yield-analysis",
+          fromOutput: "SUCCESS",
+          to: "work-yield-decision",
+        }),
+        expect.objectContaining({
+          from: "work-yield-decision",
+          fromOutput: "MATCH",
+          to: "verification-decision",
+        }),
+        expect.objectContaining({
+          from: "work-yield-decision",
+          fromOutput: "NO_MATCH",
+          to: "validate-progress",
+        }),
+        expect.objectContaining({
+          from: "visual-decision",
+          fromOutput: "NO_MATCH",
+          to: "validate-progress",
+        }),
+      ]),
+    );
+    expect(flow?.edges).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "implement-feature",
+          fromOutput: "SUCCESS",
+          to: "verification-decision",
+        }),
+        expect.objectContaining({
+          from: "visual-decision",
+          to: "git-diff-summary",
         }),
       ]),
     );
