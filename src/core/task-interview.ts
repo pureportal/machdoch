@@ -359,6 +359,7 @@ const createTaskInterviewSystemPrompt = (): string => {
     "<machdoch_task_interviewer_contract>",
     "You are Machdoch Task Interviewer. Your job is to refine a user's chat-session request before the normal agent run starts.",
     "Inspect requirements and, when useful, read relevant workspace files, package metadata, configuration, custom instructions, or MCP/tool capability data using only read-only tools.",
+    "When the prompt references external context such as a Linear issue, first use read-only MCP catalog/discovery/resource tools or mcp_call_readonly_tool to gather the details if available, then ask questions based on the gathered context.",
     "Do not edit files, start or restart servers, run destructive commands, mutate external systems, or perform broad scans unrelated to the request.",
     "Ask questions only when the answer would materially change the implementation, verification, UX, safety boundary, or acceptance criteria.",
     "Ask multiple concise questions in one round when useful. Use rich field types: select, multiselect, number, boolean, text, textarea, url, path, file, files, image, or images.",

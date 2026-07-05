@@ -41,7 +41,10 @@ const writeDiscoveryCache = async (
   );
 };
 
-const writeWorkspaceMcpConfig = async (workspaceRoot: string): Promise<void> => {
+const writeWorkspaceMcpConfig = async (
+  workspaceRoot: string,
+  serverId = "github",
+): Promise<void> => {
   const configDirectory = join(workspaceRoot, ".machdoch", "mcp");
 
   await mkdir(configDirectory, { recursive: true });
@@ -52,11 +55,11 @@ const writeWorkspaceMcpConfig = async (workspaceRoot: string): Promise<void> => 
         schemaVersion: 1,
         servers: [
           {
-            id: "github",
+            id: serverId,
             enabled: true,
             transport: {
               type: "streamable-http",
-              url: "https://api.githubcopilot.com/mcp/",
+              url: `https://example.com/${serverId}/mcp/`,
             },
           },
         ],
@@ -344,6 +347,165 @@ describe("createMcpToolDefinitions", () => {
         },
       },
     });
+  });
+
+  it("calls generic MCP tools through the read-only pre-execution guard", async () => {
+    const workspaceRoot = await createWorkspace();
+    const context = {
+      ...createExecutionContext(workspaceRoot),
+      runId: "interview-1",
+    };
+    const callToolSpy = vi
+      .spyOn(mcpClientManager, "callTool")
+      .mockResolvedValue({
+        content: [
+          {
+            type: "text",
+            text: "Repository search result",
+          },
+        ],
+      });
+
+    await writeWorkspaceMcpConfig(workspaceRoot);
+    await writeDiscoveryCache(workspaceRoot, discovery);
+
+    const readonlyTool = createMcpToolDefinitions(workspaceRoot).find(
+      (definition) => definition.spec.name === "mcp_call_readonly_tool",
+    );
+
+    if (!readonlyTool) {
+      throw new Error("Expected mcp_call_readonly_tool to be registered.");
+    }
+
+    const result = await readonlyTool.execute(
+      {
+        serverId: "github",
+        toolName: "search_repositories",
+        arguments: { query: "machdoch" },
+      },
+      context,
+    );
+
+    expect(result.toolResult.output).toBe("Repository search result");
+    expect(callToolSpy).toHaveBeenCalledWith(
+      workspaceRoot,
+      "github",
+      "search_repositories",
+      { query: "machdoch" },
+      expect.objectContaining({
+        cache: expect.objectContaining({
+          operation: "tool",
+          readOnly: true,
+          runId: "interview-1",
+        }),
+      }),
+    );
+  });
+
+  it("blocks generic read-only MCP calls for tools not marked read-only", async () => {
+    const workspaceRoot = await createWorkspace();
+    const context = createExecutionContext(workspaceRoot);
+    const callToolSpy = vi.spyOn(mcpClientManager, "callTool");
+
+    await writeWorkspaceMcpConfig(workspaceRoot);
+    await writeDiscoveryCache(workspaceRoot, discovery);
+
+    const readonlyTool = createMcpToolDefinitions(workspaceRoot).find(
+      (definition) => definition.spec.name === "mcp_call_readonly_tool",
+    );
+
+    if (!readonlyTool) {
+      throw new Error("Expected mcp_call_readonly_tool to be registered.");
+    }
+
+    const result = await readonlyTool.execute(
+      {
+        serverId: "github",
+        toolName: "create_issue",
+        arguments: {},
+      },
+      context,
+    );
+
+    expect(result.toolResult).toMatchObject({ isError: true });
+    expect(result.toolResult.output).toContain("is not marked read-only");
+    expect(callToolSpy).not.toHaveBeenCalled();
+  });
+
+  it("verifies read-only MCP calls through live discovery when cache is empty", async () => {
+    const workspaceRoot = await createWorkspace();
+    const context = createExecutionContext(workspaceRoot);
+    const discoverSpy = vi
+      .spyOn(mcpClientManager, "discoverServerById")
+      .mockResolvedValue({
+        discovery: {
+          serverId: "linear",
+          discoveredAt: "2026-07-03T00:00:00.000Z",
+          transportType: "streamable-http",
+          tools: [
+            {
+              name: "get_issue",
+              description: "Get a Linear issue.",
+              inputSchema: {
+                type: "object",
+                required: ["id"],
+                properties: {
+                  id: { type: "string" },
+                },
+              },
+              annotations: {
+                readOnlyHint: true,
+              },
+            },
+          ],
+          resources: [],
+          resourceTemplates: [],
+          prompts: [],
+        },
+      });
+    const callToolSpy = vi
+      .spyOn(mcpClientManager, "callTool")
+      .mockResolvedValue({
+        content: [
+          {
+            type: "text",
+            text: "CLOUD-1781 issue details",
+          },
+        ],
+      });
+
+    await writeWorkspaceMcpConfig(workspaceRoot, "linear");
+
+    const readonlyTool = createMcpToolDefinitions(workspaceRoot).find(
+      (definition) => definition.spec.name === "mcp_call_readonly_tool",
+    );
+
+    if (!readonlyTool) {
+      throw new Error("Expected mcp_call_readonly_tool to be registered.");
+    }
+
+    const result = await readonlyTool.execute(
+      {
+        serverId: "linear",
+        toolName: "get_issue",
+        arguments: { id: "CLOUD-1781" },
+      },
+      context,
+    );
+
+    expect(discoverSpy).toHaveBeenCalledWith(
+      workspaceRoot,
+      "linear",
+      expect.anything(),
+    );
+    expect(callToolSpy).toHaveBeenCalledWith(
+      workspaceRoot,
+      "linear",
+      "get_issue",
+      { id: "CLOUD-1781" },
+      expect.anything(),
+    );
+    expect(result.toolResult.output).toBe("CLOUD-1781 issue details");
   });
 
   it("rejects invalid Linear get_issue arguments before remote MCP dispatch", async () => {

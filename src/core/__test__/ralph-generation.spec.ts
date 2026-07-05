@@ -281,6 +281,15 @@ describe("createRalphFlowWithAgent", () => {
       value: null,
       comment: "Skipped because the flow should infer scope.",
     });
+    expect(vi.mocked(executeTask).mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        mode: "ask",
+        reasoning: "medium",
+      }),
+    );
+    expect(
+      vi.mocked(executeTask).mock.calls[0]?.[3]?.systemPromptSections?.[0],
+    ).toContain("mcp_call_readonly_tool");
     expect(vi.mocked(executeTask).mock.calls[0]?.[0]).toContain(
       "Answer comment for Scope?: Skipped because the flow should infer scope.",
     );

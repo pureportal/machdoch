@@ -1,5 +1,5 @@
 /// <reference types="vitest/globals" />
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
@@ -47,6 +47,33 @@ const memory: ConversationMemoryRuntime = {
   sessionEntries: [],
   globalEnabled: false,
   globalEntries: [],
+};
+
+const writeWorkspaceMcpConfig = async (workspaceRoot: string): Promise<void> => {
+  const configDirectory = join(workspaceRoot, ".machdoch", "mcp");
+
+  await mkdir(configDirectory, { recursive: true });
+  await writeFile(
+    join(configDirectory, "mcp.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        servers: [
+          {
+            id: "linear",
+            enabled: true,
+            transport: {
+              type: "streamable-http",
+              url: "https://example.com/linear/mcp/",
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
 };
 
 describe("resolveActionDecision", () => {
@@ -104,6 +131,39 @@ describe("createToolDefinitions", () => {
     expect(machdochToolNames).toContain("create_scheduled_job");
     expect(machdochToolNames).toContain("update_scheduled_job");
     expect(machdochToolNames).toContain("emit_scheduler_event");
+  });
+
+  it("exposes guarded read-only MCP calls in ask mode without exposing generic MCP mutations", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-agent-mcp-"));
+    const originalConfigDir = process.env.MACHDOCH_USER_CONFIG_DIR;
+
+    try {
+      process.env.MACHDOCH_USER_CONFIG_DIR = join(workspaceRoot, ".user-config");
+      await writeWorkspaceMcpConfig(workspaceRoot);
+
+      const askToolNames = createToolDefinitions(
+        createRuntimeConfig({ mode: "ask", workspaceRoot }),
+        memory,
+      ).map((definition) => definition.spec.name);
+      const machdochToolNames = createToolDefinitions(
+        createRuntimeConfig({ mode: "machdoch", workspaceRoot }),
+        memory,
+      ).map((definition) => definition.spec.name);
+
+      expect(askToolNames).toContain("mcp_discover_capabilities");
+      expect(askToolNames).toContain("mcp_call_readonly_tool");
+      expect(askToolNames).toContain("mcp_read_resource");
+      expect(askToolNames).not.toContain("mcp_call_tool");
+      expect(machdochToolNames).toContain("mcp_call_tool");
+    } finally {
+      if (originalConfigDir === undefined) {
+        delete process.env.MACHDOCH_USER_CONFIG_DIR;
+      } else {
+        process.env.MACHDOCH_USER_CONFIG_DIR = originalConfigDir;
+      }
+
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
   });
 });
 

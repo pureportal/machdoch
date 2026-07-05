@@ -2839,6 +2839,7 @@ export const useChatSessionController = (
         placement,
         startedAt: Date.now(),
       };
+      const imagePaths = getImageAttachmentPaths(submission.contextAttachments);
 
       activeDesktopTasksRef.current.set(taskId, sessionSnapshot.id);
       setPromptEnhancementBusy(true);
@@ -2868,6 +2869,7 @@ export const useChatSessionController = (
             provider: sessionSnapshot.provider,
             model: sessionSnapshot.model,
             ...(reasoning ? { reasoning } : {}),
+            ...(imagePaths.length > 0 ? { imagePaths } : {}),
             taskId,
           },
         );

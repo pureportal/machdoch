@@ -722,7 +722,7 @@ const extractLinearIssueReference = (
 };
 
 const isLinearMcpGetIssueCall = (call: AgentModelToolCall): boolean => {
-  if (call.name === "mcp_call_tool") {
+  if (call.name === "mcp_call_tool" || call.name === "mcp_call_readonly_tool") {
     return (
       getStringArg(call.arguments, "serverId")?.toLowerCase() === "linear" &&
       getStringArg(call.arguments, "toolName") === "get_issue"
@@ -747,7 +747,7 @@ const repairLinearIssueToolCallArguments = (
     return { call };
   }
 
-  if (call.name === "mcp_call_tool") {
+  if (call.name === "mcp_call_tool" || call.name === "mcp_call_readonly_tool") {
     const remoteArguments = isRecord(call.arguments.arguments)
       ? call.arguments.arguments
       : {};

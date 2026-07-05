@@ -42,6 +42,36 @@ const createWorkspace = async (): Promise<string> => {
   return workspaceRoot;
 };
 
+const writeWorkspaceMcpConfig = async (
+  workspaceRoot: string,
+  serverId: string,
+): Promise<void> => {
+  const configDirectory = join(workspaceRoot, ".machdoch", "mcp");
+
+  await mkdir(configDirectory, { recursive: true });
+  await writeFile(
+    join(configDirectory, "mcp.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        servers: [
+          {
+            id: serverId,
+            enabled: true,
+            transport: {
+              type: "streamable-http",
+              url: `https://example.com/${serverId}/mcp/`,
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+};
+
 const createConfig = (
   workspaceRoot: string,
   mode: RunMode,
@@ -1749,6 +1779,115 @@ describe("executeTask", () => {
 
     expect(result.status).toBe("executed");
     expect(callToolSpy).toHaveBeenCalledTimes(1);
+    expect(callToolSpy).toHaveBeenCalledWith(
+      workspaceRoot,
+      "linear",
+      "get_issue",
+      { id: "CLOUD-1781" },
+      expect.anything(),
+    );
+    expect(observedToolResults).toEqual([
+      {
+        output: "CLOUD-1781 issue details",
+      },
+    ]);
+  });
+
+  it("repairs Linear issue references before dispatching read-only MCP get_issue calls in ask mode", async () => {
+    const workspaceRoot = await createWorkspace();
+    const observedToolResults: Array<{ output: string; isError?: boolean }> = [];
+    const discoverSpy = vi
+      .spyOn(mcpClientManager, "discoverServerById")
+      .mockResolvedValue({
+        discovery: {
+          serverId: "linear",
+          discoveredAt: "2026-07-03T00:00:00.000Z",
+          transportType: "streamable-http",
+          tools: [
+            {
+              name: "get_issue",
+              description: "Get a Linear issue.",
+              inputSchema: {
+                type: "object",
+                required: ["id"],
+                properties: {
+                  id: { type: "string" },
+                },
+              },
+              annotations: {
+                readOnlyHint: true,
+              },
+            },
+          ],
+          resources: [],
+          resourceTemplates: [],
+          prompts: [],
+        },
+      });
+    const callToolSpy = vi
+      .spyOn(mcpClientManager, "callTool")
+      .mockResolvedValue({
+        content: [
+          {
+            type: "text",
+            text: "CLOUD-1781 issue details",
+          },
+        ],
+      });
+
+    await writeWorkspaceMcpConfig(workspaceRoot, "linear");
+
+    const adapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "",
+        toolCalls: [
+          {
+            id: "call-1",
+            name: "mcp_call_readonly_tool",
+            arguments: {
+              serverId: "linear",
+              toolName: "get_issue",
+              arguments: null,
+            },
+          },
+        ],
+      }),
+      continueTurn: async ({ toolResults }) => {
+        observedToolResults.push(
+          ...toolResults.map((toolResult) => ({
+            output: toolResult.output,
+            ...(toolResult.isError ? { isError: true } : {}),
+          })),
+        );
+
+        return {
+          text: "",
+          toolCalls: [
+            createFinalResponseToolCall({
+              summary: "Prepared CLOUD-1781 interview context.",
+              markdown: "Prepared CLOUD-1781 interview context.",
+              verification: ["Fetched CLOUD-1781 from Linear."],
+            }),
+          ],
+        };
+      },
+    };
+
+    const result = await executeTask(
+      "Linear: CLOUD-1781\n\nAsk interview questions for this bug.",
+      createConfig(workspaceRoot, "ask"),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: adapter,
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(discoverSpy).toHaveBeenCalledWith(
+      workspaceRoot,
+      "linear",
+      expect.anything(),
+    );
     expect(callToolSpy).toHaveBeenCalledWith(
       workspaceRoot,
       "linear",

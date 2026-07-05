@@ -2163,6 +2163,105 @@ describe("ChatSession component", () => {
   );
 
   it(
+    "passes image attachments to prompt enhancement and preserves them for the final task",
+    async () => {
+      const baseState = createInitialShellState();
+      const session = createSession({
+        id: "prompt-enhancement-image-session",
+        workspace: "C:\\Docs",
+        draftContextAttachments: [
+          {
+            id: "screen",
+            path: "C:\\Docs\\screen.png",
+            kind: "image",
+            name: "screen.png",
+            parent: "C:\\Docs",
+          },
+        ],
+      });
+      const originalPrompt = "Improve this screen";
+      const enhancedPrompt = "Improve the attached screen with specific UX fixes.";
+      const enhancementExecution = createMockExecutionFixture(
+        "enhance prompt",
+        "C:\\Docs",
+        { mode: "ask" },
+      );
+
+      enhancementExecution.response = {
+        ...enhancementExecution.response,
+        markdown: `<machdoch_enhanced_prompt>${enhancedPrompt}</machdoch_enhanced_prompt>`,
+      };
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: session.id,
+        sessions: [session],
+      });
+
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(async (_workspaceRoot, task, context) => {
+          if (String(task).includes("Enhance the user's Machdoch chat request")) {
+            return {
+              execution: enhancementExecution,
+            };
+          }
+
+          return {
+            execution: createMockExecutionFixture(
+              String(task),
+              "C:\\Docs",
+              { mode: context?.mode },
+            ),
+          };
+        });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prompt enhancement: Off" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Choose Simple enhance" }),
+      );
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: originalPrompt },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(2);
+      });
+
+      expect(runDesktopTaskSpy.mock.calls[0]?.[1]).toContain(
+        "- Attached image (screen.png): C:\\Docs\\screen.png",
+      );
+      expect(runDesktopTaskSpy.mock.calls[0]?.[2]).toEqual(
+        expect.objectContaining({
+          mode: "ask",
+          imagePaths: ["C:\\Docs\\screen.png"],
+        }),
+      );
+      expect(runDesktopTaskSpy.mock.calls[1]?.[1]).toBe(
+        `${enhancedPrompt}\n\nUse this image: "C:\\Docs\\screen.png"`,
+      );
+      expect(runDesktopTaskSpy.mock.calls[1]?.[2]).toEqual(
+        expect.objectContaining({
+          imagePaths: ["C:\\Docs\\screen.png"],
+        }),
+      );
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "blocks the composer with a prompt enhancement animation before interview mode starts",
     async () => {
       const originalPrompt = "billing settings";

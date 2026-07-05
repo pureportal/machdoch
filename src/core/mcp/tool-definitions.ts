@@ -887,10 +887,96 @@ const listCapabilityNames = (
   );
 };
 
+const getReadOnlyMcpToolError = (
+  server: McpEffectiveServerConfig,
+  toolName: string,
+  tool: McpDiscoveredTool | undefined,
+): string | undefined => {
+  const override = server.toolOverrides?.[toolName];
+
+  if (override?.enabled === false) {
+    return `MCP tool \`${server.id}.${toolName}\` is disabled by workspace configuration.`;
+  }
+
+  if (override?.readOnlyInAskMode === true) {
+    return undefined;
+  }
+
+  if (override?.effect === "external-read") {
+    return undefined;
+  }
+
+  if (tool && resolveToolEffect(server, tool) === "external-read") {
+    return undefined;
+  }
+
+  return [
+    `MCP tool \`${server.id}.${toolName}\` is not marked read-only.`,
+    "Use mcp_discover_capabilities or mcp_inspect_tool to inspect the tool first, or configure an MCP tool override with effect external-read/readOnlyInAskMode only if the remote operation is safe.",
+  ].join(" ");
+};
+
+const findCachedMcpTool = (
+  cache: Record<string, McpServerDiscovery>,
+  serverId: string,
+  toolName: string,
+): McpDiscoveredTool | undefined => {
+  return cache[serverId]?.tools.find((tool) => tool.name === toolName);
+};
+
+const assertReadOnlyMcpToolCall = async (
+  workspaceRoot: string,
+  serverId: string,
+  toolName: string,
+  context: AgentToolExecutionContext,
+): Promise<string | undefined> => {
+  const config = loadMcpConfigSync(workspaceRoot);
+  const server = getEnabledMcpServer(config, serverId);
+
+  if (!server) {
+    return `MCP server \`${serverId}\` is not configured or not enabled.`;
+  }
+
+  const cachedTool = findCachedMcpTool(
+    loadMcpDiscoveryCacheSync(workspaceRoot).servers,
+    server.id,
+    toolName,
+  );
+  const cachedError = getReadOnlyMcpToolError(server, toolName, cachedTool);
+
+  if (!cachedError || cachedTool || server.toolOverrides?.[toolName]) {
+    return cachedError;
+  }
+
+  try {
+    const { discovery } = await mcpClientManager.discoverServerById(
+      workspaceRoot,
+      server.id,
+      createMcpOperationOptions(context),
+    );
+    const discoveredTool = discovery.tools.find(
+      (tool) => tool.name === toolName,
+    );
+
+    if (!discoveredTool) {
+      return `MCP tool \`${server.id}.${toolName}\` was not found in live discovery.`;
+    }
+
+    return getReadOnlyMcpToolError(server, toolName, discoveredTool);
+  } catch (error) {
+    return `Unable to verify whether MCP tool \`${server.id}.${toolName}\` is read-only: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+  }
+};
+
 const executeMcpCall = async (
   toolName: string,
   args: Record<string, unknown>,
   context: AgentToolExecutionContext,
+  options: {
+    readOnly?: boolean;
+  } = {},
 ): Promise<AgentToolExecutionResult> => {
   const serverId = coerceString(args, "serverId");
   const remoteToolName = coerceString(args, "toolName");
@@ -923,13 +1009,28 @@ const executeMcpCall = async (
     );
   }
 
+  if (options.readOnly) {
+    const readOnlyError = await assertReadOnlyMcpToolCall(
+      context.workspaceRoot,
+      serverId,
+      remoteToolName,
+      context,
+    );
+
+    if (readOnlyError) {
+      return createToolErrorResult(randomUUID(), toolName, readOnlyError);
+    }
+  }
+
   try {
     const result = await mcpClientManager.callTool(
       context.workspaceRoot,
       serverId,
       remoteToolName,
       remoteArguments.value,
-      { onProgress: createProgressHandler(context) },
+      options.readOnly
+        ? createMcpOperationOptions(context, "tool", true)
+        : { onProgress: createProgressHandler(context) },
     );
     const formatted = formatCallToolOutput(result);
 
@@ -1686,7 +1787,7 @@ const createMetaToolDefinitions = (): AgentToolDefinition[] => [
     spec: {
       name: "mcp_call_tool",
       description:
-        "Call a tool exposed by a configured MCP server. Use cached discovery or mcp_discover_capabilities first when tool names or arguments are unknown.",
+        "Call a tool exposed by a configured MCP server. Use cached discovery or mcp_discover_capabilities first when tool names or arguments are unknown. In Ask mode, use mcp_call_readonly_tool instead.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -1714,6 +1815,42 @@ const createMetaToolDefinitions = (): AgentToolDefinition[] => [
     riskLevel: "high",
     effect: "external-side-effect",
     execute: (args, context) => executeMcpCall("mcp_call_tool", args, context),
+  },
+  {
+    spec: {
+      name: "mcp_call_readonly_tool",
+      description:
+        "Call a configured MCP server tool only after Machdoch verifies the remote tool is marked read-only by cached or live MCP discovery annotations, or by an explicit local MCP override. Use this for pre-execution context gathering such as reading a Linear issue.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["serverId", "toolName", "arguments"],
+        properties: {
+          serverId: {
+            type: "string",
+            description: "Configured MCP server id.",
+          },
+          toolName: {
+            type: "string",
+            description: "Remote MCP tool name.",
+          },
+          arguments: {
+            type: "object",
+            description:
+              "Arguments to pass to the remote read-only MCP tool. Always pass an object; use {} for tools with no arguments. For Linear get_issue, pass {\"id\":\"ISSUE-123\"}.",
+            additionalProperties: true,
+          },
+        },
+      },
+      strict: false,
+    },
+    backingTool: "mcp",
+    riskLevel: "medium",
+    effect: "external-read",
+    execute: (args, context) =>
+      executeMcpCall("mcp_call_readonly_tool", args, context, {
+        readOnly: true,
+      }),
   },
   {
     spec: {
