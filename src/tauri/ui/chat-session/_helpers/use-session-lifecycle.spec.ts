@@ -102,6 +102,158 @@ describe("useSessionLifecycle", () => {
     expect(state.shellState.sessions).toHaveLength(2);
   });
 
+  it("creates new sessions from remembered new-chat settings", () => {
+    const baseState = createInitialShellState();
+    const existingSession = createSession({
+      id: "existing-session",
+      provider: "openai",
+      model: "gpt-5.4",
+      mode: "machdoch",
+      sessionMemoryEnabled: true,
+      useGlobalMemory: true,
+      uiControlEnabled: false,
+      updatedAt: 100,
+      messages: [
+        {
+          id: "existing-user-message",
+          role: "user",
+          content: "Existing work",
+          createdAt: 100,
+        },
+      ],
+    });
+    const state = createStaleStateController({
+      ...baseState,
+      activeSessionId: existingSession.id,
+      sessions: [existingSession],
+      lastSelectedProvider: "openai",
+      lastSelectedModelByProvider: {
+        ...baseState.lastSelectedModelByProvider,
+        openai: "gpt-5.5",
+      },
+      lastSelectedMode: "ask",
+      lastSelectedReasoning: "high",
+      lastSelectedSessionMemoryEnabled: false,
+      lastSelectedUseGlobalMemory: false,
+      lastSelectedUiControlEnabled: true,
+    });
+    const { result } = renderHook(() =>
+      useSessionLifecycle({
+        state: state.controller,
+        providerChooserState,
+      }),
+    );
+
+    act(() => {
+      result.current.createNewSession();
+    });
+
+    const newSession = state.shellState.sessions.find(
+      (session) => session.id === state.shellState.activeSessionId,
+    );
+
+    expect(newSession).toMatchObject({
+      provider: "openai",
+      model: "gpt-5.5",
+      mode: "ask",
+      reasoning: "high",
+      sessionMemoryEnabled: false,
+      useGlobalMemory: false,
+      uiControlEnabled: true,
+    });
+    expect(existingSession).toMatchObject({
+      provider: "openai",
+      model: "gpt-5.4",
+      mode: "machdoch",
+      sessionMemoryEnabled: true,
+      useGlobalMemory: true,
+      uiControlEnabled: false,
+    });
+  });
+
+  it("refreshes reusable empty sessions with remembered new-chat settings", () => {
+    const baseState = createInitialShellState();
+    const activeSession = createSession({
+      id: "active-existing-session",
+      workspace: "C:\\Current",
+      updatedAt: 200,
+      messages: [
+        {
+          id: "active-user-message",
+          role: "user",
+          content: "Keep this chat unchanged",
+          createdAt: 200,
+        },
+      ],
+    });
+    const reusableSession = createSession({
+      id: "stale-empty-session",
+      workspace: "C:\\Old",
+      provider: "openai",
+      model: "gpt-5.4",
+      mode: "machdoch",
+      sessionMemoryEnabled: true,
+      useGlobalMemory: true,
+      uiControlEnabled: false,
+      updatedAt: 100,
+    });
+    const state = createStaleStateController({
+      ...baseState,
+      activeSessionId: activeSession.id,
+      sessions: [activeSession, reusableSession],
+      recentWorkspaces: ["C:\\Remembered"],
+      lastSelectedProvider: "openai",
+      lastSelectedModelByProvider: {
+        ...baseState.lastSelectedModelByProvider,
+        openai: "gpt-5.5",
+      },
+      lastSelectedMode: "ask",
+      lastSelectedReasoning: "high",
+      lastSelectedSessionMemoryEnabled: false,
+      lastSelectedUseGlobalMemory: false,
+      lastSelectedUiControlEnabled: true,
+    });
+    const { result } = renderHook(() =>
+      useSessionLifecycle({
+        state: state.controller,
+        providerChooserState,
+      }),
+    );
+
+    act(() => {
+      result.current.createNewSession();
+    });
+
+    expect(state.shellState.sessions).toHaveLength(2);
+    expect(state.shellState.activeSessionId).toBe(reusableSession.id);
+    expect(
+      state.shellState.sessions.find(
+        (session) => session.id === reusableSession.id,
+      ),
+    ).toMatchObject({
+      workspace: "C:\\Remembered",
+      provider: "openai",
+      model: "gpt-5.5",
+      mode: "ask",
+      reasoning: "high",
+      sessionMemoryEnabled: false,
+      useGlobalMemory: false,
+      uiControlEnabled: true,
+      messages: [],
+    });
+    expect(
+      state.shellState.sessions.find((session) => session.id === activeSession.id),
+    ).toMatchObject({
+      id: activeSession.id,
+      provider: activeSession.provider,
+      model: activeSession.model,
+      sessionMemoryEnabled: activeSession.sessionMemoryEnabled,
+      useGlobalMemory: activeSession.useGlobalMemory,
+      uiControlEnabled: activeSession.uiControlEnabled,
+      messages: activeSession.messages,
+    });
+  });
+
   it("leaves empty sessions unchanged for archive, pin, and duplicate actions", () => {
     const baseState = createInitialShellState();
     const emptySession = createSession({

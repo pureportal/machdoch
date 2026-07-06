@@ -1,6 +1,86 @@
 import { useCallback } from "react";
+import {
+  isQuickVoiceSession,
+  type ShellPersistedState,
+} from "../../chat-session.model";
 import type { SettingsSection } from "./session-shell";
 import type { ChatSessionShellStateController } from "./use-chat-session-shell-state";
+
+type SessionBooleanSettingKey =
+  | "sessionMemoryEnabled"
+  | "useGlobalMemory"
+  | "uiControlEnabled";
+
+type RememberedSessionBooleanSettingKey = keyof Pick<
+  ShellPersistedState,
+  | "lastSelectedSessionMemoryEnabled"
+  | "lastSelectedUseGlobalMemory"
+  | "lastSelectedUiControlEnabled"
+>;
+
+const updateActiveSessionBooleanSetting = (
+  state: ChatSessionShellStateController,
+  key: SessionBooleanSettingKey,
+  rememberedKey: RememberedSessionBooleanSettingKey,
+  enabled: boolean,
+): void => {
+  const targetSessionId = state.activeSession.id;
+  const allowHydrationFallback = !state.hasHydrated;
+
+  state.applyShellState((prev) => {
+    const targetSessionExists = prev.sessions.some(
+      (session) => session.id === targetSessionId,
+    );
+    const fallbackSessionId = allowHydrationFallback ? prev.activeSessionId : null;
+    const resolvedSessionId = targetSessionExists
+      ? targetSessionId
+      : fallbackSessionId &&
+          prev.sessions.some((session) => session.id === fallbackSessionId)
+        ? fallbackSessionId
+        : null;
+
+    if (!resolvedSessionId) {
+      return prev;
+    }
+
+    const nextUpdatedAt = Date.now();
+    let didUpdateSession = false;
+    let shouldRememberDefault = false;
+    const sessions = prev.sessions.map((session) => {
+      if (session.id !== resolvedSessionId) {
+        return session;
+      }
+
+      if (key === "sessionMemoryEnabled" && isQuickVoiceSession(session)) {
+        return session;
+      }
+
+      didUpdateSession = true;
+      shouldRememberDefault = !isQuickVoiceSession(session);
+
+      return {
+        ...session,
+        [key]: enabled,
+        updatedAt: nextUpdatedAt,
+      };
+    });
+
+    if (!didUpdateSession) {
+      return prev;
+    }
+
+    const nextState: ShellPersistedState = {
+      ...prev,
+      sessions,
+    };
+
+    if (shouldRememberDefault) {
+      nextState[rememberedKey] = enabled;
+    }
+
+    return nextState;
+  });
+};
 
 export const useSessionSettingsActions = (
   state: ChatSessionShellStateController,
@@ -15,33 +95,36 @@ export const useSessionSettingsActions = (
 
   const setSessionMemoryEnabled = useCallback(
     (enabled: boolean): void => {
-      state.updateActiveSession((session) => ({
-        ...session,
-        sessionMemoryEnabled: enabled,
-        updatedAt: Date.now(),
-      }));
+      updateActiveSessionBooleanSetting(
+        state,
+        "sessionMemoryEnabled",
+        "lastSelectedSessionMemoryEnabled",
+        enabled,
+      );
     },
     [state],
   );
 
   const setUseGlobalMemory = useCallback(
     (enabled: boolean): void => {
-      state.updateActiveSession((session) => ({
-        ...session,
-        useGlobalMemory: enabled,
-        updatedAt: Date.now(),
-      }));
+      updateActiveSessionBooleanSetting(
+        state,
+        "useGlobalMemory",
+        "lastSelectedUseGlobalMemory",
+        enabled,
+      );
     },
     [state],
   );
 
   const setUiControlEnabled = useCallback(
     (enabled: boolean): void => {
-      state.updateActiveSession((session) => ({
-        ...session,
-        uiControlEnabled: enabled,
-        updatedAt: Date.now(),
-      }));
+      updateActiveSessionBooleanSetting(
+        state,
+        "uiControlEnabled",
+        "lastSelectedUiControlEnabled",
+        enabled,
+      );
     },
     [state],
   );

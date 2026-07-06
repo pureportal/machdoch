@@ -911,9 +911,6 @@ export const mergeShellStateForPersistence = (
       continue;
     }
 
-    const localSessionChanged =
-      !baseSession || !areShellFragmentsEqual(localSession, baseSession);
-
     if (!latestSession) {
       mergedSessionsById.set(sessionId, localSession);
       continue;
@@ -1012,6 +1009,21 @@ export const mergeShellStateForPersistence = (
     )
       ? latestState.lastSelectedModelByProvider
       : localState.lastSelectedModelByProvider,
+    lastSelectedSessionMemoryEnabled:
+      localState.lastSelectedSessionMemoryEnabled ===
+      baseState.lastSelectedSessionMemoryEnabled
+        ? latestState.lastSelectedSessionMemoryEnabled
+        : localState.lastSelectedSessionMemoryEnabled,
+    lastSelectedUseGlobalMemory:
+      localState.lastSelectedUseGlobalMemory ===
+      baseState.lastSelectedUseGlobalMemory
+        ? latestState.lastSelectedUseGlobalMemory
+        : localState.lastSelectedUseGlobalMemory,
+    lastSelectedUiControlEnabled:
+      localState.lastSelectedUiControlEnabled ===
+      baseState.lastSelectedUiControlEnabled
+        ? latestState.lastSelectedUiControlEnabled
+        : localState.lastSelectedUiControlEnabled,
   };
 
   if (localState.lastSelectedMode !== baseState.lastSelectedMode) {
@@ -1024,6 +1036,18 @@ export const mergeShellStateForPersistence = (
     mergedState.lastSelectedMode = latestState.lastSelectedMode;
   } else {
     delete mergedState.lastSelectedMode;
+  }
+
+  if (localState.lastSelectedReasoning !== baseState.lastSelectedReasoning) {
+    if (localState.lastSelectedReasoning) {
+      mergedState.lastSelectedReasoning = localState.lastSelectedReasoning;
+    } else {
+      delete mergedState.lastSelectedReasoning;
+    }
+  } else if (latestState.lastSelectedReasoning) {
+    mergedState.lastSelectedReasoning = latestState.lastSelectedReasoning;
+  } else {
+    delete mergedState.lastSelectedReasoning;
   }
 
   if (localState.lastRecoveredLaunchId !== baseState.lastRecoveredLaunchId) {

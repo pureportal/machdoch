@@ -157,6 +157,9 @@ export interface ShellPersistedState {
   lastSelectedModelByProvider: Partial<Record<RuntimeProvider, string>>;
   lastSelectedMode?: RunMode;
   lastSelectedReasoning?: ReasoningMode;
+  lastSelectedSessionMemoryEnabled: boolean;
+  lastSelectedUseGlobalMemory: boolean;
+  lastSelectedUiControlEnabled: boolean;
   lastRecoveredLaunchId?: string;
 }
 
@@ -918,6 +921,9 @@ export const createInitialShellState = (): ShellPersistedState => {
       anthropic: getDefaultModelForProvider("anthropic"),
       google: getDefaultModelForProvider("google"),
     },
+    lastSelectedSessionMemoryEnabled: true,
+    lastSelectedUseGlobalMemory: true,
+    lastSelectedUiControlEnabled: false,
   };
 };
 
@@ -1730,6 +1736,18 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
   const lastSelectedReasoning = normalizeOptionalStoredReasoningMode(
     candidate.lastSelectedReasoning,
   );
+  const lastSelectedSessionMemoryEnabled =
+    typeof candidate.lastSelectedSessionMemoryEnabled === "boolean"
+      ? candidate.lastSelectedSessionMemoryEnabled
+      : fallback.lastSelectedSessionMemoryEnabled;
+  const lastSelectedUseGlobalMemory =
+    typeof candidate.lastSelectedUseGlobalMemory === "boolean"
+      ? candidate.lastSelectedUseGlobalMemory
+      : fallback.lastSelectedUseGlobalMemory;
+  const lastSelectedUiControlEnabled =
+    typeof candidate.lastSelectedUiControlEnabled === "boolean"
+      ? candidate.lastSelectedUiControlEnabled
+      : fallback.lastSelectedUiControlEnabled;
   const lastRecoveredLaunchId =
     typeof candidate.lastRecoveredLaunchId === "string" &&
     candidate.lastRecoveredLaunchId.trim().length > 0
@@ -1779,6 +1797,9 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
     },
     ...(lastSelectedMode ? { lastSelectedMode } : {}),
     ...(lastSelectedReasoning ? { lastSelectedReasoning } : {}),
+    lastSelectedSessionMemoryEnabled,
+    lastSelectedUseGlobalMemory,
+    lastSelectedUiControlEnabled,
     ...(lastRecoveredLaunchId ? { lastRecoveredLaunchId } : {}),
   };
 };
@@ -2472,6 +2493,9 @@ const createRetentionReplacementSession = (
     model:
       state.lastSelectedModelByProvider[provider] ??
       getDefaultModelForProvider(provider),
+    sessionMemoryEnabled: state.lastSelectedSessionMemoryEnabled,
+    useGlobalMemory: state.lastSelectedUseGlobalMemory,
+    uiControlEnabled: state.lastSelectedUiControlEnabled,
   });
 };
 

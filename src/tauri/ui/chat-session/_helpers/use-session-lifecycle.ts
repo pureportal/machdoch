@@ -9,6 +9,7 @@ import {
   normalizeSessionTags,
   sortSessionsByUpdatedAt,
   type ChatSessionRecord,
+  type ShellPersistedState,
 } from "../../chat-session.model";
 import {
   getDefaultModelForProvider,
@@ -50,6 +51,99 @@ const isReusableNewSession = (session: ChatSessionRecord): boolean => {
   );
 };
 
+interface NewSessionDefaults
+  extends Pick<
+    ChatSessionRecord,
+    | "provider"
+    | "model"
+    | "workspace"
+    | "sessionMemoryEnabled"
+    | "useGlobalMemory"
+    | "uiControlEnabled"
+  > {
+  mode?: NonNullable<ChatSessionRecord["mode"]>;
+  reasoning?: NonNullable<ChatSessionRecord["reasoning"]>;
+}
+
+const createNewSessionDefaults = (
+  state: ShellPersistedState,
+  providerChooserState: ProviderChooserState,
+  workspace: string | null | undefined,
+): NewSessionDefaults => {
+  const provider =
+    providerChooserState.chooserProviders.find(
+      (entry) => entry === state.lastSelectedProvider,
+    ) ??
+    providerChooserState.chooserProviders[0] ??
+    state.lastSelectedProvider;
+  const model =
+    state.lastSelectedModelByProvider[provider] ??
+    getDefaultModelForProvider(provider);
+  const reasoning = normalizeSessionReasoningOverride(
+    state.lastSelectedReasoning,
+    provider,
+    model,
+  );
+
+  return {
+    workspace: workspace ?? null,
+    provider,
+    model,
+    ...(state.lastSelectedMode ? { mode: state.lastSelectedMode } : {}),
+    ...(reasoning ? { reasoning } : {}),
+    sessionMemoryEnabled: state.lastSelectedSessionMemoryEnabled,
+    useGlobalMemory: state.lastSelectedUseGlobalMemory,
+    uiControlEnabled: state.lastSelectedUiControlEnabled,
+  };
+};
+
+const sessionMatchesNewSessionDefaults = (
+  session: ChatSessionRecord,
+  defaults: NewSessionDefaults,
+): boolean => {
+  return (
+    session.workspace === defaults.workspace &&
+    session.provider === defaults.provider &&
+    session.model === defaults.model &&
+    session.mode === defaults.mode &&
+    session.reasoning === defaults.reasoning &&
+    session.sessionMemoryEnabled === defaults.sessionMemoryEnabled &&
+    session.useGlobalMemory === defaults.useGlobalMemory &&
+    session.uiControlEnabled === defaults.uiControlEnabled
+  );
+};
+
+const applyNewSessionDefaults = (
+  session: ChatSessionRecord,
+  defaults: NewSessionDefaults,
+  updatedAt: number,
+): ChatSessionRecord => {
+  const nextSession: ChatSessionRecord = {
+    ...session,
+    workspace: defaults.workspace,
+    provider: defaults.provider,
+    model: defaults.model,
+    sessionMemoryEnabled: defaults.sessionMemoryEnabled,
+    useGlobalMemory: defaults.useGlobalMemory,
+    uiControlEnabled: defaults.uiControlEnabled,
+    updatedAt,
+  };
+
+  if (defaults.mode) {
+    nextSession.mode = defaults.mode;
+  } else {
+    delete nextSession.mode;
+  }
+
+  if (defaults.reasoning) {
+    nextSession.reasoning = defaults.reasoning;
+  } else {
+    delete nextSession.reasoning;
+  }
+
+  return nextSession;
+};
+
 export const useSessionLifecycle = (options: {
   state: ChatSessionShellStateController;
   providerChooserState: ProviderChooserState;
@@ -72,16 +166,24 @@ export const useSessionLifecycle = (options: {
               ? currentActiveSession
               : undefined) ??
             sortSessionsByUpdatedAt(prev.sessions).find(isReusableNewSession);
+          const newSessionWorkspace =
+            prev.recentWorkspaces[0] ??
+            currentActiveSession?.workspace ??
+            defaultNewSessionWorkspace;
+          const newSessionDefaults = createNewSessionDefaults(
+            prev,
+            providerChooserState,
+            newSessionWorkspace,
+          );
 
           if (reusableSession) {
             nextActiveSessionId = reusableSession.id;
 
-            const reusableWorkspace =
-              prev.recentWorkspaces[0] ??
-              currentActiveSession?.workspace ??
-              defaultNewSessionWorkspace;
             const shouldRefreshReusableSession =
-              reusableSession.workspace !== reusableWorkspace;
+              !sessionMatchesNewSessionDefaults(
+                reusableSession,
+                newSessionDefaults,
+              );
 
             if (
               prev.activeSessionId === reusableSession.id &&
@@ -96,41 +198,18 @@ export const useSessionLifecycle = (options: {
               sessions: shouldRefreshReusableSession
                 ? prev.sessions.map((session) =>
                     session.id === reusableSession.id
-                      ? {
-                          ...session,
-                          workspace: reusableWorkspace,
-                          updatedAt: Date.now(),
-                        }
+                      ? applyNewSessionDefaults(
+                          session,
+                          newSessionDefaults,
+                          Date.now(),
+                        )
                       : session,
                   )
                 : prev.sessions,
             };
           }
 
-          const provider =
-            providerChooserState.chooserProviders.find(
-              (entry) => entry === prev.lastSelectedProvider,
-            ) ??
-            providerChooserState.chooserProviders[0] ??
-              prev.lastSelectedProvider;
-          const model =
-            prev.lastSelectedModelByProvider[provider] ??
-            getDefaultModelForProvider(provider);
-          const reasoning = normalizeSessionReasoningOverride(
-            prev.lastSelectedReasoning,
-            provider,
-            model,
-          );
-          const session = createSession({
-            workspace:
-              prev.recentWorkspaces[0] ??
-              currentActiveSession?.workspace ??
-              defaultNewSessionWorkspace,
-            provider,
-            ...(prev.lastSelectedMode ? { mode: prev.lastSelectedMode } : {}),
-            ...(reasoning ? { reasoning } : {}),
-            model,
-          });
+          const session = createSession(newSessionDefaults);
 
           nextActiveSessionId = session.id;
 
@@ -159,22 +238,13 @@ export const useSessionLifecycle = (options: {
           );
 
           if (remainingSessions.length === 0) {
-            const provider = prev.lastSelectedProvider;
-            const model =
-              prev.lastSelectedModelByProvider[provider] ??
-              getDefaultModelForProvider(provider);
-            const reasoning = normalizeSessionReasoningOverride(
-              prev.lastSelectedReasoning,
-              provider,
-              model,
+            const replacement = createSession(
+              createNewSessionDefaults(
+                prev,
+                providerChooserState,
+                defaultNewSessionWorkspace,
+              ),
             );
-            const replacement = createSession({
-              workspace: defaultNewSessionWorkspace,
-              provider,
-              ...(prev.lastSelectedMode ? { mode: prev.lastSelectedMode } : {}),
-              ...(reasoning ? { reasoning } : {}),
-              model,
-            });
             nextActiveSessionId = replacement.id;
 
             return {

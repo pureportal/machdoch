@@ -1303,6 +1303,40 @@ describe("useChatSessionShellState", () => {
     expect(mergedState.queuedSessionMessages).toEqual([queuedMessage]);
   });
 
+  it("merges remembered new-chat defaults during concurrent persistence", () => {
+    const baseState = createInitialShellState();
+    const localState = {
+      ...baseState,
+      lastSelectedReasoning: "high" as const,
+      lastSelectedSessionMemoryEnabled: false,
+      lastSelectedUseGlobalMemory: false,
+      lastSelectedUiControlEnabled: true,
+    };
+    const latestState = {
+      ...baseState,
+      lastSelectedProvider: "anthropic" as const,
+      lastSelectedModelByProvider: {
+        ...baseState.lastSelectedModelByProvider,
+        anthropic: "claude-sonnet-4-5",
+      },
+    };
+
+    const mergedState = mergeShellStateForPersistence(
+      localState,
+      baseState,
+      latestState,
+    );
+
+    expect(mergedState.lastSelectedProvider).toBe("anthropic");
+    expect(mergedState.lastSelectedModelByProvider.anthropic).toBe(
+      "claude-sonnet-4-5",
+    );
+    expect(mergedState.lastSelectedReasoning).toBe("high");
+    expect(mergedState.lastSelectedSessionMemoryEnabled).toBe(false);
+    expect(mergedState.lastSelectedUseGlobalMemory).toBe(false);
+    expect(mergedState.lastSelectedUiControlEnabled).toBe(true);
+  });
+
   it("does not resurrect queued messages that were removed locally", () => {
     const baseState = createInitialShellState();
     const session = createSession({

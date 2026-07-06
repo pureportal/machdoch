@@ -60,6 +60,9 @@ describe("normalizeShellState", () => {
         openai: "gpt-custom",
         google: "",
       },
+      lastSelectedSessionMemoryEnabled: false,
+      lastSelectedUseGlobalMemory: false,
+      lastSelectedUiControlEnabled: true,
       voice: {
         autoSpeakResponses: true,
         preferredVoiceURI: "voice-default",
@@ -91,6 +94,9 @@ describe("normalizeShellState", () => {
     });
     expect(normalized.sessions[0]?.model.length).toBeGreaterThan(0);
     expect(normalized.lastSelectedMode).toBe("machdoch");
+    expect(normalized.lastSelectedSessionMemoryEnabled).toBe(false);
+    expect(normalized.lastSelectedUseGlobalMemory).toBe(false);
+    expect(normalized.lastSelectedUiControlEnabled).toBe(true);
   });
 
   it("preserves persisted Codex CLI model selections", () => {
