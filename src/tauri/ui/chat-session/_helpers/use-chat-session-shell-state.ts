@@ -14,6 +14,7 @@ import {
   getLatestCompletedSessionResponseAt,
   getLatestRunningTaskId,
   getSessionTitle,
+  isQuickVoiceSession,
   markSessionRead,
   mergeRecentWorkspacesForPersistence,
   normalizeShellState,
@@ -74,6 +75,135 @@ const getSessionPersistenceTimestamp = (
 
 const areShellFragmentsEqual = (left: unknown, right: unknown): boolean => {
   return serializeShellFragment(left) === serializeShellFragment(right);
+};
+
+const isMessageVersionRegression = (
+  currentMessage: ChatSessionMessage,
+  incomingMessage: ChatSessionMessage,
+): boolean => {
+  if (currentMessage.id !== incomingMessage.id) {
+    return false;
+  }
+
+  const currentAttachments = currentMessage.contextAttachments ?? [];
+  const incomingAttachments = incomingMessage.contextAttachments ?? [];
+
+  if (incomingAttachments.length < currentAttachments.length) {
+    return true;
+  }
+
+  if (currentMessage.content.trim() && !incomingMessage.content.trim()) {
+    return true;
+  }
+
+  const currentSource = currentMessage.source;
+  const incomingSource = incomingMessage.source;
+
+  if (currentSource && !incomingSource) {
+    return true;
+  }
+
+  if (!currentSource || !incomingSource) {
+    return false;
+  }
+
+  if (currentSource.kind === "execution") {
+    if (incomingSource.kind !== "execution") {
+      return true;
+    }
+
+    const currentResponseMarkdown =
+      currentSource.execution.response?.markdown.trim() ?? "";
+    const incomingResponseMarkdown =
+      incomingSource.execution.response?.markdown.trim() ?? "";
+
+    return Boolean(currentResponseMarkdown && !incomingResponseMarkdown);
+  }
+
+  if (currentSource.kind === "thinking") {
+    if (incomingSource.kind === "execution") {
+      return false;
+    }
+
+    if (incomingSource.kind !== "thinking") {
+      return true;
+    }
+
+    const currentTimelineEvents =
+      currentSource.thinking.timelineEvents?.length ?? 0;
+    const incomingTimelineEvents =
+      incomingSource.thinking.timelineEvents?.length ?? 0;
+
+    if (
+      currentSource.thinking.status === "complete" &&
+      incomingSource.thinking.status !== "complete"
+    ) {
+      return true;
+    }
+
+    if (
+      incomingSource.thinking.entries.length <
+      currentSource.thinking.entries.length
+    ) {
+      return true;
+    }
+
+    if (incomingTimelineEvents < currentTimelineEvents) {
+      return true;
+    }
+
+    return Boolean(
+      currentSource.thinking.assistantText?.trim() &&
+        !incomingSource.thinking.assistantText?.trim(),
+    );
+  }
+
+  return false;
+};
+
+const isMessageSafelyReplaced = (
+  message: ChatSessionMessage,
+  candidateMessages: readonly ChatSessionMessage[],
+): boolean => {
+  if (message.role !== "agent" || !message.taskId) {
+    return false;
+  }
+
+  return candidateMessages.some(
+    (candidate) =>
+      candidate.taskId === message.taskId &&
+      candidate.role === "agent" &&
+      candidate.id !== message.id &&
+      (candidate.source?.kind === "execution" ||
+        (candidate.source === undefined && candidate.content.trim().length > 0)),
+  );
+};
+
+const hasMessageRegression = (
+  currentMessages: readonly ChatSessionMessage[],
+  incomingMessages: readonly ChatSessionMessage[],
+): boolean => {
+  const incomingMessagesById = new Map(
+    incomingMessages.map((message) => [message.id, message]),
+  );
+
+  for (const currentMessage of currentMessages) {
+    const incomingMessage = incomingMessagesById.get(currentMessage.id);
+
+    if (!incomingMessage) {
+      if (!isMessageSafelyReplaced(currentMessage, incomingMessages)) {
+        return true;
+      }
+
+      continue;
+    }
+
+    if (isMessageVersionRegression(currentMessage, incomingMessage)) {
+      return true;
+    }
+  }
+
+  return false;
 };
 
 const mergeSessionRuntimeSelection = (
@@ -141,7 +271,10 @@ const didRemoveBaseMessages = (
 ): boolean => {
   const messageIds = new Set(messages.map((message) => message.id));
 
-  return baseMessages.some((message) => !messageIds.has(message.id));
+  return baseMessages.some(
+    (message) =>
+      !messageIds.has(message.id) && !isMessageSafelyReplaced(message, messages),
+  );
 };
 
 const mergeMessageVersionForPersistence = (
@@ -154,6 +287,20 @@ const mergeMessageVersionForPersistence = (
     !baseMessage || !areShellFragmentsEqual(localMessage, baseMessage);
   const latestChanged =
     !baseMessage || !areShellFragmentsEqual(latestMessage, baseMessage);
+  const localRegressed =
+    baseMessage !== undefined &&
+    isMessageVersionRegression(baseMessage, localMessage);
+  const latestRegressed =
+    baseMessage !== undefined &&
+    isMessageVersionRegression(baseMessage, latestMessage);
+
+  if (localRegressed && !latestRegressed) {
+    return latestMessage;
+  }
+
+  if (!localRegressed && latestRegressed) {
+    return localMessage;
+  }
 
   if (localChanged && !latestChanged) {
     return localMessage;
@@ -195,12 +342,20 @@ const mergeAppendOnlyMessages = (
 
     if (!localMessage) {
       if (latestMessage) {
+        if (isMessageSafelyReplaced(latestMessage, localMessages)) {
+          continue;
+        }
+
         messagesById.set(messageId, latestMessage);
       }
       continue;
     }
 
     if (!latestMessage) {
+      if (isMessageSafelyReplaced(localMessage, latestMessages)) {
+        continue;
+      }
+
       messagesById.set(messageId, localMessage);
       continue;
     }
@@ -242,21 +397,66 @@ const mergeSessionMessagesForPersistence = (
     latestSession.messages,
     baseSession.messages,
   );
+  const localMessageRegression = hasMessageRegression(
+    baseSession.messages,
+    localSession.messages,
+  );
+  const latestMessageRegression = hasMessageRegression(
+    baseSession.messages,
+    latestSession.messages,
+  );
+  const localQuickVoiceClear =
+    isQuickVoiceSession(localSession) &&
+    localSession.messages.length === 0 &&
+    localSession.updatedAt > baseSession.updatedAt &&
+    localSession.updatedAt >= latestSession.updatedAt;
+  const latestQuickVoiceClear =
+    isQuickVoiceSession(latestSession) &&
+    latestSession.messages.length === 0 &&
+    latestSession.updatedAt > baseSession.updatedAt &&
+    latestSession.updatedAt >= localSession.updatedAt;
 
-  if (localChanged && !latestChanged) {
+  if (localQuickVoiceClear) {
     return localSession.messages;
   }
 
-  if (!localChanged && latestChanged) {
+  if (latestQuickVoiceClear) {
     return latestSession.messages;
   }
 
-  if (
-    localChanged &&
-    latestChanged &&
-    !didRemoveBaseMessages(localSession.messages, baseSession.messages) &&
-    !didRemoveBaseMessages(latestSession.messages, baseSession.messages)
-  ) {
+  if (localChanged && !latestChanged) {
+    if (isQuickVoiceSession(localSession) && localSession.messages.length === 0) {
+      return localSession.messages;
+    }
+
+    return didRemoveBaseMessages(localSession.messages, baseSession.messages) ||
+      localMessageRegression
+      ? mergeAppendOnlyMessages(
+          primarySession.messages,
+          localSession.messages,
+          baseSession.messages,
+          latestSession.messages,
+        )
+      : localSession.messages;
+  }
+
+  if (!localChanged && latestChanged) {
+    if (isQuickVoiceSession(latestSession) && latestSession.messages.length === 0) {
+      return latestSession.messages;
+    }
+
+    return didRemoveBaseMessages(latestSession.messages, baseSession.messages) ||
+      latestMessageRegression
+      ? mergeAppendOnlyMessages(
+          primarySession.messages,
+          localSession.messages,
+          baseSession.messages,
+          latestSession.messages,
+        )
+      : latestSession.messages;
+  }
+
+  if (localChanged && latestChanged) {
     return mergeAppendOnlyMessages(
       primarySession.messages,
       localSession.messages,
@@ -274,6 +474,27 @@ const mergeSessionConcurrentFields = (
   baseSession: ChatSessionRecord,
   latestSession: ChatSessionRecord,
 ): ChatSessionRecord => {
+  const latestMessageRegression = hasMessageRegression(
+    baseSession.messages,
+    latestSession.messages,
+  );
+  const promptHistory = latestMessageRegression
+    ? localSession.promptHistory
+    : mergeSessionFieldForPersistence(
+        primarySession.promptHistory,
+        localSession.promptHistory,
+        baseSession.promptHistory,
+        latestSession.promptHistory,
+      );
+  const promptContextHistory = latestMessageRegression
+    ? localSession.promptContextHistory
+    : mergeSessionFieldForPersistence(
+        primarySession.promptContextHistory,
+        localSession.promptContextHistory,
+        baseSession.promptContextHistory,
+        latestSession.promptContextHistory,
+      );
+
   return {
     ...primarySession,
     draft: mergeSessionFieldForPersistence(
@@ -294,18 +515,8 @@ const mergeSessionConcurrentFields = (
       baseSession,
       latestSession,
     ),
-    promptHistory: mergeSessionFieldForPersistence(
-      primarySession.promptHistory,
-      localSession.promptHistory,
-      baseSession.promptHistory,
-      latestSession.promptHistory,
-    ),
-    promptContextHistory: mergeSessionFieldForPersistence(
-      primarySession.promptContextHistory,
-      localSession.promptContextHistory,
-      baseSession.promptContextHistory,
-      latestSession.promptContextHistory,
-    ),
+    promptHistory,
+    promptContextHistory,
   };
 };
 
@@ -393,13 +604,15 @@ const preserveCurrentRunningSessions = (
     nextSessionsById.set(sessionId, session);
   }
 
-  const activeSessionId = protectedSessions.has(currentState.activeSessionId)
+  const activeSessionId = nextSessionsById.has(currentState.activeSessionId)
     ? currentState.activeSessionId
-    : externalState.activeSessionId;
+    : nextSessionsById.has(externalState.activeSessionId)
+      ? externalState.activeSessionId
+      : sortSessionsByUpdatedAt([...nextSessionsById.values()])[0]?.id;
 
   return {
     ...externalState,
-    activeSessionId,
+    activeSessionId: activeSessionId ?? externalState.activeSessionId,
     sessions: sortSessionsByUpdatedAt([...nextSessionsById.values()]),
   };
 };
@@ -523,10 +736,48 @@ const mergeQueuedMessageVersionForPersistence = (
     : latestMessage;
 };
 
+const createQueuedMessageSubmittedContentSet = (
+  message: ChatSessionQueuedMessage,
+): Set<string> => {
+  return new Set(
+    [
+      message.visibleMessageContent,
+      message.promptHistoryContent,
+      message.task,
+    ].flatMap((content) => {
+      const normalizedContent = content?.trim();
+
+      return normalizedContent ? [normalizedContent] : [];
+    }),
+  );
+};
+
+const wasQueuedMessageSubmittedInSessions = (
+  message: ChatSessionQueuedMessage,
+  sessions: readonly ChatSessionRecord[],
+): boolean => {
+  const submittedContent = createQueuedMessageSubmittedContentSet(message);
+  const session = sessions.find((entry) => entry.id === message.sessionId);
+
+  if (!session || submittedContent.size === 0) {
+    return false;
+  }
+
+  return session.messages.some((entry) => {
+    return (
+      entry.role === "user" &&
+      (entry.createdAt ?? 0) >= message.createdAt &&
+      submittedContent.has(entry.content.trim())
+    );
+  });
+};
+
 const mergeQueuedSessionMessagesForPersistence = (
   localMessages: ChatSessionQueuedMessage[],
+  localSessions: ChatSessionRecord[],
   baseMessages: ChatSessionQueuedMessage[],
   latestMessages: ChatSessionQueuedMessage[],
+  latestSessions: ChatSessionRecord[],
   sessionIds: ReadonlySet<string>,
 ): ChatSessionQueuedMessage[] => {
   const localMessagesById = new Map(
@@ -540,10 +791,11 @@ const mergeQueuedSessionMessagesForPersistence = (
   );
   const deletedMessageIds = new Set<string>();
 
-  for (const messageId of baseMessagesById.keys()) {
+  for (const [messageId, baseMessage] of baseMessagesById.entries()) {
     if (
       !localMessagesById.has(messageId) ||
-      !latestMessagesById.has(messageId)
+      (!latestMessagesById.has(messageId) &&
+        wasQueuedMessageSubmittedInSessions(baseMessage, latestSessions))
     ) {
       deletedMessageIds.add(messageId);
     }
@@ -662,11 +914,6 @@ export const mergeShellStateForPersistence = (
     const localSessionChanged =
       !baseSession || !areShellFragmentsEqual(localSession, baseSession);
 
-    if (!localSessionChanged && latestSession) {
-      mergedSessionsById.set(sessionId, latestSession);
-      continue;
-    }
-
     if (!latestSession) {
       mergedSessionsById.set(sessionId, localSession);
       continue;
@@ -710,15 +957,7 @@ export const mergeShellStateForPersistence = (
 
   const sessions = sortSessionsByUpdatedAt([...mergedSessionsById.values()]);
   const sessionIds = new Set(sessions.map((session) => session.id));
-  const localActiveSession = localSessionsById.get(localState.activeSessionId);
-  const baseActiveSession = baseSessionsById.get(localState.activeSessionId);
-  const localActiveSessionChanged =
-    localActiveSession !== undefined &&
-    (baseActiveSession === undefined ||
-      !areShellFragmentsEqual(localActiveSession, baseActiveSession));
   const activeSessionId =
-    (localState.activeSessionId !== baseState.activeSessionId ||
-      localActiveSessionChanged) &&
     sessionIds.has(localState.activeSessionId)
       ? localState.activeSessionId
       : sessionIds.has(latestState.activeSessionId)
@@ -739,8 +978,10 @@ export const mergeShellStateForPersistence = (
     sessions,
     queuedSessionMessages: mergeQueuedSessionMessagesForPersistence(
       localState.queuedSessionMessages,
+      localState.sessions,
       baseState.queuedSessionMessages,
       latestState.queuedSessionMessages,
+      latestState.sessions,
       sessionIds,
     ),
     contextPacks: mergeContextPacksForPersistence(
@@ -800,15 +1041,68 @@ export const mergeShellStateForPersistence = (
   return mergedState;
 };
 
+const isExternalStateRegressive = (
+  currentState: ShellPersistedState,
+  externalState: ShellPersistedState,
+): boolean => {
+  const externalSessionsById = new Map(
+    externalState.sessions.map((session) => [session.id, session]),
+  );
+  const externalQueuedMessagesById = new Map(
+    externalState.queuedSessionMessages.map((message) => [message.id, message]),
+  );
+
+  for (const currentSession of currentState.sessions) {
+    const externalSession = externalSessionsById.get(currentSession.id);
+
+    if (!externalSession) {
+      if (
+        currentSession.messages.length > 0 ||
+        currentSession.promptHistory.length > 0
+      ) {
+        return true;
+      }
+
+      continue;
+    }
+
+    if (hasMessageRegression(currentSession.messages, externalSession.messages)) {
+      return true;
+    }
+  }
+
+  for (const currentQueuedMessage of currentState.queuedSessionMessages) {
+    if (externalQueuedMessagesById.has(currentQueuedMessage.id)) {
+      continue;
+    }
+
+    if (
+      !wasQueuedMessageSubmittedInSessions(
+        currentQueuedMessage,
+        externalState.sessions,
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 export const mergeShellStateFromExternalUpdate = (
   currentState: ShellPersistedState,
   baseState: ShellPersistedState,
   externalState: ShellPersistedState,
   hasUnpersistedLocalChanges: boolean,
 ): ShellPersistedState => {
-  return hasUnpersistedLocalChanges
-    ? mergeShellStateForPersistence(currentState, baseState, externalState)
-    : preserveCurrentRunningSessions(currentState, externalState);
+  if (
+    hasUnpersistedLocalChanges ||
+    isExternalStateRegressive(currentState, externalState)
+  ) {
+    return mergeShellStateForPersistence(currentState, baseState, externalState);
+  }
+
+  return preserveCurrentRunningSessions(currentState, externalState);
 };
 
 export interface ChatSessionShellStateController {

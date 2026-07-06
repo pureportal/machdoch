@@ -15,6 +15,7 @@ import {
   getSmartContextPacksForWorkspace,
   importSmartContextPacksIntoShellState,
   parseSmartContextPackListInput,
+  parseSmartContextPackVariableInput,
 } from "./smart-context-packs";
 
 const createPack = (
@@ -234,6 +235,14 @@ describe("smart context packs", () => {
     expect(parseSmartContextPackListInput("frontend qa, debug build\nfrontend qa")).toEqual([
       "frontend qa",
       "debug build",
+    ]);
+    expect(
+      parseSmartContextPackVariableInput(
+        "target_file, test_command=npm test\ntarget_file=ignored",
+      ),
+    ).toEqual([
+      { name: "target_file" },
+      { name: "test_command", defaultValue: "npm test" },
     ]);
   });
 

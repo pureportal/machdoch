@@ -719,6 +719,323 @@ describe("useChatSessionShellState", () => {
     ).toContain("Executing the request.");
   });
 
+  it("keeps the current active session when an external update touches another running session", () => {
+    const baseState = createInitialShellState();
+    const runningTaskId = "background-running-task";
+    const backgroundSession = createSession({
+      id: "background-running-session",
+      manualTitle: "Background running session",
+      updatedAt: 200,
+      messages: [
+        {
+          id: "background-running-user",
+          taskId: runningTaskId,
+          role: "user",
+          content: "Run in the background",
+          createdAt: 100,
+        },
+        {
+          id: "background-running-thinking",
+          taskId: runningTaskId,
+          role: "agent",
+          content: "",
+          createdAt: 200,
+          source: {
+            kind: "thinking",
+            thinking: createInitialThinkingTrace("machdoch", 200),
+          },
+        },
+      ],
+    });
+    const activeSession = createSession({
+      id: "foreground-active-session",
+      manualTitle: "Foreground active session",
+      updatedAt: 150,
+    });
+    const currentState = {
+      ...baseState,
+      activeSessionId: activeSession.id,
+      sessions: [backgroundSession, activeSession],
+    };
+    const externalState = {
+      ...baseState,
+      activeSessionId: backgroundSession.id,
+      sessions: [
+        {
+          ...backgroundSession,
+          pinnedAt: 300,
+          updatedAt: 300,
+        },
+        activeSession,
+      ],
+    };
+
+    const mergedState = mergeShellStateFromExternalUpdate(
+      currentState,
+      currentState,
+      externalState,
+      false,
+    );
+    const mergedBackgroundSession = mergedState.sessions.find(
+      (session) => session.id === backgroundSession.id,
+    );
+
+    expect(mergedState.activeSessionId).toBe(activeSession.id);
+    expect(mergedBackgroundSession?.pinnedAt).toBe(300);
+    expect(mergedBackgroundSession?.messages.map((message) => message.id)).toEqual(
+      ["background-running-user", "background-running-thinking"],
+    );
+  });
+
+  it("keeps the local active session when saving a background task completion over a newer active snapshot", () => {
+    const baseState = createInitialShellState();
+    const runningTaskId = "background-completion-task";
+    const backgroundSession = createSession({
+      id: "background-completion-session",
+      manualTitle: "Background completion session",
+      updatedAt: 200,
+      messages: [
+        {
+          id: "background-completion-user",
+          taskId: runningTaskId,
+          role: "user",
+          content: "Complete in the background",
+          createdAt: 100,
+        },
+        {
+          id: "background-completion-thinking",
+          taskId: runningTaskId,
+          role: "agent",
+          content: "",
+          createdAt: 200,
+          source: {
+            kind: "thinking",
+            thinking: createInitialThinkingTrace("machdoch", 200),
+          },
+        },
+      ],
+    });
+    const foregroundSession = createSession({
+      id: "foreground-completion-session",
+      manualTitle: "Foreground completion session",
+      updatedAt: 150,
+    });
+    const execution = createMockExecutionFixture(
+      "Complete in the background",
+      "C:\\Project",
+    );
+    const completedBackgroundSession = {
+      ...backgroundSession,
+      updatedAt: 300,
+      messages: [
+        ...backgroundSession.messages,
+        {
+          id: "background-completion-agent",
+          taskId: runningTaskId,
+          role: "agent" as const,
+          content: "Background task completed.",
+          createdAt: 300,
+          source: {
+            kind: "execution" as const,
+            execution,
+          },
+        },
+      ],
+    };
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: foregroundSession.id,
+      sessions: [backgroundSession, foregroundSession],
+    };
+
+    const mergedState = mergeShellStateForPersistence(
+      {
+        ...storedBaseState,
+        sessions: [completedBackgroundSession, foregroundSession],
+      },
+      storedBaseState,
+      {
+        ...storedBaseState,
+        activeSessionId: backgroundSession.id,
+      },
+    );
+    const mergedBackgroundSession = mergedState.sessions.find(
+      (session) => session.id === backgroundSession.id,
+    );
+
+    expect(mergedState.activeSessionId).toBe(foregroundSession.id);
+    expect(
+      mergedBackgroundSession?.messages.some(
+        (message) =>
+          message.id === "background-completion-agent" &&
+          message.source?.kind === "execution",
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps completed messages when an external snapshot is missing them", () => {
+    const baseState = createInitialShellState();
+    const task = "Finish the stable task";
+    const execution = createMockExecutionFixture(task, "C:\\Project");
+    const session = createSession({
+      id: "completed-message-regression-session",
+      updatedAt: 200,
+      lastReadAt: 200,
+      messages: [
+        {
+          id: "completed-user",
+          taskId: "completed-task",
+          role: "user",
+          content: task,
+          createdAt: 100,
+        },
+        {
+          id: "completed-agent",
+          taskId: "completed-task",
+          role: "agent",
+          content: "Task completed.",
+          createdAt: 200,
+          source: {
+            kind: "execution",
+            execution,
+          },
+        },
+      ],
+      promptHistory: [task],
+    });
+    const currentState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    };
+    const externalState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [
+        {
+          ...session,
+          updatedAt: 300,
+          lastReadAt: 300,
+          messages: [],
+          promptHistory: [],
+        },
+      ],
+    };
+
+    const mergedState = mergeShellStateFromExternalUpdate(
+      currentState,
+      currentState,
+      externalState,
+      false,
+    );
+    const mergedSession = mergedState.sessions.find(
+      (entry) => entry.id === session.id,
+    );
+
+    expect(mergedSession?.lastReadAt).toBe(300);
+    expect(mergedSession?.messages.map((message) => message.id)).toEqual([
+      "completed-user",
+      "completed-agent",
+    ]);
+  });
+
+  it("keeps richer same-id thinking traces from stale external snapshots", () => {
+    const baseState = createInitialShellState();
+    const task = "Preserve thinking detail";
+    const initialThinking = createInitialThinkingTrace("machdoch", 150);
+    const staleThinkingMessage = {
+      id: "thinking-agent",
+      taskId: "thinking-task",
+      role: "agent" as const,
+      content: "",
+      createdAt: 150,
+      source: {
+        kind: "thinking" as const,
+        thinking: initialThinking,
+      },
+    };
+    const richerThinkingMessage = {
+      ...staleThinkingMessage,
+      source: {
+        kind: "thinking" as const,
+        thinking: {
+          ...initialThinking,
+          status: "complete" as const,
+          completedAt: 250,
+          assistantText: "Completed after inspecting the workspace.",
+          entries: [
+            ...initialThinking.entries,
+            {
+              id: "thinking-detail",
+              label: "Verified",
+              detail: "Checked the workspace state.",
+              tone: "success" as const,
+              timestamp: 240,
+            },
+          ],
+        },
+      },
+    };
+    const session = createSession({
+      id: "thinking-regression-session",
+      updatedAt: 250,
+      lastReadAt: 250,
+      messages: [
+        {
+          id: "thinking-user",
+          taskId: "thinking-task",
+          role: "user",
+          content: task,
+          createdAt: 100,
+        },
+        richerThinkingMessage,
+      ],
+      promptHistory: [task],
+    });
+    const currentState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    };
+    const externalState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [
+        {
+          ...session,
+          updatedAt: 300,
+          lastReadAt: 300,
+          messages: [session.messages[0]!, staleThinkingMessage],
+        },
+      ],
+    };
+
+    const mergedState = mergeShellStateFromExternalUpdate(
+      currentState,
+      currentState,
+      externalState,
+      false,
+    );
+    const mergedSession = mergedState.sessions.find(
+      (entry) => entry.id === session.id,
+    );
+    const mergedThinking = mergedSession?.messages.find(
+      (message) => message.id === staleThinkingMessage.id,
+    );
+
+    expect(mergedSession?.lastReadAt).toBe(300);
+    expect(
+      mergedThinking?.source?.kind === "thinking"
+        ? mergedThinking.source.thinking.status
+        : null,
+    ).toBe("complete");
+    expect(
+      mergedThinking?.source?.kind === "thinking"
+        ? mergedThinking.source.thinking.entries.map((entry) => entry.detail)
+        : [],
+    ).toContain("Checked the workspace state.");
+  });
+
   it("merges same-id message updates from concurrent thinking and final-response saves", () => {
     const baseState = createInitialShellState();
     const task = "Summarize the workspace";
@@ -950,6 +1267,84 @@ describe("useChatSessionShellState", () => {
     expect(mergedState.sessions[0]?.pinnedAt).toBe(300);
   });
 
+  it("keeps queued messages when an external snapshot is missing them", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-queued-stale-drop",
+      manualTitle: "Queued stale drop",
+      updatedAt: 100,
+    });
+    const queuedMessage = {
+      id: "queued-stale-drop",
+      sessionId: session.id,
+      task: "Keep this queued message",
+      contextAttachments: [],
+      createdAt: 200,
+      updatedAt: 200,
+    };
+    const currentState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+      queuedSessionMessages: [queuedMessage],
+    };
+    const externalState = {
+      ...currentState,
+      queuedSessionMessages: [],
+    };
+
+    const mergedState = mergeShellStateFromExternalUpdate(
+      currentState,
+      currentState,
+      externalState,
+      false,
+    );
+
+    expect(mergedState.queuedSessionMessages).toEqual([queuedMessage]);
+  });
+
+  it("does not resurrect queued messages that were removed locally", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-queued-local-delete",
+      manualTitle: "Queued local delete",
+      updatedAt: 100,
+    });
+    const queuedMessage = {
+      id: "queued-local-delete",
+      sessionId: session.id,
+      task: "Remove this queued message",
+      contextAttachments: [],
+      createdAt: 200,
+      updatedAt: 200,
+    };
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+      queuedSessionMessages: [queuedMessage],
+    };
+
+    const mergedState = mergeShellStateForPersistence(
+      {
+        ...storedBaseState,
+        queuedSessionMessages: [],
+      },
+      storedBaseState,
+      {
+        ...storedBaseState,
+        queuedSessionMessages: [
+          {
+            ...queuedMessage,
+            updatedAt: 250,
+          },
+        ],
+      },
+    );
+
+    expect(mergedState.queuedSessionMessages).toEqual([]);
+  });
+
   it("does not resurrect queued messages that were removed during dispatch", () => {
     const baseState = createInitialShellState();
     const session = createSession({
@@ -971,9 +1366,23 @@ describe("useChatSessionShellState", () => {
       sessions: [session],
       queuedSessionMessages: [queuedMessage],
     };
+    const dispatchedSession = {
+      ...session,
+      updatedAt: 250,
+      messages: [
+        {
+          id: "queued-dispatched-user",
+          taskId: "queued-dispatched-task",
+          role: "user" as const,
+          content: queuedMessage.task,
+          createdAt: 250,
+        },
+      ],
+    };
     const mergedState = mergeShellStateForPersistence(
       {
         ...storedBaseState,
+        sessions: [dispatchedSession],
         queuedSessionMessages: [],
       },
       storedBaseState,

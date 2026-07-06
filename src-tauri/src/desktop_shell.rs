@@ -85,6 +85,11 @@ pub fn hide_main_window_to_tray(app: AppHandle) {
 }
 
 #[tauri::command]
+pub fn sync_chat_completion_indicator(app: AppHandle, completed: bool) -> Result<(), String> {
+    tray::sync_chat_completion_indicator(&app, completed)
+}
+
+#[tauri::command]
 pub fn quit_machdoch(app: AppHandle) {
     app.exit(0);
 }

@@ -333,6 +333,20 @@ body {
     color: white;
 }
 
+.app-message-markdown > * + * {
+    margin-top: 0.65rem;
+}
+
+.app-message-markdown > [data-md-field] + [data-md-field] {
+    margin-top: 0.25rem;
+}
+
+.app-message-markdown
+    > [data-md-field="recommendation"]
+    + [data-md-field="severity"] {
+    margin-top: 0.9rem;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
     width: 12px;
@@ -1221,7 +1235,25 @@ body {
 }
 
 :root[data-density="compact"] .app-message-markdown {
-    gap: 0.45rem !important;
+    line-height: 1.35rem !important;
+}
+
+:root[data-density="compact"] .app-message-markdown > * + * {
+    margin-top: 0.45rem !important;
+}
+
+:root[data-density="compact"]
+    .app-message-markdown
+    > [data-md-field]
+    + [data-md-field] {
+    margin-top: 0.18rem !important;
+}
+
+:root[data-density="compact"]
+    .app-message-markdown
+    > [data-md-field="recommendation"]
+    + [data-md-field="severity"] {
+    margin-top: 0.6rem !important;
 }
 
 :root[data-density="compact"] .app-message-markdown :is(p, li) {
@@ -1306,12 +1338,13 @@ body {
 }
 
 :root[data-density="compact"] .app-mode-picker-button,
+:root[data-density="compact"] .app-reasoning-picker-button,
 :root[data-density="compact"] .app-composer-toggle-button {
     width: 1.85rem !important;
     height: 1.85rem !important;
 }
 
-:root[data-density="compact"] :is(.app-model-picker-button, .app-composer-toolbar-pill, .app-mode-picker-button, .app-composer-toggle-button) svg {
+:root[data-density="compact"] :is(.app-model-picker-button, .app-composer-toolbar-pill, .app-mode-picker-button, .app-reasoning-picker-button, .app-composer-toggle-button) svg {
     width: 0.8rem !important;
     height: 0.8rem !important;
 }

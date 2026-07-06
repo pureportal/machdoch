@@ -121,6 +121,50 @@ describe("MessageMarkdown", () => {
     expect(screen.queryByRole("link", { name: "bad" })).toBeNull();
   });
 
+  it("marks structured findings paragraphs for compact field spacing", () => {
+    const { container } = render(
+      <MessageMarkdown
+        content={[
+          "**Findings**",
+          "",
+          "Severity: Critical",
+          "",
+          "Location: `Migration20260703115310.ts`",
+          "",
+          "Issue: Existing model data is dropped.",
+          "",
+          "Evidence: The migration drops `vehicle_model_uuid_foreign`.",
+          "",
+          "Impact: Vehicle rows would point at missing model generations.",
+          "",
+          "Recommendation: Preserve the old model UUIDs.",
+          "",
+          "Severity: Low",
+          "",
+          "Location: `app.alphartis.cloud` PR #814 / Codecov thread",
+        ].join("\n")}
+      />,
+    );
+
+    const paragraphs = Array.from(
+      container.querySelectorAll<HTMLParagraphElement>(
+        ".app-message-markdown > p",
+      ),
+    );
+
+    expect(paragraphs.map((paragraph) => paragraph.dataset.mdField)).toEqual([
+      undefined,
+      "severity",
+      "location",
+      "issue",
+      "evidence",
+      "impact",
+      "recommendation",
+      "severity",
+      "location",
+    ]);
+  });
+
   it("copies fenced code block content from the icon button", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {

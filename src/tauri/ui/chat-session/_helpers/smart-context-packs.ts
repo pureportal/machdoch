@@ -9,22 +9,24 @@ import type {
   SmartContextPackVariable,
 } from "../../chat-session.model";
 import { createSession, normalizeShellState } from "../../chat-session.model";
-import { getProviderLabel } from "../../model-catalog";
+import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
 import { mergeContextAttachments } from "./session-context-attachments";
 
 export interface SaveSmartContextPackInput {
+  id?: string;
   name: string;
   scope: SmartContextPackScope;
   instructions: string;
-  variables: string[];
+  prompt: string;
+  contextAttachments: ChatSessionContextAttachment[];
+  variables: Array<string | SmartContextPackVariable>;
   triggerPhrases: string[];
   triggerPathPatterns: string[];
   autoApply: boolean;
-  includePrompt: boolean;
-  includeAttachments: boolean;
-  includeModel: boolean;
-  includeMode: boolean;
-  includeReasoning: boolean;
+  provider?: RuntimeProvider;
+  model?: string;
+  mode?: RunMode;
+  reasoning?: ReasoningMode;
 }
 
 export interface SmartContextPackComposerApplication {
@@ -171,6 +173,40 @@ export const parseSmartContextPackListInput = (value: string): string[] => {
   return entries;
 };
 
+export const parseSmartContextPackVariableInput = (
+  value: string,
+): SmartContextPackVariable[] => {
+  const variables: SmartContextPackVariable[] = [];
+  const seenVariables = new Set<string>();
+
+  for (const entry of value.split(/[\n,]/u)) {
+    const normalized = entry.replace(/\s+/gu, " ").trim();
+
+    if (!normalized) {
+      continue;
+    }
+
+    const [rawName = "", ...defaultParts] = normalized.split("=");
+    const name = normalizeVariableName(rawName);
+    const key = name.toLowerCase();
+
+    if (!name || seenVariables.has(key)) {
+      continue;
+    }
+
+    seenVariables.add(key);
+
+    const defaultValue = defaultParts.join("=").trim();
+
+    variables.push({
+      name,
+      ...(defaultValue ? { defaultValue } : {}),
+    });
+  }
+
+  return variables;
+};
+
 export const extractSmartContextPackVariables = (
   ...values: string[]
 ): string[] => {
@@ -203,13 +239,15 @@ export const extractSmartContextPackVariables = (
 };
 
 export const createSmartContextPackVariables = (
-  variableNames: string[],
+  variableEntries: Array<string | SmartContextPackVariable>,
 ): SmartContextPackVariable[] => {
   const variables: SmartContextPackVariable[] = [];
   const seenVariables = new Set<string>();
 
-  for (const variableName of variableNames) {
-    const name = normalizeVariableName(variableName);
+  for (const variableEntry of variableEntries) {
+    const name = normalizeVariableName(
+      typeof variableEntry === "string" ? variableEntry : variableEntry.name,
+    );
     const key = name.toLowerCase();
 
     if (!name || seenVariables.has(key)) {
@@ -217,7 +255,16 @@ export const createSmartContextPackVariables = (
     }
 
     seenVariables.add(key);
-    variables.push({ name });
+
+    const defaultValue =
+      typeof variableEntry === "string"
+        ? ""
+        : variableEntry.defaultValue?.replace(/\s+/gu, " ").trim();
+
+    variables.push({
+      name,
+      ...(defaultValue ? { defaultValue } : {}),
+    });
   }
 
   return variables;

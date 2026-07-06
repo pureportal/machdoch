@@ -76,13 +76,34 @@ export const useSessionLifecycle = (options: {
           if (reusableSession) {
             nextActiveSessionId = reusableSession.id;
 
-            if (prev.activeSessionId === reusableSession.id) {
+            const reusableWorkspace =
+              prev.recentWorkspaces[0] ??
+              currentActiveSession?.workspace ??
+              defaultNewSessionWorkspace;
+            const shouldRefreshReusableSession =
+              reusableSession.workspace !== reusableWorkspace;
+
+            if (
+              prev.activeSessionId === reusableSession.id &&
+              !shouldRefreshReusableSession
+            ) {
               return prev;
             }
 
             return {
               ...prev,
               activeSessionId: reusableSession.id,
+              sessions: shouldRefreshReusableSession
+                ? prev.sessions.map((session) =>
+                    session.id === reusableSession.id
+                      ? {
+                          ...session,
+                          workspace: reusableWorkspace,
+                          updatedAt: Date.now(),
+                        }
+                      : session,
+                  )
+                : prev.sessions,
             };
           }
 

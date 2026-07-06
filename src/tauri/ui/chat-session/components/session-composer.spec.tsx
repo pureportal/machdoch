@@ -196,6 +196,42 @@ describe("SessionComposer", () => {
     ).toBeTruthy();
   });
 
+  it("shows the effective workspace-default reasoning mode in the toolbar", () => {
+    renderSessionComposer({
+      activeSession: createSession({
+        reasoning: undefined,
+      }),
+      activeReasoning: "xhigh",
+      defaultReasoning: "xhigh",
+      isUsingWorkspaceDefaultReasoning: true,
+    });
+
+    const reasoningButton = screen.getByRole("button", {
+      name: "Reasoning mode: XHigh",
+    });
+
+    expect(reasoningButton.getAttribute("data-reasoning-mode")).toBe("xhigh");
+    expect(reasoningButton.getAttribute("data-reasoning-source")).toBe(
+      "workspace",
+    );
+    expect(reasoningButton.getAttribute("title")).toBe(
+      "Reasoning mode: XHigh (workspace default)",
+    );
+
+    fireEvent.click(reasoningButton);
+
+    const workspaceDefaultOption = screen.getByRole("button", {
+      name: "Use workspace default reasoning",
+    });
+
+    expect(within(workspaceDefaultOption).getByText("Current")).toBeTruthy();
+    expect(
+      within(workspaceDefaultOption).getByText(
+        "Currently XHigh. Use workspace config or environment default.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("lets you choose prompt enhancement mode from the composer", () => {
     renderSessionComposer();
 

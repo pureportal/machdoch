@@ -4,6 +4,7 @@ import {
   Folder,
   Globe2,
   Layers,
+  Pencil,
   Play,
   Plus,
   Save,
@@ -20,16 +21,28 @@ import {
   type FormEvent,
   type JSX,
 } from "react";
-import type {
-  ReasoningMode,
-  RunMode,
+import {
+  REASONING_MODES,
+  RUN_MODES,
+  VALID_MODEL_PROVIDERS,
+  type ReasoningMode,
+  type RunMode,
 } from "../../../../core/runtime-contract.generated.js";
 import type {
   ChatSessionContextAttachment,
   SmartContextPack,
+  SmartContextPackVariable,
 } from "../../chat-session.model";
 import type { RalphFlow } from "../../../../core/ralph.js";
 import { Button } from "../../components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import {
   Popover,
@@ -40,6 +53,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
 import { listRalphFlows, showRalphFlow } from "../../runtime";
+import { createContextAttachmentFromReference } from "../_helpers/session-context-attachments";
 import {
   createContextPackSummary,
   createSmartContextPackPreview,
@@ -51,6 +65,7 @@ import {
   getSmartContextPackScopeLabel,
   getSmartContextPackSortTimestamp,
   parseSmartContextPackListInput,
+  parseSmartContextPackVariableInput,
   type SaveSmartContextPackInput,
   type SmartContextPackScope,
   type SmartContextPackScopeFilter,
@@ -78,7 +93,9 @@ export interface SmartContextPackPickerProps {
   onImportContextPacks: (file: File, scope: SmartContextPackScope) => void;
 }
 
-type SmartContextPackView = "apply" | "save" | "configure";
+type SmartContextPackView = "apply" | "configure";
+
+type SmartContextPackDialogMode = "create" | "edit";
 
 interface SmartContextPackListItem {
   pack: SmartContextPack;
@@ -90,8 +107,30 @@ interface SmartContextPackListItem {
   ralphFlowNames: string[];
 }
 
-const PACK_FORM_CLASS =
-  "grid max-h-[calc(100vh-8rem)] gap-3 overflow-y-auto p-3";
+interface SmartContextPackEditorInitialValue {
+  id?: string;
+  mode: SmartContextPackDialogMode;
+  name: string;
+  scope: SmartContextPackScope;
+  instructions: string;
+  prompt: string;
+  contextAttachments: ChatSessionContextAttachment[];
+  variables: SmartContextPackVariable[];
+  triggerPhrases: string[];
+  triggerPathPatterns: string[];
+  autoApply: boolean;
+  provider?: RuntimeProvider;
+  model?: string;
+  runMode?: RunMode;
+  reasoning?: ReasoningMode;
+}
+
+interface SmartContextPackDialogState {
+  key: string;
+  initialValue: SmartContextPackEditorInitialValue;
+}
+
+const PACK_FORM_CLASS = "grid gap-4";
 
 const deriveContextPackName = (draft: string): string => {
   const normalizedDraft = draft.replace(/\s+/gu, " ").trim();
@@ -113,15 +152,196 @@ const formatPackUsage = (pack: SmartContextPack): string => {
   return `${pack.useCount} use${pack.useCount === 1 ? "" : "s"}`;
 };
 
-const formatAttachmentToggleLabel = (
-  attachments: ChatSessionContextAttachment[],
-): string => {
-  const count = attachments.length;
+const formatListInputValue = (values: string[]): string => values.join(", ");
 
-  return `${count} path${count === 1 ? "" : "s"}`;
+const formatVariableInputValue = (
+  variables: SmartContextPackVariable[],
+): string => {
+  return variables
+    .map((variable) =>
+      variable.defaultValue
+        ? `${variable.name}=${variable.defaultValue}`
+        : variable.name,
+    )
+    .join(", ");
 };
 
-const formatListInputValue = (values: string[]): string => values.join(", ");
+const formatAttachmentPathInputValue = (
+  attachments: ChatSessionContextAttachment[],
+): string => attachments.map((attachment) => attachment.path).join("\n");
+
+const getAttachmentPathKey = (path: string): string => {
+  return path.replace(/\\/gu, "/").trim().toLowerCase();
+};
+
+const createContextAttachmentsFromPathInput = (
+  value: string,
+  sourceAttachments: ChatSessionContextAttachment[],
+): ChatSessionContextAttachment[] => {
+  const sourceByPath = new Map(
+    sourceAttachments.map((attachment) => [
+      getAttachmentPathKey(attachment.path),
+      attachment,
+    ]),
+  );
+  const attachments: ChatSessionContextAttachment[] = [];
+  const seenPaths = new Set<string>();
+
+  for (const line of value.split(/\r?\n/u)) {
+    const path = line.trim();
+    const key = getAttachmentPathKey(path);
+
+    if (!path || seenPaths.has(key)) {
+      continue;
+    }
+
+    seenPaths.add(key);
+
+    const existingAttachment = sourceByPath.get(key);
+
+    if (existingAttachment) {
+      attachments.push(existingAttachment);
+      continue;
+    }
+
+    const attachment = createContextAttachmentFromReference(path);
+
+    if (attachment) {
+      attachments.push(attachment);
+    }
+  }
+
+  return attachments;
+};
+
+const getDefaultRuntimeProvider = (): RuntimeProvider => {
+  return VALID_MODEL_PROVIDERS[0] ?? "openai";
+};
+
+const formatProviderOptionLabel = (provider: RuntimeProvider): string => {
+  return getProviderLabel(provider);
+};
+
+const CONTEXT_PACK_INLINE_TOKEN_PATTERN =
+  /\{[A-Za-z][A-Za-z0-9_-]{0,39}\}|`[^`\n]+`/gu;
+const CONTEXT_PACK_HEADING_PATTERN = /^#{1,6}\s+\S/u;
+
+const ContextPackPromptHighlight = ({
+  value,
+}: {
+  value: string;
+}): JSX.Element => {
+  const lines = value.split("\n");
+  const parts: JSX.Element[] = [];
+
+  lines.forEach((line, lineIndex) => {
+    if (CONTEXT_PACK_HEADING_PATTERN.test(line)) {
+      parts.push(
+        <span
+          key={`heading-${lineIndex}`}
+          className="font-semibold text-cyan-200"
+        >
+          {line}
+        </span>,
+      );
+    } else {
+      let cursor = 0;
+
+      for (const match of line.matchAll(CONTEXT_PACK_INLINE_TOKEN_PATTERN)) {
+        const index = match.index ?? 0;
+        const raw = match[0] ?? "";
+
+        if (index > cursor) {
+          parts.push(
+            <span key={`text-${lineIndex}-${cursor}`}>
+              {line.slice(cursor, index)}
+            </span>,
+          );
+        }
+
+        const isVariable =
+          raw.startsWith("{") &&
+          line[index - 1] !== "{" &&
+          line[index + raw.length] !== "}";
+
+        if (isVariable) {
+          parts.push(
+            <span
+              key={`variable-${lineIndex}-${index}`}
+              className="rounded bg-emerald-500/15 px-1 py-0.5 font-semibold text-emerald-200"
+            >
+              {raw}
+            </span>,
+          );
+        } else if (raw.startsWith("`")) {
+          parts.push(
+            <span
+              key={`code-${lineIndex}-${index}`}
+              className="text-violet-200"
+            >
+              {raw}
+            </span>,
+          );
+        } else {
+          parts.push(
+            <span key={`raw-${lineIndex}-${index}`}>{raw}</span>,
+          );
+        }
+
+        cursor = index + raw.length;
+      }
+
+      if (cursor < line.length) {
+        parts.push(
+          <span key={`text-${lineIndex}-${cursor}`}>
+            {line.slice(cursor)}
+          </span>,
+        );
+      }
+    }
+
+    if (lineIndex < lines.length - 1) {
+      parts.push(<span key={`newline-${lineIndex}`}>{"\n"}</span>);
+    }
+  });
+
+  return <>{parts.length > 0 ? parts : " "}</>;
+};
+
+const ContextPackPromptEditor = ({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}): JSX.Element => {
+  const [scrollTop, setScrollTop] = useState(0);
+
+  return (
+    <div className="relative min-h-64 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70">
+      <pre
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words px-3 py-2 font-mono text-sm leading-6 text-slate-300"
+      >
+        <span
+          className="block"
+          style={{ transform: `translateY(-${scrollTop}px)` }}
+        >
+          <ContextPackPromptHighlight value={value || " "} />
+        </span>
+      </pre>
+      <textarea
+        aria-label="Prompt"
+        value={value}
+        spellCheck={false}
+        placeholder="Review {target_file} and summarize release risk."
+        onChange={(event) => onChange(event.target.value)}
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+        className="absolute inset-0 min-h-64 w-full resize-none overflow-auto rounded-xl border-0 bg-transparent px-3 py-2 font-mono text-sm leading-6 text-transparent caret-slate-100 outline-none placeholder:font-sans placeholder:text-slate-600 selection:bg-sky-500/35 focus:ring-1 focus:ring-sky-500/30"
+      />
+    </div>
+  );
+};
 
 const formatScopeFilterLabel = (
   scopeFilter: SmartContextPackScopeFilter,
@@ -173,7 +393,7 @@ const PackOption = ({
   return (
     <label
       className={cn(
-        "flex h-8 items-center gap-2 rounded-full border border-slate-800 bg-slate-900/70 px-3 text-xs font-medium text-slate-300",
+        "flex h-8 items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/70 px-3 text-xs font-medium text-slate-300",
         disabled
           ? "cursor-not-allowed opacity-45"
           : "cursor-pointer hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
@@ -191,16 +411,372 @@ const PackOption = ({
   );
 };
 
+const SmartContextPackEditorDialog = ({
+  open,
+  initialValue,
+  workspaceRoot,
+  onOpenChange,
+  onSubmit,
+}: {
+  open: boolean;
+  initialValue: SmartContextPackEditorInitialValue;
+  workspaceRoot: string | null;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (input: SaveSmartContextPackInput) => void;
+}): JSX.Element => {
+  const [name, setName] = useState(initialValue.name);
+  const [scope, setScope] = useState<SmartContextPackScope>(
+    initialValue.scope,
+  );
+  const [instructions, setInstructions] = useState(initialValue.instructions);
+  const [prompt, setPrompt] = useState(initialValue.prompt);
+  const [attachmentPathsInput, setAttachmentPathsInput] = useState(
+    formatAttachmentPathInputValue(initialValue.contextAttachments),
+  );
+  const [variablesInput, setVariablesInput] = useState(
+    formatVariableInputValue(initialValue.variables),
+  );
+  const [triggerPhrasesInput, setTriggerPhrasesInput] = useState(
+    formatListInputValue(initialValue.triggerPhrases),
+  );
+  const [triggerPathPatternsInput, setTriggerPathPatternsInput] = useState(
+    formatListInputValue(initialValue.triggerPathPatterns),
+  );
+  const [autoApply, setAutoApply] = useState(initialValue.autoApply);
+  const [includeModel, setIncludeModel] = useState(
+    initialValue.mode === "create" ||
+      Boolean(initialValue.provider && initialValue.model),
+  );
+  const [provider, setProvider] = useState<RuntimeProvider>(
+    initialValue.provider ?? getDefaultRuntimeProvider(),
+  );
+  const [model, setModel] = useState(initialValue.model ?? "");
+  const [includeRunMode, setIncludeRunMode] = useState(
+    initialValue.mode === "create" || Boolean(initialValue.runMode),
+  );
+  const [runMode, setRunMode] = useState<RunMode>(
+    initialValue.runMode ?? "machdoch",
+  );
+  const [includeReasoning, setIncludeReasoning] = useState(
+    initialValue.mode === "create" || Boolean(initialValue.reasoning),
+  );
+  const [reasoning, setReasoning] = useState<ReasoningMode>(
+    initialValue.reasoning ?? "default",
+  );
+  const contextAttachments = useMemo(
+    () =>
+      createContextAttachmentsFromPathInput(
+        attachmentPathsInput,
+        initialValue.contextAttachments,
+      ),
+    [attachmentPathsInput, initialValue.contextAttachments],
+  );
+  const modelValue = model.trim();
+  const canSaveModel = !includeModel || modelValue.length > 0;
+  const canSave =
+    name.trim().length > 0 &&
+    canSaveModel &&
+    (instructions.trim().length > 0 ||
+      prompt.trim().length > 0 ||
+      contextAttachments.length > 0 ||
+      (includeModel && modelValue.length > 0) ||
+      includeRunMode ||
+      includeReasoning);
+
+  useEffect(() => {
+    if (!workspaceRoot && scope === "workspace") {
+      setScope("global");
+    }
+  }, [scope, workspaceRoot]);
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+
+    if (!canSave) {
+      return;
+    }
+
+    onSubmit({
+      ...(initialValue.id ? { id: initialValue.id } : {}),
+      name,
+      scope,
+      instructions,
+      prompt,
+      contextAttachments,
+      variables: [
+        ...parseSmartContextPackVariableInput(variablesInput),
+        ...extractSmartContextPackVariables(name, instructions, prompt).map(
+          (variableName) => ({ name: variableName }),
+        ),
+      ],
+      triggerPhrases: parseSmartContextPackListInput(triggerPhrasesInput),
+      triggerPathPatterns: parseSmartContextPackListInput(
+        triggerPathPatternsInput,
+      ),
+      autoApply,
+      ...(includeModel && modelValue
+        ? { provider, model: modelValue }
+        : {}),
+      ...(includeRunMode ? { mode: runMode } : {}),
+      ...(includeReasoning ? { reasoning } : {}),
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="app-context-pack-dialog max-h-[min(820px,calc(100vh-28px))] w-[min(1040px,calc(100vw-28px))] max-w-none gap-0 overflow-hidden rounded-xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none"
+      >
+        <DialogHeader className="border-b border-slate-800/80 px-5 py-4 pr-12 text-left">
+          <DialogTitle className="text-xl font-semibold text-white">
+            {initialValue.mode === "edit"
+              ? "Edit context pack"
+              : "Create context pack"}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Configure saved context pack fields.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="min-h-0">
+          <div className="grid max-h-[calc(min(820px,100vh-28px)-9rem)] gap-5 overflow-y-auto px-5 py-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+            <div className={PACK_FORM_CLASS}>
+              <label className="grid gap-1.5">
+                <span className="px-1 text-xs font-medium text-slate-400">
+                  Name
+                </span>
+                <Input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Review PR"
+                  className="h-9 rounded-xl border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
+                />
+              </label>
+
+              <div className="grid gap-1.5">
+                <span className="px-1 text-xs font-medium text-slate-400">
+                  Prompt
+                </span>
+                <ContextPackPromptEditor value={prompt} onChange={setPrompt} />
+              </div>
+
+              <label className="grid gap-1.5">
+                <span className="px-1 text-xs font-medium text-slate-400">
+                  Instructions
+                </span>
+                <Textarea
+                  value={instructions}
+                  onChange={(event) => setInstructions(event.target.value)}
+                  placeholder="Focus on regressions, missing tests, and user-facing risk."
+                  className="min-h-24 resize-none rounded-xl border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
+                />
+              </label>
+
+              <label className="grid gap-1.5">
+                <span className="px-1 text-xs font-medium text-slate-400">
+                  Paths
+                </span>
+                <Textarea
+                  value={attachmentPathsInput}
+                  onChange={(event) =>
+                    setAttachmentPathsInput(event.target.value)
+                  }
+                  placeholder={"C:\\Project\\src\\App.tsx\nhttps://example.com/spec"}
+                  className="min-h-24 resize-none rounded-xl border-slate-800 bg-slate-900/70 px-3 py-2 font-mono text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
+                />
+              </label>
+            </div>
+
+            <div className={PACK_FORM_CLASS}>
+              <div className="grid gap-1.5">
+                <span className="px-1 text-xs font-medium text-slate-400">
+                  Scope
+                </span>
+                <div className="flex rounded-full border border-slate-800 bg-slate-900/55 p-0.5">
+                  {(["workspace", "global"] as const).map((scopeOption) => {
+                    const disabled =
+                      scopeOption === "workspace" && !workspaceRoot;
+
+                    return (
+                      <button
+                        key={scopeOption}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => setScope(scopeOption)}
+                        className={cn(
+                          "h-8 flex-1 rounded-full px-3 text-xs font-medium transition-colors",
+                          scope === scopeOption
+                            ? "bg-slate-100 text-slate-950"
+                            : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                          disabled &&
+                            "cursor-not-allowed opacity-45 hover:bg-transparent",
+                        )}
+                      >
+                        {getSmartContextPackScopeLabel(scopeOption)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <label className="grid gap-1.5">
+                <span className="px-1 text-xs font-medium text-slate-400">
+                  Variables
+                </span>
+                <Textarea
+                  value={variablesInput}
+                  onChange={(event) => setVariablesInput(event.target.value)}
+                  placeholder="ticket_id, target_file, test_command=npm test"
+                  className="min-h-20 resize-none rounded-xl border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
+                />
+              </label>
+
+              <label className="grid gap-1.5">
+                <span className="px-1 text-xs font-medium text-slate-400">
+                  Trigger phrases
+                </span>
+                <Input
+                  value={triggerPhrasesInput}
+                  onChange={(event) =>
+                    setTriggerPhrasesInput(event.target.value)
+                  }
+                  placeholder="review pr, frontend qa, debug build"
+                  className="h-9 rounded-xl border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
+                />
+              </label>
+
+              <label className="grid gap-1.5">
+                <span className="px-1 text-xs font-medium text-slate-400">
+                  Path patterns
+                </span>
+                <Input
+                  value={triggerPathPatternsInput}
+                  onChange={(event) =>
+                    setTriggerPathPatternsInput(event.target.value)
+                  }
+                  placeholder="*.tsx, src/ui/**, package.json"
+                  className="h-9 rounded-xl border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
+                />
+              </label>
+
+              <PackOption
+                label="Auto-apply matching pack"
+                checked={autoApply}
+                onChange={setAutoApply}
+              />
+
+              <div className="grid gap-3 border-t border-slate-800/80 pt-4">
+                <PackOption
+                  label="Save model"
+                  checked={includeModel}
+                  onChange={setIncludeModel}
+                />
+                <div className="grid gap-2 sm:grid-cols-[9rem_minmax(0,1fr)]">
+                  <select
+                    aria-label="Model provider"
+                    value={provider}
+                    disabled={!includeModel}
+                    onChange={(event) =>
+                      setProvider(event.target.value as RuntimeProvider)
+                    }
+                    className="h-9 rounded-xl border border-slate-800 bg-slate-900/70 px-3 text-sm text-slate-100 outline-none focus:ring-1 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {VALID_MODEL_PROVIDERS.map((providerOption) => (
+                      <option key={providerOption} value={providerOption}>
+                        {formatProviderOptionLabel(providerOption)}
+                      </option>
+                    ))}
+                  </select>
+                  <Input
+                    aria-label="Model"
+                    value={model}
+                    disabled={!includeModel}
+                    onChange={(event) => setModel(event.target.value)}
+                    placeholder="gpt-5.5"
+                    className="h-9 rounded-xl border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30 disabled:opacity-45"
+                  />
+                </div>
+
+                <PackOption
+                  label="Save mode"
+                  checked={includeRunMode}
+                  onChange={setIncludeRunMode}
+                />
+                <select
+                  aria-label="Execution mode"
+                  value={runMode}
+                  disabled={!includeRunMode}
+                  onChange={(event) => setRunMode(event.target.value as RunMode)}
+                  className="h-9 rounded-xl border border-slate-800 bg-slate-900/70 px-3 text-sm text-slate-100 outline-none focus:ring-1 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {RUN_MODES.map((modeOption) => (
+                    <option key={modeOption} value={modeOption}>
+                      {getContextPackModeLabel(modeOption)}
+                    </option>
+                  ))}
+                </select>
+
+                <PackOption
+                  label="Save reasoning"
+                  checked={includeReasoning}
+                  onChange={setIncludeReasoning}
+                />
+                <select
+                  aria-label="Reasoning"
+                  value={reasoning}
+                  disabled={!includeReasoning}
+                  onChange={(event) =>
+                    setReasoning(event.target.value as ReasoningMode)
+                  }
+                  className="h-9 rounded-xl border border-slate-800 bg-slate-900/70 px-3 text-sm text-slate-100 outline-none focus:ring-1 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {REASONING_MODES.map((reasoningOption) => (
+                    <option key={reasoningOption} value={reasoningOption}>
+                      {getContextPackReasoningLabel(reasoningOption)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="border-t border-slate-800/80 px-5 py-4">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+              className="h-8 rounded-full px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={!canSave}
+              className="h-8 rounded-full border-sky-500/20 bg-sky-500/10 px-3 text-xs text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white disabled:border-slate-800 disabled:bg-slate-900/60 disabled:text-slate-600"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {initialValue.mode === "edit" ? "Update pack" : "Save pack"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 const SmartContextPackCard = ({
   item,
   applyingPackId,
   pendingDeletePackId,
+  onEditPack,
   onApplyPack,
   onDeleteContextPack,
 }: {
   item: SmartContextPackListItem;
   applyingPackId: string | null;
   pendingDeletePackId: string | null;
+  onEditPack: (pack: SmartContextPack) => void;
   onApplyPack: (pack: SmartContextPack) => void;
   onDeleteContextPack: (pack: SmartContextPack) => void | Promise<void>;
 }): JSX.Element => {
@@ -219,37 +795,40 @@ const SmartContextPackCard = ({
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <p className="truncate text-sm font-semibold text-slate-100">
-              {pack.name}
-            </p>
-            {isMatched ? (
-              <span className="inline-flex h-5 items-center gap-1 rounded-full border border-sky-400/25 bg-sky-400/10 px-1.5 text-[10px] font-semibold text-sky-100">
-                <Sparkles className="h-3 w-3" />
-                Suggested
-              </span>
-            ) : null}
-            <span
-              className={cn(
-                "inline-flex h-5 items-center gap-1 rounded-full border px-1.5 text-[10px] font-semibold",
-                item.scope === "global"
-                  ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-100"
-                  : "border-slate-700 bg-slate-950/80 text-slate-300",
-              )}
-            >
+          <p className="truncate text-sm font-semibold text-slate-100">
+            {pack.name}
+          </p>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
+            <span className="inline-flex min-w-0 items-center gap-1">
               {item.scope === "global" ? (
-                <Globe2 className="h-3 w-3" />
+                <Globe2 className="h-3 w-3 text-emerald-200" />
               ) : (
-                <Folder className="h-3 w-3" />
+                <Folder className="h-3 w-3 text-slate-400" />
               )}
               {scopeLabel}
             </span>
+            <span>{formatPackUsage(pack)}</span>
+            {isMatched ? (
+              <span className="inline-flex min-w-0 items-center gap-1 text-sky-200">
+                <Sparkles className="h-3 w-3" />
+                Suggested by current prompt
+              </span>
+            ) : null}
           </div>
-          <p className="mt-1 text-[11px] text-slate-500">
-            {formatPackUsage(pack)}
-          </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label={`Edit context pack ${pack.name}`}
+            title={`Edit ${pack.name}`}
+            disabled={applyingPackId !== null}
+            onClick={() => onEditPack(pack)}
+            className="h-8 w-8 rounded-full border-slate-700 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900/60 disabled:text-slate-600"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -276,41 +855,35 @@ const SmartContextPackCard = ({
           </Button>
         </div>
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        <span className="rounded-full border border-slate-700/80 bg-slate-950/70 px-2 py-0.5 text-[10px] leading-4 text-slate-400">
-          ~{preview.estimatedTokens} tokens
-        </span>
-        <span className="rounded-full border border-slate-700/80 bg-slate-950/70 px-2 py-0.5 text-[10px] leading-4 text-slate-400">
-          {preview.attachmentCount} path
+      <div className="grid gap-1 text-[11px] leading-5 text-slate-500">
+        <p>
+          ~{preview.estimatedTokens} tokens / {preview.attachmentCount} path
           {preview.attachmentCount === 1 ? "" : "s"}
-        </span>
+        </p>
         {preview.promptFileCount > 0 ? (
-          <span className="rounded-full border border-violet-400/20 bg-violet-400/10 px-2 py-0.5 text-[10px] leading-4 text-violet-100">
+          <p className="text-violet-100">
             {preview.promptFileCount} prompt file
             {preview.promptFileCount === 1 ? "" : "s"}
-          </span>
+          </p>
         ) : null}
         {preview.skillFileCount > 0 ? (
-          <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 text-[10px] leading-4 text-cyan-100">
+          <p className="text-cyan-100">
             {preview.skillFileCount} skill file
             {preview.skillFileCount === 1 ? "" : "s"}
-          </span>
+          </p>
         ) : null}
-        {previewWarnings.map((warning) => (
-          <span
-            key={warning}
-            className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] leading-4 text-amber-100"
-          >
+        {previewWarnings.length > 0 ? (
+          <p className="inline-flex items-center gap-1 text-amber-100">
             <AlertTriangle className="h-3 w-3" />
-            {warning}
-          </span>
-        ))}
+            {previewWarnings.join(", ")}
+          </p>
+        ) : null}
         {ralphFlowNames.length > 0 ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] leading-4 text-amber-100">
+          <p className="inline-flex items-center gap-1 text-amber-100">
             <AlertTriangle className="h-3 w-3" />
             Used by {ralphFlowNames.length} Ralph flow
             {ralphFlowNames.length === 1 ? "" : "s"}
-          </span>
+          </p>
         ) : null}
       </div>
       {isPendingUsedPackDelete ? (
@@ -320,16 +893,9 @@ const SmartContextPackCard = ({
         </div>
       ) : null}
       {summary.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {summary.map((entry) => (
-            <span
-              key={entry}
-              className="max-w-full truncate rounded-full border border-slate-700/80 bg-slate-950/70 px-2 py-0.5 text-[10px] leading-4 text-slate-400"
-            >
-              {entry}
-            </span>
-          ))}
-        </div>
+        <p className="truncate text-[11px] leading-5 text-slate-500">
+          {summary.join(" / ")}
+        </p>
       ) : null}
     </div>
   );
@@ -355,17 +921,10 @@ export const SmartContextPackPicker = ({
 }: SmartContextPackPickerProps): JSX.Element => {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<SmartContextPackView>("apply");
-  const [name, setName] = useState("");
+  const [packDialog, setPackDialog] =
+    useState<SmartContextPackDialogState | null>(null);
   const [scopeFilter, setScopeFilter] =
     useState<SmartContextPackScopeFilter>("all");
-  const [saveScope, setSaveScope] = useState<SmartContextPackScope>(
-    workspaceRoot ? "workspace" : "global",
-  );
-  const [instructions, setInstructions] = useState("");
-  const [variablesInput, setVariablesInput] = useState("");
-  const [triggerPhrasesInput, setTriggerPhrasesInput] = useState("");
-  const [triggerPathPatternsInput, setTriggerPathPatternsInput] = useState("");
-  const [autoApply, setAutoApply] = useState(false);
   const [configuringPackId, setConfiguringPackId] = useState<string | null>(null);
   const [variableValues, setVariableValues] = useState<Record<string, string>>({});
   const [applyError, setApplyError] = useState<string | null>(null);
@@ -374,18 +933,7 @@ export const SmartContextPackPicker = ({
   const [ralphPackUsageById, setRalphPackUsageById] = useState<
     Record<string, string[]>
   >({});
-  const [includePrompt, setIncludePrompt] = useState(false);
-  const [includeAttachments, setIncludeAttachments] = useState(false);
-  const [includeModel, setIncludeModel] = useState(true);
-  const [includeMode, setIncludeMode] = useState(true);
-  const [includeReasoning, setIncludeReasoning] = useState(true);
   const importInputRef = useRef<HTMLInputElement | null>(null);
-  const hasPrompt = activeDraft.trim().length > 0;
-  const hasAttachments = contextAttachments.length > 0;
-  const currentModelLabel = `${getProviderLabel(activeProvider)} / ${activeModel}`;
-  const currentModeLabel = getContextPackModeLabel(activeRunMode);
-  const currentReasoningLabel = getContextPackReasoningLabel(activeReasoning);
-  const attachmentToggleLabel = formatAttachmentToggleLabel(contextAttachments);
   const matchedPackIds = useMemo(
     () => new Set(matchedContextPackIds),
     [matchedContextPackIds],
@@ -437,41 +985,64 @@ export const SmartContextPackPicker = ({
   const missingVariableNames = configuringPack
     ? getSmartContextPackMissingVariableNames(configuringPack, variableValues)
     : [];
-  const canSave =
-    name.trim().length > 0 &&
-    ((includePrompt && hasPrompt) ||
-      (includeAttachments && hasAttachments) ||
-      instructions.trim().length > 0 ||
-      includeModel ||
-      includeMode ||
-      includeReasoning);
-
-  const openSaveView = (): void => {
-    const nextSaveScope =
+  const openCreateDialog = (): void => {
+    const nextScope =
       !workspaceRoot || scopeFilter === "global" ? "global" : "workspace";
 
-    setName(deriveContextPackName(activeDraft));
-    setInstructions("");
-    setIncludePrompt(hasPrompt);
-    setIncludeAttachments(hasAttachments);
-    setIncludeModel(true);
-    setIncludeMode(true);
-    setIncludeReasoning(true);
-    setVariablesInput(
-      formatListInputValue(extractSmartContextPackVariables(activeDraft)),
-    );
-    setSaveScope(nextSaveScope);
-    setTriggerPhrasesInput("");
-    setTriggerPathPatternsInput("");
-    setAutoApply(false);
-    setView("save");
+    setPackDialog({
+      key: `create-${Date.now()}`,
+      initialValue: {
+        mode: "create",
+        name: deriveContextPackName(activeDraft),
+        scope: nextScope,
+        instructions: "",
+        prompt: activeDraft,
+        contextAttachments,
+        variables: extractSmartContextPackVariables(activeDraft).map((name) => ({
+          name,
+        })),
+        triggerPhrases: [],
+        triggerPathPatterns: [],
+        autoApply: false,
+        provider: activeProvider,
+        model: activeModel,
+        runMode: activeRunMode,
+        reasoning: activeReasoning,
+      },
+    });
+    setOpen(false);
+    setView("apply");
   };
 
-  useEffect(() => {
-    if (!workspaceRoot && saveScope === "workspace") {
-      setSaveScope("global");
-    }
-  }, [saveScope, workspaceRoot]);
+  const openEditDialog = (pack: SmartContextPack): void => {
+    setPackDialog({
+      key: `edit-${pack.id}-${Date.now()}`,
+      initialValue: {
+        id: pack.id,
+        mode: "edit",
+        name: pack.name,
+        scope: getSmartContextPackScope(pack),
+        instructions: pack.instructions,
+        prompt: pack.prompt,
+        contextAttachments: pack.contextAttachments,
+        variables: pack.variables,
+        triggerPhrases: pack.trigger.phrases,
+        triggerPathPatterns: pack.trigger.pathPatterns,
+        autoApply: pack.trigger.autoApply,
+        ...(pack.provider ? { provider: pack.provider } : {}),
+        ...(pack.model ? { model: pack.model } : {}),
+        ...(pack.mode ? { runMode: pack.mode } : {}),
+        ...(pack.reasoning ? { reasoning: pack.reasoning } : {}),
+      },
+    });
+    setOpen(false);
+    setView("apply");
+  };
+
+  const handlePackDialogSubmit = (input: SaveSmartContextPackInput): void => {
+    onSaveContextPack(input);
+    setPackDialog(null);
+  };
 
   const openConfigureView = (pack: SmartContextPack): void => {
     setConfiguringPackId(pack.id);
@@ -581,40 +1152,6 @@ export const SmartContextPackPicker = ({
     onDeleteContextPack(pack.id);
   };
 
-  const handleSave = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
-
-    if (!canSave) {
-      return;
-    }
-
-    onSaveContextPack({
-      name,
-      scope: saveScope,
-      instructions,
-      variables: [
-        ...parseSmartContextPackListInput(variablesInput),
-        ...extractSmartContextPackVariables(
-          name,
-          instructions,
-          includePrompt ? activeDraft : "",
-        ),
-      ],
-      triggerPhrases: parseSmartContextPackListInput(triggerPhrasesInput),
-      triggerPathPatterns: parseSmartContextPackListInput(
-        triggerPathPatternsInput,
-      ),
-      autoApply,
-      includePrompt,
-      includeAttachments,
-      includeModel,
-      includeMode,
-      includeReasoning,
-    });
-    setOpen(false);
-    setView("apply");
-  };
-
   const handleConfiguredApply = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
 
@@ -662,7 +1199,8 @@ export const SmartContextPackPicker = ({
   };
 
   return (
-    <Popover
+    <>
+      <Popover
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
@@ -682,12 +1220,9 @@ export const SmartContextPackPicker = ({
           className="app-context-pack-trigger h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:border-sky-500/30 hover:bg-slate-900 hover:text-slate-100"
         >
           <Layers className="h-3.5 w-3.5 text-sky-300" />
-          <span className="hidden sm:inline">Packs</span>
-          {contextPacks.length > 0 ? (
-            <span className="rounded-full border border-slate-700 bg-slate-900 px-1.5 text-[10px] leading-4 text-slate-400">
-              {contextPacks.length}
-            </span>
-          ) : null}
+          <span className="hidden sm:inline">
+            {contextPacks.length > 0 ? `Packs (${contextPacks.length})` : "Packs"}
+          </span>
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -750,7 +1285,7 @@ export const SmartContextPackPicker = ({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={openSaveView}
+                onClick={openCreateDialog}
                 className="h-8 rounded-full border-sky-500/20 bg-sky-500/10 px-3 text-xs text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white"
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -782,7 +1317,7 @@ export const SmartContextPackPicker = ({
             {filteredPackItems.length === 0 ? (
               <button
                 type="button"
-                onClick={openSaveView}
+                onClick={openCreateDialog}
                 className="grid gap-2 rounded-2xl border border-dashed border-slate-800 bg-slate-900/45 px-4 py-5 text-left text-slate-300 hover:border-sky-500/30 hover:bg-sky-500/10 hover:text-sky-100"
               >
                 <span className="text-sm font-semibold">Save current setup</span>
@@ -799,168 +1334,12 @@ export const SmartContextPackPicker = ({
                 item={item}
                 applyingPackId={applyingPackId}
                 pendingDeletePackId={pendingDeletePackId}
+                onEditPack={openEditDialog}
                 onApplyPack={applyPack}
                 onDeleteContextPack={requestDeletePack}
               />
             ))}
           </div>
-        ) : view === "save" ? (
-          <form
-            className={PACK_FORM_CLASS}
-            onSubmit={handleSave}
-          >
-            <label className="grid gap-1.5">
-              <span className="px-1 text-xs font-medium text-slate-400">
-                Name
-              </span>
-              <Input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Review PR"
-                className="h-9 rounded-xl border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
-              />
-            </label>
-
-            <div className="grid gap-1.5">
-              <span className="px-1 text-xs font-medium text-slate-400">
-                Scope
-              </span>
-              <div className="flex rounded-full border border-slate-800 bg-slate-900/55 p-0.5">
-                {(["workspace", "global"] as const).map((scope) => {
-                  const disabled = scope === "workspace" && !workspaceRoot;
-
-                  return (
-                    <button
-                      key={scope}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => setSaveScope(scope)}
-                      className={cn(
-                        "h-8 flex-1 rounded-full px-3 text-xs font-medium transition-colors",
-                        saveScope === scope
-                          ? "bg-slate-100 text-slate-950"
-                          : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
-                        disabled &&
-                          "cursor-not-allowed opacity-45 hover:bg-transparent",
-                      )}
-                    >
-                      {getSmartContextPackScopeLabel(scope)}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <label className="grid gap-1.5">
-              <span className="px-1 text-xs font-medium text-slate-400">
-                Instructions
-              </span>
-              <Textarea
-                value={instructions}
-                onChange={(event) => setInstructions(event.target.value)}
-                placeholder="Focus on regressions, missing tests, and user-facing risk."
-                className="min-h-20 resize-none rounded-xl border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
-              />
-            </label>
-
-            <label className="grid gap-1.5">
-              <span className="px-1 text-xs font-medium text-slate-400">
-                Variables
-              </span>
-              <Input
-                value={variablesInput}
-                onChange={(event) => setVariablesInput(event.target.value)}
-                placeholder="ticket_id, target_file, test_command"
-                className="h-9 rounded-xl border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
-              />
-            </label>
-
-            <div className="grid gap-2 rounded-2xl border border-slate-800 bg-slate-900/50 p-3">
-              <label className="grid gap-1.5">
-                <span className="px-1 text-xs font-medium text-slate-400">
-                  Trigger phrases
-                </span>
-                <Input
-                  value={triggerPhrasesInput}
-                  onChange={(event) => setTriggerPhrasesInput(event.target.value)}
-                  placeholder="review pr, frontend qa, debug build"
-                  className="h-9 rounded-xl border-slate-800 bg-slate-950/60 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
-                />
-              </label>
-
-              <label className="grid gap-1.5">
-                <span className="px-1 text-xs font-medium text-slate-400">
-                  Path patterns
-                </span>
-                <Input
-                  value={triggerPathPatternsInput}
-                  onChange={(event) =>
-                    setTriggerPathPatternsInput(event.target.value)
-                  }
-                  placeholder="*.tsx, src/ui/**, package.json"
-                  className="h-9 rounded-xl border-slate-800 bg-slate-950/60 text-sm text-slate-100 placeholder:text-slate-600 focus-visible:ring-sky-500/30"
-                />
-              </label>
-
-              <PackOption
-                label="Auto-apply matching pack"
-                checked={autoApply}
-                onChange={setAutoApply}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <div className="flex flex-wrap gap-2">
-                <PackOption
-                  label="Prompt"
-                  checked={includePrompt}
-                  disabled={!hasPrompt}
-                  onChange={setIncludePrompt}
-                />
-                <PackOption
-                  label={attachmentToggleLabel}
-                  checked={includeAttachments}
-                  disabled={!hasAttachments}
-                  onChange={setIncludeAttachments}
-                />
-                <PackOption
-                  label={currentModelLabel}
-                  checked={includeModel}
-                  onChange={setIncludeModel}
-                />
-                <PackOption
-                  label={currentModeLabel}
-                  checked={includeMode}
-                  onChange={setIncludeMode}
-                />
-                <PackOption
-                  label={currentReasoningLabel}
-                  checked={includeReasoning}
-                  onChange={setIncludeReasoning}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-2 border-t border-slate-800/80 pt-3">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setView("apply")}
-                className="h-8 rounded-full px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-              >
-                Back
-              </Button>
-              <Button
-                type="submit"
-                variant="outline"
-                disabled={!canSave}
-                className="h-8 rounded-full border-sky-500/20 bg-sky-500/10 px-3 text-xs text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white disabled:border-slate-800 disabled:bg-slate-900/60 disabled:text-slate-600"
-              >
-                <Save className="h-3.5 w-3.5" />
-                Save pack
-              </Button>
-            </div>
-          </form>
         ) : configuringPack ? (
           <form
             className={PACK_FORM_CLASS}
@@ -1032,6 +1411,21 @@ export const SmartContextPackPicker = ({
           </form>
         ) : null}
       </PopoverContent>
-    </Popover>
+      </Popover>
+      {packDialog ? (
+        <SmartContextPackEditorDialog
+          key={packDialog.key}
+          open
+          initialValue={packDialog.initialValue}
+          workspaceRoot={workspaceRoot}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) {
+              setPackDialog(null);
+            }
+          }}
+          onSubmit={handlePackDialogSubmit}
+        />
+      ) : null}
+    </>
   );
 };

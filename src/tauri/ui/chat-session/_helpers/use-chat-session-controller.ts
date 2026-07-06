@@ -76,6 +76,7 @@ import {
   runTaskInterview,
   saveInstruction,
   saveClipboardImageAttachment,
+  syncChatCompletionIndicator,
   type InstructionMutationInput,
   type RecentDesktopTaskResult,
   type InstructionRegistryResult,
@@ -164,6 +165,7 @@ import {
   createMemorySummaryState,
   createProviderChooserState,
 } from "./session-shell-view-model";
+import { isChatCompletionIndicatorActive } from "./chat-completion-indicator";
 import { useChatSessionRuntime } from "./use-chat-session-runtime";
 import { useChatSessionSpeechInput } from "./use-chat-session-speech-input";
 import { useChatSessionShellState } from "./use-chat-session-shell-state";
@@ -741,6 +743,32 @@ export const useChatSessionController = (
       : null;
   const chatInterviewBusy =
     chatInterview?.status === "loading" || chatInterview?.status === "starting";
+  const chatCompletionIndicatorActive = useMemo(
+    () =>
+      isChatCompletionIndicatorActive({
+        shellState: state.shellState,
+        hasHydrated: state.hasHydrated,
+        promptEnhancementBusy,
+        chatInterviewBusy,
+      }),
+    [
+      chatInterviewBusy,
+      promptEnhancementBusy,
+      state.hasHydrated,
+      state.shellState,
+    ],
+  );
+  useEffect(() => {
+    if (!isDesktop || !state.hasHydrated) {
+      return;
+    }
+
+    void syncChatCompletionIndicator(chatCompletionIndicatorActive).catch(
+      (error) => {
+        console.error("Failed to sync chat completion indicator", error);
+      },
+    );
+  }, [chatCompletionIndicatorActive, isDesktop, state.hasHydrated]);
   const promptEnhancementWebSearchAvailable =
     isPromptEnhancementWebSearchAvailable(runtime.runtimeSnapshot);
   const promptEnhancementUnavailableReason =
@@ -2259,25 +2287,21 @@ export const useChatSessionController = (
 
   const handleSaveContextPack = useCallback(
     (input: SaveSmartContextPackInput): void => {
-      const name = input.name.replace(/\s+/gu, " ").trim();
+      const name = (input.name ?? "").replace(/\s+/gu, " ").trim();
 
       if (!name) {
         return;
       }
 
-      const instructions = input.instructions.trim();
-      const prompt = input.includePrompt ? state.activeSession.draft.trim() : "";
-      const contextAttachments = input.includeAttachments
-        ? cloneContextAttachmentsForPack(
-            state.activeSession.draftContextAttachments,
-          )
-        : [];
-      const provider = input.includeModel
-        ? state.activeSession.provider
-        : undefined;
-      const model = input.includeModel ? state.activeSession.model : undefined;
-      const mode = input.includeMode ? activeRunMode : undefined;
-      const reasoning = input.includeReasoning ? activeReasoning : undefined;
+      const instructions = input.instructions?.trim() ?? "";
+      const prompt = input.prompt?.trim() ?? "";
+      const contextAttachments = cloneContextAttachmentsForPack(
+        input.contextAttachments ?? [],
+      );
+      const provider = input.provider;
+      const model = provider ? input.model?.trim() : undefined;
+      const mode = input.mode;
+      const reasoning = input.reasoning;
 
       if (
         !instructions &&
@@ -2292,28 +2316,43 @@ export const useChatSessionController = (
 
       state.applyShellState((prev) => {
         const now = Date.now();
+        const existingPack = input.id
+          ? prev.contextPacks.find((contextPack) => contextPack.id === input.id)
+          : undefined;
         const pack: SmartContextPack = {
-          id: crypto.randomUUID(),
+          id: existingPack?.id ?? crypto.randomUUID(),
           workspace:
             input.scope === "global" ? null : state.activeSession.workspace,
           name,
           instructions,
           prompt,
           contextAttachments,
-          variables: createSmartContextPackVariables(input.variables),
+          variables: createSmartContextPackVariables(input.variables ?? []),
           trigger: {
-            phrases: input.triggerPhrases,
-            pathPatterns: input.triggerPathPatterns,
-            autoApply: input.autoApply,
+            phrases: input.triggerPhrases ?? [],
+            pathPatterns: input.triggerPathPatterns ?? [],
+            autoApply: input.autoApply ?? false,
           },
           ...(provider ? { provider } : {}),
           ...(provider && model ? { model } : {}),
           ...(mode ? { mode } : {}),
           ...(reasoning ? { reasoning } : {}),
-          createdAt: now,
+          createdAt: existingPack?.createdAt ?? now,
           updatedAt: now,
-          useCount: 0,
+          ...(existingPack?.lastUsedAt !== undefined
+            ? { lastUsedAt: existingPack.lastUsedAt }
+            : {}),
+          useCount: existingPack?.useCount ?? 0,
         };
+
+        if (existingPack) {
+          return {
+            ...prev,
+            contextPacks: prev.contextPacks.map((contextPack) =>
+              contextPack.id === existingPack.id ? pack : contextPack,
+            ),
+          };
+        }
 
         return {
           ...prev,
@@ -2325,12 +2364,6 @@ export const useChatSessionController = (
       });
     },
     [
-      activeRunMode,
-      activeReasoning,
-      state.activeSession.draft,
-      state.activeSession.draftContextAttachments,
-      state.activeSession.model,
-      state.activeSession.provider,
       state.activeSession.workspace,
       state.applyShellState,
     ],

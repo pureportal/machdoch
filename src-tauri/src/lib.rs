@@ -117,6 +117,7 @@ pub fn run() {
             desktop_shell::hide_main_window_to_tray,
             desktop_shell::quit_machdoch,
             desktop_shell::reveal_main_window,
+            desktop_shell::sync_chat_completion_indicator,
             desktop_task::cancel_desktop_task,
             desktop_task::get_active_desktop_task_ids,
             desktop_task::get_active_desktop_tasks,

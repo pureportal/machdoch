@@ -246,6 +246,15 @@ const flushShellHydration = async (): Promise<void> => {
   });
 };
 
+const flushShellPersistence = async (): Promise<void> => {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+};
+
 const createRuntimeSnapshot = (
   overrides: Partial<RuntimeSnapshot> = {},
 ): RuntimeSnapshot => {
@@ -730,6 +739,142 @@ describe("ChatSession component", () => {
 
       expect(screen.getByText(/Reading workspace files/i)).toBeDefined();
       expect(screen.queryByText(/Workspace scan complete\./i)).toBeNull();
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "keeps the selected session visible when a different session task completes",
+    async () => {
+      const task = "scan this workspace in the background";
+      const taskResolvers: Array<(value: DesktopTaskRunResponse) => void> = [];
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation(
+          () =>
+            new Promise<DesktopTaskRunResponse>((resolve) => {
+              taskResolvers.push(resolve);
+            }),
+        );
+      const baseState = createInitialShellState();
+      const backgroundSession = createSession({
+        id: "background-task-session",
+        manualTitle: "Background task session",
+        workspace: "C:\\ProjectA",
+        updatedAt: 200,
+      });
+      const foregroundSession = createSession({
+        id: "foreground-task-session",
+        manualTitle: "Foreground session",
+        workspace: "C:\\ProjectB",
+        updatedAt: 100,
+      });
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: backgroundSession.id,
+        sessions: [backgroundSession, foregroundSession],
+      });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      expect(
+        screen.getByRole("heading", { name: "Background task session" }),
+      ).toBeDefined();
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(input, {
+        target: { value: task },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      const taskId = runDesktopTaskSpy.mock.calls[0]?.[2]?.taskId;
+
+      expect(typeof taskId).toBe("string");
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Open session Foreground session" }),
+      );
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("heading", { name: "Foreground session" }),
+        ).toBeDefined();
+      });
+      await waitFor(() => {
+        const storedState = JSON.parse(
+          window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+        ) as ShellPersistedState;
+
+        expect(storedState.activeSessionId).toBe(foregroundSession.id);
+      });
+      await flushShellPersistence();
+
+      const persistedBeforeExternalUpdate = JSON.parse(
+        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+      ) as ShellPersistedState;
+
+      storeShellState({
+        ...persistedBeforeExternalUpdate,
+        activeSessionId: backgroundSession.id,
+      });
+
+      await act(async () => {
+        const execution = createMockExecutionFixture(task, "C:\\ProjectA");
+
+        taskResolvers[0]?.({
+          execution: {
+            ...execution,
+            summary: "Background task complete.",
+            response: {
+              ...(execution.response ?? {
+                highlights: [],
+                relatedFiles: [],
+                verification: [],
+                followUps: [],
+              }),
+              markdown: "Background task completion result.",
+            },
+          },
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        const storedState = JSON.parse(
+          window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+        ) as ShellPersistedState;
+        const updatedBackgroundSession = storedState.sessions.find(
+          (session) => session.id === backgroundSession.id,
+        );
+
+        expect(storedState.activeSessionId).toBe(foregroundSession.id);
+        expect(
+          updatedBackgroundSession?.messages.some(
+            (message) =>
+              message.taskId === taskId &&
+              message.role === "agent" &&
+              message.source?.kind === "execution",
+          ),
+        ).toBe(true);
+      });
+
+      expect(
+        screen.getByRole("heading", { name: "Foreground session" }),
+      ).toBeDefined();
+      expect(
+        screen.queryByText("Background task completion result."),
+      ).toBeNull();
 
       runDesktopTaskSpy.mockRestore();
     },
@@ -6403,15 +6548,15 @@ describe("ChatSession component", () => {
       },
     });
     fireEvent.change(
-      screen.getByPlaceholderText("ticket_id, target_file, test_command"),
+      screen.getByPlaceholderText(/ticket_id, target_file, test_command/u),
       {
-      target: { value: "target_view" },
+        target: { value: "target_view" },
       },
     );
     fireEvent.change(
       screen.getByPlaceholderText("review pr, frontend qa, debug build"),
       {
-      target: { value: "frontend qa" },
+        target: { value: "frontend qa" },
       },
     );
     fireEvent.change(
@@ -6502,6 +6647,81 @@ describe("ChatSession component", () => {
         model: "gpt-5.5",
         mode: "machdoch",
       });
+    });
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("edits an existing context pack from the pack dialog", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "edit-context-pack-session",
+      workspace: "C:\\Project",
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+      contextPacks: [
+        {
+          id: "editable-pack",
+          workspace: "C:\\Project",
+          name: "Review PR",
+          instructions: "Focus on regressions.",
+          prompt: "Review the staged changes.",
+          contextAttachments: [],
+          variables: [],
+          trigger: {
+            phrases: [],
+            pathPatterns: [],
+            autoApply: false,
+          },
+          provider: "openai",
+          model: "gpt-5.5",
+          mode: "machdoch",
+          createdAt: 10,
+          updatedAt: 20,
+          lastUsedAt: 30,
+          useCount: 2,
+        },
+      ],
+    });
+
+    render(<ChatSession />);
+    await flushShellHydration();
+
+    fireEvent.click(screen.getByRole("button", { name: "Context packs" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Edit context pack Review PR",
+      }),
+    );
+
+    const promptInput = screen.getByLabelText("Prompt") as HTMLTextAreaElement;
+
+    fireEvent.change(promptInput, {
+      target: { value: "Review {target_file} and run smoke tests." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Update pack" }));
+
+    await waitFor(() => {
+      const storedState = JSON.parse(
+        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+      ) as ShellPersistedState;
+      const [editedPack] = storedState.contextPacks;
+
+      expect(storedState.contextPacks).toHaveLength(1);
+      expect(editedPack).toMatchObject({
+        id: "editable-pack",
+        name: "Review PR",
+        prompt: "Review {target_file} and run smoke tests.",
+        variables: [{ name: "target_file" }],
+        createdAt: 10,
+        lastUsedAt: 30,
+        useCount: 2,
+      });
+      expect(editedPack?.updatedAt).toBeGreaterThan(20);
     });
   }, SLOW_UI_TEST_TIMEOUT_MS);
 

@@ -54,6 +54,7 @@ import {
   showRalphRunDetail,
   resolveAttachedImagePreviewSource,
   subscribeToRemoteControlCommands,
+  syncChatCompletionIndicator,
 } from "./runtime";
 import {
   desktopEventListeners,
@@ -90,6 +91,23 @@ describe("desktop runtime fullscreen detection", () => {
     await expect(
       detectFullscreenWindowOnMonitor({ x: 0, y: 0, width: 1920, height: 1080 }),
     ).resolves.toBe(false);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("syncs the chat completion indicator through the Rust command", async () => {
+    invokeMock.mockResolvedValueOnce(undefined);
+
+    await expect(syncChatCompletionIndicator(true)).resolves.toBeUndefined();
+    expect(invokeMock).toHaveBeenCalledWith(
+      "sync_chat_completion_indicator",
+      { completed: true },
+    );
+  });
+
+  it("skips chat completion indicator sync outside Tauri", async () => {
+    disableInvokeMock();
+
+    await expect(syncChatCompletionIndicator(true)).resolves.toBeUndefined();
     expect(invokeMock).not.toHaveBeenCalled();
   });
 

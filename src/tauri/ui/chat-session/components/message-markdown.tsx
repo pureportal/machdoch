@@ -47,7 +47,7 @@ export const MessageMarkdown = ({
   return (
     <div
       className={[
-        "app-message-markdown grid min-w-0 gap-3 wrap-break-word",
+        "app-message-markdown min-w-0 leading-6 wrap-break-word",
         className,
       ]
         .filter(Boolean)

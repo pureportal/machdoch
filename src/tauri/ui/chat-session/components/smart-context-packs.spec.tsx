@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SmartContextPack } from "../../chat-session.model";
 import { listRalphFlows, showRalphFlow } from "../../runtime";
@@ -32,6 +33,43 @@ const createPack = (
   useCount: 0,
   ...overrides,
 });
+
+const renderPicker = ({
+  contextPacks = [createPack()],
+  activeDraft = "",
+  contextAttachments = [],
+  matchedContextPackIds = [],
+  onSaveContextPack = vi.fn(),
+  onApplyContextPack = vi.fn(),
+  onDeleteContextPack = vi.fn(),
+}: Partial<ComponentProps<typeof SmartContextPackPicker>> = {}) => {
+  render(
+    <SmartContextPackPicker
+      contextPacks={contextPacks}
+      workspaceRoot="C:\\Project"
+      activeDraft={activeDraft}
+      activeProvider="openai"
+      activeModel="gpt-5.5"
+      activeRunMode="machdoch"
+      activeReasoning="default"
+      contextAttachments={contextAttachments}
+      matchedContextPackIds={matchedContextPackIds}
+      imageInputSupported
+      workspaceLabel="Project"
+      onSaveContextPack={onSaveContextPack}
+      onApplyContextPack={onApplyContextPack}
+      onDeleteContextPack={onDeleteContextPack}
+      onExportContextPacks={vi.fn()}
+      onImportContextPacks={vi.fn()}
+    />,
+  );
+
+  return {
+    onSaveContextPack,
+    onApplyContextPack,
+    onDeleteContextPack,
+  };
+};
 
 describe("SmartContextPackPicker", () => {
   beforeEach(() => {
@@ -70,26 +108,7 @@ describe("SmartContextPackPicker", () => {
   it("warns before deleting a pack used by a Ralph flow", async () => {
     const onDeleteContextPack = vi.fn();
 
-    render(
-      <SmartContextPackPicker
-        contextPacks={[createPack()]}
-        workspaceRoot="C:\\Project"
-        activeDraft=""
-        activeProvider="openai"
-        activeModel="gpt-5.5"
-        activeRunMode="machdoch"
-        activeReasoning="default"
-        contextAttachments={[]}
-        matchedContextPackIds={[]}
-        imageInputSupported
-        workspaceLabel="Project"
-        onSaveContextPack={vi.fn()}
-        onApplyContextPack={vi.fn()}
-        onDeleteContextPack={onDeleteContextPack}
-        onExportContextPacks={vi.fn()}
-        onImportContextPacks={vi.fn()}
-      />,
-    );
+    renderPicker({ onDeleteContextPack });
 
     fireEvent.click(screen.getByRole("button", { name: "Context packs" }));
 
@@ -112,5 +131,102 @@ describe("SmartContextPackPicker", () => {
     await waitFor(() => {
       expect(onDeleteContextPack).toHaveBeenCalledWith("pack-1");
     });
+  });
+
+  it("opens a full save dialog with an editable highlighted prompt", async () => {
+    const onSaveContextPack = vi.fn();
+
+    renderPicker({
+      contextPacks: [],
+      activeDraft: "Review {target_file}",
+      onSaveContextPack,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Context packs" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Create context pack")).toBeTruthy();
+
+    const promptInput = screen.getByLabelText("Prompt") as HTMLTextAreaElement;
+
+    expect(promptInput.value).toBe("Review {target_file}");
+    expect(screen.getByText("{target_file}").className).toContain(
+      "text-emerald-200",
+    );
+
+    fireEvent.change(promptInput, {
+      target: { value: "Review {target_file} for {ticket_id}" },
+    });
+
+    expect(screen.getByText("{ticket_id}").className).toContain(
+      "text-emerald-200",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save pack" }));
+
+    expect(onSaveContextPack).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Review {target_file}",
+        scope: "workspace",
+        prompt: "Review {target_file} for {ticket_id}",
+        provider: "openai",
+        model: "gpt-5.5",
+        mode: "machdoch",
+        reasoning: "default",
+      }),
+    );
+    expect(onSaveContextPack.mock.calls[0]?.[0].variables).toEqual(
+      expect.arrayContaining([
+        { name: "target_file" },
+        { name: "ticket_id" },
+      ]),
+    );
+  });
+
+  it("edits an existing pack with the same dialog component", async () => {
+    const onSaveContextPack = vi.fn();
+
+    renderPicker({
+      contextPacks: [
+        createPack({
+          prompt: "Run {test_command}.",
+          variables: [{ name: "test_command", defaultValue: "pnpm test" }],
+        }),
+      ],
+      onSaveContextPack,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Context packs" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Edit context pack Review PR",
+      }),
+    );
+
+    expect(await screen.findByText("Edit context pack")).toBeTruthy();
+
+    const promptInput = screen.getByLabelText("Prompt") as HTMLTextAreaElement;
+    const variablesInput = screen.getByPlaceholderText(
+      "ticket_id, target_file, test_command=npm test",
+    ) as HTMLTextAreaElement;
+
+    expect(promptInput.value).toBe("Run {test_command}.");
+    expect(variablesInput.value).toBe("test_command=pnpm test");
+
+    fireEvent.change(promptInput, {
+      target: { value: "Run pnpm test -- --watch=false." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Update pack" }));
+
+    expect(onSaveContextPack).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "pack-1",
+        name: "Review PR",
+        prompt: "Run pnpm test -- --watch=false.",
+      }),
+    );
+    expect(onSaveContextPack.mock.calls[0]?.[0].variables).toEqual([
+      { name: "test_command", defaultValue: "pnpm test" },
+    ]);
   });
 });

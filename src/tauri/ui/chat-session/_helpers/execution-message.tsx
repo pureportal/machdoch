@@ -162,6 +162,34 @@ const getReactNodeText = (node: ReactNode): string => {
   return "";
 };
 
+const getStructuredFindingsField = (children: ReactNode): string | undefined => {
+  const text = getReactNodeText(children).trimStart();
+  const match = /^(severity|location|issue|evidence|impact|recommendation)\s*:/iu.exec(
+    text,
+  );
+
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  switch (match[1].toLowerCase()) {
+    case "severity":
+      return "severity";
+    case "location":
+      return "location";
+    case "issue":
+      return "issue";
+    case "evidence":
+      return "evidence";
+    case "impact":
+      return "impact";
+    case "recommendation":
+      return "recommendation";
+    default:
+      return undefined;
+  }
+};
+
 const copyTextToClipboard = async (text: string): Promise<void> => {
   if (globalThis.navigator?.clipboard?.writeText) {
     await globalThis.navigator.clipboard.writeText(text);
@@ -224,7 +252,7 @@ const CopyableCodeBlock = ({ children }: { children?: ReactNode }): JSX.Element 
   };
 
   return (
-    <div className="group relative min-w-0">
+    <div className="app-message-code-block group relative min-w-0">
       <pre className="m-0 max-w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 pr-12 text-xs leading-6 text-slate-200">
         {children}
       </pre>
@@ -391,9 +419,18 @@ export const createExecutionThinkingTrace = (
 };
 
 export const markdownComponents: Components = {
-  p: ({ children }): JSX.Element => (
-    <p className="m-0 whitespace-pre-wrap wrap-break-word">{children}</p>
-  ),
+  p: ({ children }): JSX.Element => {
+    const structuredField = getStructuredFindingsField(children);
+
+    return (
+      <p
+        data-md-field={structuredField}
+        className="m-0 whitespace-pre-wrap wrap-break-word"
+      >
+        {children}
+      </p>
+    );
+  },
   ul: ({ children }): JSX.Element => (
     <ul className="m-0 min-w-0 list-disc space-y-1 pl-5 wrap-break-word">
       {children}

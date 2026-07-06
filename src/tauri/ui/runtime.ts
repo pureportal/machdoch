@@ -3125,6 +3125,20 @@ export const detectFullscreenWindowOnMonitor = async (
   }
 };
 
+export const syncChatCompletionIndicator = async (
+  completed: boolean,
+): Promise<void> => {
+  if (!canInvokeTauriCommands()) {
+    return;
+  }
+
+  try {
+    await tauriCore.invoke("sync_chat_completion_indicator", { completed });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
 export const saveUserWebSearchApiKey = async (
   provider: UserWebSearchApiKeyProvider,
   apiKey: string,
