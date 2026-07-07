@@ -22,11 +22,14 @@ const createExecution = (
 
 const createSessionWithExecutionStatus = (
   status: TaskExecutionResult["status"],
+  options: { lastReadAt?: number } = {},
 ): ChatSessionRecord => {
   const taskId = `${status}-task`;
 
   return createSession({
     id: `${status}-session`,
+    updatedAt: 2,
+    lastReadAt: options.lastReadAt ?? 1,
     messages: [
       {
         id: `${taskId}-user`,
@@ -85,8 +88,20 @@ const isActive = (
   });
 
 describe("chat completion indicator", () => {
-  it("activates for a hydrated shell with a completed session and no queued work", () => {
+  it("activates for a hydrated shell with an unread completed session and no queued work", () => {
     expect(isActive()).toBe(true);
+  });
+
+  it("does not activate after the completed session has been read", () => {
+    expect(
+      isActive({
+        shellState: createShellState({
+          sessions: [
+            createSessionWithExecutionStatus("executed", { lastReadAt: 2 }),
+          ],
+        }),
+      }),
+    ).toBe(false);
   });
 
   it("does not activate before shell hydration", () => {

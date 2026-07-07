@@ -1,5 +1,6 @@
 import {
   getSessionOverviewStatus,
+  hasUnreadCompletedSessionResponse,
   type ShellPersistedState,
 } from "../../chat-session.model";
 
@@ -24,7 +25,7 @@ export const isChatCompletionIndicatorActive = ({
     return false;
   }
 
-  let hasCompletedSession = false;
+  let hasUnreadCompletedSession = false;
 
   for (const session of shellState.sessions) {
     const status = getSessionOverviewStatus(session);
@@ -33,10 +34,10 @@ export const isChatCompletionIndicatorActive = ({
       return false;
     }
 
-    if (status === "done") {
-      hasCompletedSession = true;
+    if (hasUnreadCompletedSessionResponse(session)) {
+      hasUnreadCompletedSession = true;
     }
   }
 
-  return hasCompletedSession;
+  return hasUnreadCompletedSession;
 };

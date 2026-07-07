@@ -1,6 +1,7 @@
 import { getEventListeners } from "node:events";
 import {
   createProviderRequestSignal,
+  getProviderRequestRetryDelayMs,
   withProviderRequest,
   type ProviderRequestLogEntry,
 } from "./request.js";
@@ -36,6 +37,32 @@ describe("createProviderRequestSignal", () => {
 });
 
 describe("withProviderRequest", () => {
+  it("honors Retry-After headers when calculating provider retry delays", () => {
+    expect(
+      getProviderRequestRetryDelayMs(
+        1,
+        Object.assign(new Error("rate limit"), {
+          status: 429,
+          headers: new Headers({
+            "retry-after-ms": "2500",
+          }),
+        }),
+      ),
+    ).toBe(2_500);
+
+    expect(
+      getProviderRequestRetryDelayMs(
+        1,
+        Object.assign(new Error("rate limit"), {
+          status: 429,
+          headers: {
+            "retry-after": "2",
+          },
+        }),
+      ),
+    ).toBe(2_000);
+  });
+
   it("retries retryable failures and logs each attempt", async () => {
     const logs: ProviderRequestLogEntry[] = [];
     let attempts = 0;
@@ -126,6 +153,43 @@ describe("withProviderRequest", () => {
       ),
     ).rejects.toThrow(
       /LANGDOCK_BASE_URL.*https:\/\/api\.langdock\.com\/openai\/eu\/v1.*Original error: 400 No body/s,
+    );
+  });
+
+  it("adds Langdock rate-limit guidance to 429 provider errors", async () => {
+    const providerError = Object.assign(new Error("429 status code (no body)"), {
+      status: 429,
+      code: "rate_limit",
+      request_id: "req_langdock_429",
+    });
+    let caughtError: unknown;
+
+    try {
+      await withProviderRequest(
+        {
+          provider: "langdock",
+          operation: "startTurn",
+          maxAttempts: 1,
+        },
+        async () => {
+          throw providerError;
+        },
+      );
+    } catch (error) {
+      caughtError = error;
+    }
+
+    expect(caughtError).toBeInstanceOf(Error);
+    expect(caughtError).toMatchObject({
+      status: 429,
+      code: "rate_limit",
+      request_id: "req_langdock_429",
+    });
+    expect((caughtError as Error).message).toMatch(
+      /Langdock Chat Completions rate limits are enforced at the workspace level and per model/s,
+    );
+    expect((caughtError as Error).message).toContain(
+      "Original error: 429 status code (no body)",
     );
   });
 
