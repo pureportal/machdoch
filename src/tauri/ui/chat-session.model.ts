@@ -52,6 +52,10 @@ export interface ChatSessionContextAttachment {
   parent?: string;
 }
 
+export interface ChatSessionMessagePromptEnhancement {
+  originalContent: string;
+}
+
 export interface ChatSessionMessage {
   id: string;
   taskId?: string;
@@ -60,6 +64,7 @@ export interface ChatSessionMessage {
   createdAt?: number;
   intent?: "retry-task" | "continue-task";
   contextAttachments?: ChatSessionContextAttachment[];
+  promptEnhancement?: ChatSessionMessagePromptEnhancement;
   source?: ChatSessionMessageSource;
 }
 
@@ -67,6 +72,7 @@ export interface ChatSessionRecord {
   id: string;
   createdAt: number;
   updatedAt: number;
+  composerUpdatedAt?: number;
   lastReadAt?: number;
   archivedAt?: number;
   pinnedAt?: number;
@@ -131,6 +137,7 @@ export interface ChatSessionQueuedMessage {
   task: string;
   visibleMessageContent?: string;
   promptHistoryContent?: string;
+  promptEnhancement?: ChatSessionMessagePromptEnhancement;
   contextAttachments: ChatSessionContextAttachment[];
   createdAt: number;
   updatedAt: number;
@@ -836,7 +843,12 @@ export const createSession = (
   overrides: Partial<ChatSessionRecord> = {},
 ): ChatSessionRecord => {
   const provider = overrides.provider ?? DEFAULT_PROVIDER;
-  const now = overrides.updatedAt ?? Date.now();
+  const requestedUpdatedAt = overrides.updatedAt ?? Date.now();
+  const composerUpdatedAt = Math.max(
+    overrides.createdAt ?? requestedUpdatedAt,
+    normalizeFiniteNumber(overrides.composerUpdatedAt, requestedUpdatedAt),
+  );
+  const now = Math.max(requestedUpdatedAt, composerUpdatedAt);
   const mode = normalizeOptionalStoredRunMode(overrides.mode);
   const reasoning = normalizeOptionalStoredReasoningMode(overrides.reasoning);
   const specialSession = isSpecialSessionKind(overrides.specialSession)
@@ -848,6 +860,7 @@ export const createSession = (
     id: overrides.id ?? crypto.randomUUID(),
     createdAt: overrides.createdAt ?? now,
     updatedAt: now,
+    composerUpdatedAt,
     lastReadAt:
       typeof overrides.lastReadAt === "number" ? overrides.lastReadAt : now,
     ...(typeof overrides.archivedAt === "number"
@@ -1464,6 +1477,23 @@ const normalizeMessageIntent = (
   return undefined;
 };
 
+const normalizeMessagePromptEnhancement = (
+  value: unknown,
+  content: string,
+): ChatSessionMessagePromptEnhancement | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const originalContent = normalizeString(value.originalContent).trim();
+
+  if (!originalContent || originalContent === content.trim()) {
+    return undefined;
+  }
+
+  return { originalContent };
+};
+
 const normalizeSessionMessages = (
   value: unknown,
   sessionId: string,
@@ -1488,6 +1518,10 @@ const normalizeSessionMessages = (
       entry.contextAttachments,
       `message-context-${sessionId}-${index}`,
     );
+    const promptEnhancement =
+      entry.role === "user"
+        ? normalizeMessagePromptEnhancement(entry.promptEnhancement, content)
+        : undefined;
     const message: ChatSessionMessage = {
       id: normalizeString(entry.id, `${sessionId}-message-${index}`),
       role: entry.role,
@@ -1496,6 +1530,7 @@ const normalizeSessionMessages = (
       ...(createdAt !== undefined ? { createdAt } : {}),
       ...(intent ? { intent } : {}),
       ...(contextAttachments.length > 0 ? { contextAttachments } : {}),
+      ...(promptEnhancement ? { promptEnhancement } : {}),
       ...(source ? { source } : {}),
     };
 
@@ -1554,6 +1589,10 @@ const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord =
       typeof session.createdAt === "number" ? session.createdAt : undefined,
     updatedAt:
       typeof session.updatedAt === "number" ? session.updatedAt : undefined,
+    composerUpdatedAt:
+      typeof session.composerUpdatedAt === "number"
+        ? session.composerUpdatedAt
+        : session.updatedAt,
     lastReadAt:
       typeof session.lastReadAt === "number"
         ? session.lastReadAt
@@ -1583,6 +1622,7 @@ const getSessionNormalizationTimestamp = (
 ): number => {
   let timestamp = Math.max(
     session.updatedAt,
+    session.composerUpdatedAt ?? 0,
     session.lastReadAt ?? 0,
     session.archivedAt ?? 0,
     session.pinnedAt ?? 0,
@@ -1634,6 +1674,10 @@ const normalizeQueuedSessionMessages = (
     const promptHistoryContent = normalizeString(
       entry.promptHistoryContent,
     ).trim();
+    const promptEnhancement = normalizeMessagePromptEnhancement(
+      entry.promptEnhancement,
+      visibleMessageContent || task,
+    );
     const createdAt = normalizeFiniteNumber(entry.createdAt, index);
     const updatedAt = Math.max(
       createdAt,
@@ -1646,6 +1690,7 @@ const normalizeQueuedSessionMessages = (
       task,
       ...(visibleMessageContent ? { visibleMessageContent } : {}),
       ...(promptHistoryContent ? { promptHistoryContent } : {}),
+      ...(promptEnhancement ? { promptEnhancement } : {}),
       contextAttachments: normalizeContextAttachments(
         entry.contextAttachments,
         `queued-context-${id}`,

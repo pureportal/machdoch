@@ -1,9 +1,14 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach } from "vitest";
 import type { ChatSessionContextAttachment } from "../../chat-session.model";
 import {
   ContextAttachmentsList,
   MessageAttachmentsList,
 } from "./context-attachments";
+
+afterEach(() => {
+  cleanup();
+});
 
 const createAttachment = (
   overrides: Partial<ChatSessionContextAttachment> = {},

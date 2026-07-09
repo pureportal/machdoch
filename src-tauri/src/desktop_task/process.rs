@@ -1,5 +1,5 @@
 use std::{
-    io::{BufRead, BufReader, Read},
+    io::{BufReader, Read},
     path::Path,
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
@@ -24,14 +24,69 @@ pub(super) const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
 #[cfg(target_os = "windows")]
 pub(super) const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+pub(super) const SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES: usize = 1024 * 1024;
+pub(super) const SUBPROCESS_OUTPUT_TRUNCATED_MARKER: &str =
+    "[output truncated after capture limit]";
+
 pub(super) fn read_stdout(stdout: impl Read) -> Result<String, String> {
-    let mut output = String::new();
+    read_bounded_stream_text(stdout, "stdout")
+}
 
-    BufReader::new(stdout)
-        .read_to_string(&mut output)
-        .map_err(|error| format!("Failed to read the shared CLI stdout stream: {error}"))?;
+pub(super) fn read_bounded_stream_text(
+    mut stream: impl Read,
+    stream_name: &str,
+) -> Result<String, String> {
+    let mut captured = Vec::with_capacity(SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES.min(8192));
+    let mut truncated = false;
+    let mut buffer = [0_u8; 8192];
 
-    Ok(output)
+    loop {
+        let bytes_read = stream.read(&mut buffer).map_err(|error| {
+            format!("Failed to read the shared CLI {stream_name} stream: {error}")
+        })?;
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        append_bounded_bytes(&mut captured, &buffer[..bytes_read], &mut truncated);
+    }
+
+    Ok(decode_bounded_output(captured, truncated))
+}
+
+fn append_bounded_bytes(captured: &mut Vec<u8>, bytes: &[u8], truncated: &mut bool) {
+    if *truncated {
+        return;
+    }
+
+    let remaining = SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES.saturating_sub(captured.len());
+
+    if bytes.len() <= remaining {
+        captured.extend_from_slice(bytes);
+        return;
+    }
+
+    captured.extend_from_slice(&bytes[..remaining]);
+    *truncated = true;
+}
+
+fn decode_bounded_output(captured: Vec<u8>, truncated: bool) -> String {
+    let mut output = String::from_utf8_lossy(&captured).to_string();
+
+    if truncated {
+        append_truncation_marker(&mut output);
+    }
+
+    output
+}
+
+fn append_truncation_marker(output: &mut String) {
+    if !output.is_empty() && !output.ends_with('\n') {
+        output.push('\n');
+    }
+
+    output.push_str(SUBPROCESS_OUTPUT_TRUNCATED_MARKER);
 }
 
 pub(super) type DesktopTaskActivity = Arc<Mutex<Instant>>;
@@ -59,26 +114,133 @@ fn read_stderr_lines(
     mut handle_progress_line: impl FnMut(&str) -> bool,
 ) -> Result<Vec<String>, String> {
     let mut stderr_lines = Vec::new();
+    let mut retained_bytes = 0_usize;
+    let mut diagnostics_truncated = false;
+    let mut current_line = Vec::new();
+    let mut current_line_truncated = false;
+    let mut reader = BufReader::new(stderr);
+    let mut buffer = [0_u8; 8192];
 
-    for line in BufReader::new(stderr).lines() {
-        let line =
-            line.map_err(|error| format!("Failed to read the shared CLI stderr stream: {error}"))?;
+    loop {
+        let bytes_read = reader
+            .read(&mut buffer)
+            .map_err(|error| format!("Failed to read the shared CLI stderr stream: {error}"))?;
 
-        let trimmed_line = line.trim();
-
-        if trimmed_line.is_empty() {
-            continue;
+        if bytes_read == 0 {
+            break;
         }
 
-        if handle_progress_line(trimmed_line) {
-            mark_desktop_task_activity(activity);
-            continue;
+        for byte in &buffer[..bytes_read] {
+            if *byte == b'\n' {
+                process_stderr_line(
+                    &mut stderr_lines,
+                    &mut retained_bytes,
+                    &mut diagnostics_truncated,
+                    &current_line,
+                    current_line_truncated,
+                    activity,
+                    &mut handle_progress_line,
+                );
+                current_line.clear();
+                current_line_truncated = false;
+            } else if current_line.len() < SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES {
+                current_line.push(*byte);
+            } else {
+                current_line_truncated = true;
+            }
         }
+    }
 
-        stderr_lines.push(trimmed_line.to_string());
+    if !current_line.is_empty() || current_line_truncated {
+        process_stderr_line(
+            &mut stderr_lines,
+            &mut retained_bytes,
+            &mut diagnostics_truncated,
+            &current_line,
+            current_line_truncated,
+            activity,
+            &mut handle_progress_line,
+        );
     }
 
     Ok(stderr_lines)
+}
+
+fn process_stderr_line(
+    stderr_lines: &mut Vec<String>,
+    retained_bytes: &mut usize,
+    diagnostics_truncated: &mut bool,
+    raw_line: &[u8],
+    line_truncated: bool,
+    activity: &DesktopTaskActivity,
+    handle_progress_line: &mut impl FnMut(&str) -> bool,
+) {
+    let raw_line = raw_line.strip_suffix(b"\r").unwrap_or(raw_line);
+    let line = String::from_utf8_lossy(raw_line);
+    let trimmed_line = line.trim();
+
+    if trimmed_line.is_empty() && !line_truncated {
+        return;
+    }
+
+    if !line_truncated && handle_progress_line(trimmed_line) {
+        mark_desktop_task_activity(activity);
+        return;
+    }
+
+    push_bounded_stderr_line(
+        stderr_lines,
+        retained_bytes,
+        diagnostics_truncated,
+        trimmed_line,
+        line_truncated,
+    );
+}
+
+fn push_bounded_stderr_line(
+    stderr_lines: &mut Vec<String>,
+    retained_bytes: &mut usize,
+    diagnostics_truncated: &mut bool,
+    line: &str,
+    line_truncated: bool,
+) {
+    if *diagnostics_truncated {
+        return;
+    }
+
+    let separator_bytes = if stderr_lines.is_empty() { 0 } else { 1 };
+    let remaining = SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES
+        .saturating_sub(*retained_bytes)
+        .saturating_sub(separator_bytes);
+
+    let mut retained_line = line.to_string();
+
+    if line_truncated || retained_line.len() > remaining {
+        truncate_string_to_byte_limit(&mut retained_line, remaining);
+        append_truncation_marker(&mut retained_line);
+        *diagnostics_truncated = true;
+    }
+
+    if retained_line.is_empty() {
+        retained_line.push_str(SUBPROCESS_OUTPUT_TRUNCATED_MARKER);
+    }
+
+    *retained_bytes += separator_bytes + retained_line.len();
+    stderr_lines.push(retained_line);
+}
+
+fn truncate_string_to_byte_limit(value: &mut String, limit: usize) {
+    if value.len() <= limit {
+        return;
+    }
+
+    let mut end = limit;
+
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    value.truncate(end);
 }
 
 pub(super) fn read_stderr(
@@ -245,7 +407,8 @@ mod tests {
 
     use super::{
         create_desktop_task_activity, desktop_task_activity_elapsed, join_cli_output_and_cleanup,
-        mark_desktop_task_activity, read_stderr_lines,
+        mark_desktop_task_activity, read_stderr_lines, read_stdout,
+        SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES, SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
     };
     use crate::desktop_task::payload::write_conversation_context_file;
 
@@ -311,5 +474,34 @@ mod tests {
 
         assert_eq!(stderr_lines, vec!["ordinary stderr".to_string()]);
         assert!(desktop_task_activity_elapsed(&activity) < elapsed_before_progress);
+    }
+
+    #[test]
+    fn stdout_reader_caps_retained_output_and_marks_truncation() {
+        let output = read_stdout(Cursor::new(vec![
+            b'x';
+            SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES + 128
+        ]))
+        .expect("stdout should be read");
+
+        assert!(output.len() < SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES + 256);
+        assert!(output.contains(SUBPROCESS_OUTPUT_TRUNCATED_MARKER));
+        assert!(std::str::from_utf8(output.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn stderr_reader_caps_non_progress_diagnostics() {
+        let activity = create_desktop_task_activity();
+        let stderr_lines = read_stderr_lines(
+            Cursor::new(vec![b'e'; SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES + 128]),
+            &activity,
+            |_| false,
+        )
+        .expect("stderr should be read");
+        let stderr_text = stderr_lines.join("\n");
+
+        assert!(stderr_text.len() < SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES + 256);
+        assert!(stderr_text.contains(SUBPROCESS_OUTPUT_TRUNCATED_MARKER));
+        assert!(std::str::from_utf8(stderr_text.as_bytes()).is_ok());
     }
 }

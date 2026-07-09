@@ -26,7 +26,6 @@ const runtimeConfig: RuntimeConfig = {
     {
       provider: "openai",
       configured: true,
-      source: "env",
     },
   ],
   webSearch: {

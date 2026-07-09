@@ -10,29 +10,38 @@ import { useChatSessionRuntime } from "./use-chat-session-runtime";
 
 const createRuntimeSnapshot = (
   overrides: Partial<RuntimeSnapshot> = {},
-): RuntimeSnapshot => ({
-  workspaceRoot: "C:\\Project",
-  mode: "ask",
-  provider: "openai",
-  model: "gpt-5.5",
-  offline: false,
-  agentLimits: {
-    executorTurns: 64,
-    autopilotExecutorIterations: 16,
-  },
-  compatibility: {
-    discoverGithubCustomizations: false,
-  },
-  providerAvailability: [],
-  webSearch: {
-    activeProvider: "none",
+): RuntimeSnapshot => {
+  const baseSnapshot: RuntimeSnapshot = {
+    workspaceRoot: "C:\\Project",
+    mode: "ask",
+    defaultMode: "ask",
+    provider: "openai",
+    model: "gpt-5.5",
+    reasoning: "default",
+    defaultReasoning: "default",
+    offline: false,
+    agentLimits: {
+      executorTurns: 64,
+      autopilotExecutorIterations: 16,
+    },
+    compatibility: {
+      discoverGithubCustomizations: false,
+    },
     providerAvailability: [],
-  },
-  reviewModel: {
-    mode: "base",
-  },
-  ...overrides,
-});
+    webSearch: {
+      activeProvider: "none",
+      providerAvailability: [],
+    },
+    reviewModel: {
+      mode: "base",
+    },
+  };
+
+  return {
+    ...baseSnapshot,
+    ...overrides,
+  };
+};
 
 describe("useChatSessionRuntime", () => {
   beforeEach(() => {

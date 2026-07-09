@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.ui.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "tsBuildInfoFile": "./.cache/tsconfig.ui.test.tsbuildinfo"
+  },
+  "include": [
+    "src/tauri/ui/vite-env.d.ts",
+    "src/tauri/ui/**/*.spec.ts",
+    "src/tauri/ui/**/*.spec.tsx",
+    "src/tauri/ui/**/*.test.ts",
+    "src/tauri/ui/**/*.test.tsx"
+  ],
+  "exclude": []
+}

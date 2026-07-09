@@ -53,12 +53,17 @@ export const useSessionComposerState = (
 
           state.setPromptHistoryIndex(nextIndex);
           state.setDraftValue(state.activeSession.promptHistory[nextIndex]);
-          state.updateActiveSession((session) => ({
-            ...session,
-            draftContextAttachments:
-              session.promptContextHistory[nextIndex] ?? [],
-            updatedAt: Date.now(),
-          }));
+          state.updateActiveSession((session) => {
+            const updatedAt = Date.now();
+
+            return {
+              ...session,
+              draftContextAttachments:
+                session.promptContextHistory[nextIndex] ?? [],
+              composerUpdatedAt: updatedAt,
+              updatedAt,
+            };
+          });
           return;
         }
 
@@ -66,11 +71,16 @@ export const useSessionComposerState = (
 
         state.setPromptHistoryIndex(nextIndex);
         state.setDraftValue(state.activeSession.promptHistory[nextIndex]);
-        state.updateActiveSession((session) => ({
-          ...session,
-          draftContextAttachments: session.promptContextHistory[nextIndex] ?? [],
-          updatedAt: Date.now(),
-        }));
+        state.updateActiveSession((session) => {
+          const updatedAt = Date.now();
+
+          return {
+            ...session,
+            draftContextAttachments: session.promptContextHistory[nextIndex] ?? [],
+            composerUpdatedAt: updatedAt,
+            updatedAt,
+          };
+        });
         return;
       }
 
@@ -84,22 +94,32 @@ export const useSessionComposerState = (
         state.setPromptHistoryIndex(null);
         state.setDraftValue(state.draftBeforeHistory);
         state.setDraftBeforeHistory("");
-        state.updateActiveSession((session) => ({
-          ...session,
-          draftContextAttachments: draftContextAttachmentsBeforeHistory,
-          updatedAt: Date.now(),
-        }));
+        state.updateActiveSession((session) => {
+          const updatedAt = Date.now();
+
+          return {
+            ...session,
+            draftContextAttachments: draftContextAttachmentsBeforeHistory,
+            composerUpdatedAt: updatedAt,
+            updatedAt,
+          };
+        });
         setDraftContextAttachmentsBeforeHistory([]);
         return;
       }
 
       state.setPromptHistoryIndex(nextIndex);
       state.setDraftValue(state.activeSession.promptHistory[nextIndex]);
-      state.updateActiveSession((session) => ({
-        ...session,
-        draftContextAttachments: session.promptContextHistory[nextIndex] ?? [],
-        updatedAt: Date.now(),
-      }));
+      state.updateActiveSession((session) => {
+        const updatedAt = Date.now();
+
+        return {
+          ...session,
+          draftContextAttachments: session.promptContextHistory[nextIndex] ?? [],
+          composerUpdatedAt: updatedAt,
+          updatedAt,
+        };
+      });
     },
     [draftContextAttachmentsBeforeHistory, state],
   );

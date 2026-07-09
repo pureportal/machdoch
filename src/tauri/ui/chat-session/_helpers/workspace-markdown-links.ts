@@ -12,6 +12,7 @@ const WORKSPACE_RELATIVE_SEGMENT_PATH_PATTERN =
   /^(?:\.\/)?(?:[^\\/#?:]+\/)+[^\\/#?:]+$/u;
 const COMMON_WORKSPACE_FILE_NAME_PATTERN =
   /^(?:\.env(?:\.[\w.-]+)?|AGENTS|Containerfile|Dockerfile|Gemfile|LICENSE|Makefile|NOTICE|Procfile|README|Rakefile)(?:\.[A-Za-z0-9]+)?$/iu;
+const PATH_SAFETY_ESCAPE_PATTERN = /%(?:2e|2f|5c)/giu;
 
 export interface WorkspaceMarkdownLinkTarget {
   relativePath: string;
@@ -19,15 +20,57 @@ export interface WorkspaceMarkdownLinkTarget {
 
 const decodeMarkdownHref = (href: string): string => {
   try {
-    return decodeURI(href);
+    return decodeURIComponent(href);
   } catch {
-    return href;
+    return href.replace(PATH_SAFETY_ESCAPE_PATTERN, (escape) =>
+      decodeURIComponent(escape),
+    );
   }
+};
+
+const stripFileUrlSearchAndHash = (path: string): string =>
+  path.replace(/[?#].*$/u, "");
+
+const getRawFileUrlPath = (href: string): string => {
+  const pathWithAuthority = href.slice("file:".length);
+
+  if (!pathWithAuthority.startsWith("//")) {
+    return stripFileUrlSearchAndHash(pathWithAuthority);
+  }
+
+  const slashAfterAuthority = pathWithAuthority.indexOf("/", 2);
+
+  if (slashAfterAuthority === 2) {
+    return stripFileUrlSearchAndHash(pathWithAuthority.slice(2));
+  }
+
+  if (slashAfterAuthority === -1) {
+    return "";
+  }
+
+  const authority = pathWithAuthority.slice(2, slashAfterAuthority);
+  const path = stripFileUrlSearchAndHash(
+    pathWithAuthority.slice(slashAfterAuthority),
+  );
+
+  return authority && authority.toLowerCase() !== "localhost"
+    ? `//${authority}${path}`
+    : path;
 };
 
 const stripFileUrlPrefix = (href: string): string => {
   if (!href.toLowerCase().startsWith("file:")) {
     return href;
+  }
+
+  const rawFilePath = getRawFileUrlPath(href);
+
+  if (
+    hasUnsafeWorkspacePathSegment(
+      normalizeLocalPath(decodeMarkdownHref(rawFilePath)),
+    )
+  ) {
+    return rawFilePath;
   }
 
   try {
@@ -72,20 +115,22 @@ const stripSourceLocation = (path: string): string => {
 };
 
 const normalizeHrefPath = (href: string): string =>
-  stripSourceLocation(normalizeLocalPath(stripFileUrlPrefix(decodeMarkdownHref(href))));
+  stripSourceLocation(normalizeLocalPath(decodeMarkdownHref(stripFileUrlPrefix(href))));
 
 const isAbsoluteLocalPath = (path: string): boolean =>
   WINDOWS_DRIVE_PATH_PATTERN.test(path) ||
   UNC_PATH_PATTERN.test(path) ||
   path.startsWith("/");
 
-const isWorkspaceRelativePath = (path: string): boolean => {
+const hasUnsafeWorkspacePathSegment = (path: string): boolean =>
+  path.split("/").some((segment) => segment === "." || segment === "..");
+
+const isWorkspaceRelativePathLike = (path: string): boolean => {
   if (
     !path ||
     path.startsWith("#") ||
     path.startsWith("?") ||
     path.startsWith("/") ||
-    path.startsWith("../") ||
     URL_PROTOCOL_PATTERN.test(path)
   ) {
     return false;
@@ -96,6 +141,20 @@ const isWorkspaceRelativePath = (path: string): boolean => {
     WORKSPACE_RELATIVE_SEGMENT_PATH_PATTERN.test(path) ||
     COMMON_WORKSPACE_FILE_NAME_PATTERN.test(path)
   );
+};
+
+const toOpenableWorkspaceRelativePath = (path: string): string | null => {
+  if (!isWorkspaceRelativePathLike(path)) {
+    return null;
+  }
+
+  const relativePath = path.replace(/^\.\//u, "");
+
+  if (hasUnsafeWorkspacePathSegment(relativePath)) {
+    return null;
+  }
+
+  return relativePath;
 };
 
 const toWorkspaceRelativePath = (
@@ -132,7 +191,7 @@ export const isLocalMarkdownLinkHref = (href: string | undefined): boolean => {
 
   const path = normalizeHrefPath(normalizedHref);
 
-  return isAbsoluteLocalPath(path) || isWorkspaceRelativePath(path);
+  return isAbsoluteLocalPath(path) || isWorkspaceRelativePathLike(path);
 };
 
 export const getWorkspaceMarkdownLinkTarget = (
@@ -147,10 +206,10 @@ export const getWorkspaceMarkdownLinkTarget = (
 
   const path = normalizeHrefPath(normalizedHref);
 
-  if (isWorkspaceRelativePath(path)) {
-    return {
-      relativePath: path.replace(/^\.\//u, ""),
-    };
+  const openableRelativePath = toOpenableWorkspaceRelativePath(path);
+
+  if (openableRelativePath) {
+    return { relativePath: openableRelativePath };
   }
 
   if (!workspaceRoot || !isAbsoluteLocalPath(path)) {
@@ -159,5 +218,9 @@ export const getWorkspaceMarkdownLinkTarget = (
 
   const relativePath = toWorkspaceRelativePath(path, workspaceRoot);
 
-  return relativePath ? { relativePath } : null;
+  if (!relativePath || hasUnsafeWorkspacePathSegment(relativePath)) {
+    return null;
+  }
+
+  return { relativePath };
 };

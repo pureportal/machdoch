@@ -519,6 +519,7 @@ export interface TaskExecutionOptions {
   runId?: string;
   onStateChange?: TaskExecutionProgressHandler;
   onActionOutput?: TaskActionOutputHandler;
+  onStreamActivity?: () => void;
   modelAdapter?: AgentModelAdapter;
   monitorModelAdapter?: AgentModelAdapter;
   additionalToolDefinitions?: AgentToolDefinition[];

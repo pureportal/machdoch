@@ -125,6 +125,7 @@ describe("RalphFlowLibraryPanel", () => {
     renderPanel({
       dirty: true,
       draftFlow: {
+        schemaVersion: 1,
         blocks: [],
         edges: [],
         id: workspaceFlow.id,

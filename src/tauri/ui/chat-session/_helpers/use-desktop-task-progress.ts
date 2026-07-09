@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   type MutableRefObject,
 } from "react";
 import {
@@ -10,6 +11,17 @@ import {
   type TaskThinkingTrace,
 } from "../../task-thinking.model";
 import type { TaskExecutionProgress } from "../../../../core/types.js";
+
+interface QueuedDesktopTaskProgress {
+  progress: TaskExecutionProgress;
+  timestamp: number;
+}
+
+interface QueuedDesktopTaskProgressBatch {
+  sessionId: string;
+  taskId: string;
+  events: QueuedDesktopTaskProgress[];
+}
 
 export type UpdateThinkingTrace = (
   sessionId: string,
@@ -39,40 +51,189 @@ export const useDesktopTaskProgress = (options: {
   resolveSessionIdForTask?: ResolveDesktopTaskSessionId;
   updateThinkingTrace: UpdateThinkingTrace;
 }): void => {
+  const optionsRef = useRef(options);
+
+  optionsRef.current = options;
+
   useEffect(() => {
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
+    let scheduledFlushId: number | null = null;
+    let scheduledFlushKind: "animation-frame" | "timeout" | null = null;
+    const queuedProgressByTaskId = new Map<
+      string,
+      QueuedDesktopTaskProgressBatch
+    >();
+
+    const flushQueuedProgress = (): void => {
+      scheduledFlushId = null;
+      scheduledFlushKind = null;
+
+      if (queuedProgressByTaskId.size === 0) {
+        return;
+      }
+
+      const batches = [...queuedProgressByTaskId.values()];
+
+      queuedProgressByTaskId.clear();
+
+      for (const batch of batches) {
+        optionsRef.current.updateThinkingTrace(
+          batch.sessionId,
+          batch.taskId,
+          (trace) => {
+            let nextTrace = trace;
+
+            for (const event of batch.events) {
+              nextTrace = appendThinkingProgress(
+                nextTrace,
+                event.progress,
+                event.timestamp,
+              );
+            }
+
+            return nextTrace;
+          },
+        );
+      }
+    };
+
+    const cancelScheduledFlush = (): void => {
+      if (scheduledFlushId === null) {
+        return;
+      }
+
+      if (
+        scheduledFlushKind === "animation-frame" &&
+        typeof window.cancelAnimationFrame === "function"
+      ) {
+        window.cancelAnimationFrame(scheduledFlushId);
+      } else {
+        window.clearTimeout(scheduledFlushId);
+      }
+
+      scheduledFlushId = null;
+      scheduledFlushKind = null;
+    };
+
+    const scheduleQueuedProgressFlush = (): void => {
+      if (scheduledFlushId !== null) {
+        return;
+      }
+
+      if (typeof window.requestAnimationFrame === "function") {
+        scheduledFlushKind = "animation-frame";
+        scheduledFlushId = window.requestAnimationFrame(flushQueuedProgress);
+        return;
+      }
+
+      scheduledFlushKind = "timeout";
+      scheduledFlushId = window.setTimeout(flushQueuedProgress, 16);
+    };
+
+    const flushQueuedProgressForTask = (taskId: string): void => {
+      const batch = queuedProgressByTaskId.get(taskId);
+
+      if (!batch) {
+        return;
+      }
+
+      queuedProgressByTaskId.delete(taskId);
+
+      if (queuedProgressByTaskId.size === 0) {
+        cancelScheduledFlush();
+      }
+
+      optionsRef.current.updateThinkingTrace(
+        batch.sessionId,
+        batch.taskId,
+        (trace) => {
+          let nextTrace = trace;
+
+          for (const event of batch.events) {
+            nextTrace = appendThinkingProgress(
+              nextTrace,
+              event.progress,
+              event.timestamp,
+            );
+          }
+
+          return nextTrace;
+        },
+      );
+    };
+
+    const queueProgressUpdate = (
+      sessionId: string,
+      taskId: string,
+      progress: TaskExecutionProgress,
+      timestamp: number,
+    ): void => {
+      const existingBatch = queuedProgressByTaskId.get(taskId);
+
+      if (existingBatch) {
+        existingBatch.sessionId = sessionId;
+        existingBatch.events.push({ progress, timestamp });
+      } else {
+        queuedProgressByTaskId.set(taskId, {
+          sessionId,
+          taskId,
+          events: [{ progress, timestamp }],
+        });
+      }
+
+      scheduleQueuedProgressFlush();
+    };
 
     void subscribeToDesktopTaskProgress((progressEvent) => {
-      let sessionId = options.activeDesktopTasksRef.current.get(
+      const currentOptions = optionsRef.current;
+      let sessionId = currentOptions.activeDesktopTasksRef.current.get(
         progressEvent.taskId,
       );
 
       if (!sessionId) {
         sessionId =
-          options.resolveSessionIdForTask?.(progressEvent.taskId) ?? undefined;
+          currentOptions.resolveSessionIdForTask?.(progressEvent.taskId) ??
+          undefined;
 
         if (sessionId) {
-          options.activeDesktopTasksRef.current.set(progressEvent.taskId, sessionId);
+          currentOptions.activeDesktopTasksRef.current.set(
+            progressEvent.taskId,
+            sessionId,
+          );
         }
       }
 
       if (
         !sessionId ||
-        options.ignoredDesktopTaskIdsRef.current.has(progressEvent.taskId)
+        currentOptions.ignoredDesktopTaskIdsRef.current.has(progressEvent.taskId)
       ) {
         return;
       }
 
-      options.updateThinkingTrace(sessionId, progressEvent.taskId, (trace) => {
-        return appendThinkingProgress(
-          trace,
+      if (progressEvent.progress.cancellable) {
+        queueProgressUpdate(
+          sessionId,
+          progressEvent.taskId,
           progressEvent.progress,
           progressEvent.timestamp,
         );
-      });
+      } else {
+        flushQueuedProgressForTask(progressEvent.taskId);
+        currentOptions.updateThinkingTrace(
+          sessionId,
+          progressEvent.taskId,
+          (trace) => {
+            return appendThinkingProgress(
+              trace,
+              progressEvent.progress,
+              progressEvent.timestamp,
+            );
+          },
+        );
+      }
 
-      const progressHandler = options.progressHandlersRef?.current.get(
+      const progressHandler = currentOptions.progressHandlersRef?.current.get(
         progressEvent.taskId,
       );
 
@@ -81,7 +242,7 @@ export const useDesktopTaskProgress = (options: {
         return;
       }
 
-      options.onUnhandledProgress?.(
+      currentOptions.onUnhandledProgress?.(
         sessionId,
         progressEvent.taskId,
         progressEvent.progress,
@@ -98,14 +259,9 @@ export const useDesktopTaskProgress = (options: {
 
     return () => {
       disposed = true;
+      cancelScheduledFlush();
+      queuedProgressByTaskId.clear();
       unsubscribe?.();
     };
-  }, [
-    options.activeDesktopTasksRef,
-    options.ignoredDesktopTaskIdsRef,
-    options.onUnhandledProgress,
-    options.progressHandlersRef,
-    options.resolveSessionIdForTask,
-    options.updateThinkingTrace,
-  ]);
+  }, []);
 };

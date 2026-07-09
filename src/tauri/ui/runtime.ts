@@ -285,6 +285,14 @@ export interface ClipboardImageAttachmentInput {
   fileName?: string;
 }
 
+export interface FilePreviewReadResult {
+  content: string;
+  bytesRead: number;
+  maxBytes: number;
+  truncated: boolean;
+  lossy: boolean;
+}
+
 export interface SynthesizedVoiceAudio {
   provider: UserVoiceAiProvider;
   mimeType: string;
@@ -5041,6 +5049,62 @@ export const openAttachedPath = async (
   }
 };
 
+export const readWorkspaceFilePreview = async (
+  workspaceRoot: string | null | undefined,
+  relativePath: string,
+): Promise<FilePreviewReadResult> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  const normalizedRelativePath = relativePath.trim();
+
+  if (!normalizedRelativePath) {
+    throw new Error("Expected a workspace-relative path to preview.");
+  }
+
+  if (!canInvokeTauriCommands()) {
+    throw new Error("File previews are only available in the desktop app.");
+  }
+
+  try {
+    return await tauriCore.invoke<FilePreviewReadResult>(
+      "read_workspace_file_preview",
+      {
+        workspaceRoot: normalizedWorkspaceRoot ?? "",
+        relativePath: normalizedRelativePath,
+      },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const readAttachedFilePreview = async (
+  path: string,
+  workspaceRoot?: string | null,
+): Promise<FilePreviewReadResult> => {
+  const normalizedPath = path.trim();
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+  if (!normalizedPath) {
+    throw new Error("Expected an attached file path to preview.");
+  }
+
+  if (!canInvokeTauriCommands()) {
+    throw new Error("File previews are only available in the desktop app.");
+  }
+
+  try {
+    return await tauriCore.invoke<FilePreviewReadResult>(
+      "read_attached_file_preview",
+      {
+        path: normalizedPath,
+        workspaceRoot: normalizedWorkspaceRoot,
+      },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
 const ATTACHMENT_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:", "ftp:"]);
 
 export const openExternalUrl = async (url: string): Promise<void> => {
@@ -5114,6 +5178,66 @@ export const resolveAttachedImagePreviewSource = async (
         {
           path: normalizedPath,
           workspaceRoot: normalizedWorkspaceRoot,
+        },
+      );
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  return convertLocalFileSource(resolvedPath);
+};
+
+export const resolveAttachedFilePreviewSource = async (
+  path: string,
+  workspaceRoot?: string | null,
+): Promise<string> => {
+  const normalizedPath = path.trim();
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+  if (!normalizedPath) {
+    throw new Error("Expected an attached file path to preview.");
+  }
+
+  let resolvedPath = normalizedPath;
+
+  if (canInvokeTauriCommands()) {
+    try {
+      resolvedPath = await tauriCore.invoke<string>(
+        "resolve_attached_file_preview_path",
+        {
+          path: normalizedPath,
+          workspaceRoot: normalizedWorkspaceRoot,
+        },
+      );
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  return convertLocalFileSource(resolvedPath);
+};
+
+export const resolveWorkspaceFilePreviewSource = async (
+  workspaceRoot: string | null | undefined,
+  relativePath: string,
+): Promise<string> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  const normalizedRelativePath = relativePath.trim();
+
+  if (!normalizedRelativePath) {
+    throw new Error("Expected a workspace-relative path to preview.");
+  }
+
+  let resolvedPath = normalizedRelativePath;
+
+  if (canInvokeTauriCommands()) {
+    try {
+      resolvedPath = await tauriCore.invoke<string>(
+        "resolve_workspace_file_preview_path",
+        {
+          workspaceRoot: normalizedWorkspaceRoot ?? "",
+          relativePath: normalizedRelativePath,
         },
       );
     } catch (error) {

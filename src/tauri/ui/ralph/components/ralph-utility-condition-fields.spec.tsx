@@ -1,8 +1,12 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RalphUtilityCondition } from "../../../../core/ralph.js";
 import { RalphUtilityConditionFields } from "./ralph-utility-condition-fields";
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("RalphUtilityConditionFields", () => {
   it("renders the default simple condition when no condition is configured", () => {

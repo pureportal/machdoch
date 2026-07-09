@@ -43,11 +43,18 @@ export interface SessionHistoryIndexEntry {
   session: ChatSessionRecord;
   title: string;
   searchText: string;
-  searchTokens: string[];
+  titleSearchText: string;
+  tagSearchText: string;
+  projectSearchText: string;
   projectId: string;
   projectLabel: string;
   score: number;
 }
+
+export type SessionHistoryIndexEntryCache = Map<
+  string,
+  SessionHistoryIndexEntry
+>;
 
 export interface SessionHistoryIndex {
   entries: SessionHistoryIndexEntry[];
@@ -96,10 +103,6 @@ const tokenizeSearchQuery = (value: string): string[] => {
   return normalized.split(" ").filter(Boolean);
 };
 
-const uniqueTokens = (value: string): string[] => {
-  return [...new Set(tokenizeSearchQuery(value))];
-};
-
 const normalizeProjectKey = (workspace: string): string => {
   const trimmedWorkspace = workspace.trim();
   const normalizedWorkspace = trimmedWorkspace
@@ -119,8 +122,11 @@ const getProjectLabel = (workspace: string | null): string => {
   return getWorkspaceLabel(workspace);
 };
 
-const getMessageSearchParts = (message: ChatSessionMessage): string[] => {
-  const parts = [message.content];
+const appendMessageSearchParts = (
+  parts: string[],
+  message: ChatSessionMessage,
+): void => {
+  parts.push(message.content);
 
   if (message.source?.kind === "execution") {
     const execution = message.source.execution;
@@ -133,15 +139,15 @@ const getMessageSearchParts = (message: ChatSessionMessage): string[] => {
       ...(execution.response?.highlights ?? []),
       ...(execution.response?.verification ?? []),
       ...(execution.response?.followUps ?? []),
-      ...(execution.response?.relatedFiles.flatMap((file) => [
-        file.path,
-        file.description,
-      ]) ?? []),
-      ...execution.outputSections.flatMap((section) => [
-        section.title,
-        ...section.lines,
-      ]),
     );
+
+    for (const file of execution.response?.relatedFiles ?? []) {
+      parts.push(file.path, file.description);
+    }
+
+    for (const section of execution.outputSections) {
+      parts.push(section.title, ...section.lines);
+    }
   }
 
   if (message.source?.kind === "thinking") {
@@ -151,12 +157,16 @@ const getMessageSearchParts = (message: ChatSessionMessage): string[] => {
       thinking.assistantText ?? "",
       thinking.modelStream?.label ?? "",
       thinking.modelStream?.content ?? "",
-      ...(thinking.actionOutputLines?.map((line) => line.text) ?? []),
-      ...thinking.entries.flatMap((entry) => [entry.label, entry.detail]),
     );
-  }
 
-  return parts;
+    for (const line of thinking.actionOutputLines ?? []) {
+      parts.push(line.text);
+    }
+
+    for (const entry of thinking.entries) {
+      parts.push(entry.label, entry.detail);
+    }
+  }
 };
 
 const calculateSearchScore = (
@@ -168,8 +178,6 @@ const calculateSearchScore = (
   }
 
   let score = 0;
-  const normalizedTitle = normalizeSearchText(entry.title);
-  const normalizedTags = normalizeSearchText(entry.session.tags.join(" "));
 
   for (const token of queryTokens) {
     if (!entry.searchText.includes(token)) {
@@ -178,19 +186,19 @@ const calculateSearchScore = (
 
     score += 1;
 
-    if (normalizedTitle.includes(token)) {
+    if (entry.titleSearchText.includes(token)) {
       score += 6;
     }
 
-    if (normalizedTitle.startsWith(token)) {
+    if (entry.titleSearchText.startsWith(token)) {
       score += 4;
     }
 
-    if (normalizedTags.includes(token)) {
+    if (entry.tagSearchText.includes(token)) {
       score += 5;
     }
 
-    if (entry.projectLabel.toLowerCase().includes(token)) {
+    if (entry.projectSearchText.includes(token)) {
       score += 2;
     }
   }
@@ -250,30 +258,17 @@ const matchesSessionStatusFilters = (
 
 export const createSessionHistoryIndex = (
   sessions: ChatSessionRecord[],
+  entryCache?: SessionHistoryIndexEntryCache,
 ): SessionHistoryIndex => {
   const tagsByLabel = new Map<string, SessionHistoryTagFacet>();
   const projectsById = new Map<string, SessionHistoryProjectFacet>();
+  const nextEntryCache = entryCache
+    ? new Map<string, SessionHistoryIndexEntry>()
+    : null;
   const entries = sessions.map((session) => {
     const title = getSessionTitle(session);
     const projectId = getProjectId(session.workspace);
     const projectLabel = getProjectLabel(session.workspace);
-    const searchParts = [
-      title,
-      session.workspace ?? "",
-      projectLabel,
-      session.provider,
-      session.model,
-      session.draft,
-      ...session.tags,
-      ...session.messages.flatMap(getMessageSearchParts),
-      ...session.promptHistory,
-      ...session.draftContextAttachments.flatMap((attachment) => [
-        attachment.name,
-        attachment.path,
-        attachment.parent ?? "",
-      ]),
-    ];
-    const searchText = normalizeSearchText(searchParts.join(" "));
 
     for (const tag of session.tags) {
       const key = tag.toLowerCase();
@@ -293,16 +288,56 @@ export const createSessionHistoryIndex = (
       count: (existingProject?.count ?? 0) + 1,
     });
 
-    return {
+    const cachedEntry = entryCache?.get(session.id);
+
+    if (cachedEntry?.session === session) {
+      nextEntryCache?.set(session.id, cachedEntry);
+      return cachedEntry;
+    }
+
+    const searchParts = [
+      title,
+      session.workspace ?? "",
+      projectLabel,
+      session.provider,
+      session.model,
+      session.draft,
+      ...session.tags,
+      ...session.promptHistory,
+    ];
+
+    for (const message of session.messages) {
+      appendMessageSearchParts(searchParts, message);
+    }
+
+    for (const attachment of session.draftContextAttachments) {
+      searchParts.push(attachment.name, attachment.path, attachment.parent ?? "");
+    }
+
+    const searchText = normalizeSearchText(searchParts.join(" "));
+    const entry: SessionHistoryIndexEntry = {
       session,
       title,
       searchText,
-      searchTokens: uniqueTokens(searchText),
+      titleSearchText: normalizeSearchText(title),
+      tagSearchText: normalizeSearchText(session.tags.join(" ")),
+      projectSearchText: normalizeSearchText(projectLabel),
       projectId,
       projectLabel,
       score: 0,
     };
+
+    nextEntryCache?.set(session.id, entry);
+    return entry;
   });
+
+  if (entryCache && nextEntryCache) {
+    entryCache.clear();
+
+    for (const [sessionId, entry] of nextEntryCache) {
+      entryCache.set(sessionId, entry);
+    }
+  }
 
   return {
     entries,
@@ -319,62 +354,78 @@ export const filterSessionHistoryIndex = (
   const tagFilters = new Set(
     normalizeSessionTags(options.tagFilters ?? []).map((tag) => tag.toLowerCase()),
   );
+  const hasTagFilters = tagFilters.size > 0;
   const projectFilter =
     options.projectFilter && options.projectFilter !== ALL_SESSION_PROJECTS_FILTER
       ? options.projectFilter
       : null;
-  const entries = index.entries
-    .flatMap((entry) => {
-      const isAlwaysVisibleSession = isQuickVoiceSession(entry.session);
-      const archived = isSessionArchived(entry.session);
-      const matchesScope =
-        options.scope === "all"
-          ? true
-          : options.scope === "archived"
-            ? archived
-            : !archived;
-      const matchesStatus = matchesSessionStatusFilters(
-        entry.session,
-        options.status,
-      );
-      const matchesProject = projectFilter ? entry.projectId === projectFilter : true;
-      const sessionTagKeys = new Set(
-        entry.session.tags.map((tag) => tag.toLowerCase()),
-      );
-      const matchesTags = [...tagFilters].every((tag) =>
-        sessionTagKeys.has(tag),
-      );
-      const score = isAlwaysVisibleSession
-        ? 0
-        : calculateSearchScore(entry, queryTokens);
+  const entries: SessionHistoryIndexEntry[] = [];
 
-      if (
-        !isAlwaysVisibleSession &&
-        (!matchesScope ||
-          !matchesStatus ||
-          !matchesProject ||
-          !matchesTags ||
-          score < 0)
-      ) {
-        return [];
+  for (const entry of index.entries) {
+    const isAlwaysVisibleSession = isQuickVoiceSession(entry.session);
+    const archived = isSessionArchived(entry.session);
+    const matchesScope =
+      options.scope === "all"
+        ? true
+        : options.scope === "archived"
+          ? archived
+          : !archived;
+    const matchesStatus = matchesSessionStatusFilters(
+      entry.session,
+      options.status,
+    );
+    const matchesProject = projectFilter ? entry.projectId === projectFilter : true;
+
+    if (
+      !isAlwaysVisibleSession &&
+      (!matchesScope || !matchesStatus || !matchesProject)
+    ) {
+      continue;
+    }
+
+    const sessionTagKeys = hasTagFilters
+      ? new Set(entry.session.tags.map((tag) => tag.toLowerCase()))
+      : null;
+    let matchesTags = true;
+
+    if (sessionTagKeys) {
+      for (const tag of tagFilters) {
+        if (!sessionTagKeys.has(tag)) {
+          matchesTags = false;
+          break;
+        }
       }
+    }
 
-      return [{ ...entry, score }];
-    })
-    .sort((left, right) => {
-      const leftIsAlwaysVisibleSession = isQuickVoiceSession(left.session);
-      const rightIsAlwaysVisibleSession = isQuickVoiceSession(right.session);
+    if (!isAlwaysVisibleSession && !matchesTags) {
+      continue;
+    }
 
-      if (leftIsAlwaysVisibleSession !== rightIsAlwaysVisibleSession) {
-        return leftIsAlwaysVisibleSession ? -1 : 1;
-      }
+    const score = isAlwaysVisibleSession
+      ? 0
+      : calculateSearchScore(entry, queryTokens);
 
-      if (left.score !== right.score) {
-        return right.score - left.score;
-      }
+    if (!isAlwaysVisibleSession && score < 0) {
+      continue;
+    }
 
-      return compareSessionsByAttention(left.session, right.session);
-    });
+    entries.push({ ...entry, score });
+  }
+
+  entries.sort((left, right) => {
+    const leftIsAlwaysVisibleSession = isQuickVoiceSession(left.session);
+    const rightIsAlwaysVisibleSession = isQuickVoiceSession(right.session);
+
+    if (leftIsAlwaysVisibleSession !== rightIsAlwaysVisibleSession) {
+      return leftIsAlwaysVisibleSession ? -1 : 1;
+    }
+
+    if (left.score !== right.score) {
+      return right.score - left.score;
+    }
+
+    return compareSessionsByAttention(left.session, right.session);
+  });
 
   return {
     entries,
@@ -426,6 +477,7 @@ export const duplicateSessionRecord = (
     id: crypto.randomUUID(),
     createdAt: timestamp,
     updatedAt: timestamp,
+    composerUpdatedAt: timestamp,
     manualTitle: `${title} ${mode === "branch" ? "branch" : "copy"}`,
     draft: mode === "branch" ? "" : session.draft,
     draftContextAttachments:

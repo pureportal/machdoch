@@ -18,7 +18,7 @@ use std::os::unix::process::CommandExt;
 use crate::runtime_snapshot::{normalize_optional_string, resolve_workspace_root_path};
 
 use super::{
-    diagnostics::{format_command_failure, format_timeout_duration},
+    diagnostics::{format_command_failure, format_diagnostic_snippet, format_timeout_duration},
     payload::{
         build_cli_args, cleanup_temporary_file, enrich_ui_control_conversation_context,
         write_conversation_context_file, CliCommandOptions,
@@ -39,7 +39,10 @@ fn parse_desktop_task_response(stdout: &str) -> Result<DesktopTaskRunResponse, S
     let trimmed_stdout = stdout.trim();
 
     serde_json::from_str::<DesktopTaskRunResponse>(trimmed_stdout).map_err(|error| {
-        format!("Failed to parse the shared CLI JSON response: {error}. Output: {trimmed_stdout}")
+        format!(
+            "Failed to parse the shared CLI JSON response: {error}. Output: {}",
+            format_diagnostic_snippet(trimmed_stdout)
+        )
     })
 }
 
@@ -290,7 +293,8 @@ mod tests {
 
     use serde_json::json;
 
-    use super::stop_shared_cli_after_wait_error;
+    use super::{parse_desktop_task_response, stop_shared_cli_after_wait_error};
+    use crate::desktop_task::diagnostics::COMMAND_DIAGNOSTIC_TRUNCATED_MARKER;
     use crate::desktop_task::payload::write_conversation_context_file;
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_DESKTOP_TASK_WAIT_ERROR_TEST_CHILD_MODE";
@@ -353,5 +357,15 @@ mod tests {
         assert!(error.contains("Failed to wait for the shared CLI to finish"));
         assert!(!context_path.exists());
         let _ = fs::remove_file(context_path);
+    }
+
+    #[test]
+    fn desktop_task_parse_error_uses_bounded_output_snippet() {
+        let error = parse_desktop_task_response(&"not-json".repeat(20 * 1024))
+            .expect_err("invalid JSON should fail");
+
+        assert!(error.contains("Failed to parse the shared CLI JSON response"));
+        assert!(error.contains(COMMAND_DIAGNOSTIC_TRUNCATED_MARKER));
+        assert!(error.len() < 18 * 1024);
     }
 }

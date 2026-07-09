@@ -200,10 +200,7 @@ export const AgentLimitsSettingsPanel = ({
   }, []);
 
   return (
-    <SettingsCard
-      title="Agent execution"
-      description="Loop limits and review model routing save automatically."
-    >
+    <SettingsCard title="Agent execution">
       <div className="grid gap-0">
         <SettingPanel
           label="Limit mode"

@@ -313,9 +313,9 @@ describe("Ralph flow formatting helpers", () => {
         id: "end",
         type: "END",
         title: "End",
-        status: "failure",
+        status: "failed",
       }),
-    ).toMatchObject({ primary: "Failure end" });
+    ).toMatchObject({ primary: "Failed end" });
   });
 
   it("returns prompt-like text for every non-terminal content source", () => {

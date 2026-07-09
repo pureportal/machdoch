@@ -54,10 +54,7 @@ export const VoiceSettingsPanel = ({
     );
 
   return (
-    <SettingsCard
-      title="Voice"
-      description="Voice provider and device selections apply immediately."
-    >
+    <SettingsCard title="Voice">
       <div className="grid gap-0">
         <SettingsProviderChoice
           label="Speak to text"

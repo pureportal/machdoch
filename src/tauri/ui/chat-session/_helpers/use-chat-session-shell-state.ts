@@ -47,6 +47,7 @@ import {
   createSessionHistoryIndex,
   filterSessionHistoryIndex,
   type SessionHistoryIndex,
+  type SessionHistoryIndexEntryCache,
   type SessionHistoryProjectFacet,
   type SessionHistoryTagFacet,
 } from "./session-history-index";
@@ -56,11 +57,14 @@ const serializeShellFragment = (value: unknown): string => {
   return JSON.stringify(value);
 };
 
+const SHELL_STATE_PERSIST_DELAY_MS = 120;
+
 const getSessionPersistenceTimestamp = (
   session: ChatSessionRecord,
 ): number => {
   let timestamp = Math.max(
     session.updatedAt,
+    session.composerUpdatedAt ?? 0,
     session.lastReadAt ?? 0,
     session.archivedAt ?? 0,
     session.pinnedAt ?? 0,
@@ -74,6 +78,10 @@ const getSessionPersistenceTimestamp = (
 };
 
 const areShellFragmentsEqual = (left: unknown, right: unknown): boolean => {
+  if (Object.is(left, right)) {
+    return true;
+  }
+
   return serializeShellFragment(left) === serializeShellFragment(right);
 };
 
@@ -179,6 +187,18 @@ const isMessageSafelyReplaced = (
   );
 };
 
+const isPromptEnhancementPlaceholderMessage = (
+  message: ChatSessionMessage,
+): boolean => {
+  const taskId = message.taskId;
+
+  if (!taskId?.startsWith("prompt-enhancement-")) {
+    return false;
+  }
+
+  return message.id === `${taskId}-user` || message.id === `${taskId}-thinking`;
+};
+
 const hasMessageRegression = (
   currentMessages: readonly ChatSessionMessage[],
   incomingMessages: readonly ChatSessionMessage[],
@@ -191,6 +211,10 @@ const hasMessageRegression = (
     const incomingMessage = incomingMessagesById.get(currentMessage.id);
 
     if (!incomingMessage) {
+      if (isPromptEnhancementPlaceholderMessage(currentMessage)) {
+        continue;
+      }
+
       if (!isMessageSafelyReplaced(currentMessage, incomingMessages)) {
         return true;
       }
@@ -245,6 +269,10 @@ const mergeSessionRuntimeSelection = (
   return mergedSession;
 };
 
+const getSessionComposerTimestamp = (session: ChatSessionRecord): number => {
+  return Math.max(session.composerUpdatedAt ?? 0, session.createdAt);
+};
+
 const mergeSessionFieldForPersistence = <T,>(
   primaryValue: T,
   localValue: T,
@@ -273,6 +301,7 @@ const didRemoveBaseMessages = (
 
   return baseMessages.some(
     (message) =>
+      !isPromptEnhancementPlaceholderMessage(message) &&
       !messageIds.has(message.id) && !isMessageSafelyReplaced(message, messages),
   );
 };
@@ -342,6 +371,10 @@ const mergeAppendOnlyMessages = (
 
     if (!localMessage) {
       if (latestMessage) {
+        if (isPromptEnhancementPlaceholderMessage(latestMessage)) {
+          continue;
+        }
+
         if (isMessageSafelyReplaced(latestMessage, localMessages)) {
           continue;
         }
@@ -474,6 +507,11 @@ const mergeSessionConcurrentFields = (
   baseSession: ChatSessionRecord,
   latestSession: ChatSessionRecord,
 ): ChatSessionRecord => {
+  const composerPrimarySession =
+    getSessionComposerTimestamp(localSession) >=
+    getSessionComposerTimestamp(latestSession)
+      ? localSession
+      : latestSession;
   const latestMessageRegression = hasMessageRegression(
     baseSession.messages,
     latestSession.messages,
@@ -498,16 +536,20 @@ const mergeSessionConcurrentFields = (
   return {
     ...primarySession,
     draft: mergeSessionFieldForPersistence(
-      primarySession.draft,
+      composerPrimarySession.draft,
       localSession.draft,
       baseSession.draft,
       latestSession.draft,
     ),
     draftContextAttachments: mergeSessionFieldForPersistence(
-      primarySession.draftContextAttachments,
+      composerPrimarySession.draftContextAttachments,
       localSession.draftContextAttachments,
       baseSession.draftContextAttachments,
       latestSession.draftContextAttachments,
+    ),
+    composerUpdatedAt: Math.max(
+      getSessionComposerTimestamp(localSession),
+      getSessionComposerTimestamp(latestSession),
     ),
     messages: mergeSessionMessagesForPersistence(
       primarySession,
@@ -527,6 +569,7 @@ const createNewSessionConcurrentBase = (
     ...session,
     draft: "",
     draftContextAttachments: [],
+    composerUpdatedAt: session.createdAt,
     messages: [],
     promptHistory: [],
     promptContextHistory: [],
@@ -563,7 +606,153 @@ const mergeRunningSessionWithExternalSnapshot = (
   );
 };
 
-const preserveCurrentRunningSessions = (
+const hasSessionComposerInput = (session: ChatSessionRecord): boolean => {
+  return (
+    session.draft.trim().length > 0 ||
+    session.draftContextAttachments.length > 0
+  );
+};
+
+const isOnlySessionComposerChanged = (
+  localSession: ChatSessionRecord,
+  baseSession: ChatSessionRecord,
+): boolean => {
+  return areShellFragmentsEqual(
+    {
+      ...localSession,
+      draft: baseSession.draft,
+      draftContextAttachments: baseSession.draftContextAttachments,
+      composerUpdatedAt: baseSession.composerUpdatedAt,
+      updatedAt: baseSession.updatedAt,
+    },
+    baseSession,
+  );
+};
+
+const rebasePreHydrationComposerInput = (
+  localState: ShellPersistedState,
+  baseState: ShellPersistedState,
+  hydratedState: ShellPersistedState,
+): ShellPersistedState => {
+  const baseActiveSession = baseState.sessions.find(
+    (session) => session.id === baseState.activeSessionId,
+  );
+  const localActiveSession = localState.sessions.find(
+    (session) => session.id === baseState.activeSessionId,
+  );
+
+  if (
+    !baseActiveSession ||
+    !localActiveSession ||
+    !hasSessionComposerInput(localActiveSession) ||
+    localState.sessions.length !== baseState.sessions.length ||
+    !isOnlySessionComposerChanged(localActiveSession, baseActiveSession)
+  ) {
+    return localState;
+  }
+
+  const hydratedActiveSessionId =
+    hydratedState.sessions.find(
+      (session) => session.id === hydratedState.activeSessionId,
+    )?.id ?? hydratedState.sessions[0]?.id;
+
+  if (!hydratedActiveSessionId) {
+    return localState;
+  }
+
+  return {
+    ...localState,
+    activeSessionId: hydratedActiveSessionId,
+    sessions: hydratedState.sessions.map((session) => {
+      if (session.id !== hydratedActiveSessionId) {
+        return session;
+      }
+
+      const nextSession: ChatSessionRecord = {
+        ...session,
+        updatedAt: Math.max(session.updatedAt, localActiveSession.updatedAt),
+        composerUpdatedAt: Math.max(
+          getSessionComposerTimestamp(session),
+          getSessionComposerTimestamp(localActiveSession),
+        ),
+      };
+
+      if (!session.draft.trim()) {
+        nextSession.draft = localActiveSession.draft;
+      }
+
+      if (session.draftContextAttachments.length === 0) {
+        nextSession.draftContextAttachments =
+          localActiveSession.draftContextAttachments;
+      }
+
+      return nextSession;
+    }),
+  };
+};
+
+const preserveCurrentComposerInput = (
+  externalSession: ChatSessionRecord,
+  currentSession: ChatSessionRecord,
+): ChatSessionRecord => {
+  if (
+    externalSession.draft === currentSession.draft &&
+    areShellFragmentsEqual(
+      externalSession.draftContextAttachments,
+      currentSession.draftContextAttachments,
+    )
+  ) {
+    return externalSession;
+  }
+
+  if (
+    getSessionComposerTimestamp(externalSession) >
+    getSessionComposerTimestamp(currentSession)
+  ) {
+    return externalSession;
+  }
+
+  return {
+    ...externalSession,
+    draft: currentSession.draft,
+    draftContextAttachments: currentSession.draftContextAttachments,
+    composerUpdatedAt: getSessionComposerTimestamp(currentSession),
+    updatedAt: Math.max(externalSession.updatedAt, currentSession.updatedAt),
+  };
+};
+
+const mergeExternalSessionWithCurrentState = (
+  currentSession: ChatSessionRecord,
+  externalSession: ChatSessionRecord,
+): ChatSessionRecord | null => {
+  if (getLatestRunningTaskId(currentSession)) {
+    return mergeRunningSessionWithExternalSnapshot(currentSession, externalSession);
+  }
+
+  const externalHasMessageAdvance = hasMessageRegression(
+    externalSession.messages,
+    currentSession.messages,
+  );
+
+  if (
+    getSessionPersistenceTimestamp(currentSession) >
+      getSessionPersistenceTimestamp(externalSession) &&
+    !externalHasMessageAdvance
+  ) {
+    return currentSession;
+  }
+
+  const composerPreservedSession = preserveCurrentComposerInput(
+    externalSession,
+    currentSession,
+  );
+
+  return composerPreservedSession === externalSession
+    ? null
+    : composerPreservedSession;
+};
+
+const preserveCurrentSessionState = (
   currentState: ShellPersistedState,
   externalState: ShellPersistedState,
 ): ShellPersistedState => {
@@ -573,23 +762,26 @@ const preserveCurrentRunningSessions = (
   const protectedSessions = new Map<string, ChatSessionRecord>();
 
   for (const currentSession of currentState.sessions) {
-    const runningTaskId = getLatestRunningTaskId(currentSession);
+    const externalSession = externalSessionsById.get(currentSession.id);
 
-    if (!runningTaskId) {
+    if (!externalSession) {
+      if (
+        getLatestRunningTaskId(currentSession) ||
+        hasSessionComposerInput(currentSession)
+      ) {
+        protectedSessions.set(currentSession.id, currentSession);
+      }
       continue;
     }
 
-    const externalSession = externalSessionsById.get(currentSession.id);
-
-    protectedSessions.set(
-      currentSession.id,
-      externalSession
-        ? mergeRunningSessionWithExternalSnapshot(
-            currentSession,
-            externalSession,
-          )
-        : currentSession,
+    const protectedSession = mergeExternalSessionWithCurrentState(
+      currentSession,
+      externalSession,
     );
+
+    if (protectedSession) {
+      protectedSessions.set(currentSession.id, protectedSession);
+    }
   }
 
   if (protectedSessions.size === 0) {
@@ -1126,7 +1318,7 @@ export const mergeShellStateFromExternalUpdate = (
     return mergeShellStateForPersistence(currentState, baseState, externalState);
   }
 
-  return preserveCurrentRunningSessions(currentState, externalState);
+  return preserveCurrentSessionState(currentState, externalState);
 };
 
 export interface ChatSessionShellStateController {
@@ -1192,9 +1384,6 @@ export const useChatSessionShellState = (
   const [shellState, setShellState] = useState<ShellPersistedState>(
     initialShellStateRef.current,
   );
-  const [draftsBySessionId, setDraftsBySessionId] = useState<
-    Record<string, string>
-  >({});
   const [activeSessionId, setActiveSessionIdState] = useState<string>(
     initialShellStateRef.current.activeSessionId,
   );
@@ -1225,6 +1414,9 @@ export const useChatSessionShellState = (
   const persistedMutationRevisionRef = useRef(0);
   const persistInFlightRef = useRef(false);
   const persistQueuedRef = useRef(false);
+  const persistTimerRef = useRef<number | null>(null);
+  const sessionHistoryIndexEntryCacheRef =
+    useRef<SessionHistoryIndexEntryCache>(new Map());
 
   const resolvedActiveSessionId = useMemo(() => {
     if (!isolateActiveSession) {
@@ -1262,13 +1454,7 @@ export const useChatSessionShellState = (
   const rawActiveSession =
     shellState.sessions.find((session) => session.id === resolvedActiveSessionId) ??
     shellState.sessions[0];
-
-  const activeSession = useMemo<ChatSessionRecord>(() => {
-    return {
-      ...rawActiveSession,
-      draft: draftsBySessionId[rawActiveSession.id] ?? rawActiveSession.draft,
-    };
-  }, [draftsBySessionId, rawActiveSession]);
+  const activeSession = rawActiveSession;
 
   const visibleMessages = useMemo(() => {
     return createVisibleConversationMessages(activeSession.messages);
@@ -1283,7 +1469,10 @@ export const useChatSessionShellState = (
   }, [shellState.sessions]);
 
   const sessionHistoryIndex = useMemo(() => {
-    return createSessionHistoryIndex(sortedSessions);
+    return createSessionHistoryIndex(
+      sortedSessions,
+      sessionHistoryIndexEntryCacheRef.current,
+    );
   }, [sortedSessions]);
 
   const filteredSessions = useMemo(() => {
@@ -1324,6 +1513,89 @@ export const useChatSessionShellState = (
     [hasHydrated],
   );
 
+  const clearScheduledShellStatePersistence = useCallback((): void => {
+    if (persistTimerRef.current === null) {
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      window.clearTimeout(persistTimerRef.current);
+    }
+
+    persistTimerRef.current = null;
+  }, []);
+
+  const persistShellState = useCallback(async (): Promise<void> => {
+    if (persistInFlightRef.current) {
+      persistQueuedRef.current = true;
+      return;
+    }
+
+    persistInFlightRef.current = true;
+
+    try {
+      do {
+        persistQueuedRef.current = false;
+
+        const targetRevision = localMutationRevisionRef.current;
+
+        if (persistedMutationRevisionRef.current >= targetRevision) {
+          continue;
+        }
+
+        const latestPersistedState = normalizeShellState(
+          await loadShellState(lastPersistedShellStateRef.current),
+        );
+        const mergedShellState = mergeShellStateForPersistence(
+          shellStateRef.current,
+          lastPersistedShellStateRef.current,
+          latestPersistedState,
+        );
+
+        await saveShellState(mergedShellState);
+
+        lastPersistedShellStateRef.current = mergedShellState;
+        persistedMutationRevisionRef.current = targetRevision;
+
+        if (
+          localMutationRevisionRef.current === targetRevision &&
+          !areShellFragmentsEqual(shellStateRef.current, mergedShellState)
+        ) {
+          shellStateRef.current = mergedShellState;
+          setShellState(mergedShellState);
+        }
+
+        void broadcastShellStateChanged();
+      } while (
+        persistQueuedRef.current ||
+        persistedMutationRevisionRef.current < localMutationRevisionRef.current
+      );
+    } finally {
+      persistInFlightRef.current = false;
+    }
+  }, []);
+
+  const scheduleShellStatePersistence = useCallback((): void => {
+    if (persistTimerRef.current !== null) {
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      void persistShellState();
+      return;
+    }
+
+    persistTimerRef.current = window.setTimeout(() => {
+      persistTimerRef.current = null;
+      void persistShellState();
+    }, SHELL_STATE_PERSIST_DELAY_MS);
+  }, [persistShellState]);
+
+  const flushShellStatePersistence = useCallback((): void => {
+    clearScheduledShellStatePersistence();
+    void persistShellState();
+  }, [clearScheduledShellStatePersistence, persistShellState]);
+
   useEffect(() => {
     shellStateRef.current = shellState;
   }, [shellState]);
@@ -1335,41 +1607,6 @@ export const useChatSessionShellState = (
       document.documentElement.classList.remove("dark");
     };
   }, []);
-
-  useEffect(() => {
-    const sessionIds = new Set(
-      shellState.sessions.map((session) => session.id),
-    );
-    const canAdoptOrphanDraft = sessionIds.has(resolvedActiveSessionId);
-
-    setDraftsBySessionId((prev) => {
-      let changed = false;
-      const nextDrafts: Record<string, string> = {};
-      const orphanDrafts: string[] = [];
-
-      for (const [sessionId, draft] of Object.entries(prev)) {
-        if (!sessionIds.has(sessionId)) {
-          changed = true;
-          if (draft.length > 0) {
-            orphanDrafts.push(draft);
-          }
-          continue;
-        }
-
-        nextDrafts[sessionId] = draft;
-      }
-
-      if (
-        canAdoptOrphanDraft &&
-        nextDrafts[resolvedActiveSessionId] === undefined &&
-        orphanDrafts.length === 1
-      ) {
-        nextDrafts[resolvedActiveSessionId] = orphanDrafts[0];
-      }
-
-      return changed ? nextDrafts : prev;
-    });
-  }, [resolvedActiveSessionId, shellState.sessions]);
 
   useEffect(() => {
     if (!activeSession || resolvedActiveSessionId === activeSessionId) {
@@ -1423,10 +1660,6 @@ export const useChatSessionShellState = (
           return;
         }
 
-        if (didMutateBeforeHydrationRef.current) {
-          return;
-        }
-
         const normalizedShellState = normalizeShellState(value);
         const recoveredShellState = recoverInterruptedTasksForLaunch(
           normalizedShellState,
@@ -1434,6 +1667,29 @@ export const useChatSessionShellState = (
           Date.now(),
           activeDesktopTaskIds ?? undefined,
         );
+
+        if (didMutateBeforeHydrationRef.current) {
+          const preHydrationShellState = rebasePreHydrationComposerInput(
+            shellStateRef.current,
+            initialShellStateRef.current,
+            recoveredShellState,
+          );
+          const mergedShellState = mergeShellStateForPersistence(
+            preHydrationShellState,
+            initialShellStateRef.current,
+            recoveredShellState,
+          );
+
+          lastPersistedShellStateRef.current = normalizedShellState;
+
+          if (!areShellFragmentsEqual(mergedShellState, normalizedShellState)) {
+            localMutationRevisionRef.current += 1;
+          }
+
+          shellStateRef.current = mergedShellState;
+          setShellState(mergedShellState);
+          return;
+        }
 
         if (
           value === initialShellStateRef.current &&
@@ -1470,58 +1726,39 @@ export const useChatSessionShellState = (
       return;
     }
 
-    const persistShellState = async (): Promise<void> => {
-      if (persistInFlightRef.current) {
-        persistQueuedRef.current = true;
-        return;
-      }
+    scheduleShellStatePersistence();
+  }, [
+    hasHydrated,
+    persistenceSignal,
+    scheduleShellStatePersistence,
+    shellState,
+  ]);
 
-      persistInFlightRef.current = true;
+  useEffect(() => {
+    return () => {
+      clearScheduledShellStatePersistence();
+    };
+  }, [clearScheduledShellStatePersistence]);
 
-      try {
-        do {
-          persistQueuedRef.current = false;
+  useEffect(() => {
+    if (!hasHydrated) {
+      return;
+    }
 
-          const targetRevision = localMutationRevisionRef.current;
-
-          if (persistedMutationRevisionRef.current >= targetRevision) {
-            continue;
-          }
-
-          const latestPersistedState = normalizeShellState(
-            await loadShellState(lastPersistedShellStateRef.current),
-          );
-          const mergedShellState = mergeShellStateForPersistence(
-            shellStateRef.current,
-            lastPersistedShellStateRef.current,
-            latestPersistedState,
-          );
-
-          await saveShellState(mergedShellState);
-
-          lastPersistedShellStateRef.current = mergedShellState;
-          persistedMutationRevisionRef.current = targetRevision;
-
-          if (
-            localMutationRevisionRef.current === targetRevision &&
-            !areShellFragmentsEqual(shellStateRef.current, mergedShellState)
-          ) {
-            shellStateRef.current = mergedShellState;
-            setShellState(mergedShellState);
-          }
-
-          void broadcastShellStateChanged();
-        } while (
-          persistQueuedRef.current ||
-          persistedMutationRevisionRef.current < localMutationRevisionRef.current
-        );
-      } finally {
-        persistInFlightRef.current = false;
+    const flushWhenHidden = (): void => {
+      if (document.visibilityState === "hidden") {
+        flushShellStatePersistence();
       }
     };
 
-    void persistShellState();
-  }, [hasHydrated, persistenceSignal, shellState]);
+    window.addEventListener("pagehide", flushShellStatePersistence);
+    document.addEventListener("visibilitychange", flushWhenHidden);
+
+    return () => {
+      window.removeEventListener("pagehide", flushShellStatePersistence);
+      document.removeEventListener("visibilitychange", flushWhenHidden);
+    };
+  }, [flushShellStatePersistence, hasHydrated]);
 
   useEffect(() => {
     let disposed = false;
@@ -1648,11 +1885,28 @@ export const useChatSessionShellState = (
           return prev;
         }
 
+        let didUpdateSession = false;
+        const sessions = prev.sessions.map((session) => {
+          if (session.id !== resolvedSessionId) {
+            return session;
+          }
+
+          const nextSession = updater(session);
+
+          if (nextSession !== session) {
+            didUpdateSession = true;
+          }
+
+          return nextSession;
+        });
+
+        if (!didUpdateSession) {
+          return prev;
+        }
+
         return {
           ...prev,
-          sessions: prev.sessions.map((session) =>
-            session.id === resolvedSessionId ? updater(session) : session,
-          ),
+          sessions,
         };
       });
     },
@@ -1664,12 +1918,33 @@ export const useChatSessionShellState = (
       sessionId: string,
       updater: (session: ChatSessionRecord) => ChatSessionRecord,
     ): void => {
-      applyShellState((prev) => ({
-        ...prev,
-        sessions: prev.sessions.map((session) =>
-          session.id === sessionId ? updater(session) : session,
-        ),
-      }));
+      applyShellState((prev) => {
+        let didFindSession = false;
+        let didUpdateSession = false;
+        const sessions = prev.sessions.map((session) => {
+          if (session.id !== sessionId) {
+            return session;
+          }
+
+          didFindSession = true;
+          const nextSession = updater(session);
+
+          if (nextSession !== session) {
+            didUpdateSession = true;
+          }
+
+          return nextSession;
+        });
+
+        if (!didFindSession || !didUpdateSession) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          sessions,
+        };
+      });
     },
     [applyShellState],
   );
@@ -1677,24 +1952,44 @@ export const useChatSessionShellState = (
   const setDraftValue = useCallback(
     (value: SetStateAction<string>): void => {
       const sessionId = activeSession.id;
-      const fallbackDraft = activeSession.draft;
 
-      setDraftsBySessionId((prev) => {
-        const currentValue = prev[sessionId] ?? fallbackDraft;
-        const nextValue =
-          typeof value === "function" ? value(currentValue) : value;
+      applyShellState((prev) => {
+        let didFindSession = false;
+        let didUpdateSession = false;
+        const updatedAt = Date.now();
+        const sessions = prev.sessions.map((session) => {
+          if (session.id !== sessionId) {
+            return session;
+          }
 
-        if (prev[sessionId] === nextValue) {
+          didFindSession = true;
+          const nextDraft =
+            typeof value === "function" ? value(session.draft) : value;
+
+          if (session.draft === nextDraft) {
+            return session;
+          }
+
+          didUpdateSession = true;
+          return {
+            ...session,
+            draft: nextDraft,
+            updatedAt,
+            composerUpdatedAt: updatedAt,
+          };
+        });
+
+        if (!didFindSession || !didUpdateSession) {
           return prev;
         }
 
         return {
           ...prev,
-          [sessionId]: nextValue,
+          sessions,
         };
       });
     },
-    [activeSession.draft, activeSession.id],
+    [activeSession.id, applyShellState],
   );
 
   const setActiveSessionId = useCallback(

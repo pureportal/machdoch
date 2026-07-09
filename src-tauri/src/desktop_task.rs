@@ -1,5 +1,7 @@
 use std::{
     collections::HashSet,
+    fs,
+    io::Read,
     path::PathBuf,
     sync::atomic::AtomicBool,
     sync::{Arc, Mutex},
@@ -54,6 +56,8 @@ const RALPH_COMMAND_TIMEOUT_MS: u64 = 12 * 60 * 60 * 1_000;
 const DESKTOP_TASK_WAIT_POLL_MS: u64 = 250;
 const MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES: usize = 20 * 1024 * 1024;
 const MAX_ATTACHMENT_PATH_GRANTS: usize = 1024;
+const MAX_FILE_PREVIEW_BYTES: u64 = 512 * 1024;
+const BINARY_PREVIEW_SCAN_BYTES: usize = 8 * 1024;
 
 #[derive(Default)]
 pub struct AttachmentPathGrantMap(pub Mutex<HashSet<PathBuf>>);
@@ -95,6 +99,16 @@ pub struct DroppedPathEntry {
 pub struct DroppedPathsResolution {
     entries: Vec<DroppedPathEntry>,
     workspace_root: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilePreviewReadResult {
+    content: String,
+    bytes_read: usize,
+    max_bytes: u64,
+    truncated: bool,
+    lossy: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -248,6 +262,98 @@ pub async fn open_workspace_path(
     .map_err(|error| format!("The workspace path opener stopped unexpectedly. {error}"))?
 }
 
+fn ensure_file_preview_path(path: PathBuf) -> Result<PathBuf, String> {
+    let metadata = fs::metadata(&path).map_err(|error| {
+        format!(
+            "Unable to inspect preview path `{}`: {error}",
+            path.display()
+        )
+    })?;
+
+    if !metadata.is_file() {
+        return Err("Expected the preview path to be a file.".to_string());
+    }
+
+    Ok(path)
+}
+
+fn read_file_preview_sync(path: PathBuf) -> Result<FilePreviewReadResult, String> {
+    let preview_path = ensure_file_preview_path(path)?;
+    let mut file = fs::File::open(&preview_path).map_err(|error| {
+        format!(
+            "Unable to open preview file `{}`: {error}",
+            preview_path.display()
+        )
+    })?;
+    let mut bytes = Vec::new();
+
+    file.by_ref()
+        .take(MAX_FILE_PREVIEW_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| {
+            format!(
+                "Unable to read preview file `{}`: {error}",
+                preview_path.display()
+            )
+        })?;
+
+    let truncated = bytes.len() as u64 > MAX_FILE_PREVIEW_BYTES;
+
+    if truncated {
+        bytes.truncate(MAX_FILE_PREVIEW_BYTES as usize);
+    }
+
+    if bytes
+        .iter()
+        .take(BINARY_PREVIEW_SCAN_BYTES)
+        .any(|byte| *byte == 0)
+    {
+        return Err(
+            "This file does not look like text. Use the external opener instead.".to_string(),
+        );
+    }
+
+    let lossy = std::str::from_utf8(&bytes).is_err();
+    let content = String::from_utf8_lossy(&bytes).into_owned();
+
+    Ok(FilePreviewReadResult {
+        content,
+        bytes_read: bytes.len(),
+        max_bytes: MAX_FILE_PREVIEW_BYTES,
+        truncated,
+        lossy,
+    })
+}
+
+#[tauri::command]
+pub async fn resolve_workspace_file_preview_path(
+    workspace_root: String,
+    relative_path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved_path = resolve_workspace_relative_path(&workspace_root, &relative_path)?;
+        let preview_path = ensure_file_preview_path(resolved_path)?;
+
+        Ok(format_path_for_ui(&preview_path))
+    })
+    .await
+    .map_err(|error| format!("The workspace preview resolver stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn read_workspace_file_preview(
+    workspace_root: String,
+    relative_path: String,
+) -> Result<FilePreviewReadResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved_path = resolve_workspace_relative_path(&workspace_root, &relative_path)?;
+
+        read_file_preview_sync(resolved_path)
+    })
+    .await
+    .map_err(|error| format!("The workspace file preview reader stopped unexpectedly. {error}"))?
+}
+
 #[tauri::command]
 pub async fn open_ralph_flow_in_explorer(
     app_handle: tauri::AppHandle,
@@ -275,6 +381,33 @@ pub async fn open_attached_path(
     tauri::async_runtime::spawn_blocking(move || open_path_in_system_shell(&resolved_path))
         .await
         .map_err(|error| format!("The attachment opener stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn resolve_attached_file_preview_path(
+    state: tauri::State<'_, AttachmentPathGrantMap>,
+    path: String,
+    workspace_root: Option<String>,
+) -> Result<String, String> {
+    let resolved_path = resolve_attached_path(&state, workspace_root.as_deref(), &path)?;
+    let preview_path = ensure_file_preview_path(resolved_path)?;
+
+    Ok(format_path_for_ui(&preview_path))
+}
+
+#[tauri::command]
+pub async fn read_attached_file_preview(
+    state: tauri::State<'_, AttachmentPathGrantMap>,
+    path: String,
+    workspace_root: Option<String>,
+) -> Result<FilePreviewReadResult, String> {
+    let resolved_path = resolve_attached_path(&state, workspace_root.as_deref(), &path)?;
+
+    tauri::async_runtime::spawn_blocking(move || read_file_preview_sync(resolved_path))
+        .await
+        .map_err(|error| {
+            format!("The attachment file preview reader stopped unexpectedly. {error}")
+        })?
 }
 
 #[tauri::command]

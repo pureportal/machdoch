@@ -7,7 +7,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::command::run_agent_cli_command;
+use super::command::{
+    run_agent_cli_command, AGENT_CLI_OUTPUT_CAPTURE_LIMIT_BYTES, AGENT_CLI_OUTPUT_TRUNCATED_MARKER,
+};
 
 const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_AGENT_CLI_TEST_CHILD_MODE";
 const TEST_DESCENDANT_PID_FILE_ENV: &str = "MACHDOCH_AGENT_CLI_TEST_DESCENDANT_PID_FILE";
@@ -41,7 +43,7 @@ fn large_output_command() -> (PathBuf, Vec<&'static str>, HashMap<String, String
         PathBuf::from("/bin/sh"),
         vec![
             "-c",
-            "i=0; while [ \"$i\" -lt 128 ]; do head -c 8192 /dev/zero | tr '\\0' x; head -c 8192 /dev/zero | tr '\\0' x >&2; i=$((i + 1)); done",
+            "i=0; while [ \"$i\" -lt 256 ]; do head -c 8192 /dev/zero | tr '\\0' x; head -c 8192 /dev/zero | tr '\\0' x >&2; i=$((i + 1)); done",
         ],
         HashMap::new(),
     )
@@ -162,7 +164,7 @@ fn agent_cli_test_child_entrypoint() {
         Ok("large-output") => {
             let chunk = "x".repeat(8192);
 
-            for _ in 0..128 {
+            for _ in 0..256 {
                 print!("{chunk}");
                 eprint!("{chunk}");
             }
@@ -188,8 +190,12 @@ fn agent_cli_command_drains_large_stdout_and_stderr_while_running() {
     .expect("large stdout and stderr should not block child process exit");
 
     assert_eq!(output.exit_code, Some(0));
-    assert!(output.stdout.len() >= 8192 * 128);
-    assert!(output.stderr.len() >= 8192 * 128);
+    assert!(output.stdout.len() < AGENT_CLI_OUTPUT_CAPTURE_LIMIT_BYTES + 256);
+    assert!(output.stderr.len() < AGENT_CLI_OUTPUT_CAPTURE_LIMIT_BYTES + 256);
+    assert!(output.stdout.contains(AGENT_CLI_OUTPUT_TRUNCATED_MARKER));
+    assert!(output.stderr.contains(AGENT_CLI_OUTPUT_TRUNCATED_MARKER));
+    assert!(std::str::from_utf8(output.stdout.as_bytes()).is_ok());
+    assert!(std::str::from_utf8(output.stderr.as_bytes()).is_ok());
 }
 
 #[test]

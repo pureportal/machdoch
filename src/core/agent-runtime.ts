@@ -256,6 +256,7 @@ const createModelStreamProgressEmitter = (
   loopState: AgentLoopState,
   state: TaskExecutionState,
   onStateChange: TaskExecutionProgressHandler | undefined,
+  onStreamActivity: (() => void) | undefined,
   createTimelineMetadata?: () => Record<string, ProgressMetadataValue> | undefined,
 ): {
   handleEvent: (event: AgentModelStreamEvent) => void;
@@ -319,6 +320,8 @@ const createModelStreamProgressEmitter = (
 
   return {
     handleEvent: (event): void => {
+      onStreamActivity?.();
+
       switch (event.type) {
         case "text-delta": {
           if (!event.delta) {
@@ -927,6 +930,7 @@ const runExecutorCycle = async (
   signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
   onActionOutput: TaskActionOutputHandler | undefined,
+  onStreamActivity: (() => void) | undefined,
   runId: string | undefined,
 ): Promise<ExecutorCycleOutcome> => {
   throwIfExecutionAborted(signal);
@@ -1017,6 +1021,7 @@ const runExecutorCycle = async (
     loopState,
     "executing",
     onStateChange,
+    onStreamActivity,
     () =>
       createProgressMetadata({
         executorIteration,
@@ -1049,7 +1054,7 @@ const runExecutorCycle = async (
       tools: toolSpecs,
       ...(structuredOutput ? { structuredOutput } : {}),
       ...(signal ? { signal } : {}),
-      ...(onStateChange
+      ...(onStateChange || onStreamActivity
         ? { onStreamEvent: modelStreamProgress.handleEvent }
         : {}),
     });
@@ -1158,7 +1163,7 @@ const runExecutorCycle = async (
       nextTurn = await adapter.continueTurn({
         toolResults,
         ...(signal ? { signal } : {}),
-        ...(onStateChange
+        ...(onStateChange || onStreamActivity
           ? { onStreamEvent: modelStreamProgress.handleEvent }
           : {}),
       });
@@ -1834,6 +1839,7 @@ const runModelDrivenLoop = async (
   signal: AbortSignal | undefined,
   onStateChange: TaskExecutionProgressHandler | undefined,
   onActionOutput: TaskActionOutputHandler | undefined,
+  onStreamActivity: (() => void) | undefined,
   runId: string | undefined,
 ): Promise<TaskExecutionResult> => {
   let cycleResult = await runExecutorCycle(
@@ -1851,6 +1857,7 @@ const runModelDrivenLoop = async (
     signal,
     onStateChange,
     onActionOutput,
+    onStreamActivity,
     runId,
   );
   let executorIterations = 1;
@@ -1944,6 +1951,7 @@ const runModelDrivenLoop = async (
       signal,
       onStateChange,
       onActionOutput,
+      onStreamActivity,
       runId,
     );
     executorIterations += 1;
@@ -2008,6 +2016,7 @@ export const maybeExecuteModelDrivenTask = async (
       params.signal,
       params.onStateChange,
       params.onActionOutput,
+      params.onStreamActivity,
       params.runId ?? `task-${randomUUID()}`,
     );
   } catch (error) {

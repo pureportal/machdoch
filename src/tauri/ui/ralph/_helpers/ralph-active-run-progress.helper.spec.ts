@@ -13,7 +13,7 @@ const createProgress = (
 ): TaskExecutionProgress => ({
   task: "run Ralph flow",
   mode: "machdoch",
-  state: "running",
+  state: "executing",
   message: "Working",
   executedTools: [],
   outputSections: [],

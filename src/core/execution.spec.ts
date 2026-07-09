@@ -1571,13 +1571,13 @@ describe("executeTask", () => {
                 provider: "openai",
                 delta: "Still working.",
               });
-            }, 50),
+            }, 100),
             setTimeout(() => {
               resolve({
                 text: "",
                 toolCalls: [createFinalResponseToolCall()],
               });
-            }, 120),
+            }, 300),
           ];
           const rejectWithReason = (): void => {
             for (const timer of timers) {
@@ -1618,7 +1618,7 @@ describe("executeTask", () => {
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: streamingAdapter,
-        maxDurationMs: 100,
+        maxDurationMs: 250,
         onStateChange: () => undefined,
       },
     );

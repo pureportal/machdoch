@@ -1,6 +1,5 @@
 use std::{
     io,
-    io::Read,
     process::{Child, Command, ExitStatus, Stdio},
     thread,
     time::{Duration, Instant},
@@ -17,12 +16,12 @@ use serde_json::Value;
 use crate::runtime_snapshot::resolve_workspace_root_path;
 
 use super::{
-    diagnostics::{format_command_failure, format_timeout_duration},
+    diagnostics::{format_command_failure, format_diagnostic_snippet, format_timeout_duration},
     payload::cleanup_temporary_files,
     payload_files::rewrite_task_interview_payload_arguments,
     process::{
-        create_desktop_task_activity, hide_child_process_window, read_stderr,
-        terminate_child_process_tree,
+        create_desktop_task_activity, hide_child_process_window, read_bounded_stream_text,
+        read_stderr, terminate_child_process_tree,
     },
     registry::normalize_task_id,
     InstructionCommandRequest, McpCommandRequest, SchedulerCommandRequest,
@@ -79,16 +78,6 @@ const TASK_INTERVIEW_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     parse_name: "task interview",
     failure_name: "task interview",
 };
-
-fn read_cli_stream_text(mut stream: impl Read, stream_name: &str) -> Result<String, String> {
-    let mut output = Vec::new();
-
-    stream
-        .read_to_end(&mut output)
-        .map_err(|error| format!("Failed to read the shared CLI {stream_name} stream: {error}"))?;
-
-    Ok(String::from_utf8_lossy(&output).to_string())
-}
 
 fn join_auxiliary_cli_output(
     stdout_worker: thread::JoinHandle<Result<String, String>>,
@@ -172,7 +161,7 @@ fn run_bounded_auxiliary_cli_command(
         }
     };
 
-    let stdout_worker = thread::spawn(move || read_cli_stream_text(stdout, "stdout"));
+    let stdout_worker = thread::spawn(move || read_bounded_stream_text(stdout, "stdout"));
     let stderr_worker = match progress_context {
         Some(context) => {
             let activity = create_desktop_task_activity();
@@ -188,7 +177,7 @@ fn run_bounded_auxiliary_cli_command(
                 .map(|lines| lines.join("\n"))
             })
         }
-        None => thread::spawn(move || read_cli_stream_text(stderr, "stderr")),
+        None => thread::spawn(move || read_bounded_stream_text(stderr, "stderr")),
     };
     let started_at = Instant::now();
     let status = loop {
@@ -273,7 +262,8 @@ fn parse_auxiliary_command_response(stdout: &str, parse_name: &str) -> Result<Va
 
     serde_json::from_str::<Value>(trimmed_stdout).map_err(|error| {
         format!(
-            "Failed to parse the {parse_name} CLI JSON response: {error}. Output: {trimmed_stdout}"
+            "Failed to parse the {parse_name} CLI JSON response: {error}. Output: {}",
+            format_diagnostic_snippet(trimmed_stdout)
         )
     })
 }
@@ -387,7 +377,11 @@ pub(super) fn execute_task_interview_command(
 mod tests {
     use std::{env, process::Command, thread, time::Duration};
 
-    use super::run_bounded_auxiliary_cli_command;
+    use super::{parse_auxiliary_command_response, run_bounded_auxiliary_cli_command};
+    use crate::desktop_task::diagnostics::COMMAND_DIAGNOSTIC_TRUNCATED_MARKER;
+    use crate::desktop_task::process::{
+        SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES, SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
+    };
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_AUXILIARY_CLI_TEST_CHILD_MODE";
 
@@ -411,6 +405,14 @@ mod tests {
                 eprintln!("child stderr");
             }
             Ok("hang") => thread::sleep(Duration::from_secs(60)),
+            Ok("large-output") => {
+                let chunk = "x".repeat(8192);
+
+                for _ in 0..256 {
+                    print!("{chunk}");
+                    eprint!("{chunk}");
+                }
+            }
             _ => {}
         }
     }
@@ -435,5 +437,31 @@ mod tests {
 
         assert!(error.contains("The scheduler CLI exceeded the desktop safety timeout"));
         assert!(error.contains("was stopped"));
+    }
+
+    #[test]
+    fn bounded_auxiliary_cli_command_caps_stdout_and_stderr() {
+        let mut command = test_child_command("large-output");
+        let output =
+            run_bounded_auxiliary_cli_command(&mut command, "scheduler", Some(10_000), None)
+                .expect("large output command should finish");
+
+        assert!(output.status.success());
+        assert!(output.stdout.len() < SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES + 256);
+        assert!(output.stderr.len() < SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES + 256);
+        assert!(output.stdout.contains(SUBPROCESS_OUTPUT_TRUNCATED_MARKER));
+        assert!(output.stderr.contains(SUBPROCESS_OUTPUT_TRUNCATED_MARKER));
+        assert!(std::str::from_utf8(output.stdout.as_bytes()).is_ok());
+        assert!(std::str::from_utf8(output.stderr.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn auxiliary_parse_error_uses_bounded_output_snippet() {
+        let error = parse_auxiliary_command_response(&"not-json".repeat(20 * 1024), "scheduler")
+            .expect_err("invalid JSON should fail");
+
+        assert!(error.contains("Failed to parse the scheduler CLI JSON response"));
+        assert!(error.contains(COMMAND_DIAGNOSTIC_TRUNCATED_MARKER));
+        assert!(error.len() < 18 * 1024);
     }
 }

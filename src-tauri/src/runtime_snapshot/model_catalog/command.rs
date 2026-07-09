@@ -19,6 +19,9 @@ const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+pub(super) const AGENT_CLI_OUTPUT_CAPTURE_LIMIT_BYTES: usize = 1024 * 1024;
+pub(super) const AGENT_CLI_OUTPUT_TRUNCATED_MARKER: &str = "[output truncated after capture limit]";
+
 pub(super) struct AgentCliCommandOutput {
     pub(super) exit_code: Option<i32>,
     pub(super) stdout: String,
@@ -26,12 +29,48 @@ pub(super) struct AgentCliCommandOutput {
 }
 
 fn read_agent_cli_stream(mut stream: impl Read, description: &str) -> Result<String, String> {
-    let mut output = String::new();
-    stream
-        .read_to_string(&mut output)
-        .map_err(|error| format!("Failed to read agent CLI {description}: {error}"))?;
+    let mut captured = Vec::with_capacity(AGENT_CLI_OUTPUT_CAPTURE_LIMIT_BYTES.min(8192));
+    let mut truncated = false;
+    let mut buffer = [0_u8; 8192];
 
-    Ok(output)
+    loop {
+        let bytes_read = stream
+            .read(&mut buffer)
+            .map_err(|error| format!("Failed to read agent CLI {description}: {error}"))?;
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        if truncated {
+            continue;
+        }
+
+        let remaining = AGENT_CLI_OUTPUT_CAPTURE_LIMIT_BYTES.saturating_sub(captured.len());
+
+        if bytes_read <= remaining {
+            captured.extend_from_slice(&buffer[..bytes_read]);
+        } else {
+            captured.extend_from_slice(&buffer[..remaining]);
+            truncated = true;
+        }
+    }
+
+    Ok(decode_agent_cli_output(captured, truncated))
+}
+
+fn decode_agent_cli_output(captured: Vec<u8>, truncated: bool) -> String {
+    let mut output = String::from_utf8_lossy(&captured).to_string();
+
+    if truncated {
+        if !output.is_empty() && !output.ends_with('\n') {
+            output.push('\n');
+        }
+
+        output.push_str(AGENT_CLI_OUTPUT_TRUNCATED_MARKER);
+    }
+
+    output
 }
 
 fn join_agent_cli_stream_worker(

@@ -18,6 +18,7 @@ const createBlock = (id: string, title: string): RalphFlowBlock =>
   }) as RalphFlowBlock;
 
 const createEdge = (output: string, to: string): RalphFlowEdge => ({
+  id: `source-${output}-${to}`,
   from: "source",
   fromOutput: output,
   to,

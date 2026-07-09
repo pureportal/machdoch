@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { cn } from "@/tauri/ui/lib/utils"
+import { cn } from "../../lib/utils"
 
 const setRef = <T,>(ref: React.Ref<T> | undefined, value: T): void => {
   if (typeof ref === "function") {

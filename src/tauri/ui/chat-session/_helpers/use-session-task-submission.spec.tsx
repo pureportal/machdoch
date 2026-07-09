@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createInitialShellState,
   createSession,
+  type ChatSessionRecord,
   type ShellPersistedState,
 } from "../../chat-session.model";
 import { createMockExecutionFixture } from "../../preview/fixtures";
@@ -23,7 +24,9 @@ const createStateController = (
     setDraftValue: vi.fn(),
     setPromptHistoryIndex: vi.fn(),
     setDraftBeforeHistory: vi.fn(),
-    applyShellState: vi.fn((updater) => {
+    applyShellState: vi.fn((
+      updater: Parameters<ChatSessionShellStateController["applyShellState"]>[0],
+    ) => {
       const nextState =
         typeof updater === "function" ? updater(controller.shellState) : updater;
 
@@ -116,7 +119,7 @@ describe("useSessionTaskSubmission", () => {
         progressHandlersRef: {
           current: new Map(),
         },
-        applySessionMessageLimit: (session) => session,
+        applySessionMessageLimit: (session: ChatSessionRecord) => session,
         updateThinkingTrace: vi.fn(),
       }),
     );

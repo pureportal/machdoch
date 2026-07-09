@@ -1,5 +1,6 @@
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -8,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { type ReactElement, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RalphFlow } from "../../../core/ralph.js";
+import type { RalphFlow, RalphFlowBlock } from "../../../core/ralph.js";
 import { TooltipProvider } from "../components/ui/tooltip";
 import {
   cancelDesktopTask,
@@ -286,6 +287,9 @@ describe("RalphFlowEditor", () => {
   });
 
   afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+    document.body.removeAttribute("style");
     vi.unstubAllGlobals();
   });
 
@@ -1178,7 +1182,10 @@ describe("RalphFlowEditor", () => {
     });
 
     const savedFlow = vi.mocked(saveRalphFlow).mock.calls.at(-1)?.[1].flow;
-    const groupBlock = savedFlow?.blocks.find((block) => block.id === "phase");
+    const groupBlock = savedFlow?.blocks.find(
+      (block): block is Extract<RalphFlowBlock, { type: "GROUP" }> =>
+        block.id === "phase" && block.type === "GROUP",
+    );
 
     expect(groupBlock).toMatchObject({
       type: "GROUP",
@@ -1284,7 +1291,10 @@ describe("RalphFlowEditor", () => {
     const savedFlow = vi.mocked(saveRalphFlow).mock.calls.at(-1)?.[1].flow;
     const startBlock = savedFlow?.blocks.find((block) => block.id === "start");
     const promptBlock = savedFlow?.blocks.find((block) => block.id === "prompt");
-    const groupBlock = savedFlow?.blocks.find((block) => block.id === "phase");
+    const groupBlock = savedFlow?.blocks.find(
+      (block): block is Extract<RalphFlowBlock, { type: "GROUP" }> =>
+        block.id === "phase" && block.type === "GROUP",
+    );
     const noteBlock = savedFlow?.blocks.find((block) => block.id === "note");
     const reviewBlock = savedFlow?.blocks.find((block) => block.id === "review");
 
@@ -1300,7 +1310,11 @@ describe("RalphFlowEditor", () => {
       size: { width: 280, height: 180 },
     });
     expect(reviewBlock?.position?.x).toBeGreaterThan(1120);
-    expect(groupBlock?.childBlockIds).not.toContain("review");
+    expect(groupBlock?.type).toBe("GROUP");
+    if (groupBlock?.type !== "GROUP") {
+      throw new Error("Expected saved phase block to be a group.");
+    }
+    expect(groupBlock.childBlockIds).not.toContain("review");
   });
 
   it("edits and saves flow-level max transitions", async () => {
@@ -1526,6 +1540,7 @@ describe("RalphFlowEditor", () => {
   it("deletes saved Ralph flows from the flow list", async () => {
     const flowPath = "C:\\Project\\.machdoch\\ralph\\flows\\existing-flow.json";
     const confirmMock = vi.mocked(window.confirm);
+    confirmMock.mockReturnValue(true);
 
     vi.mocked(listRalphFlows).mockResolvedValue({
       workspaceRoot: "C:\\Project",
@@ -1571,7 +1586,9 @@ describe("RalphFlowEditor", () => {
     await waitFor(() => {
       expect((deleteMenuItem as HTMLButtonElement).disabled).toBe(false);
     });
-    fireEvent.click(deleteMenuItem);
+    await act(async () => {
+      fireEvent.click(deleteMenuItem);
+    });
 
     await waitFor(() => {
       expect(deleteRalphFlow).toHaveBeenCalledWith(
@@ -1588,6 +1605,7 @@ describe("RalphFlowEditor", () => {
 
   it("removes the current unsaved Ralph flow from the flow list", async () => {
     const confirmMock = vi.mocked(window.confirm);
+    confirmMock.mockReturnValue(true);
 
     renderRalphFlowEditor("Ralph Flow");
 
@@ -1603,7 +1621,9 @@ describe("RalphFlowEditor", () => {
     await waitFor(() => {
       expect((deleteMenuItem as HTMLButtonElement).disabled).toBe(false);
     });
-    fireEvent.click(deleteMenuItem);
+    await act(async () => {
+      fireEvent.click(deleteMenuItem);
+    });
 
     expect(confirmMock).toHaveBeenCalledWith(
       'Discard unsaved Ralph flow "Ralph Flow"?',
@@ -1706,7 +1726,9 @@ describe("RalphFlowEditor", () => {
     await waitFor(() => {
       expect((copyMenuItem as HTMLButtonElement).disabled).toBe(false);
     });
-    fireEvent.click(copyMenuItem);
+    await act(async () => {
+      fireEvent.click(copyMenuItem);
+    });
 
     await waitFor(() => {
       expect(showRalphFlow).toHaveBeenCalledWith(
@@ -1728,6 +1750,7 @@ describe("RalphFlowEditor", () => {
   it("moves saved Ralph flows to global from the row context menu", async () => {
     const flowPath = "C:\\Project\\.machdoch\\ralph\\flows\\existing-flow.json";
     const confirmMock = vi.mocked(window.confirm);
+    confirmMock.mockReturnValue(true);
 
     vi.mocked(listRalphFlows).mockImplementation(async (_workspaceRoot, scope) => ({
       workspaceRoot: "C:\\Project",
@@ -1776,7 +1799,9 @@ describe("RalphFlowEditor", () => {
     await waitFor(() => {
       expect((moveMenuItem as HTMLButtonElement).disabled).toBe(false);
     });
-    fireEvent.click(moveMenuItem);
+    await act(async () => {
+      fireEvent.click(moveMenuItem);
+    });
 
     await waitFor(() => {
       expect(saveRalphFlow).toHaveBeenCalledWith(
@@ -2165,7 +2190,6 @@ describe("RalphFlowEditor", () => {
           blockCount: 2,
           edgeCount: 1,
           variableCount: 0,
-          valid: true,
         },
       ],
     });
@@ -2233,7 +2257,6 @@ describe("RalphFlowEditor", () => {
           blockCount: 2,
           edgeCount: 1,
           variableCount: 0,
-          valid: true,
         },
       ],
     });
@@ -2285,7 +2308,6 @@ describe("RalphFlowEditor", () => {
           blockCount: 2,
           edgeCount: 1,
           variableCount: 0,
-          valid: true,
         },
       ],
     });
@@ -2403,7 +2425,6 @@ describe("RalphFlowEditor", () => {
           blockCount: 2,
           edgeCount: 1,
           variableCount: 0,
-          valid: true,
         },
       ],
     });
@@ -2442,7 +2463,6 @@ describe("RalphFlowEditor", () => {
           blockCount: 2,
           edgeCount: 1,
           variableCount: 0,
-          valid: true,
         },
       ],
     });
@@ -2508,7 +2528,6 @@ describe("RalphFlowEditor", () => {
           blockCount: 3,
           edgeCount: 2,
           variableCount: 0,
-          valid: true,
         },
       ],
     });
@@ -2608,7 +2627,6 @@ describe("RalphFlowEditor", () => {
           blockCount: 2,
           edgeCount: 1,
           variableCount: 0,
-          valid: true,
         },
         {
           id: "other-flow",
@@ -2617,7 +2635,6 @@ describe("RalphFlowEditor", () => {
           blockCount: 2,
           edgeCount: 1,
           variableCount: 0,
-          valid: true,
         },
       ],
     });
@@ -2677,7 +2694,6 @@ describe("RalphFlowEditor", () => {
           blockCount: 2,
           edgeCount: 1,
           variableCount: 3,
-          valid: true,
         },
       ],
     });
@@ -2766,7 +2782,6 @@ describe("RalphFlowEditor", () => {
           blockCount: 2,
           edgeCount: 1,
           variableCount: 1,
-          valid: true,
         },
       ],
     });
@@ -2893,7 +2908,6 @@ describe("RalphFlowEditor", () => {
           blockCount: 2,
           edgeCount: 1,
           variableCount: 0,
-          valid: true,
         },
       ],
     });
@@ -2942,7 +2956,6 @@ describe("RalphFlowEditor", () => {
           blockCount: 2,
           edgeCount: 1,
           variableCount: 0,
-          valid: true,
         },
       ],
     });

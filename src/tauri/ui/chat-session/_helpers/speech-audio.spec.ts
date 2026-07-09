@@ -13,7 +13,7 @@ const createAudioBuffer = (samples: Float32Array): AudioBuffer => {
     numberOfChannels: 1,
     sampleRate: samples.length,
     getChannelData: () => samples,
-  } as AudioBuffer;
+  } as unknown as AudioBuffer;
 };
 
 const stubAudioContext = (audioBuffer: AudioBuffer): void => {

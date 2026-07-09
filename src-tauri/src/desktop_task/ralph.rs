@@ -19,7 +19,7 @@ use serde_json::Value;
 use crate::runtime_snapshot::resolve_workspace_root_path;
 
 use super::{
-    diagnostics::{format_command_failure, format_timeout_duration},
+    diagnostics::{format_command_failure, format_diagnostic_snippet, format_timeout_duration},
     payload::cleanup_temporary_files,
     payload_files::rewrite_ralph_payload_arguments,
     process::{
@@ -39,7 +39,10 @@ fn parse_ralph_command_response(stdout: &str) -> Result<Value, String> {
     let trimmed_stdout = stdout.trim();
 
     serde_json::from_str::<Value>(trimmed_stdout).map_err(|error| {
-        format!("Failed to parse the Ralph CLI JSON response: {error}. Output: {trimmed_stdout}")
+        format!(
+            "Failed to parse the Ralph CLI JSON response: {error}. Output: {}",
+            format_diagnostic_snippet(trimmed_stdout)
+        )
     })
 }
 
@@ -332,7 +335,8 @@ pub(super) fn resolve_ralph_flow_path_for_open(
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_ralph_flow_scope;
+    use super::{normalize_ralph_flow_scope, parse_ralph_command_response};
+    use crate::desktop_task::diagnostics::COMMAND_DIAGNOSTIC_TRUNCATED_MARKER;
 
     #[test]
     fn ralph_flow_scope_accepts_only_known_scopes() {
@@ -345,5 +349,15 @@ mod tests {
             None
         );
         assert!(normalize_ralph_flow_scope(Some("project")).is_err());
+    }
+
+    #[test]
+    fn ralph_parse_error_uses_bounded_output_snippet() {
+        let error = parse_ralph_command_response(&"not-json".repeat(20 * 1024))
+            .expect_err("invalid JSON should fail");
+
+        assert!(error.contains("Failed to parse the Ralph CLI JSON response"));
+        assert!(error.contains(COMMAND_DIAGNOSTIC_TRUNCATED_MARKER));
+        assert!(error.len() < 18 * 1024);
     }
 }

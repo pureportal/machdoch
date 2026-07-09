@@ -71,6 +71,13 @@ const renderPicker = ({
   };
 };
 
+const openContextPackPicker = async (): Promise<HTMLElement> => {
+  fireEvent.click(screen.getByRole("button", { name: "Context packs" }));
+  return await screen.findByRole("searchbox", {
+    name: "Search context packs",
+  });
+};
+
 describe("SmartContextPackPicker", () => {
   beforeEach(() => {
     vi.mocked(listRalphFlows).mockResolvedValue({
@@ -110,9 +117,7 @@ describe("SmartContextPackPicker", () => {
 
     renderPicker({ onDeleteContextPack });
 
-    fireEvent.click(screen.getByRole("button", { name: "Context packs" }));
-
-    expect(await screen.findByText("Used by 1 Ralph flow")).toBeTruthy();
+    await openContextPackPicker();
 
     const deleteButton = screen.getByRole("button", {
       name: "Delete context pack Review PR",
@@ -131,6 +136,115 @@ describe("SmartContextPackPicker", () => {
     await waitFor(() => {
       expect(onDeleteContextPack).toHaveBeenCalledWith("pack-1");
     });
+  });
+
+  it("focuses the pack search input when opened", async () => {
+    renderPicker();
+
+    const searchInput = await openContextPackPicker();
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(searchInput);
+    });
+  });
+
+  it("filters pack entries from typed search text", async () => {
+    renderPicker({
+      contextPacks: [
+        createPack({ id: "pack-1", name: "Review PR", updatedAt: 3 }),
+        createPack({
+          id: "pack-2",
+          name: "Release Notes",
+          instructions: "Summarize user-facing changes.",
+          updatedAt: 2,
+        }),
+        createPack({
+          id: "pack-3",
+          name: "Deploy Checklist",
+          prompt: "Verify deployment risk.",
+          updatedAt: 1,
+        }),
+      ],
+    });
+
+    const searchInput = await openContextPackPicker();
+    fireEvent.change(searchInput, { target: { value: "release" } });
+
+    expect(screen.getByText("Release Notes")).toBeTruthy();
+    expect(screen.queryByText("Review PR")).toBeNull();
+    expect(screen.queryByText("Deploy Checklist")).toBeNull();
+  });
+
+  it("applies the highest-ranked pack when pressing Enter in search", async () => {
+    const onApplyContextPack = vi.fn();
+
+    renderPicker({
+      contextPacks: [
+        createPack({
+          id: "pack-1",
+          name: "Legacy Deploy",
+          updatedAt: 2,
+        }),
+        createPack({
+          id: "pack-2",
+          name: "Deploy Checklist",
+          updatedAt: 1,
+        }),
+      ],
+      onApplyContextPack,
+    });
+
+    const searchInput = await openContextPackPicker();
+    fireEvent.change(searchInput, { target: { value: "deploy checklist" } });
+    fireEvent.keyDown(searchInput, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(onApplyContextPack).toHaveBeenCalledWith("pack-2");
+    });
+  });
+
+  it("shows compact pack rows without token, path, scope text, or usage metadata", async () => {
+    renderPicker({
+      contextPacks: [
+        createPack({
+          useCount: 3,
+          contextAttachments: [
+            {
+              id: "attachment-1",
+              path: "C:\\Project\\src\\index.ts",
+              kind: "file",
+              name: "index.ts",
+            },
+          ],
+        }),
+        createPack({
+          id: "pack-2",
+          workspace: null,
+          name: "Global Helper",
+          updatedAt: 1,
+        }),
+      ],
+    });
+
+    await openContextPackPicker();
+
+    expect(screen.getByText("Review PR")).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: "Workspace context pack" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: "Global context pack" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Review PR").parentElement?.textContent?.trim()).toBe(
+      "Review PR",
+    );
+    expect(
+      screen.getByText("Global Helper").parentElement?.textContent?.trim(),
+    ).toBe("Global Helper");
+    expect(screen.queryByText(/tokens/u)).toBeNull();
+    expect(screen.queryByText(/paths?/u)).toBeNull();
+    expect(screen.queryByText("3 uses")).toBeNull();
+    expect(screen.queryByText("Focus on regressions.")).toBeNull();
   });
 
   it("opens a full save dialog with an editable highlighted prompt", async () => {

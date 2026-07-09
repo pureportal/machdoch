@@ -123,6 +123,7 @@ export interface ModelDrivenExecutionParams {
   structuredOutput?: AgentModelStructuredOutput;
   onStateChange?: TaskExecutionProgressHandler;
   onActionOutput?: TaskActionOutputHandler;
+  onStreamActivity?: () => void;
   runId?: string;
   signal?: AbortSignal;
 }

@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   Download,
   Folder,
   Globe2,
@@ -8,7 +7,7 @@ import {
   Play,
   Plus,
   Save,
-  Sparkles,
+  Search,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -20,6 +19,7 @@ import {
   type ChangeEvent,
   type FormEvent,
   type JSX,
+  type KeyboardEvent,
 } from "react";
 import {
   REASONING_MODES,
@@ -55,8 +55,6 @@ import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
 import { listRalphFlows, showRalphFlow } from "../../runtime";
 import { createContextAttachmentFromReference } from "../_helpers/session-context-attachments";
 import {
-  createContextPackSummary,
-  createSmartContextPackPreview,
   extractSmartContextPackVariables,
   getContextPackReasoningLabel,
   getContextPackModeLabel,
@@ -100,9 +98,6 @@ type SmartContextPackDialogMode = "create" | "edit";
 interface SmartContextPackListItem {
   pack: SmartContextPack;
   scope: SmartContextPackScope;
-  summary: string[];
-  preview: ReturnType<typeof createSmartContextPackPreview>;
-  previewWarnings: string[];
   isMatched: boolean;
   ralphFlowNames: string[];
 }
@@ -144,12 +139,119 @@ const deriveContextPackName = (draft: string): string => {
     : `${normalizedDraft.slice(0, 37)}...`;
 };
 
-const formatPackUsage = (pack: SmartContextPack): string => {
-  if (pack.useCount <= 0) {
-    return "Not used";
+const normalizeContextPackSearchText = (value: string): string => {
+  return value
+    .trim()
+    .replace(/\\/gu, "/")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/gu, " ");
+};
+
+const tokenizeContextPackSearchText = (value: string): string[] => {
+  const normalized = normalizeContextPackSearchText(value);
+  return normalized ? normalized.split(" ") : [];
+};
+
+const scoreNormalizedContextPackCandidate = (
+  normalizedCandidate: string,
+  normalizedQuery: string,
+  tokens: readonly string[],
+  labelBonus: number,
+): number => {
+  if (!normalizedCandidate) {
+    return 0;
   }
 
-  return `${pack.useCount} use${pack.useCount === 1 ? "" : "s"}`;
+  const words = normalizedCandidate.split(" ");
+  let score = 0;
+
+  for (const token of tokens) {
+    if (normalizedCandidate === token) {
+      score += 500;
+      continue;
+    }
+
+    if (normalizedCandidate.startsWith(token)) {
+      score += 420;
+      continue;
+    }
+
+    if (words.includes(token)) {
+      score += 360;
+      continue;
+    }
+
+    if (words.some((word) => word.startsWith(token))) {
+      score += 300;
+      continue;
+    }
+
+    const tokenIndex = normalizedCandidate.indexOf(token);
+
+    if (tokenIndex < 0) {
+      return 0;
+    }
+
+    score += 160 - Math.min(tokenIndex, 100);
+  }
+
+  if (normalizedCandidate === normalizedQuery) {
+    return score + 800 + labelBonus;
+  }
+
+  if (normalizedCandidate.startsWith(normalizedQuery)) {
+    return score + 620 + labelBonus;
+  }
+
+  const phraseIndex = normalizedCandidate.indexOf(normalizedQuery);
+
+  if (phraseIndex >= 0) {
+    return score + 420 - Math.min(phraseIndex, 100) + labelBonus;
+  }
+
+  return score + labelBonus;
+};
+
+const scoreContextPackSearchItem = (
+  item: SmartContextPackListItem,
+  searchText: string,
+): number => {
+  const normalizedQuery = normalizeContextPackSearchText(searchText);
+  const tokens = tokenizeContextPackSearchText(searchText);
+
+  if (!normalizedQuery || tokens.length === 0) {
+    return 0;
+  }
+
+  const { pack } = item;
+  const nameScore = scoreNormalizedContextPackCandidate(
+    normalizeContextPackSearchText(pack.name),
+    normalizedQuery,
+    tokens,
+    160,
+  );
+  const triggerScore = scoreNormalizedContextPackCandidate(
+    normalizeContextPackSearchText(pack.trigger.phrases.join(" ")),
+    normalizedQuery,
+    tokens,
+    80,
+  );
+  const promptScore = scoreNormalizedContextPackCandidate(
+    normalizeContextPackSearchText(pack.prompt),
+    normalizedQuery,
+    tokens,
+    20,
+  );
+  const instructionsScore = scoreNormalizedContextPackCandidate(
+    normalizeContextPackSearchText(pack.instructions),
+    normalizedQuery,
+    tokens,
+    20,
+  );
+
+  return Math.max(nameScore, triggerScore, promptScore, instructionsScore);
 };
 
 const formatListInputValue = (values: string[]): string => values.join(", ");
@@ -355,10 +457,6 @@ const formatScopeFilterLabel = (
     default:
       return "All";
   }
-};
-
-const isVariablePreviewWarning = (warning: string): boolean => {
-  return warning.endsWith(" variable") || warning.endsWith(" variables");
 };
 
 const collectRalphFlowPackIds = (flow: RalphFlow): Set<string> => {
@@ -780,8 +878,7 @@ const SmartContextPackCard = ({
   onApplyPack: (pack: SmartContextPack) => void;
   onDeleteContextPack: (pack: SmartContextPack) => void | Promise<void>;
 }): JSX.Element => {
-  const { pack, summary, preview, previewWarnings, isMatched, ralphFlowNames } =
-    item;
+  const { pack, isMatched, ralphFlowNames } = item;
   const scopeLabel = getSmartContextPackScopeLabel(item.scope);
   const isPendingUsedPackDelete =
     pendingDeletePackId === pack.id && ralphFlowNames.length > 0;
@@ -789,34 +886,29 @@ const SmartContextPackCard = ({
   return (
     <div
       className={cn(
-        "grid gap-2 rounded-2xl border bg-slate-900/65 p-3 transition-colors",
-        isMatched ? "border-sky-500/30 bg-sky-500/10" : "border-slate-800",
+        "rounded-xl border bg-slate-900/55 px-2.5 py-1.5 transition-colors",
+        isMatched ? "border-sky-500/30 bg-sky-500/10" : "border-slate-800/90",
       )}
     >
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-slate-100">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-100">
             {pack.name}
           </p>
-          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
-            <span className="inline-flex min-w-0 items-center gap-1">
-              {item.scope === "global" ? (
-                <Globe2 className="h-3 w-3 text-emerald-200" />
-              ) : (
-                <Folder className="h-3 w-3 text-slate-400" />
-              )}
-              {scopeLabel}
-            </span>
-            <span>{formatPackUsage(pack)}</span>
-            {isMatched ? (
-              <span className="inline-flex min-w-0 items-center gap-1 text-sky-200">
-                <Sparkles className="h-3 w-3" />
-                Suggested by current prompt
-              </span>
-            ) : null}
-          </div>
+          <span
+            role="img"
+            aria-label={`${scopeLabel} context pack`}
+            title={`${scopeLabel} context pack`}
+            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-slate-800/80 bg-slate-950/60"
+          >
+            {item.scope === "global" ? (
+              <Globe2 className="h-3 w-3 text-emerald-200" />
+            ) : (
+              <Folder className="h-3 w-3 text-slate-400" />
+            )}
+          </span>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1">
           <Button
             type="button"
             variant="outline"
@@ -825,9 +917,9 @@ const SmartContextPackCard = ({
             title={`Edit ${pack.name}`}
             disabled={applyingPackId !== null}
             onClick={() => onEditPack(pack)}
-            className="h-8 w-8 rounded-full border-slate-700 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900/60 disabled:text-slate-600"
+            className="h-7 w-7 rounded-full border-slate-800 bg-transparent text-slate-400 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100 disabled:border-slate-800 disabled:bg-transparent disabled:text-slate-600"
           >
-            <Pencil className="h-3.5 w-3.5" />
+            <Pencil className="h-3 w-3" />
           </Button>
           <Button
             type="button"
@@ -837,9 +929,9 @@ const SmartContextPackCard = ({
             title={`Apply ${pack.name}`}
             disabled={applyingPackId !== null}
             onClick={() => onApplyPack(pack)}
-            className="h-8 w-8 rounded-full border-sky-500/20 bg-sky-500/10 text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white disabled:border-slate-800 disabled:bg-slate-900/60 disabled:text-slate-600"
+            className="h-7 w-7 rounded-full border-sky-500/20 bg-sky-500/10 text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white disabled:border-slate-800 disabled:bg-transparent disabled:text-slate-600"
           >
-            <Play className="h-3.5 w-3.5 fill-current" />
+            <Play className="h-3 w-3 fill-current" />
           </Button>
           <Button
             type="button"
@@ -849,53 +941,17 @@ const SmartContextPackCard = ({
             title={`Delete ${pack.name}`}
             disabled={applyingPackId === pack.id}
             onClick={() => void onDeleteContextPack(pack)}
-            className="h-8 w-8 rounded-full border-rose-500/20 bg-rose-500/10 text-rose-100 shadow-none hover:bg-rose-500/15 hover:text-white disabled:border-slate-800 disabled:bg-slate-900/60 disabled:text-slate-600"
+            className="h-7 w-7 rounded-full border-rose-500/20 bg-transparent text-rose-200 shadow-none hover:bg-rose-500/10 hover:text-white disabled:border-slate-800 disabled:bg-transparent disabled:text-slate-600"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-3 w-3" />
           </Button>
         </div>
       </div>
-      <div className="grid gap-1 text-[11px] leading-5 text-slate-500">
-        <p>
-          ~{preview.estimatedTokens} tokens / {preview.attachmentCount} path
-          {preview.attachmentCount === 1 ? "" : "s"}
-        </p>
-        {preview.promptFileCount > 0 ? (
-          <p className="text-violet-100">
-            {preview.promptFileCount} prompt file
-            {preview.promptFileCount === 1 ? "" : "s"}
-          </p>
-        ) : null}
-        {preview.skillFileCount > 0 ? (
-          <p className="text-cyan-100">
-            {preview.skillFileCount} skill file
-            {preview.skillFileCount === 1 ? "" : "s"}
-          </p>
-        ) : null}
-        {previewWarnings.length > 0 ? (
-          <p className="inline-flex items-center gap-1 text-amber-100">
-            <AlertTriangle className="h-3 w-3" />
-            {previewWarnings.join(", ")}
-          </p>
-        ) : null}
-        {ralphFlowNames.length > 0 ? (
-          <p className="inline-flex items-center gap-1 text-amber-100">
-            <AlertTriangle className="h-3 w-3" />
-            Used by {ralphFlowNames.length} Ralph flow
-            {ralphFlowNames.length === 1 ? "" : "s"}
-          </p>
-        ) : null}
-      </div>
       {isPendingUsedPackDelete ? (
-        <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100">
+        <div className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-xs leading-5 text-amber-100">
           This pack is used by {ralphFlowNames.join(", ")}. Click delete again to
           remove it anyway.
         </div>
-      ) : null}
-      {summary.length > 0 ? (
-        <p className="truncate text-[11px] leading-5 text-slate-500">
-          {summary.join(" / ")}
-        </p>
       ) : null}
     </div>
   );
@@ -911,7 +967,6 @@ export const SmartContextPackPicker = ({
   activeReasoning,
   contextAttachments,
   matchedContextPackIds,
-  imageInputSupported,
   workspaceLabel,
   onSaveContextPack,
   onApplyContextPack,
@@ -925,6 +980,7 @@ export const SmartContextPackPicker = ({
     useState<SmartContextPackDialogState | null>(null);
   const [scopeFilter, setScopeFilter] =
     useState<SmartContextPackScopeFilter>("all");
+  const [packSearchText, setPackSearchText] = useState("");
   const [configuringPackId, setConfiguringPackId] = useState<string | null>(null);
   const [variableValues, setVariableValues] = useState<Record<string, string>>({});
   const [applyError, setApplyError] = useState<string | null>(null);
@@ -934,6 +990,7 @@ export const SmartContextPackPicker = ({
     Record<string, string[]>
   >({});
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const packSearchInputRef = useRef<HTMLInputElement | null>(null);
   const matchedPackIds = useMemo(
     () => new Set(matchedContextPackIds),
     [matchedContextPackIds],
@@ -947,31 +1004,43 @@ export const SmartContextPackPicker = ({
     });
   }, [contextPacks]);
   const packItems = useMemo<SmartContextPackListItem[]>(() => {
-    return sortedPacks.map((pack) => {
-      const preview = createSmartContextPackPreview(pack, {
-        imageInputSupported,
-      });
-
-      return {
-        pack,
-        scope: getSmartContextPackScope(pack),
-        summary: createContextPackSummary(pack),
-        preview,
-        previewWarnings: preview.warnings.filter(
-          (warning) => !isVariablePreviewWarning(warning),
-        ),
-        isMatched: matchedPackIds.has(pack.id),
-        ralphFlowNames: ralphPackUsageById[pack.id] ?? [],
-      };
-    });
-  }, [imageInputSupported, matchedPackIds, ralphPackUsageById, sortedPacks]);
-  const filteredPackItems = useMemo(
+    return sortedPacks.map((pack) => ({
+      pack,
+      scope: getSmartContextPackScope(pack),
+      isMatched: matchedPackIds.has(pack.id),
+      ralphFlowNames: ralphPackUsageById[pack.id] ?? [],
+    }));
+  }, [matchedPackIds, ralphPackUsageById, sortedPacks]);
+  const scopedPackItems = useMemo(
     () =>
       packItems.filter(
         (item) => scopeFilter === "all" || item.scope === scopeFilter,
       ),
     [packItems, scopeFilter],
   );
+  const visiblePackItems = useMemo<SmartContextPackListItem[]>(() => {
+    if (!packSearchText.trim()) {
+      return scopedPackItems;
+    }
+
+    return scopedPackItems
+      .map((item, order) => ({
+        item,
+        order,
+        score: scoreContextPackSearchItem(item, packSearchText),
+      }))
+      .filter((entry) => entry.score > 0)
+      .sort((firstEntry, secondEntry) => {
+        const scoreDifference = secondEntry.score - firstEntry.score;
+
+        if (scoreDifference !== 0) {
+          return scoreDifference;
+        }
+
+        return firstEntry.order - secondEntry.order;
+      })
+      .map((entry) => entry.item);
+  }, [packSearchText, scopedPackItems]);
   const workspacePackCount = packItems.filter(
     (item) => item.scope === "workspace",
   ).length;
@@ -985,6 +1054,21 @@ export const SmartContextPackPicker = ({
   const missingVariableNames = configuringPack
     ? getSmartContextPackMissingVariableNames(configuringPack, variableValues)
     : [];
+
+  const handlePopoverOpenChange = (nextOpen: boolean): void => {
+    setOpen(nextOpen);
+
+    if (nextOpen) {
+      setView("apply");
+      setPackSearchText("");
+      return;
+    }
+
+    setView("apply");
+    setConfiguringPackId(null);
+    setPackSearchText("");
+  };
+
   const openCreateDialog = (): void => {
     const nextScope =
       !workspaceRoot || scopeFilter === "global" ? "global" : "workspace";
@@ -1012,6 +1096,7 @@ export const SmartContextPackPicker = ({
     });
     setOpen(false);
     setView("apply");
+    setPackSearchText("");
   };
 
   const openEditDialog = (pack: SmartContextPack): void => {
@@ -1037,6 +1122,7 @@ export const SmartContextPackPicker = ({
     });
     setOpen(false);
     setView("apply");
+    setPackSearchText("");
   };
 
   const handlePackDialogSubmit = (input: SaveSmartContextPackInput): void => {
@@ -1073,6 +1159,7 @@ export const SmartContextPackPicker = ({
       .then(() => onApplyContextPack(pack.id))
       .then(() => {
         setOpen(false);
+        setPackSearchText("");
       })
       .catch((error) => {
         console.error("Failed to apply context pack", error);
@@ -1080,6 +1167,23 @@ export const SmartContextPackPicker = ({
       .finally(() => {
         setApplyingPackId(null);
       });
+  };
+
+  const handlePackSearchKeyDown = (
+    event: KeyboardEvent<HTMLInputElement>,
+  ): void => {
+    if (event.key !== "Enter" || !packSearchText.trim()) {
+      return;
+    }
+
+    const bestMatch = visiblePackItems[0];
+
+    if (!bestMatch) {
+      return;
+    }
+
+    event.preventDefault();
+    applyPack(bestMatch.pack);
   };
 
   const loadRalphPackUsage = async (): Promise<Record<string, string[]>> => {
@@ -1173,6 +1277,7 @@ export const SmartContextPackPicker = ({
         setConfiguringPackId(null);
         setVariableValues({});
         setApplyError(null);
+        setPackSearchText("");
       })
       .catch((error) => {
         console.error("Failed to apply context pack", error);
@@ -1201,16 +1306,9 @@ export const SmartContextPackPicker = ({
   return (
     <>
       <Popover
-      open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-
-        if (!nextOpen) {
-          setView("apply");
-          setConfiguringPackId(null);
-        }
-      }}
-    >
+        open={open}
+        onOpenChange={handlePopoverOpenChange}
+      >
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -1229,6 +1327,10 @@ export const SmartContextPackPicker = ({
         align="start"
         sideOffset={8}
         className="w-[28rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border-slate-800 bg-slate-950/98 p-0 shadow-xl shadow-slate-950/40 backdrop-blur-xl"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          packSearchInputRef.current?.focus();
+        }}
       >
         <div className="border-b border-slate-800/80 px-4 py-3">
           <div className="flex items-center justify-between gap-3">
@@ -1275,7 +1377,7 @@ export const SmartContextPackPicker = ({
                 title={`Export ${formatScopeFilterLabel(
                   scopeFilter,
                 ).toLowerCase()} context packs`}
-                disabled={filteredPackItems.length === 0}
+                disabled={scopedPackItems.length === 0}
                 onClick={() => onExportContextPacks(scopeFilter)}
                 className="h-8 w-8 rounded-full border-slate-800 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:text-slate-600"
               >
@@ -1310,11 +1412,28 @@ export const SmartContextPackPicker = ({
               </button>
             ))}
           </div>
+          {view === "apply" ? (
+            <div className="relative mt-3">
+              <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-500" />
+              <Input
+                ref={packSearchInputRef}
+                type="search"
+                value={packSearchText}
+                onChange={(event) => setPackSearchText(event.target.value)}
+                onKeyDown={handlePackSearchKeyDown}
+                aria-label="Search context packs"
+                placeholder="Search packs"
+                autoComplete="off"
+                spellCheck={false}
+                className="h-9 rounded-2xl border-slate-800 bg-slate-900/70 pr-3 pl-9 text-sm text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/30"
+              />
+            </div>
+          ) : null}
         </div>
 
         {view === "apply" ? (
-          <div className="grid max-h-[26rem] gap-2 overflow-y-auto p-3">
-            {filteredPackItems.length === 0 ? (
+          <div className="grid max-h-[26rem] gap-1.5 overflow-y-auto p-3">
+            {scopedPackItems.length === 0 ? (
               <button
                 type="button"
                 onClick={openCreateDialog}
@@ -1322,13 +1441,18 @@ export const SmartContextPackPicker = ({
               >
                 <span className="text-sm font-semibold">Save current setup</span>
                 <span className="text-xs leading-5 text-slate-500">
-                  Prompt, instructions, paths, prompt files, skill files, model,
-                  and mode.
+                  Create a reusable pack from the current setup.
                 </span>
               </button>
             ) : null}
 
-            {filteredPackItems.map((item) => (
+            {scopedPackItems.length > 0 && visiblePackItems.length === 0 ? (
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-500">
+                No matching context packs
+              </div>
+            ) : null}
+
+            {visiblePackItems.map((item) => (
               <SmartContextPackCard
                 key={item.pack.id}
                 item={item}

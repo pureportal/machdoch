@@ -258,11 +258,14 @@ const flushShellPersistence = async (): Promise<void> => {
 const createRuntimeSnapshot = (
   overrides: Partial<RuntimeSnapshot> = {},
 ): RuntimeSnapshot => {
-  return {
+  const baseSnapshot: RuntimeSnapshot = {
     workspaceRoot: "/mocked/tauri/path",
     mode: "ask",
+    defaultMode: "ask",
     provider: "openai",
     model: "gpt-5.5",
+    reasoning: "default",
+    defaultReasoning: "default",
     offline: false,
     agentLimits: {
       executorTurns: 64,
@@ -279,6 +282,10 @@ const createRuntimeSnapshot = (
     reviewModel: {
       mode: "base",
     },
+  };
+
+  return {
+    ...baseSnapshot,
     ...overrides,
   };
 };
@@ -737,7 +744,9 @@ describe("ChatSession component", () => {
         timestamp: 1,
       });
 
-      expect(screen.getByText(/Reading workspace files/i)).toBeDefined();
+      await waitFor(() => {
+        expect(screen.getByText(/Reading workspace files/i)).toBeDefined();
+      });
       expect(screen.queryByText(/Workspace scan complete\./i)).toBeNull();
 
       runDesktopTaskSpy.mockRestore();
@@ -2166,6 +2175,10 @@ describe("ChatSession component", () => {
       enhancementExecution.response = {
         ...enhancementExecution.response,
         markdown: `<machdoch_enhanced_prompt>${enhancedPrompt}</machdoch_enhanced_prompt>`,
+        highlights: [],
+        relatedFiles: [],
+        verification: [],
+        followUps: [],
       };
 
       const runDesktopTaskSpy = vi
@@ -2215,7 +2228,262 @@ describe("ChatSession component", () => {
         expect.objectContaining({ mode: "ask" }),
       );
       expect(runDesktopTaskSpy.mock.calls[1]?.[1]).toBe(enhancedPrompt);
-      expect(screen.getAllByText(originalPrompt).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(enhancedPrompt).length).toBeGreaterThan(0);
+      expect(screen.queryByText(originalPrompt)).toBeNull();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "View original prompt" }),
+      );
+
+      const originalPromptPanel = document.querySelector(
+        ".app-original-prompt-panel",
+      );
+
+      expect(originalPromptPanel).not.toBeNull();
+      expect(
+        within(originalPromptPanel as HTMLElement).getByText(originalPrompt),
+      ).toBeTruthy();
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "does not jump back when prompt enhancement finishes after switching sessions",
+    async () => {
+      const baseState = createInitialShellState();
+      const sourceSession = createSession({
+        id: "enhancement-source-session",
+        manualTitle: "Enhancement source",
+        updatedAt: 200,
+      });
+      const staySession = createSession({
+        id: "enhancement-stay-session",
+        manualTitle: "Stay here",
+        updatedAt: 100,
+      });
+      const originalPrompt = "scan setup without jumping";
+      const enhancedPrompt = "Scan setup without changing the selected chat.";
+      const enhancementExecution = createMockExecutionFixture(
+        originalPrompt,
+        "/mock/home/path",
+        { mode: "ask" },
+      );
+      let resolveEnhancement:
+        | ((value: DesktopTaskRunResponse) => void)
+        | undefined;
+
+      enhancementExecution.response = {
+        ...enhancementExecution.response,
+        markdown: `<machdoch_enhanced_prompt>${enhancedPrompt}</machdoch_enhanced_prompt>`,
+        highlights: [],
+        relatedFiles: [],
+        verification: [],
+        followUps: [],
+      };
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: sourceSession.id,
+        sessions: [sourceSession, staySession],
+      });
+
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation((_workspaceRoot, task, context) => {
+          const taskText = String(task);
+
+          if (taskText.includes("Enhance the user's Machdoch chat request")) {
+            return new Promise<DesktopTaskRunResponse>((resolve) => {
+              resolveEnhancement = resolve;
+            });
+          }
+
+          return Promise.resolve({
+            execution: createMockExecutionFixture(taskText, "/mock/home/path", {
+              mode: context?.mode,
+            }),
+          });
+        });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prompt enhancement: Off" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Choose Simple enhance" }),
+      );
+
+      fireEvent.change(
+        screen.getByPlaceholderText(/What should machdoch do next\?/i),
+        {
+          target: { value: originalPrompt },
+        },
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Open session Stay here" }),
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("heading", { name: "Stay here" })).toBeDefined();
+      });
+
+      await act(async () => {
+        resolveEnhancement?.({
+          execution: enhancementExecution,
+        });
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(2);
+      });
+
+      expect(runDesktopTaskSpy.mock.calls[1]?.[1]).toBe(enhancedPrompt);
+      expect(screen.getByRole("heading", { name: "Stay here" })).toBeDefined();
+
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "does not clear the current chat draft when an enhanced queued follow-up finishes after switching sessions",
+    async () => {
+      const baseState = createInitialShellState();
+      const runningTaskId = "enhancement-queued-running-task";
+      const sourceSession = createSession({
+        id: "enhancement-queued-source-session",
+        manualTitle: "Queued enhancement source",
+        updatedAt: 200,
+        messages: [
+          {
+            id: "enhancement-queued-running-user",
+            taskId: runningTaskId,
+            role: "user",
+            content: "Keep working in the source chat",
+            createdAt: 100,
+          },
+          {
+            id: "enhancement-queued-running-thinking",
+            taskId: runningTaskId,
+            role: "agent",
+            content: "",
+            createdAt: 200,
+            source: {
+              kind: "thinking",
+              thinking: createInitialThinkingTrace("machdoch", 200),
+            },
+          },
+        ],
+      });
+      const staySession = createSession({
+        id: "enhancement-queued-stay-session",
+        manualTitle: "Queued stay here",
+        updatedAt: 100,
+      });
+      const queuedPrompt = "queue this follow-up after enhancement";
+      const stayDraft = "do not clear this draft";
+      const enhancedPrompt = "Queue this follow-up with a stable target session.";
+      const enhancementExecution = createMockExecutionFixture(
+        queuedPrompt,
+        "/mock/home/path",
+        { mode: "ask" },
+      );
+      let resolveEnhancement:
+        | ((value: DesktopTaskRunResponse) => void)
+        | undefined;
+
+      enhancementExecution.response = {
+        ...enhancementExecution.response,
+        markdown: `<machdoch_enhanced_prompt>${enhancedPrompt}</machdoch_enhanced_prompt>`,
+        highlights: [],
+        relatedFiles: [],
+        verification: [],
+        followUps: [],
+      };
+
+      storeShellState({
+        ...baseState,
+        activeSessionId: sourceSession.id,
+        sessions: [sourceSession, staySession],
+      });
+
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation((_workspaceRoot, task, context) => {
+          if (String(task).includes("Enhance the user's Machdoch chat request")) {
+            return new Promise<DesktopTaskRunResponse>((resolve) => {
+              resolveEnhancement = resolve;
+            });
+          }
+
+          return Promise.resolve({
+            execution: createMockExecutionFixture(String(task), "/mock/home/path", {
+              mode: context?.mode,
+            }),
+          });
+        });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prompt enhancement: Off" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Choose Simple enhance" }),
+      );
+
+      fireEvent.change(
+        screen.getByPlaceholderText(/What should machdoch do next\?/i),
+        {
+          target: { value: queuedPrompt },
+        },
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Open session Queued stay here" }),
+      );
+
+      const stayInput = await screen.findByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(stayInput, {
+        target: { value: stayDraft },
+      });
+
+      await act(async () => {
+        resolveEnhancement?.({
+          execution: enhancementExecution,
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole("heading", { name: "Queued stay here" })).toBeDefined();
+      });
+      expect(
+        screen.getByPlaceholderText(
+          /What should machdoch do next\?/i,
+        ) as HTMLTextAreaElement,
+      ).toHaveProperty("value", stayDraft);
+      expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
 
       runDesktopTaskSpy.mockRestore();
     },
@@ -2275,14 +2543,16 @@ describe("ChatSession component", () => {
         expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
       });
 
-      const pendingStatus = screen.getByRole("status");
+      const sessionRow = getSessionRow(originalPrompt);
 
-      expect(screen.getByText(originalPrompt)).toBeTruthy();
-      expect(within(pendingStatus).getByText("Enhancing prompt")).toBeTruthy();
-      expect(within(pendingStatus).getByText("Simple enhance")).toBeTruthy();
+      expect(screen.getAllByText(originalPrompt).length).toBeGreaterThan(0);
       expect(
-        screen.queryByText(/is refining the request|Prompt enhancement refined/u),
-      ).toBeNull();
+        within(sessionRow).getByLabelText("Session status: Running"),
+      ).toBeDefined();
+      expect(screen.getByText("Enhancing prompt")).toBeTruthy();
+      expect(
+        screen.getByText(/Simple enhance is refining the request/u),
+      ).toBeTruthy();
       expect(input).toHaveProperty("value", "");
 
       fireEvent.click(screen.getByRole("button", { name: "Cancel task" }));
@@ -2298,10 +2568,148 @@ describe("ChatSession component", () => {
 
       await waitFor(() => {
         expect(screen.queryByText("Enhancing prompt")).toBeNull();
+        expect(input).toHaveProperty("value", originalPrompt);
       });
-      expect(input).toHaveProperty("value", originalPrompt);
 
       cancelDesktopTaskSpy.mockRestore();
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "allows starting another enhanced chat while the previous enhancement is pending",
+    async () => {
+      const firstPrompt = "scan setup";
+      const secondPrompt = "review dashboard";
+      const firstEnhancedPrompt = "Scan the setup with explicit checks.";
+      const secondEnhancedPrompt = "Review the dashboard with UX findings.";
+      const firstEnhancementExecution = createMockExecutionFixture(
+        firstPrompt,
+        "/mock/home/path",
+        { mode: "ask" },
+      );
+      const secondEnhancementExecution = createMockExecutionFixture(
+        secondPrompt,
+        "/mock/home/path",
+        { mode: "ask" },
+      );
+      let resolveFirstEnhancement:
+        | ((value: DesktopTaskRunResponse) => void)
+        | undefined;
+      let resolveSecondEnhancement:
+        | ((value: DesktopTaskRunResponse) => void)
+        | undefined;
+
+      firstEnhancementExecution.response = {
+        ...firstEnhancementExecution.response,
+        markdown: `<machdoch_enhanced_prompt>${firstEnhancedPrompt}</machdoch_enhanced_prompt>`,
+        highlights: [],
+        relatedFiles: [],
+        verification: [],
+        followUps: [],
+      };
+      secondEnhancementExecution.response = {
+        ...secondEnhancementExecution.response,
+        markdown: `<machdoch_enhanced_prompt>${secondEnhancedPrompt}</machdoch_enhanced_prompt>`,
+        highlights: [],
+        relatedFiles: [],
+        verification: [],
+        followUps: [],
+      };
+
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation((_workspaceRoot, task, context) => {
+          const taskText = String(task);
+
+          if (taskText.includes("Enhance the user's Machdoch chat request")) {
+            if (taskText.includes(firstPrompt)) {
+              return new Promise<DesktopTaskRunResponse>((resolve) => {
+                resolveFirstEnhancement = resolve;
+              });
+            }
+
+            if (taskText.includes(secondPrompt)) {
+              return new Promise<DesktopTaskRunResponse>((resolve) => {
+                resolveSecondEnhancement = resolve;
+              });
+            }
+          }
+
+          return Promise.resolve({
+            execution: createMockExecutionFixture(taskText, "/mock/home/path", {
+              mode: context?.mode,
+            }),
+          });
+        });
+
+      render(<ChatSession />);
+      await flushShellHydration();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prompt enhancement: Off" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Choose Simple enhance" }),
+      );
+
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+
+      fireEvent.change(input, {
+        target: { value: firstPrompt },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(
+        within(getSessionRow(firstPrompt)).getByLabelText(
+          "Session status: Running",
+        ),
+      ).toBeDefined();
+
+      fireEvent.click(screen.getByRole("button", { name: /^New$/i }));
+      const secondInput = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      );
+      fireEvent.change(secondInput, {
+        target: { value: secondPrompt },
+      });
+      expect(screen.getByRole("button", { name: "Send message" })).toHaveProperty(
+        "disabled",
+        false,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(2);
+      });
+      expect(
+        within(getSessionRow(secondPrompt)).getByLabelText(
+          "Session status: Running",
+        ),
+      ).toBeDefined();
+
+      await act(async () => {
+        resolveFirstEnhancement?.({
+          execution: firstEnhancementExecution,
+        });
+        resolveSecondEnhancement?.({
+          execution: secondEnhancementExecution,
+        });
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(runDesktopTaskSpy).toHaveBeenCalledTimes(4);
+      });
+      expect(runDesktopTaskSpy.mock.calls[2]?.[1]).toBe(firstEnhancedPrompt);
+      expect(runDesktopTaskSpy.mock.calls[3]?.[1]).toBe(secondEnhancedPrompt);
+
       runDesktopTaskSpy.mockRestore();
     },
     SLOW_UI_TEST_TIMEOUT_MS,
@@ -2335,6 +2743,10 @@ describe("ChatSession component", () => {
       enhancementExecution.response = {
         ...enhancementExecution.response,
         markdown: `<machdoch_enhanced_prompt>${enhancedPrompt}</machdoch_enhanced_prompt>`,
+        highlights: [],
+        relatedFiles: [],
+        verification: [],
+        followUps: [],
       };
 
       storeShellState({
@@ -2430,6 +2842,10 @@ describe("ChatSession component", () => {
       enhancementExecution.response = {
         ...enhancementExecution.response,
         markdown: `<machdoch_enhanced_prompt>${enhancedPrompt}</machdoch_enhanced_prompt>`,
+        highlights: [],
+        relatedFiles: [],
+        verification: [],
+        followUps: [],
       };
 
       const runTaskInterviewSpy = vi
@@ -2513,8 +2929,8 @@ describe("ChatSession component", () => {
       ).toBeTruthy();
       expect(input).toHaveProperty("disabled", true);
       expect(
-        screen.queryByText(/is refining the request|Prompt enhancement refined/u),
-      ).toBeNull();
+        screen.getByText(/Simple enhance is refining the request/u),
+      ).toBeTruthy();
       expect(runTaskInterviewSpy).not.toHaveBeenCalled();
 
       await act(async () => {
@@ -2523,6 +2939,21 @@ describe("ChatSession component", () => {
         });
         await Promise.resolve();
       });
+
+      expect(await screen.findByText(enhancedPrompt)).toBeTruthy();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "View original prompt" }),
+      );
+
+      const originalPromptPanel = document.querySelector(
+        ".app-original-prompt-panel",
+      );
+
+      expect(originalPromptPanel).not.toBeNull();
+      expect(
+        within(originalPromptPanel as HTMLElement).getByText(originalPrompt),
+      ).toBeTruthy();
 
       await waitFor(() => {
         expect(runTaskInterviewSpy).toHaveBeenCalledTimes(1);
@@ -2555,6 +2986,10 @@ describe("ChatSession component", () => {
       enhancementExecution.response = {
         ...enhancementExecution.response,
         markdown: `<machdoch_enhanced_prompt>${enhancedPrompt}</machdoch_enhanced_prompt>`,
+        highlights: [],
+        relatedFiles: [],
+        verification: [],
+        followUps: [],
       };
 
       const loadWorkspaceRuntimeSnapshotSpy = vi
@@ -2626,7 +3061,21 @@ describe("ChatSession component", () => {
         expect.objectContaining({ mode: "ask" }),
       );
       expect(runDesktopTaskSpy.mock.calls[1]?.[1]).toBe(enhancedPrompt);
-      expect(screen.getAllByText(originalPrompt).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(enhancedPrompt).length).toBeGreaterThan(0);
+      expect(screen.queryByText(originalPrompt)).toBeNull();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "View original prompt" }),
+      );
+
+      const originalPromptPanel = document.querySelector(
+        ".app-original-prompt-panel",
+      );
+
+      expect(originalPromptPanel).not.toBeNull();
+      expect(
+        within(originalPromptPanel as HTMLElement).getByText(originalPrompt),
+      ).toBeTruthy();
 
       loadWorkspaceRuntimeSnapshotSpy.mockRestore();
       runDesktopTaskSpy.mockRestore();
@@ -2736,6 +3185,10 @@ describe("ChatSession component", () => {
       enhancementExecution.response = {
         ...enhancementExecution.response,
         markdown: `<machdoch_enhanced_prompt>${enhancedPrompt}</machdoch_enhanced_prompt>`,
+        highlights: [],
+        relatedFiles: [],
+        verification: [],
+        followUps: [],
       };
 
       const runTaskInterviewSpy = vi
@@ -2810,7 +3263,21 @@ describe("ChatSession component", () => {
         }),
       );
       expect(runDesktopTaskSpy.mock.calls[1]?.[1]).toBe(finalPrompt);
-      expect(screen.getAllByText(originalPrompt).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(enhancedPrompt).length).toBeGreaterThan(0);
+      expect(screen.queryByText(originalPrompt)).toBeNull();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "View original prompt" }),
+      );
+
+      const originalPromptPanel = document.querySelector(
+        ".app-original-prompt-panel",
+      );
+
+      expect(originalPromptPanel).not.toBeNull();
+      expect(
+        within(originalPromptPanel as HTMLElement).getByText(originalPrompt),
+      ).toBeTruthy();
 
       runTaskInterviewSpy.mockRestore();
       runDesktopTaskSpy.mockRestore();
@@ -3187,6 +3654,15 @@ describe("ChatSession component", () => {
             },
           },
         });
+      const readWorkspaceFilePreviewSpy = vi
+        .spyOn(runtime, "readWorkspaceFilePreview")
+        .mockResolvedValue({
+          content: "export const ChatSession = () => null;",
+          bytesRead: 38,
+          maxBytes: 524288,
+          truncated: false,
+          lossy: false,
+        });
       const openWorkspacePathSpy = vi
         .spyOn(runtime, "openWorkspacePath")
         .mockResolvedValue();
@@ -3219,12 +3695,24 @@ describe("ChatSession component", () => {
 
       fireEvent.click(relatedFileButton);
 
+      await waitFor(() => {
+        expect(readWorkspaceFilePreviewSpy).toHaveBeenCalledWith(
+          null,
+          "src/tauri/ui/chat-session-shell.tsx",
+        );
+      });
+      expect(await screen.findByText("chat-session-shell.tsx")).toBeDefined();
+      expect(screen.getByText("TypeScript")).toBeDefined();
+
+      fireEvent.click(screen.getByRole("button", { name: "Open externally" }));
+
       expect(openWorkspacePathSpy).toHaveBeenCalledWith(
         null,
         "src/tauri/ui/chat-session-shell.tsx",
       );
 
       runDesktopTaskSpy.mockRestore();
+      readWorkspaceFilePreviewSpy.mockRestore();
       openWorkspacePathSpy.mockRestore();
     },
     SLOW_UI_TEST_TIMEOUT_MS,
@@ -3513,7 +4001,9 @@ describe("ChatSession component", () => {
         },
       });
 
-      expect(screen.getByText("Recovered continue is working.")).toBeDefined();
+      await waitFor(() => {
+        expect(screen.getByText("Recovered continue is working.")).toBeDefined();
+      });
 
       runDesktopTaskSpy.mockRestore();
     },
@@ -4080,7 +4570,10 @@ describe("ChatSession component", () => {
 
   it("saves a message as a Markdown download from the message context menu", async () => {
     const messageMarkdown = "Save this message\n\n```ts\nconst ok = true;\n```";
-    const createObjectUrl = vi.fn(() => "blob:machdoch-message");
+    const createObjectUrl = vi.fn((blob: Blob) => {
+      void blob;
+      return "blob:machdoch-message";
+    });
     const revokeObjectUrl = vi.fn();
     const originalCreateObjectUrl = URL.createObjectURL;
     const originalRevokeObjectUrl = URL.revokeObjectURL;
@@ -5843,6 +6336,15 @@ describe("ChatSession component", () => {
     const openAttachedPathSpy = vi
       .spyOn(runtime, "openAttachedPath")
       .mockResolvedValue();
+    const readAttachedFilePreviewSpy = vi
+      .spyOn(runtime, "readAttachedFilePreview")
+      .mockResolvedValue({
+        content: "# Plan\n\nShip the file preview.",
+        bytesRead: 29,
+        maxBytes: 524288,
+        truncated: false,
+        lossy: false,
+      });
 
     render(<ChatSession />);
 
@@ -5901,6 +6403,17 @@ describe("ChatSession component", () => {
 
     expect(sentAttachment).toBeDefined();
     fireEvent.click(sentAttachment);
+
+    await waitFor(() => {
+      expect(readAttachedFilePreviewSpy).toHaveBeenCalledWith(
+        "C:\\Docs\\plan.md",
+        "C:\\Docs",
+      );
+    });
+    expect(await screen.findByText("Markdown")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open externally" }));
+
     expect(openAttachedPathSpy).toHaveBeenCalledWith(
       "C:\\Docs\\plan.md",
       "C:\\Docs",
@@ -5909,6 +6422,7 @@ describe("ChatSession component", () => {
     resolveDroppedPathsSpy.mockRestore();
     runDesktopTaskSpy.mockRestore();
     openAttachedPathSpy.mockRestore();
+    readAttachedFilePreviewSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("opens attached files directly from the main composer", async () => {
@@ -5929,6 +6443,15 @@ describe("ChatSession component", () => {
     const openAttachedPathSpy = vi
       .spyOn(runtime, "openAttachedPath")
       .mockResolvedValue();
+    const readAttachedFilePreviewSpy = vi
+      .spyOn(runtime, "readAttachedFilePreview")
+      .mockResolvedValue({
+        content: "# Plan",
+        bytesRead: 6,
+        maxBytes: 524288,
+        truncated: false,
+        lossy: false,
+      });
 
     storeShellState({
       ...baseState,
@@ -5943,12 +6466,22 @@ describe("ChatSession component", () => {
     });
     fireEvent.click(attachmentButton);
 
+    await waitFor(() => {
+      expect(readAttachedFilePreviewSpy).toHaveBeenCalledWith(
+        "C:\\Docs\\plan.md",
+        "C:\\Docs",
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open externally" }));
+
     expect(openAttachedPathSpy).toHaveBeenCalledWith(
       "C:\\Docs\\plan.md",
       "C:\\Docs",
     );
 
     openAttachedPathSpy.mockRestore();
+    readAttachedFilePreviewSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("previews clipboard image attachments directly from the main composer", async () => {
@@ -7546,6 +8079,15 @@ describe("ChatSession component", () => {
     const openAttachedPathSpy = vi
       .spyOn(runtime, "openAttachedPath")
       .mockResolvedValue();
+    const readAttachedFilePreviewSpy = vi
+      .spyOn(runtime, "readAttachedFilePreview")
+      .mockResolvedValue({
+        content: "Quick note",
+        bytesRead: 10,
+        maxBytes: 524288,
+        truncated: false,
+        lossy: false,
+      });
 
     render(<AssistantPopupShell />);
 
@@ -7577,10 +8119,21 @@ describe("ChatSession component", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Show file quick-note.txt" }),
     );
+    await waitFor(() => {
+      expect(readAttachedFilePreviewSpy).toHaveBeenCalledWith(
+        "C:\\Docs\\quick-note.txt",
+        "C:\\Docs",
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open externally" }));
+
     expect(openAttachedPathSpy).toHaveBeenCalledWith(
       "C:\\Docs\\quick-note.txt",
       "C:\\Docs",
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     fireEvent.change(input, {
       target: { value: "Summarize it" },
@@ -7602,6 +8155,7 @@ describe("ChatSession component", () => {
     resolveDroppedPathsSpy.mockRestore();
     runDesktopTaskSpy.mockRestore();
     openAttachedPathSpy.mockRestore();
+    readAttachedFilePreviewSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("adds selected images to the Quick Chat composer and sends them as image inputs", async () => {

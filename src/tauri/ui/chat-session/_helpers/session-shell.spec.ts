@@ -9,11 +9,14 @@ import {
 const createRuntimeSnapshot = (
   overrides: Partial<RuntimeSnapshot> = {},
 ): RuntimeSnapshot => {
-  return {
+  const baseSnapshot: RuntimeSnapshot = {
     workspaceRoot: "c:/Development/machdoch",
     mode: "ask",
+    defaultMode: "ask",
     provider: "openai",
     model: "gpt-5.5",
+    reasoning: "default",
+    defaultReasoning: "default",
     offline: false,
     agentLimits: {
       executorTurns: 64,
@@ -30,6 +33,10 @@ const createRuntimeSnapshot = (
     reviewModel: {
       mode: "base",
     },
+  };
+
+  return {
+    ...baseSnapshot,
     ...overrides,
   };
 };

@@ -79,6 +79,23 @@ describe("MessageMarkdown", () => {
     );
   });
 
+  it("normalizes safe leading-dot workspace source links before opening", () => {
+    const onOpenWorkspaceFile = vi.fn();
+
+    render(
+      <MessageMarkdown
+        content="[spec](./src/tauri/ui/task-thinking-panel.spec.tsx:44)"
+        onOpenWorkspaceFile={onOpenWorkspaceFile}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "spec" }));
+
+    expect(onOpenWorkspaceFile).toHaveBeenCalledWith(
+      "src/tauri/ui/task-thinking-panel.spec.tsx",
+    );
+  });
+
   it("opens extensionless workspace file links through the workspace handler", () => {
     const onOpenWorkspaceFile = vi.fn();
 
@@ -110,6 +127,49 @@ describe("MessageMarkdown", () => {
     expect(screen.queryByRole("link", { name: "secret" })).toBeNull();
 
     fireEvent.click(screen.getByText("secret"));
+
+    expect(onOpenWorkspaceFile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["leading traversal", "../secret.txt"],
+    ["relative traversal", "src/../secret.txt"],
+    ["encoded traversal", "src/%2E%2E/secret.txt"],
+    ["encoded slash traversal", "src%2F..%2Fsecret.txt"],
+    ["encoded backslash traversal", "src%5C..%5Csecret.txt"],
+    ["current-directory segment", "src/./secret.txt"],
+    [
+      "absolute workspace traversal",
+      "C:/Development/machdoch/src/../secret.txt",
+    ],
+    [
+      "file URL workspace traversal",
+      "<file:///C:/Development/machdoch/src/../secret.txt>",
+    ],
+    [
+      "file URL encoded traversal",
+      "<file:///C:/Development/machdoch/src/%2E%2E/secret.txt>",
+    ],
+    [
+      "file URL current-directory segment",
+      "<file:///C:/Development/machdoch/src/./secret.txt>",
+    ],
+  ])("renders unsafe workspace path segments inertly for %s", (label, href) => {
+    const onOpenWorkspaceFile = vi.fn();
+
+    render(
+      <MessageMarkdown
+        content={`[${label}](${href})`}
+        workspaceRoot="C:/Development/machdoch"
+        onOpenWorkspaceFile={onOpenWorkspaceFile}
+      />,
+    );
+
+    expect(screen.getByText(label)).toBeDefined();
+    expect(screen.queryByRole("button", { name: label })).toBeNull();
+    expect(screen.queryByRole("link", { name: label })).toBeNull();
+
+    fireEvent.click(screen.getByText(label));
 
     expect(onOpenWorkspaceFile).not.toHaveBeenCalled();
   });

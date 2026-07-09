@@ -241,6 +241,7 @@ const createActivityAwareExecutionOptions = (
           },
         }
       : {}),
+    onStreamActivity: managedSignal.resetTimeout,
   };
 };
 
@@ -400,6 +401,9 @@ const runTaskExecutionStateMachine = async (
               : {}),
             ...(options.onActionOutput
               ? { onActionOutput: options.onActionOutput }
+              : {}),
+            ...(options.onStreamActivity
+              ? { onStreamActivity: options.onStreamActivity }
               : {}),
           });
 

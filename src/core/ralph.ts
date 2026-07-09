@@ -5730,7 +5730,7 @@ const searchFilesRecursive = async (
   rootPath: string,
   options: {
     basePath: string;
-    pattern?: string;
+    normalizedPattern?: string;
     glob?: RegExp;
     maxResults: number;
     signal?: AbortSignal;
@@ -5756,13 +5756,18 @@ const searchFilesRecursive = async (
       }
 
       await searchFilesRecursive(path, options, results);
+
+      if (results.length >= options.maxResults) {
+        return;
+      }
+
       continue;
     }
 
     const matchesPattern =
-      options.pattern === undefined ||
-      entry.name.toLowerCase().includes(options.pattern.toLowerCase()) ||
-      path.toLowerCase().includes(options.pattern.toLowerCase());
+      options.normalizedPattern === undefined ||
+      entry.name.toLowerCase().includes(options.normalizedPattern) ||
+      path.toLowerCase().includes(options.normalizedPattern);
     const relativeFilePath = relative(options.basePath, path).replace(/\\/gu, "/");
     const matchesGlob =
       options.glob === undefined ||
@@ -5793,7 +5798,9 @@ const executeSearchFilesUtilityBlock = async (
       rootPath,
       {
         basePath: rootPath,
-        ...(utility.pattern ? { pattern: utility.pattern } : {}),
+        ...(utility.pattern
+          ? { normalizedPattern: utility.pattern.toLowerCase() }
+          : {}),
         ...(utility.glob ? { glob: globToRegExp(utility.glob) } : {}),
         maxResults:
           utility.maxResults ?? DEFAULT_RALPH_UTILITY_MAX_SEARCH_RESULTS,

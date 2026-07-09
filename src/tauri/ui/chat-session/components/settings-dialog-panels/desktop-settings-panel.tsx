@@ -145,10 +145,7 @@ export const DesktopSettingsPanel = ({
   }, [setup.settings]);
 
   return (
-    <SettingsCard
-      title="Desktop assistant"
-      description="Desktop behavior changes save automatically."
-    >
+    <SettingsCard title="Desktop assistant">
       <div className="grid gap-0">
         <SettingPanel label="Launch on sign-in">
           <ChoiceButtons

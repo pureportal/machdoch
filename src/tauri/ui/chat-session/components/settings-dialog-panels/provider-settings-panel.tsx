@@ -18,10 +18,7 @@ export const ProviderSettingsPanel = ({
   const providerLabel = getProviderLabel(setup.provider);
 
   return (
-    <SettingsCard
-      title="Model provider keys"
-      description="Provider key edits save automatically after you stop typing."
-    >
+    <SettingsCard title="Model provider keys">
       <SettingsProviderChoice
         label="Provider"
         value={setup.provider}

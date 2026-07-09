@@ -34,6 +34,8 @@ import {
   openExternalUrl,
   openRalphFlowInExplorer,
   openRemoteControlUrl,
+  readAttachedFilePreview,
+  readWorkspaceFilePreview,
   createRalphFlow,
   deleteRalphFlow,
   listRalphFlowRevisions,
@@ -52,7 +54,9 @@ import {
   saveUserReviewModelSettings,
   saveUserSpeechToTextInputDevice,
   showRalphRunDetail,
+  resolveAttachedFilePreviewSource,
   resolveAttachedImagePreviewSource,
+  resolveWorkspaceFilePreviewSource,
   subscribeToRemoteControlCommands,
   syncChatCompletionIndicator,
 } from "./runtime";
@@ -1014,6 +1018,91 @@ describe("desktop runtime fullscreen detection", () => {
       path: "C:\\Docs\\plan.md",
       workspaceRoot: "C:\\Docs",
     });
+  });
+
+  it("reads workspace file previews through the Rust command", async () => {
+    invokeMock.mockResolvedValueOnce({
+      content: "const value = 1;",
+      bytesRead: 16,
+      maxBytes: 524288,
+      truncated: false,
+      lossy: false,
+    });
+
+    await expect(
+      readWorkspaceFilePreview(" C:\\Docs ", " src/main.ts "),
+    ).resolves.toEqual({
+      content: "const value = 1;",
+      bytesRead: 16,
+      maxBytes: 524288,
+      truncated: false,
+      lossy: false,
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("read_workspace_file_preview", {
+      workspaceRoot: "C:\\Docs",
+      relativePath: "src/main.ts",
+    });
+  });
+
+  it("reads attached file previews through the Rust command", async () => {
+    invokeMock.mockResolvedValueOnce({
+      content: "hello",
+      bytesRead: 5,
+      maxBytes: 524288,
+      truncated: false,
+      lossy: false,
+    });
+
+    await expect(
+      readAttachedFilePreview(" C:\\Docs\\notes.txt ", " C:\\Docs "),
+    ).resolves.toEqual({
+      content: "hello",
+      bytesRead: 5,
+      maxBytes: 524288,
+      truncated: false,
+      lossy: false,
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("read_attached_file_preview", {
+      path: "C:\\Docs\\notes.txt",
+      workspaceRoot: "C:\\Docs",
+    });
+  });
+
+  it("resolves workspace file preview sources through the Rust command", async () => {
+    invokeMock.mockResolvedValueOnce("C:\\Docs\\diagram.png");
+
+    await expect(
+      resolveWorkspaceFilePreviewSource(" C:\\Docs ", " assets/diagram.png "),
+    ).resolves.toBe(
+      "http://asset.localhost/C%3A%5CDocs%5Cdiagram.png",
+    );
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      "resolve_workspace_file_preview_path",
+      {
+        workspaceRoot: "C:\\Docs",
+        relativePath: "assets/diagram.png",
+      },
+    );
+    expect(convertFileSrcMock).toHaveBeenCalledWith("C:\\Docs\\diagram.png");
+  });
+
+  it("resolves attached file preview sources through the Rust command", async () => {
+    invokeMock.mockResolvedValueOnce("C:\\Docs\\manual.pdf");
+
+    await expect(
+      resolveAttachedFilePreviewSource(" C:\\Docs\\manual.pdf ", " C:\\Docs "),
+    ).resolves.toBe(
+      "http://asset.localhost/C%3A%5CDocs%5Cmanual.pdf",
+    );
+
+    expect(invokeMock).toHaveBeenCalledWith("resolve_attached_file_preview_path", {
+      path: "C:\\Docs\\manual.pdf",
+      workspaceRoot: "C:\\Docs",
+    });
+    expect(convertFileSrcMock).toHaveBeenCalledWith("C:\\Docs\\manual.pdf");
   });
 
   it("resolves attached image preview sources through the Rust command", async () => {

@@ -62,7 +62,7 @@ describe("ralph-generation-formatting helper", () => {
     };
 
     expect(getProviderOption("openai")).toBe("openai");
-    expect(getProviderOption("not-a-provider")).toBe("default");
+    expect(getProviderOption("not-a-provider" as never)).toBe("default");
     expect(getEffectiveProvider("default", "openai")).toBe("openai");
     expect(getPreferredModelForProvider("openai", snapshot)).toBe("gpt-5.5");
   });
@@ -111,7 +111,7 @@ describe("ralph-generation-formatting helper", () => {
     const session: RalphGenerationInterviewSession = {
       id: "session-1",
       prompt: "Build a flow",
-      scope: "project",
+      scope: "workspace",
       target: "flow",
       turn: 1,
       maxTurns: 5,
@@ -127,6 +127,7 @@ describe("ralph-generation-formatting helper", () => {
             {
               fieldId: "scope",
               label: "Scope",
+              type: "text",
               value: "src",
               comment: "Focus source",
             },

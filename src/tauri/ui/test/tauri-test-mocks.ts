@@ -1,7 +1,43 @@
-import { vi } from "vitest";
+import { type Mock, vi } from "vitest";
 
 export type DesktopEventHandler = (event: { payload: unknown }) => void;
 export type WindowEventHandler<T = unknown> = (event: { payload: T }) => void;
+type WindowListenerCleanup = () => void;
+type WindowEventListenerMock<T> = Mock<
+  (handler: WindowEventHandler<T>) => Promise<WindowListenerCleanup>
+>;
+type WindowActionMock = Mock<(...args: unknown[]) => Promise<void>>;
+type WindowValueMock<T> = Mock<() => Promise<T>>;
+
+interface WindowHandle {
+  label: string;
+  close: WindowActionMock;
+  emit: WindowActionMock;
+  emitTo: WindowActionMock;
+  hide: WindowActionMock;
+  innerSize: WindowValueMock<PhysicalSize>;
+  isMaximized: WindowValueMock<boolean>;
+  isMinimized: WindowValueMock<boolean>;
+  isVisible: WindowValueMock<boolean>;
+  listen: typeof listenMock;
+  maximize: WindowActionMock;
+  minimize: WindowActionMock;
+  onMoved: WindowEventListenerMock<PhysicalPosition>;
+  onDragDropEvent: WindowEventListenerMock<DragDropEvent>;
+  onFocusChanged: WindowEventListenerMock<boolean>;
+  onResized: WindowEventListenerMock<PhysicalSize>;
+  onScaleChanged: WindowEventListenerMock<{
+    scaleFactor: number;
+    size: PhysicalSize;
+  }>;
+  outerPosition: WindowValueMock<PhysicalPosition>;
+  setFocus: WindowActionMock;
+  setPosition: WindowActionMock;
+  setSize: WindowActionMock;
+  show: WindowActionMock;
+  unmaximize: WindowActionMock;
+  unminimize: WindowActionMock;
+}
 
 export type DragDropEvent =
   | { type: "enter"; paths: string[]; position: PhysicalPosition }
@@ -57,6 +93,27 @@ export const listenMock = vi.fn(
   },
 );
 
+const createWindowEventListenerMock = <T>(
+  listeners: Set<WindowEventHandler<T>>,
+): WindowEventListenerMock<T> =>
+  vi.fn(
+    async (
+      handler: WindowEventHandler<T>,
+    ): Promise<WindowListenerCleanup> => {
+      listeners.add(handler);
+
+      return () => {
+        listeners.delete(handler);
+      };
+    },
+  );
+
+const createResolvedWindowActionMock = (): WindowActionMock =>
+  vi.fn().mockResolvedValue(undefined);
+
+const createResolvedWindowValueMock = <T>(value: T): WindowValueMock<T> =>
+  vi.fn().mockResolvedValue(value);
+
 export class PhysicalPosition {
   constructor(
     public x: number,
@@ -71,65 +128,31 @@ export class PhysicalSize {
   ) {}
 }
 
-const createWindowHandle = (label: string) => ({
+const createWindowHandle = (label: string): WindowHandle => ({
   label,
-  close: vi.fn().mockResolvedValue(undefined),
-  emit: vi.fn().mockResolvedValue(undefined),
-  emitTo: vi.fn().mockResolvedValue(undefined),
-  hide: vi.fn().mockResolvedValue(undefined),
-  innerSize: vi.fn().mockResolvedValue(new PhysicalSize(0, 0)),
-  isMaximized: vi.fn().mockResolvedValue(false),
-  isMinimized: vi.fn().mockResolvedValue(false),
-  isVisible: vi.fn().mockResolvedValue(true),
+  close: createResolvedWindowActionMock(),
+  emit: createResolvedWindowActionMock(),
+  emitTo: createResolvedWindowActionMock(),
+  hide: createResolvedWindowActionMock(),
+  innerSize: createResolvedWindowValueMock(new PhysicalSize(0, 0)),
+  isMaximized: createResolvedWindowValueMock(false),
+  isMinimized: createResolvedWindowValueMock(false),
+  isVisible: createResolvedWindowValueMock(true),
   listen: listenMock,
-  maximize: vi.fn().mockResolvedValue(undefined),
-  minimize: vi.fn().mockResolvedValue(undefined),
-  onMoved: vi.fn(async (handler: WindowEventHandler<PhysicalPosition>) => {
-    windowMovedListeners.add(handler);
-
-    return () => {
-      windowMovedListeners.delete(handler);
-    };
-  }),
-  onDragDropEvent: vi.fn(
-    async (handler: WindowEventHandler<DragDropEvent>) => {
-      windowDragDropListeners.add(handler);
-
-      return () => {
-        windowDragDropListeners.delete(handler);
-      };
-    },
-  ),
-  onFocusChanged: vi.fn(async (handler: WindowEventHandler<boolean>) => {
-    windowFocusChangedListeners.add(handler);
-
-    return () => {
-      windowFocusChangedListeners.delete(handler);
-    };
-  }),
-  onResized: vi.fn(async (handler: WindowEventHandler<PhysicalSize>) => {
-    windowResizedListeners.add(handler);
-
-    return () => {
-      windowResizedListeners.delete(handler);
-    };
-  }),
-  onScaleChanged: vi.fn(
-    async (handler: WindowEventHandler<{ scaleFactor: number; size: PhysicalSize }>) => {
-      windowScaleChangedListeners.add(handler);
-
-      return () => {
-        windowScaleChangedListeners.delete(handler);
-      };
-    },
-  ),
-  outerPosition: vi.fn().mockResolvedValue(new PhysicalPosition(0, 0)),
-  setFocus: vi.fn().mockResolvedValue(undefined),
-  setPosition: vi.fn().mockResolvedValue(undefined),
-  setSize: vi.fn().mockResolvedValue(undefined),
-  show: vi.fn().mockResolvedValue(undefined),
-  unmaximize: vi.fn().mockResolvedValue(undefined),
-  unminimize: vi.fn().mockResolvedValue(undefined),
+  maximize: createResolvedWindowActionMock(),
+  minimize: createResolvedWindowActionMock(),
+  onMoved: createWindowEventListenerMock(windowMovedListeners),
+  onDragDropEvent: createWindowEventListenerMock(windowDragDropListeners),
+  onFocusChanged: createWindowEventListenerMock(windowFocusChangedListeners),
+  onResized: createWindowEventListenerMock(windowResizedListeners),
+  onScaleChanged: createWindowEventListenerMock(windowScaleChangedListeners),
+  outerPosition: createResolvedWindowValueMock(new PhysicalPosition(0, 0)),
+  setFocus: createResolvedWindowActionMock(),
+  setPosition: createResolvedWindowActionMock(),
+  setSize: createResolvedWindowActionMock(),
+  show: createResolvedWindowActionMock(),
+  unmaximize: createResolvedWindowActionMock(),
+  unminimize: createResolvedWindowActionMock(),
 });
 
 export const currentWindowMock = createWindowHandle("main");

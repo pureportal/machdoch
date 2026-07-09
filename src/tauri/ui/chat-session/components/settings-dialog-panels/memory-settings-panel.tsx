@@ -16,10 +16,7 @@ export const MemorySettingsPanel = ({
   setup,
 }: MemorySettingsPanelProps): JSX.Element => {
   return (
-    <SettingsCard
-      title="Global memory"
-      description="Global memory changes apply immediately."
-    >
+    <SettingsCard title="Global memory">
       <SettingPanel label="Status">
         <div className="flex flex-wrap items-center gap-2">
           <ChoiceButtons

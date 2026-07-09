@@ -14,8 +14,8 @@ const createProgress = (
   overrides: Partial<TaskExecutionProgress> = {},
 ): TaskExecutionProgress => ({
   task: "Generate Ralph flow",
-  mode: "full",
-  state: "running",
+  mode: "machdoch",
+  state: "executing",
   message: "Fallback progress",
   executedTools: [],
   outputSections: [],
@@ -32,10 +32,9 @@ describe("ralph-generation-activity helper", () => {
     const activity = createGenerationActivityFromProgress(
       createProgress({
         timelineEvent: {
-          id: "event-1",
+          kind: "validator",
           label: "Validated generated flow",
-          description: "Validation completed",
-          phase: "validate",
+          phase: "completed",
           tone: "success",
           detail: "All checks passed",
           provider: "openai",
@@ -83,7 +82,7 @@ describe("ralph-generation-activity helper", () => {
 
   it("creates activity from generation result events", () => {
     const activity = createGenerationActivityFromResultEvent({
-      type: "flow-written",
+      type: "generator-file-written",
       generationRunId: "run-1",
       message: "Flow written",
       createdAt: "2026-06-30T10:00:00.000Z",
@@ -103,8 +102,8 @@ describe("ralph-generation-activity helper", () => {
     } satisfies RalphGenerationEvent);
 
     expect(activity).toMatchObject({
-      id: "2026-06-30T10:00:00.000Z-flow-written-1-Flow written",
-      type: "flow-written",
+      id: "2026-06-30T10:00:00.000Z-generator-file-written-1-Flow written",
+      type: "generator-file-written",
       label: "Flow written",
       timestamp: Date.parse("2026-06-30T10:00:00.000Z"),
       round: 1,

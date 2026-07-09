@@ -13,6 +13,7 @@ import {
   getSessionOverviewStatus,
   type ChatSessionContextAttachment,
   type ChatSessionMessage,
+  type ChatSessionMessagePromptEnhancement,
   type ChatSessionRecord,
 } from "../../chat-session.model";
 import type {
@@ -72,6 +73,19 @@ const TERMINAL_PROGRESS_STATE_BY_STATUS = {
 } satisfies Record<TaskExecutionResult["status"], TaskExecutionProgress["state"]>;
 const TERMINAL_PROGRESS_FALLBACK_DELAY_MS = 1_500;
 
+const normalizeSubmitMessagePromptEnhancement = (
+  promptEnhancement: ChatSessionMessagePromptEnhancement | undefined,
+  visibleMessageContent: string,
+): ChatSessionMessagePromptEnhancement | undefined => {
+  const originalContent = promptEnhancement?.originalContent.trim();
+
+  if (!originalContent || originalContent === visibleMessageContent.trim()) {
+    return undefined;
+  }
+
+  return { originalContent };
+};
+
 const hasUserMessageForTask = (
   messages: readonly ChatSessionMessage[],
   taskId: string,
@@ -106,6 +120,7 @@ export interface SubmitTaskToSessionOptions {
   modeOverride?: RunMode;
   visibleMessageContent?: string;
   promptHistoryContent?: string;
+  promptEnhancement?: ChatSessionMessagePromptEnhancement;
   messageIntent?: TaskActionPromptKind;
 }
 
@@ -206,6 +221,10 @@ export const useSessionTaskSubmission = (options: {
         submitOptions.visibleMessageContent?.trim() || normalizedTask;
       const promptHistoryContent =
         submitOptions.promptHistoryContent?.trim() || normalizedTask;
+      const promptEnhancement = normalizeSubmitMessagePromptEnhancement(
+        submitOptions.promptEnhancement,
+        visibleMessageContent,
+      );
       const imagePaths = getImageAttachmentPaths(contextAttachments);
       const isQuickTaskSessionSnapshot = isQuickVoiceSession(sessionSnapshot);
       const taskId = crypto.randomUUID();
@@ -225,6 +244,7 @@ export const useSessionTaskSubmission = (options: {
         ...(userMessageContextAttachments.length > 0
           ? { contextAttachments: userMessageContextAttachments }
           : {}),
+        ...(promptEnhancement ? { promptEnhancement } : {}),
       };
       const sessionWorkspace = sessionSnapshot.workspace;
       const sessionMode = submitOptions.modeOverride ?? sessionSnapshot.mode;
@@ -534,6 +554,9 @@ export const useSessionTaskSubmission = (options: {
             draftContextAttachments: submitOptions.clearDraft
               ? []
               : sessionWithoutArchive.draftContextAttachments,
+            ...(submitOptions.clearDraft
+              ? { composerUpdatedAt: nextUpdatedAt }
+              : {}),
             sessionMemoryEnabled: isQuickTaskSessionSnapshot
               ? false
               : sessionSnapshot.sessionMemoryEnabled,
@@ -591,6 +614,9 @@ export const useSessionTaskSubmission = (options: {
             draftContextAttachments: submitOptions.clearDraft
               ? []
               : sessionSnapshot.draftContextAttachments,
+            ...(submitOptions.clearDraft
+              ? { composerUpdatedAt: nextUpdatedAt }
+              : {}),
             updatedAt: nextUpdatedAt,
             messages: [
               ...sessionSnapshot.messages,

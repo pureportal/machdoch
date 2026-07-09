@@ -113,42 +113,64 @@ const isReasoningMode = (value: unknown): value is ReasoningMode => {
   return REASONING_MODES.includes(value as ReasoningMode);
 };
 
+const isOneOf = <T extends string>(
+  value: unknown,
+  allowedValues: readonly T[],
+): value is T => {
+  return (
+    typeof value === "string" &&
+    allowedValues.includes(value as T)
+  );
+};
+
+const normalizeOneOf = <T extends string>(
+  value: unknown,
+  allowedValues: readonly T[],
+  fallback: T,
+): T => {
+  return isOneOf(value, allowedValues) ? value : fallback;
+};
+
+const normalizeArrayItems = <T>(
+  value: unknown,
+  normalizeItem: (entry: unknown) => T | undefined,
+): T[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    const normalized = normalizeItem(entry);
+    return normalized === undefined ? [] : [normalized];
+  });
+};
+
 const normalizeWorkspaceRoot = (value: unknown): string | null => {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 };
 
 const normalizeStringHistory = (value: unknown, limit: number): string[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
+  return normalizeArrayItems(value, (entry) => {
+    if (typeof entry !== "string") {
+      return undefined;
+    }
 
-  return value
-    .flatMap((entry) => {
-      if (typeof entry !== "string") {
-        return [];
-      }
-
-      const normalizedEntry = entry.trim();
-
-      return normalizedEntry ? [normalizedEntry] : [];
-    })
-    .slice(-limit);
+    return entry.trim() || undefined;
+  }).slice(-limit);
 };
 
 const normalizeMainAppId = (value: unknown): MainAppId => {
-  if (value === "ralph" || value === "marketplace") {
-    return value;
-  }
-
-  return "chat";
+  return normalizeOneOf(value, ["chat", "ralph", "marketplace"], "chat");
 };
 
 export const normalizeRunningTaskMessageAction = (
   value: unknown,
 ): RunningTaskMessageAction => {
-  return value === "steer" || value === "stop-and-send" || value === "queue"
-    ? value
-    : DEFAULT_RUNNING_TASK_MESSAGE_ACTION;
+  return normalizeOneOf(
+    value,
+    ["steer", "stop-and-send", "queue"],
+    DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
+  );
 };
 
 export const normalizeAppShellState = (value: unknown): AppShellState => {
@@ -208,16 +230,12 @@ export const normalizeMcpMarketplaceState = (
     return DEFAULT_MCP_MARKETPLACE_STATE;
   }
 
-  const registries = Array.isArray(value.registries)
-    ? value.registries.flatMap((entry) => {
-        const normalized = normalizeMarketplaceRegistrySource(entry);
-        return normalized ? [normalized] : [];
-      })
-    : [];
-
   return {
     version: 1,
-    registries,
+    registries: normalizeArrayItems(
+      value.registries,
+      normalizeMarketplaceRegistrySource,
+    ),
   };
 };
 
@@ -237,9 +255,11 @@ const normalizeRalphModel = (
 const normalizeRalphFlowLibraryMode = (
   value: unknown,
 ): RalphFlowLibraryMode => {
-  return value === "user" || value === "all" || value === "workspace"
-    ? value
-    : DEFAULT_RALPH_SETTINGS.flowLibraryMode;
+  return normalizeOneOf(
+    value,
+    ["workspace", "user", "all"],
+    DEFAULT_RALPH_SETTINGS.flowLibraryMode,
+  );
 };
 
 export const normalizeRalphSettings = (value: unknown): RalphSettings => {
@@ -288,34 +308,27 @@ export const normalizeAppearanceSettings = (
     return DEFAULT_APPEARANCE_SETTINGS;
   }
 
-  const theme: AppearanceTheme =
-    value.theme === "light" || value.theme === "dark"
-      ? value.theme
-      : DEFAULT_APPEARANCE_SETTINGS.theme;
-  const density: AppearanceDensity =
-    value.density === "compact" || value.density === "comfortable"
-      ? value.density
-      : DEFAULT_APPEARANCE_SETTINGS.density;
-  const accent: AppearanceAccent =
-    value.accent === "emerald" ||
-    value.accent === "violet" ||
-    value.accent === "amber" ||
-    value.accent === "sky"
-      ? value.accent
-      : DEFAULT_APPEARANCE_SETTINGS.accent;
-  const quickChatBubbleStyle: QuickChatBubbleStyle =
-    value.quickChatBubbleStyle === "glass" ||
-    value.quickChatBubbleStyle === "pulse" ||
-    value.quickChatBubbleStyle === "orbit" ||
-    value.quickChatBubbleStyle === "classic"
-      ? value.quickChatBubbleStyle
-      : DEFAULT_APPEARANCE_SETTINGS.quickChatBubbleStyle;
-
   return {
     version: 1,
-    theme,
-    density,
-    accent,
-    quickChatBubbleStyle,
+    theme: normalizeOneOf(
+      value.theme,
+      ["dark", "light"],
+      DEFAULT_APPEARANCE_SETTINGS.theme,
+    ),
+    density: normalizeOneOf(
+      value.density,
+      ["comfortable", "compact"],
+      DEFAULT_APPEARANCE_SETTINGS.density,
+    ),
+    accent: normalizeOneOf(
+      value.accent,
+      ["sky", "emerald", "violet", "amber"],
+      DEFAULT_APPEARANCE_SETTINGS.accent,
+    ),
+    quickChatBubbleStyle: normalizeOneOf(
+      value.quickChatBubbleStyle,
+      ["classic", "glass", "pulse", "orbit"],
+      DEFAULT_APPEARANCE_SETTINGS.quickChatBubbleStyle,
+    ),
   };
 };

@@ -2,6 +2,7 @@ import {
   Bot,
   Copy,
   Download,
+  History,
   Play,
   RotateCcw,
   Save,
@@ -50,6 +51,12 @@ export interface ConversationFeedProps {
     contextAttachments: ChatSessionContextAttachment[];
     modeLabel: string;
   } | null;
+  promptEnhancementPreview?: {
+    id: string;
+    content: string;
+    originalContent?: string;
+    contextAttachments: ChatSessionContextAttachment[];
+  } | null;
   workspaceRoot?: string | null;
   aiContextMessageLimit?: number;
   bottomRef: RefObject<HTMLDivElement | null>;
@@ -87,6 +94,22 @@ const isRecoveredTaskCrashMessage = (message: ChatSessionMessage): boolean => {
     !message.source &&
     message.content.startsWith(INTERRUPTED_TASK_CRASH_PREFIX)
   );
+};
+
+const getOriginalPromptContent = (
+  visibleContent: string,
+  originalContent: string | undefined,
+): string | null => {
+  const normalizedOriginalContent = originalContent?.trim();
+
+  if (
+    !normalizedOriginalContent ||
+    normalizedOriginalContent === visibleContent.trim()
+  ) {
+    return null;
+  }
+
+  return normalizedOriginalContent;
 };
 
 const clampMenuCoordinate = (
@@ -185,6 +208,7 @@ const saveMarkdownDownload = (content: string, fileName: string): void => {
 export const ConversationFeed = ({
   visibleMessages,
   promptEnhancementPending = null,
+  promptEnhancementPreview = null,
   workspaceRoot,
   aiContextMessageLimit = DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
   bottomRef,
@@ -197,6 +221,23 @@ export const ConversationFeed = ({
 }: ConversationFeedProps): JSX.Element => {
   const [messageContextMenu, setMessageContextMenu] =
     useState<MessageContextMenuState | null>(null);
+  const [expandedOriginalPromptIds, setExpandedOriginalPromptIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+
+  const toggleOriginalPrompt = useCallback((messageId: string): void => {
+    setExpandedOriginalPromptIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!messageContextMenu) {
@@ -304,7 +345,11 @@ export const ConversationFeed = ({
     onSaveMessageAsContextPack?.(activeMenu.contextPackMessage);
   }, [messageContextMenu, onSaveMessageAsContextPack]);
 
-  if (visibleMessages.length === 0 && !promptEnhancementPending) {
+  if (
+    visibleMessages.length === 0 &&
+    !promptEnhancementPending &&
+    !promptEnhancementPreview
+  ) {
     return (
       <div className="app-conversation-empty mx-auto flex min-h-full max-w-2xl flex-col items-center justify-center py-16">
         <div className="flex flex-col items-center gap-6 text-center">
@@ -328,6 +373,18 @@ export const ConversationFeed = ({
     visibleMessages,
     normalizedAiContextMessageLimit,
   );
+  const promptEnhancementPreviewOriginalContent = promptEnhancementPreview
+    ? getOriginalPromptContent(
+        promptEnhancementPreview.content,
+        promptEnhancementPreview.originalContent,
+      )
+    : null;
+  const promptEnhancementPreviewExpanded = promptEnhancementPreview
+    ? expandedOriginalPromptIds.has(promptEnhancementPreview.id)
+    : false;
+  const promptEnhancementPreviewPanelId = promptEnhancementPreview
+    ? `original-prompt-${promptEnhancementPreview.id}`
+    : "";
 
   return (
     <div className="app-conversation-feed mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-6 pb-2 px-4 pt-8 lg:px-6">
@@ -337,6 +394,15 @@ export const ConversationFeed = ({
         }
 
         const renderedContent = getRenderedMessageContent(message);
+        const originalPromptContent =
+          message.role === "user"
+            ? getOriginalPromptContent(
+                renderedContent,
+                message.promptEnhancement?.originalContent,
+              )
+            : null;
+        const originalPromptPanelId = `original-prompt-${message.id}`;
+        const originalPromptExpanded = expandedOriginalPromptIds.has(message.id);
         const thinkingTrace =
           message.source?.kind === "execution"
             ? createExecutionThinkingTrace(message.source.execution)
@@ -417,6 +483,9 @@ export const ConversationFeed = ({
                       message.role === "user"
                         ? "app-user-message-bubble rounded-tr-md bg-slate-800 text-slate-100 shadow-slate-950/20"
                         : "app-agent-message-bubble rounded-tl-sm border border-slate-800 bg-slate-900/80 pr-14 text-slate-300 shadow-slate-950/30",
+                      message.role === "user" &&
+                        originalPromptContent &&
+                        "pr-14",
                     )}
                     onContextMenu={(event) =>
                       openMessageContextMenu(
@@ -466,6 +535,33 @@ export const ConversationFeed = ({
                       </Button>
                     ) : null}
 
+                    {message.role === "user" && originalPromptContent ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={
+                          originalPromptExpanded
+                            ? "Hide original prompt"
+                            : "View original prompt"
+                        }
+                        aria-expanded={originalPromptExpanded}
+                        aria-controls={originalPromptPanelId}
+                        title={
+                          originalPromptExpanded
+                            ? "Hide original prompt"
+                            : "View original prompt"
+                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleOriginalPrompt(message.id);
+                        }}
+                        className="app-message-original-prompt-button absolute top-3 right-3 h-7 w-7 rounded-full border border-emerald-500/25 bg-slate-950/55 text-emerald-100 hover:bg-slate-900 hover:text-white"
+                      >
+                        <History className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : null}
+
                     <MessageMarkdown
                       content={renderedContent}
                       workspaceRoot={workspaceRoot}
@@ -475,6 +571,22 @@ export const ConversationFeed = ({
                           ? "app-user-message-text"
                           : undefined
                       }
+                    />
+                  </div>
+                ) : null}
+
+                {originalPromptContent && originalPromptExpanded ? (
+                  <div
+                    id={originalPromptPanelId}
+                    className="app-original-prompt-panel max-w-[90%] min-w-0 rounded-2xl border border-emerald-500/20 bg-slate-950/80 px-4 py-3 text-sm leading-6 text-slate-300 shadow-lg shadow-slate-950/20 wrap-break-word"
+                  >
+                    <div className="mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-emerald-200/80">
+                      Original prompt
+                    </div>
+                    <MessageMarkdown
+                      content={originalPromptContent}
+                      workspaceRoot={workspaceRoot}
+                      onOpenWorkspaceFile={onOpenWorkspaceFile}
                     />
                   </div>
                 ) : null}
@@ -525,6 +637,88 @@ export const ConversationFeed = ({
           </div>
         );
       })}
+      {promptEnhancementPreview ? (
+        <div
+          key={promptEnhancementPreview.id}
+          className="app-prompt-enhancement-preview-row contents"
+        >
+          <div className="app-message-row flex min-w-0 flex-row-reverse gap-4">
+            <Avatar className="app-message-avatar mt-1 h-10 w-10 shrink-0 border border-emerald-500/20 bg-emerald-500/20">
+              <div className="flex h-full w-full items-center justify-center">
+                <User className="h-5 w-5 text-emerald-100" />
+              </div>
+            </Avatar>
+
+            <div className="app-message-stack flex min-w-0 flex-1 flex-col items-end gap-3">
+              <div
+                className={cn(
+                  "app-message-bubble app-user-message-bubble relative max-w-[90%] min-w-0 overflow-hidden rounded-[1.75rem] rounded-tr-md bg-slate-800 px-5 py-4 text-sm leading-7 text-slate-100 shadow-lg shadow-slate-950/20 wrap-break-word",
+                  promptEnhancementPreviewOriginalContent && "pr-14",
+                )}
+              >
+                {promptEnhancementPreviewOriginalContent ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={
+                      promptEnhancementPreviewExpanded
+                        ? "Hide original prompt"
+                        : "View original prompt"
+                    }
+                    aria-expanded={promptEnhancementPreviewExpanded}
+                    aria-controls={promptEnhancementPreviewPanelId}
+                    title={
+                      promptEnhancementPreviewExpanded
+                        ? "Hide original prompt"
+                        : "View original prompt"
+                    }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleOriginalPrompt(promptEnhancementPreview.id);
+                    }}
+                    className="app-message-original-prompt-button absolute top-3 right-3 h-7 w-7 rounded-full border border-emerald-500/25 bg-slate-950/55 text-emerald-100 hover:bg-slate-900 hover:text-white"
+                  >
+                    <History className="h-3.5 w-3.5" />
+                  </Button>
+                ) : null}
+
+                <MessageMarkdown
+                  content={promptEnhancementPreview.content}
+                  workspaceRoot={workspaceRoot}
+                  onOpenWorkspaceFile={onOpenWorkspaceFile}
+                  className="app-user-message-text"
+                />
+              </div>
+
+              {promptEnhancementPreviewOriginalContent &&
+              promptEnhancementPreviewExpanded ? (
+                <div
+                  id={promptEnhancementPreviewPanelId}
+                  className="app-original-prompt-panel max-w-[90%] min-w-0 rounded-2xl border border-emerald-500/20 bg-slate-950/80 px-4 py-3 text-sm leading-6 text-slate-300 shadow-lg shadow-slate-950/20 wrap-break-word"
+                >
+                  <div className="mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-emerald-200/80">
+                    Original prompt
+                  </div>
+                  <MessageMarkdown
+                    content={promptEnhancementPreviewOriginalContent}
+                    workspaceRoot={workspaceRoot}
+                    onOpenWorkspaceFile={onOpenWorkspaceFile}
+                  />
+                </div>
+              ) : null}
+
+              {promptEnhancementPreview.contextAttachments.length > 0 ? (
+                <MessageAttachmentsList
+                  attachments={promptEnhancementPreview.contextAttachments}
+                  onOpen={onOpenAttachment}
+                  align="end"
+                />
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
       {promptEnhancementPending ? (
         <div
           key={promptEnhancementPending.id}

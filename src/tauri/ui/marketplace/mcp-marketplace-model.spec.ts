@@ -17,6 +17,38 @@ const registry = {
   official: true,
 };
 
+const createMarketplaceResult = (
+  key: string,
+  overrides: Partial<MarketplaceResult> = {},
+): MarketplaceResult => ({
+  key,
+  entry: {
+    server: {
+      name: `io.github/${key}`,
+      title: key,
+      description: `${key} server`,
+      version: "1.0.0",
+    },
+  },
+  registry,
+  recommendation: null,
+  recommended: false,
+  categories: [],
+  title: key,
+  status: "active",
+  installKind: "npm",
+  installScore: 0,
+  authRequired: false,
+  logoUrl: null,
+  metrics: {},
+  packageRegistryTypes: [],
+  repositoryUrl: null,
+  searchText: key,
+  publishedAtMs: 0,
+  updatedAtMs: 0,
+  ...overrides,
+});
+
 describe("parseMarketplaceRegistryResponse", () => {
   it("keeps registry pagination metadata with normalized entries", () => {
     const parsed = parseMarketplaceRegistryResponse(
@@ -333,9 +365,9 @@ describe("sortMarketplaceResults", () => {
 describe("filterMarketplaceResults", () => {
   it("filters by category and keeps all mode unfiltered", () => {
     const results = [
-      { key: "a", categories: ["featured"] },
-      { key: "b", categories: ["developer-tools"] },
-    ] as MarketplaceResult[];
+      createMarketplaceResult("a", { categories: ["featured"] }),
+      createMarketplaceResult("b", { categories: ["developer-tools"] }),
+    ];
 
     expect(filterMarketplaceResults(results, "featured").map((result) => result.key)).toEqual(["a"]);
     expect(filterMarketplaceResults(results, "all")).toHaveLength(2);
@@ -343,21 +375,19 @@ describe("filterMarketplaceResults", () => {
 
   it("filters by loaded text search and install kind", () => {
     const results = [
-      {
-        key: "remote",
+      createMarketplaceResult("remote", {
         categories: [],
         installKind: "remote",
         authRequired: false,
         searchText: "github repository search",
-      },
-      {
-        key: "auth",
+      }),
+      createMarketplaceResult("auth", {
         categories: [],
         installKind: "npm",
         authRequired: true,
         searchText: "private api",
-      },
-    ] as MarketplaceResult[];
+      }),
+    ];
 
     expect(filterMarketplaceResults(results, "all", "github").map((result) => result.key)).toEqual(["remote"]);
     expect(filterMarketplaceResults(results, "all", "", "auth-required").map((result) => result.key)).toEqual(["auth"]);

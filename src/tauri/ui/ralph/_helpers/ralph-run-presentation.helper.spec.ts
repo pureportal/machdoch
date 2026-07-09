@@ -20,7 +20,7 @@ import {
 
 const createActiveRun = (
   status: ActiveRalphRun["status"],
-  id = status,
+  id: string = status,
 ): ActiveRalphRun => ({
   id,
   flowId: "flow-1",
@@ -28,7 +28,7 @@ const createActiveRun = (
   flowName: "Flow",
   startedAt: 1,
   status,
-  mode: "full",
+  mode: "machdoch",
   provider: "openai",
   model: "gpt-4.1",
   variableValues: {},

@@ -155,7 +155,7 @@ describe("useChatSessionShellState", () => {
     expect(setItemSpy).not.toHaveBeenCalled();
   });
 
-  it("keeps live draft edits local instead of persisting every keystroke", async () => {
+  it("keeps live draft edits in canonical shell state and persists them after the debounce", async () => {
     const baseState = createInitialShellState();
     const session = createSession({
       id: "session-draft",
@@ -169,20 +169,24 @@ describe("useChatSessionShellState", () => {
       sessions: [session],
     });
 
-    const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
     const { result } = renderHook(() => useChatSessionShellState());
 
     await flushShellHydration();
 
     act(() => {
-      result.current.setDraftValue("This should stay local.");
+      result.current.setDraftValue("This should stay stable.");
     });
 
-    expect(result.current.activeSession.draft).toBe("This should stay local.");
-    await flushShellPersistence();
+    expect(result.current.activeSession.draft).toBe("This should stay stable.");
+    expect(result.current.shellState.sessions[0]?.draft).toBe(
+      "This should stay stable.",
+    );
 
-    expect(setItemSpy).not.toHaveBeenCalled();
-    expect(loadStoredShellState().sessions[0]?.draft).toBe("");
+    await waitFor(() => {
+      expect(loadStoredShellState().sessions[0]?.draft).toBe(
+        "This should stay stable.",
+      );
+    });
   });
 
   it("keeps a pre-hydration draft on the hydrated active session", async () => {
@@ -717,6 +721,261 @@ describe("useChatSessionShellState", () => {
         ? mergedThinking.source.thinking.entries.map((entry) => entry.detail)
         : [],
     ).toContain("Executing the request.");
+  });
+
+  it("keeps current composer attachments when an external metadata update has a stale composer snapshot", () => {
+    const baseState = createInitialShellState();
+    const attachment = {
+      id: "screen-attachment",
+      path: "C:\\Temp\\screen.png",
+      kind: "image" as const,
+      name: "screen.png",
+      parent: "C:\\Temp",
+    };
+    const currentSession = createSession({
+      id: "composer-attachment-session",
+      manualTitle: "Composer attachment session",
+      draftContextAttachments: [attachment],
+      updatedAt: 200,
+      lastReadAt: 200,
+    });
+    const currentState = {
+      ...baseState,
+      activeSessionId: currentSession.id,
+      sessions: [currentSession],
+    };
+    const externalState = {
+      ...baseState,
+      activeSessionId: currentSession.id,
+      sessions: [
+        {
+          ...currentSession,
+          draftContextAttachments: [],
+          lastReadAt: 300,
+          updatedAt: 300,
+        },
+      ],
+    };
+
+    const mergedState = mergeShellStateFromExternalUpdate(
+      currentState,
+      currentState,
+      externalState,
+      false,
+    );
+    const mergedSession = mergedState.sessions.find(
+      (session) => session.id === currentSession.id,
+    );
+
+    expect(mergedSession?.draftContextAttachments).toEqual([attachment]);
+    expect(mergedSession?.lastReadAt).toBe(300);
+  });
+
+  it("keeps current composer draft text when an external metadata update has a stale composer snapshot", () => {
+    const baseState = createInitialShellState();
+    const currentSession = createSession({
+      id: "composer-draft-session",
+      manualTitle: "Composer draft session",
+      draft: "Do not lose this draft",
+      updatedAt: 200,
+      lastReadAt: 200,
+    });
+    const currentState = {
+      ...baseState,
+      activeSessionId: currentSession.id,
+      sessions: [currentSession],
+    };
+    const externalState = {
+      ...baseState,
+      activeSessionId: currentSession.id,
+      sessions: [
+        {
+          ...currentSession,
+          draft: "",
+          lastReadAt: 300,
+          updatedAt: 300,
+        },
+      ],
+    };
+
+    const mergedState = mergeShellStateFromExternalUpdate(
+      currentState,
+      currentState,
+      externalState,
+      false,
+    );
+    const mergedSession = mergedState.sessions.find(
+      (session) => session.id === currentSession.id,
+    );
+
+    expect(mergedSession?.draft).toBe("Do not lose this draft");
+    expect(mergedSession?.lastReadAt).toBe(300);
+  });
+
+  it("keeps a cleared local composer when an external metadata update carries older attachments", () => {
+    const baseState = createInitialShellState();
+    const attachment = {
+      id: "cleared-screen-attachment",
+      path: "C:\\Temp\\cleared-screen.png",
+      kind: "image" as const,
+      name: "cleared-screen.png",
+      parent: "C:\\Temp",
+    };
+    const baseSession = createSession({
+      id: "composer-clear-session",
+      manualTitle: "Composer clear session",
+      draft: "Use this stale attachment",
+      draftContextAttachments: [attachment],
+      updatedAt: 100,
+      composerUpdatedAt: 100,
+      lastReadAt: 100,
+    });
+    const currentSession = {
+      ...baseSession,
+      draft: "",
+      draftContextAttachments: [],
+      updatedAt: 250,
+      composerUpdatedAt: 250,
+    };
+    const currentState = {
+      ...baseState,
+      activeSessionId: currentSession.id,
+      sessions: [currentSession],
+    };
+    const externalState = {
+      ...baseState,
+      activeSessionId: baseSession.id,
+      sessions: [
+        {
+          ...baseSession,
+          lastReadAt: 400,
+          updatedAt: 400,
+        },
+      ],
+    };
+
+    const mergedState = mergeShellStateFromExternalUpdate(
+      currentState,
+      currentState,
+      externalState,
+      false,
+    );
+    const mergedSession = mergedState.sessions.find(
+      (session) => session.id === currentSession.id,
+    );
+
+    expect(mergedSession?.draft).toBe("");
+    expect(mergedSession?.draftContextAttachments).toEqual([]);
+    expect(mergedSession?.lastReadAt).toBe(400);
+    expect(mergedSession?.composerUpdatedAt).toBe(250);
+  });
+
+  it("accepts a newer external composer edit when its composer timestamp is newer", () => {
+    const baseState = createInitialShellState();
+    const attachment = {
+      id: "new-external-attachment",
+      path: "C:\\Temp\\new-external.png",
+      kind: "image" as const,
+      name: "new-external.png",
+      parent: "C:\\Temp",
+    };
+    const currentSession = createSession({
+      id: "composer-newer-external-session",
+      manualTitle: "Composer newer external",
+      updatedAt: 200,
+      composerUpdatedAt: 100,
+    });
+    const externalSession = {
+      ...currentSession,
+      draft: "Use the newer external composer",
+      draftContextAttachments: [attachment],
+      updatedAt: 300,
+      composerUpdatedAt: 300,
+    };
+    const currentState = {
+      ...baseState,
+      activeSessionId: currentSession.id,
+      sessions: [currentSession],
+    };
+    const externalState = {
+      ...baseState,
+      activeSessionId: externalSession.id,
+      sessions: [externalSession],
+    };
+
+    const mergedState = mergeShellStateFromExternalUpdate(
+      currentState,
+      currentState,
+      externalState,
+      false,
+    );
+    const mergedSession = mergedState.sessions.find(
+      (session) => session.id === currentSession.id,
+    );
+
+    expect(mergedSession?.draft).toBe("Use the newer external composer");
+    expect(mergedSession?.draftContextAttachments).toEqual([attachment]);
+    expect(mergedSession?.composerUpdatedAt).toBe(300);
+  });
+
+  it("accepts external message advances when the local composer timestamp is newer", () => {
+    const baseState = createInitialShellState();
+    const attachment = {
+      id: "newer-local-attachment",
+      path: "C:\\Temp\\local-screen.png",
+      kind: "image" as const,
+      name: "local-screen.png",
+      parent: "C:\\Temp",
+    };
+    const currentSession = createSession({
+      id: "external-message-advance-session",
+      manualTitle: "External message advance",
+      draftContextAttachments: [attachment],
+      updatedAt: 400,
+    });
+    const externalSession = {
+      ...currentSession,
+      draftContextAttachments: [],
+      updatedAt: 300,
+      messages: [
+        {
+          id: "external-submitted-user",
+          taskId: "external-submitted-task",
+          role: "user" as const,
+          content: "Submitted from another async path",
+          createdAt: 300,
+        },
+      ],
+      promptHistory: ["Submitted from another async path"],
+    };
+    const currentState = {
+      ...baseState,
+      activeSessionId: currentSession.id,
+      sessions: [currentSession],
+    };
+    const externalState = {
+      ...baseState,
+      activeSessionId: currentSession.id,
+      sessions: [externalSession],
+    };
+
+    const mergedState = mergeShellStateFromExternalUpdate(
+      currentState,
+      currentState,
+      externalState,
+      false,
+    );
+    const mergedSession = mergedState.sessions.find(
+      (session) => session.id === currentSession.id,
+    );
+
+    expect(mergedSession?.messages.map((message) => message.id)).toEqual([
+      "external-submitted-user",
+    ]);
+    expect(mergedSession?.promptHistory).toEqual([
+      "Submitted from another async path",
+    ]);
+    expect(mergedSession?.draftContextAttachments).toEqual([attachment]);
   });
 
   it("keeps the current active session when an external update touches another running session", () => {

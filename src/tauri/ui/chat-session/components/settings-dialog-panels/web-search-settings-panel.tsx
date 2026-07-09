@@ -30,10 +30,7 @@ export const WebSearchSettingsPanel = ({
   );
 
   return (
-    <SettingsCard
-      title="Web search"
-      description="Provider selection applies immediately; API key edits save automatically after you stop typing."
-    >
+    <SettingsCard title="Web search">
       <SettingsProviderChoice
         label="Active web search provider"
         detail="New tasks use this provider when web search is enabled."

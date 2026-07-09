@@ -102,6 +102,37 @@ describe("useSessionLifecycle", () => {
     expect(state.shellState.sessions).toHaveLength(2);
   });
 
+  it("does not reuse an active new session that has an unsent draft", () => {
+    const baseState = createInitialShellState();
+    const draftSession = createSession({
+      id: "draft-new-session",
+      draft: "Keep this unsent request",
+      updatedAt: 100,
+    });
+    const state = createStaleStateController({
+      ...baseState,
+      activeSessionId: draftSession.id,
+      sessions: [draftSession],
+    });
+    const { result } = renderHook(() =>
+      useSessionLifecycle({
+        state: state.controller,
+        providerChooserState,
+      }),
+    );
+
+    act(() => {
+      result.current.createNewSession();
+    });
+
+    expect(state.shellState.sessions).toHaveLength(2);
+    expect(state.shellState.activeSessionId).not.toBe(draftSession.id);
+    expect(
+      state.shellState.sessions.find((session) => session.id === draftSession.id)
+        ?.draft,
+    ).toBe("Keep this unsent request");
+  });
+
   it("creates new sessions from remembered new-chat settings", () => {
     const baseState = createInitialShellState();
     const existingSession = createSession({
