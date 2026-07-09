@@ -68,7 +68,7 @@ fn is_codex_cli_runtime_model(model_id: &str) -> bool {
         return match suffix_parts.as_slice() {
             [] => true,
             ["preview"] => true,
-            ["mini"] | ["nano"] => true,
+            ["mini" | "nano" | "sol" | "terra" | "luna"] => true,
             ["mini" | "nano", "preview"] => true,
             ["codex", ..] => true,
             _ => false,
@@ -103,11 +103,14 @@ fn create_codex_cli_runtime_model(
     let normalized = model_id.to_ascii_lowercase();
     let is_fast_model = normalized.contains("mini")
         || normalized.contains("nano")
+        || normalized.contains("luna")
         || normalized.contains("codex-spark")
         || normalized.contains("haiku")
         || normalized.contains("flash");
     let is_text_only_preview = normalized.contains("codex-spark");
-    let computer_use = normalized.starts_with("gpt-5.5") || normalized.starts_with("gpt-5.4");
+    let computer_use = normalized.starts_with("gpt-5.6")
+        || normalized.starts_with("gpt-5.5")
+        || normalized.starts_with("gpt-5.4");
     let mut recommended_for = vec!["coding".to_string()];
 
     if !is_text_only_preview {
@@ -118,7 +121,7 @@ fn create_codex_cli_runtime_model(
         recommended_for.push("fast".to_string());
     }
 
-    if normalized.contains("mini") || normalized.contains("nano") {
+    if normalized.contains("mini") || normalized.contains("nano") || normalized.contains("luna") {
         recommended_for.push("cheap".to_string());
     }
 

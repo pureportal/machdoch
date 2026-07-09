@@ -42,6 +42,30 @@ describe("provider model registry", () => {
     );
   });
 
+  it("includes the GPT-5.6 family in OpenAI and Codex CLI fallbacks", () => {
+    for (const provider of ["openai", "codex-cli"] as const) {
+      const models = getProviderModelMetadata(provider).filter((model) =>
+        model.id.startsWith("gpt-5.6-"),
+      );
+
+      expect(models.map((model) => model.id)).toEqual([
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+      ]);
+      expect(
+        models.every(
+          (model) =>
+            model.lifecycle === "preview" &&
+            model.capabilities.imageInput &&
+            model.capabilities.computerUse &&
+            model.capabilities.contextWindowTokens === 1_050_000 &&
+            model.capabilities.maxOutputTokens === 128_000,
+        ),
+      ).toBe(true);
+    }
+  });
+
   it("finds provider model metadata with normalized model ids", () => {
     expect(findProviderModelMetadata("openai", "  GPT-5.5  ")).toMatchObject({
       provider: "openai",

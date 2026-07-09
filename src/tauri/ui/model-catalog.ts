@@ -62,7 +62,7 @@ const MAX_CODEX_CLI_MODELS = Number.MAX_SAFE_INTEGER;
 const MAX_LANGDOCK_MODELS = Number.MAX_SAFE_INTEGER;
 
 const OPENAI_RUNTIME_MODEL_PATTERN =
-  /^gpt-(\d+)(?:\.\d+)?(?:-(?:mini|nano))?(?:-preview)?$/u;
+  /^gpt-(\d+)(?:\.\d+)?(?:-(?:mini|nano|sol|terra|luna))?(?:-preview)?$/u;
 
 const OPENAI_EXCLUDED_MODEL_ID_PARTS = [
   "audio",
@@ -333,7 +333,9 @@ const isModernCodexCliRuntimeModel = (modelId: string): boolean => {
   }
 
   if (suffixParts.length === 1) {
-    return ["mini", "nano", "preview"].includes(suffixParts[0] ?? "");
+    return ["mini", "nano", "preview", "sol", "terra", "luna"].includes(
+      suffixParts[0] ?? "",
+    );
   }
 
   if (

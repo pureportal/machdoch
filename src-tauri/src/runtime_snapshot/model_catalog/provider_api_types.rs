@@ -192,7 +192,9 @@ pub(super) fn create_openai_runtime_model(
 ) -> ProviderRuntimeModel {
     let normalized = model_id.to_ascii_lowercase();
     let voice = false;
-    let computer_use = normalized.starts_with("gpt-5.5") || normalized.starts_with("gpt-5.4");
+    let computer_use = normalized.starts_with("gpt-5.6")
+        || normalized.starts_with("gpt-5.5")
+        || normalized.starts_with("gpt-5.4");
     let latest_text_model = normalized.starts_with("gpt-5");
     let mut recommended_for = Vec::new();
 
@@ -201,7 +203,7 @@ pub(super) fn create_openai_runtime_model(
         recommended_for.push("vision".to_string());
     }
 
-    if normalized.contains("mini") || normalized.contains("nano") {
+    if normalized.contains("mini") || normalized.contains("nano") || normalized.contains("luna") {
         recommended_for.push("fast".to_string());
         recommended_for.push("cheap".to_string());
     }

@@ -256,6 +256,54 @@ export const PROVIDER_CATALOG_METADATA: readonly ProviderCatalogMetadata[] = [
 export const PROVIDER_MODEL_METADATA = [
   {
     provider: "openai",
+    id: "gpt-5.6-sol",
+    label: "GPT-5.6 Sol",
+    lifecycle: "preview",
+    releaseDate: "2026-06-26",
+    recommendedFor: ["coding", "vision", "computer-use"],
+    capabilities: createOpenAiCapabilities({
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [
+      "Limited-preview model; availability depends on the OpenAI API account.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "openai",
+    id: "gpt-5.6-terra",
+    label: "GPT-5.6 Terra",
+    lifecycle: "preview",
+    releaseDate: "2026-06-26",
+    recommendedFor: ["coding", "vision", "computer-use"],
+    capabilities: createOpenAiCapabilities({
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [
+      "Limited-preview model; availability depends on the OpenAI API account.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "openai",
+    id: "gpt-5.6-luna",
+    label: "GPT-5.6 Luna",
+    lifecycle: "preview",
+    releaseDate: "2026-06-26",
+    recommendedFor: ["coding", "fast", "cheap", "vision", "computer-use"],
+    capabilities: createOpenAiCapabilities({
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [
+      "Limited-preview model; availability depends on the OpenAI API account.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "openai",
     id: "gpt-5.5",
     label: "GPT-5.5",
     lifecycle: "stable",
@@ -541,6 +589,57 @@ export const PROVIDER_MODEL_METADATA = [
     }),
     warnings: [
       "Langdock model availability is tied to the API key account; use live model discovery to confirm this key can access the model.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "codex-cli",
+    id: "gpt-5.6-sol",
+    label: "GPT-5.6 Sol",
+    lifecycle: "preview",
+    releaseDate: "2026-06-26",
+    recommendedFor: ["coding", "vision", "computer-use"],
+    capabilities: createCodexCliCapabilities({
+      computerUse: true,
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [
+      "Limited-preview model; Codex CLI availability depends on account access and local authentication.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "codex-cli",
+    id: "gpt-5.6-terra",
+    label: "GPT-5.6 Terra",
+    lifecycle: "preview",
+    releaseDate: "2026-06-26",
+    recommendedFor: ["coding", "vision", "computer-use"],
+    capabilities: createCodexCliCapabilities({
+      computerUse: true,
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [
+      "Limited-preview model; Codex CLI availability depends on account access and local authentication.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "codex-cli",
+    id: "gpt-5.6-luna",
+    label: "GPT-5.6 Luna",
+    lifecycle: "preview",
+    releaseDate: "2026-06-26",
+    recommendedFor: ["coding", "fast", "cheap", "vision", "computer-use"],
+    capabilities: createCodexCliCapabilities({
+      computerUse: true,
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [
+      "Limited-preview model; Codex CLI availability depends on account access and local authentication.",
     ],
     source: "curated-fallback",
   },

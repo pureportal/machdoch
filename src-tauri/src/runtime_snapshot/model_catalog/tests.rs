@@ -20,7 +20,9 @@ mod model_catalog_parser_tests {
         {
             "models": [
                 { "slug": "gpt-5.5", "display_name": "GPT-5.5" },
-                { "slug": "gpt-5.6-preview", "display_name": "GPT-5.6 Preview" },
+                { "slug": "gpt-5.6-sol", "display_name": "GPT-5.6 Sol" },
+                { "slug": "gpt-5.6-terra", "display_name": "GPT-5.6 Terra" },
+                { "slug": "gpt-5.6-luna", "display_name": "GPT-5.6 Luna" },
                 { "slug": "gpt-5.3-codex-spark", "display_name": "GPT-5.3 Codex Spark" },
                 { "slug": "gpt-5.3-codex", "display_name": "GPT-5.3 Codex" },
                 { "slug": "gpt-5.2", "display_name": "GPT-5.2" },
@@ -32,16 +34,28 @@ mod model_catalog_parser_tests {
             ]
         }
         "#;
-        let model_ids = parse_codex_cli_model_catalog(raw)
-            .expect("Codex CLI catalog should include supported model IDs")
-            .into_iter()
-            .map(|model| model.id)
+        let models = parse_codex_cli_model_catalog(raw)
+            .expect("Codex CLI catalog should include supported model IDs");
+        let model_ids = models
+            .iter()
+            .map(|model| model.id.as_str())
             .collect::<Vec<_>>();
 
         assert_eq!(
             model_ids,
-            vec!["gpt-5.3-codex-spark", "gpt-5.5", "gpt-5.6-preview"]
+            vec![
+                "gpt-5.3-codex-spark",
+                "gpt-5.5",
+                "gpt-5.6-luna",
+                "gpt-5.6-sol",
+                "gpt-5.6-terra"
+            ]
         );
+        assert!(models
+            .iter()
+            .filter(|model| model.id.starts_with("gpt-5.6-"))
+            .all(|model| model.capabilities.image_input == Some(true)
+                && model.capabilities.computer_use == Some(true)));
     }
 
     #[test]
@@ -216,6 +230,9 @@ mod model_catalog_parser_tests {
         let openai_payload = serde_json::json!({
             "data": [
                 { "id": "text-embedding-3-large", "created": 0 },
+                { "id": "gpt-5.6-sol", "created": 1782432000 },
+                { "id": "gpt-5.6-terra", "created": 1782432000 },
+                { "id": "gpt-5.6-luna", "created": 1782432000 },
                 { "id": "gpt-5.4-mini", "created": 1767312000 },
                 { "id": "gpt-5.5", "created": 1767225600 }
             ]
@@ -229,7 +246,10 @@ mod model_catalog_parser_tests {
             openai_ids,
             vec![
                 ("gpt-5.4-mini".to_string(), Some("2026-01-02".to_string())),
-                ("gpt-5.5".to_string(), Some("2026-01-01".to_string()))
+                ("gpt-5.5".to_string(), Some("2026-01-01".to_string())),
+                ("gpt-5.6-luna".to_string(), Some("2026-06-26".to_string())),
+                ("gpt-5.6-sol".to_string(), Some("2026-06-26".to_string())),
+                ("gpt-5.6-terra".to_string(), Some("2026-06-26".to_string()))
             ]
         );
 

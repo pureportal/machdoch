@@ -9,6 +9,9 @@ describe("provider model catalog", () => {
     expect(
       getCatalogModelsForProvider("codex-cli").map((model) => model.id),
     ).toEqual([
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
       "gpt-5.5",
       "gpt-5.4",
       "gpt-5.4-mini",
@@ -48,7 +51,9 @@ describe("provider model catalog", () => {
             { id: "gpt-5.5", label: "GPT-5.5" },
             { id: "gpt-5.4", label: "GPT-5.4" },
             { id: "gpt-5.4-mini", label: "GPT-5.4 mini" },
-            { id: "gpt-5.6-preview", label: "GPT-5.6 Preview" },
+            { id: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+            { id: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
+            { id: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
             { id: "gpt-5.3-codex-spark", label: "GPT-5.3 Codex Spark" },
             { id: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
             { id: "gpt-5.2", label: "GPT-5.2" },
@@ -69,7 +74,9 @@ describe("provider model catalog", () => {
         (model) => model.id,
       ),
     ).toEqual([
-      "gpt-5.6-preview",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
       "gpt-5.5",
       "gpt-5.4",
       "gpt-5.4-mini",
@@ -91,7 +98,9 @@ describe("provider model catalog", () => {
             { id: "gpt-5.5-audio-preview" },
             { id: "computer-use-preview" },
             { id: "gpt-4.1" },
-            { id: "gpt-5.6-preview", releaseDate: "2026-06-01" },
+            { id: "gpt-5.6-sol", releaseDate: "2026-06-26" },
+            { id: "gpt-5.6-terra", releaseDate: "2026-06-26" },
+            { id: "gpt-5.6-luna", releaseDate: "2026-06-26" },
             { id: "o4-mini" },
           ],
         },
@@ -100,7 +109,12 @@ describe("provider model catalog", () => {
 
     expect(
       getCatalogModelsForProvider("openai", snapshot).map((model) => model.id),
-    ).toEqual(["gpt-5.6-preview", "gpt-5.4-mini"]);
+    ).toEqual([
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-5.4-mini",
+    ]);
   });
 
   it("keeps current Anthropic runtime models including Claude 5 families", () => {

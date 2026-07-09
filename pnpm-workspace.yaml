@@ -2,4 +2,6 @@ allowBuilds:
   '@google/genai': false
   esbuild: false
   protobufjs: false
+minimumReleaseAgeExclude:
+  - openai@6.46.0
 nodeLinker: hoisted
