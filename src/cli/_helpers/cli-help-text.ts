@@ -11,7 +11,7 @@ Usage:
   machdoch --set-global-memory <on|off>
   machdoch --runtime-provider <openai|anthropic|google|langdock|codex-cli|claude-cli|copilot-cli>
   machdoch --model <name>
-  machdoch --reasoning <default|none|minimal|low|medium|high|xhigh|max>
+  machdoch --reasoning <default|none|minimal|low|medium|high|xhigh|max|ultra>
   machdoch --default-model <name>
   machdoch inspect [--json]
   machdoch config [--json]

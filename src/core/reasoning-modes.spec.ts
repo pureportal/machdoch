@@ -18,6 +18,16 @@ describe("provider model reasoning modes", () => {
   });
 
   it("matches OpenAI reasoning effort support by model family", () => {
+    expect(getReasoningModesForProviderModel("openai", "gpt-5.6-sol")).toEqual([
+      "default",
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+    ]);
     expect(getReasoningModesForProviderModel("openai", "gpt-5.5")).toEqual([
       "default",
       "none",
@@ -69,6 +79,18 @@ describe("provider model reasoning modes", () => {
   });
 
   it("matches CLI provider effort switches", () => {
+    expect(
+      getReasoningModesForProviderModel("codex-cli", "gpt-5.6-terra"),
+    ).toEqual([
+      "default",
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+    ]);
     expect(getReasoningModesForProviderModel("codex-cli", "gpt-5.5")).toEqual([
       "default",
       "low",
@@ -90,6 +112,37 @@ describe("provider model reasoning modes", () => {
   });
 
   it("normalizes stale or unsupported modes to provider-safe values", () => {
+    expect(
+      normalizeReasoningModeForProviderModel(
+        "ultra",
+        "openai",
+        "gpt-5.6-sol",
+      ),
+    ).toBe("ultra");
+    expect(
+      normalizeReasoningModeForProviderModel("ultra", "openai", "gpt-5.5"),
+    ).toBe("xhigh");
+    expect(
+      normalizeReasoningModeForProviderModel(
+        "ultra",
+        "anthropic",
+        "claude-sonnet-5",
+      ),
+    ).toBe("max");
+    expect(
+      normalizeReasoningModeForProviderModel(
+        "ultra",
+        "google",
+        "gemini-3.5-flash",
+      ),
+    ).toBe("high");
+    expect(
+      normalizeReasoningModeForProviderModel(
+        "ultra",
+        "langdock",
+        "gpt-5.6-sol",
+      ),
+    ).toBe("max");
     expect(
       normalizeReasoningModeForProviderModel("max", "openai", "gpt-5.5"),
     ).toBe("xhigh");

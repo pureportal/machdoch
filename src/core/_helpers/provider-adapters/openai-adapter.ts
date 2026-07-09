@@ -1,4 +1,10 @@
 import type OpenAI from "openai";
+import type {
+  BetaResponse,
+  BetaResponseStreamEvent,
+  ResponseCreateParamsNonStreaming as BetaResponseCreateParamsNonStreaming,
+  ResponseCreateParamsStreaming as BetaResponseCreateParamsStreaming,
+} from "openai/resources/beta/responses/responses";
 import type { ResponseStreamEvent } from "openai/resources/responses/responses";
 import type {
   AgentModelAdapter,
@@ -51,7 +57,11 @@ type OpenAIReasoningEffort =
   | "low"
   | "medium"
   | "high"
-  | "xhigh";
+  | "xhigh"
+  | "max";
+
+const OPENAI_MULTI_AGENT_BETA = "responses_multi_agent=v1" as const;
+const OPENAI_ULTRA_MAX_CONCURRENT_SUBAGENTS = 4;
 
 export const createOpenAIReasoningConfig = (
   model: string,
@@ -73,8 +83,38 @@ export const createOpenAIReasoningConfig = (
 
   return {
     reasoning: {
-      effort: normalizedReasoning === "max" ? "xhigh" : normalizedReasoning,
+      effort: normalizedReasoning === "ultra" ? "max" : normalizedReasoning,
     },
+  };
+};
+
+export const createOpenAIMultiAgentConfig = (
+  model: string,
+  reasoning?: ReasoningMode,
+): Pick<
+  BetaResponseCreateParamsNonStreaming,
+  "betas" | "multi_agent"
+> => {
+  if (!reasoning || reasoning === "default") {
+    return {};
+  }
+
+  const normalizedReasoning = normalizeReasoningModeForProviderModel(
+    reasoning,
+    "openai",
+    model,
+  );
+
+  if (normalizedReasoning !== "ultra") {
+    return {};
+  }
+
+  return {
+    multi_agent: {
+      enabled: true,
+      max_concurrent_subagents: OPENAI_ULTRA_MAX_CONCURRENT_SUBAGENTS,
+    },
+    betas: [OPENAI_MULTI_AGENT_BETA],
   };
 };
 
@@ -149,16 +189,70 @@ export const createOpenAIUserInput = (
   ];
 };
 
+type OpenAIResponseOutputItemLike = {
+  agent?: { agent_name?: string | null } | null;
+  phase?: string | null;
+  content?: Array<{
+    type?: string;
+    text?: string;
+  }>;
+  type?: string;
+  name?: string;
+  arguments?: unknown;
+  call_id?: string | null;
+};
+
 type OpenAIResponseLike = {
   id: string;
   usage?: unknown;
-  output?: Array<{
-    type?: string;
-    name?: string;
-    arguments?: unknown;
-    call_id?: string | null;
-  }>;
+  output?: OpenAIResponseOutputItemLike[];
   output_text?: string | undefined;
+};
+
+type OpenAIStreamEvent = ResponseStreamEvent | BetaResponseStreamEvent;
+
+interface OpenAIResponseStreamLike {
+  abort: () => void;
+  on: (
+    eventName: "event",
+    handler: (event: OpenAIStreamEvent) => void,
+  ) => void;
+  finalResponse: () => Promise<OpenAIResponseLike>;
+}
+
+const getOpenAIResponseText = (response: OpenAIResponseLike): string => {
+  const rootMessages = (response.output ?? []).filter(
+    (item) =>
+      item.type === "message" &&
+      (!item.agent?.agent_name || item.agent.agent_name === "/root"),
+  );
+  const finalMessages = rootMessages.filter(
+    (item) => item.phase === "final_answer",
+  );
+  const visibleMessages = finalMessages.length > 0 ? finalMessages : rootMessages;
+  const rootText = visibleMessages
+    .flatMap((item) => item.content ?? [])
+    .filter(
+      (part): part is { type?: string; text: string } =>
+        part.type === "output_text" && typeof part.text === "string",
+    )
+    .map((part) => part.text)
+    .join("")
+    .trim();
+
+  return rootText || response.output_text?.trim() || "";
+};
+
+const isRootOpenAIStreamEvent = (
+  event: ResponseStreamEvent | BetaResponseStreamEvent,
+): boolean => {
+  const agent = (
+    event as ResponseStreamEvent & {
+      agent?: { agent_name?: string | null } | null;
+    }
+  ).agent;
+
+  return !agent?.agent_name || agent.agent_name === "/root";
 };
 
 const createOpenAIFunctionCallOutput = (toolResult: AgentModelToolResult) => {
@@ -211,6 +305,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
           input: createOpenAIUserInput(params),
           tools: createOpenAITools(params.tools),
           ...createOpenAIReasoningConfig(params.model, params.reasoning),
+          ...createOpenAIMultiAgentConfig(params.model, params.reasoning),
           ...createOpenAIStructuredOutputTextConfig(params.structuredOutput),
           ...createOpenAIResponseToolSelection(),
         };
@@ -221,6 +316,13 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
             requestSignal,
             params.onStreamEvent,
           );
+        }
+
+        if (request.multi_agent?.enabled) {
+          return await this.client.beta.responses.create(request, {
+            timeout: TASK_EXECUTION_TIMEOUT_MS,
+            ...(requestSignal ? { signal: requestSignal } : {}),
+          });
         }
 
         return await this.client.responses.create(request, {
@@ -271,6 +373,10 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
             startParams.model,
             startParams.reasoning,
           ),
+          ...createOpenAIMultiAgentConfig(
+            startParams.model,
+            startParams.reasoning,
+          ),
           ...createOpenAIStructuredOutputTextConfig(startParams.structuredOutput),
           ...createOpenAIResponseToolSelection(),
         };
@@ -281,6 +387,13 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
             requestSignal,
             params.onStreamEvent,
           );
+        }
+
+        if (request.multi_agent?.enabled) {
+          return await this.client.beta.responses.create(request, {
+            timeout: TASK_EXECUTION_TIMEOUT_MS,
+            ...(requestSignal ? { signal: requestSignal } : {}),
+          });
         }
 
         return await this.client.responses.create(request, {
@@ -306,16 +419,13 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
       "OpenAI response stream started.",
     );
 
-    const stream = this.client.responses.stream(
-      {
-        ...request,
-        stream: true,
-      },
-      {
-        timeout: TASK_EXECUTION_TIMEOUT_MS,
-        ...(requestSignal ? { signal: requestSignal } : {}),
-      },
-    );
+    const multiAgent = request.multi_agent as
+      | { enabled?: boolean }
+      | null
+      | undefined;
+    const stream = multiAgent?.enabled
+      ? await this.createMultiAgentResponseStream(request, requestSignal)
+      : this.createStandardResponseStream(request, requestSignal);
     const toolNamesByItemId = new Map<string, string>();
     const abortStream = (): void => stream.abort();
     let didEmitFinalUsage = false;
@@ -334,7 +444,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
     requestSignal?.addEventListener("abort", abortStream, { once: true });
 
     try {
-      stream.on("event", (event: ResponseStreamEvent) => {
+      stream.on("event", (event) => {
         const rawEvent = event as unknown as Record<string, unknown>;
 
         switch (event.type) {
@@ -389,6 +499,10 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
             emitProviderStreamError(onStreamEvent, "openai", event);
             return;
           case "response.output_text.delta":
+            if (!isRootOpenAIStreamEvent(event)) {
+              return;
+            }
+
             emitProviderStreamEvent(onStreamEvent, {
               type: "text-delta",
               provider: "openai",
@@ -455,7 +569,10 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
           }
         }
 
-        if (event.type.includes("reasoning")) {
+        if (
+          event.type.includes("reasoning") &&
+          isRootOpenAIStreamEvent(event)
+        ) {
           const delta =
             getProviderEventString(event, "delta") ??
             getProviderEventString(event, "text") ??
@@ -484,6 +601,65 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
     } finally {
       requestSignal?.removeEventListener("abort", abortStream);
     }
+  }
+
+  private createStandardResponseStream(
+    request: Record<string, unknown>,
+    requestSignal: AbortSignal | undefined,
+  ): OpenAIResponseStreamLike {
+    const stream = this.client.responses.stream(request, {
+      timeout: TASK_EXECUTION_TIMEOUT_MS,
+      ...(requestSignal ? { signal: requestSignal } : {}),
+    });
+
+    return {
+      abort: () => stream.abort(),
+      on: (_eventName, handler) => {
+        stream.on("event", handler);
+      },
+      finalResponse: async () => await stream.finalResponse(),
+    };
+  }
+
+  private async createMultiAgentResponseStream(
+    request: Record<string, unknown>,
+    requestSignal: AbortSignal | undefined,
+  ): Promise<OpenAIResponseStreamLike> {
+    const streamingRequest = {
+      ...request,
+      stream: true,
+    } as BetaResponseCreateParamsStreaming;
+    const stream = await this.client.beta.responses.create(streamingRequest, {
+      timeout: TASK_EXECUTION_TIMEOUT_MS,
+      ...(requestSignal ? { signal: requestSignal } : {}),
+    });
+    let eventHandler: ((event: OpenAIStreamEvent) => void) | undefined;
+
+    return {
+      abort: () => stream.controller.abort(),
+      on: (_eventName, handler) => {
+        eventHandler = handler;
+      },
+      finalResponse: async (): Promise<BetaResponse> => {
+        let completedResponse: BetaResponse | undefined;
+
+        for await (const event of stream) {
+          eventHandler?.(event);
+
+          if (event.type === "response.completed") {
+            completedResponse = event.response;
+          }
+        }
+
+        if (!completedResponse) {
+          throw new Error(
+            "The OpenAI multi-agent response stream ended before completion.",
+          );
+        }
+
+        return completedResponse;
+      },
+    };
   }
 
   private normalizeResponse(response: OpenAIResponseLike): AgentModelTurn {
@@ -523,7 +699,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
     }
 
     return {
-      text: response.output_text?.trim() ?? "",
+      text: getOpenAIResponseText(response),
       toolCalls,
     };
   }

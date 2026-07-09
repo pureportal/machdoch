@@ -3077,7 +3077,7 @@ export const saveWorkspaceReasoningMode = async (
 
   if (!isRuntimeReasoningMode(reasoning)) {
     throw new Error(
-      "Expected workspace reasoning to be one of default, none, minimal, low, medium, high, xhigh, or max.",
+      "Expected workspace reasoning to be one of default, none, minimal, low, medium, high, xhigh, max, or ultra.",
     );
   }
 

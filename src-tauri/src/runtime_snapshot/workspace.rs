@@ -193,12 +193,12 @@ pub(super) fn save_workspace_reasoning_mode_value(
     reasoning: &str,
 ) -> Result<PathBuf, String> {
     let normalized_reasoning = normalize_optional_string(Some(reasoning)).ok_or_else(|| {
-        "Expected workspace reasoning to be one of default, none, minimal, low, medium, high, xhigh, or max.".to_string()
+        "Expected workspace reasoning to be one of default, none, minimal, low, medium, high, xhigh, max, or ultra.".to_string()
     })?;
 
     if !is_valid_reasoning_mode(Some(normalized_reasoning.as_str())) {
         return Err(
-            "Expected workspace reasoning to be one of default, none, minimal, low, medium, high, xhigh, or max."
+            "Expected workspace reasoning to be one of default, none, minimal, low, medium, high, xhigh, max, or ultra."
                 .to_string(),
         );
     }

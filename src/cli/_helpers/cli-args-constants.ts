@@ -36,7 +36,7 @@ export const VALID_REASONING_MODES: ReadonlySet<ReasoningMode> = new Set(
   REASONING_MODES,
 );
 export const VALID_REASONING_MODE_DESCRIPTION =
-  "default, none, minimal, low, medium, high, xhigh, or max";
+  "default, none, minimal, low, medium, high, xhigh, max, or ultra";
 export const VALID_BOOLEAN_TOGGLE_VALUES: ReadonlySet<string> = new Set(["on", "off"]);
 export const VALID_MEMORY_OVERRIDE_VALUES: ReadonlySet<string> = new Set([
   "inherit",

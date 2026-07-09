@@ -14,6 +14,7 @@ export const REASONING_LABELS: Record<ReasoningMode, string> = {
   high: "High",
   xhigh: "XHigh",
   max: "Max",
+  ultra: "Ultra",
 };
 
 export const getReasoningModesForProvider = (

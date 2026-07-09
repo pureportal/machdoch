@@ -11,6 +11,18 @@ const ALL_REASONING_MODES = [
   "high",
   "xhigh",
   "max",
+  "ultra",
+] as const satisfies readonly ReasoningMode[];
+
+const OPENAI_GPT_56_REASONING_MODES = [
+  "default",
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
 ] as const satisfies readonly ReasoningMode[];
 
 const OPENAI_GPT_55_REASONING_MODES = [
@@ -107,6 +119,8 @@ const CODEX_CLI_REASONING_MODES = [
   "xhigh",
 ] as const satisfies readonly ReasoningMode[];
 
+const CODEX_CLI_GPT_56_REASONING_MODES = OPENAI_GPT_56_REASONING_MODES;
+
 const COPILOT_CLI_REASONING_MODES = [
   "default",
   "low",
@@ -118,6 +132,9 @@ const COPILOT_CLI_REASONING_MODES = [
 
 const isOpenAiGpt55Model = (model: string): boolean =>
   /^gpt-5\.5(?:-|$)/u.test(model);
+
+const isOpenAiGpt56Model = (model: string): boolean =>
+  /^gpt-5\.6(?:-|$)/u.test(model);
 
 const isOpenAiGpt54Model = (model: string): boolean =>
   /^gpt-5\.4(?:-(?:mini|nano))?(?:-|$)/u.test(model);
@@ -154,6 +171,10 @@ const isGemini3ProModel = (model: string): boolean =>
 const getOpenAiReasoningModes = (
   model: string,
 ): readonly ReasoningMode[] => {
+  if (isOpenAiGpt56Model(model)) {
+    return OPENAI_GPT_56_REASONING_MODES;
+  }
+
   if (isOpenAiGpt55Model(model)) {
     return OPENAI_GPT_55_REASONING_MODES;
   }
@@ -224,7 +245,7 @@ const getLangdockReasoningModes = (
     return getGoogleReasoningModes(model);
   }
 
-  return getOpenAiReasoningModes(model);
+  return getOpenAiReasoningModes(model).filter((mode) => mode !== "ultra");
 };
 
 export const getReasoningModesForProviderModel = (
@@ -248,7 +269,9 @@ export const getReasoningModesForProviderModel = (
     case "langdock":
       return getLangdockReasoningModes(normalizedModel);
     case "codex-cli":
-      return CODEX_CLI_REASONING_MODES;
+      return isOpenAiGpt56Model(normalizedModel)
+        ? CODEX_CLI_GPT_56_REASONING_MODES
+        : CODEX_CLI_REASONING_MODES;
     case "copilot-cli":
       return COPILOT_CLI_REASONING_MODES;
   }
@@ -274,6 +297,13 @@ export const normalizeReasoningModeForProviderModel = (
   }
 
   switch (reasoning) {
+    case "ultra":
+      return pickFirstSupported(supportedModes, [
+        "max",
+        "xhigh",
+        "high",
+        "default",
+      ]);
     case "max":
       return pickFirstSupported(supportedModes, ["xhigh", "high", "default"]);
     case "xhigh":

@@ -65,7 +65,9 @@ export const createAnthropicOutputConfig = (
       effort:
         normalizedReasoning === "none" || normalizedReasoning === "minimal"
           ? "low"
-          : normalizedReasoning,
+          : normalizedReasoning === "ultra"
+            ? "max"
+            : normalizedReasoning,
     },
   };
 };

@@ -194,6 +194,30 @@ describe("SessionComposer", () => {
     expect(
       screen.getByRole("button", { name: "Choose XHigh reasoning" }),
     ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Choose Ultra reasoning" }),
+    ).toBeNull();
+  });
+
+  it("shows Max and Ultra only for GPT-5.6-capable sessions", () => {
+    renderSessionComposer({
+      activeSession: createSession({
+        provider: "openai",
+        model: "gpt-5.6-sol",
+      }),
+      chooserProviders: ["openai", "anthropic"],
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reasoning mode: Provider default" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Choose Max reasoning" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Choose Ultra reasoning" }),
+    ).toBeTruthy();
   });
 
   it("shows the effective workspace-default reasoning mode in the toolbar", () => {

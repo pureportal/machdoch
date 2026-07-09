@@ -44,6 +44,14 @@ describe("provider model registry", () => {
 
   it("includes the GPT-5.6 family in OpenAI and Codex CLI fallbacks", () => {
     for (const provider of ["openai", "codex-cli"] as const) {
+      expect(
+        getProviderModelMetadata(provider).find(
+          (model) => model.id === "gpt-5.6",
+        ),
+      ).toMatchObject({
+        label: "GPT-5.6 (Sol)",
+        lifecycle: "stable",
+      });
       const models = getProviderModelMetadata(provider).filter((model) =>
         model.id.startsWith("gpt-5.6-"),
       );
@@ -56,7 +64,7 @@ describe("provider model registry", () => {
       expect(
         models.every(
           (model) =>
-            model.lifecycle === "preview" &&
+            model.lifecycle === "stable" &&
             model.capabilities.imageInput &&
             model.capabilities.computerUse &&
             model.capabilities.contextWindowTokens === 1_050_000 &&

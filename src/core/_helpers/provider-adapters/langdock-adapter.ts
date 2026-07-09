@@ -41,7 +41,8 @@ type LangdockReasoningEffort =
   | "low"
   | "medium"
   | "high"
-  | "xhigh";
+  | "xhigh"
+  | "max";
 
 type LangdockChatRequest = Omit<
   ChatCompletionCreateParamsNonStreaming,
@@ -99,7 +100,12 @@ export const createLangdockReasoningConfig = (
 
   return {
     reasoning_effort:
-      normalizedReasoning === "max" ? "xhigh" : normalizedReasoning,
+      normalizedReasoning === "ultra"
+        ? "max"
+        : normalizedReasoning === "max" &&
+            !/^gpt-5\.6(?:-|$)/iu.test(model.trim())
+          ? "xhigh"
+          : normalizedReasoning,
   };
 };
 

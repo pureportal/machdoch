@@ -7,6 +7,7 @@ import {
   SignalLow,
   SignalMedium,
   SignalZero,
+  Sparkles,
   Tally5,
   type LucideIcon,
 } from "lucide-react";
@@ -108,6 +109,17 @@ const REASONING_META: Record<
       "border-rose-500/30 bg-rose-500/10 text-rose-100 hover:border-rose-400/40 hover:bg-rose-500/15 hover:text-white",
     selectedClassName: "border-rose-500/30 bg-rose-500/10 text-rose-100",
     iconClassName: "text-rose-200",
+  },
+  ultra: {
+    label: "Ultra",
+    description:
+      "Use maximum GPT-5.6 reasoning with proactive parallel subagents.",
+    icon: Sparkles,
+    triggerClassName:
+      "border-violet-400/35 bg-violet-400/10 text-violet-100 hover:border-violet-300/50 hover:bg-violet-400/15 hover:text-white",
+    selectedClassName:
+      "border-violet-400/35 bg-violet-400/10 text-violet-100",
+    iconClassName: "text-violet-200",
   },
 };
 

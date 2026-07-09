@@ -7,7 +7,7 @@ export const RUNTIME_CONFIG_SCHEMA_VERSION = 1 as const;
 export const RUN_MODES = ["ask", "machdoch"] as const;
 export type RunMode = (typeof RUN_MODES)[number];
 
-export const REASONING_MODES = ["default", "none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export const REASONING_MODES = ["default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] as const;
 export type ReasoningMode = (typeof REASONING_MODES)[number];
 
 export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "mcp", "scheduler", "utilities"] as const;

@@ -91,7 +91,11 @@ const mapReasoningToGeminiThinkingLevel = (
     return isGemini3ProModel(model) ? ThinkingLevel.LOW : ThinkingLevel.MINIMAL;
   }
 
-  if (reasoning === "xhigh" || reasoning === "max") {
+  if (
+    reasoning === "xhigh" ||
+    reasoning === "max" ||
+    reasoning === "ultra"
+  ) {
     return ThinkingLevel.HIGH;
   }
 
@@ -120,6 +124,8 @@ const mapReasoningToGeminiThinkingBudget = (
     case "xhigh":
       return 16_384;
     case "max":
+      return 24_576;
+    case "ultra":
       return 24_576;
   }
 };

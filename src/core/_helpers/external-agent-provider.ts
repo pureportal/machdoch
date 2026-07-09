@@ -50,11 +50,14 @@ const WINDOWS_TASKKILL_SUCCESS_LINE_PATTERN =
   /^[ \t]*SUCCESS: The process with PID \d+(?: \(child process of PID \d+\))? has been terminated\.[ \t]*(?:\r?\n|$)/gmu;
 
 type CodexCliReasoningEffort =
+  | "none"
   | "minimal"
   | "low"
   | "medium"
   | "high"
-  | "xhigh";
+  | "xhigh"
+  | "max"
+  | "ultra";
 
 type ClaudeCliReasoningEffort =
   | "low"
@@ -84,15 +87,17 @@ const mapReasoningToCodexCliEffort = (
     return undefined;
   }
 
-  if (normalizedReasoning === "none") {
-    return "minimal";
+  switch (normalizedReasoning) {
+    case "none":
+    case "minimal":
+    case "low":
+    case "medium":
+    case "high":
+    case "xhigh":
+    case "max":
+    case "ultra":
+      return normalizedReasoning;
   }
-
-  if (normalizedReasoning === "max") {
-    return "xhigh";
-  }
-
-  return normalizedReasoning;
 };
 
 const mapReasoningToClaudeCliEffort = (
@@ -112,6 +117,8 @@ const mapReasoningToClaudeCliEffort = (
     case "xhigh":
     case "max":
       return normalizedReasoning;
+    case "ultra":
+      return "max";
     case "default":
     case "none":
     case "minimal":
@@ -136,6 +143,8 @@ const mapReasoningToCopilotCliEffort = (
     case "xhigh":
     case "max":
       return normalizedReasoning;
+    case "ultra":
+      return "max";
     case "default":
     case "none":
     case "minimal":

@@ -46,7 +46,7 @@ const JOB_ID_COMMANDS: &[&str] = &[
 const RUN_ID_COMMANDS: &[&str] = &["scheduler-retry-run", "scheduler-cancel-run"];
 
 const SUPPORTED_REASONING_MODES: &[&str] = &[
-    "default", "none", "minimal", "low", "medium", "high", "xhigh", "max",
+    "default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
 ];
 
 const SUPPORTED_COMMAND_GROUPS: &[&[&str]] = &[
