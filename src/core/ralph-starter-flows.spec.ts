@@ -2520,6 +2520,54 @@ describe("Ralph starter flows", () => {
     }
   });
 
+  it("keeps the UI starter inspection-first, benchmark-aware, and ambitious about coherent scope", () => {
+    const starterFlow = getRalphStarterFlow("autonomous-ui-improvement-loop");
+    const flow = starterFlow?.flow;
+    const proposal = flow?.blocks.find(
+      (block) => block.id === "propose-ui-improvements",
+    );
+    const research = flow?.blocks.find((block) => block.id === "ui-research");
+    const selection = flow?.blocks.find(
+      (block) => block.id === "choose-ui-improvement",
+    );
+    const implementation = flow?.blocks.find(
+      (block) => block.id === "implement-ui-improvement",
+    );
+    const review = flow?.blocks.find(
+      (block) => block.id === "independent-ui-review",
+    );
+    const validator = flow?.blocks.find(
+      (block) => block.id === "validate-ui-improvement",
+    );
+
+    expect(starterFlow?.version).toBeGreaterThanOrEqual(9);
+    expect(proposal).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "PROMPT_JSON",
+        prompt: expect.stringContaining("without editing files"),
+      },
+    });
+    expect(JSON.stringify(proposal)).toContain("sibling views");
+    expect(JSON.stringify(research)).toContain("GitHub Primer");
+    expect(JSON.stringify(research)).toContain("npm registry");
+    expect(JSON.stringify(selection)).toContain("view-level refactor");
+    expect(JSON.stringify(selection)).toContain("rather than by line count");
+    expect(implementation).toMatchObject({
+      type: "PROMPT",
+      prompt: expect.stringContaining("full view/component refactor"),
+    });
+    expect(JSON.stringify(implementation)).toContain(
+      "Do not declare success after a small diff",
+    );
+    expect(JSON.stringify(review)).toContain(
+      "Do not reward a small clean diff",
+    );
+    expect(JSON.stringify(validator)).toContain(
+      "never evidence of completion by themselves",
+    );
+  });
+
   it("keeps strict candidate schemas aligned with the planning prompts", () => {
     const expectations = [
       {
