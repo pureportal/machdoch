@@ -146,4 +146,28 @@ describe("withCooperativeFileLock", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it("recovers a stale owner from the legacy flat layout", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "machdoch-file-lock-legacy-"));
+    const destination = join(directory, "config.json");
+    const lockPath = `${destination}.machdoch.lock`;
+    const ownerPath = join(lockPath, "owner.json");
+
+    try {
+      await mkdir(lockPath);
+      await writeFile(
+        ownerPath,
+        JSON.stringify({ token: "legacy-dead-owner", pid: 2_000_000_000 }),
+        "utf8",
+      );
+      const staleTime = new Date(Date.now() - 180_000);
+      await utimes(ownerPath, staleTime, staleTime);
+
+      await withCooperativeFileLock(destination, async () => undefined);
+
+      await expect(stat(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

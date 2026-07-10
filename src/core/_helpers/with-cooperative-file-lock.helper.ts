@@ -74,7 +74,11 @@ const loadObservedOwner = async (
     }
   }
 
-  return null;
+  // Versions before the token-directory protocol wrote owner.json directly
+  // inside the canonical lock directory. Keep recognizing that layout so an
+  // abandoned lock from an older binary cannot block startup forever.
+  const legacyOwner = await loadOwnerRecord(lockPath);
+  return legacyOwner ? { ...legacyOwner, ownerPath: lockPath } : null;
 };
 
 const isProcessAlive = (pid: number): boolean => {
