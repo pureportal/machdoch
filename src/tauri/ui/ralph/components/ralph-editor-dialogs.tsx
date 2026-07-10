@@ -50,6 +50,7 @@ interface RalphStarterFlowDialogProps {
   open: boolean;
   workspaceRoot: string | null;
   loading: boolean;
+  errorMessage: string | null;
   starterImportScope: RalphFlowScope;
   starterImportScopeLabel: string;
   onOpenChange: Dispatch<SetStateAction<boolean>>;
@@ -64,6 +65,7 @@ export const RalphStarterFlowDialog = ({
   open,
   workspaceRoot,
   loading,
+  errorMessage,
   starterImportScope,
   starterImportScopeLabel,
   onOpenChange,
@@ -195,8 +197,15 @@ export const RalphStarterFlowDialog = ({
         </ScrollArea>
 
         <DialogFooter className="items-center justify-between border-t border-slate-800 bg-slate-950 px-5 py-3 sm:flex-row">
-          <div className="text-xs text-slate-500">
-            Starter flows stay bundled; imported flows are saved as editable copies.
+          <div className="grid gap-1 text-xs">
+            <span className="text-slate-500">
+              Starter flows stay bundled; imported flows are saved as editable copies.
+            </span>
+            {errorMessage ? (
+              <span role="alert" className="text-red-300">
+                {errorMessage}
+              </span>
+            ) : null}
           </div>
           <Button
             type="button"

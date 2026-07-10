@@ -584,6 +584,9 @@ export const RalphFlowEditor = ({
     getDefaultCreationScope(flowLibraryMode),
   );
   const [starterFlowDialogOpen, setStarterFlowDialogOpen] = useState(false);
+  const [starterImportError, setStarterImportError] = useState<string | null>(
+    null,
+  );
   const [starterImportScope, setStarterImportScope] = useState<RalphFlowScope>(
     () => getDefaultCreationScope(flowLibraryMode),
   );
@@ -3968,6 +3971,7 @@ export const RalphFlowEditor = ({
 
   const openStarterFlowDialog = (): void => {
     setStarterImportScope(defaultFlowActionScope);
+    setStarterImportError(null);
     setStarterFlowDialogOpen(true);
   };
 
@@ -3981,19 +3985,25 @@ export const RalphFlowEditor = ({
     }
 
     if (!(await saveDirtyDraftBeforeReplacement("importing a starter flow"))) {
+      setStarterImportError(
+        "Could not save the current flow before importing the starter flow.",
+      );
       return;
     }
 
     const starterFlow = getStarterFlowById(starterFlowSummary.id);
 
     if (!starterFlow) {
-      setMessage(`Starter flow \`${starterFlowSummary.name}\` is not available.`);
+      const errorMessage = `Starter flow \`${starterFlowSummary.name}\` is not available.`;
+      setMessage(errorMessage);
+      setStarterImportError(errorMessage);
       return;
     }
 
     const targetScopeLabel = RALPH_FLOW_SCOPE_LABELS[targetScope].toLowerCase();
     const operationId = beginBlockingOperation();
     setMessage(null);
+    setStarterImportError(null);
 
     try {
       const existingFlows = await listRalphFlows(workspaceRoot, targetScope);
@@ -4039,12 +4049,15 @@ export const RalphFlowEditor = ({
         ),
       );
       setStarterFlowDialogOpen(false);
+      setStarterImportError(null);
       onFlowLibraryModeChange?.(targetScope);
       setMessage(
         `Imported starter flow \`${result.flow.name}\` to ${targetScopeLabel}.`,
       );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setMessage(errorMessage);
+      setStarterImportError(errorMessage);
     } finally {
       finishBlockingOperation(operationId);
     }
@@ -11809,6 +11822,7 @@ export const RalphFlowEditor = ({
             open={starterFlowDialogOpen}
             workspaceRoot={workspaceRoot}
             loading={loading}
+            errorMessage={starterImportError}
             starterImportScope={starterImportScope}
             starterImportScopeLabel={starterImportScopeLabel}
             onOpenChange={setStarterFlowDialogOpen}

@@ -540,6 +540,33 @@ describe("RalphFlowEditor", () => {
     expect(onFlowLibraryModeChange).toHaveBeenCalledWith("workspace");
   });
 
+  it("shows starter import failures in the import dialog", async () => {
+    vi.mocked(saveRalphFlow).mockRejectedValueOnce(
+      new Error("The Ralph CLI could not start."),
+    );
+
+    renderRalphFlowEditor("Review {{scope:path=ALL}}");
+
+    const starterButtons = await screen.findAllByRole("button", {
+      name: "Open starter Ralph flows",
+    });
+    fireEvent.click(starterButtons[0] as HTMLElement);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Starter Ralph flows",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Add starter flow Feature Implementation Checklist Loop to Workspace",
+      }),
+    );
+
+    expect(await screen.findByText("The Ralph CLI could not start.")).toBeTruthy();
+    expect(
+      screen.getByRole("dialog", { name: "Starter Ralph flows" }),
+    ).toBeTruthy();
+  });
+
   it("imports starter Ralph flows into the selected global target", async () => {
     const onFlowLibraryModeChange = vi.fn();
 

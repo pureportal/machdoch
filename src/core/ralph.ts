@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
 import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
+import * as addFormatsModule from "ajv-formats";
 import type { FormatsPlugin } from "ajv-formats";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -211,7 +211,11 @@ import type {
   RuntimeConfig,
 } from "./runtime-contract.generated.js";
 
-const addFormats = createRequire(import.meta.url)("ajv-formats") as FormatsPlugin;
+const addFormats = (
+  typeof addFormatsModule.default === "function"
+    ? addFormatsModule.default
+    : addFormatsModule
+) as unknown as FormatsPlugin;
 
 export { discoverRalphFlowVariables } from "./_helpers/ralph-placeholders.helper.js";
 export { createRalphFlowFingerprint } from "./_helpers/create-ralph-flow-fingerprint.helper.js";
