@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   transcribeUserSpeechAudio,
   type UserSpeechToTextProvider,
@@ -23,9 +23,11 @@ export interface SpeechTranscriptionController {
 
 export const useSpeechTranscription = (): SpeechTranscriptionController => {
   const [transcribing, setTranscribing] = useState(false);
+  const activeTranscriptionCountRef = useRef(0);
 
   const transcribeRecording = useCallback(
     async (options: SpeechTranscriptionOptions): Promise<string> => {
+      activeTranscriptionCountRef.current += 1;
       setTranscribing(true);
 
       try {
@@ -49,7 +51,13 @@ export const useSpeechTranscription = (): SpeechTranscriptionController => {
 
         return transcriptText;
       } finally {
-        setTranscribing(false);
+        activeTranscriptionCountRef.current = Math.max(
+          0,
+          activeTranscriptionCountRef.current - 1,
+        );
+        if (activeTranscriptionCountRef.current === 0) {
+          setTranscribing(false);
+        }
       }
     },
     [],

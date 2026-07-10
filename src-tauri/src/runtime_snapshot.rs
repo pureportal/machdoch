@@ -27,9 +27,9 @@ pub(crate) use desktop_settings_commands::{
     load_user_desktop_settings,
 };
 pub(crate) use env::load_global_env;
+pub use mcp_config::McpConfigWriteLock;
 use mcp_config::{
     get_user_mcp_config_path, get_workspace_mcp_config_path, load_mcp_config_document,
-    save_mcp_config_document,
 };
 use model_catalog::{create_provider_model_http_client, fetch_provider_model_catalog};
 use settings::create_timestamp_millis;
@@ -172,8 +172,22 @@ pub async fn get_user_mcp_config_document() -> Result<McpConfigDocument, String>
 }
 
 #[tauri::command]
-pub async fn save_user_mcp_config_document(raw: String) -> Result<McpConfigDocument, String> {
-    save_mcp_config_document("user", get_user_mcp_config_path()?, &raw)
+pub async fn save_user_mcp_config_document(
+    state: tauri::State<'_, McpConfigWriteLock>,
+    raw: String,
+    expected_raw: Option<String>,
+) -> Result<McpConfigDocument, String> {
+    let _guard = state
+        .0
+        .lock()
+        .map_err(|_| "The MCP configuration write lock is unavailable.".to_string())?;
+
+    mcp_config::save_mcp_config_document_if_unchanged(
+        "user",
+        get_user_mcp_config_path()?,
+        &raw,
+        expected_raw.as_deref(),
+    )
 }
 
 #[tauri::command]
@@ -185,13 +199,21 @@ pub async fn get_workspace_mcp_config_document(
 
 #[tauri::command]
 pub async fn save_workspace_mcp_config_document(
+    state: tauri::State<'_, McpConfigWriteLock>,
     workspace_root: String,
     raw: String,
+    expected_raw: Option<String>,
 ) -> Result<McpConfigDocument, String> {
-    save_mcp_config_document(
+    let _guard = state
+        .0
+        .lock()
+        .map_err(|_| "The MCP configuration write lock is unavailable.".to_string())?;
+
+    mcp_config::save_mcp_config_document_if_unchanged(
         "workspace",
         get_workspace_mcp_config_path(&workspace_root)?,
         &raw,
+        expected_raw.as_deref(),
     )
 }
 

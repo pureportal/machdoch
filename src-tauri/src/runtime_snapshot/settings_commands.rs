@@ -10,10 +10,10 @@ use super::{
         normalize_user_review_model_settings_input,
     },
     settings_types::{
-        UserAgentLimitsSettings, UserConfigFile, UserMemorySettings, UserReviewModelSettings,
+        UserAgentLimitsSettings, UserMemorySettings, UserReviewModelSettings,
         UserSpeechToTextSettings, UserVoiceSettings, UserWebSearchSettings,
     },
-    user_config::{load_user_config_file, write_user_config_file},
+    user_config::{load_user_config_file, update_user_config_file},
 };
 use crate::runtime_contract_generated::{
     AGENT_CLI_PROVIDERS, AGENT_CLI_PROVIDER_ENV_KEYS, PROVIDER_ENV_KEYS, USER_API_PROVIDERS,
@@ -43,13 +43,6 @@ fn is_user_audio_ai_provider(value: &str) -> bool {
 
 fn is_valid_web_search_provider(value: &str) -> bool {
     VALID_WEB_SEARCH_PROVIDERS.contains(&value)
-}
-
-fn update_user_config(update: impl FnOnce(&mut UserConfigFile)) -> Result<PathBuf, String> {
-    let (mut config, config_path) = load_user_config_file()?;
-    update(&mut config);
-    write_user_config_file(&config, &config_path)?;
-    Ok(config_path)
 }
 
 pub(super) fn load_user_api_keys() -> Result<HashMap<String, String>, String> {
@@ -173,7 +166,7 @@ pub(super) fn save_user_api_key(provider: &str, api_key: &str) -> Result<PathBuf
         ));
     }
 
-    update_user_config(|config| {
+    update_user_config_file(|config| {
         config
             .api_keys
             .insert(normalized_provider, normalized_api_key);
@@ -248,7 +241,7 @@ pub(super) fn save_user_web_search_api_key_value(
         return Err("Expected provider to be one of perplexity, tavily, or serper.".to_string());
     }
 
-    update_user_config(|config| {
+    update_user_config_file(|config| {
         config
             .web_search
             .api_keys
@@ -269,7 +262,7 @@ pub(super) fn save_user_web_search_active_provider_value(
         );
     }
 
-    update_user_config(|config| {
+    update_user_config_file(|config| {
         config.web_search.active_provider = Some(normalized_provider.clone());
     })
 }
@@ -282,7 +275,7 @@ pub(super) fn save_user_voice_active_provider_value(provider: &str) -> Result<Pa
         return Err("Expected provider to be one of none, openai, or google.".to_string());
     }
 
-    update_user_config(|config| {
+    update_user_config_file(|config| {
         config.voice.active_provider = Some(normalized_provider.clone());
     })
 }
@@ -297,7 +290,7 @@ pub(super) fn save_user_speech_to_text_active_provider_value(
         return Err("Expected provider to be one of none, openai, or google.".to_string());
     }
 
-    update_user_config(|config| {
+    update_user_config_file(|config| {
         config.speech_to_text.active_provider = Some(normalized_provider.clone());
     })
 }
@@ -305,13 +298,13 @@ pub(super) fn save_user_speech_to_text_active_provider_value(
 pub(super) fn save_user_speech_to_text_input_device_value(
     input_device_id: Option<&str>,
 ) -> Result<PathBuf, String> {
-    update_user_config(|config| {
+    update_user_config_file(|config| {
         config.speech_to_text.input_device_id = normalize_optional_string(input_device_id);
     })
 }
 
 pub(super) fn save_user_global_memory_enabled_value(enabled: bool) -> Result<PathBuf, String> {
-    update_user_config(|config| {
+    update_user_config_file(|config| {
         config.memory.global_enabled = Some(enabled);
         config.memory.entries = normalize_user_memory_entries(&config.memory.entries, "global");
     })
@@ -328,7 +321,7 @@ pub(super) fn save_user_agent_limits_settings_value(
 ) -> Result<PathBuf, String> {
     let normalized_settings = normalize_user_agent_limits_settings_input(settings);
 
-    update_user_config(|config| {
+    update_user_config_file(|config| {
         config.agent_limits.infinite = Some(normalized_settings.infinite);
         config.agent_limits.executor_turns = Some(normalized_settings.executor_turns);
         config.agent_limits.autopilot_executor_iterations =
@@ -341,7 +334,7 @@ pub(super) fn save_user_review_model_settings_value(
 ) -> Result<PathBuf, String> {
     let normalized_settings = normalize_user_review_model_settings_input(settings);
 
-    update_user_config(|config| {
+    update_user_config_file(|config| {
         config.review_model.mode = Some(normalized_settings.mode.clone());
         config.review_model.provider = normalized_settings.provider.clone();
         config.review_model.model = normalized_settings.model.clone();

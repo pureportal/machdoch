@@ -91,7 +91,7 @@ import {
 import {
   DEFAULT_MCP_MARKETPLACE_STATE,
   loadMcpMarketplaceState,
-  saveMcpMarketplaceState,
+  updateMcpMarketplaceStateAtomically,
   type McpMarketplaceState,
   type McpMarketplaceRegistrySourceState,
 } from "../lib/shell-store";
@@ -123,6 +123,12 @@ const MARKETPLACE_RESULT_LIST_OVERSCAN = 6;
 const MARKETPLACE_BACKGROUND_ENRICHMENT_BATCH_SIZE = 8;
 const MARKETPLACE_SEARCH_DEBOUNCE_MS = 450;
 const MARKETPLACE_CATALOG_DELTA_OVERLAP_MS = 60_000;
+const MCP_CONFIG_CONFLICT_PREFIX = "MACHDOCH_MCP_CONFIG_CONFLICT:";
+const MAX_MCP_CONFIG_MUTATION_ATTEMPTS = 4;
+
+const isMcpConfigConflict = (error: unknown): boolean => {
+  return getErrorText(error).includes(MCP_CONFIG_CONFLICT_PREFIX);
+};
 
 const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat(undefined, {
   compactDisplay: "short",
@@ -495,6 +501,10 @@ export const McpMarketplace = ({
   const [marketplaceState, setMarketplaceState] = useState<McpMarketplaceState>(
     DEFAULT_MCP_MARKETPLACE_STATE,
   );
+  const marketplaceStateRef = useRef(marketplaceState);
+  const marketplaceStateRevisionRef = useRef(0);
+  const marketplaceStateSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const [marketplaceStateLoaded, setMarketplaceStateLoaded] = useState(false);
   const [results, setResults] = useState<MarketplaceResult[]>([]);
   const [registryPages, setRegistryPages] = useState<
     Record<string, MarketplaceRegistryPage>
@@ -509,6 +519,10 @@ export const McpMarketplace = ({
   const [installing, setInstalling] = useState(false);
   const [installedDocument, setInstalledDocument] =
     useState<McpConfigDocument | null>(null);
+  const installedDocumentRequestIdRef = useRef(0);
+  const installedConfigMutationQueueRef = useRef<Promise<void>>(
+    Promise.resolve(),
+  );
   const [registryTitleDraft, setRegistryTitleDraft] = useState("");
   const [registryUrlDraft, setRegistryUrlDraft] = useState("");
   const [registryTesting, setRegistryTesting] = useState(false);
@@ -516,6 +530,8 @@ export const McpMarketplace = ({
     Record<string, MarketplaceEnrichmentSnapshot>
   >({});
   const [enrichingMetrics, setEnrichingMetrics] = useState(false);
+  const enrichingMetricsRef = useRef(false);
+  const enrichmentCacheRef = useRef(enrichmentCache);
   const [searchPending, setSearchPending] = useState(false);
   const [catalogCacheStatus, setCatalogCacheStatus] = useState<string | null>(
     null,
@@ -532,6 +548,9 @@ export const McpMarketplace = ({
     scrollTop: 0,
     viewportHeight: 480,
   });
+  const selectionResetSignatureRef = useRef<string | null>(null);
+  marketplaceStateRef.current = marketplaceState;
+  enrichmentCacheRef.current = enrichmentCache;
 
   const registries = useMemo<McpMarketplaceRegistrySource[]>(() => {
     return [
@@ -554,9 +573,12 @@ export const McpMarketplace = ({
   }, [enrichmentCache, results]);
 
   const visibleResults = useMemo(() => {
-    return sortMarketplaceResults(
+    const enrichedByKey = new Map(
+      enrichedResults.map((result) => [result.key, result]),
+    );
+    const stableOrder = sortMarketplaceResults(
       filterMarketplaceResults(
-        enrichedResults,
+        results,
         selectedCategory,
         appliedQuery,
         installKindFilter,
@@ -564,10 +586,15 @@ export const McpMarketplace = ({
       sortMode,
       appliedQuery,
     );
+
+    return stableOrder.map(
+      (result) => enrichedByKey.get(result.key) ?? result,
+    );
   }, [
     appliedQuery,
     enrichedResults,
     installKindFilter,
+    results,
     selectedCategory,
     sortMode,
   ]);
@@ -634,12 +661,27 @@ export const McpMarketplace = ({
 
   useEffect(() => {
     let cancelled = false;
+    const stateRevision = marketplaceStateRevisionRef.current;
 
-    void loadMcpMarketplaceState().then((state) => {
-      if (!cancelled) {
-        setMarketplaceState(state);
-      }
-    });
+    void loadMcpMarketplaceState()
+      .then((state) => {
+        if (
+          !cancelled &&
+          marketplaceStateRevisionRef.current === stateRevision
+        ) {
+          marketplaceStateRef.current = state;
+          setMarketplaceState(state);
+          setMarketplaceStateLoaded(true);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setMessage({
+            tone: "error",
+            text: `Marketplace registries could not be loaded: ${getErrorText(error)}`,
+          });
+        }
+      });
 
     return () => {
       cancelled = true;
@@ -659,15 +701,82 @@ export const McpMarketplace = ({
   }, [registryPages]);
 
   const loadInstalledDocument = useCallback(async (): Promise<void> => {
+    const requestId = installedDocumentRequestIdRef.current + 1;
+    installedDocumentRequestIdRef.current = requestId;
+
     try {
-      setInstalledDocument(await loadMcpConfigDocument("user"));
+      const document = await loadMcpConfigDocument("user");
+
+      if (installedDocumentRequestIdRef.current === requestId) {
+        setInstalledDocument(document);
+      }
     } catch (error) {
+      if (installedDocumentRequestIdRef.current !== requestId) {
+        return;
+      }
+
       setMessage({
         tone: "error",
         text: `Global MCP config could not be loaded: ${getErrorText(error)}`,
       });
     }
   }, []);
+
+  const mutateInstalledDocument = useCallback(
+    (
+      updateRaw: (currentRaw: string) => string,
+    ): Promise<McpConfigDocument> => {
+      const operation = installedConfigMutationQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          installedDocumentRequestIdRef.current += 1;
+
+          let savedDocument: McpConfigDocument | null = null;
+
+          for (
+            let attempt = 0;
+            attempt < MAX_MCP_CONFIG_MUTATION_ATTEMPTS;
+            attempt += 1
+          ) {
+            const document = await loadMcpConfigDocument("user");
+
+            try {
+              savedDocument = await saveMcpConfigDocument(
+                "user",
+                updateRaw(document.raw),
+                undefined,
+                document.raw,
+              );
+              break;
+            } catch (error) {
+              if (
+                !isMcpConfigConflict(error) ||
+                attempt === MAX_MCP_CONFIG_MUTATION_ATTEMPTS - 1
+              ) {
+                throw error;
+              }
+            }
+          }
+
+          if (!savedDocument) {
+            throw new Error(
+              "MCP configuration kept changing while the marketplace update was applied.",
+            );
+          }
+
+          installedDocumentRequestIdRef.current += 1;
+          setInstalledDocument(savedDocument);
+          return savedDocument;
+        });
+
+      installedConfigMutationQueueRef.current = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
+    },
+    [],
+  );
 
   const refreshMarketplaceCatalog = useCallback(
     async (options: MarketplaceCatalogRefreshOptions = {}): Promise<void> => {
@@ -804,10 +913,11 @@ export const McpMarketplace = ({
       resultsToRefresh: MarketplaceResult[],
       options: { silent?: boolean } = {},
     ): Promise<void> => {
-      if (enrichingMetrics || resultsToRefresh.length === 0) {
+      if (enrichingMetricsRef.current || resultsToRefresh.length === 0) {
         return;
       }
 
+      enrichingMetricsRef.current = true;
       setEnrichingMetrics(true);
 
       if (!options.silent) {
@@ -819,10 +929,11 @@ export const McpMarketplace = ({
       try {
         const nextCache = await enrichMarketplaceResults(
           resultsToRefresh,
-          enrichmentCache,
+          enrichmentCacheRef.current,
           controller.signal,
         );
 
+        enrichmentCacheRef.current = nextCache;
         setEnrichmentCache(nextCache);
         saveMarketplaceEnrichmentCache(nextCache);
 
@@ -842,10 +953,11 @@ export const McpMarketplace = ({
           });
         }
       } finally {
+        enrichingMetricsRef.current = false;
         setEnrichingMetrics(false);
       }
     },
-    [enrichmentCache, enrichingMetrics],
+    [],
   );
 
   useEffect(() => {
@@ -961,6 +1073,23 @@ export const McpMarketplace = ({
   }, [view]);
 
   useEffect(() => {
+    const resetSignature = JSON.stringify({
+      appliedQuery,
+      installKindFilter,
+      selectedCategory,
+      sortMode,
+    });
+
+    if (selectionResetSignatureRef.current === resetSignature) {
+      setSelectedKey((currentKey) =>
+        currentKey && visibleResults.some((result) => result.key === currentKey)
+          ? currentKey
+          : firstVisibleResultKey,
+      );
+      return;
+    }
+
+    selectionResetSignatureRef.current = resetSignature;
     const element = resultsViewportRef.current;
     if (element) {
       element.scrollTop = 0;
@@ -976,6 +1105,7 @@ export const McpMarketplace = ({
     installKindFilter,
     selectedCategory,
     sortMode,
+    visibleResults,
   ]);
 
   useEffect(() => {
@@ -1056,15 +1186,57 @@ export const McpMarketplace = ({
   }, [selectedSourceKey]);
 
   const updateMarketplaceState = async (
-    registriesPatch: McpMarketplaceRegistrySourceState[],
-  ): Promise<void> => {
+    updateRegistries: (
+      currentRegistries: McpMarketplaceRegistrySourceState[],
+    ) => McpMarketplaceRegistrySourceState[],
+  ): Promise<boolean> => {
+    if (!marketplaceStateLoaded) {
+      setMessage({
+        tone: "error",
+        text: "Marketplace registries are not loaded yet, so changes are disabled.",
+      });
+      return false;
+    }
+
+    const previousState = marketplaceStateRef.current;
     const nextState: McpMarketplaceState = {
       version: 1,
-      registries: registriesPatch,
+      registries: updateRegistries(previousState.registries),
     };
 
+    const revision = marketplaceStateRevisionRef.current + 1;
+    marketplaceStateRevisionRef.current = revision;
+    marketplaceStateRef.current = nextState;
     setMarketplaceState(nextState);
-    await saveMcpMarketplaceState(nextState);
+    const operation = marketplaceStateSaveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const committedState = await updateMcpMarketplaceStateAtomically(
+          (latestState) => ({
+            version: 1,
+            registries: updateRegistries(latestState.registries),
+          }),
+        );
+
+        if (marketplaceStateRevisionRef.current === revision) {
+          marketplaceStateRef.current = committedState;
+          setMarketplaceState(committedState);
+        }
+        return true;
+      })
+      .catch((error: unknown) => {
+        if (marketplaceStateRevisionRef.current === revision) {
+          marketplaceStateRef.current = previousState;
+          setMarketplaceState(previousState);
+        }
+        setMessage({
+          tone: "error",
+          text: `Marketplace registry changes could not be saved: ${getErrorText(error)}`,
+        });
+        return false;
+      });
+    marketplaceStateSaveQueueRef.current = operation.then(() => undefined);
+    return operation;
   };
 
   const getRegistryDraft = (): {
@@ -1152,8 +1324,8 @@ export const McpMarketplace = ({
 
     const id = `custom-${Date.now()}`;
 
-    await updateMarketplaceState([
-      ...marketplaceState.registries,
+    const saved = await updateMarketplaceState((currentRegistries) => [
+      ...currentRegistries,
       {
         id,
         title: draft.title,
@@ -1161,6 +1333,10 @@ export const McpMarketplace = ({
         enabled: true,
       },
     ]);
+    if (!saved) {
+      return;
+    }
+
     setRegistryTitleDraft("");
     setRegistryUrlDraft("");
     setMessage({
@@ -1170,16 +1346,16 @@ export const McpMarketplace = ({
   };
 
   const toggleRegistry = async (id: string, enabled: boolean): Promise<void> => {
-    await updateMarketplaceState(
-      marketplaceState.registries.map((registry) =>
+    await updateMarketplaceState((currentRegistries) =>
+      currentRegistries.map((registry) =>
         registry.id === id ? { ...registry, enabled } : registry,
       ),
     );
   };
 
   const removeRegistry = async (id: string): Promise<void> => {
-    await updateMarketplaceState(
-      marketplaceState.registries.filter((registry) => registry.id !== id),
+    await updateMarketplaceState((currentRegistries) =>
+      currentRegistries.filter((registry) => registry.id !== id),
     );
   };
 
@@ -1208,14 +1384,9 @@ export const McpMarketplace = ({
     setMessage(null);
 
     try {
-      const document = await loadMcpConfigDocument("user");
-      const nextRaw = createMcpConfigRawWithMarketplaceServer(
-        document.raw,
-        plan.server,
+      await mutateInstalledDocument((currentRaw) =>
+        createMcpConfigRawWithMarketplaceServer(currentRaw, plan.server),
       );
-      const savedDocument = await saveMcpConfigDocument("user", nextRaw);
-
-      setInstalledDocument(savedDocument);
 
       if (workspaceRoot?.trim()) {
         try {
@@ -1253,15 +1424,9 @@ export const McpMarketplace = ({
     enabled: boolean,
   ): Promise<void> => {
     try {
-      const document = await loadMcpConfigDocument("user");
-      const nextRaw = createMcpConfigRawWithServerEnabled(
-        document.raw,
-        serverId,
-        enabled,
+      await mutateInstalledDocument((currentRaw) =>
+        createMcpConfigRawWithServerEnabled(currentRaw, serverId, enabled),
       );
-      const savedDocument = await saveMcpConfigDocument("user", nextRaw);
-
-      setInstalledDocument(savedDocument);
       setMessage({
         tone: "success",
         text: `${serverId} ${enabled ? "enabled" : "disabled"}.`,
@@ -1276,11 +1441,9 @@ export const McpMarketplace = ({
 
   const removeInstalledServer = async (serverId: string): Promise<void> => {
     try {
-      const document = await loadMcpConfigDocument("user");
-      const nextRaw = createMcpConfigRawWithoutServer(document.raw, serverId);
-      const savedDocument = await saveMcpConfigDocument("user", nextRaw);
-
-      setInstalledDocument(savedDocument);
+      await mutateInstalledDocument((currentRaw) =>
+        createMcpConfigRawWithoutServer(currentRaw, serverId),
+      );
       setMessage({
         tone: "success",
         text: `${serverId} removed from global MCP config.`,

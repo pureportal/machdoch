@@ -76,6 +76,24 @@ fn normalize_remote_control_config(mut config: RemoteControlConfigFile) -> Remot
         .sort_by(|left, right| right.last_seen_at.cmp(&left.last_seen_at));
     config.paired_devices.truncate(MAX_PAIRED_DEVICES);
 
+    let mut seen_command_ids = std::collections::HashSet::new();
+    config.completed_commands.retain(|command| {
+        !command.command_id.trim().is_empty()
+            && !command.payload_hash.trim().is_empty()
+            && seen_command_ids.insert(command.command_id.clone())
+    });
+    if config.completed_commands.len() > super::MAX_COMPLETED_COMMAND_ENTRIES {
+        config
+            .completed_commands
+            .drain(..config.completed_commands.len() - super::MAX_COMPLETED_COMMAND_ENTRIES);
+    }
+    config.pending_commands.retain(|command| {
+        !command.command_id.trim().is_empty() && seen_command_ids.insert(command.command_id.clone())
+    });
+    config
+        .pending_commands
+        .truncate(super::MAX_PENDING_COMMAND_ENTRIES);
+
     config
 }
 
@@ -217,6 +235,8 @@ mod tests {
                     user_agent: None,
                 },
             ],
+            pending_commands: Vec::new(),
+            completed_commands: Vec::new(),
         };
 
         config = normalize_remote_control_config(config);

@@ -84,6 +84,7 @@ pub(super) fn execute_desktop_task(
         conversation_context,
         image_paths,
         task_id,
+        session_id: _,
     } = request;
     let workspace_path = resolve_workspace_root_path(&workspace_root)?;
     let normalized_workspace_root = workspace_path.display().to_string();

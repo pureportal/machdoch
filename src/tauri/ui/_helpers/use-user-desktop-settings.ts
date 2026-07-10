@@ -30,17 +30,30 @@ export const useUserDesktopSettings = (): UserDesktopSettings => {
   useEffect(() => {
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
+    let updateRevision = 0;
+    const loadRevision = updateRevision;
 
-    void loadUserDesktopSettings().then((loadedSettings) => {
-      if (!disposed) {
-        setSettings({
-          ...FALLBACK_USER_DESKTOP_SETTINGS,
-          ...loadedSettings,
-        });
-      }
-    });
+    void loadUserDesktopSettings()
+      .then((loadedSettings) => {
+        if (!disposed && updateRevision === loadRevision) {
+          setSettings({
+            ...FALLBACK_USER_DESKTOP_SETTINGS,
+            ...loadedSettings,
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          console.error("Failed to load user desktop settings", error);
+        }
+      });
 
     void subscribeToDesktopSettingsChanged((nextSettings) => {
+      if (disposed) {
+        return;
+      }
+
+      updateRevision += 1;
       setSettings({
         ...FALLBACK_USER_DESKTOP_SETTINGS,
         ...nextSettings,

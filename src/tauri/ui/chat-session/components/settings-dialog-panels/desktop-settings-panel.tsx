@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import {
   DEFAULT_USER_DESKTOP_SETTINGS,
   DESKTOP_SETTING_BOUNDS,
@@ -11,6 +11,7 @@ import {
   SettingsAutoSaveStatus,
   SettingsCard,
   SettingsStatus,
+  rebaseDirtySettingsDraft,
   useDebouncedAutoSave,
 } from "./shared";
 import type { DesktopSettingsControls } from "./types";
@@ -128,6 +129,7 @@ export const DesktopSettingsPanel = ({
   setup,
 }: DesktopSettingsPanelProps): JSX.Element => {
   const [draft, setDraft] = useState<UserDesktopSettings>(setup.settings);
+  const lastExternalSettingsRef = useRef(setup.settings);
   const normalizedDraft = normalizeDesktopSettingsDraft(draft);
   const dirty = hasDesktopSettingsDraftChanges(normalizedDraft, setup.settings);
   const desktopAutostartMode = getDesktopAutostartMode(draft);
@@ -141,7 +143,15 @@ export const DesktopSettingsPanel = ({
   });
 
   useEffect(() => {
-    setDraft(setup.settings);
+    const previousSettings = lastExternalSettingsRef.current;
+    lastExternalSettingsRef.current = setup.settings;
+    setDraft((currentDraft) =>
+      rebaseDirtySettingsDraft(
+        currentDraft,
+        previousSettings,
+        setup.settings,
+      ),
+    );
   }, [setup.settings]);
 
   return (

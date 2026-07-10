@@ -65,6 +65,8 @@ describe("cli args public parser", () => {
           "review",
           "--retry-factor",
           "0.5",
+          "--request-id",
+          "scheduler-create-1",
         ],
         { currentWorkingDirectory: "C:/workspace" },
       ),
@@ -75,6 +77,30 @@ describe("cli args public parser", () => {
         intervalMs: 1,
         prompt: "review",
         retryFactor: 0.5,
+        requestId: "scheduler-create-1",
+      },
+    });
+
+    expect(
+      parseCliArgs(
+        [
+          "scheduler",
+          "trigger",
+          "job-1",
+          "--dedupe-key",
+          "legacy-trigger-key",
+          "--request-id",
+          "trigger-request",
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toMatchObject({
+      command: "scheduler",
+      scheduler: {
+        action: "trigger",
+        subject: "job-1",
+        dedupeKey: "legacy-trigger-key",
+        requestId: "trigger-request",
       },
     });
   });

@@ -5,6 +5,7 @@ use super::{
 
 fn command_request(kind: &str) -> RemoteCommandRequest {
     RemoteCommandRequest {
+        command_id: None,
         kind: kind.to_string(),
         task_id: None,
         session_id: None,
@@ -23,6 +24,18 @@ fn command_request(kind: &str) -> RemoteCommandRequest {
         job_id: None,
         run_id: None,
     }
+}
+
+#[test]
+fn client_command_ids_are_preserved_for_idempotent_retries() {
+    let event = normalize_command(RemoteCommandRequest {
+        command_id: Some(" client-command-1 ".to_string()),
+        session_id: Some("session-1".to_string()),
+        ..command_request("activate-session")
+    })
+    .expect("a client command id should be accepted");
+
+    assert_eq!(event.command_id, "client-command-1");
 }
 
 #[test]
@@ -110,7 +123,7 @@ fn set_session_reasoning_requires_supported_reasoning() {
         .expect_err("missing or unsupported reasoning should reject");
 
         assert!(
-            error.contains("default, none, minimal, low, medium, high, xhigh, max"),
+            error.contains("default, none, minimal, low, medium, high, xhigh, max, ultra"),
             "unexpected reasoning error: {error}"
         );
     }

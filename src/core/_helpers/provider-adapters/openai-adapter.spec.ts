@@ -7,6 +7,7 @@ import type {
 import { TASK_EXECUTION_TIMEOUT_MS } from "../agent-runtime-types.js";
 import {
   OpenAIResponsesAdapter,
+  createOpenAIMultiAgentConfig,
   createOpenAIReasoningConfig,
   createOpenAIResponseToolSelection,
   createOpenAITools,
@@ -91,9 +92,27 @@ describe("OpenAI Responses conformance", () => {
     expect(createOpenAIReasoningConfig("gpt-5.5", "max")).toEqual({
       reasoning: { effort: "xhigh" },
     });
+    expect(createOpenAIReasoningConfig("gpt-5.6-sol", "max")).toEqual({
+      reasoning: { effort: "max" },
+    });
+    expect(createOpenAIReasoningConfig("gpt-5.6-sol", "ultra")).toEqual({
+      reasoning: { effort: "max" },
+    });
     expect(createOpenAIReasoningConfig("gpt-5", "none")).toEqual({
       reasoning: { effort: "minimal" },
     });
+  });
+
+  it("enables four-agent Ultra orchestration only for GPT-5.6", () => {
+    expect(createOpenAIMultiAgentConfig("gpt-5.6-sol", "ultra")).toEqual({
+      multi_agent: {
+        enabled: true,
+        max_concurrent_subagents: 4,
+      },
+      betas: ["responses_multi_agent=v1"],
+    });
+    expect(createOpenAIMultiAgentConfig("gpt-5.6-terra", "max")).toEqual({});
+    expect(createOpenAIMultiAgentConfig("gpt-5.5", "ultra")).toEqual({});
   });
 
   it("serializes image inputs for the Responses API", () => {
@@ -235,6 +254,114 @@ describe("OpenAI Responses conformance", () => {
         },
       ],
     });
+  });
+
+  it("routes GPT-5.6 Ultra turns through the multi-agent beta", async () => {
+    const standardCreate = vi.fn();
+    const betaCreate = vi.fn(async () => ({
+      id: "resp_ultra",
+      output: [
+        {
+          type: "message",
+          phase: "final_answer",
+          agent: { agent_name: "/root/researcher" },
+          content: [{ type: "output_text", text: "Subagent draft." }],
+        },
+        {
+          type: "message",
+          phase: "final_answer",
+          agent: { agent_name: "/root" },
+          content: [{ type: "output_text", text: "Synthesized result." }],
+        },
+      ],
+    }));
+    const client = {
+      responses: { create: standardCreate },
+      beta: { responses: { create: betaCreate } },
+    } as unknown as OpenAI;
+    const adapter = new OpenAIResponsesAdapter(client, [tool]);
+
+    await expect(
+      adapter.startTurn({
+        ...startParams,
+        model: "gpt-5.6-sol",
+        reasoning: "ultra",
+      }),
+    ).resolves.toEqual({
+      text: "Synthesized result.",
+      toolCalls: [],
+    });
+
+    expect(standardCreate).not.toHaveBeenCalled();
+    expect(betaCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-5.6-sol",
+        reasoning: { effort: "max" },
+        multi_agent: {
+          enabled: true,
+          max_concurrent_subagents: 4,
+        },
+        betas: ["responses_multi_agent=v1"],
+      }),
+      expect.objectContaining({ timeout: TASK_EXECUTION_TIMEOUT_MS }),
+    );
+  });
+
+  it("streams only root-agent text from GPT-5.6 Ultra", async () => {
+    const events: AgentModelStreamEvent[] = [];
+    const completedResponse = {
+      id: "resp_ultra_stream",
+      output: [
+        {
+          type: "message",
+          phase: "final_answer",
+          agent: { agent_name: "/root" },
+          content: [{ type: "output_text", text: "Root result." }],
+        },
+      ],
+      usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30 },
+    };
+    const betaCreate = vi.fn(async () => ({
+      controller: { abort: vi.fn() },
+      async *[Symbol.asyncIterator]() {
+        yield { type: "response.created", response: { id: "resp_ultra_stream" } };
+        yield {
+          type: "response.output_text.delta",
+          agent: { agent_name: "/root/researcher" },
+          delta: "Subagent draft.",
+        };
+        yield {
+          type: "response.output_text.delta",
+          agent: { agent_name: "/root" },
+          delta: "Root result.",
+        };
+        yield { type: "response.completed", response: completedResponse };
+      },
+    }));
+    const client = {
+      responses: { stream: vi.fn() },
+      beta: { responses: { create: betaCreate } },
+    } as unknown as OpenAI;
+    const adapter = new OpenAIResponsesAdapter(client, [tool]);
+
+    await expect(
+      adapter.startTurn({
+        ...startParams,
+        model: "gpt-5.6-sol",
+        reasoning: "ultra",
+        onStreamEvent: (event) => events.push(event),
+      }),
+    ).resolves.toEqual({
+      text: "Root result.",
+      toolCalls: [],
+    });
+
+    expect(
+      events.filter((event) => event.type === "text-delta"),
+    ).toEqual([
+      { type: "text-delta", provider: "openai", delta: "Root result." },
+    ]);
+    expect(events.filter((event) => event.type === "usage")).toHaveLength(1);
   });
 
   it("normalizes streamed Responses events", async () => {

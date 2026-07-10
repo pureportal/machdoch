@@ -1,5 +1,6 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use super::{
     command_kinds::{
@@ -70,6 +71,7 @@ pub(super) struct RemoteCommandRecord {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct RemoteCommandRequest {
+    pub(super) command_id: Option<String>,
     pub(super) kind: String,
     pub(super) task_id: Option<String>,
     pub(super) session_id: Option<String>,
@@ -112,6 +114,14 @@ pub(super) fn normalize_command(
     request: RemoteCommandRequest,
 ) -> Result<RemoteControlCommandEvent, String> {
     let kind = request.kind.trim().to_ascii_lowercase();
+    let command_id = optional_trimmed_string(request.command_id.as_deref());
+
+    if command_id
+        .as_ref()
+        .is_some_and(|command_id| command_id.chars().count() > 128)
+    {
+        return Err("Mission Control command ids cannot exceed 128 characters.".to_string());
+    }
 
     if !is_supported_command(&kind) {
         return Err("Unsupported Mission Control command.".to_string());
@@ -120,7 +130,7 @@ pub(super) fn normalize_command(
     let fields = normalize_command_fields(&kind, request)?;
 
     Ok(RemoteControlCommandEvent {
-        command_id: create_command_id(),
+        command_id: command_id.unwrap_or_else(create_command_id),
         kind,
         task_id: fields.task_id,
         session_id: fields.session_id,
@@ -272,6 +282,55 @@ pub(super) fn create_command_record(event: &RemoteControlCommandEvent) -> Remote
         target_preview: create_command_target_preview(event),
         created_at: event.created_at,
     }
+}
+
+pub(super) fn command_payloads_match(
+    left: &RemoteControlCommandEvent,
+    right: &RemoteControlCommandEvent,
+) -> bool {
+    left.command_id == right.command_id
+        && left.kind == right.kind
+        && left.task_id == right.task_id
+        && left.session_id == right.session_id
+        && left.prompt == right.prompt
+        && left.title == right.title
+        && left.tags == right.tags
+        && left.provider == right.provider
+        && left.model == right.model
+        && left.mode == right.mode
+        && left.reasoning == right.reasoning
+        && left.workspace == right.workspace
+        && left.enabled == right.enabled
+        && left.attachment_id == right.attachment_id
+        && left.context_pack_id == right.context_pack_id
+        && left.message_id == right.message_id
+        && left.job_id == right.job_id
+        && left.run_id == right.run_id
+}
+
+pub(super) fn command_payload_hash(event: &RemoteControlCommandEvent) -> String {
+    let canonical = serde_json::json!({
+        "kind": event.kind,
+        "taskId": event.task_id,
+        "sessionId": event.session_id,
+        "prompt": event.prompt,
+        "title": event.title,
+        "tags": event.tags,
+        "provider": event.provider,
+        "model": event.model,
+        "mode": event.mode,
+        "reasoning": event.reasoning,
+        "workspace": event.workspace,
+        "enabled": event.enabled,
+        "attachmentId": event.attachment_id,
+        "contextPackId": event.context_pack_id,
+        "messageId": event.message_id,
+        "jobId": event.job_id,
+        "runId": event.run_id,
+    });
+    let bytes = serde_json::to_vec(&canonical)
+        .expect("serializing a remote command payload should not fail");
+    URL_SAFE_NO_PAD.encode(Sha256::digest(bytes))
 }
 
 pub(super) fn truncate_chars(value: &str, max_chars: usize) -> String {

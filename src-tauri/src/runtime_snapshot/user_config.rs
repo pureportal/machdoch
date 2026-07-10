@@ -7,6 +7,7 @@ use std::{
 use std::os::unix::fs::PermissionsExt;
 
 use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
+use crate::cooperative_file_lock::with_cooperative_file_lock;
 
 use super::{get_user_config_directory, settings_types::UserConfigFile};
 
@@ -52,6 +53,19 @@ pub(super) fn write_user_config_file(
     )
     .map_err(|error| format!("Failed to write {}: {error}", config_path.display()))?;
     secure_user_config_file(config_path)
+}
+
+pub(super) fn update_user_config_file(
+    update: impl FnOnce(&mut UserConfigFile),
+) -> Result<PathBuf, String> {
+    let config_path = get_user_config_path()?;
+
+    with_cooperative_file_lock(&config_path, || {
+        let (mut config, loaded_path) = load_user_config_file()?;
+        update(&mut config);
+        write_user_config_file(&config, &loaded_path)?;
+        Ok(loaded_path)
+    })
 }
 
 fn secure_user_config_directory(path: &Path) -> Result<(), String> {

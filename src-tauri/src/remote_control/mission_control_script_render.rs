@@ -97,14 +97,22 @@ pub(super) fn mission_control_script_render() -> &'static str {
     }
 
     async function sendCommand(command) {
-      const response = await fetch("/api/command", {
-        method: "POST",
-        headers: {
-          ...authHeaders(),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(command)
-      });
+      command.commandId ||= globalThis.crypto?.randomUUID?.()
+        || `command-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const request = () => fetch("/api/command", {
+          method: "POST",
+          headers: {
+            ...authHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(command)
+        });
+      let response;
+      try {
+        response = await request();
+      } catch {
+        response = await request();
+      }
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Command failed.");
       toast.textContent = "Command queued locally.";

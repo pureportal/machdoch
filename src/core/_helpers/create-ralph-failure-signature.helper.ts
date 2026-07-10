@@ -21,9 +21,13 @@ const isRepeatableRalphFailureOutput = (
 };
 
 const compactFailureSignatureText = (value: string): string => {
-  return value.length > MAX_RALPH_FAILURE_SIGNATURE_CHARS
-    ? value.slice(0, MAX_RALPH_FAILURE_SIGNATURE_CHARS)
-    : value;
+  const normalized = value
+    .replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/gu, "<timestamp>")
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/giu, "<uuid>")
+    .replace(/\b\d+(?:\.\d+)?\s*ms\b/giu, "<duration>");
+  return normalized.length > MAX_RALPH_FAILURE_SIGNATURE_CHARS
+    ? normalized.slice(0, MAX_RALPH_FAILURE_SIGNATURE_CHARS)
+    : normalized;
 };
 
 const stringifyFailureSignatureValue = (value: unknown): string => {
@@ -49,9 +53,9 @@ export const createRalphFailureSignature = (
     result.blockId,
     result.output,
     result.status,
-    result.summary,
-    result.error ?? "",
-    result.markdown ?? "",
+    compactFailureSignatureText(result.summary),
+    compactFailureSignatureText(result.error ?? ""),
+    compactFailureSignatureText(result.markdown ?? ""),
     stringifyFailureSignatureValue(result.data),
   ].join("\n");
 

@@ -108,6 +108,62 @@ describe("create scheduler CLI options", () => {
     });
   });
 
+  it("parses the unattended scheduled RALPH profile", () => {
+    expect(
+      createSchedulerCliOptions({
+        action: "create",
+        rawSchedulerIntervalMs: "1000",
+        rawSchedulerTarget: "ralph-flow",
+        rawScheduledRalphFlow: "autonomous-improvement",
+        rawScheduledRalphProfile: "unattended",
+        rawScheduledRalphResumePolicy: "recoverable",
+      }),
+    ).toEqual({
+      action: "create",
+      intervalMs: 1000,
+      schedulerTarget: "ralph-flow",
+      scheduledRalphFlow: "autonomous-improvement",
+      scheduledRalphProfile: "unattended",
+      scheduledRalphResumePolicy: "recoverable",
+    });
+
+    expect(() =>
+      createSchedulerCliOptions({
+        action: "create",
+        rawSchedulerIntervalMs: "1000",
+        rawSchedulerTarget: "ralph-flow",
+        rawScheduledRalphFlow: "autonomous-improvement",
+        rawScheduledRalphProfile: "unsafe",
+      }),
+    ).toThrow("Expected --scheduled-ralph-profile to be unattended.");
+
+    expect(() =>
+      createSchedulerCliOptions({
+        action: "create",
+        rawSchedulerIntervalMs: "1000",
+        rawSchedulerTarget: "ralph-flow",
+        rawScheduledRalphFlow: "autonomous-improvement",
+        rawScheduledRalphResumePolicy: "always",
+      }),
+    ).toThrow(
+      "Expected --scheduled-ralph-resume-policy to be never or recoverable.",
+    );
+
+    expect(
+      createSchedulerCliOptions({
+        action: "create",
+        rawSchedulerIntervalMs: "1000",
+        rawSchedulerTarget: "ralph-flow",
+        rawScheduledRalphFlow: "autonomous-improvement",
+        rawScheduledRalphProfile: "unattended",
+        rawScheduledRalphResumePolicy: "never",
+      }),
+    ).toMatchObject({
+      scheduledRalphProfile: "unattended",
+      scheduledRalphResumePolicy: "never",
+    });
+  });
+
   it("rejects invalid create schedule combinations and missing prompt input", () => {
     expect(() =>
       createSchedulerCliOptions({

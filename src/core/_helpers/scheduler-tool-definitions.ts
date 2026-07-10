@@ -439,6 +439,18 @@ const schedulerTargetSchema = {
         enum: ["workspace", "user"],
         description: "Where scheduled RALPH run logs should be written.",
       },
+      executionProfile: {
+        type: "string",
+        enum: ["unattended"],
+        description:
+          "Use unattended to enable commands, writes, network, MCP tools, checkpoint recovery, and autonomous retry defaults as one profile.",
+      },
+      resumePolicy: {
+        type: "string",
+        enum: ["never", "recoverable"],
+        description:
+          "Checkpoint recovery policy. The unattended profile defaults to recoverable.",
+      },
       permissions: {
         type: "object",
         additionalProperties: false,
@@ -460,9 +472,11 @@ const schedulerTargetSchema = {
           "allowNetwork",
           "allowMcpTools",
         ],
+        description:
+          "Explicit legacy capability fields. They remain supported; executionProfile=unattended can be used instead.",
       },
     },
-    required: ["id", "permissions"],
+    required: ["id"],
     description:
       "RALPH-Flow target for unattended scheduled execution. Required when targetType is ralph-flow.",
   },
@@ -1124,11 +1138,21 @@ const parseRalphFlowTarget = (
     return "Expected `ralphFlow.id` before creating a scheduled RALPH job.";
   }
 
+  const executionProfile = normalizeEnum(
+    coerceString(value, "executionProfile"),
+    ["unattended"] as const,
+  );
+  const resumePolicy = normalizeEnum(
+    coerceString(value, "resumePolicy"),
+    ["never", "recoverable"] as const,
+  );
   const permissionsValue = value.permissions;
 
-  if (!isRecord(permissionsValue)) {
-    return "Expected `ralphFlow.permissions` before creating a scheduled RALPH job.";
+  if (!isRecord(permissionsValue) && executionProfile !== "unattended") {
+    return "Expected `ralphFlow.permissions` or executionProfile=unattended before creating a scheduled RALPH job.";
   }
+
+  const explicitPermissions = isRecord(permissionsValue) ? permissionsValue : {};
 
   const scope = normalizeEnum(coerceString(value, "scope"), ["workspace", "user"] as const);
   const runLogScope = normalizeEnum(
@@ -1137,9 +1161,10 @@ const parseRalphFlowTarget = (
   );
   const maxTransitions = coercePositiveInteger(value, "maxTransitions");
   const params = parseStringEntryRecord(value.params) ?? {};
-  const allowedRoots = coerceStringArray(permissionsValue, "allowedRoots") ?? [
+  const allowedRoots = coerceStringArray(explicitPermissions, "allowedRoots") ?? [
     workspaceRoot,
   ];
+  const unattended = executionProfile === "unattended";
 
   return {
     type: "ralph-flow",
@@ -1150,12 +1175,18 @@ const parseRalphFlowTarget = (
       params,
       ...(runLogScope ? { runLogScope } : {}),
       ...(maxTransitions !== undefined ? { maxTransitions } : {}),
+      ...(executionProfile ? { executionProfile } : {}),
+      ...(resumePolicy ? { resumePolicy } : {}),
       permissions: {
         allowedRoots,
-        allowCommands: coerceBoolean(permissionsValue, "allowCommands") ?? false,
-        allowWrites: coerceBoolean(permissionsValue, "allowWrites") ?? false,
-        allowNetwork: coerceBoolean(permissionsValue, "allowNetwork") ?? false,
-        allowMcpTools: coerceBoolean(permissionsValue, "allowMcpTools") ?? false,
+        allowCommands:
+          unattended || (coerceBoolean(explicitPermissions, "allowCommands") ?? false),
+        allowWrites:
+          unattended || (coerceBoolean(explicitPermissions, "allowWrites") ?? false),
+        allowNetwork:
+          unattended || (coerceBoolean(explicitPermissions, "allowNetwork") ?? false),
+        allowMcpTools:
+          unattended || (coerceBoolean(explicitPermissions, "allowMcpTools") ?? false),
       },
     },
   };

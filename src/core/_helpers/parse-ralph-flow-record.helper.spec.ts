@@ -24,8 +24,28 @@ describe("parseRalphFlowRecord", () => {
         id: "autonomous-refactoring-flow",
         version: 2.9,
         importedAt: "2026-01-01T00:00:00.000Z",
+        templateFingerprint: "sha256:starter-v2",
+        templateVariableDefaults: {
+          scope: "ALL",
+          newlyAdded: null,
+          ignored: 42,
+        },
       },
-      settings: { maxTransitions: 10.9 },
+      settings: {
+        maxTransitions: 10.9,
+        autonomy: {
+          enabled: true,
+          maxRecoveryAttempts: 4.8,
+          recoveryExhaustion: "defer",
+          transitionExhaustion: "checkpoint",
+          deferToBlockId: "utility",
+          backoff: {
+            initialDelaySeconds: 0,
+            multiplier: 2,
+            maxDelaySeconds: 10,
+          },
+        },
+      },
       variables: [
         { name: "scope", type: "path", default: "ALL" },
         { name: "fallback", type: "unsupported", required: false },
@@ -131,8 +151,27 @@ describe("parseRalphFlowRecord", () => {
         id: "autonomous-refactoring-flow",
         version: 2,
         importedAt: "2026-01-01T00:00:00.000Z",
+        templateFingerprint: "sha256:starter-v2",
+        templateVariableDefaults: {
+          scope: "ALL",
+          newlyAdded: undefined,
+        },
       },
-      settings: { maxTransitions: 10 },
+      settings: {
+        maxTransitions: 10,
+        autonomy: {
+          enabled: true,
+          maxRecoveryAttempts: 4,
+          recoveryExhaustion: "defer",
+          transitionExhaustion: "checkpoint",
+          deferToBlockId: "utility",
+          backoff: {
+            initialDelaySeconds: 0,
+            multiplier: 2,
+            maxDelaySeconds: 10,
+          },
+        },
+      },
       variables: [
         { name: "scope", type: "path", default: "ALL", required: false },
         { name: "fallback", type: "string", required: false },

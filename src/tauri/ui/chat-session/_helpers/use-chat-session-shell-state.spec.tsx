@@ -8,7 +8,12 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createInitialShellState, createSession } from "../../chat-session.model";
+import {
+  createInitialShellState,
+  createSession,
+  normalizeShellState,
+  type ChatSessionQueuedMessage,
+} from "../../chat-session.model";
 import { createMockExecutionFixture } from "../../preview/fixtures";
 import { createInitialThinkingTrace } from "../../task-thinking.model";
 import {
@@ -18,6 +23,8 @@ import {
 } from "./use-chat-session-shell-state";
 
 const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
+const SHELL_STATE_SNAPSHOT_STORAGE_KEY =
+  "machdoch.desktop.shell-state-snapshot";
 
 const storeShellState = (value: unknown): void => {
   window.localStorage.setItem(SHELL_STATE_STORAGE_KEY, JSON.stringify(value));
@@ -40,13 +47,40 @@ const flushShellPersistence = async (): Promise<void> => {
 };
 
 const loadStoredShellState = (): ReturnType<typeof createInitialShellState> => {
-  const storedValue = window.localStorage.getItem(SHELL_STATE_STORAGE_KEY);
+  const snapshotValue = window.localStorage.getItem(
+    SHELL_STATE_SNAPSHOT_STORAGE_KEY,
+  );
+  const storedValue = snapshotValue ??
+    window.localStorage.getItem(SHELL_STATE_STORAGE_KEY);
 
   expect(storedValue).not.toBeNull();
 
-  return JSON.parse(storedValue as string) as ReturnType<
-    typeof createInitialShellState
-  >;
+  const parsedValue = JSON.parse(storedValue as string) as
+    | ReturnType<typeof createInitialShellState>
+    | { state: ReturnType<typeof createInitialShellState> };
+
+  return "state" in parsedValue ? parsedValue.state : parsedValue;
+};
+
+const createQueuedMessageFixture = (
+  overrides: Partial<ChatSessionQueuedMessage> &
+    Pick<ChatSessionQueuedMessage, "id" | "sessionId" | "task">,
+): ChatSessionQueuedMessage => {
+  const createdAt = overrides.createdAt ?? 100;
+  const updatedAt = overrides.updatedAt ?? createdAt;
+
+  return {
+    contextAttachments: [],
+    contentUpdatedAt: updatedAt,
+    attachmentsUpdatedAt: updatedAt,
+    attachmentTombstones: {},
+    blockerUpdatedAt: updatedAt,
+    orderRank: 0,
+    orderUpdatedAt: updatedAt,
+    createdAt,
+    updatedAt,
+    ...overrides,
+  };
 };
 
 interface ScrollMetrics {
@@ -217,6 +251,62 @@ describe("useChatSessionShellState", () => {
     );
   });
 
+  it("rebases pre-hydration typing and attachments over a nonempty saved composer", async () => {
+    const baseState = createInitialShellState();
+    const savedAttachment = {
+      id: "saved-before-launch",
+      path: "C:\\Work\\saved.txt",
+      kind: "file" as const,
+      name: "saved.txt",
+      parent: "C:\\Work",
+    };
+    const localAttachment = {
+      id: "pasted-before-hydration",
+      path: "C:\\Temp\\pasted.png",
+      kind: "image" as const,
+      name: "pasted.png",
+      parent: "C:\\Temp",
+    };
+    const savedSession = createSession({
+      id: "session-nonempty-hydration",
+      draft: "Saved draft",
+      draftContextAttachments: [savedAttachment],
+      createdAt: 100,
+      updatedAt: 100,
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: savedSession.id,
+      sessions: [savedSession],
+    });
+
+    const { result } = renderHook(() => useChatSessionShellState());
+
+    act(() => {
+      result.current.setDraftValue("Typed before hydration");
+      result.current.updateActiveSession((session) => ({
+        ...session,
+        draftContextAttachments: [
+          ...session.draftContextAttachments,
+          localAttachment,
+        ],
+        updatedAt: Date.now(),
+        composerUpdatedAt: Date.now(),
+      }));
+    });
+
+    await flushShellHydration();
+
+    expect(result.current.activeSession.id).toBe(savedSession.id);
+    expect(result.current.activeSession.draft).toBe("Typed before hydration");
+    expect(
+      result.current.activeSession.draftContextAttachments.map(
+        (attachment) => attachment.id,
+      ),
+    ).toEqual([savedAttachment.id, localAttachment.id]);
+  });
+
   it("applies functional draft updates against the latest local draft", async () => {
     const { result } = renderHook(() => useChatSessionShellState());
 
@@ -228,6 +318,36 @@ describe("useChatSessionShellState", () => {
     });
 
     expect(result.current.activeSession.draft).toBe("first second");
+  });
+
+  it("does not reset an in-progress rename when session messages stream", async () => {
+    const { result } = renderHook(() => useChatSessionShellState());
+
+    await flushShellHydration();
+
+    act(() => {
+      result.current.setIsRenamingSession(true);
+      result.current.setRenameValue("My unfinished title");
+    });
+
+    act(() => {
+      result.current.updateActiveSession((session) => ({
+        ...session,
+        messages: [
+          ...session.messages,
+          {
+            id: "streamed-message",
+            role: "agent",
+            content: "A streaming update",
+            createdAt: Date.now(),
+          },
+        ],
+        updatedAt: Date.now(),
+      }));
+    });
+
+    expect(result.current.isRenamingSession).toBe(true);
+    expect(result.current.renameValue).toBe("My unfinished title");
   });
 
   it("applies pre-hydration async active-session updates to the hydrated active session", async () => {
@@ -723,6 +843,277 @@ describe("useChatSessionShellState", () => {
     ).toContain("Executing the request.");
   });
 
+  it("merges concurrent composer attachment additions element by element", () => {
+    const baseState = createInitialShellState();
+    const firstAttachment = {
+      id: "first-concurrent-attachment",
+      path: "C:\\Work\\first.txt",
+      kind: "file" as const,
+      name: "first.txt",
+    };
+    const secondAttachment = {
+      id: "second-concurrent-attachment",
+      path: "C:\\Work\\second.txt",
+      kind: "file" as const,
+      name: "second.txt",
+    };
+    const baseSession = createSession({
+      id: "composer-concurrent-additions",
+      createdAt: 100,
+      updatedAt: 100,
+    });
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: baseSession.id,
+      sessions: [baseSession],
+    };
+    const mergedState = mergeShellStateForPersistence(
+      {
+        ...storedBaseState,
+        sessions: [
+          {
+            ...baseSession,
+            draftContextAttachments: [firstAttachment],
+            draftAttachmentsUpdatedAt: 200,
+            draftAttachmentAddedAt: { [firstAttachment.id]: 200 },
+            composerUpdatedAt: 200,
+            updatedAt: 200,
+          },
+        ],
+      },
+      storedBaseState,
+      {
+        ...storedBaseState,
+        sessions: [
+          {
+            ...baseSession,
+            draftContextAttachments: [secondAttachment],
+            draftAttachmentsUpdatedAt: 300,
+            draftAttachmentAddedAt: { [secondAttachment.id]: 300 },
+            composerUpdatedAt: 300,
+            updatedAt: 300,
+          },
+        ],
+      },
+    );
+
+    expect(
+      mergedState.sessions[0]?.draftContextAttachments.map(
+        (attachment) => attachment.id,
+      ),
+    ).toEqual([firstAttachment.id, secondAttachment.id]);
+  });
+
+  it("keeps a concurrent add while a different draft attachment is removed", () => {
+    const baseState = createInitialShellState();
+    const removedAttachment = {
+      id: "removed-concurrent-attachment",
+      path: "C:\\Work\\removed.txt",
+      kind: "file" as const,
+      name: "removed.txt",
+    };
+    const addedAttachment = {
+      id: "added-concurrent-attachment",
+      path: "C:\\Work\\added.txt",
+      kind: "file" as const,
+      name: "added.txt",
+    };
+    const baseSession = createSession({
+      id: "composer-remove-add",
+      draft: "Base text",
+      draftContextAttachments: [removedAttachment],
+      createdAt: 100,
+      updatedAt: 100,
+    });
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: baseSession.id,
+      sessions: [baseSession],
+    };
+    const mergedState = mergeShellStateForPersistence(
+      {
+        ...storedBaseState,
+        sessions: [
+          {
+            ...baseSession,
+            draft: "Locally edited text",
+            draftUpdatedAt: 250,
+            draftContextAttachments: [],
+            draftAttachmentsUpdatedAt: 250,
+            draftAttachmentAddedAt: {},
+            draftAttachmentTombstones: { [removedAttachment.id]: 250 },
+            composerUpdatedAt: 250,
+            updatedAt: 250,
+          },
+        ],
+      },
+      storedBaseState,
+      {
+        ...storedBaseState,
+        sessions: [
+          {
+            ...baseSession,
+            draftContextAttachments: [removedAttachment, addedAttachment],
+            draftAttachmentsUpdatedAt: 300,
+            draftAttachmentAddedAt: {
+              [removedAttachment.id]: 100,
+              [addedAttachment.id]: 300,
+            },
+            composerUpdatedAt: 300,
+            updatedAt: 300,
+          },
+        ],
+      },
+    );
+    const mergedSession = mergedState.sessions[0];
+
+    expect(mergedSession?.draft).toBe("Locally edited text");
+    expect(mergedSession?.draftContextAttachments).toEqual([addedAttachment]);
+    expect(mergedSession?.draftAttachmentTombstones?.[removedAttachment.id]).toBe(
+      250,
+    );
+  });
+
+  it("keeps concurrent removals when aggregate attachment clocks advance", () => {
+    const baseState = createInitialShellState();
+    const firstAttachment = {
+      id: "concurrent-remove-first",
+      path: "C:\\Work\\first-remove.txt",
+      kind: "file" as const,
+      name: "first-remove.txt",
+    };
+    const secondAttachment = {
+      id: "concurrent-remove-second",
+      path: "C:\\Work\\second-remove.txt",
+      kind: "file" as const,
+      name: "second-remove.txt",
+    };
+    const baseSession = createSession({
+      id: "composer-concurrent-removals",
+      draftContextAttachments: [firstAttachment, secondAttachment],
+      draftAttachmentAddedAt: {
+        [firstAttachment.id]: 100,
+        [secondAttachment.id]: 100,
+      },
+      createdAt: 100,
+      updatedAt: 100,
+    });
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: baseSession.id,
+      sessions: [baseSession],
+    };
+    const localState = normalizeShellState({
+      ...storedBaseState,
+      sessions: [
+        {
+          ...baseSession,
+          draftContextAttachments: [secondAttachment],
+          draftAttachmentsUpdatedAt: 300,
+          draftAttachmentAddedAt: {
+            [firstAttachment.id]: 100,
+            [secondAttachment.id]: 100,
+          },
+          draftAttachmentTombstones: { [firstAttachment.id]: 300 },
+          composerUpdatedAt: 300,
+          updatedAt: 300,
+        },
+      ],
+    });
+    const latestState = normalizeShellState({
+      ...storedBaseState,
+      sessions: [
+        {
+          ...baseSession,
+          draftContextAttachments: [firstAttachment],
+          draftAttachmentsUpdatedAt: 200,
+          draftAttachmentAddedAt: {
+            [firstAttachment.id]: 100,
+            [secondAttachment.id]: 100,
+          },
+          draftAttachmentTombstones: { [secondAttachment.id]: 200 },
+          composerUpdatedAt: 200,
+          updatedAt: 200,
+        },
+      ],
+    });
+
+    expect(
+      localState.sessions[0]?.draftAttachmentAddedAt?.[secondAttachment.id],
+    ).toBe(100);
+
+    const mergedState = mergeShellStateForPersistence(
+      localState,
+      storedBaseState,
+      latestState,
+    );
+
+    expect(mergedState.sessions[0]?.draftContextAttachments).toEqual([]);
+  });
+
+  it("deduplicates concurrent same-path attachment IDs and tombstones the loser", () => {
+    const baseState = createInitialShellState();
+    const localAttachment = {
+      id: "same-path-local-id",
+      path: "C:\\Work\\Shared.txt",
+      kind: "file" as const,
+      name: "Shared.txt",
+    };
+    const externalAttachment = {
+      id: "same-path-external-id",
+      path: "c:\\work\\shared.txt",
+      kind: "file" as const,
+      name: "shared.txt",
+    };
+    const baseSession = createSession({
+      id: "composer-same-path-add",
+      createdAt: 100,
+      updatedAt: 100,
+    });
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: baseSession.id,
+      sessions: [baseSession],
+    };
+    const mergedState = mergeShellStateForPersistence(
+      {
+        ...storedBaseState,
+        sessions: [
+          {
+            ...baseSession,
+            draftContextAttachments: [localAttachment],
+            draftAttachmentsUpdatedAt: 200,
+            draftAttachmentAddedAt: { [localAttachment.id]: 200 },
+            composerUpdatedAt: 200,
+            updatedAt: 200,
+          },
+        ],
+      },
+      storedBaseState,
+      {
+        ...storedBaseState,
+        sessions: [
+          {
+            ...baseSession,
+            draftContextAttachments: [externalAttachment],
+            draftAttachmentsUpdatedAt: 300,
+            draftAttachmentAddedAt: { [externalAttachment.id]: 300 },
+            composerUpdatedAt: 300,
+            updatedAt: 300,
+          },
+        ],
+      },
+    );
+    const mergedSession = mergedState.sessions[0];
+
+    expect(mergedSession?.draftContextAttachments).toEqual([
+      externalAttachment,
+    ]);
+    expect(
+      mergedSession?.draftAttachmentTombstones?.[localAttachment.id],
+    ).toBe(300);
+  });
+
   it("keeps current composer attachments when an external metadata update has a stale composer snapshot", () => {
     const baseState = createInitialShellState();
     const attachment = {
@@ -812,6 +1203,66 @@ describe("useChatSessionShellState", () => {
     expect(mergedSession?.lastReadAt).toBe(300);
   });
 
+  it("does not promote unrelated session updates into explicit composer field clocks", () => {
+    const baseState = createInitialShellState();
+    const baseSession = createSession({
+      id: "independent-composer-clock-session",
+      createdAt: 100,
+      updatedAt: 100,
+      composerUpdatedAt: 100,
+    });
+    const attachment = {
+      id: "independent-composer-clock-attachment",
+      path: "C:\\Temp\\independent.png",
+      kind: "image" as const,
+      name: "independent.png",
+      parent: "C:\\Temp",
+    };
+    const localSession = {
+      ...baseSession,
+      draft: "Keep the explicit composer clocks",
+      draftUpdatedAt: 200,
+      draftContextAttachments: [attachment],
+      draftAttachmentsUpdatedAt: 200,
+      draftAttachmentAddedAt: { [attachment.id]: 200 },
+      composerUpdatedAt: 200,
+      updatedAt: 300,
+      messages: [
+        {
+          id: "unrelated-progress-message",
+          role: "agent" as const,
+          content: "Progress changed after the composer edit.",
+          createdAt: 300,
+        },
+      ],
+    };
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: baseSession.id,
+      sessions: [baseSession],
+    };
+
+    const mergedState = mergeShellStateForPersistence(
+      {
+        ...storedBaseState,
+        sessions: [localSession],
+      },
+      storedBaseState,
+      storedBaseState,
+    );
+    const mergedSession = mergedState.sessions[0];
+
+    expect(mergedSession?.draft).toBe("Keep the explicit composer clocks");
+    expect(mergedSession?.draftUpdatedAt).toBe(200);
+    expect(mergedSession?.draftContextAttachments).toEqual([attachment]);
+    expect(mergedSession?.draftAttachmentsUpdatedAt).toBe(200);
+    expect(mergedSession?.draftAttachmentAddedAt).toEqual({
+      [attachment.id]: 200,
+    });
+    expect(mergedSession?.composerUpdatedAt).toBe(200);
+    expect(mergedSession?.updatedAt).toBe(300);
+  });
+
   it("keeps a cleared local composer when an external metadata update carries older attachments", () => {
     const baseState = createInitialShellState();
     const attachment = {
@@ -870,7 +1321,7 @@ describe("useChatSessionShellState", () => {
     expect(mergedSession?.composerUpdatedAt).toBe(250);
   });
 
-  it("accepts a newer external composer edit when its composer timestamp is newer", () => {
+  it("accepts a newer external composer edit when its field clocks are newer", () => {
     const baseState = createInitialShellState();
     const attachment = {
       id: "new-external-attachment",
@@ -891,6 +1342,9 @@ describe("useChatSessionShellState", () => {
       draftContextAttachments: [attachment],
       updatedAt: 300,
       composerUpdatedAt: 300,
+      draftUpdatedAt: 300,
+      draftAttachmentsUpdatedAt: 300,
+      draftAttachmentAddedAt: { [attachment.id]: 300 },
     };
     const currentState = {
       ...baseState,
@@ -916,6 +1370,8 @@ describe("useChatSessionShellState", () => {
     expect(mergedSession?.draft).toBe("Use the newer external composer");
     expect(mergedSession?.draftContextAttachments).toEqual([attachment]);
     expect(mergedSession?.composerUpdatedAt).toBe(300);
+    expect(mergedSession?.draftUpdatedAt).toBe(300);
+    expect(mergedSession?.draftAttachmentsUpdatedAt).toBe(300);
   });
 
   it("accepts external message advances when the local composer timestamp is newer", () => {
@@ -1196,6 +1652,123 @@ describe("useChatSessionShellState", () => {
       "completed-user",
       "completed-agent",
     ]);
+  });
+
+  it("persists an intentional history clear without resurrecting old messages", () => {
+    const baseState = createInitialShellState();
+    const task = "Remove this history";
+    const baseSession = createSession({
+      id: "intentional-history-clear",
+      updatedAt: 100,
+      messages: [
+        {
+          id: "history-user",
+          taskId: "history-task",
+          role: "user",
+          content: task,
+          createdAt: 100,
+        },
+      ],
+      promptHistory: [task],
+    });
+    const localSession = {
+      ...baseSession,
+      messages: [],
+      promptHistory: [],
+      historyClearedAt: 200,
+      updatedAt: 200,
+    };
+    const latestSession = {
+      ...baseSession,
+      pinnedAt: 300,
+      updatedAt: 300,
+    };
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: baseSession.id,
+      sessions: [baseSession],
+    };
+
+    const mergedState = mergeShellStateForPersistence(
+      { ...storedBaseState, sessions: [localSession] },
+      storedBaseState,
+      { ...storedBaseState, sessions: [latestSession] },
+    );
+    const mergedSession = mergedState.sessions[0];
+
+    expect(mergedSession?.messages).toEqual([]);
+    expect(mergedSession?.promptHistory).toEqual([]);
+    expect(mergedSession?.historyClearedAt).toBe(200);
+    expect(mergedSession?.pinnedAt).toBe(300);
+  });
+
+  it("keeps messages submitted after a concurrent history clear", () => {
+    const baseState = createInitialShellState();
+    const baseSession = createSession({
+      id: "clear-with-concurrent-send",
+      updatedAt: 100,
+      messages: [
+        {
+          id: "old-user",
+          taskId: "old-task",
+          role: "user",
+          content: "Old prompt",
+          createdAt: 100,
+        },
+      ],
+      promptHistory: ["Old prompt"],
+      promptContextHistory: [[]],
+    });
+    const clearedSession = {
+      ...baseSession,
+      messages: [],
+      promptHistory: [],
+      promptContextHistory: [],
+      historyClearedAt: 200,
+      updatedAt: 200,
+    };
+    const concurrentlySubmittedSession = {
+      ...baseSession,
+      messages: [
+        ...baseSession.messages,
+        {
+          id: "new-user",
+          taskId: "new-task",
+          role: "user" as const,
+          content: "New prompt",
+          createdAt: 200,
+        },
+        {
+          id: "new-agent",
+          taskId: "new-task",
+          role: "agent" as const,
+          content: "New response",
+          createdAt: 200,
+        },
+      ],
+      promptHistory: ["Old prompt", "New prompt"],
+      promptContextHistory: [[], []],
+      updatedAt: 200,
+    };
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: baseSession.id,
+      sessions: [baseSession],
+    };
+
+    const mergedState = mergeShellStateForPersistence(
+      { ...storedBaseState, sessions: [clearedSession] },
+      storedBaseState,
+      { ...storedBaseState, sessions: [concurrentlySubmittedSession] },
+    );
+    const mergedSession = mergedState.sessions[0];
+
+    expect(mergedSession?.messages.map((message) => message.id)).toEqual([
+      "new-user",
+      "new-agent",
+    ]);
+    expect(mergedSession?.promptHistory).toEqual(["New prompt"]);
+    expect(mergedSession?.promptContextHistory).toEqual([[]]);
   });
 
   it("keeps richer same-id thinking traces from stale external snapshots", () => {
@@ -1496,14 +2069,14 @@ describe("useChatSessionShellState", () => {
       activeSessionId: session.id,
       sessions: [session],
     };
-    const queuedMessage = {
+    const queuedMessage = createQueuedMessageFixture({
       id: "queued-follow-up",
       sessionId: session.id,
       task: "Run the queued follow-up",
       contextAttachments: [],
       createdAt: 200,
       updatedAt: 200,
-    };
+    });
     const mergedState = mergeShellStateForPersistence(
       {
         ...storedBaseState,
@@ -1526,21 +2099,21 @@ describe("useChatSessionShellState", () => {
     expect(mergedState.sessions[0]?.pinnedAt).toBe(300);
   });
 
-  it("keeps queued messages when an external snapshot is missing them", () => {
+  it("honors an authoritative queued-message deletion from another window", () => {
     const baseState = createInitialShellState();
     const session = createSession({
       id: "session-queued-stale-drop",
       manualTitle: "Queued stale drop",
       updatedAt: 100,
     });
-    const queuedMessage = {
+    const queuedMessage = createQueuedMessageFixture({
       id: "queued-stale-drop",
       sessionId: session.id,
       task: "Keep this queued message",
       contextAttachments: [],
       createdAt: 200,
       updatedAt: 200,
-    };
+    });
     const currentState = {
       ...baseState,
       activeSessionId: session.id,
@@ -1559,7 +2132,157 @@ describe("useChatSessionShellState", () => {
       false,
     );
 
-    expect(mergedState.queuedSessionMessages).toEqual([queuedMessage]);
+    expect(mergedState.queuedSessionMessages).toEqual([]);
+  });
+
+  it("does not let unrelated activity overwrite a locally changed session field", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-field-merge",
+      manualTitle: "Before",
+      updatedAt: 100,
+    });
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    };
+    const mergedState = mergeShellStateForPersistence(
+      {
+        ...storedBaseState,
+        sessions: [
+          {
+            ...session,
+            manualTitle: "Local title",
+            updatedAt: 200,
+          },
+        ],
+      },
+      storedBaseState,
+      {
+        ...storedBaseState,
+        sessions: [
+          {
+            ...session,
+            lastReadAt: 500,
+            updatedAt: 500,
+          },
+        ],
+      },
+    );
+
+    expect(mergedState.sessions[0]?.manualTitle).toBe("Local title");
+    expect(mergedState.sessions[0]?.lastReadAt).toBe(500);
+  });
+
+  it("does not resurrect sessions deleted by another window", () => {
+    const baseState = createInitialShellState();
+    const retainedSession = createSession({
+      id: "retained-session",
+      updatedAt: 100,
+      messages: [
+        {
+          id: "removable-message",
+          role: "agent",
+          content: "Remove me",
+          createdAt: 100,
+        },
+      ],
+    });
+    const deletedSession = createSession({
+      id: "deleted-session",
+      updatedAt: 100,
+    });
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: retainedSession.id,
+      sessions: [retainedSession, deletedSession],
+    };
+    const latestState = {
+      ...storedBaseState,
+      sessions: [
+        {
+          ...retainedSession,
+          messages: [],
+          updatedAt: 200,
+        },
+      ],
+    };
+
+    const mergedState = mergeShellStateForPersistence(
+      storedBaseState,
+      storedBaseState,
+      latestState,
+    );
+
+    expect(mergedState.sessions.map((session) => session.id)).toEqual([
+      retainedSession.id,
+    ]);
+    expect(mergedState.sessions[0]?.messages).toEqual(
+      retainedSession.messages,
+    );
+  });
+
+  it("lets a session tombstone beat a saved draft unless the draft changed after the base", () => {
+    const baseState = createInitialShellState();
+    const retainedSession = createSession({
+      id: "retained-after-external-delete",
+      createdAt: 100,
+      updatedAt: 100,
+    });
+    const deletedSession = createSession({
+      id: "deleted-saved-draft",
+      draft: "Saved before deletion",
+      createdAt: 100,
+      updatedAt: 100,
+    });
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: deletedSession.id,
+      sessions: [deletedSession, retainedSession],
+    };
+    const externalState = {
+      ...storedBaseState,
+      activeSessionId: retainedSession.id,
+      sessions: [retainedSession],
+      sessionTombstones: { [deletedSession.id]: 300 },
+    };
+
+    const withoutLocalMutation = mergeShellStateFromExternalUpdate(
+      storedBaseState,
+      storedBaseState,
+      externalState,
+      false,
+    );
+
+    expect(
+      withoutLocalMutation.sessions.some(
+        (session) => session.id === deletedSession.id,
+      ),
+    ).toBe(false);
+
+    const editedSession = {
+      ...deletedSession,
+      draft: "Edited after deletion raced",
+      draftUpdatedAt: 400,
+      composerUpdatedAt: 400,
+      updatedAt: 400,
+    };
+    const withLocalMutation = mergeShellStateFromExternalUpdate(
+      {
+        ...storedBaseState,
+        sessions: [editedSession, retainedSession],
+      },
+      storedBaseState,
+      externalState,
+      true,
+    );
+
+    expect(
+      withLocalMutation.sessions.find(
+        (session) => session.id === deletedSession.id,
+      )?.draft,
+    ).toBe("Edited after deletion raced");
   });
 
   it("merges remembered new-chat defaults during concurrent persistence", () => {
@@ -1603,14 +2326,14 @@ describe("useChatSessionShellState", () => {
       manualTitle: "Queued local delete",
       updatedAt: 100,
     });
-    const queuedMessage = {
+    const queuedMessage = createQueuedMessageFixture({
       id: "queued-local-delete",
       sessionId: session.id,
       task: "Remove this queued message",
       contextAttachments: [],
       createdAt: 200,
       updatedAt: 200,
-    };
+    });
     const storedBaseState = {
       ...baseState,
       activeSessionId: session.id,
@@ -1645,14 +2368,14 @@ describe("useChatSessionShellState", () => {
       manualTitle: "Queued dispatch",
       updatedAt: 100,
     });
-    const queuedMessage = {
+    const queuedMessage = createQueuedMessageFixture({
       id: "queued-dispatched",
       sessionId: session.id,
       task: "Dispatch me once",
       contextAttachments: [],
       createdAt: 200,
       updatedAt: 200,
-    };
+    });
     const storedBaseState = {
       ...baseState,
       activeSessionId: session.id,
@@ -1692,6 +2415,151 @@ describe("useChatSessionShellState", () => {
     );
 
     expect(mergedState.queuedSessionMessages).toEqual([]);
+  });
+
+  it("merges queued text edits independently from a concurrent reorder", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({ id: "queue-order-session" });
+    const first = createQueuedMessageFixture({
+      id: "queue-first",
+      sessionId: session.id,
+      task: "First",
+      orderRank: 0,
+    });
+    const second = createQueuedMessageFixture({
+      id: "queue-second",
+      sessionId: session.id,
+      task: "Second",
+      orderRank: 1,
+    });
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+      queuedSessionMessages: [first, second],
+    };
+    const merged = mergeShellStateForPersistence(
+      {
+        ...storedBaseState,
+        queuedSessionMessages: [
+          { ...second, orderRank: 0, orderUpdatedAt: 200 },
+          { ...first, orderRank: 1, orderUpdatedAt: 200 },
+        ],
+      },
+      storedBaseState,
+      {
+        ...storedBaseState,
+        queuedSessionMessages: [
+          {
+            ...first,
+            task: "First, edited",
+            contentUpdatedAt: 300,
+            updatedAt: 300,
+          },
+          second,
+        ],
+      },
+    );
+
+    expect(
+      merged.queuedSessionMessages.map((message) => [message.id, message.task]),
+    ).toEqual([
+      ["queue-second", "Second"],
+      ["queue-first", "First, edited"],
+    ]);
+  });
+
+  it("keeps a queued deletion over a stale blocker completion", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({ id: "queue-delete-blocker-session" });
+    const queued = createQueuedMessageFixture({
+      id: "queue-delete-blocker",
+      sessionId: session.id,
+      task: "Do not resurrect",
+      blockedByTaskId: "active-task",
+    });
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+      queuedSessionMessages: [queued],
+    };
+    const unblockedQueuedMessage = {
+      ...queued,
+      blockerUpdatedAt: 250,
+      updatedAt: 250,
+    };
+    delete unblockedQueuedMessage.blockedByTaskId;
+    const merged = mergeShellStateForPersistence(
+      {
+        ...storedBaseState,
+        queuedSessionMessages: [],
+        queuedMessageTombstones: { [queued.id]: 300 },
+      },
+      storedBaseState,
+      {
+        ...storedBaseState,
+        queuedSessionMessages: [unblockedQueuedMessage],
+      },
+    );
+
+    expect(merged.queuedSessionMessages).toEqual([]);
+    expect(merged.queuedMessageTombstones[queued.id]).toBe(300);
+  });
+
+  it("does not re-add a removed queued attachment after a stale text edit", () => {
+    const baseState = createInitialShellState();
+    const session = createSession({ id: "queue-attachment-session" });
+    const attachment = {
+      id: "queued-attachment",
+      path: "C:\\Project\\context.md",
+      kind: "file" as const,
+      name: "context.md",
+      parent: "C:\\Project",
+    };
+    const queued = createQueuedMessageFixture({
+      id: "queue-with-attachment",
+      sessionId: session.id,
+      task: "Original",
+      contextAttachments: [attachment],
+    });
+    const storedBaseState = {
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+      queuedSessionMessages: [queued],
+    };
+    const merged = mergeShellStateForPersistence(
+      {
+        ...storedBaseState,
+        queuedSessionMessages: [
+          {
+            ...queued,
+            contextAttachments: [],
+            attachmentTombstones: { [attachment.id]: 200 },
+            attachmentsUpdatedAt: 200,
+            updatedAt: 200,
+          },
+        ],
+      },
+      storedBaseState,
+      {
+        ...storedBaseState,
+        queuedSessionMessages: [
+          {
+            ...queued,
+            task: "Edited elsewhere",
+            contentUpdatedAt: 300,
+            updatedAt: 300,
+          },
+        ],
+      },
+    );
+
+    expect(merged.queuedSessionMessages[0]).toMatchObject({
+      task: "Edited elsewhere",
+      contextAttachments: [],
+    });
   });
 
   it("keeps the window-local active session stable when persisted activeSessionId changes", async () => {

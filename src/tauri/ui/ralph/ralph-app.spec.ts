@@ -5,10 +5,37 @@ import type { RuntimeProviderAvailability } from "../runtime";
 import {
   getConnectedRalphProviderChoices,
   getRalphProviderChoices,
+  mergeLoadedRalphSettings,
   normalizeRalphRuntimeSettings,
 } from "./ralph-app";
 
 describe("Ralph provider choices", () => {
+  it("keeps settings edited before hydration while applying untouched loaded fields", () => {
+    const loaded = {
+      ...DEFAULT_RALPH_SETTINGS,
+      workspaceRoot: "C:\\Loaded",
+      generationReasoning: undefined,
+      runModel: "loaded-model",
+    } satisfies RalphSettings;
+    const current = {
+      ...DEFAULT_RALPH_SETTINGS,
+      workspaceRoot: "C:\\Typed",
+      generationReasoning: "high",
+    } satisfies RalphSettings;
+
+    expect(
+      mergeLoadedRalphSettings(
+        loaded,
+        current,
+        new Set<keyof RalphSettings>(["workspaceRoot", "generationReasoning"]),
+      ),
+    ).toMatchObject({
+      workspaceRoot: "C:\\Typed",
+      generationReasoning: "high",
+      runModel: "loaded-model",
+    });
+  });
+
   it("keeps only connected runnable providers in Ralph provider selectors", () => {
     const availability = [
       { provider: "openai", configured: false },

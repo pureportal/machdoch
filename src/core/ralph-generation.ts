@@ -15,6 +15,7 @@ import {
   writeGeneratedRalphFlowWithAliasFallback,
 } from "./_helpers/create-available-generated-flow-alias.helper.js";
 import { createGenerationAttemptFlowPath } from "./_helpers/create-generation-attempt-flow-path.helper.js";
+import { createRalphFlowFingerprint } from "./_helpers/create-ralph-flow-fingerprint.helper.js";
 import { createGenerationActorResultMessage } from "./_helpers/create-generation-actor-result-message.helper.js";
 import { createGenerationDidNotConvergeSummary } from "./_helpers/create-generation-did-not-converge-summary.helper.js";
 import { createGenerationFeedbackExcerpt } from "./_helpers/create-generation-feedback-excerpt.helper.js";
@@ -140,6 +141,7 @@ export interface RalphFlowGenerationOptions {
   name: string;
   prompt: string;
   existingFlow?: RalphFlow;
+  expectedFingerprint?: string;
   mode?: "do-it" | "interview";
   target?: "flow" | "prompt-block" | "refactor";
   scope?: RalphFlowScope;
@@ -2789,6 +2791,11 @@ export const createRalphFlowWithAgent = async (
   options: RalphFlowGenerationOptions,
 ): Promise<RalphFlowGenerationResult> => {
   const scope = options.scope ?? "workspace";
+  const expectedFingerprint =
+    options.expectedFingerprint ??
+    (options.existingFlow
+      ? createRalphFlowFingerprint(options.existingFlow)
+      : undefined);
   const alias = normalizeFlowAlias(options.name);
   const id = options.existingFlow?.id ?? randomUUID();
   const displayName = options.existingFlow?.name ?? options.name.trim();
@@ -3151,6 +3158,9 @@ export const createRalphFlowWithAgent = async (
           scope,
           fallbackAliasBase: generationIdentity.alias ?? alias,
           allowAliasFallback: true,
+          ...(expectedFingerprint
+            ? { expectedFingerprint }
+            : {}),
         });
         latestValidation = validateRalphFlow(flow, { config });
         await emitGenerationEvent({

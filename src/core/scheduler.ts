@@ -1,15 +1,25 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
   mkdir,
+  open,
   readFile,
+  realpath,
   readdir,
   rename,
   rm,
   stat,
   writeFile,
 } from "node:fs/promises";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import {
+  createRalphFlowFingerprint,
+  readRalphFlow,
+  type RalphFlow,
+  type RalphFlowVariable,
+} from "./ralph.js";
+import { discoverRalphFlowVariables } from "./_helpers/ralph-placeholders.helper.js";
+import { validateRalphFlow } from "./_helpers/validate-ralph-flow.helper.js";
 import { getUserConfigPath } from "./env.js";
 import { parseMarkdownDocument } from "./frontmatter.js";
 import type {
@@ -87,12 +97,15 @@ export type {
 export const SMART_SCHEDULER_SCHEMA = "machdoch.smartScheduler" as const;
 export const SMART_SCHEDULER_SCHEMA_VERSION = 1 as const;
 export const SMART_SCHEDULER_FILE_NAME = "scheduler.json";
+export const SMART_SCHEDULER_WORKSPACE_REGISTRY_FILE_NAME =
+  "scheduler-workspaces.json";
 
 const DEFAULT_TIMEZONE = "UTC";
 const DEFAULT_MISSED_RUN_POLICY: ScheduledMissedRunPolicy = "enqueue-latest";
 const DEFAULT_MISSED_RUN_GRACE_MS = 60_000;
 const DEFAULT_HISTORY_LIMIT = 100;
 const DEFAULT_EVENT_HISTORY_LIMIT = 1_000;
+const DEFAULT_MUTATION_RECEIPT_LIMIT = 1_000;
 const DEFAULT_MAX_CATCH_UP_RUNS = 100;
 const DEFAULT_CONCURRENCY_LIMIT = 1;
 const DEFAULT_SCHEDULER_SERVICE_POLL_INTERVAL_MS = 30_000;
@@ -107,6 +120,10 @@ const DEFAULT_RETRY_POLICY: ScheduledRetryPolicy = {
   maxTimeoutMs: 60_000,
   randomize: true,
 };
+const DEFAULT_UNATTENDED_RALPH_RETRY_POLICY: ScheduledRetryPolicy = {
+  ...DEFAULT_RETRY_POLICY,
+  maxAttempts: 3,
+};
 const SCHEDULER_STATE_LOCK_RETRY_MS = 25;
 const SCHEDULER_STATE_LOCK_STALE_MS = 5 * 60_000;
 const SCHEDULER_STATE_LOCK_TRANSIENT_ACCESS_MS = 2_000;
@@ -119,6 +136,21 @@ const SCHEDULER_STATE_REPLACE_RETRY_DELAYS_MS = [
   250,
 ] as const;
 const SCHEDULER_TIMEOUT_REASON_PREFIX = "Scheduled run exceeded max duration";
+const SCHEDULER_HEARTBEAT_FAILURE_PREFIX =
+  "Scheduled run heartbeat persistence failed";
+
+class StaleScheduledRunClaimError extends Error {
+  constructor(runId: string) {
+    super(`Scheduled run claim is no longer current: ${runId}`);
+    this.name = "StaleScheduledRunClaimError";
+  }
+}
+
+const isStaleScheduledRunClaimError = (
+  error: unknown,
+): error is StaleScheduledRunClaimError => {
+  return error instanceof StaleScheduledRunClaimError;
+};
 
 export type ScheduledJobStatus = "active" | "paused" | "completed" | "deleted";
 
@@ -285,6 +317,16 @@ export interface ScheduledMacroReference {
 
 export type ScheduledJobTargetType = "prompt" | "ralph-flow";
 export type ScheduledRalphFlowScope = "workspace" | "user";
+export type ScheduledRalphExecutionProfile = "unattended";
+export type ScheduledRalphResumePolicy = "never" | "recoverable";
+
+export interface ScheduledRalphFlowPermissions {
+  allowedRoots: string[];
+  allowCommands: boolean;
+  allowWrites: boolean;
+  allowNetwork: boolean;
+  allowMcpTools: boolean;
+}
 
 export interface ScheduledRalphFlowTarget {
   scope: ScheduledRalphFlowScope;
@@ -292,13 +334,36 @@ export interface ScheduledRalphFlowTarget {
   params: Record<string, string>;
   maxTransitions?: number;
   runLogScope?: ScheduledRalphFlowScope;
-  permissions?: {
-    allowedRoots: string[];
-    allowCommands: boolean;
-    allowWrites: boolean;
-    allowNetwork: boolean;
-    allowMcpTools: boolean;
-  };
+  executionProfile?: ScheduledRalphExecutionProfile;
+  resumePolicy?: ScheduledRalphResumePolicy;
+  permissions?: ScheduledRalphFlowPermissions;
+  /** Immutable flow revision captured when the job was created or updated. */
+  flowSnapshot?: RalphFlow;
+  flowFingerprint?: string;
+  flowSnapshotAt?: number;
+  flowSnapshotRefreshError?: string;
+  flowSnapshotRefreshFailedAt?: number;
+}
+
+export interface ScheduledRalphVariableReadiness {
+  name: string;
+  type: RalphFlowVariable["type"];
+  required: boolean;
+  default?: string;
+  value?: string;
+  source: "parameter" | "default" | "missing";
+}
+
+export interface ScheduledRalphTargetReadiness {
+  ready: boolean;
+  flowId: string;
+  flowName?: string;
+  flowFingerprint?: string;
+  variables: ScheduledRalphVariableReadiness[];
+  autoResolvedHumanBlockIds: string[];
+  blockingHumanBlockIds: string[];
+  errors: string[];
+  warnings: string[];
 }
 
 export interface ScheduledJobTarget {
@@ -402,6 +467,8 @@ export interface UpdateScheduledJobInput {
 
 export interface ScheduledRunAttempt {
   attempt: number;
+  /** Durable fence token that owned this attempt. */
+  claimToken?: string;
   startedAt: number;
   finishedAt: number;
   status: "succeeded" | "failed" | "cancelled" | "timed_out";
@@ -426,8 +493,14 @@ export interface ScheduledJobRun {
   queueKey: string;
   concurrencyLimit: number;
   attemptHistory: ScheduledRunAttempt[];
+  /** Durable fence token for the currently running attempt. */
+  claimToken?: string;
+  /** Immutable execution target captured at enqueue time. */
+  targetSnapshot?: ScheduledJobTarget;
+  maxDurationMsSnapshot?: number;
   dedupeKey?: string;
   parentRunId?: string;
+  idempotencyKey?: string;
   expiresAt?: number;
   nextAttemptAt?: number;
   startedAt?: number;
@@ -438,6 +511,25 @@ export interface ScheduledJobRun {
   error?: string;
 }
 
+export type SchedulerMutationOperation =
+  | "upsert-job"
+  | "update-job"
+  | "pause-job"
+  | "resume-job"
+  | "delete-job"
+  | "trigger-job"
+  | "retry-run"
+  | "cancel-run";
+
+export interface SchedulerMutationReceipt {
+  key: string;
+  operation: SchedulerMutationOperation;
+  target: string;
+  payloadHash: string;
+  completedAt: number;
+  result: unknown;
+}
+
 export interface SmartSchedulerState {
   schema: typeof SMART_SCHEDULER_SCHEMA;
   schemaVersion: typeof SMART_SCHEDULER_SCHEMA_VERSION;
@@ -446,6 +538,7 @@ export interface SmartSchedulerState {
   jobs: ScheduledJob[];
   runs: ScheduledJobRun[];
   events: ScheduledTriggerEvent[];
+  mutationReceipts: SchedulerMutationReceipt[];
 }
 
 export interface ScheduledTriggerEventInput {
@@ -490,6 +583,8 @@ export interface ScheduledTriggerEventResult {
 export interface ScheduledRunHandle {
   jobId: string;
   runId: string;
+  deduplicated?: boolean;
+  status?: ScheduledRunStatus;
 }
 
 export interface ScheduledRunEnqueueResult {
@@ -527,13 +622,18 @@ export interface SchedulerClock {
 
 export interface DurableSmartSchedulerOptions {
   statePath: string;
+  workspaceRoot?: string;
   executor?: ScheduledTaskExecutor;
   clock?: SchedulerClock;
   rng?: () => number;
+  runningHeartbeatMs?: number;
+  heartbeatRun?: (runId: string, claimToken: string) => Promise<void>;
 }
 
 export interface RunQueuedScheduledJobsOptions {
   maxRuns?: number;
+  recoverAbandoned?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface RunQueuedScheduledJobsResult {
@@ -594,6 +694,7 @@ const createEmptySchedulerState = (timestamp: number): SmartSchedulerState => ({
   jobs: [],
   runs: [],
   events: [],
+  mutationReceipts: [],
 });
 
 export const getWorkspaceSchedulerStatePath = (workspaceRoot: string): string => {
@@ -774,6 +875,94 @@ const isRecordValue = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
+const isSchedulerMutationOperation = (
+  value: unknown,
+): value is SchedulerMutationOperation => {
+  return (
+    value === "upsert-job" ||
+    value === "update-job" ||
+    value === "pause-job" ||
+    value === "resume-job" ||
+    value === "delete-job" ||
+    value === "trigger-job" ||
+    value === "retry-run" ||
+    value === "cancel-run"
+  );
+};
+
+const normalizeMutationReceipts = (
+  value: unknown,
+): SchedulerMutationReceipt[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((candidate): candidate is SchedulerMutationReceipt => {
+      return (
+        isRecordValue(candidate) &&
+        typeof candidate.key === "string" &&
+        candidate.key.length > 0 &&
+        isSchedulerMutationOperation(candidate.operation) &&
+        typeof candidate.target === "string" &&
+        candidate.target.length > 0 &&
+        typeof candidate.payloadHash === "string" &&
+        candidate.payloadHash.length > 0 &&
+        typeof candidate.completedAt === "number" &&
+        Number.isFinite(candidate.completedAt) &&
+        Object.prototype.hasOwnProperty.call(candidate, "result")
+      );
+    })
+    .slice(-DEFAULT_MUTATION_RECEIPT_LIMIT);
+};
+
+const serializeMutationPayload = (value: unknown): string => {
+  if (value === null) {
+    return "null";
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => serializeMutationPayload(entry)).join(",")}]`;
+  }
+
+  if (isRecordValue(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .filter((key) => value[key] !== undefined)
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${serializeMutationPayload(value[key])}`,
+      )
+      .join(",")}}`;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? JSON.stringify(value) : "null";
+  }
+
+  if (
+    typeof value === "string" ||
+    typeof value === "boolean"
+  ) {
+    return JSON.stringify(value);
+  }
+
+  return "null";
+};
+
+const createMutationPayloadHash = (payload: unknown): string => {
+  return createHash("sha256")
+    .update(serializeMutationPayload(payload))
+    .digest("hex");
+};
+
+interface SchedulerMutationRequest {
+  key: string | undefined;
+  operation: SchedulerMutationOperation;
+  target: string;
+  payload: unknown;
+}
+
 const getPrimaryTimeTrigger = (
   triggers: ScheduledJobTrigger[],
 ): ScheduledTimeTrigger | undefined => {
@@ -874,6 +1063,7 @@ export const readSmartSchedulerState = async (
     jobs: parsed.jobs.map((job) => migrateScheduledJobRecord(job)),
     runs: parsed.runs,
     events: Array.isArray(parsed.events) ? parsed.events : [],
+    mutationReceipts: normalizeMutationReceipts(parsed.mutationReceipts),
   };
 };
 
@@ -903,6 +1093,31 @@ const replaceSmartSchedulerStateFile = async (
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 };
 
+const writeSchedulerFileDurably = async (
+  tempPath: string,
+  targetPath: string,
+  content: string,
+): Promise<void> => {
+  const handle = await open(tempPath, "wx");
+  try {
+    await handle.writeFile(content, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+
+  await replaceSmartSchedulerStateFile(tempPath, targetPath);
+
+  if (process.platform !== "win32") {
+    const directoryHandle = await open(dirname(targetPath), "r");
+    try {
+      await directoryHandle.sync();
+    } finally {
+      await directoryHandle.close();
+    }
+  }
+};
+
 const writeSmartSchedulerStateUnlocked = async (
   statePath: string,
   state: SmartSchedulerState,
@@ -912,8 +1127,11 @@ const writeSmartSchedulerStateUnlocked = async (
   const tempPath = `${statePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
 
   try {
-    await writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-    await replaceSmartSchedulerStateFile(tempPath, statePath);
+    await writeSchedulerFileDurably(
+      tempPath,
+      statePath,
+      `${JSON.stringify(state, null, 2)}\n`,
+    );
   } catch (error) {
     await rm(tempPath, { force: true });
     throw error;
@@ -934,6 +1152,9 @@ const createJobId = (): string => `sched_${randomUUID()}`;
 const createTriggerId = (): string => `trigger_${randomUUID()}`;
 
 const createRunId = (): string => `run_${randomUUID()}`;
+
+const createRunClaimToken = (attempt: number): string =>
+  `claim_${attempt}_${randomUUID()}`;
 
 const createEventId = (): string => `event_${randomUUID()}`;
 
@@ -1276,6 +1497,7 @@ const normalizeRalphFlowScope = (
 
 const normalizeRalphFlowTarget = (
   target: ScheduledJobTargetInput,
+  workspaceRoot: string,
 ): ScheduledRalphFlowTarget | undefined => {
   if (target.type !== "ralph-flow" && !target.ralphFlow) {
     return undefined;
@@ -1288,6 +1510,37 @@ const normalizeRalphFlowTarget = (
   }
 
   const maxTransitions = target.ralphFlow?.maxTransitions;
+  const executionProfile =
+    target.ralphFlow?.executionProfile === "unattended"
+      ? target.ralphFlow.executionProfile
+      : undefined;
+  const resumePolicy =
+    target.ralphFlow?.resumePolicy === "never" ||
+    target.ralphFlow?.resumePolicy === "recoverable"
+      ? target.ralphFlow.resumePolicy
+      : executionProfile === "unattended"
+        ? "recoverable"
+        : undefined;
+  const configuredPermissions = target.ralphFlow?.permissions;
+  const unattended = executionProfile === "unattended";
+  const configuredAllowedRoots = normalizeStringList(
+    configuredPermissions?.allowedRoots,
+  );
+  const permissions =
+    configuredPermissions || unattended
+      ? {
+          allowedRoots:
+            configuredAllowedRoots.length > 0
+              ? configuredAllowedRoots
+              : unattended
+                ? [workspaceRoot]
+                : [],
+          allowCommands: unattended || configuredPermissions?.allowCommands === true,
+          allowWrites: unattended || configuredPermissions?.allowWrites === true,
+          allowNetwork: unattended || configuredPermissions?.allowNetwork === true,
+          allowMcpTools: unattended || configuredPermissions?.allowMcpTools === true,
+        }
+      : undefined;
 
   if (
     maxTransitions !== undefined &&
@@ -1304,28 +1557,459 @@ const normalizeRalphFlowTarget = (
     ...(target.ralphFlow?.runLogScope
       ? { runLogScope: normalizeRalphFlowScope(target.ralphFlow.runLogScope, "workspace") }
       : {}),
-    ...(target.ralphFlow?.permissions
-      ? {
-          permissions: {
-            allowedRoots: normalizeStringList(target.ralphFlow.permissions.allowedRoots),
-            allowCommands: target.ralphFlow.permissions.allowCommands === true,
-            allowWrites: target.ralphFlow.permissions.allowWrites === true,
-            allowNetwork: target.ralphFlow.permissions.allowNetwork === true,
-            allowMcpTools: target.ralphFlow.permissions.allowMcpTools === true,
-          },
-        }
-      : {}),
+    ...(executionProfile ? { executionProfile } : {}),
+    ...(resumePolicy ? { resumePolicy } : {}),
+    ...(permissions ? { permissions } : {}),
   };
 };
 
-const normalizeTarget = (target: ScheduledJobTargetInput): ScheduledJobTarget => {
-  const workspaceRoot = normalizeSchedulerTrimmedText(target.workspaceRoot);
+export const getUserSchedulerWorkspaceRegistryPath = (): string => {
+  return join(
+    dirname(getUserConfigPath()),
+    SMART_SCHEDULER_WORKSPACE_REGISTRY_FILE_NAME,
+  );
+};
 
-  if (!workspaceRoot) {
+interface SchedulerWorkspaceRegistry {
+  schema: "machdoch.schedulerWorkspaces";
+  schemaVersion: 1;
+  updatedAt: number;
+  workspaceRoots: string[];
+}
+
+const readSchedulerWorkspaceRegistryUnlocked = async (
+  registryPath: string,
+): Promise<SchedulerWorkspaceRegistry> => {
+  if (!existsSync(registryPath)) {
+    return {
+      schema: "machdoch.schedulerWorkspaces",
+      schemaVersion: 1,
+      updatedAt: Date.now(),
+      workspaceRoots: [],
+    };
+  }
+
+  const value = JSON.parse(await readFile(registryPath, "utf8")) as Partial<SchedulerWorkspaceRegistry>;
+
+  if (
+    value.schema !== "machdoch.schedulerWorkspaces" ||
+    value.schemaVersion !== 1 ||
+    !Array.isArray(value.workspaceRoots)
+  ) {
+    throw new Error(`Unsupported scheduler workspace registry: ${registryPath}`);
+  }
+
+  return {
+    schema: "machdoch.schedulerWorkspaces",
+    schemaVersion: 1,
+    updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : Date.now(),
+    workspaceRoots: value.workspaceRoots.filter(
+      (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+    ),
+  };
+};
+
+const writeSchedulerWorkspaceRegistryUnlocked = async (
+  registryPath: string,
+  registry: SchedulerWorkspaceRegistry,
+): Promise<void> => {
+  await mkdir(dirname(registryPath), { recursive: true });
+  const tempPath = `${registryPath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
+
+  try {
+    await writeSchedulerFileDurably(
+      tempPath,
+      registryPath,
+      `${JSON.stringify(registry, null, 2)}\n`,
+    );
+  } catch (error) {
+    await rm(tempPath, { force: true });
+    throw error;
+  }
+};
+
+export const registerSchedulerWorkspace = async (
+  workspaceRoot: string,
+): Promise<string> => {
+  const canonicalRoot = await canonicalizeWorkspaceRoot(workspaceRoot);
+  const registryPath = getUserSchedulerWorkspaceRegistryPath();
+
+  await withSchedulerStateLock(registryPath, async () => {
+    const registry = await readSchedulerWorkspaceRegistryUnlocked(registryPath);
+    const queueKey = createCanonicalWorkspaceQueueKey(canonicalRoot);
+    const rootsByKey = new Map(
+      registry.workspaceRoots.map((root) => [createCanonicalWorkspaceQueueKey(root), root]),
+    );
+    rootsByKey.set(queueKey, canonicalRoot);
+    registry.workspaceRoots = [...rootsByKey.values()].sort((left, right) =>
+      left.localeCompare(right),
+    );
+    registry.updatedAt = Date.now();
+    await writeSchedulerWorkspaceRegistryUnlocked(registryPath, registry);
+  });
+
+  return canonicalRoot;
+};
+
+export const listRegisteredSchedulerWorkspaces = async (): Promise<string[]> => {
+  const registryPath = getUserSchedulerWorkspaceRegistryPath();
+
+  return withSchedulerStateLock(registryPath, async () => {
+    const registry = await readSchedulerWorkspaceRegistryUnlocked(registryPath);
+    const validity = await Promise.all(
+      registry.workspaceRoots.map(async (workspaceRoot) => {
+        try {
+          return (await stat(workspaceRoot)).isDirectory();
+        } catch {
+          return false;
+        }
+      }),
+    );
+    const workspaceRoots = registry.workspaceRoots.filter(
+      (_workspaceRoot, index) => validity[index],
+    );
+
+    if (workspaceRoots.length !== registry.workspaceRoots.length) {
+      registry.workspaceRoots = workspaceRoots;
+      registry.updatedAt = Date.now();
+      await writeSchedulerWorkspaceRegistryUnlocked(registryPath, registry);
+    }
+
+    return workspaceRoots;
+  });
+};
+
+const cloneScheduledValue = <T>(value: T): T => {
+  return JSON.parse(JSON.stringify(value)) as T;
+};
+
+export const createScheduledRalphExecutionSnapshot = (
+  flow: RalphFlow,
+): RalphFlow => {
+  const snapshot = cloneScheduledValue(flow);
+  delete snapshot.createdAt;
+  delete snapshot.updatedAt;
+
+  if (snapshot.source) {
+    snapshot.source = {
+      kind: snapshot.source.kind,
+      id: snapshot.source.id,
+      version: snapshot.source.version,
+      ...(snapshot.source.importedAt
+        ? { importedAt: snapshot.source.importedAt }
+        : {}),
+      ...(snapshot.source.templateFingerprint
+        ? { templateFingerprint: snapshot.source.templateFingerprint }
+        : {}),
+    };
+  }
+
+  return snapshot;
+};
+
+const canonicalizeWorkspaceRoot = async (workspaceRoot: string): Promise<string> => {
+  const absoluteRoot = resolve(workspaceRoot);
+
+  try {
+    return await realpath(absoluteRoot);
+  } catch (error) {
+    if (!isErrorWithCode(error, "ENOENT")) {
+      throw error;
+    }
+
+    return absoluteRoot;
+  }
+};
+
+const createCanonicalWorkspaceQueueKey = (workspaceRoot: string): string => {
+  const normalized = resolve(workspaceRoot).replaceAll("\\", "/");
+  const canonical = process.platform === "win32" ? normalized.toLowerCase() : normalized;
+
+  return `ralph-workspace:${canonical}`;
+};
+
+const hasScheduledValue = (value: unknown): boolean => {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  return true;
+};
+
+export const inspectScheduledRalphTarget = async (
+  workspaceRoot: string,
+  target: ScheduledRalphFlowTarget,
+  options: { flow?: RalphFlow; params?: Record<string, string> } = {},
+): Promise<ScheduledRalphTargetReadiness> => {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const autoResolvedHumanBlockIds: string[] = [];
+  const blockingHumanBlockIds: string[] = [];
+  let flow: RalphFlow;
+
+  try {
+    flow = options.flow ?? target.flowSnapshot ?? await readRalphFlow(
+      workspaceRoot,
+      target.id,
+      { scope: target.scope },
+    );
+  } catch (error) {
+    return {
+      ready: false,
+      flowId: target.id,
+      variables: [],
+      autoResolvedHumanBlockIds,
+      blockingHumanBlockIds,
+      errors: [errorToMessage(error)],
+      warnings,
+    };
+  }
+
+  const params = options.params ?? target.params;
+  const declaredVariables = discoverRalphFlowVariables(flow);
+  const declaredVariableNames = new Set(declaredVariables.map((variable) => variable.name));
+  const resolvedVariables = Object.fromEntries(
+    declaredVariables.flatMap((variable) => {
+      if (Object.hasOwn(params, variable.name)) {
+        return [[variable.name, params[variable.name] ?? ""]] as const;
+      }
+      if (variable.default !== undefined) {
+        return [[variable.name, variable.default]] as const;
+      }
+      return [];
+    }),
+  );
+  const variables: ScheduledRalphVariableReadiness[] = declaredVariables.map(
+    (variable) => {
+      const hasParam = Object.hasOwn(params, variable.name);
+      const value = hasParam ? params[variable.name] : variable.default;
+      const source = hasParam
+        ? "parameter" as const
+        : variable.default !== undefined
+          ? "default" as const
+          : "missing" as const;
+
+      if (variable.required && !hasScheduledValue(value)) {
+        errors.push(`Missing required Ralph parameter \`${variable.name}\`.`);
+      }
+
+      return {
+        name: variable.name,
+        type: variable.type,
+        required: variable.required,
+        ...(variable.default !== undefined ? { default: variable.default } : {}),
+        ...(value !== undefined ? { value } : {}),
+        source,
+      };
+    },
+  );
+
+  for (const name of Object.keys(params)) {
+    if (!declaredVariableNames.has(name)) {
+      errors.push(`Ralph parameter \`${name}\` is not declared by this flow.`);
+    }
+  }
+
+  const validation = validateRalphFlow(flow, { variableValues: resolvedVariables });
+  errors.push(...validation.errors.filter((message) => !message.startsWith("missing required Ralph variable")));
+  warnings.push(...validation.warnings);
+
+  for (const block of flow.blocks) {
+    if (block.type === "ASK_USER") {
+      if (target.executionProfile === "unattended") {
+        autoResolvedHumanBlockIds.push(block.id);
+        warnings.push(
+          `ASK_USER block \`${block.id}\` will synthesize bounded unattended values.`,
+        );
+        continue;
+      }
+
+      const canAutoResolve =
+        (block.mode ?? "missingOnly") === "missingOnly" &&
+        block.fields.every((field) => {
+          if (!field.required || field.skippable) {
+            return true;
+          }
+
+          const variableName = field.variableName?.trim() || field.id;
+          return hasScheduledValue(resolvedVariables[variableName]) ||
+            hasScheduledValue(field.defaultValue);
+        });
+
+      if (canAutoResolve) {
+        autoResolvedHumanBlockIds.push(block.id);
+        warnings.push(`ASK_USER block \`${block.id}\` will use scheduled/default values.`);
+      } else {
+        blockingHumanBlockIds.push(block.id);
+        errors.push(`Scheduled Ralph flow cannot pause at ASK_USER block \`${block.id}\`.`);
+      }
+      continue;
+    }
+
+    if (block.type === "INTERVIEW") {
+      if (target.executionProfile === "unattended") {
+        autoResolvedHumanBlockIds.push(block.id);
+        warnings.push(
+          `INTERVIEW block \`${block.id}\` will be skipped by the unattended runtime.`,
+        );
+        continue;
+      }
+
+      const interviewEnabled = resolvedVariables.enableInterview;
+
+      if (interviewEnabled === "false" || interviewEnabled === "0") {
+        autoResolvedHumanBlockIds.push(block.id);
+        warnings.push(`INTERVIEW block \`${block.id}\` is disabled for unattended execution.`);
+      } else {
+        blockingHumanBlockIds.push(block.id);
+        errors.push(
+          `Scheduled Ralph flow cannot pause at INTERVIEW block \`${block.id}\`; set enableInterview=false or remove the block.`,
+        );
+      }
+    }
+  }
+
+  return {
+    ready: errors.length === 0,
+    flowId: flow.id,
+    flowName: flow.name,
+    flowFingerprint: createRalphFlowFingerprint(flow),
+    variables,
+    autoResolvedHumanBlockIds,
+    blockingHumanBlockIds,
+    errors: Array.from(new Set(errors)),
+    warnings: Array.from(new Set(warnings)),
+  };
+};
+
+const pinScheduledRalphTarget = async (
+  workspaceRoot: string,
+  target: ScheduledRalphFlowTarget,
+  timestamp: number,
+): Promise<ScheduledRalphFlowTarget> => {
+  const flow = await readRalphFlow(workspaceRoot, target.id, { scope: target.scope });
+  const readiness = await inspectScheduledRalphTarget(workspaceRoot, target, { flow });
+
+  if (!readiness.ready) {
+    throw new Error(`Scheduled Ralph target is not unattended-ready: ${readiness.errors.join(" ")}`);
+  }
+
+  return {
+    ...target,
+    id: flow.id,
+    flowSnapshot: createScheduledRalphExecutionSnapshot(flow),
+    flowFingerprint: createRalphFlowFingerprint(flow),
+    flowSnapshotAt: timestamp,
+  };
+};
+
+const refreshScheduledRalphTarget = async (
+  workspaceRoot: string,
+  target: ScheduledRalphFlowTarget,
+  timestamp: number,
+): Promise<{
+  target: ScheduledRalphFlowTarget;
+  usable: boolean;
+  error?: string;
+}> => {
+  try {
+    const refreshed = await pinScheduledRalphTarget(
+      workspaceRoot,
+      target,
+      timestamp,
+    );
+    delete refreshed.flowSnapshotRefreshError;
+    delete refreshed.flowSnapshotRefreshFailedAt;
+    return { target: refreshed, usable: true };
+  } catch (error) {
+    const message = errorToMessage(error);
+    const fallback = {
+      ...target,
+      flowSnapshotRefreshError: message,
+      flowSnapshotRefreshFailedAt: timestamp,
+    };
+
+    return {
+      target: fallback,
+      usable: Boolean(target.flowSnapshot && target.flowFingerprint),
+      error: message,
+    };
+  }
+};
+
+const normalizeRalphTargetForStorage = async (
+  workspaceRoot: string,
+  target: ScheduledRalphFlowTarget,
+  previousTarget: ScheduledRalphFlowTarget | undefined,
+  timestamp: number,
+): Promise<ScheduledRalphFlowTarget> => {
+  try {
+    return await pinScheduledRalphTarget(workspaceRoot, target, timestamp);
+  } catch (error) {
+    const message = errorToMessage(error);
+
+    if (!/^Ralph flow `.+` was not found\.$/u.test(message)) {
+      throw error;
+    }
+
+    // Watches, imported scheduler state, and external automation may refer to
+    // a flow before it is installed. Persist that reference for CRUD/sync, but
+    // retain any last valid pin and mark the target degraded. Enqueue paths
+    // must refresh successfully or have that immutable fallback before running.
+    return {
+      ...target,
+      ...(previousTarget?.flowSnapshot
+        ? { flowSnapshot: cloneScheduledValue(previousTarget.flowSnapshot) }
+        : {}),
+      ...(previousTarget?.flowFingerprint
+        ? { flowFingerprint: previousTarget.flowFingerprint }
+        : {}),
+      ...(previousTarget?.flowSnapshotAt !== undefined
+        ? { flowSnapshotAt: previousTarget.flowSnapshotAt }
+        : {}),
+      flowSnapshotRefreshError: message,
+      flowSnapshotRefreshFailedAt: timestamp,
+    };
+  }
+};
+
+const normalizeTarget = async (
+  target: ScheduledJobTargetInput,
+  timestamp: number,
+  previousTarget?: ScheduledJobTarget,
+): Promise<ScheduledJobTarget> => {
+  const configuredWorkspaceRoot = normalizeSchedulerTrimmedText(target.workspaceRoot);
+
+  if (!configuredWorkspaceRoot) {
     throw new Error("Expected scheduled job target to include a workspace root.");
   }
 
-  const ralphFlow = normalizeRalphFlowTarget(target);
+  const workspaceRoot = await canonicalizeWorkspaceRoot(configuredWorkspaceRoot);
+
+  const normalizedRalphFlow = normalizeRalphFlowTarget(target, workspaceRoot);
+  const existingRalphFlow = previousTarget?.ralphFlow;
+  const previousRalphTarget =
+    previousTarget?.workspaceRoot === workspaceRoot &&
+    existingRalphFlow !== undefined &&
+    normalizedRalphFlow !== undefined &&
+    existingRalphFlow.id === normalizedRalphFlow.id &&
+    existingRalphFlow.scope === normalizedRalphFlow.scope
+      ? existingRalphFlow
+      : undefined;
+  const ralphFlow = normalizedRalphFlow
+    ? await normalizeRalphTargetForStorage(
+        workspaceRoot,
+        normalizedRalphFlow,
+        previousRalphTarget,
+        timestamp,
+      )
+    : undefined;
   const targetType: ScheduledJobTargetType = ralphFlow ? "ralph-flow" : "prompt";
   const prompt = normalizeSchedulerMultilineText(target.prompt);
   const contextPacks = (target.contextPacks ?? []).flatMap((pack) => {
@@ -1368,37 +2052,53 @@ const normalizeTarget = (target: ScheduledJobTargetInput): ScheduledJobTarget =>
 
 const normalizeRetryPolicy = (
   retry: Partial<ScheduledRetryPolicy> | undefined,
+  defaults: ScheduledRetryPolicy = DEFAULT_RETRY_POLICY,
 ): ScheduledRetryPolicy => {
   const minTimeoutMs = normalizeSchedulerPositiveInteger(
     retry?.minTimeoutMs,
-    DEFAULT_RETRY_POLICY.minTimeoutMs,
+    defaults.minTimeoutMs,
   );
   const maxTimeoutMs = Math.max(
     minTimeoutMs,
     normalizeSchedulerPositiveInteger(
       retry?.maxTimeoutMs,
-      DEFAULT_RETRY_POLICY.maxTimeoutMs,
+      defaults.maxTimeoutMs,
     ),
   );
 
   return {
     maxAttempts: normalizeSchedulerPositiveInteger(
       retry?.maxAttempts,
-      DEFAULT_RETRY_POLICY.maxAttempts,
+      defaults.maxAttempts,
     ),
-    factor: normalizeSchedulerPositiveNumber(retry?.factor, DEFAULT_RETRY_POLICY.factor),
+    factor: normalizeSchedulerPositiveNumber(retry?.factor, defaults.factor),
     minTimeoutMs,
     maxTimeoutMs,
-    randomize: retry?.randomize ?? DEFAULT_RETRY_POLICY.randomize,
+    randomize: retry?.randomize ?? defaults.randomize,
   };
+};
+
+const getDefaultRetryPolicy = (
+  target: ScheduledJobTarget,
+): ScheduledRetryPolicy => {
+  return target.ralphFlow?.executionProfile === "unattended"
+    ? DEFAULT_UNATTENDED_RALPH_RETRY_POLICY
+    : DEFAULT_RETRY_POLICY;
 };
 
 const normalizeQueuePolicy = (
   jobId: string,
   queue: Partial<ScheduledQueuePolicy> | undefined,
+  target?: ScheduledJobTarget,
 ): ScheduledQueuePolicy => {
+  const defaultConcurrencyKey =
+    target?.ralphFlow?.executionProfile === "unattended"
+      ? createCanonicalWorkspaceQueueKey(target.workspaceRoot)
+      : jobId;
+
   return {
-    concurrencyKey: normalizeSchedulerText(queue?.concurrencyKey) ?? jobId,
+    concurrencyKey:
+      normalizeSchedulerText(queue?.concurrencyKey) ?? defaultConcurrencyKey,
     concurrencyLimit: normalizeSchedulerPositiveInteger(
       queue?.concurrencyLimit,
       DEFAULT_CONCURRENCY_LIMIT,
@@ -1756,6 +2456,8 @@ const createRun = (
     eventId?: string;
     parentRunId?: string;
     dedupeSuffix?: string;
+    targetSnapshot?: ScheduledJobTarget;
+    maxDurationMsSnapshot?: number;
   } = {},
 ): ScheduledJobRun => {
   const dedupeKey = createRunDedupeKey(job, scheduledFor, options.dedupeSuffix);
@@ -1776,6 +2478,10 @@ const createRun = (
     queueKey: job.queue.concurrencyKey,
     concurrencyLimit: job.queue.concurrencyLimit,
     attemptHistory: [],
+    targetSnapshot: cloneScheduledValue(options.targetSnapshot ?? job.target),
+    ...((options.maxDurationMsSnapshot ?? job.maxDurationMs) !== undefined
+      ? { maxDurationMsSnapshot: options.maxDurationMsSnapshot ?? job.maxDurationMs }
+      : {}),
     ...(dedupeKey ? { dedupeKey } : {}),
     ...(options.parentRunId ? { parentRunId: options.parentRunId } : {}),
     ...(expiresAt ? { expiresAt } : {}),
@@ -2001,6 +2707,9 @@ const pruneRunHistory = (state: SmartSchedulerState): void => {
   state.events = state.events
     .sort((left, right) => right.receivedAt - left.receivedAt)
     .slice(0, DEFAULT_EVENT_HISTORY_LIMIT);
+  state.mutationReceipts = state.mutationReceipts.slice(
+    -DEFAULT_MUTATION_RECEIPT_LIMIT,
+  );
 };
 
 const errorToMessage = (error: unknown): string => {
@@ -2213,33 +2922,104 @@ const normalizeTriggerEventInput = (
 
 export class DurableSmartScheduler {
   private readonly statePath: string;
+  private readonly workspaceRoot: string | undefined;
   private readonly executor: ScheduledTaskExecutor | undefined;
   private readonly clock: SchedulerClock;
   private readonly rng: () => number;
+  private readonly runningHeartbeatMs: number;
+  private readonly heartbeatRun:
+    | ((runId: string, claimToken: string) => Promise<void>)
+    | undefined;
   private stateMutation: Promise<void> = Promise.resolve();
-  private readonly activeRunControllers = new Map<string, AbortController>();
+  private readonly activeRunControllers = new Map<
+    string,
+    { claimToken: string; controller: AbortController }
+  >();
+  private workspaceRegistration: Promise<void> | undefined;
 
   constructor(options: DurableSmartSchedulerOptions) {
     this.statePath = options.statePath;
+    this.workspaceRoot = options.workspaceRoot;
     this.executor = options.executor;
     this.clock = options.clock ?? { now: () => Date.now() };
     this.rng = options.rng ?? Math.random;
+    this.runningHeartbeatMs = Math.max(
+      1,
+      Math.trunc(options.runningHeartbeatMs ?? DEFAULT_SCHEDULER_RUNNING_HEARTBEAT_MS),
+    );
+    this.heartbeatRun = options.heartbeatRun;
   }
 
   private now(): number {
     return Math.trunc(this.clock.now());
   }
 
+  private async ensureWorkspaceRegistered(): Promise<void> {
+    if (!this.workspaceRoot) {
+      return;
+    }
+
+    this.workspaceRegistration ??= registerSchedulerWorkspace(this.workspaceRoot).then(
+      () => undefined,
+    );
+
+    try {
+      await this.workspaceRegistration;
+    } catch (error) {
+      this.workspaceRegistration = undefined;
+      throw error;
+    }
+  }
+
   private async mutateState<T>(
     mutator: (state: SmartSchedulerState) => T | Promise<T>,
+    request?: SchedulerMutationRequest,
   ): Promise<T> {
+    await this.ensureWorkspaceRegistered();
     const mutation = this.stateMutation.then(async () => {
       return withSchedulerStateLock(this.statePath, async () => {
         const state = await readSmartSchedulerState(this.statePath);
+        const requestKey = normalizeSchedulerText(request?.key);
+        const payloadHash = requestKey && request
+          ? createMutationPayloadHash(request.payload)
+          : undefined;
+        const existingReceipt = requestKey
+          ? [...state.mutationReceipts]
+              .reverse()
+              .find((receipt) => receipt.key === requestKey)
+          : undefined;
+
+        if (existingReceipt && request && payloadHash) {
+          if (
+            existingReceipt.operation !== request.operation ||
+            existingReceipt.target !== request.target ||
+            existingReceipt.payloadHash !== payloadHash
+          ) {
+            throw new Error(
+              `Scheduler mutation idempotency conflict for key \`${requestKey}\`.`,
+            );
+          }
+
+          return structuredClone(existingReceipt.result) as T;
+        }
+
         const result = await mutator(state);
 
         state.updatedAt = this.now();
         pruneRunHistory(state);
+        if (requestKey && request && payloadHash) {
+          state.mutationReceipts.push({
+            key: requestKey,
+            operation: request.operation,
+            target: request.target,
+            payloadHash,
+            completedAt: state.updatedAt,
+            result: structuredClone(result),
+          });
+          state.mutationReceipts = state.mutationReceipts.slice(
+            -DEFAULT_MUTATION_RECEIPT_LIMIT,
+          );
+        }
         await writeSmartSchedulerStateUnlocked(this.statePath, state);
 
         return result;
@@ -2255,13 +3035,17 @@ export class DurableSmartScheduler {
   }
 
   async getState(): Promise<SmartSchedulerState> {
+    await this.ensureWorkspaceRegistered();
     return withSchedulerStateLock(this.statePath, () =>
       readSmartSchedulerState(this.statePath),
     );
   }
 
-  async upsertJob(input: CreateScheduledJobInput): Promise<ScheduledJob> {
-    return this.mutateState((state) => {
+  async upsertJob(
+    input: CreateScheduledJobInput,
+    requestId?: string,
+  ): Promise<ScheduledJob> {
+    return this.mutateState(async (state) => {
       const now = this.now();
       const dedupeKey = normalizeSchedulerText(input.dedupeKey);
       const existingJob = dedupeKey
@@ -2272,9 +3056,9 @@ export class DurableSmartScheduler {
       const id = existingJob?.id ?? createJobId();
       const triggers = normalizeJobTriggers(input, now, existingJob);
       const schedule = getJobScheduleSummary(triggers);
-      const target = normalizeTarget(input.target);
-      const retry = normalizeRetryPolicy(input.retry);
-      const queue = normalizeQueuePolicy(id, input.queue);
+      const target = await normalizeTarget(input.target, now, existingJob?.target);
+      const retry = normalizeRetryPolicy(input.retry, getDefaultRetryPolicy(target));
+      const queue = normalizeQueuePolicy(id, input.queue, target);
       const nextRunAt = getEarliestTriggerRunAt(triggers);
       const name =
         normalizeSchedulerText(input.name) ??
@@ -2331,14 +3115,20 @@ export class DurableSmartScheduler {
       }
 
       return job;
+    }, {
+      key: requestId,
+      operation: "upsert-job",
+      target: normalizeSchedulerText(input.dedupeKey) ?? "new-job",
+      payload: input,
     });
   }
 
   async updateJob(
     jobId: string,
     input: UpdateScheduledJobInput,
+    requestId?: string,
   ): Promise<ScheduledJob> {
-    return this.mutateState((state) => {
+    return this.mutateState(async (state) => {
       const now = this.now();
       const existingJob = state.jobs.find(
         (candidate) => candidate.id === jobId,
@@ -2394,7 +3184,18 @@ export class DurableSmartScheduler {
             )
           : existingJob.triggers;
       const schedule = getJobScheduleSummary(triggers);
-      const target = normalizeTarget(targetInput);
+      const target = await normalizeTarget(targetInput, now, existingJob.target);
+      const enteredUnattendedRalphProfile =
+        target.ralphFlow?.executionProfile === "unattended" &&
+        existingJob.target.ralphFlow?.executionProfile !== "unattended";
+      const workspaceChanged =
+        target.workspaceRoot !== existingJob.target.workspaceRoot;
+      const existingQueueWasWorkspaceDefault =
+        existingJob.queue.concurrencyKey ===
+        createCanonicalWorkspaceQueueKey(existingJob.target.workspaceRoot);
+      const refreshDefaultQueue =
+        enteredUnattendedRalphProfile ||
+        (workspaceChanged && existingQueueWasWorkspaceDefault);
       const nextRunAt = getEarliestTriggerRunAt(triggers);
       const dedupeKey = normalizeSchedulerText(input.dedupeKey) ?? existingJob.dedupeKey;
       const ttlMs =
@@ -2425,14 +3226,25 @@ export class DurableSmartScheduler {
               )
             : existingJob.missedRunGraceMs,
         retry: input.retry
-          ? normalizeRetryPolicy({ ...existingJob.retry, ...input.retry })
-          : existingJob.retry,
+          ? normalizeRetryPolicy(
+              { ...existingJob.retry, ...input.retry },
+              getDefaultRetryPolicy(target),
+            )
+          : enteredUnattendedRalphProfile
+            ? normalizeRetryPolicy(undefined, getDefaultRetryPolicy(target))
+            : existingJob.retry,
         queue: input.queue
-          ? normalizeQueuePolicy(existingJob.id, {
-              ...existingJob.queue,
-              ...input.queue,
-            })
-          : existingJob.queue,
+          ? normalizeQueuePolicy(
+              existingJob.id,
+              {
+                ...(refreshDefaultQueue ? {} : existingJob.queue),
+                ...input.queue,
+              },
+              target,
+            )
+          : refreshDefaultQueue
+            ? normalizeQueuePolicy(existingJob.id, undefined, target)
+            : existingJob.queue,
         historyLimit:
           input.historyLimit !== undefined
             ? normalizeSchedulerPositiveInteger(input.historyLimit, existingJob.historyLimit)
@@ -2466,6 +3278,11 @@ export class DurableSmartScheduler {
       );
 
       return updatedJob;
+    }, {
+      key: requestId,
+      operation: "update-job",
+      target: jobId,
+      payload: input,
     });
   }
 
@@ -2481,11 +3298,11 @@ export class DurableSmartScheduler {
     return state.jobs.find((job) => job.id === jobId && job.status !== "deleted");
   }
 
-  async pauseJob(jobId: string): Promise<ScheduledJob> {
-    return this.setJobStatus(jobId, "paused");
+  async pauseJob(jobId: string, requestId?: string): Promise<ScheduledJob> {
+    return this.setJobStatus(jobId, "paused", requestId);
   }
 
-  async resumeJob(jobId: string): Promise<ScheduledJob> {
+  async resumeJob(jobId: string, requestId?: string): Promise<ScheduledJob> {
     return this.mutateState((state) => {
       const job = state.jobs.find((candidate) => candidate.id === jobId);
 
@@ -2529,16 +3346,22 @@ export class DurableSmartScheduler {
       }
 
       return { ...job };
+    }, {
+      key: requestId,
+      operation: "resume-job",
+      target: jobId,
+      payload: {},
     });
   }
 
-  async deleteJob(jobId: string): Promise<ScheduledJob> {
-    return this.setJobStatus(jobId, "deleted");
+  async deleteJob(jobId: string, requestId?: string): Promise<ScheduledJob> {
+    return this.setJobStatus(jobId, "deleted", requestId);
   }
 
   private async setJobStatus(
     jobId: string,
     status: ScheduledJobStatus,
+    requestId?: string,
   ): Promise<ScheduledJob> {
     return this.mutateState((state) => {
       const job = state.jobs.find((candidate) => candidate.id === jobId);
@@ -2551,11 +3374,16 @@ export class DurableSmartScheduler {
       job.updatedAt = this.now();
 
       return { ...job };
+    }, {
+      key: requestId,
+      operation: status === "paused" ? "pause-job" : "delete-job",
+      target: jobId,
+      payload: {},
     });
   }
 
   async enqueueDueRuns(): Promise<ScheduledRunEnqueueResult[]> {
-    return this.mutateState((state) => {
+    return this.mutateState(async (state) => {
       const now = this.now();
       const enqueueResults: ScheduledRunEnqueueResult[] = [];
 
@@ -2588,6 +3416,23 @@ export class DurableSmartScheduler {
           dueTimes,
           now,
         );
+
+        let ralphTargetUsable = true;
+        let ralphRefreshError: string | undefined;
+
+        if (enqueueTimes.length > 0 && job.target.ralphFlow) {
+          const refresh = await refreshScheduledRalphTarget(
+            job.target.workspaceRoot,
+            job.target.ralphFlow,
+            now,
+          );
+          job.target = {
+            ...job.target,
+            ralphFlow: refresh.target,
+          };
+          ralphTargetUsable = refresh.usable;
+          ralphRefreshError = refresh.error;
+        }
 
         for (const skippedTime of skippedTimes) {
           const existingRun = hasExistingScheduledRun(
@@ -2634,12 +3479,21 @@ export class DurableSmartScheduler {
 
           const run = createRun(
             job,
-            "queued",
+            ralphTargetUsable ? "queued" : "failed",
             enqueueTime.scheduledFor,
             now,
             "schedule",
             { triggerId: enqueueTime.triggerId },
           );
+
+          if (!ralphTargetUsable) {
+            run.finishedAt = now;
+            run.updatedAt = now;
+            run.error =
+              `Scheduled Ralph flow revision could not be refreshed and no pinned fallback exists: ${ralphRefreshError ?? "unknown error"}`;
+            state.runs.push(run);
+            continue;
+          }
 
           job.lastEnqueuedAt = now;
           enqueueResults.push({
@@ -2671,8 +3525,13 @@ export class DurableSmartScheduler {
     });
   }
 
-  async triggerJobNow(jobId: string): Promise<ScheduledRunEnqueueResult> {
-    return this.mutateState((state) => {
+  async triggerJobNow(
+    jobId: string,
+    idempotencyKey?: string,
+  ): Promise<ScheduledRunEnqueueResult> {
+    const normalizedIdempotencyKey = normalizeSchedulerText(idempotencyKey);
+
+    return this.mutateState(async (state) => {
       const now = this.now();
       const job = state.jobs.find((candidate) => candidate.id === jobId);
 
@@ -2680,7 +3539,28 @@ export class DurableSmartScheduler {
         throw new Error(`Scheduled job not found: ${jobId}`);
       }
 
+      if (job.target.ralphFlow) {
+        const refresh = await refreshScheduledRalphTarget(
+          job.target.workspaceRoot,
+          job.target.ralphFlow,
+          now,
+        );
+        if (!refresh.usable) {
+          throw new Error(
+            `Scheduled Ralph flow revision could not be refreshed: ${refresh.error ?? "unknown error"}`,
+          );
+        }
+        job.target = {
+          ...job.target,
+          ralphFlow: refresh.target,
+        };
+      }
+
       const run = createRun(job, "queued", now, now, "manual");
+
+      if (normalizedIdempotencyKey) {
+        run.idempotencyKey = normalizedIdempotencyKey;
+      }
 
       job.lastEnqueuedAt = now;
       job.updatedAt = now;
@@ -2691,16 +3571,23 @@ export class DurableSmartScheduler {
         run: { ...run },
         deduplicated: false,
       };
+    }, {
+      key: normalizedIdempotencyKey,
+      operation: "trigger-job",
+      target: jobId,
+      payload: {},
     });
   }
 
   async recordEventAndEnqueueRuns(
     input: ScheduledTriggerEventInput,
   ): Promise<ScheduledTriggerEventResult> {
-    return this.mutateState((state) => {
+    return this.mutateState(async (state) => {
       const now = this.now();
       const event = normalizeTriggerEventInput(input, now);
       const enqueued: ScheduledRunEnqueueResult[] = [];
+      const refreshedRalphJobIds = new Set<string>();
+      const unusableRalphJobs = new Map<string, string>();
       const existingEvent =
         event.dedupeKey !== undefined
           ? state.events.find(
@@ -2855,6 +3742,34 @@ export class DurableSmartScheduler {
             continue;
           }
 
+          if (job.target.ralphFlow && !refreshedRalphJobIds.has(job.id)) {
+            const refresh = await refreshScheduledRalphTarget(
+              job.target.workspaceRoot,
+              job.target.ralphFlow,
+              now,
+            );
+            job.target = {
+              ...job.target,
+              ralphFlow: refresh.target,
+            };
+            refreshedRalphJobIds.add(job.id);
+            if (!refresh.usable) {
+              unusableRalphJobs.set(
+                job.id,
+                refresh.error ?? "unknown Ralph flow refresh error",
+              );
+            }
+          }
+
+          const refreshError = unusableRalphJobs.get(job.id);
+          if (refreshError) {
+            trigger.lastSkippedAt = now;
+            match.skippedReason =
+              `Scheduled Ralph flow revision could not be refreshed: ${refreshError}`;
+            event.matches.push(match);
+            continue;
+          }
+
           const run = createRun(
             job,
             "queued",
@@ -2908,19 +3823,32 @@ export class DurableSmartScheduler {
   ): Promise<SchedulerRecoveredRun[]> {
     const state = await this.getState();
     const now = this.now();
-    const abandonedRuns = state.runs.filter(
-      (run) =>
+    const abandonedRuns = state.runs.filter((run) => {
+      const activeClaim = this.activeRunControllers.get(run.id);
+
+      return (
         run.status === "running" &&
-        !this.activeRunControllers.has(run.id) &&
-        now - run.updatedAt >= staleAfterMs,
-    );
+        (!activeClaim || activeClaim.claimToken !== run.claimToken) &&
+        now - run.updatedAt >= staleAfterMs
+      );
+    });
     const recovered: SchedulerRecoveredRun[] = [];
 
     for (const run of abandonedRuns) {
-      const finishedRun = await this.finishRunAttempt(run.id, {
-        status: "failed",
-        error: reason,
-      });
+      let finishedRun: ScheduledJobRun;
+
+      try {
+        finishedRun = await this.finishRunAttempt(run.id, run.claimToken, {
+          status: "failed",
+          error: reason,
+        });
+      } catch (error) {
+        if (isStaleScheduledRunClaimError(error)) {
+          continue;
+        }
+
+        throw error;
+      }
 
       recovered.push({
         runId: finishedRun.id,
@@ -2936,6 +3864,11 @@ export class DurableSmartScheduler {
   async runDueJobs(
     options: RunQueuedScheduledJobsOptions = {},
   ): Promise<RunQueuedScheduledJobsResult> {
+    if (options.recoverAbandoned !== false) {
+      await this.recoverAbandonedRuns(
+        "Scheduler runner recovered an abandoned running run.",
+      );
+    }
     const queued = await this.enqueueDueRuns();
     const runs = await this.runQueuedRuns(options);
 
@@ -2979,8 +3912,15 @@ export class DurableSmartScheduler {
       );
       const due = await this.runDueJobs(
         options.maxRunsPerTick !== undefined
-          ? { maxRuns: options.maxRunsPerTick }
-          : {},
+          ? {
+              maxRuns: options.maxRunsPerTick,
+              recoverAbandoned: false,
+              ...(options.signal ? { signal: options.signal } : {}),
+            }
+          : {
+              recoverAbandoned: false,
+              ...(options.signal ? { signal: options.signal } : {}),
+            },
       );
       const iteration: SchedulerServiceIterationResult = {
         recovered,
@@ -3028,16 +3968,32 @@ export class DurableSmartScheduler {
       throw new Error("Cannot run scheduled jobs without a scheduler executor.");
     }
 
-    const selectedRuns = await this.claimQueuedRuns(options.maxRuns);
+    if (options.signal?.aborted) {
+      return [];
+    }
+
+    const selectedRuns = await this.claimQueuedRuns(
+      options.maxRuns,
+      options.signal,
+    );
 
     const finishedRuns = await Promise.all(
-      selectedRuns.map((run) => this.executeClaimedRun(run.id)),
+      selectedRuns.map((run) => {
+        if (!run.claimToken) {
+          throw new Error(`Scheduled run claim token was not persisted: ${run.id}`);
+        }
+
+        return this.executeClaimedRun(run.id, run.claimToken, options.signal);
+      }),
     );
 
     return finishedRuns;
   }
 
-  private async claimQueuedRuns(maxRuns: number | undefined): Promise<ScheduledJobRun[]> {
+  private async claimQueuedRuns(
+    maxRuns: number | undefined,
+    signal?: AbortSignal,
+  ): Promise<ScheduledJobRun[]> {
     return this.mutateState((state) => {
       const now = this.now();
       const runningCounts = countRunningRunsByQueue(state);
@@ -3076,7 +4032,7 @@ export class DurableSmartScheduler {
         );
 
       for (const run of queuedRuns) {
-        if (selectedRuns.length >= maxSelected) {
+        if (signal?.aborted || selectedRuns.length >= maxSelected) {
           break;
         }
 
@@ -3097,6 +4053,7 @@ export class DurableSmartScheduler {
         run.startedAt = now;
         run.updatedAt = now;
         run.attempt += 1;
+        run.claimToken = createRunClaimToken(run.attempt);
         delete run.nextAttemptAt;
         job.lastStartedAt = now;
         job.updatedAt = now;
@@ -3107,52 +4064,122 @@ export class DurableSmartScheduler {
     });
   }
 
-  private async executeClaimedRun(runId: string): Promise<ScheduledJobRun> {
+  private async executeClaimedRun(
+    runId: string,
+    claimToken: string,
+    signal?: AbortSignal,
+  ): Promise<ScheduledJobRun> {
     if (!this.executor) {
       throw new Error("Cannot run scheduled jobs without a scheduler executor.");
     }
 
     const controller = new AbortController();
-    this.activeRunControllers.set(runId, controller);
+    const forwardAbort = (): void => {
+      if (!controller.signal.aborted) {
+        controller.abort(signal?.reason ?? "Scheduler service stopped.");
+      }
+    };
+    signal?.addEventListener("abort", forwardAbort, { once: true });
+    if (signal?.aborted) {
+      forwardAbort();
+    }
+    this.activeRunControllers.set(runId, { claimToken, controller });
     let cleanupMaxDurationTimer = (): void => undefined;
-    const cleanupHeartbeat = this.startRunningRunHeartbeat(runId);
+    const cleanupHeartbeat = this.startRunningRunHeartbeat(
+      runId,
+      claimToken,
+      controller,
+    );
 
     try {
-      const { job, run, event } = await this.getRunnableSnapshot(runId);
+      const { job, run, event } = await this.getRunnableSnapshot(
+        runId,
+        claimToken,
+      );
       const request = this.createExecutionRequest(job, run, event);
       cleanupMaxDurationTimer = attachMaxDurationTimer(
         controller,
-        job.maxDurationMs,
+        run.maxDurationMsSnapshot ?? job.maxDurationMs,
       );
       const result = await this.executor.execute(request, {
         signal: controller.signal,
-        ...(job.maxDurationMs ? { maxDurationMs: job.maxDurationMs } : {}),
+        ...((run.maxDurationMsSnapshot ?? job.maxDurationMs)
+          ? { maxDurationMs: run.maxDurationMsSnapshot ?? job.maxDurationMs }
+          : {}),
       });
 
-      return await this.finishRunWithResult(runId, result);
+      if (signal?.aborted) {
+        return await this.finishRunAttempt(runId, claimToken, {
+          status: "failed",
+          result,
+          error: signal.reason
+            ? `Scheduler worker stopped: ${String(signal.reason)}`
+            : "Scheduler worker stopped.",
+          infrastructureAbort: true,
+        });
+      }
+
+      return await this.finishRunWithResult(runId, claimToken, controller, result);
     } catch (error: unknown) {
-      return await this.finishRunWithError(runId, error);
+      if (isStaleScheduledRunClaimError(error)) {
+        throw error;
+      }
+
+      if (signal?.aborted) {
+        return await this.finishRunAttempt(runId, claimToken, {
+          status: "failed",
+          error: signal.reason
+            ? `Scheduler worker stopped: ${String(signal.reason)}`
+            : errorToMessage(error),
+          infrastructureAbort: true,
+        });
+      }
+
+      return await this.finishRunWithError(runId, claimToken, controller, error);
     } finally {
       cleanupMaxDurationTimer();
       cleanupHeartbeat();
-      this.activeRunControllers.delete(runId);
+      if (this.activeRunControllers.get(runId)?.claimToken === claimToken) {
+        this.activeRunControllers.delete(runId);
+      }
+      signal?.removeEventListener("abort", forwardAbort);
     }
   }
 
-  private startRunningRunHeartbeat(runId: string): () => void {
+  private startRunningRunHeartbeat(
+    runId: string,
+    claimToken: string,
+    controller: AbortController,
+  ): () => void {
     const timer = setInterval(() => {
-      void this.touchRunningRun(runId);
-    }, DEFAULT_SCHEDULER_RUNNING_HEARTBEAT_MS);
+      void (
+        this.heartbeatRun?.(runId, claimToken) ??
+        this.touchRunningRun(runId, claimToken)
+      ).catch((error) => {
+        if (!controller.signal.aborted) {
+          controller.abort(
+            `${SCHEDULER_HEARTBEAT_FAILURE_PREFIX}: ${errorToMessage(error)}`,
+          );
+        }
+      });
+    }, this.runningHeartbeatMs);
 
     return () => clearInterval(timer);
   }
 
-  private async touchRunningRun(runId: string): Promise<void> {
+  private async touchRunningRun(
+    runId: string,
+    claimToken: string,
+  ): Promise<void> {
     await this.mutateState((state) => {
       const run = state.runs.find((candidate) => candidate.id === runId);
 
-      if (!run || run.status !== "running") {
-        return;
+      if (
+        !run ||
+        run.status !== "running" ||
+        run.claimToken !== claimToken
+      ) {
+        throw new StaleScheduledRunClaimError(runId);
       }
 
       run.updatedAt = this.now();
@@ -3161,12 +4188,17 @@ export class DurableSmartScheduler {
 
   private async getRunnableSnapshot(
     runId: string,
+    claimToken: string,
   ): Promise<{ job: ScheduledJob; run: ScheduledJobRun; event?: ScheduledTriggerEvent }> {
     const state = await this.getState();
     const run = state.runs.find((candidate) => candidate.id === runId);
 
-    if (!run || run.status !== "running") {
-      throw new Error(`Scheduled run is no longer runnable: ${runId}`);
+    if (
+      !run ||
+      run.status !== "running" ||
+      run.claimToken !== claimToken
+    ) {
+      throw new StaleScheduledRunClaimError(runId);
     }
 
     const job = state.jobs.find((candidate) => candidate.id === run.jobId);
@@ -3179,7 +4211,11 @@ export class DurableSmartScheduler {
       ? state.events.find((candidate) => candidate.id === run.eventId)
       : undefined;
 
-    return { job, run, ...(event ? { event } : {}) };
+    const snapshotJob = run.targetSnapshot
+      ? { ...job, target: cloneScheduledValue(run.targetSnapshot) }
+      : job;
+
+    return { job: snapshotJob, run, ...(event ? { event } : {}) };
   }
 
   private createExecutionRequest(
@@ -3206,20 +4242,31 @@ export class DurableSmartScheduler {
 
   private async finishRunWithResult(
     runId: string,
+    claimToken: string,
+    controller: AbortController,
     result: TaskExecutionResult,
   ): Promise<ScheduledJobRun> {
-    const controller = this.activeRunControllers.get(runId);
+    if (
+      typeof controller.signal.reason === "string" &&
+      controller.signal.reason.startsWith(SCHEDULER_HEARTBEAT_FAILURE_PREFIX)
+    ) {
+      return this.finishRunAttempt(runId, claimToken, {
+        status: "failed",
+        result,
+        error: controller.signal.reason,
+      });
+    }
 
-    if (isTimeoutReason(controller?.signal.reason)) {
-      return this.finishRunAttempt(runId, {
+    if (isTimeoutReason(controller.signal.reason)) {
+      return this.finishRunAttempt(runId, claimToken, {
         status: "timed_out",
         result,
         error: String(controller?.signal.reason),
       });
     }
 
-    if (controller?.signal.aborted) {
-      return this.finishRunAttempt(runId, {
+    if (controller.signal.aborted) {
+      return this.finishRunAttempt(runId, claimToken, {
         status: "cancelled",
         result,
         error: controller.signal.reason
@@ -3229,7 +4276,7 @@ export class DurableSmartScheduler {
     }
 
     if (taskResultCancelled(result)) {
-      return this.finishRunAttempt(runId, {
+      return this.finishRunAttempt(runId, claimToken, {
         status: "cancelled",
         result,
         error: result.reason ?? result.summary,
@@ -3237,13 +4284,13 @@ export class DurableSmartScheduler {
     }
 
     if (taskResultSucceeded(result)) {
-      return this.finishRunAttempt(runId, {
+      return this.finishRunAttempt(runId, claimToken, {
         status: "succeeded",
         result,
       });
     }
 
-    return this.finishRunAttempt(runId, {
+    return this.finishRunAttempt(runId, claimToken, {
       status: "failed",
       result,
       error: result.reason ?? result.summary,
@@ -3252,18 +4299,26 @@ export class DurableSmartScheduler {
 
   private async finishRunWithError(
     runId: string,
+    claimToken: string,
+    controller: AbortController,
     error: unknown,
   ): Promise<ScheduledJobRun> {
-    const controller = this.activeRunControllers.get(runId);
     const message =
-      controller?.signal.aborted && controller.signal.reason
+      controller.signal.aborted && controller.signal.reason
         ? String(controller.signal.reason)
         : errorToMessage(error);
 
-    return this.finishRunAttempt(runId, {
-      status: isTimeoutReason(controller?.signal.reason)
+    if (message.startsWith(SCHEDULER_HEARTBEAT_FAILURE_PREFIX)) {
+      return this.finishRunAttempt(runId, claimToken, {
+        status: "failed",
+        error: message,
+      });
+    }
+
+    return this.finishRunAttempt(runId, claimToken, {
+      status: isTimeoutReason(controller.signal.reason)
         ? "timed_out"
-        : controller?.signal.aborted
+        : controller.signal.aborted
           ? "cancelled"
           : "failed",
       error: message,
@@ -3272,40 +4327,64 @@ export class DurableSmartScheduler {
 
   private async finishRunAttempt(
     runId: string,
+    claimToken: string | undefined,
     outcome: {
       status: "succeeded" | "failed" | "cancelled" | "timed_out";
       result?: TaskExecutionResult;
       error?: string;
+      infrastructureAbort?: boolean;
     },
   ): Promise<ScheduledJobRun> {
     const finished = await this.mutateState((state) => {
       const now = this.now();
       const run = state.runs.find((candidate) => candidate.id === runId);
 
-      if (!run) {
-        throw new Error(`Scheduled run not found: ${runId}`);
+      if (
+        !run ||
+        run.status !== "running" ||
+        run.claimToken !== claimToken
+      ) {
+        throw new StaleScheduledRunClaimError(runId);
       }
 
       const job = state.jobs.find((candidate) => candidate.id === run.jobId);
       const attemptStartedAt = run.startedAt ?? now;
+      const infrastructureRetry =
+        outcome.infrastructureAbort === true &&
+        run.cancelRequestedAt === undefined;
+      if (infrastructureRetry) {
+        // A service lifecycle must not consume the job's configured execution
+        // attempts. The next claim uses the same run and immutable snapshot,
+        // while Ralph can resume the durable checkpoint from this failed attempt.
+        run.maxAttempts = Math.max(run.maxAttempts, run.attempt + 1);
+      }
       const finalStatus =
-        run.cancelRequestedAt !== undefined ? "cancelled" : outcome.status;
+        run.cancelRequestedAt !== undefined
+          ? "cancelled"
+          : infrastructureRetry
+            ? "failed"
+            : outcome.status;
       const finalError =
         run.cancelRequestedAt !== undefined
           ? run.cancelReason ?? outcome.error
           : outcome.error;
       const shouldRetry =
-        finalStatus === "failed" && run.attempt < run.maxAttempts;
+        infrastructureRetry ||
+        ((finalStatus === "failed" || finalStatus === "timed_out") &&
+          run.attempt < run.maxAttempts);
       const nextRetryAt = shouldRetry
-        ? now +
-          getRetryDelayMs(
-            job?.retry ?? DEFAULT_RETRY_POLICY,
-            run.attempt,
-            this.rng,
-          )
+        ? infrastructureRetry
+          ? now
+          : now +
+            getRetryDelayMs(
+              job?.retry ?? DEFAULT_RETRY_POLICY,
+              run.attempt,
+              this.rng,
+            )
         : undefined;
       const attempt: ScheduledRunAttempt = {
         attempt: run.attempt,
+        ...(claimToken ? { claimToken } : {}),
         startedAt: attemptStartedAt,
         finishedAt: now,
         status: finalStatus,
@@ -3317,6 +4396,7 @@ export class DurableSmartScheduler {
 
       run.attemptHistory.push(attempt);
       run.updatedAt = now;
+      delete run.claimToken;
 
       if (outcome.result) {
         run.result = outcome.result;
@@ -3386,15 +4466,10 @@ export class DurableSmartScheduler {
   async cancelRun(
     handleOrRunId: ScheduledRunHandle | string,
     reason = "Scheduled run cancelled.",
+    idempotencyKey?: string,
   ): Promise<ScheduledJobRun> {
     const runId = resolveRunId(handleOrRunId);
-    const controller = this.activeRunControllers.get(runId);
-
-    if (controller && !controller.signal.aborted) {
-      controller.abort(reason);
-    }
-
-    return this.mutateState((state) => {
+    const run = await this.mutateState<ScheduledJobRun>((state) => {
       const now = this.now();
       const run = state.runs.find((candidate) => candidate.id === runId);
 
@@ -3416,13 +4491,32 @@ export class DurableSmartScheduler {
       }
 
       return { ...run };
+    }, {
+      key: idempotencyKey,
+      operation: "cancel-run",
+      target: runId,
+      payload: { reason },
     });
+
+    const activeClaim = this.activeRunControllers.get(runId);
+    if (
+      run.status === "running" &&
+      run.claimToken !== undefined &&
+      activeClaim?.claimToken === run.claimToken &&
+      !activeClaim.controller.signal.aborted
+    ) {
+      activeClaim.controller.abort(reason);
+    }
+
+    return run;
   }
 
   async retryRun(
     handleOrRunId: ScheduledRunHandle | string,
+    idempotencyKey?: string,
   ): Promise<ScheduledRunHandle> {
     const runId = resolveRunId(handleOrRunId);
+    const normalizedIdempotencyKey = normalizeSchedulerText(idempotencyKey);
 
     return this.mutateState((state) => {
       const now = this.now();
@@ -3450,17 +4544,33 @@ export class DurableSmartScheduler {
         "manual-retry",
         {
           parentRunId: parentRun.id,
+          ...(parentRun.targetSnapshot
+            ? { targetSnapshot: parentRun.targetSnapshot }
+            : {}),
+          ...(parentRun.maxDurationMsSnapshot !== undefined
+            ? { maxDurationMsSnapshot: parentRun.maxDurationMsSnapshot }
+            : {}),
           ...(parentRun.triggerId ? { triggerId: parentRun.triggerId } : {}),
           ...(parentRun.eventId ? { eventId: parentRun.eventId } : {}),
         },
       );
+
+      if (normalizedIdempotencyKey) {
+        retryRun.idempotencyKey = normalizedIdempotencyKey;
+      }
 
       state.runs.push(retryRun);
 
       return {
         jobId: job.id,
         runId: retryRun.id,
+        status: retryRun.status,
       };
+    }, {
+      key: normalizedIdempotencyKey,
+      operation: "retry-run",
+      target: runId,
+      payload: {},
     });
   }
 }

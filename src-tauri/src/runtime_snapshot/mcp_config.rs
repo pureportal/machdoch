@@ -1,12 +1,14 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
+use crate::cooperative_file_lock::with_cooperative_file_lock;
 
 use super::{
     get_user_config_directory, resolve_workspace_root_path, settings_types::McpConfigDocument,
@@ -14,6 +16,10 @@ use super::{
 
 const MCP_CONFIG_FILE_NAME: &str = "mcp.json";
 const MCP_WORKSPACE_CONFIG_DIRECTORY: [&str; 2] = [".machdoch", "mcp"];
+pub(super) const MCP_CONFIG_CONFLICT_PREFIX: &str = "MACHDOCH_MCP_CONFIG_CONFLICT:";
+
+#[derive(Default)]
+pub struct McpConfigWriteLock(pub(super) Mutex<()>);
 
 pub(super) fn get_user_mcp_config_path() -> Result<PathBuf, String> {
     Ok(get_user_config_directory()?.join(MCP_CONFIG_FILE_NAME))
@@ -92,7 +98,18 @@ pub(super) fn load_mcp_config_document(
     })
 }
 
+#[cfg(test)]
 pub(super) fn save_mcp_config_document(
+    scope: &str,
+    config_path: PathBuf,
+    raw: &str,
+) -> Result<McpConfigDocument, String> {
+    with_cooperative_file_lock(&config_path, || {
+        save_mcp_config_document_unlocked(scope, config_path.clone(), raw)
+    })
+}
+
+fn save_mcp_config_document_unlocked(
     scope: &str,
     config_path: PathBuf,
     raw: &str,
@@ -125,6 +142,28 @@ pub(super) fn save_mcp_config_document(
         path: config_path.display().to_string(),
         exists: true,
         raw: normalized_raw,
+    })
+}
+
+pub(super) fn save_mcp_config_document_if_unchanged(
+    scope: &str,
+    config_path: PathBuf,
+    raw: &str,
+    expected_raw: Option<&str>,
+) -> Result<McpConfigDocument, String> {
+    with_cooperative_file_lock(&config_path, || {
+        if let Some(expected_raw) = expected_raw {
+            let current_document = load_mcp_config_document(scope, config_path.clone())?;
+
+            if current_document.raw != expected_raw {
+                return Err(format!(
+                    "{MCP_CONFIG_CONFLICT_PREFIX}{}",
+                    config_path.display(),
+                ));
+            }
+        }
+
+        save_mcp_config_document_unlocked(scope, config_path.clone(), raw)
     })
 }
 
@@ -222,6 +261,35 @@ mod tests {
         assert_eq!(loaded.scope, "workspace");
         assert_eq!(saved.raw, loaded.raw);
         assert!(loaded.raw.contains("\"servers\": []"));
+
+        cleanup(&directory);
+    }
+
+    #[test]
+    fn mcp_config_compare_and_swap_rejects_a_stale_document() {
+        let directory = temp_test_directory("conflict");
+        let config_path = directory.join("mcp.json");
+        let original = save_mcp_config_document("user", config_path.clone(), r#"{"servers":[]}"#)
+            .expect("initial MCP config should save");
+        let external = save_mcp_config_document(
+            "user",
+            config_path.clone(),
+            r#"{"servers":[{"id":"external"}]}"#,
+        )
+        .expect("external MCP config should save");
+
+        let error = save_mcp_config_document_if_unchanged(
+            "user",
+            config_path.clone(),
+            r#"{"servers":[{"id":"stale"}]}"#,
+            Some(&original.raw),
+        )
+        .expect_err("stale MCP config should be rejected");
+        let loaded = load_mcp_config_document("user", config_path)
+            .expect("current MCP config should remain readable");
+
+        assert!(error.starts_with(MCP_CONFIG_CONFLICT_PREFIX));
+        assert_eq!(loaded.raw, external.raw);
 
         cleanup(&directory);
     }

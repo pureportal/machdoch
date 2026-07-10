@@ -72,7 +72,13 @@ export interface ChatSessionRecord {
   id: string;
   createdAt: number;
   updatedAt: number;
+  /** Legacy aggregate composer clock retained for persisted-state migration. */
   composerUpdatedAt?: number;
+  draftUpdatedAt?: number;
+  draftAttachmentsUpdatedAt?: number;
+  draftAttachmentAddedAt?: Record<string, number>;
+  draftAttachmentTombstones?: Record<string, number>;
+  historyClearedAt?: number;
   lastReadAt?: number;
   archivedAt?: number;
   pinnedAt?: number;
@@ -138,6 +144,13 @@ export interface ChatSessionQueuedMessage {
   visibleMessageContent?: string;
   promptHistoryContent?: string;
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
+  blockedByTaskId?: string;
+  contentUpdatedAt: number;
+  attachmentsUpdatedAt: number;
+  attachmentTombstones: Record<string, number>;
+  blockerUpdatedAt: number;
+  orderRank: number;
+  orderUpdatedAt: number;
   contextAttachments: ChatSessionContextAttachment[];
   createdAt: number;
   updatedAt: number;
@@ -155,8 +168,12 @@ export const INTERRUPTED_TASK_CRASH_PREFIX = "**Task crashed.**";
 export interface ShellPersistedState {
   version: 1;
   activeSessionId: string;
+  activeSessionUpdatedAt: number;
   sessions: ChatSessionRecord[];
+  sessionTombstones?: Record<string, number>;
   queuedSessionMessages: ChatSessionQueuedMessage[];
+  queuedMessageTombstones: Record<string, number>;
+  handledRemoteCommandIds: string[];
   contextPacks: SmartContextPack[];
   recentWorkspaces: string[];
   voice: ShellVoiceSettings;
@@ -393,6 +410,29 @@ const normalizeOptionalFiniteNumber = (value: unknown): number | undefined => {
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : undefined;
+};
+
+const normalizeTimestampRecord = (
+  value: unknown,
+  maxEntries = 2_048,
+): Record<string, number> => {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .flatMap(([rawId, rawTimestamp]) => {
+        const id = rawId.trim();
+        const timestamp = normalizeOptionalFiniteNumber(rawTimestamp);
+
+        return id && timestamp !== undefined
+          ? ([[id, Math.max(0, timestamp)]] as const)
+          : [];
+      })
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, maxEntries),
+  );
 };
 
 const normalizeStringArray = (value: unknown): string[] => {
@@ -844,11 +884,47 @@ export const createSession = (
 ): ChatSessionRecord => {
   const provider = overrides.provider ?? DEFAULT_PROVIDER;
   const requestedUpdatedAt = overrides.updatedAt ?? Date.now();
-  const composerUpdatedAt = Math.max(
-    overrides.createdAt ?? requestedUpdatedAt,
+  const createdAt = overrides.createdAt ?? requestedUpdatedAt;
+  const legacyComposerUpdatedAt = Math.max(
+    createdAt,
     normalizeFiniteNumber(overrides.composerUpdatedAt, requestedUpdatedAt),
   );
+  const draftUpdatedAt = Math.max(
+    createdAt,
+    normalizeFiniteNumber(overrides.draftUpdatedAt, legacyComposerUpdatedAt),
+  );
+  const draftAttachmentsUpdatedAt = Math.max(
+    createdAt,
+    normalizeFiniteNumber(
+      overrides.draftAttachmentsUpdatedAt,
+      legacyComposerUpdatedAt,
+    ),
+  );
+  const draftContextAttachments = overrides.draftContextAttachments ?? [];
+  const draftAttachmentAddedAt = normalizeTimestampRecord(
+    overrides.draftAttachmentAddedAt,
+  );
+
+  for (const attachment of draftContextAttachments) {
+    if (draftAttachmentAddedAt[attachment.id] === undefined) {
+      draftAttachmentAddedAt[attachment.id] = draftAttachmentsUpdatedAt;
+    }
+  }
+
+  const draftAttachmentTombstones = normalizeTimestampRecord(
+    overrides.draftAttachmentTombstones,
+  );
+  const composerUpdatedAt = Math.max(
+    legacyComposerUpdatedAt,
+    draftUpdatedAt,
+    draftAttachmentsUpdatedAt,
+    ...Object.values(draftAttachmentAddedAt),
+    ...Object.values(draftAttachmentTombstones),
+  );
   const now = Math.max(requestedUpdatedAt, composerUpdatedAt);
+  const historyClearedAt = normalizeOptionalFiniteNumber(
+    overrides.historyClearedAt,
+  );
   const mode = normalizeOptionalStoredRunMode(overrides.mode);
   const reasoning = normalizeOptionalStoredReasoningMode(overrides.reasoning);
   const specialSession = isSpecialSessionKind(overrides.specialSession)
@@ -858,9 +934,14 @@ export const createSession = (
 
   return {
     id: overrides.id ?? crypto.randomUUID(),
-    createdAt: overrides.createdAt ?? now,
+    createdAt,
     updatedAt: now,
     composerUpdatedAt,
+    draftUpdatedAt,
+    draftAttachmentsUpdatedAt,
+    draftAttachmentAddedAt,
+    draftAttachmentTombstones,
+    ...(historyClearedAt !== undefined ? { historyClearedAt } : {}),
     lastReadAt:
       typeof overrides.lastReadAt === "number" ? overrides.lastReadAt : now,
     ...(typeof overrides.archivedAt === "number"
@@ -876,7 +957,7 @@ export const createSession = (
     ...(mode ? { mode } : {}),
     ...(reasoning ? { reasoning } : {}),
     draft: overrides.draft ?? "",
-    draftContextAttachments: overrides.draftContextAttachments ?? [],
+    draftContextAttachments,
     ...(overrides.manualTitle ? { manualTitle: overrides.manualTitle } : {}),
     tags: normalizeSessionTags(overrides.tags),
     messages: overrides.messages ?? [],
@@ -923,8 +1004,12 @@ export const createInitialShellState = (): ShellPersistedState => {
   return {
     version: 1,
     activeSessionId: initialSession.id,
+    activeSessionUpdatedAt: 0,
     sessions: [initialSession],
+    sessionTombstones: {},
     queuedSessionMessages: [],
+    queuedMessageTombstones: {},
+    handledRemoteCommandIds: [],
     contextPacks: [],
     recentWorkspaces: [],
     voice: createDefaultShellVoiceSettings(),
@@ -1503,6 +1588,7 @@ const normalizeSessionMessages = (
   }
 
   const messages: ChatSessionMessage[] = [];
+  const seenMessageIds = new Set<string>();
 
   for (const [index, entry] of value.entries()) {
     if (!isRecord(entry) || (entry.role !== "user" && entry.role !== "agent")) {
@@ -1522,8 +1608,21 @@ const normalizeSessionMessages = (
       entry.role === "user"
         ? normalizeMessagePromptEnhancement(entry.promptEnhancement, content)
         : undefined;
+    const preferredMessageId = normalizeString(
+      entry.id,
+      `${sessionId}-message-${index}`,
+    );
+    let messageId = preferredMessageId;
+    let duplicateIndex = 2;
+
+    while (seenMessageIds.has(messageId)) {
+      messageId = `${preferredMessageId}-${duplicateIndex}`;
+      duplicateIndex += 1;
+    }
+
+    seenMessageIds.add(messageId);
     const message: ChatSessionMessage = {
-      id: normalizeString(entry.id, `${sessionId}-message-${index}`),
+      id: messageId,
       role: entry.role,
       content,
       ...(taskId ? { taskId } : {}),
@@ -1623,9 +1722,13 @@ const getSessionNormalizationTimestamp = (
   let timestamp = Math.max(
     session.updatedAt,
     session.composerUpdatedAt ?? 0,
+    session.draftUpdatedAt ?? 0,
+    session.draftAttachmentsUpdatedAt ?? 0,
     session.lastReadAt ?? 0,
     session.archivedAt ?? 0,
     session.pinnedAt ?? 0,
+    ...Object.values(session.draftAttachmentAddedAt ?? {}),
+    ...Object.values(session.draftAttachmentTombstones ?? {}),
   );
 
   for (const message of session.messages) {
@@ -1645,6 +1748,7 @@ const normalizeQueuedSessionMessages = (
 
   const sessionIds = new Set(sessions.map((session) => session.id));
   const seenMessageIds = new Set<string>();
+  const nextLegacyOrderRankBySession = new Map<string, number>();
   const queuedMessages: ChatSessionQueuedMessage[] = [];
 
   for (const [index, entry] of value.entries()) {
@@ -1678,11 +1782,40 @@ const normalizeQueuedSessionMessages = (
       entry.promptEnhancement,
       visibleMessageContent || task,
     );
+    const blockedByTaskId = normalizeString(entry.blockedByTaskId).trim();
     const createdAt = normalizeFiniteNumber(entry.createdAt, index);
     const updatedAt = Math.max(
       createdAt,
       normalizeFiniteNumber(entry.updatedAt, createdAt),
     );
+    const legacyOrderRank = nextLegacyOrderRankBySession.get(sessionId) ?? 0;
+    const orderRank = normalizeOptionalFiniteNumber(entry.orderRank) ??
+      legacyOrderRank;
+    const orderUpdatedAt =
+      normalizeOptionalFiniteNumber(entry.orderUpdatedAt) ?? updatedAt;
+    const contentUpdatedAt =
+      normalizeOptionalFiniteNumber(entry.contentUpdatedAt) ?? updatedAt;
+    const attachmentsUpdatedAt =
+      normalizeOptionalFiniteNumber(entry.attachmentsUpdatedAt) ?? updatedAt;
+    const blockerUpdatedAt =
+      normalizeOptionalFiniteNumber(entry.blockerUpdatedAt) ?? updatedAt;
+    const attachmentTombstones = isRecord(entry.attachmentTombstones)
+      ? Object.fromEntries(
+          Object.entries(entry.attachmentTombstones)
+            .flatMap(([attachmentId, deletedAt]) => {
+              const normalizedId = attachmentId.trim();
+              const normalizedDeletedAt =
+                normalizeOptionalFiniteNumber(deletedAt);
+
+              return normalizedId && normalizedDeletedAt !== undefined
+                ? [[normalizedId, normalizedDeletedAt] as const]
+                : [];
+            })
+            .sort((left, right) => right[1] - left[1])
+            .slice(0, 512),
+        )
+      : {};
+    nextLegacyOrderRankBySession.set(sessionId, legacyOrderRank + 1);
 
     queuedMessages.push({
       id,
@@ -1691,9 +1824,18 @@ const normalizeQueuedSessionMessages = (
       ...(visibleMessageContent ? { visibleMessageContent } : {}),
       ...(promptHistoryContent ? { promptHistoryContent } : {}),
       ...(promptEnhancement ? { promptEnhancement } : {}),
+      ...(blockedByTaskId ? { blockedByTaskId } : {}),
+      contentUpdatedAt,
+      attachmentsUpdatedAt,
+      attachmentTombstones,
+      blockerUpdatedAt,
+      orderRank,
+      orderUpdatedAt,
       contextAttachments: normalizeContextAttachments(
         entry.contextAttachments,
         `queued-context-${id}`,
+      ).filter(
+        (attachment) => !(attachment.id in attachmentTombstones),
       ),
       createdAt,
       updatedAt,
@@ -1821,17 +1963,51 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
     normalizedRecentWorkspaces.length > 0
       ? normalizedRecentWorkspaces
       : deriveRecentWorkspacesFromSessions(normalizedSessions);
+  const handledRemoteCommandIds = Array.isArray(
+    candidate.handledRemoteCommandIds,
+  )
+    ? [...new Set(
+        candidate.handledRemoteCommandIds
+          .filter((commandId): commandId is string =>
+            typeof commandId === "string" && commandId.trim().length > 0,
+          )
+          .map((commandId) => commandId.trim()),
+      )].slice(-512)
+    : [];
+  const queuedMessageTombstones = isRecord(candidate.queuedMessageTombstones)
+    ? Object.fromEntries(
+        Object.entries(candidate.queuedMessageTombstones)
+          .flatMap(([messageId, deletedAt]) => {
+            const normalizedId = messageId.trim();
+            const normalizedDeletedAt = normalizeOptionalFiniteNumber(deletedAt);
+
+            return normalizedId && normalizedDeletedAt !== undefined
+              ? [[normalizedId, normalizedDeletedAt] as const]
+              : [];
+          })
+          .sort((left, right) => right[1] - left[1])
+          .slice(0, 2_048),
+      )
+    : {};
+  const sessionTombstones = normalizeTimestampRecord(
+    candidate.sessionTombstones,
+  );
 
   return {
     version: 1,
     activeSessionId: hasActiveSession
       ? (candidate.activeSessionId as string)
       : normalizedSessions[0].id,
+    activeSessionUpdatedAt:
+      normalizeOptionalFiniteNumber(candidate.activeSessionUpdatedAt) ?? 0,
     sessions: normalizedSessions,
+    sessionTombstones,
     queuedSessionMessages: normalizeQueuedSessionMessages(
       candidate.queuedSessionMessages,
       normalizedSessions,
-    ),
+    ).filter((message) => !(message.id in queuedMessageTombstones)),
+    handledRemoteCommandIds,
+    queuedMessageTombstones,
     contextPacks: normalizeSmartContextPacks(candidate.contextPacks),
     recentWorkspaces,
     voice: normalizedVoice,
@@ -1930,7 +2106,7 @@ export const isSessionWorkspaceLocked = (
 };
 
 export const canDeleteSession = (session: ChatSessionRecord): boolean => {
-  return !isQuickVoiceSession(session);
+  return !isQuickVoiceSession(session) && getLatestRunningTaskId(session) === null;
 };
 
 export const canRenameSession = (session: ChatSessionRecord): boolean => {
@@ -1990,7 +2166,11 @@ export const canPinSession = (session: ChatSessionRecord): boolean => {
 };
 
 export const canDuplicateSession = (session: ChatSessionRecord): boolean => {
-  return !isQuickVoiceSession(session) && !isSessionEmpty(session);
+  return (
+    !isQuickVoiceSession(session) &&
+    !isSessionEmpty(session) &&
+    getLatestRunningTaskId(session) === null
+  );
 };
 
 export const getLatestCompletedSessionResponseAt = (
@@ -2066,29 +2246,10 @@ export const getLatestSessionUserRequestAt = (
     );
   }
 
-  return latestRequestAt ?? session.updatedAt;
-};
-
-const getSessionAttentionSortGroup = (session: ChatSessionRecord): number => {
-  if (hasUnreadCompletedSessionResponse(session)) {
-    return 0;
-  }
-
-  const status = getSessionOverviewStatus(session);
-
-  if (status === "running") {
-    return 1;
-  }
-
-  if (status === "failed" || status === "crashed") {
-    return 2;
-  }
-
-  if (status === "done") {
-    return 3;
-  }
-
-  return 4;
+  // Draft edits and streaming progress update `updatedAt`, but neither should
+  // make an existing sidebar row jump. Sessions without a submitted request
+  // keep their stable creation order instead.
+  return latestRequestAt ?? session.createdAt;
 };
 
 export const compareSessionsByAttention = (
@@ -2118,13 +2279,6 @@ export const compareSessionsByAttention = (
     }
   }
 
-  const leftSortGroup = getSessionAttentionSortGroup(left);
-  const rightSortGroup = getSessionAttentionSortGroup(right);
-
-  if (leftSortGroup !== rightSortGroup) {
-    return leftSortGroup - rightSortGroup;
-  }
-
   const leftPinnedAt = left.pinnedAt ?? 0;
   const rightPinnedAt = right.pinnedAt ?? 0;
 
@@ -2139,7 +2293,11 @@ export const compareSessionsByAttention = (
     return latestRequestDelta;
   }
 
-  return right.updatedAt - left.updatedAt;
+  const createdAtDelta = right.createdAt - left.createdAt;
+
+  return createdAtDelta !== 0
+    ? createdAtDelta
+    : left.id.localeCompare(right.id);
 };
 
 export const sortSessionsByUpdatedAt = (
@@ -2653,7 +2811,7 @@ export const deleteExpiredArchivedSessions = (
 export const createVisibleConversationMessages = (
   messages: ChatSessionMessage[],
 ): ChatSessionMessage[] => {
-  const latestTerminalAgentMessageByTask = new Map<string, string>();
+  const tasksWithTerminalAgentMessages = new Set<string>();
   const latestThinkingAgentMessageByTask = new Map<string, string>();
 
   for (const message of messages) {
@@ -2670,7 +2828,7 @@ export const createVisibleConversationMessages = (
       continue;
     }
 
-    latestTerminalAgentMessageByTask.set(message.taskId, message.id);
+    tasksWithTerminalAgentMessages.add(message.taskId);
   }
 
   const visibleMessages: ChatSessionMessage[] = [];
@@ -2685,15 +2843,12 @@ export const createVisibleConversationMessages = (
       continue;
     }
 
-    const latestTerminalMessageId = latestTerminalAgentMessageByTask.get(
-      message.taskId,
-    );
+    if (message.source?.kind !== "thinking") {
+      visibleMessages.push(message);
+      continue;
+    }
 
-    if (latestTerminalMessageId) {
-      if (latestTerminalMessageId === message.id) {
-        visibleMessages.push(message);
-      }
-
+    if (tasksWithTerminalAgentMessages.has(message.taskId)) {
       continue;
     }
 

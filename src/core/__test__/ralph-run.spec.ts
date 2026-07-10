@@ -5,7 +5,13 @@ import { join } from "node:path";
 import { vi } from "vitest";
 import { executeTask } from "../execution.js";
 import { mcpClientManager } from "../mcp/client.js";
-import { runRalphFlow } from "../ralph.js";
+import {
+  createRalphRunLogger,
+  readRalphExecutionHistoryResults,
+  runRalphFlow,
+  type RalphRunCheckpoint,
+  type RalphRunRecord,
+} from "../ralph.js";
 import {
   createExecutionResult,
   createFlow,
@@ -372,6 +378,314 @@ describe("runRalphFlow", () => {
     expect(executeTask).not.toHaveBeenCalled();
   });
 
+  it("atomically persists the routed successor as the block-boundary checkpoint", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-boundary-record-"));
+    const logDirectory = join(workspace, "run-log");
+    const logger = {
+      runId: "boundary-run",
+      paths: {
+        id: "boundary-run",
+        directory: logDirectory,
+        recordPath: join(logDirectory, "run.json"),
+        simpleJsonlPath: join(logDirectory, "simple.jsonl"),
+        simpleMarkdownPath: join(logDirectory, "simple.md"),
+        traceJsonlPath: join(logDirectory, "trace.jsonl"),
+      },
+      simple: vi.fn(),
+      trace: vi.fn(),
+      flush: vi.fn().mockResolvedValue(undefined),
+    };
+
+    try {
+      const flow = createFlow({
+        variables: [
+          { name: "approval", type: "string", default: "", required: false },
+        ],
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "side-effect",
+            type: "UTILITY",
+            title: "Side effect",
+            utility: { type: "NOTIFY", message: "Applied once." },
+          },
+          {
+            id: "collect",
+            type: "ASK_USER",
+            title: "Collect",
+            mode: "alwaysAsk",
+            fields: [
+              {
+                id: "approval",
+                label: "Approval",
+                type: "text",
+                required: true,
+                variableName: "approval",
+              },
+            ],
+          },
+          { id: "success", type: "END", title: "Success" },
+        ],
+        edges: [
+          { id: "start-to-effect", from: "start", fromOutput: "SUCCESS", to: "side-effect" },
+          { id: "effect-to-collect", from: "side-effect", fromOutput: "SUCCESS", to: "collect" },
+          { id: "collect-to-success", from: "collect", fromOutput: "SUCCESS", to: "success" },
+        ],
+      });
+      const paused = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger, maxTransitions: 10 },
+      );
+      const persisted = JSON.parse(
+        await readFile(logger.paths.recordPath, "utf8"),
+      ) as { checkpoint?: { currentBlockId?: string } };
+
+      expect(paused.status).toBe("waiting-for-input");
+      expect(persisted.checkpoint?.currentBlockId).toBe("collect");
+      expect(paused.blockResults.filter((entry) => entry.blockId === "side-effect"))
+        .toHaveLength(1);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("caps restored checkpoint history when pausing again", async () => {
+    const historicalResult = {
+      blockId: "start",
+      output: "SUCCESS",
+      status: "skipped",
+      attempt: 1,
+      summary: "Start.",
+    } as const;
+    const checkpoint: RalphRunCheckpoint = {
+      currentBlockId: "collect",
+      transitions: 0,
+      variables: { approval: "" },
+      resultsByBlock: { start: historicalResult },
+      runLog: Array.from({ length: 1_100 }, (_, index) => `entry-${index}`),
+      blockResults: Array.from({ length: 1_100 }, () => ({ ...historicalResult })),
+      events: Array.from({ length: 2_100 }, (_, index) => ({
+        type: "block-start" as const,
+        blockId: "start",
+        attempt: index + 1,
+      })),
+      errorCounts: {},
+      repeatedFailures: {},
+    };
+    const flow = createFlow({
+      variables: [
+        { name: "approval", type: "string", default: "", required: false },
+      ],
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "collect",
+          type: "ASK_USER",
+          title: "Collect",
+          mode: "alwaysAsk",
+          fields: [
+            {
+              id: "approval",
+              label: "Approval",
+              type: "text",
+              required: true,
+              variableName: "approval",
+            },
+          ],
+        },
+        { id: "success", type: "END", title: "Success" },
+      ],
+      edges: [
+        { id: "start-to-collect", from: "start", fromOutput: "SUCCESS", to: "collect" },
+        { id: "collect-to-success", from: "collect", fromOutput: "SUCCESS", to: "success" },
+      ],
+    });
+
+    const paused = await runRalphFlow(flow, runtimeConfig, customizations, {
+      checkpoint,
+      runId: "compacted-run",
+    });
+
+    expect(paused.status).toBe("waiting-for-input");
+    expect(paused.checkpoint?.blockResults).toHaveLength(1_000);
+    expect(paused.checkpoint?.events).toHaveLength(2_000);
+    expect(paused.checkpoint?.runLog).toHaveLength(1_000);
+  });
+
+  it("continues autonomously across transition-budget segments without a fake terminal END", async () => {
+    const flow = createFlow({
+      settings: {
+        maxTransitions: 2,
+        autonomy: true,
+      },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "wait-one",
+          type: "UTILITY",
+          title: "Wait one",
+          utility: { type: "WAIT", mode: "delay", delaySeconds: 0 },
+        },
+        {
+          id: "wait-two",
+          type: "UTILITY",
+          title: "Wait two",
+          utility: { type: "WAIT", mode: "delay", delaySeconds: 0 },
+        },
+        { id: "success", type: "END", title: "Success" },
+      ],
+      edges: [
+        { id: "start-to-one", from: "start", fromOutput: "SUCCESS", to: "wait-one" },
+        { id: "one-to-two", from: "wait-one", fromOutput: "SUCCESS", to: "wait-two" },
+        { id: "two-to-success", from: "wait-two", fromOutput: "SUCCESS", to: "success" },
+      ],
+    });
+    const exhausted = await runRalphFlow(flow, runtimeConfig, customizations, {
+      runId: "transition-run",
+    });
+
+    expect(exhausted.status).toBe("completed");
+    expect(exhausted.checkpoint).toBeUndefined();
+    expect(exhausted.blockResults.map((entry) => entry.blockId)).toEqual([
+      "start",
+      "wait-one",
+      "wait-two",
+      "success",
+    ]);
+    expect(exhausted.autonomy?.totalTransitions).toBe(3);
+    expect(exhausted.events.filter((event) => event.type === "end")).toHaveLength(1);
+  });
+
+  it("recovers a failed-END ERROR route with bounded autonomous retry", async () => {
+    vi.mocked(executeTask)
+      .mockResolvedValueOnce(
+        createExecutionResult({
+          status: "blocked",
+          summary: "Transient provider failure.",
+          reason: "Retryable failure.",
+        }),
+      )
+      .mockResolvedValueOnce(createExecutionResult({ summary: "Recovered." }));
+
+    const result = await runRalphFlow(
+      createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          { id: "work", type: "PROMPT", title: "Work", prompt: "Do work." },
+          { id: "success", type: "END", title: "Success" },
+          { id: "failed", type: "END", title: "Failed", status: "failed" },
+        ],
+        edges: [
+          { id: "start-to-work", from: "start", fromOutput: "SUCCESS", to: "work" },
+          { id: "work-success", from: "work", fromOutput: "SUCCESS", to: "success" },
+          { id: "work-error", from: "work", fromOutput: "ERROR", to: "failed" },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+      {
+        maxTransitions: 10,
+        autonomy: {
+          maxRecoveryAttempts: 2,
+          backoff: { initialDelaySeconds: 0, maxDelaySeconds: 0 },
+        },
+      },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(executeTask).toHaveBeenCalledTimes(2);
+    expect(result.autonomy).toMatchObject({
+      recoveryAttempts: [
+        expect.objectContaining({
+          blockId: "work",
+          output: "ERROR",
+          failedEndBlockId: "failed",
+          attempt: 1,
+        }),
+      ],
+      recovered: [
+        expect.objectContaining({ blockId: "work", attempts: 1 }),
+      ],
+      deferred: [],
+    });
+    expect(result.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "retry",
+          blockId: "work",
+          recovery: expect.objectContaining({ failedEndBlockId: "failed" }),
+        }),
+      ]),
+    );
+  });
+
+  it("defers exhausted INVALID work to a configured executable block", async () => {
+    const result = await runRalphFlow(
+      createFlow({
+        settings: {
+          maxTransitions: 10,
+          autonomy: {
+            maxRecoveryAttempts: 1,
+            backoff: { initialDelaySeconds: 0, maxDelaySeconds: 0 },
+            recoveryExhaustion: "defer",
+            deferToBlockId: "defer-work",
+          },
+        },
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "validate",
+            type: "UTILITY",
+            title: "Validate",
+            utility: {
+              type: "VALIDATE_JSON",
+              input: "{}",
+              schema: { type: "object", required: ["ok"] },
+            },
+          },
+          {
+            id: "defer-work",
+            type: "UTILITY",
+            title: "Defer work",
+            utility: { type: "NOTIFY", message: "Deferred." },
+          },
+          { id: "success", type: "END", title: "Success" },
+          { id: "failed", type: "END", title: "Failed", status: "failed" },
+        ],
+        edges: [
+          { id: "start-to-validate", from: "start", fromOutput: "SUCCESS", to: "validate" },
+          { id: "validate-invalid", from: "validate", fromOutput: "INVALID", to: "failed" },
+          { id: "defer-to-success", from: "defer-work", fromOutput: "SUCCESS", to: "success" },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.blockResults.filter((entry) => entry.blockId === "validate"))
+      .toHaveLength(2);
+    expect(result.autonomy?.deferred).toEqual([
+      expect.objectContaining({
+        blockId: "validate",
+        output: "INVALID",
+        routedToBlockId: "defer-work",
+      }),
+    ]);
+    expect(result.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "edge-route",
+          from: "validate",
+          to: "defer-work",
+          deferred: expect.objectContaining({ blockId: "validate" }),
+        }),
+      ]),
+    );
+  });
+
   it("blocks repeated identical non-success utility loops before another agent pass", async () => {
     vi.mocked(executeTask).mockResolvedValue(
       createExecutionResult({
@@ -732,6 +1046,7 @@ describe("runRalphFlow", () => {
         recursive: true,
       });
       await writeFile(join(workspace, "src", "App.tsx"), "export {};\n", "utf8");
+      await writeFile(join(workspace, "src", "Other.tsx"), "export {};\n", "utf8");
       await writeFile(
         join(workspace, "node_modules", "package", "src", "Hidden.tsx"),
         "export {};\n",
@@ -756,6 +1071,7 @@ describe("runRalphFlow", () => {
                 rootPath: ".",
                 pattern: "src",
                 glob: "*.tsx",
+                maxResults: 1,
               },
             },
             { id: "success", type: "END", title: "Success" },
@@ -784,13 +1100,14 @@ describe("runRalphFlow", () => {
         (entry) => entry.blockId === "search",
       );
       const searchData = searchResult?.data as
-        | { results: string[]; count: number }
+        | { results: string[]; count: number; truncated: boolean; limit: number }
         | undefined;
       const normalizedResults =
         searchData?.results.map((entry) => entry.replace(/\\/gu, "/")) ?? [];
 
       expect(result.status).toBe("completed");
       expect(searchData?.count).toBe(1);
+      expect(searchData).toMatchObject({ truncated: true, limit: 1 });
       expect(normalizedResults).toEqual([
         expect.stringMatching(/\/src\/App\.tsx$/u),
       ]);
@@ -1128,6 +1445,78 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("defers repeated identical failures instead of persisting a resume loop", async () => {
+    vi.mocked(executeTask).mockResolvedValue(
+      createExecutionResult({ summary: "Repair attempted." }),
+    );
+
+    const result = await runRalphFlow(
+      createFlow({
+        settings: {
+          maxTransitions: 20,
+          autonomy: {
+            recoveryExhaustion: "defer",
+            deferToBlockId: "defer-work",
+            backoff: { initialDelaySeconds: 0, maxDelaySeconds: 0 },
+          },
+        },
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "check",
+            type: "UTILITY",
+            title: "Check",
+            utility: {
+              type: "VALIDATE_JSON",
+              input: "{}",
+              schema: { type: "object", required: ["ok"] },
+            },
+          },
+          { id: "fix", type: "PROMPT", title: "Fix", prompt: "Repair." },
+          {
+            id: "defer-work",
+            type: "UTILITY",
+            title: "Defer",
+            utility: { type: "NOTIFY", message: "Deferred." },
+          },
+          { id: "success", type: "END", title: "Success" },
+        ],
+        edges: [
+          { id: "start-to-check", from: "start", fromOutput: "SUCCESS", to: "check" },
+          { id: "check-to-fix", from: "check", fromOutput: "INVALID", to: "fix" },
+          { id: "fix-to-check", from: "fix", fromOutput: "SUCCESS", to: "check" },
+          { id: "defer-to-success", from: "defer-work", fromOutput: "SUCCESS", to: "success" },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.autonomy).toMatchObject({
+      deferred: [
+        expect.objectContaining({
+          blockId: "check",
+          attempts: 3,
+          routedToBlockId: "defer-work",
+        }),
+      ],
+      exhaustion: {
+        kind: "repeated-failure",
+        blockId: "check",
+      },
+    });
+    expect(result.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "edge-route",
+          from: "check",
+          to: "defer-work",
+        }),
+      ]),
+    );
+  });
+
   it("keeps inline numeric defaults when callers submit blank variable values", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-counter-default-"));
 
@@ -1306,7 +1695,7 @@ describe("runRalphFlow", () => {
             blockId: "select-task",
             output: "SELECTED",
             data: expect.objectContaining({
-              task: expect.objectContaining({ id: "task-1", status: "in_progress" }),
+              task: expect.objectContaining({ id: "task-1", status: "implementing" }),
             }),
           }),
           expect.objectContaining({ blockId: "mark-task", output: "SUCCESS" }),
@@ -1315,6 +1704,79 @@ describe("runRalphFlow", () => {
       await expect(readFile(join(workspace, "state", "tasks.json"), "utf8"))
         .resolves.toContain("\"status\": \"done\"");
       expect(executeTask).not.toHaveBeenCalled();
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("enforces and records deterministic JSON work-item state transitions", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-work-item-state-"));
+
+    try {
+      await mkdir(join(workspace, "state"), { recursive: true });
+      await writeFile(
+        join(workspace, "state", "tasks.json"),
+        JSON.stringify({
+          tasks: [{ id: "task-1", title: "First", status: "planned" }],
+        }),
+        "utf8",
+      );
+
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "implement",
+              type: "UTILITY",
+              title: "Implement",
+              utility: {
+                type: "MARK_JSON_TASK",
+                path: "state/tasks.json",
+                taskId: "task-1",
+                status: "implementing",
+                enforce: true,
+              },
+            },
+            {
+              id: "verify",
+              type: "UTILITY",
+              title: "Verify",
+              utility: {
+                type: "MARK_JSON_TASK",
+                path: "state/tasks.json",
+                taskId: "task-1",
+                status: "verifying",
+                enforce: true,
+              },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            { id: "start-to-implement", from: "start", fromOutput: "SUCCESS", to: "implement" },
+            { id: "implement-to-verify", from: "implement", fromOutput: "SUCCESS", to: "verify" },
+            { id: "verify-to-success", from: "verify", fromOutput: "SUCCESS", to: "success" },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10, runId: "work-item-run" },
+      );
+      const stored = JSON.parse(
+        await readFile(join(workspace, "state", "tasks.json"), "utf8"),
+      ) as { tasks: Array<Record<string, unknown>> };
+
+      expect(result.status).toBe("completed");
+      expect(stored.tasks[0]).toMatchObject({
+        id: "task-1",
+        workItemId: "task-1",
+        runId: "work-item-run",
+        status: "verifying",
+        stateHistory: [
+          expect.objectContaining({ from: "planned", to: "implementing" }),
+          expect.objectContaining({ from: "implementing", to: "verifying" }),
+        ],
+      });
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -1348,6 +1810,18 @@ describe("runRalphFlow", () => {
                 title: "Update UI",
                 status: "todo",
                 batchKey: "ui",
+              },
+              {
+                id: "task-4",
+                title: "Previously deferred",
+                status: "deferred",
+                batchKey: "service",
+              },
+              {
+                id: "task-5",
+                title: "No action needed",
+                status: "no_action",
+                batchKey: "service",
               },
             ],
           },
@@ -1396,10 +1870,17 @@ describe("runRalphFlow", () => {
       expect(selectResult).toMatchObject({
         output: "SELECTED",
         data: expect.objectContaining({
-          task: expect.objectContaining({ id: "task-1" }),
+          task: expect.objectContaining({
+            id: "task-1",
+            workItemId: "task-1",
+            runId: expect.any(String),
+            stateHistory: [
+              expect.objectContaining({ from: "planned", to: "implementing" }),
+            ],
+          }),
           tasks: [
-            expect.objectContaining({ id: "task-1", status: "in_progress" }),
-            expect.objectContaining({ id: "task-2", status: "in_progress" }),
+            expect.objectContaining({ id: "task-1", status: "implementing" }),
+            expect.objectContaining({ id: "task-2", status: "implementing" }),
           ],
           indexes: [0, 1],
           count: 2,
@@ -1410,9 +1891,11 @@ describe("runRalphFlow", () => {
       });
       expect(storedTasks.tasks.map((task) => [task.id, task.status, task.attempts]))
         .toEqual([
-          ["task-1", "in_progress", 1],
-          ["task-2", "in_progress", 1],
+          ["task-1", "implementing", 1],
+          ["task-2", "implementing", 1],
           ["task-3", "todo", undefined],
+          ["task-4", "deferred", undefined],
+          ["task-5", "no_action", undefined],
         ]);
       expect(executeTask).not.toHaveBeenCalled();
     } finally {
@@ -1502,6 +1985,141 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("removes strict-output nulls for optional schema properties before validation", async () => {
+    vi.mocked(executeTask).mockResolvedValueOnce(
+      createExecutionResult({
+        summary: "Stop.",
+        response: {
+          markdown: JSON.stringify({ decision: "STOP", selectedCandidate: null }),
+          highlights: [],
+          relatedFiles: [],
+          verification: [],
+          followUps: [],
+        },
+      }),
+    );
+
+    const result = await runRalphFlow(
+      createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "prompt-json",
+            type: "UTILITY",
+            title: "Prompt JSON",
+            utility: {
+              type: "PROMPT_JSON",
+              prompt: "Choose or stop.",
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["decision"],
+                properties: {
+                  decision: { type: "string", enum: ["STOP", "IMPLEMENT"] },
+                  selectedCandidate: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {},
+                  },
+                },
+              },
+            },
+          },
+          { id: "success", type: "END", title: "Success" },
+        ],
+        edges: [
+          { id: "start-to-prompt", from: "start", fromOutput: "SUCCESS", to: "prompt-json" },
+          { id: "prompt-to-success", from: "prompt-json", fromOutput: "SUCCESS", to: "success" },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+      { maxTransitions: 5 },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.blockResults.find((entry) => entry.blockId === "prompt-json"))
+      .toMatchObject({
+        output: "SUCCESS",
+        data: expect.objectContaining({
+          output: { decision: "STOP" },
+        }),
+      });
+    expect(vi.mocked(executeTask).mock.calls[0]?.[3]).toMatchObject({
+      structuredOutput: { strict: true },
+    });
+  });
+
+  it("enforces integer, object null, and additionalProperties JSON schema rules", async () => {
+    const result = await runRalphFlow(
+      createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "validate-properties",
+            type: "UTILITY",
+            title: "Validate properties",
+            utility: {
+              type: "VALIDATE_JSON",
+              input: JSON.stringify({ count: 1.5, extra: true }),
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: { count: { type: "integer" } },
+              },
+            },
+          },
+          {
+            id: "validate-null",
+            type: "UTILITY",
+            title: "Validate null",
+            utility: {
+              type: "VALIDATE_JSON",
+              input: "null",
+              schema: { type: "object" },
+            },
+          },
+          { id: "success", type: "END", title: "Success" },
+        ],
+        edges: [
+          { id: "start-to-properties", from: "start", fromOutput: "SUCCESS", to: "validate-properties" },
+          { id: "properties-to-null", from: "validate-properties", fromOutput: "INVALID", to: "validate-null" },
+          { id: "null-to-success", from: "validate-null", fromOutput: "INVALID", to: "success" },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+      { maxTransitions: 5 },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.blockResults.find((entry) => entry.blockId === "validate-properties"))
+      .toMatchObject({
+        output: "INVALID",
+        data: {
+          input: { count: 1.5, extra: true },
+          validation: {
+            valid: false,
+            errors: expect.arrayContaining([
+              expect.stringContaining("expected integer"),
+              expect.stringContaining("extra is not allowed"),
+            ]),
+          },
+        },
+      });
+    expect(result.blockResults.find((entry) => entry.blockId === "validate-null"))
+      .toMatchObject({
+        output: "INVALID",
+        data: {
+          input: null,
+          validation: {
+            valid: false,
+            errors: [expect.stringContaining("expected object, got null")],
+          },
+        },
+      });
+  });
+
   it("routes VALIDATOR_JSON decisions from schema-valid model output", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-validator-json-"));
 
@@ -1563,7 +2181,7 @@ describe("runRalphFlow", () => {
       expect(vi.mocked(executeTask).mock.calls[0]?.[3]).toMatchObject({
         structuredOutput: {
           name: "ralph_validator-json",
-          strict: false,
+          strict: true,
           schema: expect.objectContaining({
             required: ["decision", "confidence", "summary", "evidence", "remainingWork"],
           }),
@@ -2809,7 +3427,7 @@ describe("runRalphFlow", () => {
           expect.objectContaining({
             blockId: "search-empty",
             output: "EMPTY",
-            status: "error",
+            status: "completed",
             data: expect.objectContaining({ count: 0 }),
           }),
           expect.objectContaining({
@@ -2883,6 +3501,43 @@ describe("runRalphFlow", () => {
           }),
         ]),
       );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("reports truncated scope evidence when the configured cap is reached", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-cap-"));
+    try {
+      await mkdir(join(workspace, "a"), { recursive: true });
+      await mkdir(join(workspace, "b"), { recursive: true });
+      await writeFile(join(workspace, "package.json"), "{}", "utf8");
+      await writeFile(join(workspace, "a", "package.json"), "{}", "utf8");
+      await writeFile(join(workspace, "b", "package.json"), "{}", "utf8");
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "scan",
+              type: "UTILITY",
+              title: "Scan",
+              utility: { type: "SCAN_SCOPE_EVIDENCE", rootPath: ".", maxResults: 1 },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            { id: "start-scan", from: "start", fromOutput: "SUCCESS", to: "scan" },
+            { id: "scan-success", from: "scan", fromOutput: "SUCCESS", to: "success" },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 10 },
+      );
+
+      expect(result.blockResults.find((entry) => entry.blockId === "scan")?.data)
+        .toMatchObject({ truncated: true, limit: 1, scopes: [expect.any(Object)] });
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -3117,7 +3772,7 @@ describe("runRalphFlow", () => {
       });
   });
 
-  it("returns UNAVAILABLE instead of starting managed UI_ANALYZE servers", async () => {
+  it("returns UNAVAILABLE when managed UI_ANALYZE has no server command", async () => {
     const result = await runRalphFlow(
       createFlow({
         blocks: [
@@ -3132,7 +3787,7 @@ describe("runRalphFlow", () => {
               targetUrl: "http://127.0.0.1:5173",
               server: {
                 mode: "managed",
-                command: "pnpm dev",
+                reuseExisting: false,
               },
             },
           },
@@ -3164,10 +3819,13 @@ describe("runRalphFlow", () => {
         output: "UNAVAILABLE",
         data: expect.objectContaining({
           adapter: "browser",
-          server: {
+          server: expect.objectContaining({
             mode: "managed",
             ready: false,
-          },
+            started: false,
+            reused: false,
+            error: expect.stringContaining("requires server.command"),
+          }),
         }),
       });
   });
@@ -3827,6 +4485,168 @@ describe("runRalphFlow", () => {
     expect(executeTask).not.toHaveBeenCalled();
   });
 
+  it("finalizes full execution history and outcome in a run-scoped report", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-final-report-"));
+    const userLogDirectory = await mkdtemp(join(tmpdir(), "ralph-user-log-"));
+
+    try {
+      const result = await runRalphFlow(
+        createFlow({
+          variables: [
+            {
+              name: "reportPath",
+              type: "path",
+              default: "{{run:artifactRoot}}/final-report.json",
+              required: false,
+            },
+          ],
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "notify",
+              type: "UTILITY",
+              title: "Notify",
+              utility: { type: "NOTIFY", message: "Ready." },
+            },
+            {
+              id: "report",
+              type: "UTILITY",
+              title: "Final report",
+              utility: { type: "FINAL_REPORT", path: "{{reportPath}}" },
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            { id: "start-to-notify", from: "start", fromOutput: "SUCCESS", to: "notify" },
+            { id: "notify-to-report", from: "notify", fromOutput: "SUCCESS", to: "report" },
+            { id: "report-to-success", from: "report", fromOutput: "SUCCESS", to: "success" },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        {
+          maxTransitions: 10,
+          logger: {
+            runId: "report-run",
+            paths: {
+              id: "report-run",
+              directory: userLogDirectory,
+              recordPath: join(userLogDirectory, "run.json"),
+              simpleJsonlPath: join(userLogDirectory, "simple.jsonl"),
+              simpleMarkdownPath: join(userLogDirectory, "simple.md"),
+              traceJsonlPath: join(userLogDirectory, "trace.jsonl"),
+            },
+            simple: vi.fn(),
+            trace: vi.fn(),
+            flush: vi.fn().mockResolvedValue(undefined),
+          },
+        },
+      );
+      const reportPath = join(
+        workspace,
+        ".machdoch",
+        "ralph",
+        "runs",
+        "report-run",
+        "final-report.json",
+      );
+      const report = JSON.parse(await readFile(reportPath, "utf8")) as {
+        outcome: { status: string; summary: string };
+        executionHistory: Array<{ blockId: string; sequence: number }>;
+        events: Array<{ type: string }>;
+      };
+
+      expect(result.status).toBe("completed");
+      expect(report.outcome).toMatchObject({
+        status: "completed",
+        summary: expect.stringContaining("ended at `success`"),
+      });
+      expect(report.executionHistory.map((entry) => entry.blockId)).toEqual([
+        "start",
+        "notify",
+        "report",
+        "success",
+      ]);
+      expect(report.events.at(-1)).toMatchObject({
+        type: "end",
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+      await rm(userLogDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("restores and finalizes report descriptors after a crash before END", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-final-report-resume-"));
+    try {
+      const reportPath = join(workspace, "final-report.json");
+      await writeFile(reportPath, JSON.stringify({ outcome: { status: "running" } }), "utf8");
+      const flow = createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "report",
+            type: "UTILITY",
+            title: "Final report",
+            utility: { type: "FINAL_REPORT", path: "final-report.json" },
+          },
+          { id: "success", type: "END", title: "Success", status: "success" },
+        ],
+        edges: [
+          { id: "start-report", from: "start", fromOutput: "SUCCESS", to: "report" },
+          { id: "report-success", from: "report", fromOutput: "SUCCESS", to: "success" },
+        ],
+      });
+      const reportResult = {
+        blockId: "report",
+        operationId: "report-operation",
+        output: "SUCCESS",
+        status: "completed" as const,
+        attempt: 1,
+        summary: "Report started.",
+      };
+      const checkpoint: RalphRunCheckpoint = {
+        currentBlockId: "success",
+        transitions: 2,
+        variables: {},
+        resultsByBlock: { report: reportResult },
+        runLog: [],
+        blockResults: [reportResult],
+        events: [],
+        errorCounts: {},
+        repeatedFailures: {},
+        finalReports: [{ blockId: "report", jsonPath: reportPath }],
+        operationLedger: {
+          "report-operation": {
+            id: "report-operation",
+            blockId: "report",
+            attempt: 1,
+            state: "routed",
+            startedAt: "2026-01-01T00:00:00.000Z",
+            completedAt: "2026-01-01T00:00:01.000Z",
+            routedAt: "2026-01-01T00:00:02.000Z",
+            routedToBlockId: "success",
+          },
+        },
+      };
+
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { checkpoint, runId: "report-resume" },
+      );
+      const report = JSON.parse(await readFile(reportPath, "utf8")) as {
+        outcome: { status: string };
+      };
+
+      expect(result.status).toBe("completed");
+      expect(report.outcome.status).toBe("completed");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("runs MCP tool blocks and resolves argument placeholders", async () => {
     vi.mocked(mcpClientManager.callTool).mockResolvedValue({
       content: [
@@ -4276,6 +5096,1412 @@ describe("runRalphFlow", () => {
         },
       }),
     );
+  });
+
+  it("executes a block again when a legitimate graph loop returns to it", async () => {
+    vi.mocked(executeTask)
+      .mockResolvedValueOnce(createExecutionResult({ summary: "A1" }))
+      .mockResolvedValueOnce(createExecutionResult({ summary: "Loop", response: {
+        markdown: "RALPH_DECISION: LOOP",
+        highlights: [], relatedFiles: [], verification: [], followUps: [],
+      } }))
+      .mockResolvedValueOnce(createExecutionResult({ summary: "A2" }))
+      .mockResolvedValueOnce(createExecutionResult({ summary: "Done", response: {
+        markdown: "RALPH_DECISION: DONE",
+        highlights: [], relatedFiles: [], verification: [], followUps: [],
+      } }));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        { id: "a", type: "PROMPT", title: "A", prompt: "Execute A" },
+        { id: "route", type: "DECISION", title: "Route", prompt: "Loop?", labels: ["LOOP", "DONE"] },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        { id: "start-a", from: "start", fromOutput: "SUCCESS", to: "a" },
+        { id: "a-route", from: "a", fromOutput: "SUCCESS", to: "route" },
+        { id: "route-loop", from: "route", fromOutput: "LOOP", to: "a" },
+        { id: "route-done", from: "route", fromOutput: "DONE", to: "success" },
+      ],
+      settings: { maxTransitions: 20 },
+    });
+
+    const result = await runRalphFlow(flow, runtimeConfig, customizations);
+
+    expect(result.status).toBe("completed");
+    expect(result.blockResults.filter((entry) => entry.blockId === "a")).toHaveLength(2);
+    expect(executeTask).toHaveBeenCalledTimes(4);
+  });
+
+  it("routes a durably completed operation after resume without replaying its side effect", async () => {
+    const completed = {
+      blockId: "side-effect",
+      operationId: "operation-side-effect-1",
+      output: "SUCCESS",
+      status: "completed" as const,
+      attempt: 1,
+      summary: "Side effect completed.",
+    };
+    const checkpoint: RalphRunCheckpoint = {
+      currentBlockId: "side-effect",
+      transitions: 1,
+      variables: {},
+      resultsByBlock: { "side-effect": completed },
+      runLog: ["side-effect.SUCCESS: Side effect completed."],
+      blockResults: [completed],
+      events: [],
+      errorCounts: {},
+      attemptCounts: { "side-effect": 1 },
+      repeatedFailures: {},
+      operationLedger: {
+        "operation-side-effect-1": {
+          id: "operation-side-effect-1",
+          blockId: "side-effect",
+          attempt: 1,
+          state: "completed",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          completedAt: "2026-01-01T00:00:01.000Z",
+          output: "SUCCESS",
+          summary: "Side effect completed.",
+        },
+      },
+    };
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        { id: "side-effect", type: "PROMPT", title: "Side Effect", prompt: "Do it" },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        { id: "start-side", from: "start", fromOutput: "SUCCESS", to: "side-effect" },
+        { id: "side-success", from: "side-effect", fromOutput: "SUCCESS", to: "success" },
+      ],
+    });
+
+    const result = await runRalphFlow(flow, runtimeConfig, customizations, {
+      checkpoint,
+      runId: "resume-operation",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.blockResults.filter((entry) => entry.blockId === "side-effect"))
+      .toHaveLength(1);
+    expect(executeTask).not.toHaveBeenCalled();
+  });
+
+  it("rejects a concurrent resume without mutating or releasing the foreign lease", async () => {
+    const lease = {
+      ownerId: "other-process",
+      generation: 3,
+      acquiredAt: new Date().toISOString(),
+      heartbeatAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    const checkpoint: RalphRunCheckpoint = {
+      currentBlockId: "start",
+      transitions: 0,
+      variables: {},
+      resultsByBlock: {},
+      runLog: [],
+      blockResults: [],
+      events: [],
+      errorCounts: {},
+      repeatedFailures: {},
+      runId: "leased-run",
+      flowId: "refactor-flow",
+      lease,
+    };
+    const logger = {
+      runId: "leased-run",
+      simple: vi.fn(),
+      trace: vi.fn(),
+      flush: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await runRalphFlow(
+      createFlow(),
+      runtimeConfig,
+      customizations,
+      { checkpoint, runId: "leased-run", logger },
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.summary).toContain("leased by other-process");
+    expect(result.checkpoint).toEqual(checkpoint);
+    expect(result.checkpoint?.lease).not.toHaveProperty("releasedAt");
+    expect(logger.simple).not.toHaveBeenCalled();
+    expect(logger.trace).not.toHaveBeenCalled();
+    expect(logger.flush).not.toHaveBeenCalled();
+    expect(executeTask).not.toHaveBeenCalled();
+  });
+
+  it("atomically fences simultaneous durable run acquisition", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-run-acquire-race-"));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        { id: "work", type: "PROMPT", title: "Work", prompt: "Do the work." },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        { id: "start-work", from: "start", fromOutput: "SUCCESS", to: "work" },
+        { id: "work-success", from: "work", fromOutput: "SUCCESS", to: "success" },
+      ],
+    });
+    let resolveExecution!: (value: ReturnType<typeof createExecutionResult>) => void;
+    const execution = new Promise<ReturnType<typeof createExecutionResult>>((resolve) => {
+      resolveExecution = resolve;
+    });
+
+    try {
+      vi.mocked(executeTask).mockImplementation(() => execution);
+      const firstLogger = await createRalphRunLogger(workspace, flow, {
+        runId: "acquisition-race",
+      });
+      const secondLogger = await createRalphRunLogger(workspace, flow, {
+        runId: "acquisition-race",
+        paths: firstLogger.paths!,
+        append: true,
+      });
+      const firstRun = runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        {
+          logger: firstLogger,
+          runId: firstLogger.runId,
+          leaseOwnerId: "acquisition-owner-a",
+        },
+      );
+      const secondRun = runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        {
+          logger: secondLogger,
+          runId: secondLogger.runId,
+          leaseOwnerId: "acquisition-owner-b",
+        },
+      );
+      const executionDeadline = Date.now() + 10_000;
+      while (vi.mocked(executeTask).mock.calls.length === 0 && Date.now() < executionDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(executeTask).toHaveBeenCalledTimes(1);
+      resolveExecution(createExecutionResult({ summary: "Winner completed." }));
+
+      const results = await Promise.all([firstRun, secondRun]);
+      expect(results.filter((result) => result.status === "completed")).toHaveLength(1);
+      expect(
+        results.filter(
+          (result) =>
+            result.status === "crashed" &&
+            result.summary.toLowerCase().includes("ownership"),
+        ),
+      ).toHaveLength(1);
+      expect(executeTask).toHaveBeenCalledTimes(1);
+      const record = JSON.parse(
+        await readFile(firstLogger.paths!.recordPath, "utf8"),
+      ) as RalphRunRecord;
+      expect(record.status).toBe("completed");
+    } finally {
+      resolveExecution?.(createExecutionResult({ summary: "Cleanup." }));
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("prevents a stale owner from appending history or finalizing after takeover", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-run-stale-owner-"));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        { id: "work", type: "PROMPT", title: "Work", prompt: "Do the work." },
+        {
+          id: "report",
+          type: "UTILITY",
+          title: "Report",
+          utility: {
+            type: "FINAL_REPORT",
+            path: "reports/final.json",
+            markdownPath: "reports/final.md",
+          },
+        },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        { id: "start-work", from: "start", fromOutput: "SUCCESS", to: "work" },
+        { id: "work-report", from: "work", fromOutput: "SUCCESS", to: "report" },
+        { id: "work-error-report", from: "work", fromOutput: "ERROR", to: "report" },
+        { id: "report-success", from: "report", fromOutput: "SUCCESS", to: "success" },
+      ],
+    });
+    let resolveStaleExecution!: (value: ReturnType<typeof createExecutionResult>) => void;
+    const staleExecution = new Promise<ReturnType<typeof createExecutionResult>>((resolve) => {
+      resolveStaleExecution = resolve;
+    });
+
+    try {
+      vi.mocked(executeTask).mockImplementation(() => staleExecution);
+      const staleLogger = await createRalphRunLogger(workspace, flow, {
+        runId: "stale-owner-run",
+      });
+      const staleRun = runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        {
+          logger: staleLogger,
+          runId: staleLogger.runId,
+          leaseOwnerId: "stale-owner",
+          leaseDurationMs: 5_000,
+        },
+      );
+
+      let takeoverCheckpoint: RalphRunCheckpoint | undefined;
+      let lastObservedRecord: RalphRunRecord | undefined;
+      let earlyStaleResult: Awaited<ReturnType<typeof runRalphFlow>> | undefined;
+      void staleRun.then((result) => {
+        earlyStaleResult = result;
+      });
+      const checkpointDeadline = Date.now() + 10_000;
+      while (!takeoverCheckpoint && Date.now() < checkpointDeadline) {
+        try {
+          const record = JSON.parse(
+            await readFile(staleLogger.paths!.recordPath, "utf8"),
+          ) as RalphRunRecord;
+          lastObservedRecord = record;
+          if (
+            record.checkpoint?.currentBlockId === "work" &&
+            record.checkpoint.lease?.ownerId === "stale-owner" &&
+            Object.values(record.checkpoint.operationLedger ?? {}).some(
+              (entry) => entry.blockId === "work" && entry.state === "started",
+            ) &&
+            vi.mocked(executeTask).mock.calls.length === 1
+          ) {
+            takeoverCheckpoint = record.checkpoint;
+          }
+        } catch {
+          // The first atomic run record may not exist yet.
+        }
+        if (!takeoverCheckpoint) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+      }
+      expect(
+        takeoverCheckpoint,
+        JSON.stringify({ lastObservedRecord, earlyStaleResult }, null, 2),
+      ).toBeDefined();
+      expect(executeTask).toHaveBeenCalledTimes(1);
+
+      const takeoverLogger = await createRalphRunLogger(workspace, flow, {
+        runId: staleLogger.runId,
+        paths: staleLogger.paths!,
+        append: true,
+      });
+      const takeoverResult = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        {
+          logger: takeoverLogger,
+          runId: takeoverLogger.runId,
+          checkpoint: takeoverCheckpoint!,
+          leaseOwnerId: "takeover-owner",
+          forceLeaseTakeover: true,
+          leaseDurationMs: 5_000,
+        },
+      );
+      expect(takeoverResult.status).toBe("completed");
+
+      resolveStaleExecution(createExecutionResult({ summary: "Stale work returned late." }));
+      const staleResult = await staleRun;
+      expect(staleResult.status).toBe("crashed");
+      expect(staleResult.summary.toLowerCase()).toContain("ownership");
+
+      const history = await readRalphExecutionHistoryResults(staleLogger.paths);
+      expect(history.filter((entry) => entry.blockId === "work")).toEqual([
+        expect.objectContaining({ output: "ERROR" }),
+      ]);
+      const record = JSON.parse(
+        await readFile(staleLogger.paths!.recordPath, "utf8"),
+      ) as RalphRunRecord;
+      expect(record.status).toBe("completed");
+      expect(record.summary).toBe(takeoverResult.summary);
+      const report = JSON.parse(
+        await readFile(join(workspace, "reports", "final.json"), "utf8"),
+      ) as { outcome?: { status?: unknown } };
+      expect(report.outcome?.status).toBe("completed");
+      expect(executeTask).toHaveBeenCalledTimes(1);
+    } finally {
+      resolveStaleExecution?.(createExecutionResult({ summary: "Cleanup." }));
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("heartbeats a durable lease while a long block is still executing", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-heartbeat-"));
+    try {
+      let resolveExecution!: (value: ReturnType<typeof createExecutionResult>) => void;
+      const executionPromise = new Promise<ReturnType<typeof createExecutionResult>>(
+        (resolve) => {
+          resolveExecution = resolve;
+        },
+      );
+      vi.mocked(executeTask).mockImplementation(() => executionPromise);
+      const flow = createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          { id: "long", type: "PROMPT", title: "Long", prompt: "Wait" },
+          { id: "success", type: "END", title: "Success", status: "success" },
+        ],
+        edges: [
+          { id: "start-long", from: "start", fromOutput: "SUCCESS", to: "long" },
+          { id: "long-success", from: "long", fromOutput: "SUCCESS", to: "success" },
+        ],
+      });
+      const logger = await createRalphRunLogger(workspace, flow, {
+        runId: "heartbeat-run",
+      });
+      const runPromise = runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger, runId: logger.runId, leaseDurationMs: 1_000 },
+      );
+
+      let activeRecord:
+        | { checkpoint: { lease: { acquiredAt: string; heartbeatAt: string } } }
+        | undefined;
+      let inspectionError: unknown;
+      const heartbeatDeadline = Date.now() + 10_000;
+      while (Date.now() < heartbeatDeadline) {
+        try {
+          activeRecord = JSON.parse(
+            await readFile(logger.paths!.recordPath, "utf8"),
+          ) as typeof activeRecord;
+          if (
+            activeRecord &&
+            Date.parse(activeRecord.checkpoint.lease.heartbeatAt) >
+              Date.parse(activeRecord.checkpoint.lease.acquiredAt)
+          ) {
+            break;
+          }
+        } catch (error) {
+          inspectionError = error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      resolveExecution(createExecutionResult({ summary: "Finished." }));
+      const result = await runPromise;
+      const diagnostics = [
+        `run status: ${result.status}`,
+        `summary: ${result.summary}`,
+        `durability: ${result.durability?.error ?? "healthy"}`,
+        ...(inspectionError
+          ? [`last record read error: ${inspectionError instanceof Error ? inspectionError.message : String(inspectionError)}`]
+          : []),
+      ].join("; ");
+      expect(activeRecord, diagnostics).toBeDefined();
+      expect(
+        Date.parse(activeRecord!.checkpoint.lease.heartbeatAt),
+        diagnostics,
+      ).toBeGreaterThan(Date.parse(activeRecord!.checkpoint.lease.acquiredAt));
+      expect(result.status, diagnostics).toBe("completed");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("releases the retained lease when final durability failure promotes completion to crash", async () => {
+    const logger = {
+      runId: "flush-failure-run",
+      simple: vi.fn(),
+      trace: vi.fn(),
+      flush: vi.fn().mockRejectedValue(new Error("disk unavailable")),
+    };
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        { id: "start-success", from: "start", fromOutput: "SUCCESS", to: "success" },
+      ],
+    });
+
+    const result = await runRalphFlow(flow, runtimeConfig, customizations, {
+      logger,
+      runId: logger.runId,
+    });
+
+    expect(result.status).toBe("crashed");
+    expect(result.durability).toMatchObject({ status: "degraded" });
+    expect(result.checkpoint?.lease?.releasedAt).toEqual(expect.any(String));
+  });
+
+  it("routes unresolved strict utility references as an ERROR result", async () => {
+    const result = await runRalphFlow(
+      createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "write",
+            type: "UTILITY",
+            title: "Write",
+            utility: {
+              type: "WRITE_JSON",
+              path: "{{data:not-run:path}}",
+              input: "{}",
+            },
+          },
+          { id: "handled", type: "END", title: "Handled", status: "success" },
+        ],
+        edges: [
+          { id: "start-write", from: "start", fromOutput: "SUCCESS", to: "write" },
+          { id: "write-error", from: "write", fromOutput: "ERROR", to: "handled" },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+      { maxTransitions: 10 },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.blockResults.find((entry) => entry.blockId === "write"))
+      .toMatchObject({
+        output: "ERROR",
+        status: "error",
+        error: expect.stringContaining("Unresolved Ralph block reference"),
+      });
+  });
+
+  it("enforces an MCP deadline even when the connector never settles", async () => {
+    vi.mocked(mcpClientManager.readResource).mockImplementation(
+      () => new Promise(() => undefined),
+    );
+    const result = await runRalphFlow(
+      createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "mcp",
+            type: "MCP_RESOURCE",
+            title: "MCP",
+            serverId: "test",
+            uri: "test://resource",
+            settings: {
+              timeoutSeconds: 0.001,
+              mcp: {
+                servers: [{
+                  id: "test",
+                  enabled: true,
+                  transport: { type: "streamable-http", url: "https://example.test/mcp" },
+                }],
+              },
+            },
+          },
+          { id: "handled", type: "END", title: "Handled", status: "success" },
+        ],
+        edges: [
+          { id: "start-mcp", from: "start", fromOutput: "SUCCESS", to: "mcp" },
+          { id: "mcp-error", from: "mcp", fromOutput: "ERROR", to: "handled" },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+      { maxTransitions: 10 },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.blockResults.find((entry) => entry.blockId === "mcp"))
+      .toMatchObject({
+        output: "ERROR",
+        error: expect.stringContaining("timed out"),
+      });
+  });
+
+  it("reconciles a partial APPEND_JSONL tail on end-to-end operation resume", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-append-resume-"));
+    const path = join(workspace, "events.jsonl");
+    const operationId = "append-operation";
+    const initial = "{\"seed\":true}\n";
+    const intended = "{\"item\":1}\n";
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "append",
+          type: "UTILITY",
+          title: "Append",
+          utility: { type: "APPEND_JSONL", path: "events.jsonl", input: "{\"item\":1}" },
+        },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        { id: "start-append", from: "start", fromOutput: "SUCCESS", to: "append" },
+        { id: "append-success", from: "append", fromOutput: "SUCCESS", to: "success" },
+      ],
+    });
+    const checkpoint: RalphRunCheckpoint = {
+      currentBlockId: "append",
+      transitions: 1,
+      variables: {},
+      resultsByBlock: {},
+      runLog: [],
+      blockResults: [],
+      events: [],
+      errorCounts: {},
+      repeatedFailures: {},
+      attemptCounts: { append: 1 },
+      operationLedger: {
+        [operationId]: {
+          id: operationId,
+          blockId: "append",
+          attempt: 1,
+          state: "started",
+          startedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    };
+
+    try {
+      await writeFile(path, `${initial}${intended.slice(0, 6)}`, "utf8");
+      await writeFile(
+        `${path}.ralph-operations.json`,
+        JSON.stringify({
+          operations: {
+            [operationId]: {
+              state: "started",
+              priorSize: Buffer.byteLength(initial),
+              lineLength: Buffer.byteLength(intended),
+              startedAt: "2026-01-01T00:00:00.000Z",
+            },
+          },
+        }),
+        "utf8",
+      );
+
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { checkpoint, runId: "append-resume" },
+      );
+
+      expect(result.status).toBe("completed");
+      await expect(readFile(path, "utf8")).resolves.toBe(`${initial}${intended}`);
+      expect(result.blockResults.find((entry) => entry.blockId === "append"))
+        .toMatchObject({ operationId, output: "SUCCESS" });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("fails APPEND_JSONL closed on ledger I/O errors without mutating its target", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-append-ledger-error-"));
+    const path = join(workspace, "events.jsonl");
+    const original = "{\"existing\":true}\n";
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "append",
+          type: "UTILITY",
+          title: "Append",
+          utility: { type: "APPEND_JSONL", path: "events.jsonl", input: "{\"item\":1}" },
+        },
+        { id: "failed", type: "END", title: "Failed", status: "failed" },
+      ],
+      edges: [
+        { id: "start-append", from: "start", fromOutput: "SUCCESS", to: "append" },
+        { id: "append-failed", from: "append", fromOutput: "ERROR", to: "failed" },
+      ],
+    });
+
+    try {
+      await writeFile(path, original, "utf8");
+      await mkdir(`${path}.ralph-operations.json`);
+
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "append-ledger-error" },
+      );
+
+      expect(result.blockResults.find((entry) => entry.blockId === "append"))
+        .toMatchObject({ output: "ERROR" });
+      await expect(readFile(path, "utf8")).resolves.toBe(original);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("replays an atomically written FINAL_REPORT pending operation", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-report-pending-"));
+    const operationId = "pending-report-operation";
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "report",
+          type: "UTILITY",
+          title: "Report",
+          utility: { type: "FINAL_REPORT", path: "report.json" },
+        },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        { id: "start-report", from: "start", fromOutput: "SUCCESS", to: "report" },
+        { id: "report-success", from: "report", fromOutput: "SUCCESS", to: "success" },
+      ],
+    });
+    const checkpoint: RalphRunCheckpoint = {
+      currentBlockId: "report",
+      transitions: 1,
+      variables: {},
+      resultsByBlock: {},
+      runLog: [],
+      blockResults: [],
+      events: [],
+      errorCounts: {},
+      repeatedFailures: {},
+      attemptCounts: { report: 1 },
+      operationLedger: {
+        [operationId]: {
+          id: operationId,
+          blockId: "report",
+          attempt: 1,
+          state: "started",
+          startedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    };
+
+    try {
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { checkpoint, runId: "pending-report" },
+      );
+      const report = JSON.parse(await readFile(join(workspace, "report.json"), "utf8")) as {
+        outcome: { status: string };
+      };
+
+      expect(result.status).toBe("completed");
+      expect(report.outcome.status).toBe("completed");
+      expect(result.blockResults.find((entry) => entry.blockId === "report"))
+        .toMatchObject({ operationId, output: "SUCCESS" });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("does not synthesize an unvisited branch-specific FINAL_REPORT", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-report-branch-"));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "report-a",
+          type: "UTILITY",
+          title: "Report A",
+          utility: { type: "FINAL_REPORT", path: "reports/a.json" },
+        },
+        {
+          id: "report-b",
+          type: "UTILITY",
+          title: "Report B",
+          utility: { type: "FINAL_REPORT", path: "{{data:never:path}}" },
+        },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        { id: "start-a", from: "start", fromOutput: "SUCCESS", to: "report-a" },
+        { id: "a-success", from: "report-a", fromOutput: "SUCCESS", to: "success" },
+      ],
+    });
+
+    try {
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "branch-report" },
+      );
+
+      expect(result.status).toBe("completed");
+      await expect(readFile(join(workspace, "reports", "a.json"), "utf8"))
+        .resolves.toContain('"status": "completed"');
+      expect(result.blockResults.some((entry) => entry.blockId === "report-b")).toBe(false);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses APPEND_JSONL resume when crash-tail bytes do not match the operation", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-append-mismatch-"));
+    const path = join(workspace, "events.jsonl");
+    const operationId = "append-mismatch-operation";
+    const initial = "{\"seed\":true}\n";
+    const mismatched = "not-the-intended-entry";
+    const checkpoint: RalphRunCheckpoint = {
+      currentBlockId: "append",
+      transitions: 1,
+      variables: {},
+      resultsByBlock: {},
+      runLog: [],
+      blockResults: [],
+      events: [],
+      errorCounts: {},
+      repeatedFailures: {},
+      attemptCounts: { append: 1 },
+      operationLedger: {
+        [operationId]: {
+          id: operationId,
+          blockId: "append",
+          attempt: 1,
+          state: "started",
+          startedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    };
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "append",
+          type: "UTILITY",
+          title: "Append",
+          utility: { type: "APPEND_JSONL", path: "events.jsonl", input: "{\"item\":1}" },
+        },
+        { id: "failed", type: "END", title: "Failed", status: "failed" },
+      ],
+      edges: [
+        { id: "start-append", from: "start", fromOutput: "SUCCESS", to: "append" },
+        { id: "append-failed", from: "append", fromOutput: "ERROR", to: "failed" },
+      ],
+    });
+
+    try {
+      await writeFile(path, `${initial}${mismatched}`, "utf8");
+      await writeFile(`${path}.ralph-operations.json`, JSON.stringify({
+        operations: {
+          [operationId]: {
+            state: "started",
+            priorSize: Buffer.byteLength(initial),
+            lineLength: Buffer.byteLength("{\"item\":1}\n"),
+          },
+        },
+      }), "utf8");
+
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { checkpoint, runId: "append-mismatch" },
+      );
+
+      expect(result.blockResults.find((entry) => entry.blockId === "append"))
+        .toMatchObject({
+          output: "ERROR",
+          data: expect.objectContaining({ reconciliation: "indeterminate" }),
+        });
+      await expect(readFile(path, "utf8")).resolves.toBe(`${initial}${mismatched}`);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("resumes pending SELECT_JSON_TASK and MARK_JSON_TASK operations idempotently", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-task-replay-"));
+    const path = join(workspace, "tasks.json");
+    const runId = "task-replay-run";
+    const selectOperationId = "pending-select";
+    const selectFlow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "select",
+          type: "UTILITY",
+          title: "Select",
+          utility: { type: "SELECT_JSON_TASK", path: "tasks.json" },
+        },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
+        { id: "select-success", from: "select", fromOutput: "SELECTED", to: "success" },
+      ],
+    });
+    const createPendingCheckpoint = (
+      blockId: string,
+      operationId: string,
+    ): RalphRunCheckpoint => ({
+      currentBlockId: blockId,
+      transitions: 1,
+      variables: {},
+      resultsByBlock: {},
+      runLog: [],
+      blockResults: [],
+      events: [],
+      errorCounts: {},
+      repeatedFailures: {},
+      attemptCounts: { [blockId]: 1 },
+      operationLedger: {
+        [operationId]: {
+          id: operationId,
+          blockId,
+          attempt: 1,
+          state: "started",
+          startedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    });
+
+    try {
+      const now = new Date().toISOString();
+      await writeFile(path, JSON.stringify({ tasks: [{
+        id: "task-1",
+        status: "implementing",
+        attempts: 1,
+        lease: {
+          ownerId: runId,
+          generation: 1,
+          acquiredAt: now,
+          heartbeatAt: now,
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+      }] }), "utf8");
+
+      const selected = await runRalphFlow(
+        selectFlow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        {
+          checkpoint: createPendingCheckpoint("select", selectOperationId),
+          runId,
+        },
+      );
+      const afterSelect = JSON.parse(await readFile(path, "utf8")) as {
+        tasks: Array<{ attempts: number; lease: { generation: number } }>;
+      };
+
+      expect(selected.status).toBe("completed");
+      expect(afterSelect.tasks[0]).toMatchObject({ attempts: 1, lease: { generation: 1 } });
+
+      const stateHistory = [{ from: "implementing", to: "completed", at: now }];
+      await writeFile(path, JSON.stringify({ tasks: [{
+        id: "task-1",
+        status: "completed",
+        stateHistory,
+      }] }), "utf8");
+      const markFlow = createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "mark",
+            type: "UTILITY",
+            title: "Mark",
+            utility: {
+              type: "MARK_JSON_TASK",
+              path: "tasks.json",
+              taskId: "task-1",
+              status: "completed",
+              enforce: true,
+            },
+          },
+          { id: "success", type: "END", title: "Success", status: "success" },
+        ],
+        edges: [
+          { id: "start-mark", from: "start", fromOutput: "SUCCESS", to: "mark" },
+          { id: "mark-success", from: "mark", fromOutput: "SUCCESS", to: "success" },
+        ],
+      });
+      const marked = await runRalphFlow(
+        markFlow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        {
+          checkpoint: createPendingCheckpoint("mark", "pending-mark"),
+          runId,
+        },
+      );
+      const afterMark = JSON.parse(await readFile(path, "utf8")) as {
+        tasks: Array<{ status: string; stateHistory: unknown[] }>;
+      };
+
+      expect(marked.status).toBe("completed");
+      expect(afterMark.tasks[0]).toMatchObject({ status: "completed" });
+      expect(afterMark.tasks[0]?.stateHistory).toHaveLength(1);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("makes deferred JSON tasks eligible after their bounded cooldown", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-task-defer-"));
+    const path = join(workspace, "tasks.json");
+    const selectBlock = {
+      id: "select",
+      type: "UTILITY" as const,
+      title: "Select",
+      utility: { type: "SELECT_JSON_TASK" as const, path: "tasks.json" },
+    };
+    const selectionFlow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        selectBlock,
+        { id: "success", type: "END", title: "Success", status: "success" },
+        { id: "blocked", type: "END", title: "Blocked", status: "failed" },
+      ],
+      edges: [
+        { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
+        { id: "selected-success", from: "select", fromOutput: "SELECTED", to: "success" },
+        { id: "invalid-blocked", from: "select", fromOutput: "INVALID", to: "blocked" },
+      ],
+    });
+
+    try {
+      await writeFile(path, JSON.stringify({ tasks: [{ id: "task-1", status: "planned" }] }), "utf8");
+      const deferFlow = createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          selectBlock,
+          {
+            id: "defer",
+            type: "UTILITY",
+            title: "Defer",
+            utility: {
+              type: "MARK_JSON_TASK",
+              path: "tasks.json",
+              status: "deferred",
+              enforce: true,
+              delaySeconds: 60,
+            },
+          },
+          { id: "success", type: "END", title: "Success", status: "success" },
+        ],
+        edges: [
+          { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
+          { id: "select-defer", from: "select", fromOutput: "SELECTED", to: "defer" },
+          { id: "defer-success", from: "defer", fromOutput: "SUCCESS", to: "success" },
+        ],
+      });
+      const deferred = await runRalphFlow(
+        deferFlow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "defer-owner" },
+      );
+      const deferredJson = JSON.parse(await readFile(path, "utf8")) as {
+        tasks: Array<{ status: string; nextEligibleAt?: string }>;
+      };
+      expect(deferred.status).toBe("completed");
+      expect(deferredJson.tasks[0]).toMatchObject({
+        status: "deferred",
+        nextEligibleAt: expect.any(String),
+      });
+
+      const before = await runRalphFlow(
+        selectionFlow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "defer-before" },
+      );
+      expect(before.blockResults.find((entry) => entry.blockId === "select"))
+        .toMatchObject({ output: "INVALID" });
+
+      const eligibleJson = JSON.parse(await readFile(path, "utf8")) as {
+        tasks: Array<Record<string, unknown>>;
+      };
+      eligibleJson.tasks[0]!.nextEligibleAt = new Date(Date.now() - 1_000).toISOString();
+      await writeFile(path, JSON.stringify(eligibleJson), "utf8");
+      const after = await runRalphFlow(
+        selectionFlow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "defer-after" },
+      );
+      const stored = JSON.parse(await readFile(path, "utf8")) as {
+        tasks: Array<Record<string, unknown>>;
+      };
+
+      expect(after.status).toBe("completed");
+      expect(after.blockResults.find((entry) => entry.blockId === "select"))
+        .toMatchObject({ output: "SELECTED" });
+      expect(stored.tasks[0]).not.toHaveProperty("nextEligibleAt");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("reports structured blockers for missing, cyclic, and deferred JSON task dependencies", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-task-blockers-"));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "select",
+          type: "UTILITY",
+          title: "Select",
+          utility: { type: "SELECT_JSON_TASK", path: "tasks.json" },
+        },
+        { id: "blocked", type: "END", title: "Blocked", status: "failed" },
+      ],
+      edges: [
+        { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
+        { id: "select-blocked", from: "select", fromOutput: "INVALID", to: "blocked" },
+      ],
+    });
+
+    try {
+      await writeFile(join(workspace, "tasks.json"), JSON.stringify({ tasks: [
+        { id: "missing", status: "planned", dependencies: ["absent"] },
+        { id: "cycle-a", status: "planned", dependencies: ["cycle-b"] },
+        { id: "cycle-b", status: "planned", dependencies: ["cycle-a"] },
+        { id: "deferred", status: "deferred", nextEligibleAt: "2099-01-01T00:00:00.000Z" },
+        { id: "waits", status: "planned", dependencies: ["deferred"] },
+      ] }), "utf8");
+
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "dependency-blockers" },
+      );
+      const selection = result.blockResults.find((entry) => entry.blockId === "select");
+
+      expect(selection).toMatchObject({
+        output: "INVALID",
+        data: expect.objectContaining({
+          blockers: expect.arrayContaining([
+            expect.objectContaining({ taskId: "missing", missingDependencyIds: ["absent"] }),
+            expect.objectContaining({ taskId: "waits", deferredDependencyIds: ["deferred"] }),
+          ]),
+          dependencyCycles: expect.arrayContaining([
+            expect.arrayContaining(["cycle-a", "cycle-b"]),
+          ]),
+        }),
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("selects random-seeded JSON tasks deterministically for the same run", async () => {
+    const firstWorkspace = await mkdtemp(join(tmpdir(), "ralph-seeded-first-"));
+    const secondWorkspace = await mkdtemp(join(tmpdir(), "ralph-seeded-second-"));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "select",
+          type: "UTILITY",
+          title: "Select",
+          utility: {
+            type: "SELECT_JSON_TASK",
+            path: "tasks.json",
+            strategy: "random-seeded",
+          },
+        },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
+        { id: "select-success", from: "select", fromOutput: "SELECTED", to: "success" },
+      ],
+    });
+    const tasks = { tasks: [
+      { id: "alpha", status: "planned" },
+      { id: "beta", status: "planned" },
+      { id: "gamma", status: "planned" },
+    ] };
+
+    try {
+      await Promise.all([
+        writeFile(join(firstWorkspace, "tasks.json"), JSON.stringify(tasks), "utf8"),
+        writeFile(join(secondWorkspace, "tasks.json"), JSON.stringify(tasks), "utf8"),
+      ]);
+      const [first, second] = await Promise.all([
+        runRalphFlow(
+          flow,
+          { ...runtimeConfig, workspaceRoot: firstWorkspace },
+          customizations,
+          { runId: "stable-seed" },
+        ),
+        runRalphFlow(
+          flow,
+          { ...runtimeConfig, workspaceRoot: secondWorkspace },
+          customizations,
+          { runId: "stable-seed" },
+        ),
+      ]);
+      const selectedId = (result: typeof first): unknown => {
+        const data = result.blockResults.find((entry) => entry.blockId === "select")?.data;
+        return typeof data === "object" && data !== null && "task" in data &&
+          typeof data.task === "object" && data.task !== null && "id" in data.task
+          ? data.task.id
+          : undefined;
+      };
+
+      expect(selectedId(first)).toEqual(selectedId(second));
+      expect(selectedId(first)).toEqual(expect.any(String));
+    } finally {
+      await rm(firstWorkspace, { recursive: true, force: true });
+      await rm(secondWorkspace, { recursive: true, force: true });
+    }
+  });
+
+  it("heartbeats claimed JSON task leases while a long block is running", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-task-heartbeat-"));
+    const path = join(workspace, "tasks.json");
+    const selectionBlocks = [
+      { id: "start", type: "START" as const, title: "Start" },
+      {
+        id: "select",
+        type: "UTILITY" as const,
+        title: "Select",
+        utility: { type: "SELECT_JSON_TASK" as const, path: "tasks.json" },
+      },
+      { id: "blocked", type: "END" as const, title: "Blocked", status: "failed" as const },
+    ];
+    const rivalFlow = createFlow({
+      blocks: selectionBlocks,
+      edges: [
+        { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
+        { id: "select-blocked", from: "select", fromOutput: "INVALID", to: "blocked" },
+      ],
+    });
+    const ownerFlow = createFlow({
+      blocks: [
+        selectionBlocks[0]!,
+        selectionBlocks[1]!,
+        { id: "work", type: "PROMPT", title: "Work", prompt: "Work for a while." },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        { id: "start-select", from: "start", fromOutput: "SUCCESS", to: "select" },
+        { id: "select-work", from: "select", fromOutput: "SELECTED", to: "work" },
+        { id: "work-success", from: "work", fromOutput: "SUCCESS", to: "success" },
+      ],
+    });
+    let rivalResult: Awaited<ReturnType<typeof runRalphFlow>> | undefined;
+
+    try {
+      await writeFile(path, JSON.stringify({ tasks: [{ id: "task-1", status: "planned" }] }), "utf8");
+      vi.mocked(executeTask).mockImplementationOnce(async () => {
+        const json = JSON.parse(await readFile(path, "utf8")) as {
+          tasks: Array<{ lease: { heartbeatAt: string; expiresAt: string } }>;
+        };
+        json.tasks[0]!.lease.heartbeatAt = new Date().toISOString();
+        json.tasks[0]!.lease.expiresAt = new Date(Date.now() + 100).toISOString();
+        await writeFile(path, JSON.stringify(json), "utf8");
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 400));
+        rivalResult = await runRalphFlow(
+          rivalFlow,
+          { ...runtimeConfig, workspaceRoot: workspace },
+          customizations,
+          { runId: "rival-run", leaseDurationMs: 750 },
+        );
+        return createExecutionResult({ summary: "Work complete." });
+      });
+
+      const ownerResult = await runRalphFlow(
+        ownerFlow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "owner-run", leaseDurationMs: 750 },
+      );
+      const stored = JSON.parse(await readFile(path, "utf8")) as {
+        tasks: Array<{ lease: { ownerId: string; expiresAt: string } }>;
+      };
+
+      expect(ownerResult.status).toBe("completed");
+      expect(rivalResult?.blockResults.find((entry) => entry.blockId === "select")?.output)
+        .not.toBe("SELECTED");
+      expect(stored.tasks[0]?.lease.ownerId).toBe("owner-run");
+      expect(Date.parse(stored.tasks[0]!.lease.expiresAt)).toBeGreaterThan(Date.now());
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("does not replay a pending non-idempotent HTTP request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const operationId = "pending-post";
+    const checkpoint: RalphRunCheckpoint = {
+      currentBlockId: "post",
+      transitions: 1,
+      variables: {},
+      resultsByBlock: {},
+      runLog: [],
+      blockResults: [],
+      events: [],
+      errorCounts: {},
+      repeatedFailures: {},
+      attemptCounts: { post: 1 },
+      operationLedger: {
+        [operationId]: {
+          id: operationId,
+          blockId: "post",
+          attempt: 1,
+          state: "started",
+          startedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    };
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "post",
+          type: "UTILITY",
+          title: "Post",
+          utility: {
+            type: "HTTP_FETCH",
+            url: "https://example.test/mutate",
+            method: "POST",
+            body: "{}",
+          },
+        },
+        { id: "handled", type: "END", title: "Handled", status: "success" },
+      ],
+      edges: [
+        { id: "start-post", from: "start", fromOutput: "SUCCESS", to: "post" },
+        { id: "post-error", from: "post", fromOutput: "ERROR", to: "handled" },
+      ],
+    });
+
+    const result = await runRalphFlow(flow, runtimeConfig, customizations, {
+      checkpoint,
+      runId: "pending-post-run",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.blockResults.find((entry) => entry.blockId === "post"))
+      .toMatchObject({
+        operationId,
+        output: "ERROR",
+        data: expect.objectContaining({ reconciliation: "indeterminate" }),
+      });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("aborts a long block when its heartbeat can no longer prove ownership", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-heartbeat-failure-"));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        { id: "work", type: "PROMPT", title: "Work", prompt: "Keep working." },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        { id: "start-work", from: "start", fromOutput: "SUCCESS", to: "work" },
+        { id: "work-success", from: "work", fromOutput: "SUCCESS", to: "success" },
+      ],
+    });
+
+    try {
+      const logger = await createRalphRunLogger(workspace, flow, {
+        runId: "heartbeat-failure",
+      });
+      const paths = logger.paths;
+      if (!paths) {
+        throw new Error("Expected logger paths.");
+      }
+      let abortObserved = false;
+      vi.mocked(executeTask).mockImplementationOnce(async (_task, _config, _customizations, executionOptions) => {
+        await rm(paths.recordPath, { force: true });
+        await mkdir(paths.recordPath);
+        const signal = executionOptions?.signal;
+        if (!signal) {
+          throw new Error("Expected block abort signal.");
+        }
+        await new Promise<void>((resolveAbort, rejectAbort) => {
+          const timeout = setTimeout(
+            () => rejectAbort(new Error("Heartbeat did not abort the block.")),
+            3_000,
+          );
+          signal.addEventListener("abort", () => {
+            clearTimeout(timeout);
+            abortObserved = true;
+            resolveAbort();
+          }, { once: true });
+        });
+        return createExecutionResult({ summary: "Aborted work." });
+      });
+
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger, runId: logger.runId, leaseDurationMs: 1_000 },
+      );
+
+      expect(abortObserved).toBe(true);
+      expect(result.status).toBe("crashed");
+      expect(result.summary).toContain("ownership lost");
+      expect(result.checkpoint).toBeUndefined();
+      expect(result.blockResults.some((entry) => entry.blockId === "work")).toBe(false);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  it("writes a generic run-scoped fallback when no branch report executes", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-report-fallback-"));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        { id: "stopped", type: "END", title: "Stopped", status: "cancelled" },
+        {
+          id: "normal-report",
+          type: "UTILITY",
+          title: "Normal report",
+          utility: { type: "FINAL_REPORT", path: "{{data:normal:path}}" },
+        },
+        {
+          id: "retained-report",
+          type: "UTILITY",
+          title: "Retained report",
+          utility: { type: "FINAL_REPORT", path: "{{data:retained:path}}" },
+        },
+      ],
+      edges: [
+        { id: "start-stopped", from: "start", fromOutput: "SUCCESS", to: "stopped" },
+      ],
+    });
+
+    try {
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "fallback-report-run" },
+      );
+      const fallbackPath = join(
+        workspace,
+        ".machdoch",
+        "ralph",
+        "runs",
+        "fallback-report-run",
+        "final-report.json",
+      );
+      const report = JSON.parse(await readFile(fallbackPath, "utf8")) as {
+        outcome: { status: string };
+        fallback: { reason: string };
+      };
+
+      expect(result.status).toBe("stopped");
+      expect(report.outcome.status).toBe("stopped");
+      expect(report.fallback.reason).toContain("No branch-specific");
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
   });
 });
 

@@ -23,7 +23,6 @@ import {
   restoreRalphFlowRevision,
   runRalphFlow,
   validateRalphFlow,
-  writeRalphRunRecord,
   writeRalphFlow,
   type RalphFlow,
   type RalphFlowScope,
@@ -1124,6 +1123,9 @@ export const printRalphSummary = async (
       const flow = await readRalphFlow(args.workspaceRoot, resolution.id, {
         allowInvalid: true,
         scope,
+        ...(options.expectedFingerprint
+          ? { expectedFingerprint: options.expectedFingerprint }
+          : {}),
       });
 
       if (args.json) {
@@ -1161,7 +1163,12 @@ export const printRalphSummary = async (
     case "delete": {
       const subject = options.subject ??
         fail("Expected a flow id or alias after `machdoch ralph delete`.");
-      const result = await deleteRalphFlow(args.workspaceRoot, subject, { scope });
+      const result = await deleteRalphFlow(args.workspaceRoot, subject, {
+        scope,
+        ...(options.expectedFingerprint
+          ? { expectedFingerprint: options.expectedFingerprint }
+          : {}),
+      });
 
       if (args.json) {
         printJson({ ...result, scope });
@@ -1267,7 +1274,12 @@ export const printRalphSummary = async (
         args.workspaceRoot,
         subject,
         revision,
-        { scope },
+        {
+          scope,
+          ...(options.expectedFingerprint
+            ? { expectedFingerprint: options.expectedFingerprint }
+            : {}),
+        },
       );
 
       if (args.json) {
@@ -1317,6 +1329,9 @@ export const printRalphSummary = async (
         reason: "manual-save",
         allowInvalid: true,
         scope,
+        ...(options.expectedFingerprint
+          ? { expectedFingerprint: options.expectedFingerprint }
+          : {}),
       });
       const storedFlow = await readRalphFlow(args.workspaceRoot, flow.id, {
         allowInvalid: true,
@@ -1381,12 +1396,10 @@ export const printRalphSummary = async (
           ? { maxTransitions: options.maxTransitions }
           : {}),
       });
-      const runRecord = await writeRalphRunRecord(args.workspaceRoot, flow, result, {
-        variableValues,
-        runId: logger.runId,
-        ...(logger.paths ? { paths: logger.paths } : {}),
-        scope,
-      });
+      if (!logger.paths) {
+        throw new Error("Ralph file logger did not expose artifact paths.");
+      }
+      const runRecord = { paths: logger.paths, path: logger.paths.recordPath };
 
       if (args.json) {
         printJson({
@@ -1495,12 +1508,7 @@ export const printRalphSummary = async (
           ? { maxTransitions: options.maxTransitions }
           : {}),
       });
-      const runRecord = await writeRalphRunRecord(args.workspaceRoot, flow, result, {
-        variableValues: record.variableValues,
-        runId: record.id,
-        paths,
-        scope,
-      });
+      const runRecord = { paths, path: paths.recordPath };
 
       if (args.json) {
         printJson({
@@ -1573,6 +1581,9 @@ export const printRalphSummary = async (
         config,
         customizations,
         ...(existingFlow ? { existingFlow } : {}),
+        ...(options.expectedFingerprint
+          ? { expectedFingerprint: options.expectedFingerprint }
+          : {}),
         ...(options.target ? { target: options.target } : {}),
         ...(options.generationMode ? { mode: options.generationMode } : {}),
         ...(options.maxRounds ? { maxRounds: options.maxRounds } : {}),

@@ -42,6 +42,8 @@ const MAX_SESSIONS: usize = 128;
 const MAX_LOG_ENTRIES: usize = 160;
 const MAX_TIMELINE_ENTRIES: usize = 80;
 const MAX_COMMAND_ENTRIES: usize = 100;
+const MAX_PENDING_COMMAND_ENTRIES: usize = 256;
+const MAX_COMPLETED_COMMAND_ENTRIES: usize = 512;
 const MAX_PAIRED_DEVICES: usize = 32;
 const MAX_COMMAND_TEXT_CHARS: usize = 8_000;
 const MAX_REMOTE_SHELL_SESSIONS: usize = 80;
@@ -79,6 +81,8 @@ struct RemoteControlInner {
     server: Option<RemoteControlServerInfo>,
     sessions: HashMap<String, RemoteTaskSession>,
     commands: VecDeque<RemoteCommandRecord>,
+    pending_commands: VecDeque<RemoteControlCommandEvent>,
+    completed_commands: VecDeque<CompletedRemoteCommandReceipt>,
     shell: Option<RemoteShellSnapshot>,
 }
 
@@ -93,6 +97,10 @@ struct RemoteControlConfigFile {
     enabled: bool,
     #[serde(default)]
     paired_devices: Vec<RemoteControlPairedDevice>,
+    #[serde(default)]
+    pending_commands: Vec<RemoteControlCommandEvent>,
+    #[serde(default)]
+    completed_commands: Vec<CompletedRemoteCommandReceipt>,
 }
 
 impl Default for RemoteControlConfigFile {
@@ -102,6 +110,8 @@ impl Default for RemoteControlConfigFile {
             port: DEFAULT_REMOTE_CONTROL_PORT,
             enabled: false,
             paired_devices: Vec::new(),
+            pending_commands: Vec::new(),
+            completed_commands: Vec::new(),
         }
     }
 }
@@ -117,6 +127,14 @@ struct RemoteControlPairedDevice {
     expires_at: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     user_agent: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompletedRemoteCommandReceipt {
+    command_id: String,
+    payload_hash: String,
+    completed_at: u64,
 }
 
 #[derive(Clone)]
@@ -174,6 +192,21 @@ pub async fn get_remote_control_status(
     state: tauri::State<'_, RemoteControlState>,
 ) -> Result<RemoteControlStatus, String> {
     state.status()
+}
+
+#[tauri::command]
+pub async fn get_pending_remote_control_commands(
+    state: tauri::State<'_, RemoteControlState>,
+) -> Result<Vec<RemoteControlCommandEvent>, String> {
+    state.pending_commands()
+}
+
+#[tauri::command]
+pub async fn acknowledge_remote_control_command(
+    state: tauri::State<'_, RemoteControlState>,
+    command_id: String,
+) -> Result<bool, String> {
+    state.acknowledge_command(&command_id)
 }
 
 #[tauri::command]

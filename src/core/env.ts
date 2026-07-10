@@ -1,8 +1,10 @@
 import { existsSync, statSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
+import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
+import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
 import {
   MAX_GLOBAL_MEMORY_ENTRIES,
   normalizeConversationMemoryEntries,
@@ -361,11 +363,15 @@ const loadUserConfigFile = async (): Promise<{
   };
 };
 
-const saveUserConfigFile = async (config: UserConfigFile): Promise<string> => {
+const updateUserConfigFile = async (
+  update: (config: UserConfigFile) => UserConfigFile,
+): Promise<string> => {
   const path = getUserConfigPath();
 
-  await mkdir(getUserConfigDirectory(), { recursive: true });
-  await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  await withCooperativeFileLock(path, async () => {
+    const { config } = await loadUserConfigFile();
+    await writeJsonAtomically(path, update(config));
+  });
 
   return path;
 };
@@ -448,17 +454,13 @@ export const saveUserApiKey = async (
     throw new Error("Expected a non-empty API key.");
   }
 
-  const { config, path } = await loadUserConfigFile();
-
-  await saveUserConfigFile({
+  return updateUserConfigFile((config) => ({
     ...config,
     apiKeys: {
       ...(config.apiKeys ?? {}),
       [normalizedProvider]: normalizedApiKey,
     },
-  });
-
-  return path;
+  }));
 };
 
 export const saveUserAgentCliPath = async (
@@ -484,17 +486,13 @@ export const saveUserAgentCliPath = async (
     );
   }
 
-  const { config, path } = await loadUserConfigFile();
-
-  await saveUserConfigFile({
+  return updateUserConfigFile((config) => ({
     ...config,
     agentCliPaths: {
       ...(config.agentCliPaths ?? {}),
       [normalizedProvider]: normalizedBinaryPath,
     },
-  });
-
-  return path;
+  }));
 };
 
 /**
@@ -517,9 +515,7 @@ export const saveUserWebSearchApiKey = async (
     throw new Error("Expected a non-empty API key.");
   }
 
-  const { config, path } = await loadUserConfigFile();
-
-  await saveUserConfigFile({
+  return updateUserConfigFile((config) => ({
     ...config,
     webSearch: {
       ...(config.webSearch ?? {}),
@@ -528,9 +524,7 @@ export const saveUserWebSearchApiKey = async (
         [normalizedProvider]: normalizedApiKey,
       },
     },
-  });
-
-  return path;
+  }));
 };
 
 /**
@@ -545,17 +539,13 @@ export const saveUserWebSearchActiveProvider = async (
     );
   }
 
-  const { config, path } = await loadUserConfigFile();
-
-  await saveUserConfigFile({
+  return updateUserConfigFile((config) => ({
     ...config,
     webSearch: {
       ...(config.webSearch ?? {}),
       activeProvider: provider,
     },
-  });
-
-  return path;
+  }));
 };
 
 export const saveUserVoiceActiveProvider = async (
@@ -565,17 +555,13 @@ export const saveUserVoiceActiveProvider = async (
     throw new Error("Expected voice.provider to be one of none, openai, or google.");
   }
 
-  const { config, path } = await loadUserConfigFile();
-
-  await saveUserConfigFile({
+  return updateUserConfigFile((config) => ({
     ...config,
     voice: {
       ...(config.voice ?? {}),
       activeProvider: provider,
     },
-  });
-
-  return path;
+  }));
 };
 
 export const saveUserSpeechToTextActiveProvider = async (
@@ -587,56 +573,48 @@ export const saveUserSpeechToTextActiveProvider = async (
     );
   }
 
-  const { config, path } = await loadUserConfigFile();
-
-  await saveUserConfigFile({
+  return updateUserConfigFile((config) => ({
     ...config,
     speechToText: {
       ...(config.speechToText ?? {}),
       activeProvider: provider,
     },
-  });
-
-  return path;
+  }));
 };
 
 export const saveUserSpeechToTextInputDevice = async (
   inputDeviceId: string | null,
 ): Promise<string> => {
   const normalizedInputDeviceId = normalizeOptionalString(inputDeviceId) ?? null;
-  const { config, path } = await loadUserConfigFile();
-  const speechToText = {
-    ...(config.speechToText ?? {}),
-  };
 
-  if (normalizedInputDeviceId) {
-    speechToText.inputDeviceId = normalizedInputDeviceId;
-  } else {
-    delete speechToText.inputDeviceId;
-  }
+  return updateUserConfigFile((config) => {
+    const speechToText = {
+      ...(config.speechToText ?? {}),
+    };
 
-  await saveUserConfigFile({
-    ...config,
-    speechToText,
+    if (normalizedInputDeviceId) {
+      speechToText.inputDeviceId = normalizedInputDeviceId;
+    } else {
+      delete speechToText.inputDeviceId;
+    }
+
+    return {
+      ...config,
+      speechToText,
+    };
   });
-
-  return path;
 };
 
 export const saveUserDesktopSettingsPatch = async (
   settings: Partial<UserDesktopSettings>,
 ): Promise<string> => {
-  const { config, path } = await loadUserConfigFile();
-
-  await saveUserConfigFile({
+  return updateUserConfigFile((config) => ({
     ...config,
     desktop: {
       ...(config.desktop ?? {}),
       ...settings,
     },
-  });
-
-  return path;
+  }));
 };
 
 /**
@@ -706,13 +684,12 @@ export const loadUserAgentLimitsSettings =
 export const saveUserAgentLimitsSettings = async (
   settings: UserAgentLimitsSettings,
 ): Promise<string> => {
-  const { config } = await loadUserConfigFile();
   const normalizedSettings = normalizeUserAgentLimitsSettings(settings);
 
-  return saveUserConfigFile({
+  return updateUserConfigFile((config) => ({
     ...config,
     agentLimits: normalizedSettings,
-  });
+  }));
 };
 
 /**
@@ -731,13 +708,12 @@ export const loadUserReviewModelSettings =
 export const saveUserReviewModelSettings = async (
   settings: UserReviewModelSettings,
 ): Promise<string> => {
-  const { config } = await loadUserConfigFile();
   const normalizedSettings = normalizeUserReviewModelSettings(settings);
 
-  return saveUserConfigFile({
+  return updateUserConfigFile((config) => ({
     ...config,
     reviewModel: normalizedSettings,
-  });
+  }));
 };
 
 /**
@@ -764,9 +740,7 @@ export const loadUserMemorySettings = async (): Promise<{
 export const saveUserGlobalMemoryEnabled = async (
   enabled: boolean,
 ): Promise<string> => {
-  const { config } = await loadUserConfigFile();
-
-  return saveUserConfigFile({
+  return updateUserConfigFile((config) => ({
     ...config,
     memory: {
       ...(config.memory ?? {}),
@@ -776,7 +750,7 @@ export const saveUserGlobalMemoryEnabled = async (
         "global",
       ),
     },
-  });
+  }));
 };
 
 /**
@@ -785,28 +759,36 @@ export const saveUserGlobalMemoryEnabled = async (
 export const rememberUserGlobalMemory = async (
   content: string,
 ): Promise<ConversationMemoryEntry> => {
-  const { config } = await loadUserConfigFile();
-  const normalizedEntries = normalizeConversationMemoryEntries(
-    config.memory?.entries,
-    "global",
-  );
-  const remembered = rememberConversationMemoryEntry(
-    normalizedEntries,
-    "global",
-    content,
-    MAX_GLOBAL_MEMORY_ENTRIES,
-  );
+  let rememberedEntry: ConversationMemoryEntry | undefined;
 
-  await saveUserConfigFile({
-    ...config,
-    memory: {
-      ...(config.memory ?? {}),
-      globalEnabled: config.memory?.globalEnabled === true,
-      entries: remembered.entries,
-    },
+  await updateUserConfigFile((config) => {
+    const normalizedEntries = normalizeConversationMemoryEntries(
+      config.memory?.entries,
+      "global",
+    );
+    const remembered = rememberConversationMemoryEntry(
+      normalizedEntries,
+      "global",
+      content,
+      MAX_GLOBAL_MEMORY_ENTRIES,
+    );
+    rememberedEntry = remembered.entry;
+
+    return {
+      ...config,
+      memory: {
+        ...(config.memory ?? {}),
+        globalEnabled: config.memory?.globalEnabled === true,
+        entries: remembered.entries,
+      },
+    };
   });
 
-  return remembered.entry;
+  if (!rememberedEntry) {
+    throw new Error("The memory entry could not be persisted.");
+  }
+
+  return rememberedEntry;
 };
 
 /**

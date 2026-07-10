@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applySessionRetentionPolicy,
   canArchiveSession,
+  canDeleteSession,
   canDuplicateSession,
   canPinSession,
   createInitialShellState,
@@ -34,6 +35,35 @@ import { createInitialThinkingTrace } from "./task-thinking.model";
 const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
 
 describe("normalizeShellState", () => {
+  it("repairs duplicate persisted message ids without dropping either message", () => {
+    const normalized = normalizeShellState({
+      activeSessionId: "duplicate-message-session",
+      sessions: [
+        {
+          id: "duplicate-message-session",
+          provider: "openai",
+          model: "gpt-5.5",
+          workspace: null,
+          createdAt: 1,
+          updatedAt: 2,
+          messages: [
+            { id: "shared-id", role: "user", content: "First", createdAt: 1 },
+            { id: "shared-id", role: "agent", content: "Second", createdAt: 2 },
+          ],
+        },
+      ],
+    });
+
+    expect(normalized.sessions[0]?.messages.map((message) => message.id)).toEqual([
+      "shared-id",
+      "shared-id-2",
+    ]);
+    expect(normalized.sessions[0]?.messages.map((message) => message.content)).toEqual([
+      "First",
+      "Second",
+    ]);
+  });
+
   it("repairs invalid persisted sessions while preserving valid overrides", () => {
     const normalized = normalizeShellState({
       activeSessionId: "session-1",
@@ -808,7 +838,7 @@ describe("getSessionOverviewStatus", () => {
     expect(hasUnreadCompletedSessionResponse(readSession)).toBe(false);
   });
 
-  it("sorts session overviews by unread, running, and latest user request time", () => {
+  it("keeps session ordering based on the latest user request instead of progress", () => {
     const unreadSession = createSession({
       id: "unread-session",
       updatedAt: 900,
@@ -905,11 +935,30 @@ describe("getSessionOverviewStatus", () => {
         unreadSession,
       ]).map((session) => session.id),
     ).toEqual([
-      "unread-session",
       "running-session",
       "recent-requested-session",
       "older-requested-session",
+      "unread-session",
     ]);
+  });
+
+  it("does not reorder empty sessions when their drafts update", () => {
+    const older = createSession({
+      id: "older-empty",
+      createdAt: 100,
+      updatedAt: 10_000,
+      draft: "new typing",
+    });
+    const newer = createSession({
+      id: "newer-empty",
+      createdAt: 200,
+      updatedAt: 200,
+    });
+
+    expect(getLatestSessionUserRequestAt(older)).toBe(100);
+    expect(
+      sortSessionsByUpdatedAt([older, newer]).map((session) => session.id),
+    ).toEqual(["newer-empty", "older-empty"]);
   });
 
   it("keeps unpinned empty sessions directly after pinned sessions", () => {
@@ -991,8 +1040,8 @@ describe("getSessionOverviewStatus", () => {
     ).toEqual([
       "pinned-done-session",
       "empty-session",
-      "running-session",
       "done-session",
+      "running-session",
     ]);
   });
 
@@ -1007,6 +1056,24 @@ describe("getSessionOverviewStatus", () => {
 });
 
 describe("getLatestRunningTaskId", () => {
+  it("prevents deleting or cloning a running session", () => {
+    const taskId = "guarded-running-task";
+    const runningSession = createSession({
+      messages: [
+        {
+          id: `${taskId}-user`,
+          taskId,
+          role: "user",
+          content: "Keep this task alive",
+          createdAt: 1,
+        },
+      ],
+    });
+
+    expect(canDeleteSession(runningSession)).toBe(false);
+    expect(canDuplicateSession(runningSession)).toBe(false);
+  });
+
   it("returns the latest task id only while that task is still running", () => {
     const runningSession = createSession({
       messages: [
@@ -1408,7 +1475,7 @@ describe("recoverInterruptedTasksForLaunch", () => {
 });
 
 describe("createVisibleConversationMessages", () => {
-  it("keeps non-preview messages in order and only the latest agent update per task", () => {
+  it("keeps non-preview messages in order and replaces thinking with terminal output", () => {
     const visibleMessages = createVisibleConversationMessages([
       {
         id: "user-task-1",
@@ -1530,6 +1597,43 @@ describe("createVisibleConversationMessages", () => {
     expect(visibleMessages.map((message) => message.id)).toEqual([
       "user-task-1",
       "latest-thinking-task-1",
+    ]);
+  });
+
+  it("keeps multiple intentional terminal messages for the same task", () => {
+    const visibleMessages = createVisibleConversationMessages([
+      {
+        id: "user-task-1",
+        taskId: "task-1",
+        role: "user",
+        content: "first request",
+      },
+      {
+        id: "execution-task-1-part-1",
+        taskId: "task-1",
+        role: "agent",
+        content: "first result",
+        source: {
+          kind: "execution",
+          execution: createMockExecutionFixture("first request"),
+        },
+      },
+      {
+        id: "execution-task-1-part-2",
+        taskId: "task-1",
+        role: "agent",
+        content: "follow-up result",
+        source: {
+          kind: "execution",
+          execution: createMockExecutionFixture("first request"),
+        },
+      },
+    ]);
+
+    expect(visibleMessages.map((message) => message.id)).toEqual([
+      "user-task-1",
+      "execution-task-1-part-1",
+      "execution-task-1-part-2",
     ]);
   });
 });

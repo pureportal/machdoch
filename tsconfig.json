@@ -16,7 +16,7 @@
     "incremental": true,
     "tsBuildInfoFile": "./.cache/tsconfig.tsbuildinfo",
     "resolveJsonModule": true,
-    "lib": ["ES2022"],
+    "lib": ["ES2024"],
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],

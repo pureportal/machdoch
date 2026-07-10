@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getUserConfigPath } from "../../env.js";
+import { withCooperativeFileLock } from "../../_helpers/with-cooperative-file-lock.helper.js";
+import { writeJsonAtomically } from "../../_helpers/write-file-atomically.helper.js";
 import { createManagedMcpId, getSourceServerIdFromManagedId } from "./ids.js";
 import {
   MCP_LIFECYCLE_FILE_NAME,
@@ -42,7 +43,9 @@ export const runMcpLifecycleMutation = async <T>(
 ): Promise<T> => {
   const statePath = getMcpLifecycleStatePath(options);
   const previous = lifecycleMutationQueues.get(statePath) ?? Promise.resolve();
-  const next = previous.catch(() => undefined).then(mutation);
+  const next = previous
+    .catch(() => undefined)
+    .then(() => withCooperativeFileLock(statePath, mutation));
   const queued = next.catch(() => undefined).finally(() => {
     if (lifecycleMutationQueues.get(statePath) === queued) {
       lifecycleMutationQueues.delete(statePath);
@@ -296,15 +299,7 @@ export const saveMcpLifecycleState = async (
   options: McpLifecycleStoreOptions = {},
 ): Promise<string> => {
   const statePath = getMcpLifecycleStatePath(options);
-  const directory = dirname(statePath);
-  const temporaryPath = join(
-    directory,
-    `.${MCP_LIFECYCLE_FILE_NAME}.${process.pid}.${randomUUID()}.tmp`,
-  );
-
-  await mkdir(directory, { recursive: true });
-  await writeFile(temporaryPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-  await rename(temporaryPath, statePath);
+  await writeJsonAtomically(statePath, state);
 
   return statePath;
 };

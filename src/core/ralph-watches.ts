@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, watch } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import {
   DurableSmartScheduler,
   getUserSchedulerStatePath,
@@ -8,8 +9,10 @@ import {
 } from "./scheduler.js";
 import {
   getUserRalphDirectory,
+  acquireRalphFileMutationLock,
   type RalphFlowScope,
 } from "./ralph.js";
+import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
 import {
   normalizeRalphWatchId,
   normalizeRalphWatchInput,
@@ -169,14 +172,51 @@ export const loadRalphWatchState = async (): Promise<RalphWatchState> => {
   return parseRalphWatchState(parsed, path);
 };
 
-export const saveRalphWatchState = async (
+const writeRalphWatchStateUnlocked = async (
   state: RalphWatchState,
 ): Promise<string> => {
   const path = getRalphWatchStatePath();
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-
+  await writeJsonAtomically(path, state);
   return path;
+};
+
+const withRalphWatchStateMutation = async <Result>(
+  mutate: () => Promise<Result>,
+): Promise<Result> => {
+  const path = getRalphWatchStatePath();
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    try {
+      const lock = await acquireRalphFileMutationLock(
+        path,
+        `ralph-watch:${process.pid}:${randomUUID()}`,
+      );
+      try {
+        return await mutate();
+      } finally {
+        await lock.release();
+      }
+    } catch (error) {
+      lastError = error;
+      if (
+        !(error instanceof Error) ||
+        !error.message.startsWith("Ralph mutation lease is active for") ||
+        attempt === 79
+      ) {
+        throw error;
+      }
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+};
+
+export const saveRalphWatchState = async (
+  state: RalphWatchState,
+): Promise<string> => {
+  return withRalphWatchStateMutation(() => writeRalphWatchStateUnlocked(state));
 };
 
 export const listRalphWatches = async (): Promise<RalphWatchDefinition[]> => {
@@ -186,42 +226,45 @@ export const listRalphWatches = async (): Promise<RalphWatchDefinition[]> => {
 export const upsertRalphWatch = async (
   input: RalphWatchInput,
 ): Promise<RalphWatchDefinition> => {
-  const state = await loadRalphWatchState();
-  const id = normalizeRalphWatchId(input.id);
-  const existing = state.watches.find((watch) => watch.id === id);
-  const watchDefinition = await normalizeRalphWatchInput(input, existing);
-  const nextWatches = existing
-    ? state.watches.map((watch) =>
-        watch.id === watchDefinition.id ? watchDefinition : watch,
-      )
-    : [...state.watches, watchDefinition];
-  const now = new Date().toISOString();
+  return withRalphWatchStateMutation(async () => {
+    const state = await loadRalphWatchState();
+    const id = normalizeRalphWatchId(input.id);
+    const existing = state.watches.find((watch) => watch.id === id);
+    const watchDefinition = await normalizeRalphWatchInput(input, existing);
+    const nextWatches = existing
+      ? state.watches.map((watch) =>
+          watch.id === watchDefinition.id ? watchDefinition : watch,
+        )
+      : [...state.watches, watchDefinition];
 
-  await saveRalphWatchState({
-    ...state,
-    updatedAt: now,
-    watches: nextWatches.sort((left, right) => left.id.localeCompare(right.id)),
+    await writeRalphWatchStateUnlocked({
+      ...state,
+      updatedAt: new Date().toISOString(),
+      watches: nextWatches.sort((left, right) => left.id.localeCompare(right.id)),
+    });
+
+    return watchDefinition;
   });
-
-  return watchDefinition;
 };
 
 export const deleteRalphWatch = async (id: string): Promise<RalphWatchDefinition> => {
-  const normalizedId = normalizeRalphWatchId(id);
-  const state = await loadRalphWatchState();
-  const match = state.watches.find((watch) => watch.id === normalizedId);
+  return withRalphWatchStateMutation(async () => {
+    const normalizedId = normalizeRalphWatchId(id);
+    const state = await loadRalphWatchState();
+    const match = state.watches.find((watch) => watch.id === normalizedId);
 
-  if (!match) {
-    throw new Error(`Ralph watch not found: ${id}`);
-  }
+    if (!match) {
+      throw new Error(`Ralph watch not found: ${id}`);
+    }
 
-  await saveRalphWatchState({
-    ...state,
-    updatedAt: new Date().toISOString(),
-    watches: state.watches.filter((watch) => watch.id !== normalizedId),
+    await writeRalphWatchStateUnlocked({
+      ...state,
+      updatedAt: new Date().toISOString(),
+      watches: state.watches.filter((watch) => watch.id !== normalizedId),
+    });
+
+    return match;
   });
-
-  return match;
 };
 
 export const syncRalphWatchSchedulerJobs = async (
@@ -351,12 +394,24 @@ export class RalphWatchService {
     root: RalphWatchRoot,
   ): Promise<WatchHandle> {
     let previous = await scanRalphWatchFiles(root);
-    const timer = setInterval(() => {
-      if (this.stopped) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let pollingStopped = false;
+
+    const scheduleNextPoll = (): void => {
+      if (this.stopped || pollingStopped) {
         return;
       }
 
-      void (async () => {
+      timer = setTimeout(() => {
+        void poll();
+      }, watchDefinition.pollIntervalMs);
+    };
+    const poll = async (): Promise<void> => {
+      if (this.stopped || pollingStopped) {
+        return;
+      }
+
+      try {
         const current = await scanRalphWatchFiles(root);
         const now = Date.now();
 
@@ -372,13 +427,22 @@ export class RalphWatchService {
         }
 
         previous = current;
-      })().catch((error) => {
-        void this.reportError(watchDefinition, error);
-      });
-    }, watchDefinition.pollIntervalMs);
+      } catch (error) {
+        await this.reportError(watchDefinition, error);
+      } finally {
+        scheduleNextPoll();
+      }
+    };
+
+    scheduleNextPoll();
 
     return {
-      stop: () => clearInterval(timer),
+      stop: () => {
+        pollingStopped = true;
+        if (timer !== undefined) {
+          clearTimeout(timer);
+        }
+      },
     };
   }
 

@@ -10,11 +10,16 @@ use super::DesktopTaskRunResponse;
 
 const MAX_PENDING_CANCEL_IDS: usize = 256;
 const MAX_RECENT_COMPLETED_TASK_RESULTS: usize = 128;
+const MAX_CLAIMED_TASK_IDS: usize = 512;
 
 #[derive(Default)]
 struct DesktopTaskCancelState {
     active: HashMap<String, ActiveDesktopTask>,
+    active_operation_owners: HashMap<String, String>,
+    claimed: HashSet<String>,
+    claimed_order: VecDeque<String>,
     pending: HashSet<String>,
+    pending_order: VecDeque<String>,
     completed: HashMap<String, RecentDesktopTaskResult>,
     completed_order: VecDeque<String>,
 }
@@ -33,6 +38,7 @@ struct ActiveDesktopTask {
     workspace_root: String,
     arguments: Vec<String>,
     started_at: u64,
+    operation_key: Option<String>,
 }
 
 pub(super) struct ActiveDesktopTaskRegistration {
@@ -42,6 +48,7 @@ pub(super) struct ActiveDesktopTaskRegistration {
     pub(super) workspace_root: String,
     pub(super) arguments: Vec<String>,
     pub(super) started_at: u64,
+    pub(super) operation_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -107,12 +114,49 @@ fn remember_pending_cancel(cancel_state: &mut DesktopTaskCancelState, task_id: &
     }
 
     if cancel_state.pending.len() >= MAX_PENDING_CANCEL_IDS {
-        if let Some(stale_task_id) = cancel_state.pending.iter().next().cloned() {
+        if let Some(stale_task_id) = cancel_state.pending_order.pop_front() {
             cancel_state.pending.remove(&stale_task_id);
         }
     }
 
     cancel_state.pending.insert(task_id.to_string());
+    cancel_state.pending_order.push_back(task_id.to_string());
+}
+
+fn remove_pending_cancel(cancel_state: &mut DesktopTaskCancelState, task_id: &str) -> bool {
+    let removed = cancel_state.pending.remove(task_id);
+
+    if removed {
+        cancel_state
+            .pending_order
+            .retain(|pending_task_id| pending_task_id != task_id);
+    }
+
+    removed
+}
+
+fn trim_claimed_task_ids(cancel_state: &mut DesktopTaskCancelState) {
+    let target_len = MAX_CLAIMED_TASK_IDS.max(cancel_state.active.len());
+    let excess = cancel_state.claimed_order.len().saturating_sub(target_len);
+
+    if excess == 0 {
+        return;
+    }
+
+    let stale_task_ids = cancel_state
+        .claimed_order
+        .iter()
+        .filter(|task_id| !cancel_state.active.contains_key(*task_id))
+        .take(excess)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    for stale_task_id in stale_task_ids {
+        cancel_state
+            .claimed_order
+            .retain(|task_id| task_id != &stale_task_id);
+        cancel_state.claimed.remove(&stale_task_id);
+    }
 }
 
 pub fn request_desktop_task_cancel(state: &DesktopTaskCancelMap, task_id: &str) {
@@ -123,7 +167,9 @@ pub fn request_desktop_task_cancel(state: &DesktopTaskCancelMap, task_id: &str) 
     if let Ok(mut cancel_state) = state.0.lock() {
         if let Some(active_task) = cancel_state.active.get(task_id.as_str()) {
             active_task.cancel_flag.store(true, Ordering::SeqCst);
-        } else {
+        } else if !cancel_state.claimed.contains(task_id.as_str())
+            && !cancel_state.completed.contains_key(task_id.as_str())
+        {
             remember_pending_cancel(&mut cancel_state, task_id.as_str());
         }
     }
@@ -200,26 +246,76 @@ pub(super) fn recent_completed_task_results(
     Ok(results)
 }
 
+pub(super) fn completed_desktop_task_result(
+    state: &DesktopTaskCancelMap,
+    task_id: &str,
+) -> Result<Option<Result<DesktopTaskRunResponse, String>>, String> {
+    let Some(task_id) = normalize_task_id(Some(task_id)) else {
+        return Ok(None);
+    };
+    let cancel_state = state.0.lock().map_err(|_| {
+        "Unable to inspect the completed desktop task because the task registry lock is unavailable."
+            .to_string()
+    })?;
+
+    Ok(cancel_state
+        .completed
+        .get(&task_id)
+        .map(|result| match &result.outcome {
+            RecentDesktopTaskOutcome::Succeeded { response } => Ok(response.clone()),
+            RecentDesktopTaskOutcome::Failed { error } => Err(error.clone()),
+        }))
+}
+
 pub(super) fn register_active_task(
     state: &DesktopTaskCancelMap,
     registration: ActiveDesktopTaskRegistration,
-) {
-    if let Ok(mut cancel_state) = state.0.lock() {
-        if cancel_state.pending.remove(&registration.task_id) {
-            registration.cancel_flag.store(true, Ordering::SeqCst);
-        }
+) -> Result<bool, String> {
+    let mut cancel_state = state.0.lock().map_err(|_| {
+        "Unable to claim the desktop task because the task registry lock is unavailable."
+            .to_string()
+    })?;
 
-        cancel_state.active.insert(
-            registration.task_id,
-            ActiveDesktopTask {
-                cancel_flag: registration.cancel_flag,
-                kind: registration.kind,
-                workspace_root: registration.workspace_root,
-                arguments: registration.arguments,
-                started_at: registration.started_at,
-            },
-        );
+    if cancel_state.claimed.contains(&registration.task_id) {
+        return Ok(false);
     }
+
+    if let Some(operation_key) = registration.operation_key.as_deref() {
+        if let Some(active_task_id) = cancel_state.active_operation_owners.get(operation_key) {
+            return Err(format!(
+                "MACHDOCH_OPERATION_ALREADY_ACTIVE:{active_task_id}"
+            ));
+        }
+    }
+
+    if remove_pending_cancel(&mut cancel_state, &registration.task_id) {
+        registration.cancel_flag.store(true, Ordering::SeqCst);
+    }
+
+    cancel_state.claimed.insert(registration.task_id.clone());
+    cancel_state
+        .claimed_order
+        .push_back(registration.task_id.clone());
+    if let Some(operation_key) = registration.operation_key.as_ref() {
+        cancel_state
+            .active_operation_owners
+            .insert(operation_key.clone(), registration.task_id.clone());
+    }
+    cancel_state.active.insert(
+        registration.task_id,
+        ActiveDesktopTask {
+            cancel_flag: registration.cancel_flag,
+            kind: registration.kind,
+            workspace_root: registration.workspace_root,
+            arguments: registration.arguments,
+            started_at: registration.started_at,
+            operation_key: registration.operation_key,
+        },
+    );
+
+    trim_claimed_task_ids(&mut cancel_state);
+
+    Ok(true)
 }
 
 pub(super) fn remember_completed_task_result(
@@ -254,19 +350,34 @@ pub(super) fn finish_active_task(state: &DesktopTaskCancelMap, task_id: Option<&
     };
 
     if let Ok(mut cancel_state) = state.0.lock() {
-        cancel_state.active.remove(&task_id);
-        cancel_state.pending.remove(&task_id);
+        if let Some(active_task) = cancel_state.active.remove(&task_id) {
+            if let Some(operation_key) = active_task.operation_key {
+                if cancel_state
+                    .active_operation_owners
+                    .get(&operation_key)
+                    .is_some_and(|owner_task_id| owner_task_id == &task_id)
+                {
+                    cancel_state.active_operation_owners.remove(&operation_key);
+                }
+            }
+        }
+        remove_pending_cancel(&mut cancel_state, &task_id);
+        trim_claimed_task_ids(&mut cancel_state);
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{atomic::AtomicBool, Arc};
+
     use serde_json::json;
 
     use super::{
-        recent_completed_task_results, remember_completed_task_result, remember_pending_cancel,
-        DesktopTaskCancelMap, DesktopTaskCancelState, RecentDesktopTaskOutcome,
-        RecentDesktopTaskResult, MAX_PENDING_CANCEL_IDS, MAX_RECENT_COMPLETED_TASK_RESULTS,
+        recent_completed_task_results, register_active_task, remember_completed_task_result,
+        remember_pending_cancel, trim_claimed_task_ids, ActiveDesktopTask,
+        ActiveDesktopTaskRegistration, DesktopTaskCancelMap, DesktopTaskCancelState,
+        RecentDesktopTaskOutcome, RecentDesktopTaskResult, MAX_CLAIMED_TASK_IDS,
+        MAX_PENDING_CANCEL_IDS, MAX_RECENT_COMPLETED_TASK_RESULTS,
     };
     use crate::desktop_task::DesktopTaskRunResponse;
 
@@ -279,6 +390,118 @@ mod tests {
         }
 
         assert_eq!(cancel_state.pending.len(), MAX_PENDING_CANCEL_IDS);
+        assert_eq!(cancel_state.pending_order.len(), MAX_PENDING_CANCEL_IDS);
+        assert!(!cancel_state.pending.contains("task-0"));
+        assert!(cancel_state
+            .pending
+            .contains(&format!("task-{}", MAX_PENDING_CANCEL_IDS + 9)));
+    }
+
+    #[test]
+    fn cancel_for_a_claimed_or_completed_task_does_not_become_pending() {
+        let state = DesktopTaskCancelMap::default();
+        {
+            let mut cancel_state = state.0.lock().expect("state lock");
+            cancel_state.claimed.insert("claimed-task".to_string());
+            let completed_result = Ok(DesktopTaskRunResponse {
+                execution: json!({ "ok": true }),
+                preview: None,
+            });
+            cancel_state.completed.insert(
+                "completed-task".to_string(),
+                RecentDesktopTaskResult::desktop(
+                    "completed-task".to_string(),
+                    String::new(),
+                    Vec::new(),
+                    1,
+                    2,
+                    &completed_result,
+                ),
+            );
+        }
+
+        super::request_desktop_task_cancel(&state, "claimed-task");
+        super::request_desktop_task_cancel(&state, "completed-task");
+
+        let cancel_state = state.0.lock().expect("state lock");
+        assert!(cancel_state.pending.is_empty());
+    }
+
+    #[test]
+    fn claimed_task_ids_evict_completed_entries_behind_an_active_oldest_entry() {
+        let mut cancel_state = DesktopTaskCancelState::default();
+        let active_task_id = "active-oldest".to_string();
+        cancel_state.claimed.insert(active_task_id.clone());
+        cancel_state.claimed_order.push_back(active_task_id.clone());
+        cancel_state.active.insert(
+            active_task_id,
+            ActiveDesktopTask {
+                cancel_flag: Arc::new(AtomicBool::new(false)),
+                kind: "desktop".to_string(),
+                workspace_root: "workspace".to_string(),
+                arguments: Vec::new(),
+                started_at: 1,
+                operation_key: None,
+            },
+        );
+
+        for index in 0..(MAX_CLAIMED_TASK_IDS + 20) {
+            let task_id = format!("completed-{index}");
+            cancel_state.claimed.insert(task_id.clone());
+            cancel_state.claimed_order.push_back(task_id);
+        }
+
+        trim_claimed_task_ids(&mut cancel_state);
+
+        assert_eq!(cancel_state.claimed_order.len(), MAX_CLAIMED_TASK_IDS);
+        assert!(cancel_state.claimed.contains("active-oldest"));
+        assert!(!cancel_state.claimed.contains("completed-0"));
+    }
+
+    #[test]
+    fn task_ids_are_claimed_only_once() {
+        let state = DesktopTaskCancelMap::default();
+        let registration = || ActiveDesktopTaskRegistration {
+            task_id: "shared-task".to_string(),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            kind: "desktop".to_string(),
+            workspace_root: "workspace".to_string(),
+            arguments: Vec::new(),
+            started_at: 1,
+            operation_key: None,
+        };
+
+        assert_eq!(register_active_task(&state, registration()), Ok(true));
+        assert_eq!(register_active_task(&state, registration()), Ok(false));
+    }
+
+    #[test]
+    fn operation_key_has_exactly_one_active_owner() {
+        let state = DesktopTaskCancelMap::default();
+        let registration = |task_id: &str| ActiveDesktopTaskRegistration {
+            task_id: task_id.to_string(),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            kind: "desktop".to_string(),
+            workspace_root: "workspace".to_string(),
+            arguments: Vec::new(),
+            started_at: 1,
+            operation_key: Some("session:shared-session".to_string()),
+        };
+
+        assert_eq!(
+            register_active_task(&state, registration("task-1")),
+            Ok(true)
+        );
+        assert_eq!(
+            register_active_task(&state, registration("task-2")),
+            Err("MACHDOCH_OPERATION_ALREADY_ACTIVE:task-1".to_string())
+        );
+
+        super::finish_active_task(&state, Some("task-1"));
+        assert_eq!(
+            register_active_task(&state, registration("task-2")),
+            Ok(true)
+        );
     }
 
     #[test]

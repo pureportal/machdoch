@@ -5,7 +5,7 @@ import {
   LoaderCircle,
   SlidersHorizontal,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { RalphFlowEditor } from "./ralph-flow-editor";
 import {
   createInitialShellState,
@@ -30,8 +30,8 @@ import {
   loadRalphSettings,
   loadShellState,
   saveRalphSettings,
-  saveShellState,
   subscribeToShellStateChanged,
+  updateShellStateAtomically,
   type RalphFlowLibraryMode,
   type RalphSettings,
 } from "../lib/shell-store";
@@ -390,18 +390,20 @@ export const normalizeRalphRuntimeSettings = (
   };
 };
 
-const hasRalphRuntimeSelectionChanged = (
+export const mergeLoadedRalphSettings = (
+  loaded: RalphSettings,
   current: RalphSettings,
-  next: RalphSettings,
-): boolean => {
-  return (
-    current.generationProvider !== next.generationProvider ||
-    current.generationModel !== next.generationModel ||
-    current.generationReasoning !== next.generationReasoning ||
-    current.runProvider !== next.runProvider ||
-    current.runModel !== next.runModel ||
-    current.runReasoning !== next.runReasoning
-  );
+  dirtyFields: ReadonlySet<keyof RalphSettings>,
+): RalphSettings => {
+  const merged = { ...loaded } as RalphSettings;
+  const mutableMerged = merged as unknown as Record<string, unknown>;
+  const currentRecord = current as unknown as Record<string, unknown>;
+
+  for (const field of dirtyFields) {
+    mutableMerged[field] = currentRecord[field];
+  }
+
+  return merged;
 };
 
 export interface RalphAppProps {
@@ -426,6 +428,39 @@ export const RalphApp = ({
   const [recentWorkspaces, setRecentWorkspaces] = useState<string[]>([]);
   const [shellStateLoaded, setShellStateLoaded] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [editorDirty, setEditorDirty] = useState(false);
+  const settingsRef = useRef(settings);
+  const settingsEditRevisionRef = useRef(0);
+  const dirtySettingsFieldsRef = useRef(new Set<keyof RalphSettings>());
+  const settingsSaveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const recentWorkspacesRequestRef = useRef(0);
+
+  settingsRef.current = settings;
+
+  const persistSettings = (next: RalphSettings): void => {
+    settingsSaveChainRef.current = settingsSaveChainRef.current
+      .catch(() => undefined)
+      .then(() => saveRalphSettings(next))
+      .catch((error: unknown) => {
+        console.error("Failed to persist Ralph settings", error);
+      });
+  };
+
+  const updateSettings = (patch: Partial<RalphSettings>): void => {
+    const normalized = normalizeRalphRuntimeSettings({
+      ...settingsRef.current,
+      ...patch,
+      version: 1,
+    });
+
+    settingsEditRevisionRef.current += 1;
+    for (const field of Object.keys(patch) as Array<keyof RalphSettings>) {
+      dirtySettingsFieldsRef.current.add(field);
+    }
+    settingsRef.current = normalized;
+    setSettings(normalized);
+    persistSettings(normalized);
+  };
   const generationReasoning = settings.generationReasoning
     ? normalizeReasoningModeForProvider(
         settings.generationReasoning,
@@ -462,20 +497,32 @@ export const RalphApp = ({
 
   useEffect(() => {
     let cancelled = false;
+    const editRevisionAtStart = settingsEditRevisionRef.current;
 
     void loadRalphSettings()
       .then((loadedSettings) => {
         if (!cancelled) {
-          const normalizedSettings =
-            normalizeRalphRuntimeSettings(loadedSettings);
+          const dirtyFields = dirtySettingsFieldsRef.current;
+          const mergedSettings =
+            settingsEditRevisionRef.current === editRevisionAtStart
+              ? loadedSettings
+              : mergeLoadedRalphSettings(
+                  loadedSettings,
+                  settingsRef.current,
+                  dirtyFields,
+                );
+          const normalizedSettings = normalizeRalphRuntimeSettings(mergedSettings);
 
+          settingsRef.current = normalizedSettings;
           setSettings(normalizedSettings);
           if (
-            normalizedSettings.generationProvider !==
-              loadedSettings.generationProvider ||
-            normalizedSettings.runProvider !== loadedSettings.runProvider
+            normalizedSettings.generationProvider !== loadedSettings.generationProvider ||
+            normalizedSettings.generationModel !== loadedSettings.generationModel ||
+            normalizedSettings.runProvider !== loadedSettings.runProvider ||
+            normalizedSettings.runModel !== loadedSettings.runModel ||
+            settingsEditRevisionRef.current !== editRevisionAtStart
           ) {
-            void saveRalphSettings(normalizedSettings);
+            persistSettings(normalizedSettings);
           }
           setSettingsLoaded(true);
         }
@@ -517,48 +564,22 @@ export const RalphApp = ({
   }, []);
 
   useEffect(() => {
-    if (!settingsLoaded) {
-      return;
-    }
-
-    const normalizedSettings = normalizeRalphRuntimeSettings(settings);
-
-    if (!hasRalphRuntimeSelectionChanged(settings, normalizedSettings)) {
-      return;
-    }
-
-    setSettings(normalizedSettings);
-    void saveRalphSettings(normalizedSettings);
-  }, [settings, settingsLoaded]);
-
-  useEffect(() => {
-    if (
-      isRalphRunnableProvider(settings.generationProvider) &&
-      isRalphRunnableProvider(settings.runProvider)
-    ) {
-      return;
-    }
-
-    const normalizedSettings = normalizeRalphRuntimeSettings(settings);
-    setSettings(normalizedSettings);
-    void saveRalphSettings(normalizedSettings);
-  }, [settings]);
-
-  useEffect(() => {
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
 
     const refreshRecentWorkspaces = async (): Promise<void> => {
+      const requestId = recentWorkspacesRequestRef.current + 1;
+      recentWorkspacesRequestRef.current = requestId;
       try {
         const shellState = await loadSharedShellState();
 
-        if (!cancelled) {
+        if (!cancelled && requestId === recentWorkspacesRequestRef.current) {
           setRecentWorkspaces(shellState.recentWorkspaces);
           setShellStateLoaded(true);
         }
       } catch (error) {
         console.error("Failed to load Ralph workspace history", error);
-        if (!cancelled) {
+        if (!cancelled && requestId === recentWorkspacesRequestRef.current) {
           setShellStateLoaded(true);
         }
       }
@@ -578,61 +599,61 @@ export const RalphApp = ({
 
     return () => {
       cancelled = true;
+      recentWorkspacesRequestRef.current += 1;
       unsubscribe?.();
     };
   }, []);
 
-  const updateSettings = (patch: Partial<RalphSettings>): void => {
-    setSettings((current) => {
-      const next = {
-        ...current,
-        ...patch,
-        version: 1,
-      } satisfies RalphSettings;
-
-      void saveRalphSettings(next);
-      return next;
-    });
-  };
-
   const persistRecentWorkspace = async (workspace: string): Promise<void> => {
-    const shellState = await loadSharedShellState();
-    const nextShellState = {
-      ...shellState,
-      recentWorkspaces: rememberRecentWorkspace(
-        shellState.recentWorkspaces,
-        workspace,
-      ),
-    } satisfies ShellPersistedState;
+    await updateShellStateAtomically(createInitialShellState(), (current) => {
+      const shellState = normalizeShellState(current);
 
-    await saveShellState(nextShellState);
+      return {
+        ...shellState,
+        recentWorkspaces: rememberRecentWorkspace(
+          shellState.recentWorkspaces,
+          workspace,
+        ),
+      } satisfies ShellPersistedState;
+    });
     await broadcastShellStateChanged();
   };
 
   const persistRecentWorkspaceRemoval = async (
     workspace: string,
   ): Promise<void> => {
-    const shellState = await loadSharedShellState();
-    const nextShellState = {
-      ...shellState,
-      recentWorkspaces: removeRecentWorkspace(
-        shellState.recentWorkspaces,
-        workspace,
-      ),
-    } satisfies ShellPersistedState;
+    await updateShellStateAtomically(createInitialShellState(), (current) => {
+      const shellState = normalizeShellState(current);
 
-    await saveShellState(nextShellState);
+      return {
+        ...shellState,
+        recentWorkspaces: removeRecentWorkspace(
+          shellState.recentWorkspaces,
+          workspace,
+        ),
+      } satisfies ShellPersistedState;
+    });
     await broadcastShellStateChanged();
   };
 
   const applyWorkspaceSelection = (workspace: string): void => {
     const normalizedWorkspace = workspace.trim();
 
-    if (!normalizedWorkspace) {
+    if (!normalizedWorkspace || normalizedWorkspace === settingsRef.current.workspaceRoot) {
+      return;
+    }
+
+    if (
+      editorDirty &&
+      !window.confirm(
+        "The selected Ralph flow has unsaved changes. Discard them and switch workspaces?",
+      )
+    ) {
       return;
     }
 
     updateSettings({ workspaceRoot: normalizedWorkspace });
+    setEditorDirty(false);
     setRecentWorkspaces((current) =>
       rememberRecentWorkspace(current, normalizedWorkspace),
     );
@@ -853,8 +874,10 @@ export const RalphApp = ({
 
       <div className="relative min-h-0 min-w-0 overflow-hidden">
         <RalphFlowEditor
+          key={settings.workspaceRoot ?? "no-workspace"}
           workspaceRoot={settings.workspaceRoot}
           isActive={isActive}
+          onDirtyChange={setEditorDirty}
           flowLibraryMode={settings.flowLibraryMode}
           onFlowLibraryModeChange={(flowLibraryMode) =>
             updateSettings({ flowLibraryMode })

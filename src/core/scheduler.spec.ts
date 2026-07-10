@@ -1,20 +1,60 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   DurableSmartScheduler,
+  createScheduledRalphExecutionSnapshot,
   getNextCronRunAfter,
   getWorkspaceSchedulerStatePath,
   syncScheduledPromptJobs,
   type ScheduledTaskExecutor,
 } from "./scheduler.ts";
+import {
+  createRalphFlowFingerprint,
+  deleteRalphFlow,
+  writeRalphFlow,
+  type RalphFlow,
+} from "./ralph.ts";
 import type { TaskExecutionResult } from "./types.ts";
 
 const workspacesToClean: string[] = [];
 
+const createSimpleFlow = (
+  id: string,
+  options: Partial<RalphFlow> = {},
+): RalphFlow => ({
+  schemaVersion: 1,
+  id,
+  name: options.name ?? id,
+  ...options,
+  blocks: options.blocks ?? [
+    { id: "start", type: "START", title: "Start" },
+    { id: "done", type: "END", title: "Done", status: "success" },
+  ],
+  edges: options.edges ?? [
+    {
+      id: "start-done",
+      from: "start",
+      fromOutput: "SUCCESS",
+      to: "done",
+    },
+  ],
+});
+
 const createWorkspace = async (): Promise<string> => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-scheduler-"));
   workspacesToClean.push(workspaceRoot);
+
+  for (const id of [
+    "autonomous-improvement",
+    "autonomous-ui-improvement",
+    "isolated-improvement",
+    "legacy-flow",
+    "security-analysis",
+  ]) {
+    await writeRalphFlow(workspaceRoot, createSimpleFlow(id));
+  }
+
   return workspaceRoot;
 };
 
@@ -63,6 +103,11 @@ const sleep = async (durationMs: number): Promise<void> => {
   await new Promise((resolve) => {
     setTimeout(resolve, durationMs);
   });
+};
+
+const getExpectedWorkspaceQueueKey = (workspaceRoot: string): string => {
+  const normalized = resolve(workspaceRoot).replaceAll("\\", "/");
+  return `ralph-workspace:${process.platform === "win32" ? normalized.toLowerCase() : normalized}`;
 };
 
 const createSuccessfulResult = (
@@ -118,6 +163,836 @@ describe("getNextCronRunAfter", () => {
 });
 
 describe("DurableSmartScheduler", () => {
+  it("strips nested starter provenance without changing execution fingerprint", () => {
+    const flow = createSimpleFlow("snapshot-flow", {
+      source: {
+        kind: "starter",
+        id: "source-starter",
+        version: 2,
+        templateFingerprint: "template-sha",
+        templateVariableDefaults: { goal: "default" },
+        templateSnapshot: createSimpleFlow("source-starter"),
+      },
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-10T00:00:00.000Z",
+    });
+
+    const snapshot = createScheduledRalphExecutionSnapshot(flow);
+
+    expect(snapshot.source?.templateSnapshot).toBeUndefined();
+    expect(snapshot.source?.templateVariableDefaults).toBeUndefined();
+    expect(snapshot.createdAt).toBeUndefined();
+    expect(snapshot.updatedAt).toBeUndefined();
+    expect(createRalphFlowFingerprint(snapshot)).toBe(
+      createRalphFlowFingerprint(flow),
+    );
+  });
+
+  it("rejects unattended targets with missing variables or human-only blocks", async () => {
+    const workspaceRoot = await createWorkspace();
+    await writeRalphFlow(
+      workspaceRoot,
+      createSimpleFlow("readiness-flow", {
+        variables: [
+          { name: "goal", type: "string", required: true },
+        ],
+      }),
+    );
+    await writeRalphFlow(
+      workspaceRoot,
+      createSimpleFlow("human-flow", {
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "approval",
+            type: "ASK_USER",
+            title: "Approval",
+            mode: "alwaysAsk",
+            fields: [{ id: "approved", label: "Approved", type: "boolean" }],
+          },
+          { id: "done", type: "END", title: "Done", status: "success" },
+        ],
+        edges: [
+          { id: "to-approval", from: "start", fromOutput: "SUCCESS", to: "approval" },
+          { id: "to-done", from: "approval", fromOutput: "SUBMITTED", to: "done" },
+        ],
+      }),
+      { allowInvalid: true },
+    );
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+    });
+
+    await expect(scheduler.upsertJob({
+      schedule: { type: "delay", delayMs: 1_000 },
+      target: {
+        type: "ralph-flow",
+        workspaceRoot,
+        ralphFlow: { id: "readiness-flow", executionProfile: "unattended" },
+      },
+    })).rejects.toThrow("Missing required Ralph parameter `goal`");
+
+    await expect(scheduler.upsertJob({
+      schedule: { type: "delay", delayMs: 1_000 },
+      target: {
+        type: "ralph-flow",
+        workspaceRoot,
+        ralphFlow: {
+          id: "readiness-flow",
+          params: { goal: "Improve it", typoGoal: "unknown" },
+          executionProfile: "unattended",
+        },
+      },
+    })).rejects.toThrow("parameter `typoGoal` is not declared");
+
+    await expect(scheduler.upsertJob({
+      schedule: { type: "delay", delayMs: 1_000 },
+      target: {
+        type: "ralph-flow",
+        workspaceRoot,
+        ralphFlow: { id: "human-flow" },
+      },
+    })).rejects.toThrow("cannot pause at ASK_USER");
+
+    await expect(scheduler.upsertJob({
+      schedule: { type: "delay", delayMs: 1_000 },
+      target: {
+        type: "ralph-flow",
+        workspaceRoot,
+        ralphFlow: { id: "human-flow", executionProfile: "unattended" },
+      },
+    })).resolves.toMatchObject({
+      target: {
+        ralphFlow: {
+          executionProfile: "unattended",
+          flowSnapshot: expect.objectContaining({ id: "human-flow" }),
+        },
+      },
+    });
+  });
+
+  it("persists unresolved external flow references but will not enqueue them unpinned", async () => {
+    const workspaceRoot = await createWorkspace();
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+    });
+    const forgedSnapshot = createSimpleFlow("external-flow", {
+      name: "Untrusted caller snapshot",
+    });
+    const job = await scheduler.upsertJob({
+      triggers: [{ kind: "manual", eventType: "manual.external-flow" }],
+      target: {
+        type: "ralph-flow",
+        workspaceRoot,
+        ralphFlow: {
+          id: "external-flow",
+          executionProfile: "unattended",
+          flowSnapshot: forgedSnapshot,
+          flowFingerprint: createRalphFlowFingerprint(forgedSnapshot),
+        },
+      },
+    });
+
+    expect(job.target.ralphFlow).toMatchObject({
+      id: "external-flow",
+      flowSnapshotRefreshError: expect.stringContaining("was not found"),
+    });
+    expect(job.target.ralphFlow?.flowSnapshot).toBeUndefined();
+    await expect(scheduler.triggerJobNow(job.id)).rejects.toThrow(
+      "Scheduled Ralph flow revision could not be refreshed",
+    );
+
+    await writeRalphFlow(
+      workspaceRoot,
+      createSimpleFlow("external-flow", { name: "Installed external flow" }),
+    );
+    const queued = await scheduler.triggerJobNow(job.id);
+
+    expect(queued.run.targetSnapshot?.ralphFlow).toMatchObject({
+      id: "external-flow",
+      flowSnapshot: expect.objectContaining({ name: "Installed external flow" }),
+    });
+  });
+
+  it("pins each queued Ralph revision while refreshing later occurrences", async () => {
+    const workspaceRoot = await createWorkspace();
+    await writeRalphFlow(
+      workspaceRoot,
+      createSimpleFlow("versioned-flow", { name: "Version One" }),
+    );
+    const observedNames: string[] = [];
+    const executor: ScheduledTaskExecutor = {
+      execute: async (request) => {
+        observedNames.push(request.ralphFlow?.flowSnapshot?.name ?? "missing");
+        return createSuccessfulResult();
+      },
+    };
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+      executor,
+    });
+    const job = await scheduler.upsertJob({
+      triggers: [{ kind: "manual", eventType: "manual.versioned" }],
+      target: {
+        type: "ralph-flow",
+        workspaceRoot,
+        ralphFlow: {
+          id: "versioned-flow",
+          executionProfile: "unattended",
+        },
+      },
+    });
+
+    const first = await scheduler.triggerJobNow(job.id);
+    await writeRalphFlow(
+      workspaceRoot,
+      createSimpleFlow("versioned-flow", { name: "Version Two" }),
+      { createRevision: true },
+    );
+    expect(first.run.targetSnapshot?.ralphFlow?.flowSnapshot?.name).toBe("Version One");
+    await scheduler.runQueuedRuns();
+
+    const second = await scheduler.triggerJobNow(job.id);
+    expect(second.run.targetSnapshot?.ralphFlow?.flowSnapshot?.name).toBe("Version Two");
+    await scheduler.runQueuedRuns();
+
+    expect(observedNames).toEqual(["Version One", "Version Two"]);
+  });
+
+  it("deduplicates manual triggers and retries by durable idempotency key", async () => {
+    const workspaceRoot = await createWorkspace();
+    const statePath = getWorkspaceSchedulerStatePath(workspaceRoot);
+    const executor: ScheduledTaskExecutor = {
+      execute: async () => createSuccessfulResult("Run exactly once"),
+    };
+    const scheduler = new DurableSmartScheduler({ statePath, executor });
+    const job = await scheduler.upsertJob({
+      triggers: [{ kind: "manual", eventType: "manual.remote" }],
+      target: { workspaceRoot, prompt: "Run exactly once" },
+    });
+
+    const first = await scheduler.triggerJobNow(job.id, "remote-trigger-1");
+    const reloaded = new DurableSmartScheduler({ statePath, executor });
+    const duplicate = await reloaded.triggerJobNow(
+      job.id,
+      "remote-trigger-1",
+    );
+
+    expect(duplicate).toEqual(first);
+    expect((await reloaded.listRuns(job.id))).toHaveLength(1);
+
+    const [completed] = await reloaded.runQueuedRuns({ maxRuns: 1 });
+    expect(completed?.status).toBe("succeeded");
+    const retry = await reloaded.retryRun(
+      completed!.id,
+      "remote-retry-1",
+    );
+    const duplicateRetry = await new DurableSmartScheduler({
+      statePath,
+      executor,
+    }).retryRun(completed!.id, "remote-retry-1");
+
+    expect(duplicateRetry).toEqual(retry);
+    expect((await reloaded.listRuns(job.id))).toHaveLength(2);
+  });
+
+  it("replays job mutations across restarts without undoing newer operations", async () => {
+    const workspaceRoot = await createWorkspace();
+    const statePath = getWorkspaceSchedulerStatePath(workspaceRoot);
+    const clock = createClock(1_000);
+    const input = {
+      schedule: { type: "interval" as const, intervalMs: 60_000 },
+      target: { workspaceRoot, prompt: "Keep the original mutation result" },
+    };
+    const scheduler = new DurableSmartScheduler({ statePath, clock });
+    const created = await scheduler.upsertJob(input, "create-request");
+    const updated = await scheduler.updateJob(
+      created.id,
+      { name: "First update" },
+      "update-request",
+    );
+    await scheduler.updateJob(
+      created.id,
+      { name: "Newer update" },
+      "newer-update-request",
+    );
+
+    const paused = await scheduler.pauseJob(
+      created.id,
+      "initial-pause-request",
+    );
+    clock.advance(10_000);
+
+    const reloaded = new DurableSmartScheduler({ statePath, clock });
+    const replayedCreate = await reloaded.upsertJob(input, "create-request");
+    const replayedUpdate = await reloaded.updateJob(
+      created.id,
+      { name: "First update" },
+      "update-request",
+    );
+    const replayedPause = await reloaded.pauseJob(
+      created.id,
+      "initial-pause-request",
+    );
+
+    expect(replayedCreate).toEqual(created);
+    expect(replayedUpdate).toEqual(updated);
+    expect(replayedPause).toEqual(paused);
+    expect((await reloaded.getJob(created.id))?.status).toBe("paused");
+    expect((await reloaded.getJob(created.id))?.name).toBe("Newer update");
+
+    const resumed = await reloaded.resumeJob(created.id, "resume-request");
+    const deleted = await reloaded.deleteJob(created.id, "delete-request");
+    const stateBeforeReplay = await reloaded.getState();
+
+    clock.advance(90_000);
+
+    const replayedResume = await new DurableSmartScheduler({
+      statePath,
+      clock,
+    }).resumeJob(created.id, "resume-request");
+    const replayedDelete = await reloaded.deleteJob(
+      created.id,
+      "delete-request",
+    );
+    const stateAfterReplay = await reloaded.getState();
+
+    expect(replayedResume).toEqual(resumed);
+    expect(replayedDelete).toEqual(deleted);
+    expect(stateAfterReplay.updatedAt).toBe(stateBeforeReplay.updatedAt);
+    expect(stateAfterReplay.jobs.find((job) => job.id === created.id)?.status).toBe(
+      "deleted",
+    );
+  });
+
+  it("rejects reuse of a mutation key for another operation, target, or payload", async () => {
+    const workspaceRoot = await createWorkspace();
+    const statePath = getWorkspaceSchedulerStatePath(workspaceRoot);
+    const scheduler = new DurableSmartScheduler({ statePath });
+    const firstInput = {
+      triggers: [{ kind: "manual" as const, eventType: "manual.first" }],
+      target: { workspaceRoot, prompt: "First payload" },
+    };
+    const first = await scheduler.upsertJob(firstInput, "shared-request");
+
+    await expect(
+      scheduler.upsertJob(
+        {
+          ...firstInput,
+          target: { workspaceRoot, prompt: "Changed payload" },
+        },
+        "shared-request",
+      ),
+    ).rejects.toThrow("Scheduler mutation idempotency conflict");
+    await expect(
+      scheduler.pauseJob(first.id, "shared-request"),
+    ).rejects.toThrow("Scheduler mutation idempotency conflict");
+
+    const second = await scheduler.upsertJob({
+      triggers: [{ kind: "manual", eventType: "manual.second" }],
+      target: { workspaceRoot, prompt: "Second target" },
+    });
+    await scheduler.pauseJob(first.id, "target-request");
+
+    await expect(
+      scheduler.pauseJob(second.id, "target-request"),
+    ).rejects.toThrow("Scheduler mutation idempotency conflict");
+  });
+
+  it("replays trigger, retry, and cancel results after their runs are pruned", async () => {
+    const workspaceRoot = await createWorkspace();
+    const statePath = getWorkspaceSchedulerStatePath(workspaceRoot);
+    const executor: ScheduledTaskExecutor = {
+      execute: async () => createSuccessfulResult("completed for pruning"),
+    };
+    const scheduler = new DurableSmartScheduler({ statePath, executor });
+    const job = await scheduler.upsertJob({
+      triggers: [{ kind: "manual", eventType: "manual.pruning" }],
+      target: { workspaceRoot, prompt: "Exercise receipt pruning" },
+      historyLimit: 1,
+    });
+    const triggered = await scheduler.triggerJobNow(job.id, "trigger-request");
+
+    await scheduler.runQueuedRuns({ maxRuns: 1 });
+    const retry = await scheduler.retryRun(
+      triggered.run.id,
+      "retry-request",
+    );
+    await scheduler.runQueuedRuns({ maxRuns: 1 });
+
+    const cancelTarget = await scheduler.triggerJobNow(job.id);
+    const cancelled = await scheduler.cancelRun(
+      cancelTarget.run.id,
+      "No longer needed.",
+      "cancel-request",
+    );
+    await scheduler.triggerJobNow(job.id);
+    await scheduler.runQueuedRuns({ maxRuns: 1 });
+
+    expect(await scheduler.getRun(triggered.run.id)).toBeUndefined();
+    expect(await scheduler.getRun(retry.runId)).toBeUndefined();
+    expect(await scheduler.getRun(cancelTarget.run.id)).toBeUndefined();
+
+    const reloaded = new DurableSmartScheduler({ statePath, executor });
+    await expect(
+      reloaded.triggerJobNow(job.id, "trigger-request"),
+    ).resolves.toEqual(triggered);
+    await expect(
+      reloaded.retryRun(triggered.run.id, "retry-request"),
+    ).resolves.toEqual(retry);
+    await expect(
+      reloaded.cancelRun(
+        cancelTarget.run.id,
+        "No longer needed.",
+        "cancel-request",
+      ),
+    ).resolves.toEqual(cancelled);
+    expect(await reloaded.listRuns(job.id)).toHaveLength(1);
+  });
+
+  it("requeues infrastructure-aborted work without consuming its execution attempts", async () => {
+    const workspaceRoot = await createWorkspace();
+    const executionStarted = defer<void>();
+    let executionCount = 0;
+    const executor: ScheduledTaskExecutor = {
+      execute: async (request, options) => {
+        executionCount += 1;
+        if (executionCount > 1) {
+          return createSuccessfulResult(request.task);
+        }
+        executionStarted.resolve();
+        await new Promise<void>((resolveExecution) => {
+          if (options.signal?.aborted) {
+            resolveExecution();
+            return;
+          }
+          options.signal?.addEventListener("abort", () => resolveExecution(), {
+            once: true,
+          });
+        });
+
+        return {
+          task: request.task,
+          mode: "machdoch",
+          status: "cancelled",
+          summary: "service stopped",
+          reason: "service stopped",
+          executedTools: [],
+          outputSections: [],
+        };
+      },
+    };
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+      executor,
+    });
+    const job = await scheduler.upsertJob({
+      triggers: [{ kind: "manual", eventType: "manual.cancel" }],
+      target: { workspaceRoot, prompt: "long work" },
+    });
+    await scheduler.triggerJobNow(job.id);
+    const controller = new AbortController();
+    const worker = scheduler.runQueuedRuns({ signal: controller.signal });
+    await executionStarted.promise;
+    controller.abort("fleet shutdown");
+    const [interruptedRun] = await worker;
+
+    expect(interruptedRun).toMatchObject({
+      id: expect.any(String),
+      status: "queued",
+      attempt: 1,
+      attemptHistory: [expect.objectContaining({ status: "failed" })],
+    });
+    await expect(scheduler.listRuns()).resolves.not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ status: "running" })]),
+    );
+
+    const [retriedRun] = await scheduler.runQueuedRuns();
+    expect(retriedRun).toMatchObject({
+      id: interruptedRun?.id,
+      status: "succeeded",
+      attempt: 2,
+    });
+    expect(retriedRun?.targetSnapshot).toEqual(interruptedRun?.targetSnapshot);
+  });
+
+  it("aborts and fails a run when its durable heartbeat cannot be persisted", async () => {
+    const workspaceRoot = await createWorkspace();
+    let heartbeatClaim:
+      | { runId: string; claimToken: string }
+      | undefined;
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+      runningHeartbeatMs: 5,
+      heartbeatRun: async (runId, claimToken) => {
+        heartbeatClaim = { runId, claimToken };
+        throw new Error("disk unavailable");
+      },
+      executor: {
+        execute: async (request, options) => {
+          await new Promise<void>((resolveExecution) => {
+            if (options.signal?.aborted) {
+              resolveExecution();
+              return;
+            }
+            options.signal?.addEventListener("abort", () => resolveExecution(), {
+              once: true,
+            });
+          });
+          return createSuccessfulResult(request.task);
+        },
+      },
+    });
+    const job = await scheduler.upsertJob({
+      triggers: [{ kind: "manual", eventType: "manual.heartbeat" }],
+      target: { workspaceRoot, prompt: "heartbeat-sensitive work" },
+    });
+    await scheduler.triggerJobNow(job.id);
+
+    const [run] = await scheduler.runQueuedRuns();
+
+    expect(run?.status).toBe("failed");
+    expect(run?.error).toContain("heartbeat persistence failed");
+    expect(heartbeatClaim).toEqual({
+      runId: run?.id,
+      claimToken: run?.attemptHistory[0]?.claimToken,
+    });
+  });
+
+  it("fences a stale worker after recovery reclaims the same run", async () => {
+    const workspaceRoot = await createWorkspace();
+    const statePath = getWorkspaceSchedulerStatePath(workspaceRoot);
+    const clock = createClock(10_000);
+    const firstExecutionStarted = defer<void>();
+    const firstExecution = defer<TaskExecutionResult>();
+    const secondExecutionStarted = defer<void>();
+    const secondExecutionAborted = defer<void>();
+    let executionCount = 0;
+    const scheduler = new DurableSmartScheduler({
+      statePath,
+      clock,
+      executor: {
+        execute: async (request, options) => {
+          executionCount += 1;
+          if (executionCount === 1) {
+            firstExecutionStarted.resolve();
+            return firstExecution.promise;
+          }
+
+          secondExecutionStarted.resolve();
+          await new Promise<void>((resolveExecution) => {
+            if (options.signal?.aborted) {
+              secondExecutionAborted.resolve();
+              resolveExecution();
+              return;
+            }
+
+            options.signal?.addEventListener(
+              "abort",
+              () => {
+                secondExecutionAborted.resolve();
+                resolveExecution();
+              },
+              { once: true },
+            );
+          });
+          return createSuccessfulResult(request.task);
+        },
+      },
+    });
+    const recoveryScheduler = new DurableSmartScheduler({ statePath, clock });
+    const job = await scheduler.upsertJob({
+      triggers: [{ kind: "manual", eventType: "manual.claim-fence" }],
+      target: { workspaceRoot, prompt: "claim-fenced work" },
+      retry: {
+        maxAttempts: 2,
+        minTimeoutMs: 1,
+        maxTimeoutMs: 1,
+        randomize: false,
+      },
+    });
+    await scheduler.triggerJobNow(job.id);
+
+    const staleWorker = scheduler.runQueuedRuns();
+    const staleWorkerResult = expect(staleWorker).rejects.toThrow(
+      "Scheduled run claim is no longer current",
+    );
+    await firstExecutionStarted.promise;
+    const firstClaim = (await scheduler.listRuns()).find(
+      (run) => run.status === "running",
+    );
+
+    expect(firstClaim?.claimToken).toEqual(expect.any(String));
+    clock.advance(10);
+    await expect(
+      recoveryScheduler.recoverAbandonedRuns("Recovered stale claim.", 1),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        runId: firstClaim?.id,
+        previousStatus: "running",
+        status: "queued",
+      }),
+    ]);
+    const recoveredRun = await scheduler.getRun(firstClaim?.id ?? "");
+    expect(recoveredRun).toMatchObject({
+      status: "queued",
+      attempt: 1,
+      attemptHistory: [
+        expect.objectContaining({
+          claimToken: firstClaim?.claimToken,
+          status: "failed",
+        }),
+      ],
+    });
+    expect(recoveredRun?.claimToken).toBeUndefined();
+
+    clock.set(recoveredRun?.nextAttemptAt ?? clock.now());
+    const currentWorker = scheduler.runQueuedRuns();
+    await secondExecutionStarted.promise;
+    const secondClaim = await scheduler.getRun(firstClaim?.id ?? "");
+
+    expect(secondClaim).toMatchObject({ status: "running", attempt: 2 });
+    expect(secondClaim?.claimToken).toEqual(expect.any(String));
+    expect(secondClaim?.claimToken).not.toBe(firstClaim?.claimToken);
+
+    firstExecution.resolve(createSuccessfulResult("stale worker returned"));
+    await staleWorkerResult;
+
+    const afterStaleFinish = await scheduler.getRun(firstClaim?.id ?? "");
+    expect(afterStaleFinish).toMatchObject({
+      status: "running",
+      attempt: 2,
+      claimToken: secondClaim?.claimToken,
+      attemptHistory: [expect.objectContaining({ status: "failed" })],
+    });
+    expect(afterStaleFinish?.attemptHistory).toHaveLength(1);
+    await expect(scheduler.listEvents()).resolves.toEqual([]);
+
+    await scheduler.cancelRun(firstClaim?.id ?? "", "Stop current claim.");
+    await secondExecutionAborted.promise;
+    const [cancelledRun] = await currentWorker;
+
+    expect(cancelledRun).toMatchObject({
+      status: "cancelled",
+      attempt: 2,
+    });
+    expect(cancelledRun?.claimToken).toBeUndefined();
+    expect(cancelledRun?.attemptHistory).toHaveLength(2);
+    expect(cancelledRun?.attemptHistory.map((attempt) => attempt.claimToken)).toEqual([
+      firstClaim?.claimToken,
+      secondClaim?.claimToken,
+    ]);
+  });
+
+  it("rekeys the default Ralph queue when its canonical workspace changes", async () => {
+    const firstWorkspace = await createWorkspace();
+    const secondWorkspace = await createWorkspace();
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(firstWorkspace),
+    });
+    const job = await scheduler.upsertJob({
+      schedule: { type: "delay", delayMs: 1_000 },
+      target: {
+        type: "ralph-flow",
+        workspaceRoot: firstWorkspace,
+        ralphFlow: { id: "legacy-flow", executionProfile: "unattended" },
+      },
+    });
+    const updated = await scheduler.updateJob(job.id, {
+      target: {
+        workspaceRoot: secondWorkspace,
+        ralphFlow: { id: "legacy-flow", executionProfile: "unattended" },
+      },
+    });
+
+    expect(updated.queue.concurrencyKey).toBe(
+      getExpectedWorkspaceQueueKey(secondWorkspace),
+    );
+  });
+
+  it("uses a last-known valid Ralph snapshot without starving unrelated due jobs", async () => {
+    const workspaceRoot = await createWorkspace();
+    const clock = createClock();
+    const executedFlowIds: string[] = [];
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+      clock,
+      executor: {
+        execute: async (request) => {
+          executedFlowIds.push(request.ralphFlow?.id ?? "prompt");
+          return createSuccessfulResult();
+        },
+      },
+    });
+    await scheduler.upsertJob({
+      schedule: { type: "delay", delayMs: 1_000 },
+      target: {
+        type: "ralph-flow",
+        workspaceRoot,
+        ralphFlow: { id: "legacy-flow", executionProfile: "unattended" },
+      },
+      queue: { concurrencyLimit: 2 },
+    });
+    await scheduler.upsertJob({
+      schedule: { type: "delay", delayMs: 1_000 },
+      target: {
+        type: "ralph-flow",
+        workspaceRoot,
+        ralphFlow: { id: "security-analysis", executionProfile: "unattended" },
+      },
+      queue: { concurrencyLimit: 2 },
+    });
+    await deleteRalphFlow(workspaceRoot, "legacy-flow");
+    clock.set(1_000);
+
+    const result = await scheduler.runDueJobs();
+
+    expect(result.runs).toHaveLength(2);
+    expect(executedFlowIds.sort()).toEqual(["legacy-flow", "security-analysis"]);
+    const fallbackRun = result.runs.find(
+      (run) => run.targetSnapshot?.ralphFlow?.id === "legacy-flow",
+    );
+    expect(fallbackRun?.targetSnapshot?.ralphFlow?.flowSnapshotRefreshError)
+      .toContain("was not found");
+  });
+
+  it("applies the unattended RALPH capability, recovery, and retry profile", async () => {
+    const workspaceRoot = await createWorkspace();
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+    });
+
+    const job = await scheduler.upsertJob({
+      schedule: { type: "delay", delayMs: 1_000 },
+      target: {
+        type: "ralph-flow",
+        workspaceRoot,
+        ralphFlow: {
+          id: "autonomous-improvement",
+          executionProfile: "unattended",
+        },
+      },
+    });
+
+    expect(job.target.ralphFlow).toMatchObject({
+      id: "autonomous-improvement",
+      executionProfile: "unattended",
+      resumePolicy: "recoverable",
+      permissions: {
+        allowedRoots: [workspaceRoot],
+        allowCommands: true,
+        allowWrites: true,
+        allowNetwork: true,
+        allowMcpTools: true,
+      },
+    });
+    expect(job.retry).toMatchObject({
+      maxAttempts: 3,
+      minTimeoutMs: 1_000,
+      maxTimeoutMs: 60_000,
+      factor: 2,
+      randomize: true,
+    });
+    expect(job.queue).toEqual({
+      concurrencyKey: getExpectedWorkspaceQueueKey(workspaceRoot),
+      concurrencyLimit: 1,
+    });
+
+    const sibling = await scheduler.upsertJob({
+      schedule: { type: "delay", delayMs: 2_000 },
+      target: {
+        type: "ralph-flow",
+        workspaceRoot,
+        ralphFlow: {
+          id: "autonomous-ui-improvement",
+          executionProfile: "unattended",
+        },
+      },
+    });
+    const isolated = await scheduler.upsertJob({
+      schedule: { type: "delay", delayMs: 3_000 },
+      target: {
+        type: "ralph-flow",
+        workspaceRoot,
+        ralphFlow: {
+          id: "isolated-improvement",
+          executionProfile: "unattended",
+        },
+      },
+      queue: {
+        concurrencyKey: "isolated-worktree",
+        concurrencyLimit: 2,
+      },
+    });
+
+    expect(sibling.queue).toEqual(job.queue);
+    expect(isolated.queue).toEqual({
+      concurrencyKey: "isolated-worktree",
+      concurrencyLimit: 2,
+    });
+  });
+
+  it("preserves explicit scheduled RALPH permissions and retry defaults", async () => {
+    const workspaceRoot = await createWorkspace();
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+    });
+
+    const job = await scheduler.upsertJob({
+      schedule: { type: "delay", delayMs: 1_000 },
+      target: {
+        type: "ralph-flow",
+        workspaceRoot,
+        ralphFlow: {
+          id: "legacy-flow",
+          permissions: {
+            allowedRoots: [workspaceRoot],
+            allowCommands: true,
+            allowWrites: false,
+            allowNetwork: false,
+            allowMcpTools: false,
+          },
+        },
+      },
+    });
+
+    expect(job.target.ralphFlow?.permissions).toEqual({
+      allowedRoots: [workspaceRoot],
+      allowCommands: true,
+      allowWrites: false,
+      allowNetwork: false,
+      allowMcpTools: false,
+    });
+    expect(job.target.ralphFlow?.executionProfile).toBeUndefined();
+    expect(job.target.ralphFlow?.resumePolicy).toBeUndefined();
+    expect(job.retry.maxAttempts).toBe(1);
+
+    const upgraded = await scheduler.updateJob(job.id, {
+      target: {
+        ralphFlow: {
+          id: "legacy-flow",
+          executionProfile: "unattended",
+        },
+      },
+    });
+
+    expect(upgraded.target.ralphFlow).toMatchObject({
+      executionProfile: "unattended",
+      resumePolicy: "recoverable",
+      permissions: {
+        allowCommands: true,
+        allowWrites: true,
+        allowNetwork: true,
+        allowMcpTools: true,
+      },
+    });
+    expect(upgraded.retry.maxAttempts).toBe(3);
+    expect(upgraded.queue).toEqual({
+      concurrencyKey: getExpectedWorkspaceQueueKey(workspaceRoot),
+      concurrencyLimit: 1,
+    });
+  });
+
   it("upserts jobs by dedupe key", async () => {
     const workspaceRoot = await createWorkspace();
     const clock = createClock();
@@ -191,6 +1066,26 @@ describe("DurableSmartScheduler", () => {
     const jobs = await scheduler.listJobs();
 
     expect(jobs.map((job) => job.name).sort()).toEqual(jobNames);
+  });
+
+  it("commits one receipt and result for concurrent duplicate requests", async () => {
+    const workspaceRoot = await createWorkspace();
+    const statePath = getWorkspaceSchedulerStatePath(workspaceRoot);
+    const input = {
+      triggers: [{ kind: "manual" as const, eventType: "manual.concurrent" }],
+      target: { workspaceRoot, prompt: "Create once across processes" },
+    };
+    const firstScheduler = new DurableSmartScheduler({ statePath });
+    const secondScheduler = new DurableSmartScheduler({ statePath });
+
+    const [first, duplicate] = await Promise.all([
+      firstScheduler.upsertJob(input, "concurrent-create-request"),
+      secondScheduler.upsertJob(input, "concurrent-create-request"),
+    ]);
+
+    expect(duplicate).toEqual(first);
+    expect(await firstScheduler.listJobs()).toHaveLength(1);
+    expect((await firstScheduler.getState()).mutationReceipts).toHaveLength(1);
   });
 
   it("syncs enabled prompt frontmatter into scheduled jobs", async () => {
@@ -845,7 +1740,7 @@ describe("DurableSmartScheduler", () => {
     expect(finishedRun?.nextAttemptAt).toBeUndefined();
   });
 
-  it("records max-duration expiry as timed out", async () => {
+  it("retries max-duration expiry and preserves the same queued run", async () => {
     const workspaceRoot = await createWorkspace();
     const clock = createClock();
     const executor: ScheduledTaskExecutor = {
@@ -876,10 +1771,21 @@ describe("DurableSmartScheduler", () => {
 
     const { runs: [finishedRun] } = await scheduler.runDueJobs();
 
-    expect(finishedRun?.status).toBe("timed_out");
+    expect(finishedRun?.status).toBe("queued");
     expect(finishedRun?.attemptHistory).toHaveLength(1);
     expect(finishedRun?.attemptHistory[0]?.status).toBe("timed_out");
-    expect(finishedRun?.nextAttemptAt).toBeUndefined();
+    expect(finishedRun?.nextAttemptAt).toEqual(expect.any(Number));
+    const originalRunId = finishedRun?.id;
+    clock.set(finishedRun?.nextAttemptAt ?? 0);
+
+    const [retriedRun] = await scheduler.runQueuedRuns();
+
+    expect(retriedRun?.id).toBe(originalRunId);
+    expect(retriedRun?.status).toBe("timed_out");
+    expect(retriedRun?.attemptHistory.map((attempt) => attempt.status)).toEqual([
+      "timed_out",
+      "timed_out",
+    ]);
   });
 
   it("enforces queue concurrency limits across jobs", async () => {

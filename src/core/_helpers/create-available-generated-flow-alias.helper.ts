@@ -115,6 +115,7 @@ export const writeGeneratedRalphFlowWithAliasFallback = async (
     scope: RalphFlowScope;
     fallbackAliasBase: string;
     allowAliasFallback: boolean;
+    expectedFingerprint?: string;
   },
 ): Promise<RalphFlow> => {
   let writableFlow = flow;
@@ -128,6 +129,9 @@ export const writeGeneratedRalphFlowWithAliasFallback = async (
       await writeRalphFlow(workspaceRoot, writableFlow, {
         createRevision: true,
         scope: options.scope,
+        ...(options.expectedFingerprint
+          ? { expectedFingerprint: options.expectedFingerprint }
+          : {}),
       });
 
       return writableFlow;

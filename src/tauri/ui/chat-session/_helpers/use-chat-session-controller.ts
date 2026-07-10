@@ -94,6 +94,11 @@ import {
   type RunningTaskMessageAction,
 } from "../../lib/shell-store";
 import {
+  beginCrossWindowOperation,
+  completeCrossWindowOperation,
+  releaseCrossWindowOperation,
+} from "../../lib/cross-window-operation";
+import {
   appendThinkingProgress,
   createInitialThinkingTrace,
 } from "../../task-thinking.model";
@@ -106,7 +111,6 @@ import {
   createContextAttachment,
   createContextAttachmentFromReference,
   createContextAttachmentsFromTaskBlock,
-  createPromptHistoryUpdate,
   getImageAttachmentPaths,
   isLinkContextAttachment,
   mergeContextAttachments,
@@ -184,7 +188,11 @@ import { useSessionComposerState } from "./use-session-composer-state";
 import { useSessionFileDrops } from "./use-session-file-drops";
 import { useSessionLifecycle } from "./use-session-lifecycle";
 import { useSessionSettingsActions } from "./use-session-settings";
-import { useSessionTaskSubmission } from "./use-session-task-submission";
+import {
+  useSessionTaskSubmission,
+  type ComposerClearGuard,
+  type SessionOperationConflictSubmission,
+} from "./use-session-task-submission";
 import { useSessionWindowControls } from "./use-session-window-controls";
 import { useSpeechInputDevices } from "./use-speech-input-devices";
 import {
@@ -202,6 +210,7 @@ type ChatInputNeededSubmission =
       task: string;
       contextAttachments: ChatSessionContextAttachment[];
       runningAction: RunningTaskMessageAction | null;
+      composerClearGuard: ComposerClearGuard;
     }
   | {
       kind: "quick-task";
@@ -231,6 +240,7 @@ interface PromptEnhancementPendingState {
   contextAttachments: ChatSessionContextAttachment[];
   placement: PromptEnhancementPendingPlacement;
   startedAt: number;
+  composerClearGuard?: ComposerClearGuard;
 }
 
 interface PromptEnhancementPreviewState {
@@ -243,6 +253,69 @@ interface PromptEnhancementPreviewState {
 
 const getMessageTaskId = (message: ChatSessionMessage): string => {
   return message.taskId ?? message.id;
+};
+
+const createComposerClearGuard = (
+  session: Pick<
+    ChatSessionRecord,
+    | "draft"
+    | "draftContextAttachments"
+    | "composerUpdatedAt"
+    | "draftUpdatedAt"
+    | "draftAttachmentsUpdatedAt"
+  >,
+): ComposerClearGuard => ({
+  draft: session.draft,
+  contextAttachments: session.draftContextAttachments.map((attachment) => ({
+    ...attachment,
+  })),
+  ...(session.composerUpdatedAt !== undefined
+    ? { composerUpdatedAt: session.composerUpdatedAt }
+    : {}),
+  ...(session.draftUpdatedAt !== undefined
+    ? { draftUpdatedAt: session.draftUpdatedAt }
+    : {}),
+  ...(session.draftAttachmentsUpdatedAt !== undefined
+    ? { draftAttachmentsUpdatedAt: session.draftAttachmentsUpdatedAt }
+    : {}),
+});
+
+const areComposerAttachmentsEqual = (
+  left: readonly ChatSessionContextAttachment[],
+  right: readonly ChatSessionContextAttachment[],
+): boolean => {
+  return (
+    left.length === right.length &&
+    left.every((attachment, index) => {
+      const candidate = right[index];
+
+      return (
+        candidate !== undefined &&
+        attachment.id === candidate.id &&
+        attachment.path === candidate.path &&
+        attachment.kind === candidate.kind &&
+        attachment.name === candidate.name &&
+        attachment.parent === candidate.parent
+      );
+    })
+  );
+};
+
+const isComposerClearGuardCurrent = (
+  session: ChatSessionRecord,
+  guard: ComposerClearGuard,
+): boolean => {
+  return (
+    session.draft === guard.draft &&
+    areComposerAttachmentsEqual(
+      session.draftContextAttachments,
+      guard.contextAttachments,
+    ) &&
+    (session.draftUpdatedAt ?? session.composerUpdatedAt) ===
+      (guard.draftUpdatedAt ?? guard.composerUpdatedAt) &&
+    (session.draftAttachmentsUpdatedAt ?? session.composerUpdatedAt) ===
+      (guard.draftAttachmentsUpdatedAt ?? guard.composerUpdatedAt)
+  );
 };
 
 const createPromptEnhancementThinkingTrace = (
@@ -407,7 +480,13 @@ const reorderQueuedMessagesWithinSession = (
     const replacement = reorderedSessionMessages[nextSessionMessageIndex];
     nextSessionMessageIndex += 1;
 
-    return replacement ? { ...replacement, updatedAt: reorderedAt } : message;
+    return replacement
+      ? {
+          ...replacement,
+          orderRank: nextSessionMessageIndex - 1,
+          orderUpdatedAt: reorderedAt,
+        }
+      : message;
   });
 };
 
@@ -448,6 +527,8 @@ interface FilePreviewState {
 
 export interface UseChatSessionControllerOptions {
   isolateActiveSession?: boolean;
+  persistActiveSession?: boolean;
+  trackSessionReads?: boolean;
   fileDropTarget?: FileDropTarget;
   forwardedDropEventName?: string;
 }
@@ -464,6 +545,7 @@ const ACTIVE_DESKTOP_TASK_RECONCILE_INTERVAL_MS = 15_000;
 const ACTIVE_DESKTOP_TASK_MISSING_GRACE_MS = 45_000;
 const ACTIVE_DESKTOP_TASK_MISSING_CONFIRMATION_COUNT = 3;
 const INACTIVE_DESKTOP_TASK_RECOVERY_ROUTE_TTL_MS = 2 * 60_000;
+const dispatchingQueuedMessageIds = new Set<string>();
 
 type InactiveDesktopTaskObservation = {
   firstMissingAt: number;
@@ -521,12 +603,29 @@ export const useChatSessionController = (
 ) => {
   const state = useChatSessionShellState({
     isolateActiveSession: options.isolateActiveSession,
+    persistActiveSession: options.persistActiveSession,
+    trackSessionReads: options.trackSessionReads,
   });
   const shellStateRef = useRef(state.shellState);
+  shellStateRef.current = state.shellState;
   const activeSessionIdRef = useRef(state.activeSessionId);
   activeSessionIdRef.current = state.activeSessionId;
   const activeDesktopTasksRef = useRef<Map<string, string>>(new Map());
+  const interviewComposerClearGuardsRef = useRef(
+    new WeakMap<ChatInterviewStartContext, ComposerClearGuard>(),
+  );
+  const chatInterviewRequestRevisionRef = useRef(0);
+  const attachmentMutationVersionsRef = useRef<Map<string, number>>(new Map());
+  const invalidateAttachmentMutation = useCallback((key: string): void => {
+    attachmentMutationVersionsRef.current.set(
+      key,
+      (attachmentMutationVersionsRef.current.get(key) ?? 0) + 1,
+    );
+  }, []);
   const ignoredDesktopTaskIdsRef = useRef<Set<string>>(new Set());
+  const sessionOperationConflictHandlerRef = useRef<
+    (submission: SessionOperationConflictSubmission) => boolean
+  >(() => false);
   const inactiveDesktopTaskObservationsRef = useRef<
     Map<string, InactiveDesktopTaskObservation>
   >(new Map());
@@ -539,9 +638,6 @@ export const useChatSessionController = (
   const recoveredTaskAssistantTextRef = useRef<Map<string, string>>(new Map());
   const finalizedRecoveredTaskIdsRef = useRef<Set<string>>(new Set());
   const activeTaskRouteHydrationSignatureRef = useRef<string | null>(null);
-  const [quickTaskDraft, setQuickTaskDraft] = useState("");
-  const [quickTaskContextAttachments, setQuickTaskContextAttachments] =
-    useState<ChatSessionContextAttachment[]>([]);
   const [attachmentImagePreview, setAttachmentImagePreview] =
     useState<AttachmentImagePreviewState | null>(null);
   const [filePreview, setFilePreview] = useState<FilePreviewState | null>(null);
@@ -562,8 +658,19 @@ export const useChatSessionController = (
     useState<ChatInterviewDialogState | null>(null);
   const [chatInputNeeded, setChatInputNeeded] =
     useState<ChatInputNeededState | null>(null);
-  const dispatchingQueuedMessageIdsRef = useRef<Set<string>>(new Set());
   const queuedSessionMessages = state.shellState.queuedSessionMessages;
+  const blockedQueuedTaskIdsSignature = useMemo(
+    () =>
+      queuedSessionMessages
+        .flatMap((message) =>
+          message.blockedByTaskId
+            ? [`${message.id}:${message.blockedByTaskId}`]
+            : [],
+        )
+        .sort()
+        .join("\0"),
+    [queuedSessionMessages],
+  );
   const updateQueuedSessionMessages = useCallback(
     (
       updater: (
@@ -577,15 +684,47 @@ export const useChatSessionController = (
           return prev;
         }
 
+        const nextMessageIds = new Set(
+          nextQueuedMessages.map((message) => message.id),
+        );
+        const removedMessageIds = prev.queuedSessionMessages
+          .filter((message) => !nextMessageIds.has(message.id))
+          .map((message) => message.id);
+        const queuedMessageTombstones = {
+          ...prev.queuedMessageTombstones,
+        };
+        const deletedAt = Date.now();
+
+        for (const messageId of removedMessageIds) {
+          queuedMessageTombstones[messageId] = deletedAt;
+        }
+
         return {
           ...prev,
           queuedSessionMessages: nextQueuedMessages,
+          queuedMessageTombstones: Object.fromEntries(
+            Object.entries(queuedMessageTombstones)
+              .sort((left, right) => right[1] - left[1])
+              .slice(0, 2_048),
+          ),
         };
       });
     },
     [state.applyShellState],
   );
   const composerState = useSessionComposerState(state);
+  const activeComposerSession = useMemo<ChatSessionRecord>(
+    () => ({
+      ...state.activeSession,
+      draft: composerState.activeDraft,
+      draftContextAttachments: composerState.activeContextAttachments,
+    }),
+    [
+      composerState.activeContextAttachments,
+      composerState.activeDraft,
+      state.activeSession,
+    ],
+  );
   const runtime = useChatSessionRuntime({
     catalogOpen: state.catalogOpen,
     activeSessionProvider: state.activeSession.provider,
@@ -612,8 +751,7 @@ export const useChatSessionController = (
       }
 
       if (sessionId === state.activeSession.id) {
-        state.setPromptHistoryIndex(null);
-        state.setDraftBeforeHistory("");
+        composerState.commitHistoryPreview();
         state.setDraftValue((currentDraft) =>
           appendTranscriptToDraft(currentDraft, normalizedTranscript),
         );
@@ -632,10 +770,9 @@ export const useChatSessionController = (
       });
     },
     [
+      composerState.commitHistoryPreview,
       state.activeSession.id,
-      state.setDraftBeforeHistory,
       state.setDraftValue,
-      state.setPromptHistoryIndex,
       state.updateSessionById,
     ],
   );
@@ -666,6 +803,16 @@ export const useChatSessionController = (
     state,
     providerChooserState,
   });
+  const handleCreateSession = useCallback((): void => {
+    const sessionId = activeSessionIdRef.current;
+    composerState.resetDraftHistoryState();
+    invalidateAttachmentMutation(`session:${sessionId}`);
+    lifecycleActions.createNewSession();
+  }, [
+    composerState.resetDraftHistoryState,
+    invalidateAttachmentMutation,
+    lifecycleActions,
+  ]);
   const settingsActions = useSessionSettingsActions(state);
   const windowControls = useSessionWindowControls();
   const memorySummaryState = createMemorySummaryState({
@@ -693,6 +840,9 @@ export const useChatSessionController = (
   const quickTaskSession = useMemo(() => {
     return state.shellState.sessions.find(isQuickVoiceSession) ?? null;
   }, [state.shellState.sessions]);
+  const quickTaskDraft = quickTaskSession?.draft ?? "";
+  const quickTaskContextAttachments =
+    quickTaskSession?.draftContextAttachments ?? [];
   const quickTaskVisibleMessages = useMemo(() => {
     return quickTaskSession
       ? createVisibleConversationMessages(quickTaskSession.messages)
@@ -840,8 +990,8 @@ export const useChatSessionController = (
   const matchedContextPackIds = useMemo(
     () => {
       if (
-        !state.activeSession.draft.trim() &&
-        state.activeSession.draftContextAttachments.length === 0
+        !activeComposerSession.draft.trim() &&
+        activeComposerSession.draftContextAttachments.length === 0
       ) {
         return [];
       }
@@ -851,8 +1001,9 @@ export const useChatSessionController = (
       for (const pack of workspaceContextPacks) {
         if (
           doesSmartContextPackMatchComposer(pack, {
-            draft: state.activeSession.draft,
-            contextAttachments: state.activeSession.draftContextAttachments,
+            draft: activeComposerSession.draft,
+            contextAttachments:
+              activeComposerSession.draftContextAttachments,
           })
         ) {
           matchedIds.push(pack.id);
@@ -862,8 +1013,8 @@ export const useChatSessionController = (
       return matchedIds;
     },
     [
-      state.activeSession.draft,
-      state.activeSession.draftContextAttachments,
+      activeComposerSession.draft,
+      activeComposerSession.draftContextAttachments,
       workspaceContextPacks,
     ],
   );
@@ -872,7 +1023,7 @@ export const useChatSessionController = (
     state.activeSession.model,
   );
   const activeSessionImageAttachmentPaths = getImageAttachmentPaths(
-    state.activeSession.draftContextAttachments,
+    activeComposerSession.draftContextAttachments,
   );
   const activeSessionImageInputError =
     activeSessionImageAttachmentPaths.length > 0 &&
@@ -929,7 +1080,7 @@ export const useChatSessionController = (
       ? "Prompt enhancement is still running."
       : (promptEnhancementUnavailableReason ?? activeSessionImageInputError);
   const canSendMessage =
-    Boolean(state.activeSession.draft.trim()) &&
+    Boolean(activeComposerSession.draft.trim()) &&
     !speechInput.recording &&
     !speechInput.transcribing &&
     !chatInterviewBusy &&
@@ -1134,7 +1285,7 @@ export const useChatSessionController = (
           messages: [
             ...session.messages,
             {
-              id: crypto.randomUUID(),
+              id: `${taskId}-thinking`,
               taskId,
               role: "agent",
               content: "",
@@ -1197,7 +1348,7 @@ export const useChatSessionController = (
               messages: [
                 ...messagesWithoutRecoveredCrash,
                 {
-                  id: crypto.randomUUID(),
+                  id: `${taskId}-agent`,
                   taskId,
                   role: "agent",
                   content: formatTaskExecutionError(result.outcome.error),
@@ -1238,7 +1389,7 @@ export const useChatSessionController = (
             messages: [
               ...nextMessages,
               {
-                id: crypto.randomUUID(),
+                id: `${taskId}-execution`,
                 taskId,
                 role: "agent",
                 content: createExecutionMessageContent(execution),
@@ -1339,147 +1490,160 @@ export const useChatSessionController = (
     }
 
     let disposed = false;
+    let reconcileInFlight = false;
 
     const reconcileInactiveRunningTasks = async (): Promise<void> => {
-      const activeTaskIds = await loadActiveDesktopTaskIds();
-
-      if (disposed || activeTaskIds === null) {
+      if (reconcileInFlight) {
         return;
       }
 
-      const activeTaskIdSet = new Set(
-        activeTaskIds
-          .map((taskId) => taskId.trim())
-          .filter((taskId) => taskId.length > 0),
-      );
-      const runningTaskIds = shellStateRef.current.sessions
-        .map((session) => getLatestRunningTaskId(session))
-        .filter((taskId): taskId is string => taskId !== null);
-      const currentInactiveRunningTaskIds = runningTaskIds.filter(
-        (taskId) => !activeTaskIdSet.has(taskId),
-      );
+      reconcileInFlight = true;
 
-      for (const taskId of runningTaskIds) {
-        if (activeTaskIdSet.has(taskId)) {
-          inactiveDesktopTaskObservationsRef.current.delete(taskId);
-          inactiveDesktopTaskRecoveryRoutesRef.current.delete(taskId);
+      try {
+        const activeTaskIds = await loadActiveDesktopTaskIds();
+
+        if (disposed || activeTaskIds === null) {
+          return;
         }
-      }
 
-      if (currentInactiveRunningTaskIds.length === 0) {
-        return;
-      }
+        const activeTaskIdSet = new Set(
+          activeTaskIds
+            .map((taskId) => taskId.trim())
+            .filter((taskId) => taskId.length > 0),
+        );
+        const runningTaskIds = shellStateRef.current.sessions
+          .map((session) => getLatestRunningTaskId(session))
+          .filter((taskId): taskId is string => taskId !== null);
+        const currentInactiveRunningTaskIds = runningTaskIds.filter(
+          (taskId) => !activeTaskIdSet.has(taskId),
+        );
 
-      const completedResults = await loadRecentDesktopTaskResults(
-        currentInactiveRunningTaskIds,
-      );
-
-      if (disposed) {
-        return;
-      }
-
-      const completedResultTaskIds = new Set<string>();
-
-      if (completedResults) {
-        for (const result of completedResults) {
-          if (applyCompletedDesktopTaskResult(result)) {
-            completedResultTaskIds.add(result.id.trim());
+        for (const taskId of runningTaskIds) {
+          if (activeTaskIdSet.has(taskId)) {
+            inactiveDesktopTaskObservationsRef.current.delete(taskId);
+            inactiveDesktopTaskRecoveryRoutesRef.current.delete(taskId);
           }
         }
-      }
 
-      const now = Date.now();
-      const confirmedInactiveTaskIds: string[] = [];
-
-      for (const taskId of currentInactiveRunningTaskIds) {
-        if (activeTaskIdSet.has(taskId) || completedResultTaskIds.has(taskId)) {
-          continue;
+        if (currentInactiveRunningTaskIds.length === 0) {
+          return;
         }
 
-        const currentSession = shellStateRef.current.sessions.find(
-          (session) => getLatestRunningTaskId(session) === taskId,
+        const completedResults = await loadRecentDesktopTaskResults(
+          currentInactiveRunningTaskIds,
         );
 
-        if (!currentSession) {
-          inactiveDesktopTaskObservationsRef.current.delete(taskId);
-          continue;
+        if (disposed) {
+          return;
         }
 
-        const previousObservation =
-          inactiveDesktopTaskObservationsRef.current.get(taskId);
-        const observation: InactiveDesktopTaskObservation = previousObservation
-          ? {
-              firstMissingAt: previousObservation.firstMissingAt,
-              missCount: previousObservation.missCount + 1,
+        const completedResultTaskIds = new Set<string>();
+
+        if (completedResults) {
+          for (const result of completedResults) {
+            if (applyCompletedDesktopTaskResult(result)) {
+              completedResultTaskIds.add(result.id.trim());
             }
-          : {
-              firstMissingAt: now,
-              missCount: 1,
-            };
-
-        inactiveDesktopTaskObservationsRef.current.set(taskId, observation);
-
-        if (
-          observation.missCount >=
-            ACTIVE_DESKTOP_TASK_MISSING_CONFIRMATION_COUNT &&
-          now - observation.firstMissingAt >= ACTIVE_DESKTOP_TASK_MISSING_GRACE_MS
-        ) {
-          confirmedInactiveTaskIds.push(taskId);
-        }
-      }
-
-      if (confirmedInactiveTaskIds.length === 0) {
-        return;
-      }
-
-      const confirmedInactiveTaskIdSet = new Set(confirmedInactiveTaskIds);
-
-      state.applyShellState((prev) => {
-        const inactiveRunningTaskIds = prev.sessions
-          .map((session) => getLatestRunningTaskId(session))
-          .filter((taskId): taskId is string => {
-            return (
-              taskId !== null &&
-              !activeTaskIdSet.has(taskId) &&
-              confirmedInactiveTaskIdSet.has(taskId)
-            );
-          });
-
-        if (inactiveRunningTaskIds.length === 0) {
-          return prev;
+          }
         }
 
-        const nextState = recoverInactiveRunningTasks(
-          prev,
-          activeTaskIdSet,
-          Date.now(),
-        );
+        const now = Date.now();
+        const confirmedInactiveTaskIds: string[] = [];
 
-        if (nextState === prev) {
-          return prev;
-        }
+        for (const taskId of currentInactiveRunningTaskIds) {
+          if (activeTaskIdSet.has(taskId) || completedResultTaskIds.has(taskId)) {
+            continue;
+          }
 
-        for (const taskId of inactiveRunningTaskIds) {
-          const session = prev.sessions.find(
-            (entry) => getLatestRunningTaskId(entry) === taskId,
+          const currentSession = shellStateRef.current.sessions.find(
+            (session) => getLatestRunningTaskId(session) === taskId,
           );
 
-          activeDesktopTasksRef.current.delete(taskId);
-          inactiveDesktopTaskObservationsRef.current.delete(taskId);
+          if (!currentSession) {
+            inactiveDesktopTaskObservationsRef.current.delete(taskId);
+            continue;
+          }
 
-          if (session) {
-            inactiveDesktopTaskRecoveryRoutesRef.current.set(taskId, {
-              sessionId: session.id,
-              expiresAt:
-                Date.now() + INACTIVE_DESKTOP_TASK_RECOVERY_ROUTE_TTL_MS,
-            });
+          const previousObservation =
+            inactiveDesktopTaskObservationsRef.current.get(taskId);
+          const observation: InactiveDesktopTaskObservation = previousObservation
+            ? {
+                firstMissingAt: previousObservation.firstMissingAt,
+                missCount: previousObservation.missCount + 1,
+              }
+            : {
+                firstMissingAt: now,
+                missCount: 1,
+              };
+
+          inactiveDesktopTaskObservationsRef.current.set(taskId, observation);
+
+          if (
+            observation.missCount >=
+              ACTIVE_DESKTOP_TASK_MISSING_CONFIRMATION_COUNT &&
+            now - observation.firstMissingAt >=
+              ACTIVE_DESKTOP_TASK_MISSING_GRACE_MS
+          ) {
+            confirmedInactiveTaskIds.push(taskId);
           }
         }
 
-        return nextState;
-      });
+        if (confirmedInactiveTaskIds.length === 0) {
+          return;
+        }
+
+        const confirmedInactiveTaskIdSet = new Set(confirmedInactiveTaskIds);
+
+        state.applyShellState((prev) => {
+          const inactiveRunningTaskIds = prev.sessions
+            .map((session) => getLatestRunningTaskId(session))
+            .filter((taskId): taskId is string => {
+              return (
+                taskId !== null &&
+                !activeTaskIdSet.has(taskId) &&
+                confirmedInactiveTaskIdSet.has(taskId)
+              );
+            });
+
+          if (inactiveRunningTaskIds.length === 0) {
+            return prev;
+          }
+
+          const nextState = recoverInactiveRunningTasks(
+            prev,
+            activeTaskIdSet,
+            Date.now(),
+          );
+
+          if (nextState === prev) {
+            return prev;
+          }
+
+          for (const taskId of inactiveRunningTaskIds) {
+            const session = prev.sessions.find(
+              (entry) => getLatestRunningTaskId(entry) === taskId,
+            );
+
+            activeDesktopTasksRef.current.delete(taskId);
+            inactiveDesktopTaskObservationsRef.current.delete(taskId);
+
+            if (session) {
+              inactiveDesktopTaskRecoveryRoutesRef.current.set(taskId, {
+                sessionId: session.id,
+                expiresAt:
+                  Date.now() + INACTIVE_DESKTOP_TASK_RECOVERY_ROUTE_TTL_MS,
+              });
+            }
+          }
+
+          return nextState;
+        });
+      } finally {
+        reconcileInFlight = false;
+      }
     };
 
+    void reconcileInactiveRunningTasks();
     const intervalId = window.setInterval(() => {
       void reconcileInactiveRunningTasks();
     }, ACTIVE_DESKTOP_TASK_RECONCILE_INTERVAL_MS);
@@ -1552,7 +1716,7 @@ export const useChatSessionController = (
           messages: [
             ...messagesWithoutRecoveredCrash,
             {
-              id: crypto.randomUUID(),
+              id: `${taskId}-execution`,
               taskId,
               role: "agent",
               content: createExecutionMessageContent(execution),
@@ -2195,14 +2359,17 @@ export const useChatSessionController = (
             (message) =>
               getMessageTaskId(message) !== pendingPromptEnhancement.taskId,
           );
-          const shouldRestoreDraft = current.draft.trim().length === 0;
-          const shouldRestoreAttachments =
-            current.draftContextAttachments.length === 0;
+          const shouldRestoreComposer = Boolean(
+            pendingPromptEnhancement.composerClearGuard &&
+              isComposerClearGuardCurrent(
+                current,
+                pendingPromptEnhancement.composerClearGuard,
+              ),
+          );
 
           if (
             nextMessages.length === current.messages.length &&
-            !shouldRestoreDraft &&
-            !shouldRestoreAttachments
+            !shouldRestoreComposer
           ) {
             return current;
           }
@@ -2212,30 +2379,21 @@ export const useChatSessionController = (
           return applySessionMessageLimit({
             ...current,
             messages: nextMessages,
-            ...(shouldRestoreDraft
-              ? { draft: pendingPromptEnhancement.prompt }
-              : {}),
-            ...(shouldRestoreAttachments
+            ...(shouldRestoreComposer
               ? {
+                  draft: pendingPromptEnhancement.prompt,
                   draftContextAttachments:
                     pendingPromptEnhancement.contextAttachments.map(
                       (attachment) => ({ ...attachment }),
                     ),
                 }
               : {}),
-            ...(shouldRestoreDraft || shouldRestoreAttachments
+            ...(shouldRestoreComposer
               ? { composerUpdatedAt: updatedAt }
               : {}),
             updatedAt,
           });
         });
-        if (state.activeSession.id === pendingPromptEnhancement.sessionId) {
-          state.setDraftValue((currentDraft) =>
-            currentDraft.trim().length > 0
-              ? currentDraft
-              : pendingPromptEnhancement.prompt,
-          );
-        }
       } else {
         updateThinkingTrace(session.id, targetTaskId, (trace) => {
           return appendThinkingProgress(trace, {
@@ -2360,6 +2518,60 @@ export const useChatSessionController = (
     [createQuickTaskSessionSnapshot, state.applyShellState],
   );
 
+  const setQuickTaskDraft = useCallback(
+    (update: string | ((currentDraft: string) => string)): void => {
+      updateQuickTaskSession((session) => {
+        const draft =
+          typeof update === "function" ? update(session.draft) : update;
+
+        if (draft === session.draft) {
+          return session;
+        }
+
+        const updatedAt = Date.now();
+
+        return {
+          ...session,
+          draft,
+          composerUpdatedAt: updatedAt,
+          updatedAt,
+        };
+      });
+    },
+    [updateQuickTaskSession],
+  );
+
+  const setQuickTaskContextAttachments = useCallback(
+    (
+      update:
+        | ChatSessionContextAttachment[]
+        | ((
+            currentAttachments: ChatSessionContextAttachment[],
+          ) => ChatSessionContextAttachment[]),
+    ): void => {
+      updateQuickTaskSession((session) => {
+        const draftContextAttachments =
+          typeof update === "function"
+            ? update(session.draftContextAttachments)
+            : update;
+
+        if (draftContextAttachments === session.draftContextAttachments) {
+          return session;
+        }
+
+        const updatedAt = Date.now();
+
+        return {
+          ...session,
+          draftContextAttachments,
+          composerUpdatedAt: updatedAt,
+          updatedAt,
+        };
+      });
+    },
+    [updateQuickTaskSession],
+  );
+
   const buildQuickVoiceSessionSnapshot = useCallback((): ChatSessionRecord => {
     return createQuickTaskSessionSnapshot(quickTaskSession);
   }, [createQuickTaskSessionSnapshot, quickTaskSession]);
@@ -2436,13 +2648,37 @@ export const useChatSessionController = (
     async (
       paths: string[],
       target: FileDropTarget,
-      options: { updateWorkspaceRoot?: boolean } = {},
+      options: {
+        updateWorkspaceRoot?: boolean;
+        targetSessionId?: string;
+        attachmentMutationVersion?: number;
+      } = {},
     ): Promise<void> => {
+      if (target === "active-session") {
+        composerState.commitHistoryPreview();
+      }
+
+      const targetSessionId =
+        target === "active-session"
+          ? options.targetSessionId ?? activeSessionIdRef.current
+          : null;
+      const attachmentMutationKey =
+        target === "quick-task"
+          ? "quick-task"
+          : `session:${targetSessionId ?? "missing"}`;
+      const attachmentMutationVersion =
+        options.attachmentMutationVersion ??
+        attachmentMutationVersionsRef.current.get(attachmentMutationKey) ??
+        0;
       const resolution = await resolveDroppedPaths(paths);
       const attachments = resolution.entries.map(createContextAttachment);
       const shouldUpdateWorkspaceRoot = options.updateWorkspaceRoot !== false;
 
-      if (attachments.length === 0) {
+      if (
+        attachments.length === 0 ||
+        (attachmentMutationVersionsRef.current.get(attachmentMutationKey) ?? 0) !==
+          attachmentMutationVersion
+      ) {
         return;
       }
 
@@ -2462,8 +2698,15 @@ export const useChatSessionController = (
         return;
       }
 
-      composerState.resetDraftHistoryState();
-      state.updateActiveSession((session) => {
+      if (!targetSessionId) {
+        return;
+      }
+
+      if (activeSessionIdRef.current === targetSessionId) {
+        composerState.resetDraftHistoryState();
+      }
+
+      state.updateSessionById(targetSessionId, (session) => {
         const updatedAt = Date.now();
 
         return {
@@ -2478,7 +2721,7 @@ export const useChatSessionController = (
       });
 
       if (shouldUpdateWorkspaceRoot && resolution.workspaceRoot) {
-        state.updateActiveSession((session) =>
+        state.updateSessionById(targetSessionId, (session) =>
           isSessionWorkspaceLocked(session)
             ? session
             : {
@@ -2490,8 +2733,9 @@ export const useChatSessionController = (
       }
     },
     [
-      composerState,
-      state.updateActiveSession,
+      composerState.commitHistoryPreview,
+      composerState.resetDraftHistoryState,
+      state.updateSessionById,
       updateQuickTaskSession,
     ],
   );
@@ -2515,7 +2759,7 @@ export const useChatSessionController = (
         return;
       }
 
-      composerState.resetDraftHistoryState();
+      composerState.commitHistoryPreview();
       state.updateActiveSession((session) => {
         const updatedAt = Date.now();
 
@@ -2530,10 +2774,7 @@ export const useChatSessionController = (
         };
       });
     },
-    [
-      composerState,
-      state.updateActiveSession,
-    ],
+    [composerState.commitHistoryPreview, state.updateActiveSession],
   );
 
   const handleAppendDroppedText = useCallback(
@@ -2551,15 +2792,12 @@ export const useChatSessionController = (
         return;
       }
 
-      composerState.resetDraftHistoryState();
+      composerState.commitHistoryPreview();
       state.setDraftValue((currentDraft) =>
         appendDraftBlock(currentDraft, normalizedText),
       );
     },
-    [
-      composerState,
-      state.setDraftValue,
-    ],
+    [composerState.commitHistoryPreview, state.setDraftValue],
   );
 
   const handleSelectAttachments = useCallback(
@@ -2567,6 +2805,18 @@ export const useChatSessionController = (
       target: FileDropTarget,
       selectionKind: AttachmentSelectionKind,
     ): Promise<void> => {
+      if (target === "active-session") {
+        composerState.commitHistoryPreview();
+      }
+
+      const targetSessionId =
+        target === "active-session" ? activeSessionIdRef.current : undefined;
+      const attachmentMutationKey =
+        target === "quick-task"
+          ? "quick-task"
+          : `session:${targetSessionId ?? "missing"}`;
+      const attachmentMutationVersion =
+        attachmentMutationVersionsRef.current.get(attachmentMutationKey) ?? 0;
       const targetProvider =
         target === "quick-task"
           ? quickTaskProvider
@@ -2594,6 +2844,7 @@ export const useChatSessionController = (
                 : "/mock/document.txt",
           ],
           target,
+          { targetSessionId, attachmentMutationVersion },
         );
         return;
       }
@@ -2624,12 +2875,16 @@ export const useChatSessionController = (
             : {}),
         })) as DialogSelection;
 
-        await handleAttachPaths(normalizeDialogSelection(selected), target);
+        await handleAttachPaths(normalizeDialogSelection(selected), target, {
+          targetSessionId,
+          attachmentMutationVersion,
+        });
       } catch (error) {
         console.error("Failed to select context attachments", error);
       }
     },
     [
+      composerState.commitHistoryPreview,
       handleAttachPaths,
       isDesktop,
       quickTaskModel,
@@ -2641,6 +2896,18 @@ export const useChatSessionController = (
 
   const handlePasteContextImages = useCallback(
     async (files: File[], target: FileDropTarget): Promise<void> => {
+      if (target === "active-session") {
+        composerState.commitHistoryPreview();
+      }
+
+      const targetSessionId =
+        target === "active-session" ? activeSessionIdRef.current : undefined;
+      const attachmentMutationKey =
+        target === "quick-task"
+          ? "quick-task"
+          : `session:${targetSessionId ?? "missing"}`;
+      const attachmentMutationVersion =
+        attachmentMutationVersionsRef.current.get(attachmentMutationKey) ?? 0;
       const targetProvider =
         target === "quick-task"
           ? quickTaskProvider
@@ -2687,9 +2954,14 @@ export const useChatSessionController = (
         ),
       );
 
-      await handleAttachPaths(paths, target, { updateWorkspaceRoot: false });
+      await handleAttachPaths(paths, target, {
+        updateWorkspaceRoot: false,
+        targetSessionId,
+        attachmentMutationVersion,
+      });
     },
     [
+      composerState.commitHistoryPreview,
       handleAttachPaths,
       quickTaskModel,
       quickTaskProvider,
@@ -2795,6 +3067,14 @@ export const useChatSessionController = (
         return;
       }
 
+      composerState.commitHistoryPreview();
+      const targetSessionId = state.activeSession.id;
+      const targetUserMessageSignature = JSON.stringify(
+        state.activeSession.messages
+          .filter((message) => message.role === "user")
+          .map((message) => message.id),
+      );
+      const packRevisionSignature = JSON.stringify(pack);
       let contextAttachments = pack.contextAttachments;
 
       if (pack.contextAttachments.length > 0) {
@@ -2812,12 +3092,6 @@ export const useChatSessionController = (
         ...pack,
         contextAttachments,
       };
-      const application = applySmartContextPackToComposer(
-        state.activeSession.draft,
-        state.activeSession.draftContextAttachments,
-        packForApplication,
-        variableValues,
-      );
       const savedProvider = pack.provider;
       const savedModel = pack.model;
       const savedModelSelection =
@@ -2826,11 +3100,30 @@ export const useChatSessionController = (
         providerChooserState.chooserProviders.includes(savedProvider)
           ? { provider: savedProvider, model: savedModel }
           : null;
+      let didApplyPack = false;
 
-      composerState.resetDraftHistoryState();
-      state.setDraftValue(application.draft);
+        state.applyShellState((prev) => {
+        const currentPack = prev.contextPacks.find(
+          (contextPack) => contextPack.id === pack.id,
+        );
+        const currentSession = prev.sessions.find(
+          (session) => session.id === targetSessionId,
+        );
 
-      state.applyShellState((prev) => {
+        if (
+          !currentPack ||
+          JSON.stringify(currentPack) !== packRevisionSignature ||
+          !currentSession ||
+          JSON.stringify(
+            currentSession.messages
+              .filter((message) => message.role === "user")
+              .map((message) => message.id),
+          ) !== targetUserMessageSignature
+        ) {
+          return prev;
+        }
+
+        didApplyPack = true;
         const now = Date.now();
         const nextState: ShellPersistedState = {
           ...prev,
@@ -2844,10 +3137,16 @@ export const useChatSessionController = (
               : contextPack,
           ),
           sessions: prev.sessions.map((session) => {
-            if (session.id !== state.activeSession.id) {
+            if (session.id !== targetSessionId) {
               return session;
             }
 
+            const application = applySmartContextPackToComposer(
+              session.draft,
+              session.draftContextAttachments,
+              packForApplication,
+              variableValues,
+            );
             const nextSession: ChatSessionRecord = {
               ...session,
               draft: application.draft,
@@ -2914,15 +3213,17 @@ export const useChatSessionController = (
 
         return nextState;
       });
+
+      if (didApplyPack && activeSessionIdRef.current === targetSessionId) {
+        composerState.resetDraftHistoryState();
+      }
     },
     [
-      composerState,
+      composerState.commitHistoryPreview,
+      composerState.resetDraftHistoryState,
       providerChooserState.chooserProviders,
-      state.activeSession.draft,
-      state.activeSession.draftContextAttachments,
       state.activeSession.id,
       state.applyShellState,
-      state.setDraftValue,
       workspaceContextPacks,
     ],
   );
@@ -3064,7 +3365,7 @@ export const useChatSessionController = (
   }, [state.activeSession.id, state.activeSession.workspace]);
 
   useEffect(() => {
-    if (!state.activeSession.draft.trim() && matchedContextPackIds.length === 0) {
+    if (!activeComposerSession.draft.trim() && matchedContextPackIds.length === 0) {
       return;
     }
 
@@ -3074,7 +3375,7 @@ export const useChatSessionController = (
         pack.variables.length === 0 &&
         !autoAppliedContextPackIdsRef.current.has(pack.id) &&
         matchedContextPackIds.includes(pack.id) &&
-        !isSmartContextPackAppliedToDraft(state.activeSession.draft, pack)
+        !isSmartContextPackAppliedToDraft(activeComposerSession.draft, pack)
       );
     });
 
@@ -3090,21 +3391,32 @@ export const useChatSessionController = (
   }, [
     handleApplyContextPack,
     matchedContextPackIds,
-    state.activeSession.draft,
+    activeComposerSession.draft,
     workspaceContextPacks,
   ]);
 
   const handleRemoveContextAttachment = useCallback(
     (target: FileDropTarget, attachmentId: string): void => {
       if (target === "quick-task") {
+        const mutationKey = "quick-task";
+        attachmentMutationVersionsRef.current.set(
+          mutationKey,
+          (attachmentMutationVersionsRef.current.get(mutationKey) ?? 0) + 1,
+        );
         setQuickTaskContextAttachments((attachments) =>
           attachments.filter((attachment) => attachment.id !== attachmentId),
         );
         return;
       }
 
-      composerState.resetDraftHistoryState();
-      state.updateActiveSession((session) => {
+      const targetSessionId = activeSessionIdRef.current;
+      const mutationKey = `session:${targetSessionId}`;
+      attachmentMutationVersionsRef.current.set(
+        mutationKey,
+        (attachmentMutationVersionsRef.current.get(mutationKey) ?? 0) + 1,
+      );
+      composerState.commitHistoryPreview();
+      state.updateSessionById(targetSessionId, (session) => {
         const updatedAt = Date.now();
 
         return {
@@ -3118,20 +3430,31 @@ export const useChatSessionController = (
       });
     },
     [
-      composerState,
-      state.updateActiveSession,
+      composerState.commitHistoryPreview,
+      state.updateSessionById,
     ],
   );
 
   const handleClearContextAttachments = useCallback(
     (target: FileDropTarget): void => {
       if (target === "quick-task") {
+        const mutationKey = "quick-task";
+        attachmentMutationVersionsRef.current.set(
+          mutationKey,
+          (attachmentMutationVersionsRef.current.get(mutationKey) ?? 0) + 1,
+        );
         setQuickTaskContextAttachments([]);
         return;
       }
 
-      composerState.resetDraftHistoryState();
-      state.updateActiveSession((session) => {
+      const targetSessionId = activeSessionIdRef.current;
+      const mutationKey = `session:${targetSessionId}`;
+      attachmentMutationVersionsRef.current.set(
+        mutationKey,
+        (attachmentMutationVersionsRef.current.get(mutationKey) ?? 0) + 1,
+      );
+      composerState.commitHistoryPreview();
+      state.updateSessionById(targetSessionId, (session) => {
         if (session.draftContextAttachments.length === 0) {
           return session;
         }
@@ -3147,8 +3470,8 @@ export const useChatSessionController = (
       });
     },
     [
-      composerState,
-      state.updateActiveSession,
+      composerState.commitHistoryPreview,
+      state.updateSessionById,
     ],
   );
 
@@ -3162,61 +3485,67 @@ export const useChatSessionController = (
     forwardedDropEventName: options.forwardedDropEventName,
   });
 
-  const clearActiveSessionComposer = useCallback((): void => {
-    composerState.resetDraftHistoryState();
-    state.setDraftValue("");
-    state.updateActiveSession((session) => {
-      if (
-        session.draft.length === 0 &&
-        session.draftContextAttachments.length === 0
-      ) {
-        return session;
-      }
-
-      const updatedAt = Date.now();
-
-      return {
-        ...session,
-        draft: "",
-        draftContextAttachments: [],
-        composerUpdatedAt: updatedAt,
-        updatedAt,
-      };
-    });
-  }, [
-    composerState,
-    state.setDraftValue,
-    state.updateActiveSession,
-  ]);
-
   const clearSessionComposerInput = useCallback(
-    (sessionId: string): void => {
+    (
+      sessionId: string,
+      expectedComposer?: ComposerClearGuard,
+    ): ComposerClearGuard | null => {
+      let clearedComposer: ComposerClearGuard | null = null;
+
       if (sessionId === state.activeSession.id) {
-        clearActiveSessionComposer();
-        return;
+        composerState.resetDraftHistoryState();
       }
 
       state.updateSessionById(sessionId, (session) => {
         if (
-          session.draft.length === 0 &&
-          session.draftContextAttachments.length === 0
+          expectedComposer &&
+          !isComposerClearGuardCurrent(session, expectedComposer)
         ) {
           return session;
         }
 
-        const updatedAt = Date.now();
+        if (
+          session.draft.length === 0 &&
+          session.draftContextAttachments.length === 0
+        ) {
+          clearedComposer = createComposerClearGuard(session);
+          return session;
+        }
 
-        return {
+        const updatedAt = Date.now();
+        const nextSession: ChatSessionRecord = {
           ...session,
           draft: "",
           draftContextAttachments: [],
           composerUpdatedAt: updatedAt,
           updatedAt,
         };
+
+        clearedComposer = createComposerClearGuard(nextSession);
+        return nextSession;
       });
+
+      if (clearedComposer) {
+        state.applyShellState((currentState) => {
+          const clearedSession = currentState.sessions.find(
+            (session) => session.id === sessionId,
+          );
+
+          if (clearedSession) {
+            clearedComposer = createComposerClearGuard(clearedSession);
+          }
+
+          return currentState;
+        });
+        invalidateAttachmentMutation(`session:${sessionId}`);
+      }
+
+      return clearedComposer;
     },
     [
-      clearActiveSessionComposer,
+      composerState.resetDraftHistoryState,
+      invalidateAttachmentMutation,
+      state.applyShellState,
       state.activeSession.id,
       state.updateSessionById,
     ],
@@ -3227,13 +3556,10 @@ export const useChatSessionController = (
       sessionId: string;
       prompt: string;
       contextAttachments: ChatSessionContextAttachment[];
+      composerClearGuard: ComposerClearGuard;
     }): void => {
       state.updateSessionById(input.sessionId, (session) => {
-        const shouldRestoreDraft = session.draft.trim().length === 0;
-        const shouldRestoreAttachments =
-          session.draftContextAttachments.length === 0;
-
-        if (!shouldRestoreDraft && !shouldRestoreAttachments) {
+        if (!isComposerClearGuardCurrent(session, input.composerClearGuard)) {
           return session;
         }
 
@@ -3241,30 +3567,16 @@ export const useChatSessionController = (
 
         return {
           ...session,
-          ...(shouldRestoreDraft ? { draft: input.prompt } : {}),
-          ...(shouldRestoreAttachments
-            ? {
-                draftContextAttachments: input.contextAttachments.map(
-                  (attachment) => ({ ...attachment }),
-                ),
-              }
-            : {}),
+          draft: input.prompt,
+          draftContextAttachments: input.contextAttachments.map(
+            (attachment) => ({ ...attachment }),
+          ),
           composerUpdatedAt: updatedAt,
           updatedAt,
         };
       });
-
-      if (state.activeSession.id === input.sessionId) {
-        state.setDraftValue((currentDraft) =>
-          currentDraft.trim().length > 0 ? currentDraft : input.prompt,
-        );
-      }
     },
-    [
-      state.activeSession.id,
-      state.setDraftValue,
-      state.updateSessionById,
-    ],
+    [state.updateSessionById],
   );
 
   const restorePromptEnhancementComposer = useCallback(
@@ -3273,14 +3585,14 @@ export const useChatSessionController = (
         const nextMessages = session.messages.filter(
           (message) => getMessageTaskId(message) !== pending.taskId,
         );
-        const shouldRestoreDraft = session.draft.trim().length === 0;
-        const shouldRestoreAttachments =
-          session.draftContextAttachments.length === 0;
+        const shouldRestoreComposer = Boolean(
+          pending.composerClearGuard &&
+            isComposerClearGuardCurrent(session, pending.composerClearGuard),
+        );
 
         if (
           nextMessages.length === session.messages.length &&
-          !shouldRestoreDraft &&
-          !shouldRestoreAttachments
+          !shouldRestoreComposer
         ) {
           return session;
         }
@@ -3290,31 +3602,24 @@ export const useChatSessionController = (
         return applySessionMessageLimit({
           ...session,
           messages: nextMessages,
-          ...(shouldRestoreDraft ? { draft: pending.prompt } : {}),
-          ...(shouldRestoreAttachments
+          ...(shouldRestoreComposer
             ? {
+                draft: pending.prompt,
                 draftContextAttachments: pending.contextAttachments.map(
                   (attachment) => ({ ...attachment }),
                 ),
               }
             : {}),
-          ...(shouldRestoreDraft || shouldRestoreAttachments
+          ...(shouldRestoreComposer
             ? { composerUpdatedAt: updatedAt }
             : {}),
           updatedAt,
         });
       });
 
-      if (state.activeSession.id === pending.sessionId) {
-        state.setDraftValue((currentDraft) =>
-          currentDraft.trim().length > 0 ? currentDraft : pending.prompt,
-        );
-      }
     },
     [
       applySessionMessageLimit,
-      state.activeSession.id,
-      state.setDraftValue,
       state.updateSessionById,
     ],
   );
@@ -3375,6 +3680,10 @@ export const useChatSessionController = (
     progressHandlersRef: desktopTaskProgressHandlersRef,
     applySessionMessageLimit,
     updateThinkingTrace,
+    onComposerCleared: (sessionId) =>
+      invalidateAttachmentMutation(`session:${sessionId}`),
+    onSessionOperationConflict: (submission) =>
+      sessionOperationConflictHandlerRef.current(submission),
   });
 
   const enhancePromptForSubmission = useCallback(
@@ -3430,7 +3739,15 @@ export const useChatSessionController = (
       showPromptEnhancementSessionPlaceholder(pending);
 
       if (placement === "message") {
-        clearSessionComposerInput(sessionSnapshot.id);
+        const clearedComposer = clearSessionComposerInput(
+          sessionSnapshot.id,
+          submission.composerClearGuard,
+        );
+
+        if (clearedComposer) {
+          pending.composerClearGuard = clearedComposer;
+          submission.composerClearGuard = clearedComposer;
+        }
       }
 
       try {
@@ -3453,6 +3770,7 @@ export const useChatSessionController = (
             model: sessionSnapshot.model,
             ...(reasoning ? { reasoning } : {}),
             ...(imagePaths.length > 0 ? { imagePaths } : {}),
+            sessionId: sessionSnapshot.id,
             taskId,
           },
         );
@@ -3545,19 +3863,41 @@ export const useChatSessionController = (
         visibleMessageContent?: string;
         promptHistoryContent?: string;
         promptEnhancement?: ChatSessionMessagePromptEnhancement;
+        blockedByTaskId?: string;
         contextAttachments: ChatSessionContextAttachment[];
+        composerClearGuard?: ComposerClearGuard;
+        clearComposer?: boolean;
       },
     ): ChatSessionQueuedMessage | null => {
       const task = (input?.task ?? state.activeSession.draft).trim();
+      const sessionId = input?.sessionId ?? state.activeSession.id;
+      const targetSession = shellStateRef.current.sessions.find(
+        (session) => session.id === sessionId,
+      );
+      const contextAttachments = (
+        input?.contextAttachments ?? state.activeSession.draftContextAttachments
+      ).map((attachment) => ({ ...attachment }));
+      const hasUnsupportedImage = Boolean(
+        targetSession &&
+          getImageAttachmentPaths(contextAttachments).length > 0 &&
+          !modelSupportsImageInput(targetSession.provider, targetSession.model),
+      );
 
-      if (!task || activeSessionImageInputError) {
+      if (!task || !targetSession || hasUnsupportedImage) {
         return null;
       }
 
       const now = Date.now();
+      const sessionOrderRanks = shellStateRef.current.queuedSessionMessages
+        .filter((message) => message.sessionId === sessionId)
+        .map((message) => message.orderRank);
+      const orderRank =
+        placement === "front"
+          ? Math.min(0, ...sessionOrderRanks) - 1
+          : Math.max(-1, ...sessionOrderRanks) + 1;
       const queuedMessage: ChatSessionQueuedMessage = {
         id: crypto.randomUUID(),
-        sessionId: input?.sessionId ?? state.activeSession.id,
+        sessionId,
         task,
         ...(input?.visibleMessageContent?.trim()
           ? { visibleMessageContent: input.visibleMessageContent.trim() }
@@ -3566,9 +3906,16 @@ export const useChatSessionController = (
           ? { promptHistoryContent: input.promptHistoryContent.trim() }
           : {}),
         ...(input?.promptEnhancement ? { promptEnhancement: input.promptEnhancement } : {}),
-        contextAttachments: (
-          input?.contextAttachments ?? state.activeSession.draftContextAttachments
-        ).map((attachment) => ({ ...attachment })),
+        ...(input?.blockedByTaskId
+          ? { blockedByTaskId: input.blockedByTaskId }
+          : {}),
+        contextAttachments,
+        contentUpdatedAt: now,
+        attachmentsUpdatedAt: now,
+        attachmentTombstones: {},
+        blockerUpdatedAt: now,
+        orderRank,
+        orderUpdatedAt: now,
         createdAt: now,
         updatedAt: now,
       };
@@ -3578,28 +3925,163 @@ export const useChatSessionController = (
           ? [queuedMessage, ...current]
           : [...current, queuedMessage],
       );
-      clearSessionComposerInput(queuedMessage.sessionId);
+      if (input?.clearComposer !== false) {
+        clearSessionComposerInput(
+          queuedMessage.sessionId,
+          input?.composerClearGuard,
+        );
+      }
 
       return queuedMessage;
     },
     [
-      activeSessionImageInputError,
       clearSessionComposerInput,
       state.activeSession,
       updateQueuedSessionMessages,
     ],
   );
 
+  const handleSessionOperationConflict = useCallback(
+    (submission: SessionOperationConflictSubmission): boolean => {
+      const { activeTaskId, ...queuedSubmission } = submission;
+      const queuedMessage = queueActiveSessionMessage("back", {
+        ...queuedSubmission,
+        blockedByTaskId: activeTaskId,
+        clearComposer: false,
+      });
+
+      if (!queuedMessage) {
+        return false;
+      }
+
+      activeDesktopTasksRef.current.set(activeTaskId, submission.sessionId);
+      return true;
+    },
+    [queueActiveSessionMessage],
+  );
+  sessionOperationConflictHandlerRef.current = handleSessionOperationConflict;
+
+  useEffect(() => {
+    if (!blockedQueuedTaskIdsSignature) {
+      return;
+    }
+
+    let disposed = false;
+    let reconcileInFlight = false;
+
+    const reconcileSessionOperationConflicts = async (): Promise<void> => {
+      if (disposed || reconcileInFlight) {
+        return;
+      }
+
+      reconcileInFlight = true;
+
+      try {
+        const activeTasks = await loadActiveDesktopTasks();
+
+        if (disposed || activeTasks === null) {
+          return;
+        }
+
+        const activeTaskIds = new Set(activeTasks.map((task) => task.id));
+        const blockedMessages =
+          shellStateRef.current.queuedSessionMessages.filter(
+            (message) => message.blockedByTaskId,
+          );
+
+        for (const blockedMessage of blockedMessages) {
+          const taskId = blockedMessage.blockedByTaskId;
+
+          if (!taskId) {
+            continue;
+          }
+
+          if (activeTaskIds.has(taskId)) {
+            activeDesktopTasksRef.current.set(
+              taskId,
+              blockedMessage.sessionId,
+            );
+            continue;
+          }
+
+          if (
+            activeDesktopTasksRef.current.get(taskId) ===
+            blockedMessage.sessionId
+          ) {
+            activeDesktopTasksRef.current.delete(taskId);
+          }
+        }
+
+        const now = Date.now();
+        updateQueuedSessionMessages((current) => {
+          let changed = false;
+          const nextMessages = current.map((message) => {
+            if (
+              !message.blockedByTaskId ||
+              activeTaskIds.has(message.blockedByTaskId)
+            ) {
+              return message;
+            }
+
+            const nextMessage = {
+              ...message,
+              blockerUpdatedAt: now,
+              updatedAt: now,
+            };
+            delete nextMessage.blockedByTaskId;
+            changed = true;
+            return nextMessage;
+          });
+
+          return changed ? nextMessages : current;
+        });
+      } finally {
+        reconcileInFlight = false;
+      }
+    };
+
+    void reconcileSessionOperationConflicts();
+    const intervalId = window.setInterval(() => {
+      void reconcileSessionOperationConflicts();
+    }, 2_000);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [blockedQueuedTaskIdsSignature, updateQueuedSessionMessages]);
+
   const appendSteeringMessageToRunningTask = useCallback(
     (input?: {
       sessionSnapshot: ChatSessionRecord;
       task: string;
       contextAttachments: ChatSessionContextAttachment[];
+      composerClearGuard?: ComposerClearGuard;
     }): boolean => {
-      const sessionSnapshot = input?.sessionSnapshot ?? state.activeSession;
+      const submittedSessionSnapshot = input?.sessionSnapshot ?? state.activeSession;
+      const sessionSnapshot =
+        shellStateRef.current.sessions.find(
+          (session) => session.id === submittedSessionSnapshot.id,
+        ) ?? null;
       const task = (input?.task ?? state.activeSession.draft).trim();
 
-      if (!task || activeSessionImageInputError) {
+      if (!sessionSnapshot || !task) {
+        return false;
+      }
+
+      const contextAttachments = (
+        input?.contextAttachments ?? state.activeSession.draftContextAttachments
+      ).map((attachment) => ({
+        ...attachment,
+      }));
+      const hasUnsupportedImage =
+        getImageAttachmentPaths(contextAttachments).length > 0 &&
+        !modelSupportsImageInput(
+          sessionSnapshot.provider,
+          sessionSnapshot.model,
+        );
+
+      if (hasUnsupportedImage) {
         return false;
       }
 
@@ -3611,49 +4093,51 @@ export const useChatSessionController = (
         return false;
       }
 
-      const contextAttachments = (
-        input?.contextAttachments ?? state.activeSession.draftContextAttachments
-      ).map((attachment) => ({
-        ...attachment,
-      }));
+      const now = Date.now();
+      const orderRank =
+        Math.max(
+          -1,
+          ...shellStateRef.current.queuedSessionMessages
+            .filter((message) => message.sessionId === sessionSnapshot.id)
+            .map((message) => message.orderRank),
+        ) + 1;
+      const queuedMessage: ChatSessionQueuedMessage = {
+        id: crypto.randomUUID(),
+        sessionId: sessionSnapshot.id,
+        task,
+        visibleMessageContent: task,
+        promptHistoryContent: task,
+        contextAttachments,
+        contentUpdatedAt: now,
+        attachmentsUpdatedAt: now,
+        attachmentTombstones: {},
+        blockerUpdatedAt: now,
+        orderRank,
+        orderUpdatedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      };
 
-      state.updateSessionById(sessionSnapshot.id, (session) => {
-        const updatedAt = Date.now();
-        const promptHistory = createPromptHistoryUpdate(
-          session,
-          task,
-          contextAttachments,
-        );
-
-        return applySessionMessageLimit({
-          ...session,
-          updatedAt,
-          draft: "",
-          draftContextAttachments: [],
-          composerUpdatedAt: updatedAt,
-          promptHistory: promptHistory.promptHistory,
-          promptContextHistory: promptHistory.promptContextHistory,
-        });
-      });
-
-      if (sessionSnapshot.id === state.activeSession.id) {
-        state.setDraftValue("");
-        composerState.resetDraftHistoryState();
-      }
+      updateQueuedSessionMessages((current) => [queuedMessage, ...current]);
+      clearSessionComposerInput(
+        sessionSnapshot.id,
+        input?.composerClearGuard,
+      );
 
       updateThinkingTrace(sessionSnapshot.id, targetTaskId, (trace) => {
         const progress: TaskExecutionProgress = {
           task: trace.task ?? "",
           mode: trace.mode,
           state: "executing",
-          message: "Steering note received.",
+          message:
+            "Live steering is unavailable for this runtime; the note was queued as the next follow-up.",
           executedTools: [],
           outputSections: [],
           cancellable: true,
           timelineEvent: {
             kind: "state",
             phase: "started",
-            label: "Steering note",
+            label: "Follow-up queued",
             detail: appendContextAttachmentsToTask(task, contextAttachments),
             tone: "info",
           },
@@ -3665,14 +4149,11 @@ export const useChatSessionController = (
       return true;
     },
     [
-      activeSessionImageInputError,
-      applySessionMessageLimit,
-      composerState,
+      clearSessionComposerInput,
       getActiveDesktopTaskIdForSession,
       state.activeSession,
-      state.setDraftValue,
-      state.updateSessionById,
       updateThinkingTrace,
+      updateQueuedSessionMessages,
     ],
   );
 
@@ -3685,41 +4166,90 @@ export const useChatSessionController = (
 
       if (
         !nextQueuedMessage ||
-        dispatchingQueuedMessageIdsRef.current.has(nextQueuedMessage.id)
+        Boolean(nextQueuedMessage.blockedByTaskId) ||
+        dispatchingQueuedMessageIds.has(nextQueuedMessage.id)
       ) {
         return;
       }
 
-      dispatchingQueuedMessageIdsRef.current.add(nextQueuedMessage.id);
-      const didSubmit = taskSubmission.submitTaskToSession({
-        sessionSnapshot: session,
-        task: nextQueuedMessage.task,
-        contextAttachments: nextQueuedMessage.contextAttachments,
-        clearDraft: false,
-        activateSession: shouldActivateSubmittedSession(session.id),
-        visibleMessageContent:
-          nextQueuedMessage.visibleMessageContent ?? nextQueuedMessage.task,
-        promptHistoryContent:
-          nextQueuedMessage.promptHistoryContent ?? nextQueuedMessage.task,
-        ...(nextQueuedMessage.promptEnhancement
-          ? { promptEnhancement: nextQueuedMessage.promptEnhancement }
-          : {}),
-      });
+      dispatchingQueuedMessageIds.add(nextQueuedMessage.id);
+      void beginCrossWindowOperation(
+        `queued-message:${nextQueuedMessage.id}`,
+      )
+        .then(async (lease) => {
+          if (!lease) {
+            return;
+          }
 
-      if (didSubmit) {
-        updateQueuedSessionMessages((current) =>
-          current.filter(
-            (message) =>
-              message.id !== nextQueuedMessage.id &&
-              !(
-                message.sessionId === session.id &&
-                message.task.trim().length === 0
+          try {
+            const latestQueuedMessage =
+              shellStateRef.current.queuedSessionMessages.find(
+                (message) => message.id === nextQueuedMessage.id,
+              );
+            const latestSession = shellStateRef.current.sessions.find(
+              (entry) => entry.id === session.id,
+            );
+            const latestQueuedHead =
+              shellStateRef.current.queuedSessionMessages.find(
+                (message) =>
+                  message.sessionId === session.id &&
+                  message.task.trim().length > 0,
+              );
+
+            if (
+              !latestQueuedMessage ||
+              !latestSession ||
+              latestQueuedHead?.id !== latestQueuedMessage.id ||
+              getSessionOverviewStatus(latestSession) === "running"
+            ) {
+              await releaseCrossWindowOperation(lease);
+              return;
+            }
+
+            const didSubmit = taskSubmission.submitTaskToSession({
+              sessionSnapshot: latestSession,
+              task: latestQueuedMessage.task,
+              contextAttachments: latestQueuedMessage.contextAttachments,
+              clearDraft: false,
+              activateSession: shouldActivateSubmittedSession(latestSession.id),
+              visibleMessageContent:
+                latestQueuedMessage.visibleMessageContent ??
+                latestQueuedMessage.task,
+              promptHistoryContent:
+                latestQueuedMessage.promptHistoryContent ??
+                latestQueuedMessage.task,
+              ...(latestQueuedMessage.promptEnhancement
+                ? { promptEnhancement: latestQueuedMessage.promptEnhancement }
+                : {}),
+            });
+
+            if (!didSubmit) {
+              await releaseCrossWindowOperation(lease);
+              return;
+            }
+
+            updateQueuedSessionMessages((current) =>
+              current.filter(
+                (message) =>
+                  message.id !== latestQueuedMessage.id &&
+                  !(
+                    message.sessionId === latestSession.id &&
+                    message.task.trim().length === 0
+                  ),
               ),
-          ),
-        );
-      }
-
-      dispatchingQueuedMessageIdsRef.current.delete(nextQueuedMessage.id);
+            );
+            await completeCrossWindowOperation(lease);
+          } catch (error) {
+            await releaseCrossWindowOperation(lease);
+            throw error;
+          }
+        })
+        .catch((error) => {
+          console.error("Failed to dispatch queued message", error);
+        })
+        .finally(() => {
+          dispatchingQueuedMessageIds.delete(nextQueuedMessage.id);
+        });
     },
     [
       queuedSessionMessages,
@@ -3756,13 +4286,15 @@ export const useChatSessionController = (
           }
 
           const updatedAt = Date.now();
+          const currentMessage = { ...message };
+          delete currentMessage.promptEnhancement;
 
           return {
-            id: message.id,
-            sessionId: message.sessionId,
+            ...currentMessage,
             task: content,
-            contextAttachments: message.contextAttachments,
-            createdAt: message.createdAt,
+            visibleMessageContent: content,
+            promptHistoryContent: content,
+            contentUpdatedAt: updatedAt,
             updatedAt,
           };
         }),
@@ -3804,31 +4336,53 @@ export const useChatSessionController = (
   );
 
   const handleQueuedMessageRemove = useCallback((messageId: string): void => {
+    const mutationKey = `queued:${messageId}`;
+    attachmentMutationVersionsRef.current.set(
+      mutationKey,
+      (attachmentMutationVersionsRef.current.get(mutationKey) ?? 0) + 1,
+    );
     updateQueuedSessionMessages((current) =>
       current.filter((message) => message.id !== messageId),
     );
   }, [updateQueuedSessionMessages]);
 
   const handleAttachQueuedMessagePaths = useCallback(
-    async (messageId: string, paths: string[]): Promise<void> => {
+    async (
+      messageId: string,
+      paths: string[],
+      expectedMutationVersion?: number,
+    ): Promise<void> => {
+      const mutationKey = `queued:${messageId}`;
+      const mutationVersion =
+        expectedMutationVersion ??
+        attachmentMutationVersionsRef.current.get(mutationKey) ??
+        0;
       const resolution = await resolveDroppedPaths(paths);
       const attachments = resolution.entries.map(createContextAttachment);
 
-      if (attachments.length === 0) {
+      if (
+        attachments.length === 0 ||
+        (attachmentMutationVersionsRef.current.get(mutationKey) ?? 0) !==
+          mutationVersion
+      ) {
         return;
       }
 
       updateQueuedSessionMessages((current) =>
         current.map((message) =>
           message.id === messageId
-            ? {
+            ? (() => {
+                const updatedAt = Date.now();
+                return {
                 ...message,
                 contextAttachments: mergeContextAttachments(
                   message.contextAttachments,
                   attachments,
                 ),
-                updatedAt: Date.now(),
-              }
+                attachmentsUpdatedAt: updatedAt,
+                updatedAt,
+              };
+              })()
             : message,
         ),
       );
@@ -3848,6 +4402,10 @@ export const useChatSessionController = (
       if (!queuedMessage) {
         return;
       }
+
+      const mutationKey = `queued:${messageId}`;
+      const mutationVersion =
+        attachmentMutationVersionsRef.current.get(mutationKey) ?? 0;
 
       const targetSession =
         state.shellState.sessions.find(
@@ -3870,13 +4428,17 @@ export const useChatSessionController = (
       }
 
       if (!isDesktop) {
-        await handleAttachQueuedMessagePaths(messageId, [
-          selectingFolders
-            ? "/mock/context-folder"
-            : selectingImages
-              ? "/mock/screenshot.png"
-              : "/mock/document.txt",
-        ]);
+        await handleAttachQueuedMessagePaths(
+          messageId,
+          [
+            selectingFolders
+              ? "/mock/context-folder"
+              : selectingImages
+                ? "/mock/screenshot.png"
+                : "/mock/document.txt",
+          ],
+          mutationVersion,
+        );
         return;
       }
 
@@ -3906,6 +4468,7 @@ export const useChatSessionController = (
         await handleAttachQueuedMessagePaths(
           messageId,
           normalizeDialogSelection(selected),
+          mutationVersion,
         );
       } catch (error) {
         console.error("Failed to select queued message attachments", error);
@@ -3922,16 +4485,29 @@ export const useChatSessionController = (
 
   const handleQueuedMessageRemoveContextAttachment = useCallback(
     (messageId: string, attachmentId: string): void => {
+      const mutationKey = `queued:${messageId}`;
+      attachmentMutationVersionsRef.current.set(
+        mutationKey,
+        (attachmentMutationVersionsRef.current.get(mutationKey) ?? 0) + 1,
+      );
       updateQueuedSessionMessages((current) =>
         current.map((message) =>
           message.id === messageId
-            ? {
+            ? (() => {
+                const updatedAt = Date.now();
+                return {
                 ...message,
                 contextAttachments: message.contextAttachments.filter(
                   (attachment) => attachment.id !== attachmentId,
                 ),
-                updatedAt: Date.now(),
-              }
+                attachmentTombstones: {
+                  ...message.attachmentTombstones,
+                  [attachmentId]: updatedAt,
+                },
+                attachmentsUpdatedAt: updatedAt,
+                updatedAt,
+              };
+              })()
             : message,
         ),
       );
@@ -3941,15 +4517,33 @@ export const useChatSessionController = (
 
   const handleQueuedMessageClearContextAttachments = useCallback(
     (messageId: string): void => {
+      const mutationKey = `queued:${messageId}`;
+      attachmentMutationVersionsRef.current.set(
+        mutationKey,
+        (attachmentMutationVersionsRef.current.get(mutationKey) ?? 0) + 1,
+      );
       updateQueuedSessionMessages((current) =>
         current.map((message) =>
           message.id === messageId &&
           message.contextAttachments.length > 0
-            ? {
+            ? (() => {
+                const updatedAt = Date.now();
+                return {
                 ...message,
                 contextAttachments: [],
-                updatedAt: Date.now(),
-              }
+                attachmentTombstones: {
+                  ...message.attachmentTombstones,
+                  ...Object.fromEntries(
+                    message.contextAttachments.map((attachment) => [
+                      attachment.id,
+                      updatedAt,
+                    ]),
+                  ),
+                },
+                attachmentsUpdatedAt: updatedAt,
+                updatedAt,
+              };
+              })()
             : message,
         ),
       );
@@ -3970,6 +4564,10 @@ export const useChatSessionController = (
           return session;
         }
 
+        if (session.manualTitle === normalizedTitle) {
+          return session;
+        }
+
         return {
           ...session,
           manualTitle: normalizedTitle,
@@ -3984,11 +4582,20 @@ export const useChatSessionController = (
     (sessionId: string, tags: string[]): void => {
       const normalizedTags = normalizeSessionTags(tags);
 
-      state.updateSessionById(sessionId, (session) => ({
-        ...session,
-        tags: normalizedTags,
-        updatedAt: Date.now(),
-      }));
+      state.updateSessionById(sessionId, (session) => {
+        if (
+          session.tags.length === normalizedTags.length &&
+          session.tags.every((tag, index) => tag === normalizedTags[index])
+        ) {
+          return session;
+        }
+
+        return {
+          ...session,
+          tags: normalizedTags,
+          updatedAt: Date.now(),
+        };
+      });
     },
     [state.updateSessionById],
   );
@@ -4024,14 +4631,19 @@ export const useChatSessionController = (
         });
       }
 
-      state.updateSessionById(sessionId, (session) => ({
-        ...session,
-        messages: [],
-        promptHistory: [],
-        promptContextHistory: [],
-        sessionMemory: [],
-        updatedAt: Date.now(),
-      }));
+      state.updateSessionById(sessionId, (session) => {
+        const updatedAt = Date.now();
+
+        return {
+          ...session,
+          messages: [],
+          promptHistory: [],
+          promptContextHistory: [],
+          sessionMemory: [],
+          historyClearedAt: updatedAt,
+          updatedAt,
+        };
+      });
     },
     [
       activeDesktopTasksRef,
@@ -4044,6 +4656,10 @@ export const useChatSessionController = (
   const handleRemoteUpdateSessionDraft = useCallback(
     (sessionId: string, draft: string): void => {
       state.updateSessionById(sessionId, (session) => {
+        if (session.draft === draft) {
+          return session;
+        }
+
         const updatedAt = Date.now();
 
         return {
@@ -4063,38 +4679,64 @@ export const useChatSessionController = (
         return;
       }
 
-      state.applyShellState((prev) => ({
-        ...prev,
-        lastSelectedProvider: provider,
-        lastSelectedModelByProvider: {
-          ...prev.lastSelectedModelByProvider,
-          [provider]: model,
-        },
-        sessions: prev.sessions.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                provider,
-                model,
-                updatedAt: Date.now(),
-              }
-            : session,
-        ),
-      }));
+      state.applyShellState((prev) => {
+        let sessionChanged = false;
+        const sessions = prev.sessions.map((session) => {
+          if (session.id !== sessionId) {
+            return session;
+          }
+
+          if (session.provider === provider && session.model === model) {
+            return session;
+          }
+
+          sessionChanged = true;
+          return {
+            ...session,
+            provider,
+            model,
+            updatedAt: Date.now(),
+          };
+        });
+        const selectionChanged =
+          prev.lastSelectedProvider !== provider ||
+          prev.lastSelectedModelByProvider[provider] !== model;
+
+        if (!sessionChanged && !selectionChanged) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          lastSelectedProvider: provider,
+          lastSelectedModelByProvider: {
+            ...prev.lastSelectedModelByProvider,
+            [provider]: model,
+          },
+          sessions,
+        };
+      });
     },
     [providerChooserState.chooserProviders, state.applyShellState],
   );
 
   const handleRemoteSetSessionMode = useCallback(
     (sessionId: string, mode: RunMode | null): void => {
-      state.applyShellState((prev) => ({
-        ...prev,
-        ...(mode ? { lastSelectedMode: mode } : {}),
-        sessions: prev.sessions.map((session) => {
+      state.applyShellState((prev) => {
+        let sessionChanged = false;
+        const sessions = prev.sessions.map((session) => {
           if (session.id !== sessionId) {
             return session;
           }
 
+          if (
+            (mode && session.mode === mode) ||
+            (!mode && session.mode === undefined)
+          ) {
+            return session;
+          }
+
+          sessionChanged = true;
           const nextSession = mode
             ? { ...session, mode }
             : removeSessionModeOverride(session);
@@ -4103,8 +4745,21 @@ export const useChatSessionController = (
             ...nextSession,
             updatedAt: Date.now(),
           };
-        }),
-      }));
+        });
+        const selectionChanged = Boolean(
+          mode && prev.lastSelectedMode !== mode,
+        );
+
+        if (!sessionChanged && !selectionChanged) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          ...(mode ? { lastSelectedMode: mode } : {}),
+          sessions,
+        };
+      });
     },
     [state.applyShellState],
   );
@@ -4114,9 +4769,8 @@ export const useChatSessionController = (
       state.applyShellState((prev) => {
         let normalizedReasoning: ReasoningMode | undefined;
         let sessionFound = false;
-        const nextState: ShellPersistedState = {
-          ...prev,
-          sessions: prev.sessions.map((session) => {
+        let sessionChanged = false;
+        const sessions = prev.sessions.map((session) => {
             if (session.id !== sessionId) {
               return session;
             }
@@ -4127,6 +4781,12 @@ export const useChatSessionController = (
               session.provider,
               session.model,
             );
+
+            if (session.reasoning === normalizedReasoning) {
+              return session;
+            }
+
+            sessionChanged = true;
             const nextSession: ChatSessionRecord = {
               ...session,
               updatedAt: Date.now(),
@@ -4139,12 +4799,24 @@ export const useChatSessionController = (
             }
 
             return nextSession;
-          }),
-        };
+          });
 
         if (!sessionFound) {
           return prev;
         }
+
+        const selectionChanged = normalizedReasoning
+          ? prev.lastSelectedReasoning !== normalizedReasoning
+          : prev.lastSelectedReasoning !== undefined;
+
+        if (!sessionChanged && !selectionChanged) {
+          return prev;
+        }
+
+        const nextState: ShellPersistedState = {
+          ...prev,
+          sessions,
+        };
 
         if (normalizedReasoning) {
           nextState.lastSelectedReasoning = normalizedReasoning;
@@ -4164,18 +4836,34 @@ export const useChatSessionController = (
       key: "sessionMemoryEnabled" | "useGlobalMemory" | "uiControlEnabled",
       enabled: boolean,
     ): void => {
-      state.updateSessionById(sessionId, (session) => ({
-        ...session,
-        [key]: enabled,
-        updatedAt: Date.now(),
-      }));
+      state.updateSessionById(sessionId, (session) => {
+        if (session[key] === enabled) {
+          return session;
+        }
+
+        return {
+          ...session,
+          [key]: enabled,
+          updatedAt: Date.now(),
+        };
+      });
     },
     [state.updateSessionById],
   );
 
   const handleRemoteRemoveContextAttachment = useCallback(
     (sessionId: string, attachmentId: string): void => {
+      let removed = false;
       state.updateSessionById(sessionId, (session) => {
+        if (
+          !session.draftContextAttachments.some(
+            (attachment) => attachment.id === attachmentId,
+          )
+        ) {
+          return session;
+        }
+
+        removed = true;
         const updatedAt = Date.now();
 
         return {
@@ -4187,13 +4875,23 @@ export const useChatSessionController = (
           updatedAt,
         };
       });
+
+      if (removed) {
+        invalidateAttachmentMutation(`session:${sessionId}`);
+      }
     },
-    [state.updateSessionById],
+    [invalidateAttachmentMutation, state.updateSessionById],
   );
 
   const handleRemoteClearContextAttachments = useCallback(
     (sessionId: string): void => {
+      let cleared = false;
       state.updateSessionById(sessionId, (session) => {
+        if (session.draftContextAttachments.length === 0) {
+          return session;
+        }
+
+        cleared = true;
         const updatedAt = Date.now();
 
         return {
@@ -4203,21 +4901,38 @@ export const useChatSessionController = (
           updatedAt,
         };
       });
+
+      if (cleared) {
+        invalidateAttachmentMutation(`session:${sessionId}`);
+      }
     },
-    [state.updateSessionById],
+    [invalidateAttachmentMutation, state.updateSessionById],
   );
 
   const handleRemoteApplyContextPack = useCallback(
-    (sessionId: string, packId: string): void => {
-      const pack = workspaceContextPacks.find(
-        (contextPack) => contextPack.id === packId,
-      );
-
-      if (!pack) {
-        return;
-      }
+    (sessionId: string, packId: string): boolean => {
+      let applied = false;
 
       state.applyShellState((prev) => {
+        const targetSession = prev.sessions.find(
+          (session) => session.id === sessionId,
+        );
+
+        if (!targetSession) {
+          return prev;
+        }
+
+        const pack = getSmartContextPacksForWorkspace(
+          prev.contextPacks,
+          targetSession.workspace,
+        ).find((contextPack) => contextPack.id === packId);
+
+        if (!pack) {
+          return prev;
+        }
+
+        applied = true;
+
         const now = Date.now();
         const savedProvider = pack.provider;
         const savedModel = pack.model;
@@ -4316,15 +5031,28 @@ export const useChatSessionController = (
 
         return nextState;
       });
+
+      return applied;
     },
     [
       providerChooserState.chooserProviders,
       state.applyShellState,
-      workspaceContextPacks,
     ],
   );
 
+  const handleQueueRemoteSessionFollowUp = useCallback(
+    (sessionId: string, task: string): boolean =>
+      queueActiveSessionMessage("back", {
+        sessionId,
+        task,
+        contextAttachments: [],
+        clearComposer: false,
+      }) !== null,
+    [queueActiveSessionMessage],
+  );
+
   const remoteMissionControl = useRemoteMissionControl({
+    hasHydrated: state.hasHydrated,
     shellState: state.shellState,
     activeSession: state.activeSession,
     visibleMessages: state.visibleMessages,
@@ -4366,11 +5094,26 @@ export const useChatSessionController = (
     speechInputEnabled: speechInput.enabled,
     speechInputStatus: speechInput.statusText,
     activeDesktopTasksRef,
+    flushPersistence: state.flushPersistence,
+    onMarkRemoteCommandHandled: (commandId: string) => {
+      state.applyShellState((prev) => {
+        if (prev.handledRemoteCommandIds.includes(commandId)) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          handledRemoteCommandIds: [
+            ...prev.handledRemoteCommandIds,
+            commandId,
+          ].slice(-512),
+        };
+      });
+    },
     submitTaskToSession: taskSubmission.submitTaskToSession,
     onRetryTask: taskSubmission.handleRetryTask,
     onContinueTask: taskSubmission.handleContinueTask,
-    onCancelSessionTask: requestTaskCancellation,
-    onCreateSession: () => lifecycleActions.createNewSession(),
+    onCreateSession: handleCreateSession,
     onActivateSession: state.setActiveSessionId,
     onArchiveSession: lifecycleActions.archiveSession,
     onTogglePinnedSession: lifecycleActions.togglePinnedSession,
@@ -4394,6 +5137,7 @@ export const useChatSessionController = (
       handleRemoteSetSessionFlag(sessionId, "uiControlEnabled", enabled),
     onRemoveContextAttachment: handleRemoteRemoveContextAttachment,
     onClearContextAttachments: handleRemoteClearContextAttachments,
+    onQueueSessionFollowUp: handleQueueRemoteSessionFollowUp,
     onApplyContextPack: handleRemoteApplyContextPack,
     onDeleteContextPack: handleDeleteContextPack,
     onSaveMessageAsContextPack: handleSaveMessageAsContextPack,
@@ -4405,18 +5149,19 @@ export const useChatSessionController = (
     (
       transcript: string,
       contextAttachments: ChatSessionContextAttachment[] = [],
-    ): void => {
+    ): boolean => {
       const normalizedTranscript = transcript.trim();
 
       if (!normalizedTranscript) {
-        return;
+        return false;
       }
 
-      taskSubmission.submitTaskToSession({
+      return taskSubmission.submitTaskToSession({
         sessionSnapshot: buildQuickVoiceSessionSnapshot(),
         task: normalizedTranscript,
         contextAttachments,
         clearDraft: true,
+        createSessionIfMissing: true,
         activateSession: false,
       });
     },
@@ -4444,13 +5189,16 @@ export const useChatSessionController = (
       return;
     }
 
-    submitQuickVoiceCommand(normalizedDraft, contextAttachments);
-    setQuickTaskDraft("");
-    setQuickTaskContextAttachments([]);
+    if (submitQuickVoiceCommand(normalizedDraft, contextAttachments)) {
+      invalidateAttachmentMutation("quick-task");
+      setQuickTaskDraft("");
+      setQuickTaskContextAttachments([]);
+    }
   }, [
     quickTaskContextAttachments,
     quickTaskDraft,
     quickTaskImageInputError,
+    invalidateAttachmentMutation,
     requestChatInputNeededValues,
     submitQuickVoiceCommand,
   ]);
@@ -4524,6 +5272,7 @@ export const useChatSessionController = (
           promptContextHistory: [],
           sessionMemoryEnabled: false,
           sessionMemory: [],
+          historyClearedAt: nextUpdatedAt,
           updatedAt: nextUpdatedAt,
         };
       });
@@ -4555,6 +5304,8 @@ export const useChatSessionController = (
       visibleTask,
       context.originalTask,
     );
+    const composerClearGuard =
+      interviewComposerClearGuardsRef.current.get(context);
 
     setPromptEnhancementPreview((current) =>
       current?.sessionId === context.sessionSnapshot.id ? null : current,
@@ -4565,6 +5316,7 @@ export const useChatSessionController = (
       task: finalPrompt,
       contextAttachments: context.contextAttachments,
       clearDraft: true,
+      ...(composerClearGuard ? { composerClearGuard } : {}),
       activateSession: shouldActivateSubmittedSession(context.sessionSnapshot.id),
       visibleMessageContent: visibleTask,
       promptHistoryContent: context.originalTask ?? visibleTask,
@@ -4572,6 +5324,7 @@ export const useChatSessionController = (
     });
 
     if (submitted) {
+      interviewComposerClearGuardsRef.current.delete(context);
       setChatInterview(null);
       return;
     }
@@ -4592,7 +5345,12 @@ export const useChatSessionController = (
     context: ChatInterviewStartContext,
     taskId: string,
     result: TaskInterviewResult,
+    requestRevision: number,
   ): Promise<void> => {
+    if (chatInterviewRequestRevisionRef.current !== requestRevision) {
+      return;
+    }
+
     const fields = result.fields ?? [];
     const nextValues = createDefaultRalphInputValues(fields);
     const findings = result.session.findings ?? [];
@@ -4653,7 +5411,11 @@ export const useChatSessionController = (
 
     const finalPrompt =
       result.finalPrompt ??
-      createLocalTaskInterviewPrompt(context, result.session, [], {});
+        createLocalTaskInterviewPrompt(context, result.session, [], {});
+
+    if (chatInterviewRequestRevisionRef.current !== requestRevision) {
+      return;
+    }
 
     setChatInterview((current) =>
       current?.taskId === taskId
@@ -4686,6 +5448,7 @@ export const useChatSessionController = (
     answers?: Record<string, RalphInputValue>,
     answerComments?: Record<string, string>,
   ): Promise<void> => {
+    const requestRevision = ++chatInterviewRequestRevisionRef.current;
     const taskId = `task-interview-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const initialThinking = createInitialThinkingTrace(context.mode, Date.now());
 
@@ -4745,8 +5508,17 @@ export const useChatSessionController = (
           : {}),
       });
 
-      await applyChatInterviewResult(context, taskId, result);
+      await applyChatInterviewResult(
+        context,
+        taskId,
+        result,
+        requestRevision,
+      );
     } catch (error) {
+      if (chatInterviewRequestRevisionRef.current !== requestRevision) {
+        return;
+      }
+
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       setChatInterview((current) =>
@@ -4783,6 +5555,7 @@ export const useChatSessionController = (
     sessionSnapshot = state.activeSession,
     contextAttachments = state.activeSession.draftContextAttachments,
     originalTask?: string,
+    composerClearGuard?: ComposerClearGuard,
   ): void => {
     const reasoning = normalizeSessionReasoningOverride(
       sessionSnapshot.reasoning,
@@ -4803,6 +5576,10 @@ export const useChatSessionController = (
       model: sessionSnapshot.model,
       ...(reasoning ? { reasoning } : {}),
     };
+
+    if (composerClearGuard) {
+      interviewComposerClearGuardsRef.current.set(context, composerClearGuard);
+    }
 
     void requestChatInterviewRound(context);
   };
@@ -4952,15 +5729,34 @@ export const useChatSessionController = (
     submitTaskFromInterview(chatInterview.context, finalPrompt);
   };
 
+  const closeChatInterview = useCallback((): void => {
+    chatInterviewRequestRevisionRef.current += 1;
+    const taskId = chatInterview?.taskId;
+
+    if (taskId && activeDesktopTasksRef.current.has(taskId)) {
+      ignoredDesktopTaskIdsRef.current.add(taskId);
+      activeDesktopTasksRef.current.delete(taskId);
+      desktopTaskProgressHandlersRef.current.delete(taskId);
+      void cancelDesktopTask(taskId).catch((error) => {
+        console.error("Failed to cancel closed task interview:", error);
+      });
+    }
+
+    setChatInterview(null);
+    setPromptEnhancementPreview(null);
+  }, [chatInterview]);
+
   const submitResolvedChatInputNeededSubmission = useCallback(
     (
       submission: ChatInputNeededSubmission,
       resolvedTask: string,
     ): void => {
       if (submission.kind === "quick-task") {
-        submitQuickVoiceCommand(resolvedTask, submission.contextAttachments);
-        setQuickTaskDraft("");
-        setQuickTaskContextAttachments([]);
+        if (submitQuickVoiceCommand(resolvedTask, submission.contextAttachments)) {
+          invalidateAttachmentMutation("quick-task");
+          setQuickTaskDraft("");
+          setQuickTaskContextAttachments([]);
+        }
         return;
       }
 
@@ -4980,6 +5776,7 @@ export const useChatSessionController = (
             sessionId: submission.sessionSnapshot.id,
             prompt: originalTask ?? resolvedTask,
             contextAttachments: submission.contextAttachments,
+            composerClearGuard: submission.composerClearGuard,
           });
           setPromptEnhancementStatus({
             tone: "error",
@@ -4994,6 +5791,7 @@ export const useChatSessionController = (
                 sessionSnapshot: submission.sessionSnapshot,
                 task: resolvedTask,
                 contextAttachments: submission.contextAttachments,
+                composerClearGuard: submission.composerClearGuard,
               });
               return;
             case "stop-and-send": {
@@ -5004,6 +5802,7 @@ export const useChatSessionController = (
                 promptHistoryContent,
                 ...(promptEnhancement ? { promptEnhancement } : {}),
                 contextAttachments: submission.contextAttachments,
+                composerClearGuard: submission.composerClearGuard,
               });
 
               if (queuedMessage) {
@@ -5019,6 +5818,7 @@ export const useChatSessionController = (
                 promptHistoryContent,
                 ...(promptEnhancement ? { promptEnhancement } : {}),
                 contextAttachments: submission.contextAttachments,
+                composerClearGuard: submission.composerClearGuard,
               });
               return;
           }
@@ -5043,6 +5843,7 @@ export const useChatSessionController = (
                 submission.sessionSnapshot,
                 submission.contextAttachments,
                 promptEnhancement.originalContent,
+                submission.composerClearGuard,
               );
             });
             return;
@@ -5053,6 +5854,7 @@ export const useChatSessionController = (
             submission.sessionSnapshot,
             submission.contextAttachments,
             originalTask,
+            submission.composerClearGuard,
           );
           return;
         }
@@ -5062,6 +5864,7 @@ export const useChatSessionController = (
           task,
           contextAttachments: submission.contextAttachments,
           clearDraft: true,
+          composerClearGuard: submission.composerClearGuard,
           activateSession: shouldActivateSubmittedSession(
             submission.sessionSnapshot.id,
           ),
@@ -5112,6 +5915,7 @@ export const useChatSessionController = (
       promptEnhancementMode,
       queueActiveSessionMessage,
       requestTaskCancellation,
+      invalidateAttachmentMutation,
       restoreSessionComposerInput,
       shouldActivateSubmittedSession,
       startChatInterview,
@@ -5168,7 +5972,7 @@ export const useChatSessionController = (
   );
 
   const handleSend = (): void => {
-    const task = state.activeSession.draft.trim();
+    const task = activeComposerSession.draft.trim();
 
     if (
       !task ||
@@ -5179,16 +5983,26 @@ export const useChatSessionController = (
       return;
     }
 
-    const contextAttachments = state.activeSession.draftContextAttachments.map(
+    const committedHistorySession = composerState.isHistoryPreviewActive
+      ? composerState.commitHistoryPreview()
+      : null;
+
+    if (composerState.isHistoryPreviewActive && !committedHistorySession) {
+      return;
+    }
+
+    const sessionSnapshot = committedHistorySession ?? activeComposerSession;
+    const contextAttachments = sessionSnapshot.draftContextAttachments.map(
       (attachment) => ({ ...attachment }),
     );
     const submission: ChatInputNeededSubmission = {
       kind: "active-session",
-      sessionSnapshot: state.activeSession,
+      sessionSnapshot,
       task,
       contextAttachments,
+      composerClearGuard: createComposerClearGuard(sessionSnapshot),
       runningAction:
-        getSessionOverviewStatus(state.activeSession) === "running"
+        getSessionOverviewStatus(sessionSnapshot) === "running"
           ? runningTaskMessageAction
           : null,
     };
@@ -5230,6 +6044,10 @@ export const useChatSessionController = (
 
   return {
     isDesktop,
+    hasHydrated: state.hasHydrated,
+    quickVoiceSettingsLoaded:
+      runtime.userDesktopSettingsLoaded &&
+      runtime.userSpeechToTextSettingsLoaded,
     submitQuickVoiceCommand,
     clearQuickTaskHistory,
     fileDrop,
@@ -5290,7 +6108,7 @@ export const useChatSessionController = (
       onSessionSearchQueryChange: state.setSessionSearchQuery,
       onSessionProjectFilterChange: state.setSessionProjectFilter,
       onSessionTagFilterToggle: lifecycleActions.toggleSessionTagFilter,
-      onCreateSession: lifecycleActions.createNewSession,
+      onCreateSession: handleCreateSession,
       onActivateSession: state.setActiveSessionId,
       onArchiveSession: lifecycleActions.archiveSession,
       onTogglePinnedSession: lifecycleActions.togglePinnedSession,
@@ -5331,7 +6149,7 @@ export const useChatSessionController = (
       onRenameCommit: handleRenameCommit,
       onRenameCancel: handleRenameCancel,
       onSelectFolder: handleSelectFolder,
-      onCreateSession: lifecycleActions.createNewSession,
+      onCreateSession: handleCreateSession,
       onStartRename: () => {
         state.setRenameValue(currentSessionTitle);
         state.setIsRenamingSession(true);
@@ -5379,10 +6197,7 @@ export const useChatSessionController = (
     },
     chatInterview: {
       state: chatInterview,
-      onClose: () => {
-        setChatInterview(null);
-        setPromptEnhancementPreview(null);
-      },
+      onClose: closeChatInterview,
       onValueChange: updateChatInterviewValue,
       onToggleComment: toggleChatInterviewComment,
       onCommentChange: updateChatInterviewComment,
@@ -5403,7 +6218,7 @@ export const useChatSessionController = (
       onSubmitValue: submitChatInputNeededValue,
     },
     composer: {
-      activeSession: state.activeSession,
+      activeSession: activeComposerSession,
       chooserProviders: providerChooserState.chooserProviders,
       activeRunMode,
       activeRunModeMeta,
@@ -5433,15 +6248,15 @@ export const useChatSessionController = (
         PROMPT_ENHANCEMENT_WEB_SEARCH_UNAVAILABLE_REASON,
       promptEnhancementPending: composerPromptEnhancementPending,
       statusMessage: promptEnhancementStatus,
-      contextAttachments: state.activeSession.draftContextAttachments,
+      contextAttachments: activeComposerSession.draftContextAttachments,
       contextPacks: workspaceContextPacks,
       matchedContextPackIds,
       imageInputSupported: activeSessionImageInputSupported,
       imageInputDisabledReason: activeSessionImageInputSupported
         ? null
         : createImageInputUnsupportedModelMessage(
-            state.activeSession.provider,
-            state.activeSession.model,
+            activeComposerSession.provider,
+            activeComposerSession.model,
           ),
       speechInput: {
         browserSupported: speechInput.browserSupported,

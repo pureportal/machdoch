@@ -49,6 +49,9 @@ export const useChatSessionSpeechInput = (
   const [finalizing, setFinalizing] = useState(false);
   const recordingSessionIdRef = useRef<string>(options.activeSessionId);
   const recordingProviderRef = useRef<UserSpeechToTextProvider | null>(null);
+  const operationSequenceRef = useRef(0);
+  const startInFlightRef = useRef<number | null>(null);
+  const finalizingRef = useRef(false);
 
   const availabilityDescription = useMemo(() => {
     return getSpeechInputAvailabilityDescription(
@@ -61,10 +64,14 @@ export const useChatSessionSpeechInput = (
   const finalizeRecording = useCallback(async (): Promise<void> => {
     const provider = recordingProviderRef.current;
 
-    if (!provider) {
+    if (!provider || finalizingRef.current) {
       return;
     }
 
+    const operationSequence = operationSequenceRef.current + 1;
+    operationSequenceRef.current = operationSequence;
+    finalizingRef.current = true;
+    const recordingSessionId = recordingSessionIdRef.current;
     setFinalizing(true);
     setStatusTone("info");
     setStatusText("Transcribing...");
@@ -72,7 +79,10 @@ export const useChatSessionSpeechInput = (
     try {
       const recordedBlob = await recorder.stopRecording();
 
-      if (!recordedBlob) {
+      if (
+        !recordedBlob ||
+        operationSequenceRef.current !== operationSequence
+      ) {
         return;
       }
 
@@ -81,10 +91,17 @@ export const useChatSessionSpeechInput = (
         provider,
       });
 
-      options.onTranscript(recordingSessionIdRef.current, transcriptText);
+      if (operationSequenceRef.current !== operationSequence) {
+        return;
+      }
+
+      options.onTranscript(recordingSessionId, transcriptText);
       setStatusTone("success");
       setStatusText("Transcript added to the draft.");
     } catch (error) {
+      if (operationSequenceRef.current !== operationSequence) {
+        return;
+      }
       recorder.cancelRecording();
       setStatusTone("error");
       setStatusText(
@@ -93,12 +110,23 @@ export const useChatSessionSpeechInput = (
           : "Speech-to-text failed for this recording.",
       );
     } finally {
-      recordingProviderRef.current = null;
-      setFinalizing(false);
+      if (operationSequenceRef.current === operationSequence) {
+        recordingProviderRef.current = null;
+        finalizingRef.current = false;
+        setFinalizing(false);
+      }
     }
   }, [options, recorder, transcription]);
 
   const startRecording = useCallback(async (): Promise<void> => {
+    if (
+      startInFlightRef.current !== null ||
+      finalizingRef.current ||
+      recordingProviderRef.current !== null
+    ) {
+      return;
+    }
+
     if (!recorder.browserSupported) {
       setStatusTone("error");
       setStatusText(
@@ -113,19 +141,36 @@ export const useChatSessionSpeechInput = (
       return;
     }
 
+    const operationSequence = operationSequenceRef.current + 1;
+    operationSequenceRef.current = operationSequence;
+    startInFlightRef.current = operationSequence;
+    const recordingSessionId = options.activeSessionId;
+
     try {
-      await recorder.startRecording({
+      const started = await recorder.startRecording({
         inputDeviceId: options.settings.inputDeviceId,
       });
-      recordingSessionIdRef.current = options.activeSessionId;
+
+      if (!started || operationSequenceRef.current !== operationSequence) {
+        return;
+      }
+
+      recordingSessionIdRef.current = recordingSessionId;
       recordingProviderRef.current = configuredProvider;
       setStatusTone("info");
       setStatusText("Listening...");
     } catch (error) {
+      if (operationSequenceRef.current !== operationSequence) {
+        return;
+      }
       recorder.cancelRecording();
       recordingProviderRef.current = null;
       setStatusTone("error");
       setStatusText(getRecordingErrorMessage(error));
+    } finally {
+      if (startInFlightRef.current === operationSequence) {
+        startInFlightRef.current = null;
+      }
     }
   }, [
     configuredProvider,
@@ -135,7 +180,11 @@ export const useChatSessionSpeechInput = (
   ]);
 
   const toggleRecording = useCallback((): void => {
-    if (finalizing || transcription.transcribing) {
+    if (
+      finalizingRef.current ||
+      startInFlightRef.current !== null ||
+      transcription.transcribing
+    ) {
       return;
     }
 
@@ -155,9 +204,13 @@ export const useChatSessionSpeechInput = (
 
   useEffect(() => {
     return () => {
+      operationSequenceRef.current += 1;
+      startInFlightRef.current = null;
+      finalizingRef.current = false;
       recordingProviderRef.current = null;
+      recorder.cancelRecording();
     };
-  }, []);
+  }, [recorder.cancelRecording]);
 
   return {
     browserSupported: recorder.browserSupported,

@@ -5,11 +5,17 @@ pub(super) fn mission_control_script_events() -> &'static str {
       if (!prompt) return;
       remotePrompt.value = "";
       const session = selectedSession();
+      const submittedSessionId = session?.id;
       void sendCommand({
         kind: "follow-up",
-        sessionId: session?.id,
+        sessionId: submittedSessionId,
         prompt
-      }).catch((error) => { toast.textContent = error.message; });
+      }).catch((error) => {
+        if (remotePrompt.value === "" && selectedSession()?.id === submittedSessionId) {
+          remotePrompt.value = prompt;
+        }
+        toast.textContent = error.message;
+      });
     });
 
     tasks.addEventListener("click", (event) => {
@@ -28,12 +34,18 @@ pub(super) fn mission_control_script_events() -> &'static str {
       const textarea = form.elements.prompt;
       const prompt = textarea.value.trim();
       if (!prompt) return;
+      const submittedTaskId = form.dataset.followup;
       textarea.value = "";
       void sendCommand({
         kind: "follow-up",
-        taskId: form.dataset.followup,
+        taskId: submittedTaskId,
         prompt
-      }).catch((error) => { toast.textContent = error.message; });
+      }).catch((error) => {
+        if (textarea.value === "" && form.dataset.followup === submittedTaskId) {
+          textarea.value = prompt;
+        }
+        toast.textContent = error.message;
+      });
     });
 
     shellSessions.addEventListener("click", (event) => {

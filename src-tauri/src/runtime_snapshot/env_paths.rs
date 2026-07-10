@@ -75,17 +75,34 @@ pub(super) fn default_agent_cli_path_candidates(
 
             if command == "codex" {
                 let codex_bin = local_app_data.join("OpenAI").join("Codex").join("bin");
-                candidates.push(codex_bin.join("codex.exe"));
+                let mut versioned_binaries = Vec::new();
 
                 if let Ok(entries) = fs::read_dir(&codex_bin) {
                     for entry in entries.flatten() {
                         let candidate = entry.path().join("codex.exe");
 
                         if candidate.is_file() {
-                            candidates.push(candidate);
+                            versioned_binaries.push(candidate);
                         }
                     }
                 }
+
+                versioned_binaries.sort_by(|left, right| {
+                    let left_modified = left
+                        .metadata()
+                        .and_then(|metadata| metadata.modified())
+                        .ok();
+                    let right_modified = right
+                        .metadata()
+                        .and_then(|metadata| metadata.modified())
+                        .ok();
+
+                    right_modified
+                        .cmp(&left_modified)
+                        .then_with(|| left.cmp(right))
+                });
+                candidates.extend(versioned_binaries);
+                candidates.push(codex_bin.join("codex.exe"));
             }
         }
 

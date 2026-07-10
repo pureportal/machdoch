@@ -1,8 +1,10 @@
 import type { RalphFlow, RalphFlowBlock } from "../ralph.ts";
 import { createFlow } from "../__test__/ralph-test-helpers.ts";
 import {
+  createRalphFlowGraphIndex,
   DEFAULT_RALPH_GROUP_MAX_DEPTH,
   findOutgoingRalphEdge,
+  getRalphBlockIdsWithPathToEnd,
   getRalphBlockById,
   getRalphGroupDepthIssue,
   getReachableRalphBlockIds,
@@ -36,10 +38,11 @@ describe("Ralph flow graph lookup helpers", () => {
 
   it("finds outgoing edges by block id and output", () => {
     const flow = createFlow();
+    const index = createRalphFlowGraphIndex(flow);
 
-    expect(hasOutgoingRalphEdge(flow, "validate", "DONE")).toBe(true);
-    expect(hasOutgoingRalphEdge(flow, "validate", "ERROR")).toBe(false);
-    expect(findOutgoingRalphEdge(flow, "validate", "DONE")).toEqual({
+    expect(hasOutgoingRalphEdge(flow, "validate", "DONE", index)).toBe(true);
+    expect(hasOutgoingRalphEdge(flow, "validate", "ERROR", index)).toBe(false);
+    expect(findOutgoingRalphEdge(flow, "validate", "DONE", index)).toEqual({
       id: "validate-done",
       from: "validate",
       fromOutput: "DONE",
@@ -61,8 +64,13 @@ describe("Ralph flow graph traversal helpers", () => {
   });
 
   it("detects terminal paths and disconnected branches", () => {
-    expect(hasRalphPathToEnd(createFlow(), "start")).toBe(true);
-    expect(hasRalphPathToEnd(createFlow(), "missing")).toBe(false);
+    const flow = createFlow();
+
+    expect(getRalphBlockIdsWithPathToEnd(flow)).toEqual(
+      new Set(["start", "fix-tsc", "validate", "success"]),
+    );
+    expect(hasRalphPathToEnd(flow, "start")).toBe(true);
+    expect(hasRalphPathToEnd(flow, "missing")).toBe(false);
     expect(
       hasRalphPathToEnd(
         createEmptyFlow({

@@ -14,6 +14,8 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -30,7 +32,7 @@ import { AgentComposer } from "./chat-session/components/agent-composer";
 import { AttachmentImagePreviewDialog } from "./chat-session/components/attachment-image-preview-dialog";
 import { ChatInputNeededDialog } from "./chat-session/components/chat-input-needed-dialog";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
-import { FilePreviewDialog } from "./chat-session/components/file-preview-dialog";
+import { FilePreviewDialogFallback } from "./chat-session/components/file-preview-dialog-fallback";
 import { MessageMarkdown } from "./chat-session/components/message-markdown";
 import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
 import { Button } from "./components/ui/button";
@@ -40,6 +42,12 @@ import { QUICK_CHAT_DROP_EVENT } from "./runtime";
 
 const QUICK_TASK_HISTORY_LIMIT = 6;
 const QUICK_WINDOW_BLUR_HIDE_DELAY_MS = 100;
+
+const FilePreviewDialog = lazy(async () => {
+  const module = await import("./chat-session/components/file-preview-dialog");
+
+  return { default: module.FilePreviewDialog };
+});
 
 const QuickTaskMessage = ({
   message,
@@ -269,6 +277,8 @@ export const AssistantPopupShell = (): JSX.Element => {
   const controller = useChatSessionController({
     fileDropTarget: "quick-task",
     forwardedDropEventName: QUICK_CHAT_DROP_EVENT,
+    persistActiveSession: false,
+    trackSessionReads: false,
   });
 
   useEffect(() => {
@@ -442,11 +452,23 @@ export const AssistantPopupShell = (): JSX.Element => {
         preview={controller.attachmentImagePreview.preview}
         onOpenChange={controller.attachmentImagePreview.onOpenChange}
       />
-      <FilePreviewDialog
-        preview={controller.filePreview.preview}
-        onOpenChange={controller.filePreview.onOpenChange}
-        onOpenExternal={controller.filePreview.onOpenExternal}
-      />
+      {controller.filePreview.preview ? (
+        <Suspense
+          fallback={
+            <FilePreviewDialogFallback
+              preview={controller.filePreview.preview}
+              onOpenChange={controller.filePreview.onOpenChange}
+              onOpenExternal={controller.filePreview.onOpenExternal}
+            />
+          }
+        >
+          <FilePreviewDialog
+            preview={controller.filePreview.preview}
+            onOpenChange={controller.filePreview.onOpenChange}
+            onOpenExternal={controller.filePreview.onOpenExternal}
+          />
+        </Suspense>
+      ) : null}
       <ChatInputNeededDialog {...controller.inputNeeded} />
     </>
   );

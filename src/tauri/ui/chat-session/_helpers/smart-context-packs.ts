@@ -802,15 +802,10 @@ export const importSmartContextPacksIntoShellState = (
     sessions: state.sessions.length > 0 ? state.sessions : [fallbackSession],
     contextPacks: payload.contextPacks,
   });
-  const existingIds = new Set(state.contextPacks.map((pack) => pack.id));
   const importedPacks = normalizedImportState.contextPacks.map((pack, index) => {
-    const id = existingIds.has(pack.id) ? crypto.randomUUID() : pack.id;
-
-    existingIds.add(id);
-
     return {
       ...pack,
-      id,
+      id: crypto.randomUUID(),
       workspace: targetScope === "global" ? null : targetWorkspace,
       createdAt: timestamp + index,
       updatedAt: timestamp + index,

@@ -32,5 +32,5 @@ await build({
   outfile: outputFile,
   platform: "node",
   sourcemap: true,
-  target: "node20.10",
+  target: "node22.13",
 });

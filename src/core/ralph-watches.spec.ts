@@ -92,6 +92,26 @@ describe("Ralph watches", () => {
     });
   });
 
+  it("preserves concurrent watch upserts", async () => {
+    const watchRoot = await createRoot("machdoch-ralph-watch-concurrent-");
+
+    await Promise.all(
+      ["docs", "source"].map((id) =>
+        upsertRalphWatch({
+          id,
+          flow: { scope: "user", id: `summarize-${id}` },
+          executionWorkspaceRoot: watchRoot,
+          roots: [{ path: watchRoot }],
+        }),
+      ),
+    );
+
+    expect((await listRalphWatches()).map((watch) => watch.id)).toEqual([
+      "docs",
+      "source",
+    ]);
+  });
+
   it("removes stale scheduler jobs when watches are deleted outside the scheduler", async () => {
     const watchRoot = await createRoot("machdoch-ralph-watch-root-");
     const scheduler = createUserRalphWatchScheduler();

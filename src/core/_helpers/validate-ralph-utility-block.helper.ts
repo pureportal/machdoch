@@ -157,6 +157,14 @@ export const validateRalphUtilityBlock = (
   const blockLabel = block.id || block.title || "utility block";
   const utility = block.utility;
 
+  if (utility.order !== undefined && utility.order !== "oldest" && utility.order !== "newest") {
+    addUtilityIssue(
+      errors,
+      "utility-order-invalid",
+      `${blockLabel} order must be oldest or newest.`,
+      { blockId: block.id },
+    );
+  }
   if (utility.delaySeconds !== undefined && utility.delaySeconds < 0) {
     addUtilityIssue(
       errors,

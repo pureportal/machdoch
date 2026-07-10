@@ -6,7 +6,7 @@ import {
   type RefObject,
 } from "react";
 
-const SCROLL_TO_NEWEST_THRESHOLD_PX = 96;
+const SCROLL_TO_NEWEST_THRESHOLD_PX = 8;
 
 const getScrollDistanceToBottom = (
   scrollViewport: HTMLElement,
@@ -151,6 +151,31 @@ export const useNewestMessageScroll = ({
       scrollViewport.removeEventListener("scroll", updateScrollPinnedState);
       resizeObserver?.disconnect();
     };
+  }, [resetKey]);
+
+  useLayoutEffect(() => {
+    const bottomElement = bottomRef.current;
+
+    if (!bottomElement || lastScrollResetKeyRef.current !== resetKey) {
+      return;
+    }
+
+    const scrollViewport = findScrollViewport(bottomElement);
+
+    if (!scrollViewport) {
+      return;
+    }
+
+    if (isScrollPinnedToNewestRef.current) {
+      scrollViewportToBottom(scrollViewport);
+      setShowScrollToNewestButton(false);
+    } else {
+      setShowScrollToNewestButton(
+        !isScrollViewportNearBottom(scrollViewport),
+      );
+    }
+
+    lastScrollHeightRef.current = scrollViewport.scrollHeight;
   }, [contentKey, resetKey]);
 
   return {

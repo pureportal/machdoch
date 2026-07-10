@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
 import { getUserConfigPath } from "../env.js";
+import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
+import { writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
 import type { ToolCallEffect, ToolRiskLevel } from "../types.js";
 import { enrichMcpDiscoveryMetadata } from "./discovery-metadata.js";
 import { getMcpPreset, listMcpPresets } from "./presets.js";
@@ -1175,8 +1177,9 @@ export const saveUserMcpConfig = async (
   config: McpConfigFile,
 ): Promise<string> => {
   const path = getUserMcpConfigPath();
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  await withCooperativeFileLock(path, async () => {
+    await writeJsonAtomically(path, config);
+  });
   return path;
 };
 
@@ -1185,8 +1188,9 @@ export const saveWorkspaceMcpConfig = async (
   config: McpConfigFile,
 ): Promise<string> => {
   const path = getWorkspaceMcpConfigPath(workspaceRoot);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  await withCooperativeFileLock(path, async () => {
+    await writeJsonAtomically(path, config);
+  });
   return path;
 };
 
@@ -1196,52 +1200,58 @@ export const saveUserMcpOAuthState = async (
   patch: McpOAuthStatePatch,
 ): Promise<string> => {
   const path = getUserMcpConfigPath();
-  const config = await readConfigFile(path);
-  const normalizedId = normalizeServerId(server.id);
-  const servers = [...(config.servers ?? [])];
-  const index = servers.findIndex((entry) => entry.id === normalizedId);
-  const current = index >= 0 ? servers[index] : undefined;
-  const currentAuth =
-    current?.auth?.type === "oauth" ? current.auth : ({ type: "oauth" } satisfies McpOAuthConfig);
-  const nextAuth = {
-    ...currentAuth,
-    type: "oauth",
-  } as McpOAuthConfig;
-  const nextAuthRecord = nextAuth as unknown as Record<string, unknown>;
+  await withCooperativeFileLock(path, async () => {
+    const config = await readConfigFile(path);
+    const normalizedId = normalizeServerId(server.id);
+    const servers = [...(config.servers ?? [])];
+    const index = servers.findIndex((entry) => entry.id === normalizedId);
+    const current = index >= 0 ? servers[index] : undefined;
+    const currentAuth =
+      current?.auth?.type === "oauth"
+        ? current.auth
+        : ({ type: "oauth" } satisfies McpOAuthConfig);
+    const nextAuth = {
+      ...currentAuth,
+      type: "oauth",
+    } as McpOAuthConfig;
+    const nextAuthRecord = nextAuth as unknown as Record<string, unknown>;
 
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === undefined) {
-      delete nextAuthRecord[key];
-      continue;
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) {
+        delete nextAuthRecord[key];
+        continue;
+      }
+
+      nextAuthRecord[key] = value;
     }
 
-    nextAuthRecord[key] = value;
-  }
-
-  const nextServer: McpServerOverride = {
-    ...(current ?? {
+    const nextServer: McpServerOverride = {
+      ...(current ?? {
+        id: normalizedId,
+        transport: server.transport,
+        ...(server.title ? { title: server.title } : {}),
+        ...(server.description ? { description: server.description } : {}),
+        ...(server.preset ? { preset: server.preset } : {}),
+      }),
       id: normalizedId,
-      transport: server.transport,
-      ...(server.title ? { title: server.title } : {}),
-      ...(server.description ? { description: server.description } : {}),
-      ...(server.preset ? { preset: server.preset } : {}),
-    }),
-    id: normalizedId,
-    ...(!current?.transport ? { transport: server.transport } : {}),
-    auth: nextAuth,
-  };
+      ...(!current?.transport ? { transport: server.transport } : {}),
+      auth: nextAuth,
+    };
 
-  if (index >= 0) {
-    servers[index] = nextServer;
-  } else {
-    servers.push(nextServer);
-  }
+    if (index >= 0) {
+      servers[index] = nextServer;
+    } else {
+      servers.push(nextServer);
+    }
 
-  return saveUserMcpConfig({
-    ...config,
-    schemaVersion: MCP_CONFIG_SCHEMA_VERSION,
-    servers,
+    await writeJsonAtomically(path, {
+      ...config,
+      schemaVersion: MCP_CONFIG_SCHEMA_VERSION,
+      servers,
+    });
   });
+
+  return path;
 };
 
 const parseDiscoveryCache = (raw: string): McpDiscoveryCacheFile => {
@@ -1336,25 +1346,18 @@ export const saveWorkspaceMcpDiscovery = async (
   discovery: McpServerDiscovery,
 ): Promise<string> => {
   const path = getWorkspaceMcpDiscoveryCachePath(workspaceRoot);
-  const cache = await loadDiscoveryCacheFile(path);
   const enrichedDiscovery = enrichMcpDiscoveryMetadata(discovery);
 
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(
-    path,
-    `${JSON.stringify(
-      {
-        schemaVersion: MCP_DISCOVERY_CACHE_SCHEMA_VERSION,
-        servers: {
-          ...cache.servers,
-          [enrichedDiscovery.serverId]: enrichedDiscovery,
-        },
-      } satisfies McpDiscoveryCacheFile,
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
+  await withCooperativeFileLock(path, async () => {
+    const cache = await loadDiscoveryCacheFile(path);
+    await writeJsonAtomically(path, {
+      schemaVersion: MCP_DISCOVERY_CACHE_SCHEMA_VERSION,
+      servers: {
+        ...cache.servers,
+        [enrichedDiscovery.serverId]: enrichedDiscovery,
+      },
+    } satisfies McpDiscoveryCacheFile);
+  });
 
   return path;
 };

@@ -49,6 +49,46 @@ afterEach(async () => {
 });
 
 describe("createSchedulerToolDefinitions", () => {
+  it("creates a full-capability unattended RALPH job without four permission toggles", async () => {
+    const workspaceRoot = await createWorkspace();
+    const context = createContext(workspaceRoot);
+    const createTool = getTool("create_scheduled_job");
+
+    const result = await createTool.execute(
+      {
+        name: "Autonomous improvements",
+        schedule: {
+          type: "interval",
+          intervalMs: 60_000,
+        },
+        targetType: "ralph-flow",
+        ralphFlow: {
+          id: "autonomous-code-improvement",
+          executionProfile: "unattended",
+        },
+      },
+      context,
+    );
+    const createdJob = JSON.parse(result.toolResult.output).job;
+    const scheduler = new DurableSmartScheduler({
+      statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+    });
+    const job = await scheduler.getJob(createdJob.id);
+
+    expect(job?.target.ralphFlow).toMatchObject({
+      executionProfile: "unattended",
+      resumePolicy: "recoverable",
+      permissions: {
+        allowedRoots: [workspaceRoot],
+        allowCommands: true,
+        allowWrites: true,
+        allowNetwork: true,
+        allowMcpTools: true,
+      },
+    });
+    expect(job?.retry.maxAttempts).toBe(3);
+  });
+
   it("creates, lists, and updates durable scheduler jobs for AI-driven requests", async () => {
     const workspaceRoot = await createWorkspace();
     const context = createContext(workspaceRoot);

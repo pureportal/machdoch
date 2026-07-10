@@ -1,7 +1,8 @@
 import { coerceRalphFlowBlockRecord } from "./coerce-ralph-flow-block-record.helper.js";
 import { RALPH_FLOW_SCHEMA_VERSION } from "./create-ralph-validation-result.helper.js";
 import type {
-  RalphAnnotationLink, RalphAnnotationLinkKind, RalphFlow, RalphFlowBlock,
+  RalphAnnotationLink, RalphAnnotationLinkKind, RalphAutonomyPolicy,
+  RalphAutonomySetting, RalphFlow, RalphFlowBlock,
   RalphFlowEdge, RalphFlowSettings, RalphFlowSource, RalphFlowVariable,
   RalphVariableType,
 } from "../ralph.js";
@@ -67,7 +68,76 @@ const coerceFlowSettings = (value: unknown): RalphFlowSettings | undefined => {
     settings.maxTransitions = Math.trunc(value.maxTransitions);
   }
 
+  const autonomy = coerceAutonomySetting(value.autonomy);
+  if (autonomy !== undefined) {
+    settings.autonomy = autonomy;
+  }
+
   return Object.keys(settings).length > 0 ? settings : undefined;
+};
+
+const coerceAutonomySetting = (
+  value: unknown,
+): RalphAutonomySetting | undefined => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const policy: RalphAutonomyPolicy = {};
+
+  if (typeof value.enabled === "boolean") {
+    policy.enabled = value.enabled;
+  }
+  if (typeof value.recoverFailedEnd === "boolean") {
+    policy.recoverFailedEnd = value.recoverFailedEnd;
+  }
+  if (
+    typeof value.maxRecoveryAttempts === "number" &&
+    Number.isFinite(value.maxRecoveryAttempts)
+  ) {
+    policy.maxRecoveryAttempts = Math.trunc(value.maxRecoveryAttempts);
+  }
+  if (
+    value.transitionExhaustion === "checkpoint" ||
+    value.transitionExhaustion === "crash"
+  ) {
+    policy.transitionExhaustion = value.transitionExhaustion;
+  }
+  if (
+    value.recoveryExhaustion === "defer" ||
+    value.recoveryExhaustion === "block"
+  ) {
+    policy.recoveryExhaustion = value.recoveryExhaustion;
+  }
+  if (typeof value.deferToBlockId === "string" && value.deferToBlockId.trim()) {
+    policy.deferToBlockId = value.deferToBlockId.trim();
+  }
+  if (isRecord(value.backoff)) {
+    const backoff = {
+      ...(typeof value.backoff.initialDelaySeconds === "number" &&
+      Number.isFinite(value.backoff.initialDelaySeconds)
+        ? { initialDelaySeconds: value.backoff.initialDelaySeconds }
+        : {}),
+      ...(typeof value.backoff.multiplier === "number" &&
+      Number.isFinite(value.backoff.multiplier)
+        ? { multiplier: value.backoff.multiplier }
+        : {}),
+      ...(typeof value.backoff.maxDelaySeconds === "number" &&
+      Number.isFinite(value.backoff.maxDelaySeconds)
+        ? { maxDelaySeconds: value.backoff.maxDelaySeconds }
+        : {}),
+    };
+
+    if (Object.keys(backoff).length > 0) {
+      policy.backoff = backoff;
+    }
+  }
+
+  return policy;
 };
 
 const coerceFlowSource = (value: unknown): RalphFlowSource | undefined => {
@@ -85,12 +155,41 @@ const coerceFlowSource = (value: unknown): RalphFlowSource | undefined => {
     typeof value.importedAt === "string" && value.importedAt.trim().length > 0
       ? value.importedAt
       : undefined;
+  const templateFingerprint =
+    typeof value.templateFingerprint === "string" &&
+    value.templateFingerprint.trim().length > 0
+      ? value.templateFingerprint.trim()
+      : undefined;
+  const templateVariableDefaults = isRecord(value.templateVariableDefaults)
+    ? Object.fromEntries(
+        Object.entries(value.templateVariableDefaults).flatMap(([key, entry]) =>
+          typeof entry === "string" || entry === null
+            ? [[key, entry === null ? undefined : entry] as const]
+            : [],
+        ),
+      )
+    : undefined;
+  let templateSnapshot: RalphFlowSource["templateSnapshot"];
+  if (isRecord(value.templateSnapshot)) {
+    const parsedSnapshot = parseRalphFlowRecord(value.templateSnapshot);
+    const snapshot = { ...parsedSnapshot };
+    delete snapshot.source;
+    delete snapshot.createdAt;
+    delete snapshot.updatedAt;
+    templateSnapshot = snapshot;
+  }
 
   return {
     kind: "starter",
     id: value.id,
     version: Math.trunc(value.version),
     ...(importedAt ? { importedAt } : {}),
+    ...(templateFingerprint ? { templateFingerprint } : {}),
+    ...(templateVariableDefaults &&
+    Object.keys(templateVariableDefaults).length > 0
+      ? { templateVariableDefaults }
+      : {}),
+    ...(templateSnapshot ? { templateSnapshot } : {}),
   };
 };
 

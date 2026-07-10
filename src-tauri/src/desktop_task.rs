@@ -31,7 +31,7 @@ use attachments::{
 };
 use cli_commands::{
     execute_instruction_command, execute_mcp_command, execute_scheduler_command,
-    execute_task_interview_command,
+    execute_task_interview_command, start_scheduler_service as start_scheduler_service_process,
 };
 use commands::execute_desktop_task;
 #[cfg(test)]
@@ -42,9 +42,9 @@ use process::open_path_in_system_shell;
 use progress::create_progress_timestamp;
 use ralph::{execute_ralph_command, resolve_ralph_flow_path_for_open};
 use registry::{
-    active_task_ids, active_task_summaries, finish_active_task, normalize_task_id,
-    recent_completed_task_results, register_active_task, remember_completed_task_result,
-    ActiveDesktopTaskRegistration,
+    active_task_ids, active_task_summaries, completed_desktop_task_result, finish_active_task,
+    normalize_task_id, recent_completed_task_results, register_active_task,
+    remember_completed_task_result, ActiveDesktopTaskRegistration,
 };
 pub use registry::{
     request_desktop_task_cancel, ActiveDesktopTaskSummary, DesktopTaskCancelMap,
@@ -82,6 +82,7 @@ pub struct DesktopTaskRunRequest {
     conversation_context: Option<Value>,
     image_paths: Option<Vec<String>>,
     task_id: Option<String>,
+    session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -210,7 +211,7 @@ pub async fn run_desktop_task(
     request.task_id = task_id.clone();
 
     if let Some(id) = &task_id {
-        register_active_task(
+        let claimed = register_active_task(
             &state,
             ActiveDesktopTaskRegistration {
                 task_id: id.clone(),
@@ -219,8 +220,22 @@ pub async fn run_desktop_task(
                 workspace_root: request.workspace_root.clone(),
                 arguments: Vec::new(),
                 started_at: task_started_at,
+                operation_key: request
+                    .session_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|session_id| !session_id.is_empty())
+                    .map(|session_id| format!("session:{session_id}")),
             },
-        );
+        )?;
+
+        if !claimed {
+            if let Some(completed_result) = completed_desktop_task_result(&state, id)? {
+                return completed_result;
+            }
+
+            return Err(format!("MACHDOCH_TASK_ALREADY_ACTIVE:{id}"));
+        }
     }
 
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -465,6 +480,13 @@ pub async fn run_scheduler_command(request: SchedulerCommandRequest) -> Result<V
 }
 
 #[tauri::command]
+pub async fn start_scheduler_service(request: SchedulerCommandRequest) -> Result<u32, String> {
+    tauri::async_runtime::spawn_blocking(move || start_scheduler_service_process(request))
+        .await
+        .map_err(|error| format!("The scheduler service launcher stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
 pub async fn run_ralph_command(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, DesktopTaskCancelMap>,
@@ -477,7 +499,7 @@ pub async fn run_ralph_command(
     request.task_id = task_id.clone();
 
     if let Some(id) = &task_id {
-        register_active_task(
+        let claimed = register_active_task(
             &state,
             ActiveDesktopTaskRegistration {
                 task_id: id.clone(),
@@ -486,8 +508,13 @@ pub async fn run_ralph_command(
                 workspace_root: request.workspace_root.clone(),
                 arguments: request.arguments.clone(),
                 started_at: create_progress_timestamp(),
+                operation_key: None,
             },
-        );
+        )?;
+
+        if !claimed {
+            return Err(format!("MACHDOCH_TASK_ALREADY_ACTIVE:{id}"));
+        }
     }
 
     let result = tauri::async_runtime::spawn_blocking(move || {

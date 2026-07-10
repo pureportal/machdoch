@@ -7,44 +7,99 @@ import type {
 
 export const DEFAULT_RALPH_GROUP_MAX_DEPTH = 3;
 
+export interface RalphFlowGraphIndex {
+  blocksById: Map<string, RalphFlowBlock>;
+  incomingBlockIdsByBlock: Map<string, string[]>;
+  outgoingEdgeByBlockAndOutput: Map<string, RalphFlowEdge>;
+  outgoingEdgesByBlock: Map<string, RalphFlowEdge[]>;
+}
+
+const createOutgoingEdgeKey = (
+  blockId: string,
+  output: RalphExecutionOutput,
+): string => `${blockId}\0${output}`;
+
 export const getRalphBlockById = (flow: RalphFlow): Map<string, RalphFlowBlock> => {
   return new Map(flow.blocks.map((block) => [block.id, block]));
+};
+
+export const createRalphFlowGraphIndex = (
+  flow: RalphFlow,
+): RalphFlowGraphIndex => {
+  const incomingBlockIdsByBlock = new Map<string, string[]>();
+  const outgoingEdgeByBlockAndOutput = new Map<string, RalphFlowEdge>();
+  const outgoingEdgesByBlock = new Map<string, RalphFlowEdge[]>();
+
+  for (const edge of flow.edges) {
+    const outgoingEdges = outgoingEdgesByBlock.get(edge.from) ?? [];
+    outgoingEdges.push(edge);
+    outgoingEdgesByBlock.set(edge.from, outgoingEdges);
+
+    const outgoingEdgeKey = createOutgoingEdgeKey(edge.from, edge.fromOutput);
+    if (!outgoingEdgeByBlockAndOutput.has(outgoingEdgeKey)) {
+      outgoingEdgeByBlockAndOutput.set(outgoingEdgeKey, edge);
+    }
+
+    const incomingBlockIds = incomingBlockIdsByBlock.get(edge.to) ?? [];
+    incomingBlockIds.push(edge.from);
+    incomingBlockIdsByBlock.set(edge.to, incomingBlockIds);
+  }
+
+  return {
+    blocksById: getRalphBlockById(flow),
+    incomingBlockIdsByBlock,
+    outgoingEdgeByBlockAndOutput,
+    outgoingEdgesByBlock,
+  };
 };
 
 export const hasOutgoingRalphEdge = (
   flow: RalphFlow,
   blockId: string,
   output: RalphExecutionOutput,
+  index?: RalphFlowGraphIndex,
 ): boolean => {
-  return flow.edges.some(
-    (edge) => edge.from === blockId && edge.fromOutput === output,
-  );
+  return index
+    ? index.outgoingEdgeByBlockAndOutput.has(
+        createOutgoingEdgeKey(blockId, output),
+      )
+    : flow.edges.some(
+        (edge) => edge.from === blockId && edge.fromOutput === output,
+      );
 };
 
 export const findOutgoingRalphEdge = (
   flow: RalphFlow,
   blockId: string,
   output: RalphExecutionOutput,
+  index?: RalphFlowGraphIndex,
 ): RalphFlowEdge | undefined => {
-  return flow.edges.find(
-    (edge) => edge.from === blockId && edge.fromOutput === output,
-  );
+  return index
+    ? index.outgoingEdgeByBlockAndOutput.get(
+        createOutgoingEdgeKey(blockId, output),
+      )
+    : flow.edges.find(
+        (edge) => edge.from === blockId && edge.fromOutput === output,
+      );
 };
 
-export const getReachableRalphBlockIds = (flow: RalphFlow): Set<string> => {
+export const getReachableRalphBlockIds = (
+  flow: RalphFlow,
+  index = createRalphFlowGraphIndex(flow),
+): Set<string> => {
   const starts = flow.blocks.filter((block) => block.type === "START");
   const reachable = new Set<string>();
   const pending = starts.map((block) => block.id);
 
-  while (pending.length > 0) {
-    const current = pending.shift();
+  for (let cursor = 0; cursor < pending.length; cursor += 1) {
+    const current = pending[cursor];
 
     if (!current || reachable.has(current)) {
       continue;
     }
 
     reachable.add(current);
-    for (const edge of flow.edges.filter((candidate) => candidate.from === current)) {
+    for (const edge of index.outgoingEdgesByBlock.get(current) ?? []) {
       pending.push(edge.to);
     }
   }
@@ -52,30 +107,41 @@ export const getReachableRalphBlockIds = (flow: RalphFlow): Set<string> => {
   return reachable;
 };
 
-export const hasRalphPathToEnd = (flow: RalphFlow, startBlockId: string): boolean => {
-  const blockMap = getRalphBlockById(flow);
-  const visited = new Set<string>();
-  const pending = [startBlockId];
+export const getRalphBlockIdsWithPathToEnd = (
+  flow: RalphFlow,
+  index = createRalphFlowGraphIndex(flow),
+): Set<string> => {
+  const blockIdsWithPathToEnd = new Set(
+    flow.blocks
+      .filter((block) => block.type === "END")
+      .map((block) => block.id),
+  );
+  const pending = [...blockIdsWithPathToEnd];
 
-  while (pending.length > 0) {
-    const current = pending.shift();
+  for (let cursor = 0; cursor < pending.length; cursor += 1) {
+    const current = pending[cursor];
 
-    if (!current || visited.has(current)) {
+    if (!current) {
       continue;
     }
 
-    visited.add(current);
-    const block = blockMap.get(current);
-    if (block?.type === "END") {
-      return true;
-    }
-
-    for (const edge of flow.edges.filter((candidate) => candidate.from === current)) {
-      pending.push(edge.to);
+    for (const sourceBlockId of index.incomingBlockIdsByBlock.get(current) ?? []) {
+      if (!blockIdsWithPathToEnd.has(sourceBlockId)) {
+        blockIdsWithPathToEnd.add(sourceBlockId);
+        pending.push(sourceBlockId);
+      }
     }
   }
 
-  return false;
+  return blockIdsWithPathToEnd;
+};
+
+export const hasRalphPathToEnd = (
+  flow: RalphFlow,
+  startBlockId: string,
+  index = createRalphFlowGraphIndex(flow),
+): boolean => {
+  return getRalphBlockIdsWithPathToEnd(flow, index).has(startBlockId);
 };
 
 export const getRalphGroupDepthIssue = (
@@ -105,15 +171,10 @@ export const getRalphGroupDepthIssue = (
   return undefined;
 };
 
-export const hasGraphCycle = (flow: RalphFlow): boolean => {
-  const edgesBySource = new Map<string, string[]>();
-
-  for (const edge of flow.edges) {
-    const targets = edgesBySource.get(edge.from) ?? [];
-    targets.push(edge.to);
-    edgesBySource.set(edge.from, targets);
-  }
-
+export const hasGraphCycle = (
+  flow: RalphFlow,
+  index = createRalphFlowGraphIndex(flow),
+): boolean => {
   const visiting = new Set<string>();
   const visited = new Set<string>();
 
@@ -128,8 +189,8 @@ export const hasGraphCycle = (flow: RalphFlow): boolean => {
 
     visiting.add(blockId);
 
-    for (const target of edgesBySource.get(blockId) ?? []) {
-      if (visit(target)) {
+    for (const edge of index.outgoingEdgesByBlock.get(blockId) ?? []) {
+      if (visit(edge.to)) {
         return true;
       }
     }

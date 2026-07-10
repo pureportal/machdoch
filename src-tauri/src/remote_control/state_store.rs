@@ -52,6 +52,8 @@ fn apply_loaded_config(inner: &mut RemoteControlInner, config: RemoteControlConf
         return;
     }
 
+    inner.pending_commands = config.pending_commands.iter().cloned().collect();
+    inner.completed_commands = config.completed_commands.iter().cloned().collect();
     inner.config = config;
     inner.config_loaded = true;
 }

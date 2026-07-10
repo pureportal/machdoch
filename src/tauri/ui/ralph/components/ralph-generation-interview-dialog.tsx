@@ -36,7 +36,8 @@ import type {
   RalphAiTarget,
 } from "../_helpers/ralph-flow-editor-options.helper";
 
-interface RalphAiGenerationStartContext {
+export interface RalphAiGenerationStartContext {
+  workspaceRoot: string;
   userPrompt: string;
   generationPrompt: string;
   target: RalphAiTarget;
@@ -44,12 +45,11 @@ interface RalphAiGenerationStartContext {
   targetScope: RalphFlowScope;
   targetFlowName: string;
   existingFlow?: RalphFlow;
+  expectedFingerprintAtStart?: string;
   targetFlowId: string | null;
   selectedIdAtStart: string | null;
   selectedScopeAtStart: RalphFlowScope;
   draftSnapshotAtStart: string;
-  savedSnapshotAtStart: string;
-  draftWasDirtyAtStart: boolean;
   promptBlockLabel?: string;
 }
 

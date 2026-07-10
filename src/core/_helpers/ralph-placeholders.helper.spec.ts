@@ -31,6 +31,8 @@ describe("parseRalphPlaceholderContent", () => {
     ["lastError"],
     ["lastData"],
     ["runLog"],
+    ["run:id"],
+    ["run:artifactRoot"],
   ] as const)("parses builtin placeholder %s", (content) => {
     expect(parseRalphPlaceholderContent(`{{${content}}}`, content)).toEqual({
       raw: `{{${content}}}`,

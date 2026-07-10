@@ -1,4 +1,5 @@
 use std::{
+    fs::{self, OpenOptions},
     io,
     process::{Child, Command, ExitStatus, Stdio},
     thread,
@@ -13,7 +14,7 @@ use std::os::unix::process::CommandExt;
 
 use serde_json::Value;
 
-use crate::runtime_snapshot::resolve_workspace_root_path;
+use crate::runtime_snapshot::{get_user_config_directory, resolve_workspace_root_path};
 
 use super::{
     diagnostics::{format_command_failure, format_diagnostic_snippet, format_timeout_duration},
@@ -309,6 +310,93 @@ pub(super) fn execute_scheduler_command(request: SchedulerCommandRequest) -> Res
         request.arguments,
         &SCHEDULER_CLI_SPEC,
     )
+}
+
+pub(super) fn start_scheduler_service(request: SchedulerCommandRequest) -> Result<u32, String> {
+    let user_config_directory = get_user_config_directory()?;
+    fs::create_dir_all(&user_config_directory)
+        .map_err(|error| format!("Failed to create the scheduler service directory: {error}"))?;
+    let service_owner_path = user_config_directory
+        .join("scheduler-workspaces.json.service-lock")
+        .join("owner");
+    if let Ok(metadata) = fs::metadata(&service_owner_path) {
+        if metadata
+            .modified()
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .map(|age| age <= Duration::from_secs(120))
+            .unwrap_or(false)
+        {
+            if let Ok(owner) = fs::read_to_string(&service_owner_path) {
+                if let Some(pid) = owner
+                    .split(':')
+                    .next()
+                    .and_then(|value| value.parse::<u32>().ok())
+                {
+                    return Ok(pid);
+                }
+            }
+        }
+    }
+    let workspace_path = if request.workspace_root.trim().is_empty() {
+        user_config_directory.clone()
+    } else {
+        resolve_workspace_root_path(&request.workspace_root)?
+    };
+    let log_path = user_config_directory.join("scheduler-service.log");
+    if fs::metadata(&log_path)
+        .map(|metadata| metadata.len() > 10 * 1024 * 1024)
+        .unwrap_or(false)
+    {
+        let rotated_log_path = user_config_directory.join("scheduler-service.log.1");
+        let _ = fs::remove_file(&rotated_log_path);
+        fs::rename(&log_path, &rotated_log_path)
+            .map_err(|error| format!("Failed to rotate scheduler service log: {error}"))?;
+    }
+    let stdout_log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|error| format!("Failed to open scheduler service log: {error}"))?;
+    let stderr_log = stdout_log
+        .try_clone()
+        .map_err(|error| format!("Failed to clone scheduler service log handle: {error}"))?;
+    let cli_args = build_auxiliary_cli_args(
+        &workspace_path.display().to_string(),
+        SCHEDULER_CLI_SPEC.subcommand,
+        request.arguments,
+    )?;
+    let mut cli_command = crate::shared_cli::create_shared_cli_command(&cli_args)?;
+    cli_command
+        .command
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(stdout_log))
+        .stderr(Stdio::from(stderr_log));
+    hide_child_process_window(&mut cli_command.command);
+
+    #[cfg(target_os = "windows")]
+    {
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        cli_command
+            .command
+            .creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
+    }
+
+    #[cfg(unix)]
+    {
+        cli_command.command.process_group(0);
+    }
+
+    cli_command
+        .command
+        .spawn()
+        .map(|child| child.id())
+        .map_err(|error| {
+            format!(
+                "Failed to launch the persistent scheduler service. {} {error}",
+                crate::shared_cli::cli_runtime_error_hint()
+            )
+        })
 }
 
 pub(super) fn execute_mcp_command(request: McpCommandRequest) -> Result<Value, String> {

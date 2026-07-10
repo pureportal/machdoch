@@ -238,7 +238,28 @@ async fn post_remote_web_command(
     let control_state = RemoteControlState {
         shared: state.shared.clone(),
     };
-    control_state.record_command(&event);
+    let record_outcome = match control_state.record_command(&event) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            let status = if error.starts_with("MACHDOCH_REMOTE_COMMAND_ID_CONFLICT:") {
+                StatusCode::CONFLICT
+            } else {
+                StatusCode::SERVICE_UNAVAILABLE
+            };
+            return json_response(status, json!({ "error": error }));
+        }
+    };
+
+    if record_outcome == super::state::RecordCommandOutcome::Duplicate {
+        return json_response(
+            StatusCode::ACCEPTED,
+            json!({
+                "ok": true,
+                "duplicate": true,
+                "commandId": event.command_id,
+            }),
+        );
+    }
 
     if event.kind == "cancel" {
         if let Some(task_id) = event.task_id.as_deref() {

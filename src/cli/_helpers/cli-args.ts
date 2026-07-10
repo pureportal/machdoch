@@ -135,6 +135,8 @@ export const parseCliArgs = (
         "scheduled-ralph-param"?: string[];
         "scheduled-ralph-run-log-scope"?: string;
         "scheduled-ralph-max-transitions"?: string;
+        "scheduled-ralph-profile"?: string;
+        "scheduled-ralph-resume-policy"?: string;
         "scheduled-ralph-allowed-root"?: string[];
         "scheduled-ralph-allow-commands"?: string;
         "scheduled-ralph-allow-writes"?: string;
@@ -142,6 +144,7 @@ export const parseCliArgs = (
         "scheduled-ralph-allow-mcp-tools"?: string;
         "flow-json"?: string;
         "flow-json-file"?: string;
+        "expected-fingerprint"?: string;
         "watch-json"?: string;
         "watch-json-file"?: string;
         "existing-flow-json"?: string;
@@ -167,6 +170,7 @@ export const parseCliArgs = (
         "retry-factor"?: string;
         "retry-randomize"?: string;
         "dedupe-key"?: string;
+        "request-id"?: string;
         "ttl-ms"?: string;
         "max-duration-ms"?: string;
         "concurrency-key"?: string;
@@ -259,6 +263,8 @@ export const parseCliArgs = (
         "scheduled-ralph-param": { type: "string", multiple: true },
         "scheduled-ralph-run-log-scope": { type: "string" },
         "scheduled-ralph-max-transitions": { type: "string" },
+        "scheduled-ralph-profile": { type: "string" },
+        "scheduled-ralph-resume-policy": { type: "string" },
         "scheduled-ralph-allowed-root": { type: "string", multiple: true },
         "scheduled-ralph-allow-commands": { type: "string" },
         "scheduled-ralph-allow-writes": { type: "string" },
@@ -266,6 +272,7 @@ export const parseCliArgs = (
         "scheduled-ralph-allow-mcp-tools": { type: "string" },
         "flow-json": { type: "string" },
         "flow-json-file": { type: "string" },
+        "expected-fingerprint": { type: "string" },
         "watch-json": { type: "string" },
         "watch-json-file": { type: "string" },
         "existing-flow-json": { type: "string" },
@@ -291,6 +298,7 @@ export const parseCliArgs = (
         "retry-factor": { type: "string" },
         "retry-randomize": { type: "string" },
         "dedupe-key": { type: "string" },
+        "request-id": { type: "string" },
         "ttl-ms": { type: "string" },
         "max-duration-ms": { type: "string" },
         "concurrency-key": { type: "string" },
@@ -425,6 +433,12 @@ export const parseCliArgs = (
   const rawScheduledRalphMaxTransitions = normalizeOptionalString(
     values?.["scheduled-ralph-max-transitions"],
   );
+  const rawScheduledRalphProfile = normalizeOptionalString(
+    values?.["scheduled-ralph-profile"],
+  );
+  const rawScheduledRalphResumePolicy = normalizeOptionalString(
+    values?.["scheduled-ralph-resume-policy"],
+  );
   const rawScheduledRalphAllowedRoots = values?.["scheduled-ralph-allowed-root"]
     ?.map((entry) => normalizeOptionalString(entry))
     .filter((entry): entry is string => Boolean(entry));
@@ -442,6 +456,9 @@ export const parseCliArgs = (
   );
   const rawRalphFlowJson = normalizeOptionalString(values?.["flow-json"]);
   const rawRalphFlowJsonFile = normalizeOptionalString(values?.["flow-json-file"]);
+  const rawRalphExpectedFingerprint = normalizeOptionalString(
+    values?.["expected-fingerprint"],
+  );
   const rawRalphWatchJson = normalizeOptionalString(values?.["watch-json"]);
   const rawRalphWatchJsonFile = normalizeOptionalString(values?.["watch-json-file"]);
   const rawRalphExistingFlowJson = normalizeOptionalString(
@@ -489,6 +506,7 @@ export const parseCliArgs = (
     values?.["retry-randomize"],
   );
   const rawSchedulerDedupeKey = normalizeOptionalString(values?.["dedupe-key"]);
+  const rawSchedulerRequestId = normalizeOptionalString(values?.["request-id"]);
   const rawSchedulerTtlMs = normalizeOptionalString(values?.["ttl-ms"]);
   const rawSchedulerMaxDurationMs = normalizeOptionalString(
     values?.["max-duration-ms"],
@@ -1173,6 +1191,14 @@ export const parseCliArgs = (
       fail("--flow-json-file is only valid for `machdoch ralph save`.");
     }
 
+    if (
+      action !== "save" &&
+      action !== "delete" &&
+      rawRalphExpectedFingerprint
+    ) {
+      fail("--expected-fingerprint is only valid for `machdoch ralph save` or `machdoch ralph delete`.");
+    }
+
     if (action !== "watches" && rawRalphWatchJson) {
       fail("--watch-json is only valid for `machdoch ralph watches create`.");
     }
@@ -1348,6 +1374,9 @@ export const parseCliArgs = (
           ...(rawSchedulerPromptFile ? { promptFile: rawSchedulerPromptFile } : {}),
           ...(rawRalphFlowJson ? { flowJson: rawRalphFlowJson } : {}),
           ...(rawRalphFlowJsonFile ? { flowJsonFile: rawRalphFlowJsonFile } : {}),
+          ...(rawRalphExpectedFingerprint
+            ? { expectedFingerprint: rawRalphExpectedFingerprint }
+            : {}),
           ...(rawRalphWatchJson ? { watchJson: rawRalphWatchJson } : {}),
           ...(rawRalphWatchJsonFile ? { watchJsonFile: rawRalphWatchJsonFile } : {}),
           ...(rawRalphExistingFlowJson
@@ -1597,6 +1626,8 @@ export const parseCliArgs = (
           rawScheduledRalphParams,
           rawScheduledRalphRunLogScope,
           rawScheduledRalphMaxTransitions,
+          rawScheduledRalphProfile,
+          rawScheduledRalphResumePolicy,
           rawScheduledRalphAllowedRoots,
           rawScheduledRalphAllowCommands,
           rawScheduledRalphAllowWrites,
@@ -1612,6 +1643,7 @@ export const parseCliArgs = (
           rawSchedulerRetryFactor,
           rawSchedulerRetryRandomize,
           rawSchedulerDedupeKey,
+          rawSchedulerRequestId,
           rawSchedulerTtlMs,
           rawSchedulerMaxDurationMs,
           rawSchedulerConcurrencyKey,

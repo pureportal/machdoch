@@ -274,6 +274,34 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.response?.markdown).toBe("Codex delegated answer.");
   });
 
+  it("passes GPT-5.6 Ultra through to Codex CLI", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        provider: "codex-cli",
+        model: "gpt-5.6-sol",
+        reasoning: "ultra",
+      }),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+
+    expect(call?.args).toContain("--config");
+    expect(call?.args).toContain('model_reasoning_effort="ultra"');
+
+    call?.child.stdout.write("Codex Ultra answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "executed",
+      response: { markdown: "Codex Ultra answer." },
+    });
+  });
+
   it("strips Windows taskkill success lines from Codex stdout", async () => {
     const workspaceRoot = await createWorkspace();
 

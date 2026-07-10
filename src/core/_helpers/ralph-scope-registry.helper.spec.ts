@@ -55,6 +55,8 @@ describe("Ralph scope registry helpers", () => {
       await mkdir(join(workspace, "src"), { recursive: true });
       await mkdir(join(workspace, "src-tauri"), { recursive: true });
       await mkdir(join(workspace, "packages", "api"), { recursive: true });
+      await mkdir(join(workspace, "engine", "payments"), { recursive: true });
+      await mkdir(join(workspace, "acceptance"), { recursive: true });
       await mkdir(join(workspace, "node_modules", "ignored"), {
         recursive: true,
       });
@@ -70,6 +72,11 @@ describe("Ralph scope registry helpers", () => {
       await writeFile(join(workspace, "src", "index.ts"), "", "utf8");
       await writeFile(join(workspace, "src-tauri", "Cargo.toml"), "", "utf8");
       await writeFile(join(workspace, "packages", "api", "package.json"), "{}", "utf8");
+      await writeFile(join(workspace, "engine", "payments", "index.ts"), "", "utf8");
+      await writeFile(join(workspace, "engine", "payments", "charge.ts"), "", "utf8");
+      await writeFile(join(workspace, "engine", "payments", "refund.ts"), "", "utf8");
+      await writeFile(join(workspace, "acceptance", "checkout.test.ts"), "", "utf8");
+      await writeFile(join(workspace, "acceptance", "refund.test.ts"), "", "utf8");
       await writeFile(
         join(
           workspace,
@@ -100,6 +107,8 @@ describe("Ralph scope registry helpers", () => {
           "src",
           "src-tauri",
           "packages-api",
+          "engine-payments",
+          "acceptance",
         ]),
       );
       expect(scopeIds.join("\n")).not.toContain("node-modules");
@@ -107,6 +116,28 @@ describe("Ralph scope registry helpers", () => {
       expect(
         evidence.scopes.find((scope) => scope.id === "src-tauri")?.risk,
       ).toBe("high");
+      expect(
+        evidence.scopes.find((scope) => scope.id === "engine-payments"),
+      ).toMatchObject({
+        kind: "module",
+        risk: "high",
+        tags: expect.arrayContaining([
+          "entrypoint",
+          "missing-local-tests",
+          "source-bearing",
+        ]),
+        evidence: expect.arrayContaining([
+          "semantic:entrypoints=index.ts",
+          "semantic:source-files=3",
+          "semantic:test-files=0",
+        ]),
+      });
+      expect(evidence.scopes.find((scope) => scope.id === "acceptance")).toMatchObject(
+        {
+          kind: "test",
+          tags: expect.arrayContaining(["test-covered"]),
+        },
+      );
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -161,6 +192,95 @@ describe("Ralph scope registry helpers", () => {
     expect(secondMark.cycleCompleted).toBe(true);
     expect(secondMark.registry.selection.cycle).toBe(2);
     expect(secondMark.registry.selection.completedScopeIds).toEqual([]);
+  });
+
+  it("cools down deferred scopes without counting them as validated or completed", () => {
+    const registry = parseRalphScopeRegistry(undefined, {
+      flowAlias: "test-flow",
+      strategy: "start-to-end",
+      now: "2026-06-25T10:00:00.000Z",
+    });
+    const update = updateRalphScopeRegistryFromEvidence(
+      registry,
+      createEvidence(),
+      {
+        flowAlias: "test-flow",
+        strategy: "start-to-end",
+        now: "2026-06-25T10:01:00.000Z",
+      },
+    );
+    const firstSelection = selectRalphScopeFromRegistry(update.registry, {
+      now: "2026-06-25T10:02:00.000Z",
+    });
+    const deferred = markRalphScopeRegistryResult(firstSelection.registry, {
+      outcome: "DEFERRED_AFTER_BOUNDED_REPAIR",
+      now: "2026-06-25T10:03:00.000Z",
+    });
+
+    expect(deferred.scope).toMatchObject({
+      id: "alpha",
+      validatedCount: 0,
+      lastValidatedAt: null,
+      lastOutcome: "DEFERRED_AFTER_BOUNDED_REPAIR",
+      lastOutcomeAt: "2026-06-25T10:03:00.000Z",
+      eligibleAfter: "2026-06-25T10:33:00.000Z",
+    });
+    expect(deferred.cycleCompleted).toBe(false);
+    expect(deferred.registry.selection.completedScopeIds).toEqual([]);
+    expect(deferred.registry.history.at(-1)).toMatchObject({
+      type: "scope-marked",
+      outcome: "DEFERRED_AFTER_BOUNDED_REPAIR",
+      eligibleAfter: "2026-06-25T10:33:00.000Z",
+    });
+
+    const nextSelection = selectRalphScopeFromRegistry(deferred.registry, {
+      now: "2026-06-25T10:04:00.000Z",
+    });
+    expect(nextSelection.scope?.id).toBe("beta");
+
+    const betaCompleted = markRalphScopeRegistryResult(nextSelection.registry, {
+      outcome: "DONE",
+      now: "2026-06-25T10:05:00.000Z",
+    });
+    const noEligibleWork = selectRalphScopeFromRegistry(betaCompleted.registry, {
+      now: "2026-06-25T10:06:00.000Z",
+    });
+    expect(noEligibleWork.scope).toBeUndefined();
+
+    const retrySelection = selectRalphScopeFromRegistry(
+      noEligibleWork.registry,
+      { now: "2026-06-25T10:34:00.000Z" },
+    );
+    expect(retrySelection.scope?.id).toBe("alpha");
+    expect(retrySelection.scope?.eligibleAfter).toBeNull();
+  });
+
+  it("uses a long cooldown for no-meaningful-work outcomes", () => {
+    const registry = parseRalphScopeRegistry(undefined, {
+      flowAlias: "test-flow",
+      strategy: "start-to-end",
+      now: "2026-06-25T10:00:00.000Z",
+    });
+    const update = updateRalphScopeRegistryFromEvidence(
+      registry,
+      createEvidence(),
+      {
+        flowAlias: "test-flow",
+        strategy: "start-to-end",
+        now: "2026-06-25T10:01:00.000Z",
+      },
+    );
+    const selection = selectRalphScopeFromRegistry(update.registry, {
+      now: "2026-06-25T10:02:00.000Z",
+    });
+    const stopped = markRalphScopeRegistryResult(selection.registry, {
+      outcome: "STOP_NO_MEANINGFUL_WORK",
+      now: "2026-06-25T10:03:00.000Z",
+    });
+
+    expect(stopped.scope?.eligibleAfter).toBe("2026-06-26T10:03:00.000Z");
+    expect(stopped.scope?.validatedCount).toBe(0);
+    expect(stopped.registry.selection.completedScopeIds).toEqual([]);
   });
 
   it("advances a lifie-style completed UI scope only after it is marked", () => {

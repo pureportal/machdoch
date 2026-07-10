@@ -24,10 +24,11 @@ Usage:
   machdoch instructions generate [name] --prompt <wish> [--path <file>] [--scope <user|workspace|ralph-flow>] [--ralph-flow <flow>] [--flow-scope <user|workspace>] [--apply-to <glob>] [--max-rounds <n>] [--json]
   machdoch interview --prompt <text> [--input-json <json>] [--max-rounds <n>] [--json]
   machdoch ralph list [--scope <user|workspace>] [--json]
-  machdoch ralph show|validate|delete <flow> [--scope <user|workspace>] [--json]
+  machdoch ralph show|validate <flow> [--scope <user|workspace>] [--json]
+  machdoch ralph delete <flow> [--expected-fingerprint <sha256>] [--scope <user|workspace>] [--json]
   machdoch ralph revisions <flow> [--scope <user|workspace>] [--json]
   machdoch ralph restore <flow> --revision <revision-id> [--scope <user|workspace>] [--json]
-  machdoch ralph save <flow> --flow-json <json> [--scope <user|workspace>] [--json]
+  machdoch ralph save <flow> --flow-json <json> [--expected-fingerprint <sha256>] [--scope <user|workspace>] [--json]
   machdoch ralph run <flow> [--scope <user|workspace>] [--param <name=value>] [--json]
   machdoch ralph resume <run-id> (--input-json <json>|--input-json-file <path>|--retry-current) [--scope <user|workspace>] [--json]
   machdoch ralph runs [flow] [--scope <user|workspace>] [--json]
@@ -58,7 +59,11 @@ Usage:
   machdoch scheduler events [--json]
   machdoch scheduler event --event-type <type> [--event-kind <kind>] [--json]
   machdoch scheduler run-due [--json]
+  machdoch scheduler run-all-due [--json]
+  machdoch scheduler poll-all [--json]
+  machdoch scheduler inspect-ralph <flow> [--scheduled-ralph-param <name=value>] [--json]
   machdoch scheduler service [--service-start-event-type <type>] [--service-poll-ms <ms>] [--service-idle-shutdown-ms <ms>] [--json]
+  machdoch scheduler service-all [--service-poll-ms <ms>] [--json]
   machdoch scheduler retry|cancel <run-id> [--json]
   machdoch scheduler sync-prompts [--json]
 
@@ -129,6 +134,10 @@ Options:
                           Scope where scheduled RALPH run logs are written.
   --scheduled-ralph-max-transitions <n>
                           Maximum graph transitions for scheduled RALPH runs.
+  --scheduled-ralph-profile <unattended>
+                          Enable full capabilities, checkpoint recovery, and autonomous retry defaults.
+  --scheduled-ralph-resume-policy <never|recoverable>
+                          Control whether scheduler retries resume a durable RALPH checkpoint.
   --scheduled-ralph-allowed-root <path>
                           Filesystem root allowed for scheduled RALPH execution. Repeat for multiple roots.
   --scheduled-ralph-allow-commands <on|off>
@@ -153,6 +162,8 @@ Options:
   --audience <target>     Instruction audience: executor, validator, generator, or all.
   --priority <integer>    Instruction ordering priority.
   --flow-json <json>      Save a complete Ralph flow JSON document for \`ralph save\`.
+  --expected-fingerprint <sha256>
+                          Reject \`ralph save\` or \`ralph delete\` if the stored flow changed since it was read.
   --watch-json <json>     Save a Ralph watch definition for \`ralph watches create\`.
   --watch-json-file <path>
                           Read a Ralph watch definition from a JSON file.
@@ -209,6 +220,7 @@ Options:
   --service-start-event-dedupe-key <key>
                           Stable dedupe key for the service start event.
   --dedupe-key <key>      Stable key used to update an existing schedule instead of creating a duplicate.
+  --request-id <id>       Stable mutation request id; replaying it returns the original scheduler result.
   --concurrency-key <key> Share queue capacity across related scheduled jobs.
   --concurrency-limit <n> Maximum actively running jobs for the queue key.
   --json                  Print machine-readable JSON.

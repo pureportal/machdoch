@@ -36,7 +36,7 @@ export default defineConfig({
     testTimeout: 30_000,
     passWithNoTests: true,
     restoreMocks: true,
-    isolate: false,
+    isolate: true,
     projects: [
       {
         extends: true,
@@ -53,6 +53,7 @@ export default defineConfig({
           name: "ui-jsdom",
           environment: "jsdom",
           include: [...jsdomSpecFiles],
+          setupFiles: ["./src/tauri/ui/test/vitest-ui-setup.ts"],
         },
       },
     ],

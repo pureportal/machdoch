@@ -38,10 +38,10 @@ import {
   saveWorkspaceDefaultMode,
   saveWorkspaceReasoningMode,
   subscribeToDesktopSettingsChanged,
+  subscribeToUserSettingsChanged,
   createFallbackMcpConfigDocument,
   createMcpConfigRawWithPreset,
   MCP_PRESET_SUMMARIES,
-  USER_SPEECH_TO_TEXT_PROVIDER_ORDER,
   USER_API_KEY_PROVIDER_ORDER,
   saveUserWebSearchActiveProvider,
   saveUserWebSearchApiKey,
@@ -69,9 +69,14 @@ import {
 import type { SettingsStatusMessage } from "../components/settings-dialog-panels/types";
 import {
   createEmptyUserMemorySettings,
-  createEmptyWebSearchSettings,
   getWebSearchProviderLabel,
 } from "./session-shell";
+
+const MCP_CONFIG_CONFLICT_PREFIX = "MACHDOCH_MCP_CONFIG_CONFLICT:";
+
+const isMcpConfigConflict = (error: unknown): boolean => {
+  return String(error).includes(MCP_CONFIG_CONFLICT_PREFIX);
+};
 
 export interface UseChatSessionRuntimeOptions {
   catalogOpen: boolean;
@@ -92,6 +97,7 @@ export interface ChatSessionRuntimeController {
   voiceSetupSaving: boolean;
   voiceSetupMessage: SettingsStatusMessage | null;
   userSpeechToTextSettings: UserSpeechToTextSettings;
+  userSpeechToTextSettingsLoaded: boolean;
   speechToTextSetupSaving: boolean;
   speechInputDeviceSaving: boolean;
   speechToTextSetupMessage: SettingsStatusMessage | null;
@@ -312,6 +318,12 @@ const createRuntimeSnapshotRequestKey = (
   return normalizedWorkspace;
 };
 
+interface McpWorkspaceEditorState {
+  document: McpConfigDocument;
+  draft: string;
+  draftRevision: number;
+}
+
 const getFirstMcpServerIdFromRawConfig = (raw: string): string | null => {
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -351,6 +363,9 @@ const getFirstMcpServerIdFromRawConfig = (raw: string): string | null => {
 export const useChatSessionRuntime = (
   options: UseChatSessionRuntimeOptions,
 ): ChatSessionRuntimeController => {
+  const activeWorkspaceKey = createRuntimeSnapshotRequestKey(
+    options.activeSessionWorkspace,
+  );
   const [runtimeSnapshot, setRuntimeSnapshot] =
     useState<RuntimeSnapshot | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
@@ -451,11 +466,106 @@ export const useChatSessionRuntime = (
   >(null);
   const runtimeSnapshotRequestIdRef = useRef(0);
   const runtimeSnapshotRequestKeyRef = useRef<string | null>(null);
+  const workspaceSaveRequestIdRef = useRef(0);
+  const mcpConfigLoadRequestIdRef = useRef(0);
+  const mcpConfigSaveRequestIdRef = useRef(0);
+  const mcpDiscoveryRequestIdRef = useRef(0);
+  const mcpOAuthRequestIdRef = useRef(0);
+  const mcpConfigDraftRevisionRef = useRef<Record<McpConfigScope, number>>({
+    user: 0,
+    workspace: 0,
+  });
+  const [userSpeechToTextSettingsLoaded, setUserSpeechToTextSettingsLoaded] =
+    useState(false);
+  const providerSetupOpenRef = useRef(false);
+  const activeSessionProviderRef = useRef(options.activeSessionProvider);
+  const providerSetupProviderRef = useRef(providerSetupProvider);
+  const providerSetupKeyRef = useRef(providerSetupKey);
+  const providerSetupEditRevisionRef = useRef(0);
+  const providerSetupSaveRequestIdRef = useRef(0);
+  const webSearchSetupOpenRef = useRef(false);
+  const webSearchSetupProviderRef = useRef(webSearchSetupProvider);
+  const webSearchSetupKeyRef = useRef(webSearchSetupKey);
+  const webSearchSetupEditRevisionRef = useRef(0);
+  const webSearchSetupSaveRequestIdRef = useRef(0);
+  const mcpConfigDocumentsRef = useRef(mcpConfigDocuments);
+  const mcpConfigDraftsRef = useRef(mcpConfigDrafts);
+  const activeWorkspaceKeyRef = useRef(activeWorkspaceKey);
+  const representedMcpWorkspaceKeyRef = useRef(activeWorkspaceKey);
+  const mcpWorkspaceEditorsRef = useRef(
+    new Map<string, McpWorkspaceEditorState>(),
+  );
+  const voiceMutationRevisionRef = useRef(0);
+  const speechMutationRevisionRef = useRef(0);
+  const settingsEventSequenceRef = useRef(new Map<string, number>());
   const mcpConfigDocument = mcpConfigDocuments[mcpConfigScope];
   const mcpConfigDraft = mcpConfigDrafts[mcpConfigScope];
   const mcpConfigWorkspaceAvailable = Boolean(
     options.activeSessionWorkspace?.trim(),
   );
+  activeSessionProviderRef.current = options.activeSessionProvider;
+  providerSetupProviderRef.current = providerSetupProvider;
+  providerSetupKeyRef.current = providerSetupKey;
+  webSearchSetupProviderRef.current = webSearchSetupProvider;
+  webSearchSetupKeyRef.current = webSearchSetupKey;
+  mcpConfigDocumentsRef.current = mcpConfigDocuments;
+  mcpConfigDraftsRef.current = mcpConfigDrafts;
+  activeWorkspaceKeyRef.current = activeWorkspaceKey;
+
+  useEffect(() => {
+    const previousWorkspaceKey = representedMcpWorkspaceKeyRef.current;
+
+    if (previousWorkspaceKey === activeWorkspaceKey) {
+      return;
+    }
+
+    if (previousWorkspaceKey) {
+      mcpWorkspaceEditorsRef.current.set(previousWorkspaceKey, {
+        document: mcpConfigDocumentsRef.current.workspace,
+        draft: mcpConfigDraftsRef.current.workspace,
+        draftRevision: mcpConfigDraftRevisionRef.current.workspace,
+      });
+    }
+
+    representedMcpWorkspaceKeyRef.current = activeWorkspaceKey;
+    mcpConfigLoadRequestIdRef.current += 1;
+    mcpConfigSaveRequestIdRef.current += 1;
+    mcpDiscoveryRequestIdRef.current += 1;
+    mcpOAuthRequestIdRef.current += 1;
+
+    const cached = activeWorkspaceKey
+      ? mcpWorkspaceEditorsRef.current.get(activeWorkspaceKey)
+      : undefined;
+    const document =
+      cached?.document ??
+      createFallbackMcpConfigDocument(
+        "workspace",
+        options.activeSessionWorkspace,
+      );
+    const draft = cached?.draft ?? document.raw;
+
+    mcpConfigDocumentsRef.current = {
+      ...mcpConfigDocumentsRef.current,
+      workspace: document,
+    };
+    mcpConfigDraftsRef.current = {
+      ...mcpConfigDraftsRef.current,
+      workspace: draft,
+    };
+    mcpConfigDraftRevisionRef.current.workspace =
+      cached?.draftRevision ?? 0;
+    setMcpConfigDocuments((current) => ({ ...current, workspace: document }));
+    setMcpConfigDrafts((current) => ({ ...current, workspace: draft }));
+    setMcpDiscoveryServerId("");
+    setMcpDiscoveryOutput(null);
+    setMcpOAuthServerId("");
+    setMcpOAuthCallback("");
+    setMcpConfigMessage(null);
+
+    if (!activeWorkspaceKey) {
+      setMcpConfigScope("user");
+    }
+  }, [activeWorkspaceKey, options.activeSessionWorkspace]);
 
   const applyLoadedWebSearchSettings = useCallback(
     (settings: UserWebSearchSettings): void => {
@@ -534,7 +644,10 @@ export const useChatSessionRuntime = (
       const requestKey = createRuntimeSnapshotRequestKey(workspaceRoot);
       runtimeSnapshotRequestIdRef.current = requestId;
       const isCurrentRequest = (): boolean => {
-        return runtimeSnapshotRequestIdRef.current === requestId;
+        return (
+          runtimeSnapshotRequestIdRef.current === requestId &&
+          activeWorkspaceKeyRef.current === requestKey
+        );
       };
       const keepCurrentSnapshotForRequest = (): void => {
         setRuntimeSnapshot((currentSnapshot) =>
@@ -588,23 +701,64 @@ export const useChatSessionRuntime = (
   );
 
   const refreshMcpConfigDocuments = useCallback(async (): Promise<void> => {
+    const requestId = mcpConfigLoadRequestIdRef.current + 1;
+    const workspaceRoot = options.activeSessionWorkspace;
+    const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
+    const draftRevisions = { ...mcpConfigDraftRevisionRef.current };
+    const cleanDrafts = {
+      user:
+        mcpConfigDraftsRef.current.user ===
+        mcpConfigDocumentsRef.current.user.raw,
+      workspace:
+        mcpConfigDraftsRef.current.workspace ===
+        mcpConfigDocumentsRef.current.workspace.raw,
+    };
+    mcpConfigLoadRequestIdRef.current = requestId;
     setMcpConfigLoading(true);
     setMcpConfigMessage(null);
 
     try {
       const [userDocument, workspaceDocument] = await Promise.all([
         loadMcpConfigDocument("user"),
-        loadMcpConfigDocument("workspace", options.activeSessionWorkspace),
+        loadMcpConfigDocument("workspace", workspaceRoot),
       ]);
 
-      setMcpConfigDocuments({
-        user: userDocument,
-        workspace: workspaceDocument,
-      });
-      setMcpConfigDrafts({
-        user: userDocument.raw,
-        workspace: workspaceDocument.raw,
-      });
+      if (
+        mcpConfigLoadRequestIdRef.current !== requestId ||
+        activeWorkspaceKeyRef.current !== workspaceKey ||
+        representedMcpWorkspaceKeyRef.current !== workspaceKey
+      ) {
+        return;
+      }
+
+      const canReplaceUser =
+        cleanDrafts.user &&
+        mcpConfigDraftRevisionRef.current.user === draftRevisions.user;
+      const canReplaceWorkspace =
+        cleanDrafts.workspace &&
+        mcpConfigDraftRevisionRef.current.workspace ===
+          draftRevisions.workspace;
+      const nextDocuments = {
+        user: canReplaceUser
+          ? userDocument
+          : mcpConfigDocumentsRef.current.user,
+        workspace: canReplaceWorkspace
+          ? workspaceDocument
+          : mcpConfigDocumentsRef.current.workspace,
+      };
+      const nextDrafts = {
+        user: canReplaceUser
+          ? userDocument.raw
+          : mcpConfigDraftsRef.current.user,
+        workspace: canReplaceWorkspace
+          ? workspaceDocument.raw
+          : mcpConfigDraftsRef.current.workspace,
+      };
+
+      mcpConfigDocumentsRef.current = nextDocuments;
+      mcpConfigDraftsRef.current = nextDrafts;
+      setMcpConfigDocuments(nextDocuments);
+      setMcpConfigDrafts(nextDrafts);
       setMcpDiscoveryServerId((current) => {
         if (current.trim()) {
           return current;
@@ -617,10 +771,14 @@ export const useChatSessionRuntime = (
         );
       });
 
-      if (!options.activeSessionWorkspace?.trim()) {
+      if (!workspaceRoot?.trim()) {
         setMcpConfigScope("user");
       }
     } catch (error) {
+      if (mcpConfigLoadRequestIdRef.current !== requestId) {
+        return;
+      }
+
       console.error("Failed to load MCP config documents", error);
       setMcpConfigMessage({
         tone: "error",
@@ -630,7 +788,9 @@ export const useChatSessionRuntime = (
             : "MCP configuration could not be loaded.",
       });
     } finally {
-      setMcpConfigLoading(false);
+      if (mcpConfigLoadRequestIdRef.current === requestId) {
+        setMcpConfigLoading(false);
+      }
     }
   }, [options.activeSessionWorkspace]);
 
@@ -680,6 +840,11 @@ export const useChatSessionRuntime = (
       .catch((error) => {
         if (!cancelled) {
           console.error("Failed to load user speech-to-text settings", error);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setUserSpeechToTextSettingsLoaded(true);
         }
       });
 
@@ -737,16 +902,6 @@ export const useChatSessionRuntime = (
         }
 
         console.error("Failed to load user speech-to-text settings", error);
-        applyLoadedUserSpeechToTextSettings({
-          activeProvider: "none",
-          inputDeviceId: null,
-          providerAvailability: USER_SPEECH_TO_TEXT_PROVIDER_ORDER.map(
-            (provider) => ({
-              provider,
-              configured: false,
-            }),
-          ),
-        });
       });
 
     return () => {
@@ -766,7 +921,11 @@ export const useChatSessionRuntime = (
       .catch((error) => {
         if (!cancelled) {
           console.error("Failed to load user desktop settings", error);
-          applyLoadedUserDesktopSettings(createEmptyUserDesktopSettings());
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setUserDesktopSettingsLoaded(true);
         }
       });
 
@@ -837,6 +996,96 @@ export const useChatSessionRuntime = (
   }, [applyLoadedUserDesktopSettings]);
 
   useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+
+    void subscribeToUserSettingsChanged((kind) => {
+      const sequence = (settingsEventSequenceRef.current.get(kind) ?? 0) + 1;
+      settingsEventSequenceRef.current.set(kind, sequence);
+
+      void (async () => {
+        try {
+          if (kind === "provider-keys") {
+            const keys = await loadUserProviderApiKeys();
+            if (disposed || settingsEventSequenceRef.current.get(kind) !== sequence) {
+              return;
+            }
+            const editedProvider = providerSetupProviderRef.current;
+            setProviderSetupKeys({
+              ...keys,
+              ...(providerSetupOpenRef.current
+                ? { [editedProvider]: providerSetupKeyRef.current }
+                : {}),
+            });
+          } else if (kind === "web-search") {
+            const settings = await loadUserWebSearchSettings();
+            if (disposed || settingsEventSequenceRef.current.get(kind) !== sequence) {
+              return;
+            }
+            setWebSearchActiveProvider(settings.activeProvider);
+            const editedProvider = webSearchSetupProviderRef.current;
+            setWebSearchSetupKeys({
+              ...settings.apiKeys,
+              ...(webSearchSetupOpenRef.current
+                ? { [editedProvider]: webSearchSetupKeyRef.current }
+                : {}),
+            });
+          } else if (kind === "voice") {
+            const settings = await loadUserVoiceSettings();
+            if (!disposed && settingsEventSequenceRef.current.get(kind) === sequence) {
+              applyLoadedUserVoiceSettings(settings);
+            }
+          } else if (kind === "speech-to-text") {
+            const settings = await loadUserSpeechToTextSettings();
+            if (!disposed && settingsEventSequenceRef.current.get(kind) === sequence) {
+              applyLoadedUserSpeechToTextSettings(settings);
+            }
+          } else if (kind === "memory") {
+            const settings = await loadUserMemorySettings();
+            if (!disposed && settingsEventSequenceRef.current.get(kind) === sequence) {
+              applyLoadedUserMemorySettings(settings);
+            }
+          } else if (kind === "agent-limits") {
+            const settings = await loadUserAgentLimitsSettings();
+            if (!disposed && settingsEventSequenceRef.current.get(kind) === sequence) {
+              applyLoadedUserAgentLimitsSettings(settings);
+            }
+          } else if (kind === "review-model") {
+            const settings = await loadUserReviewModelSettings();
+            if (!disposed && settingsEventSequenceRef.current.get(kind) === sequence) {
+              applyLoadedUserReviewModelSettings(settings);
+            }
+          } else if (kind === "mcp") {
+            await refreshMcpConfigDocuments();
+          }
+        } catch (error) {
+          if (!disposed) {
+            console.error(`Failed to apply ${kind} settings update`, error);
+          }
+        }
+      })();
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        unsubscribe = unlisten;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, [
+    applyLoadedUserAgentLimitsSettings,
+    applyLoadedUserMemorySettings,
+    applyLoadedUserReviewModelSettings,
+    applyLoadedUserSpeechToTextSettings,
+    applyLoadedUserVoiceSettings,
+    refreshMcpConfigDocuments,
+  ]);
+
+  useEffect(() => {
     if (!options.catalogOpen) {
       return;
     }
@@ -865,7 +1114,6 @@ export const useChatSessionRuntime = (
         }
 
         console.error("Failed to load user desktop settings", error);
-        applyLoadedUserDesktopSettings(createEmptyUserDesktopSettings());
       });
 
     return () => {
@@ -894,9 +1142,6 @@ export const useChatSessionRuntime = (
         }
 
         console.error("Failed to load user agent limit settings", error);
-        applyLoadedUserAgentLimitsSettings(
-          createEmptyUserAgentLimitsSettings(),
-        );
       });
 
     return () => {
@@ -925,9 +1170,6 @@ export const useChatSessionRuntime = (
         }
 
         console.error("Failed to load user review-model settings", error);
-        applyLoadedUserReviewModelSettings(
-          createEmptyUserReviewModelSettings(),
-        );
       });
 
     return () => {
@@ -981,13 +1223,21 @@ export const useChatSessionRuntime = (
 
   useEffect(() => {
     if (!options.catalogOpen) {
+      providerSetupOpenRef.current = false;
       return;
     }
 
+    if (providerSetupOpenRef.current) {
+      return;
+    }
+
+    providerSetupOpenRef.current = true;
+
     let cancelled = false;
+    const editRevision = providerSetupEditRevisionRef.current;
 
     setProviderSetupProvider(
-      getInitialProviderSetupProvider(options.activeSessionProvider),
+      getInitialProviderSetupProvider(activeSessionProviderRef.current),
     );
     setProviderSetupKeys({});
     setProviderSetupKey("");
@@ -995,7 +1245,10 @@ export const useChatSessionRuntime = (
 
     void loadUserProviderApiKeys()
       .then((apiKeys) => {
-        if (!cancelled) {
+        if (
+          !cancelled &&
+          providerSetupEditRevisionRef.current === editRevision
+        ) {
           setProviderSetupKeys(apiKeys);
         }
       })
@@ -1008,7 +1261,7 @@ export const useChatSessionRuntime = (
     return () => {
       cancelled = true;
     };
-  }, [options.activeSessionProvider, options.catalogOpen]);
+  }, [options.catalogOpen]);
 
   useEffect(() => {
     if (!options.catalogOpen) {
@@ -1020,10 +1273,18 @@ export const useChatSessionRuntime = (
 
   useEffect(() => {
     if (!options.catalogOpen) {
+      webSearchSetupOpenRef.current = false;
       return;
     }
 
+    if (webSearchSetupOpenRef.current) {
+      return;
+    }
+
+    webSearchSetupOpenRef.current = true;
+
     let cancelled = false;
+    const editRevision = webSearchSetupEditRevisionRef.current;
 
     setWebSearchSetupKeys({});
     setWebSearchSetupKey("");
@@ -1035,7 +1296,9 @@ export const useChatSessionRuntime = (
           return;
         }
 
-        applyLoadedWebSearchSettings(settings);
+        if (webSearchSetupEditRevisionRef.current === editRevision) {
+          applyLoadedWebSearchSettings(settings);
+        }
       })
       .catch((error) => {
         if (cancelled) {
@@ -1043,7 +1306,6 @@ export const useChatSessionRuntime = (
         }
 
         console.error("Failed to load web-search settings", error);
-        applyLoadedWebSearchSettings(createEmptyWebSearchSettings());
       });
 
     return () => {
@@ -1072,7 +1334,6 @@ export const useChatSessionRuntime = (
         }
 
         console.error("Failed to load user memory settings", error);
-        applyLoadedUserMemorySettings(createEmptyUserMemorySettings());
       });
 
     return () => {
@@ -1109,6 +1370,7 @@ export const useChatSessionRuntime = (
 
   const handleProviderSetupProviderChange = useCallback(
     (provider: UserApiKeyProvider): void => {
+      providerSetupProviderRef.current = provider;
       setProviderSetupProvider(provider);
       setProviderSetupMessage(null);
     },
@@ -1117,6 +1379,7 @@ export const useChatSessionRuntime = (
 
   const handleProviderSetupKeyChange = useCallback(
     (value: string): void => {
+      providerSetupEditRevisionRef.current += 1;
       setProviderSetupKey(value);
       setProviderSetupKeys((prev) => ({
         ...prev,
@@ -1147,6 +1410,7 @@ export const useChatSessionRuntime = (
 
   const handleWebSearchSetupProviderChange = useCallback(
     (provider: UserWebSearchApiKeyProvider): void => {
+      webSearchSetupProviderRef.current = provider;
       setWebSearchSetupProvider(provider);
       setWebSearchSetupMessage(null);
     },
@@ -1155,6 +1419,7 @@ export const useChatSessionRuntime = (
 
   const handleWebSearchSetupKeyChange = useCallback(
     (value: string): void => {
+      webSearchSetupEditRevisionRef.current += 1;
       setWebSearchSetupKey(value);
       setWebSearchSetupKeys((prev) => ({
         ...prev,
@@ -1172,41 +1437,72 @@ export const useChatSessionRuntime = (
     keyValue?: string,
   ): Promise<boolean> => {
     const normalizedKey = (keyValue ?? providerSetupKey).trim();
+    const provider = providerSetupProvider;
+    const editRevision = providerSetupEditRevisionRef.current;
+    const requestId = providerSetupSaveRequestIdRef.current + 1;
 
     if (!normalizedKey || !isTauri()) {
       return false;
     }
 
+    providerSetupSaveRequestIdRef.current = requestId;
     setProviderSetupSaving(true);
     setProviderSetupMessage(null);
 
     try {
       const nextProviders = await saveUserProviderApiKey(
-        providerSetupProvider,
+        provider,
         normalizedKey,
       );
+
+      if (providerSetupSaveRequestIdRef.current !== requestId) {
+        return false;
+      }
 
       setGlobalProviders(nextProviders);
       setProviderSetupKeys((prev) => ({
         ...prev,
-        [providerSetupProvider]: normalizedKey,
+        [provider]:
+          providerSetupEditRevisionRef.current === editRevision
+            ? normalizedKey
+            : prev[provider],
       }));
-      setProviderSetupKey(normalizedKey);
+      if (
+        providerSetupEditRevisionRef.current === editRevision &&
+        providerSetupProviderRef.current === provider
+      ) {
+        setProviderSetupKey(normalizedKey);
+      }
       setProviderSetupMessage({
         tone: "success",
-        text: `${getProviderLabel(providerSetupProvider)} API key saved.`,
+        text: `${getProviderLabel(provider)} API key saved.`,
       });
 
-      await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
+      const submittedWorkspaceKey = createRuntimeSnapshotRequestKey(
+        options.activeSessionWorkspace,
+      );
+      if (activeWorkspaceKeyRef.current === submittedWorkspaceKey) {
+        await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
+      }
+      const voiceRevision = voiceMutationRevisionRef.current;
+      const speechRevision = speechMutationRevisionRef.current;
       const [voiceSettings, speechToTextSettings] = await Promise.all([
         loadUserVoiceSettings(),
         loadUserSpeechToTextSettings(),
       ]);
-      applyLoadedUserVoiceSettings(voiceSettings);
-      applyLoadedUserSpeechToTextSettings(speechToTextSettings);
+      if (voiceMutationRevisionRef.current === voiceRevision) {
+        applyLoadedUserVoiceSettings(voiceSettings);
+      }
+      if (speechMutationRevisionRef.current === speechRevision) {
+        applyLoadedUserSpeechToTextSettings(speechToTextSettings);
+      }
 
       return true;
     } catch (error) {
+      if (providerSetupSaveRequestIdRef.current !== requestId) {
+        return false;
+      }
+
       setProviderSetupMessage({
         tone: "error",
         text:
@@ -1217,7 +1513,9 @@ export const useChatSessionRuntime = (
 
       return false;
     } finally {
-      setProviderSetupSaving(false);
+      if (providerSetupSaveRequestIdRef.current === requestId) {
+        setProviderSetupSaving(false);
+      }
     }
   }, [
     applyLoadedUserVoiceSettings,
@@ -1230,6 +1528,8 @@ export const useChatSessionRuntime = (
 
   const handleVoiceActiveProviderSave = useCallback(
     async (provider: VoiceAiProvider): Promise<void> => {
+      const mutationRevision = voiceMutationRevisionRef.current + 1;
+      voiceMutationRevisionRef.current = mutationRevision;
       setVoiceSetupSaving(true);
       setVoiceSetupMessage(null);
 
@@ -1238,6 +1538,9 @@ export const useChatSessionRuntime = (
         const providerLabel =
           provider === "none" ? "System voice fallback" : getProviderLabel(provider);
 
+        if (voiceMutationRevisionRef.current !== mutationRevision) {
+          return;
+        }
         applyLoadedUserVoiceSettings(settings);
         setVoiceSetupMessage({
           tone: "success",
@@ -1267,6 +1570,8 @@ export const useChatSessionRuntime = (
 
   const handleSpeechToTextActiveProviderSave = useCallback(
     async (provider: SpeechToTextProvider): Promise<void> => {
+      const mutationRevision = speechMutationRevisionRef.current + 1;
+      speechMutationRevisionRef.current = mutationRevision;
       setSpeechToTextSetupSaving(true);
       setSpeechToTextSetupMessage(null);
 
@@ -1275,6 +1580,9 @@ export const useChatSessionRuntime = (
         const providerLabel =
           provider === "none" ? "Speak to text" : getProviderLabel(provider);
 
+        if (speechMutationRevisionRef.current !== mutationRevision) {
+          return;
+        }
         applyLoadedUserSpeechToTextSettings(settings);
         setSpeechToTextSetupMessage({
           tone: "success",
@@ -1305,6 +1613,8 @@ export const useChatSessionRuntime = (
   const handleSpeechToTextInputDeviceSave = useCallback(
     async (inputDeviceId: string | null): Promise<void> => {
       const normalizedInputDeviceId = inputDeviceId?.trim() || null;
+      const mutationRevision = speechMutationRevisionRef.current + 1;
+      speechMutationRevisionRef.current = mutationRevision;
 
       if (!isTauri()) {
         applyLoadedUserSpeechToTextSettings({
@@ -1328,6 +1638,9 @@ export const useChatSessionRuntime = (
           normalizedInputDeviceId,
         );
 
+        if (speechMutationRevisionRef.current !== mutationRevision) {
+          return;
+        }
         applyLoadedUserSpeechToTextSettings(settings);
         setSpeechToTextSetupMessage({
           tone: "success",
@@ -1352,13 +1665,25 @@ export const useChatSessionRuntime = (
 
   const handleWebSearchActiveProviderSave = useCallback(
     async (provider: WebSearchProvider): Promise<void> => {
+      const requestId = webSearchSetupSaveRequestIdRef.current + 1;
+      const editRevision = webSearchSetupEditRevisionRef.current;
+      webSearchSetupSaveRequestIdRef.current = requestId;
       setWebSearchSetupSaving(true);
       setWebSearchSetupMessage(null);
 
       try {
         const settings = await saveUserWebSearchActiveProvider(provider);
 
-        applyLoadedWebSearchSettings(settings);
+        if (webSearchSetupSaveRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setWebSearchActiveProvider(settings.activeProvider);
+        setWebSearchSetupKeys((currentKeys) =>
+          webSearchSetupEditRevisionRef.current === editRevision
+            ? settings.apiKeys
+            : { ...settings.apiKeys, ...currentKeys },
+        );
         setWebSearchSetupMessage({
           tone: "success",
           text:
@@ -1369,6 +1694,10 @@ export const useChatSessionRuntime = (
 
         await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
       } catch (error) {
+        if (webSearchSetupSaveRequestIdRef.current !== requestId) {
+          return;
+        }
+
         setWebSearchSetupMessage({
           tone: "error",
           text:
@@ -1377,12 +1706,13 @@ export const useChatSessionRuntime = (
               : "The web-search provider could not be saved.",
         });
       } finally {
-        setWebSearchSetupSaving(false);
+        if (webSearchSetupSaveRequestIdRef.current === requestId) {
+          setWebSearchSetupSaving(false);
+        }
       }
     },
     [
-      applyLoadedWebSearchSettings,
-        options.activeSessionWorkspace,
+      options.activeSessionWorkspace,
       refreshWorkspaceRuntimeSnapshot,
     ],
   );
@@ -1391,36 +1721,56 @@ export const useChatSessionRuntime = (
     keyValue?: string,
   ): Promise<boolean> => {
     const normalizedKey = (keyValue ?? webSearchSetupKey).trim();
+    const provider = webSearchSetupProvider;
+    const editRevision = webSearchSetupEditRevisionRef.current;
+    const requestId = webSearchSetupSaveRequestIdRef.current + 1;
 
     if (!normalizedKey || !isTauri()) {
       return false;
     }
 
+    webSearchSetupSaveRequestIdRef.current = requestId;
     setWebSearchSetupSaving(true);
     setWebSearchSetupMessage(null);
 
     try {
       const settings = await saveUserWebSearchApiKey(
-        webSearchSetupProvider,
+        provider,
         normalizedKey,
       );
 
-      applyLoadedWebSearchSettings(settings);
+      if (webSearchSetupSaveRequestIdRef.current !== requestId) {
+        return false;
+      }
+
+      setWebSearchActiveProvider(settings.activeProvider);
       setWebSearchSetupKeys((prev) => ({
-        ...prev,
         ...settings.apiKeys,
-        [webSearchSetupProvider]: normalizedKey,
+        ...prev,
+        [provider]:
+          webSearchSetupEditRevisionRef.current === editRevision
+            ? normalizedKey
+            : prev[provider],
       }));
-      setWebSearchSetupKey(normalizedKey);
+      if (
+        webSearchSetupEditRevisionRef.current === editRevision &&
+        webSearchSetupProviderRef.current === provider
+      ) {
+        setWebSearchSetupKey(normalizedKey);
+      }
       setWebSearchSetupMessage({
         tone: "success",
-        text: `${getWebSearchProviderLabel(webSearchSetupProvider)} API key saved.`,
+        text: `${getWebSearchProviderLabel(provider)} API key saved.`,
       });
 
       await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
 
       return true;
     } catch (error) {
+      if (webSearchSetupSaveRequestIdRef.current !== requestId) {
+        return false;
+      }
+
       setWebSearchSetupMessage({
         tone: "error",
         text:
@@ -1431,10 +1781,11 @@ export const useChatSessionRuntime = (
 
       return false;
     } finally {
-      setWebSearchSetupSaving(false);
+      if (webSearchSetupSaveRequestIdRef.current === requestId) {
+        setWebSearchSetupSaving(false);
+      }
     }
   }, [
-    applyLoadedWebSearchSettings,
     options.activeSessionWorkspace,
     refreshWorkspaceRuntimeSnapshot,
     webSearchSetupKey,
@@ -1548,7 +1899,8 @@ export const useChatSessionRuntime = (
 
   const handleWorkspaceDefaultModeSave = useCallback(
     async (mode: RuntimeSnapshot["mode"]): Promise<void> => {
-      if (!options.activeSessionWorkspace) {
+      const workspaceRoot = options.activeSessionWorkspace;
+      if (!workspaceRoot) {
         setWorkspaceSetupMessage({
           tone: "error",
           text: "Select a workspace before changing its default mode.",
@@ -1556,11 +1908,22 @@ export const useChatSessionRuntime = (
         return;
       }
 
+      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
+      const requestId = workspaceSaveRequestIdRef.current + 1;
+      workspaceSaveRequestIdRef.current = requestId;
+
       setWorkspaceSetupSaving(true);
       setWorkspaceSetupMessage(null);
 
       try {
-        await saveWorkspaceDefaultMode(options.activeSessionWorkspace, mode);
+        await saveWorkspaceDefaultMode(workspaceRoot, mode);
+
+        if (
+          workspaceSaveRequestIdRef.current !== requestId ||
+          activeWorkspaceKeyRef.current !== workspaceKey
+        ) {
+          return;
+        }
 
         if (!isTauri()) {
           setRuntimeSnapshot((currentSnapshot) =>
@@ -1574,22 +1937,33 @@ export const useChatSessionRuntime = (
           );
         }
 
-        await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
+        await refreshWorkspaceRuntimeSnapshot(workspaceRoot);
+
+        if (activeWorkspaceKeyRef.current !== workspaceKey) {
+          return;
+        }
 
         setWorkspaceSetupMessage({
           tone: "success",
           text: `Workspace default mode saved as ${getRunModeLabel(mode)}.`,
         });
       } catch (error) {
-        setWorkspaceSetupMessage({
-          tone: "error",
-          text:
-            error instanceof Error
-              ? error.message
-              : "Workspace default mode could not be updated.",
-        });
+        if (
+          workspaceSaveRequestIdRef.current === requestId &&
+          activeWorkspaceKeyRef.current === workspaceKey
+        ) {
+          setWorkspaceSetupMessage({
+            tone: "error",
+            text:
+              error instanceof Error
+                ? error.message
+                : "Workspace default mode could not be updated.",
+          });
+        }
       } finally {
-        setWorkspaceSetupSaving(false);
+        if (workspaceSaveRequestIdRef.current === requestId) {
+          setWorkspaceSetupSaving(false);
+        }
       }
     },
     [
@@ -1600,7 +1974,8 @@ export const useChatSessionRuntime = (
 
   const handleWorkspaceReasoningModeSave = useCallback(
     async (reasoning: RuntimeSnapshot["reasoning"]): Promise<void> => {
-      if (!options.activeSessionWorkspace) {
+      const workspaceRoot = options.activeSessionWorkspace;
+      if (!workspaceRoot) {
         setWorkspaceSetupMessage({
           tone: "error",
           text: "Select a workspace before changing its reasoning mode.",
@@ -1608,14 +1983,25 @@ export const useChatSessionRuntime = (
         return;
       }
 
+      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
+      const requestId = workspaceSaveRequestIdRef.current + 1;
+      workspaceSaveRequestIdRef.current = requestId;
+
       setWorkspaceSetupSaving(true);
       setWorkspaceSetupMessage(null);
 
       try {
         await saveWorkspaceReasoningMode(
-          options.activeSessionWorkspace,
+          workspaceRoot,
           reasoning,
         );
+
+        if (
+          workspaceSaveRequestIdRef.current !== requestId ||
+          activeWorkspaceKeyRef.current !== workspaceKey
+        ) {
+          return;
+        }
 
         if (!isTauri()) {
           setRuntimeSnapshot((currentSnapshot) =>
@@ -1628,22 +2014,33 @@ export const useChatSessionRuntime = (
           );
         }
 
-        await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
+        await refreshWorkspaceRuntimeSnapshot(workspaceRoot);
+
+        if (activeWorkspaceKeyRef.current !== workspaceKey) {
+          return;
+        }
 
         setWorkspaceSetupMessage({
           tone: "success",
           text: `Workspace reasoning saved as ${getReasoningModeLabel(reasoning)}.`,
         });
       } catch (error) {
-        setWorkspaceSetupMessage({
-          tone: "error",
-          text:
-            error instanceof Error
-              ? error.message
-              : "Workspace reasoning mode could not be updated.",
-        });
+        if (
+          workspaceSaveRequestIdRef.current === requestId &&
+          activeWorkspaceKeyRef.current === workspaceKey
+        ) {
+          setWorkspaceSetupMessage({
+            tone: "error",
+            text:
+              error instanceof Error
+                ? error.message
+                : "Workspace reasoning mode could not be updated.",
+          });
+        }
       } finally {
-        setWorkspaceSetupSaving(false);
+        if (workspaceSaveRequestIdRef.current === requestId) {
+          setWorkspaceSetupSaving(false);
+        }
       }
     },
     [
@@ -1670,6 +2067,11 @@ export const useChatSessionRuntime = (
 
   const handleMcpConfigDraftChange = useCallback(
     (value: string): void => {
+      mcpConfigDraftRevisionRef.current[mcpConfigScope] += 1;
+      mcpConfigDraftsRef.current = {
+        ...mcpConfigDraftsRef.current,
+        [mcpConfigScope]: value,
+      };
       setMcpConfigDrafts((prev) => ({
         ...prev,
         [mcpConfigScope]: value,
@@ -1683,32 +2085,121 @@ export const useChatSessionRuntime = (
   );
 
   const handleMcpConfigSave = useCallback(async (): Promise<void> => {
+    const requestId = mcpConfigSaveRequestIdRef.current + 1;
+    const scope = mcpConfigScope;
+    const submittedDraft = mcpConfigDraft;
+    const draftRevision = mcpConfigDraftRevisionRef.current[scope];
+    const workspaceRoot = options.activeSessionWorkspace;
+    const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
+    const expectedRaw = mcpConfigDocumentsRef.current[scope].raw;
+
+    if (
+      scope === "workspace" &&
+      (!workspaceKey ||
+        representedMcpWorkspaceKeyRef.current !== workspaceKey)
+    ) {
+      setMcpConfigMessage({
+        tone: "error",
+        text: "The workspace changed. Reload its MCP configuration before saving.",
+      });
+      return;
+    }
+
+    mcpConfigSaveRequestIdRef.current = requestId;
+    mcpConfigLoadRequestIdRef.current += 1;
+    setMcpConfigLoading(false);
     setMcpConfigSaving(true);
     setMcpConfigMessage(null);
 
     try {
       const document = await saveMcpConfigDocument(
-        mcpConfigScope,
-        mcpConfigDraft,
-        options.activeSessionWorkspace,
+        scope,
+        submittedDraft,
+        workspaceRoot,
+        expectedRaw,
       );
+
+      if (
+        mcpConfigSaveRequestIdRef.current !== requestId ||
+        (scope === "workspace" &&
+          (activeWorkspaceKeyRef.current !== workspaceKey ||
+            representedMcpWorkspaceKeyRef.current !== workspaceKey))
+      ) {
+        return;
+      }
 
       setMcpConfigDocuments((prev) => ({
         ...prev,
-        [mcpConfigScope]: document,
+        [scope]: document,
       }));
-      setMcpConfigDrafts((prev) => ({
-        ...prev,
-        [mcpConfigScope]: document.raw,
-      }));
+      mcpConfigDocumentsRef.current = {
+        ...mcpConfigDocumentsRef.current,
+        [scope]: document,
+      };
+      const nextDraft =
+        mcpConfigDraftRevisionRef.current[scope] === draftRevision &&
+        mcpConfigDraftsRef.current[scope] === submittedDraft
+          ? document.raw
+          : mcpConfigDraftsRef.current[scope];
+      mcpConfigDraftsRef.current = {
+        ...mcpConfigDraftsRef.current,
+        [scope]: nextDraft,
+      };
+      setMcpConfigDrafts((prev) => ({ ...prev, [scope]: nextDraft }));
+
+      if (scope === "workspace" && workspaceKey) {
+        mcpWorkspaceEditorsRef.current.set(workspaceKey, {
+          document,
+          draft: nextDraft,
+          draftRevision: mcpConfigDraftRevisionRef.current.workspace,
+        });
+      }
       setMcpConfigMessage({
         tone: "success",
         text:
-          mcpConfigScope === "workspace"
+          scope === "workspace"
             ? "Workspace MCP config saved."
             : "Global MCP config saved.",
       });
     } catch (error) {
+      if (mcpConfigSaveRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      if (isMcpConfigConflict(error)) {
+        try {
+          const latestDocument = await loadMcpConfigDocument(
+            scope,
+            workspaceRoot,
+          );
+
+          if (
+            mcpConfigSaveRequestIdRef.current !== requestId ||
+            (scope === "workspace" &&
+              (activeWorkspaceKeyRef.current !== workspaceKey ||
+                representedMcpWorkspaceKeyRef.current !== workspaceKey))
+          ) {
+            return;
+          }
+
+          mcpConfigDocumentsRef.current = {
+            ...mcpConfigDocumentsRef.current,
+            [scope]: latestDocument,
+          };
+          setMcpConfigDocuments((prev) => ({
+            ...prev,
+            [scope]: latestDocument,
+          }));
+          setMcpConfigMessage({
+            tone: "error",
+            text: "MCP configuration changed elsewhere. The latest version is now the comparison base and your draft was kept; review it before saving again.",
+          });
+          return;
+        } catch (reloadError) {
+          console.error("Failed to reload conflicting MCP config", reloadError);
+        }
+      }
+
       setMcpConfigMessage({
         tone: "error",
         text:
@@ -1717,7 +2208,9 @@ export const useChatSessionRuntime = (
             : "MCP configuration could not be saved.",
       });
     } finally {
-      setMcpConfigSaving(false);
+      if (mcpConfigSaveRequestIdRef.current === requestId) {
+        setMcpConfigSaving(false);
+      }
     }
   }, [mcpConfigDraft, mcpConfigScope, options.activeSessionWorkspace]);
 
@@ -1732,6 +2225,11 @@ export const useChatSessionRuntime = (
           (candidate) => candidate.id === presetId,
         );
 
+        mcpConfigDraftRevisionRef.current[mcpConfigScope] += 1;
+        mcpConfigDraftsRef.current = {
+          ...mcpConfigDraftsRef.current,
+          [mcpConfigScope]: nextDraft,
+        };
         setMcpConfigDrafts((prev) => ({
           ...prev,
           [mcpConfigScope]: nextDraft,
@@ -1763,13 +2261,18 @@ export const useChatSessionRuntime = (
       action: "discover" | "refresh" | "cache",
       requestedServerId?: string,
     ): Promise<void> => {
-      if (!options.activeSessionWorkspace?.trim()) {
+      const workspaceRoot = options.activeSessionWorkspace;
+      if (!workspaceRoot?.trim()) {
         setMcpConfigMessage({
           tone: "error",
           text: "Select a workspace before using MCP discovery.",
         });
         return;
       }
+
+      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
+      const requestId = mcpDiscoveryRequestIdRef.current + 1;
+      mcpDiscoveryRequestIdRef.current = requestId;
 
       const serverId = (requestedServerId ?? mcpDiscoveryServerId).trim();
 
@@ -1787,13 +2290,20 @@ export const useChatSessionRuntime = (
       try {
         const result =
           action === "cache"
-            ? await listMcpCachedCapabilities(options.activeSessionWorkspace)
+            ? await listMcpCachedCapabilities(workspaceRoot)
             : action === "refresh"
               ? await refreshMcpDiscoveryCache(
-                  options.activeSessionWorkspace,
+                  workspaceRoot,
                   serverId,
                 )
-              : await discoverMcpServer(options.activeSessionWorkspace, serverId);
+              : await discoverMcpServer(workspaceRoot, serverId);
+
+        if (
+          mcpDiscoveryRequestIdRef.current !== requestId ||
+          activeWorkspaceKeyRef.current !== workspaceKey
+        ) {
+          return;
+        }
 
         setMcpDiscoveryOutput(JSON.stringify(result, null, 2));
         setMcpConfigMessage({
@@ -1806,15 +2316,22 @@ export const useChatSessionRuntime = (
                 : "MCP server discovery completed.",
         });
       } catch (error) {
-        setMcpConfigMessage({
-          tone: "error",
-          text:
-            error instanceof Error
-              ? error.message
-              : "MCP discovery could not be completed.",
-        });
+        if (
+          mcpDiscoveryRequestIdRef.current === requestId &&
+          activeWorkspaceKeyRef.current === workspaceKey
+        ) {
+          setMcpConfigMessage({
+            tone: "error",
+            text:
+              error instanceof Error
+                ? error.message
+                : "MCP discovery could not be completed.",
+          });
+        }
       } finally {
-        setMcpDiscoveryBusy(false);
+        if (mcpDiscoveryRequestIdRef.current === requestId) {
+          setMcpDiscoveryBusy(false);
+        }
       }
     },
     [mcpDiscoveryServerId, options.activeSessionWorkspace],
@@ -1833,19 +2350,57 @@ export const useChatSessionRuntime = (
   }, [runMcpDiscoveryAction]);
 
   const refreshUserMcpConfigDocument = useCallback(async (): Promise<void> => {
-    const document = await loadMcpConfigDocument(
-      "user",
-      options.activeSessionWorkspace,
-    );
+    const requestId = mcpConfigLoadRequestIdRef.current + 1;
+    const draftRevision = mcpConfigDraftRevisionRef.current.user;
+    const draftWasClean =
+      mcpConfigDraftsRef.current.user ===
+      mcpConfigDocumentsRef.current.user.raw;
+    mcpConfigLoadRequestIdRef.current = requestId;
+    let document: McpConfigDocument;
+
+    try {
+      document = await loadMcpConfigDocument(
+        "user",
+        options.activeSessionWorkspace,
+      );
+    } finally {
+      if (mcpConfigLoadRequestIdRef.current === requestId) {
+        setMcpConfigLoading(false);
+      }
+    }
+
+    if (mcpConfigLoadRequestIdRef.current !== requestId) {
+      return;
+    }
+
+    const canReplaceDraft =
+      draftWasClean &&
+      mcpConfigDraftRevisionRef.current.user === draftRevision;
+
+    if (!canReplaceDraft) {
+      setMcpConfigMessage({
+        tone: "error",
+        text: "The global MCP configuration changed while this draft was open. Your draft and its original comparison base were kept; saving will require conflict review.",
+      });
+      return;
+    }
 
     setMcpConfigDocuments((prev) => ({
       ...prev,
       user: document,
     }));
+    mcpConfigDocumentsRef.current = {
+      ...mcpConfigDocumentsRef.current,
+      user: document,
+    };
     setMcpConfigDrafts((prev) => ({
       ...prev,
       user: document.raw,
     }));
+    mcpConfigDraftsRef.current = {
+      ...mcpConfigDraftsRef.current,
+      user: document.raw,
+    };
   }, [options.activeSessionWorkspace]);
 
   const handleMcpOAuthServerIdChange = useCallback((serverId: string): void => {
@@ -1859,13 +2414,18 @@ export const useChatSessionRuntime = (
   }, []);
 
   const handleMcpOAuthStart = useCallback(async (requestedServerId?: string): Promise<void> => {
-    if (!options.activeSessionWorkspace?.trim()) {
+    const workspaceRoot = options.activeSessionWorkspace;
+    if (!workspaceRoot?.trim()) {
       setMcpConfigMessage({
         tone: "error",
         text: "Select a workspace before starting MCP OAuth.",
       });
       return;
     }
+
+    const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
+    const requestId = mcpOAuthRequestIdRef.current + 1;
+    mcpOAuthRequestIdRef.current = requestId;
 
     const serverId = (requestedServerId ?? mcpOAuthServerId).trim();
 
@@ -1882,12 +2442,23 @@ export const useChatSessionRuntime = (
 
     try {
       const result = await authorizeMcpOAuth(
-        options.activeSessionWorkspace,
+        workspaceRoot,
         serverId,
       );
 
+      if (
+        mcpOAuthRequestIdRef.current !== requestId ||
+        activeWorkspaceKeyRef.current !== workspaceKey
+      ) {
+        return;
+      }
+
       setMcpDiscoveryOutput(JSON.stringify(result, null, 2));
       await refreshUserMcpConfigDocument();
+
+      if (activeWorkspaceKeyRef.current !== workspaceKey) {
+        return;
+      }
 
       setMcpConfigMessage({
         tone: "success",
@@ -1899,15 +2470,22 @@ export const useChatSessionRuntime = (
               : "MCP OAuth authorized.",
       });
     } catch (error) {
-      setMcpConfigMessage({
-        tone: "error",
-        text:
-          error instanceof Error
-            ? error.message
-            : "MCP OAuth could not be started.",
-      });
+      if (
+        mcpOAuthRequestIdRef.current === requestId &&
+        activeWorkspaceKeyRef.current === workspaceKey
+      ) {
+        setMcpConfigMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "MCP OAuth could not be started.",
+        });
+      }
     } finally {
-      setMcpOAuthBusy(false);
+      if (mcpOAuthRequestIdRef.current === requestId) {
+        setMcpOAuthBusy(false);
+      }
     }
   }, [
     mcpOAuthServerId,
@@ -1919,13 +2497,18 @@ export const useChatSessionRuntime = (
     requestedServerId?: string,
     requestedAuthorizationResponse?: string,
   ): Promise<void> => {
-    if (!options.activeSessionWorkspace?.trim()) {
+    const workspaceRoot = options.activeSessionWorkspace;
+    if (!workspaceRoot?.trim()) {
       setMcpConfigMessage({
         tone: "error",
         text: "Select a workspace before finishing MCP OAuth.",
       });
       return;
     }
+
+    const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
+    const requestId = mcpOAuthRequestIdRef.current + 1;
+    mcpOAuthRequestIdRef.current = requestId;
 
     const serverId = (requestedServerId ?? mcpOAuthServerId).trim();
     const authorizationResponse = (
@@ -1953,14 +2536,24 @@ export const useChatSessionRuntime = (
 
     try {
       const result = await finishMcpOAuth(
-        options.activeSessionWorkspace,
+        workspaceRoot,
         serverId,
         authorizationResponse,
       );
 
+      if (
+        mcpOAuthRequestIdRef.current !== requestId ||
+        activeWorkspaceKeyRef.current !== workspaceKey
+      ) {
+        return;
+      }
+
       setMcpDiscoveryOutput(JSON.stringify(result, null, 2));
       setMcpOAuthCallback("");
       await refreshUserMcpConfigDocument();
+      if (activeWorkspaceKeyRef.current !== workspaceKey) {
+        return;
+      }
       setMcpConfigMessage({
         tone: "success",
         text:
@@ -1969,15 +2562,22 @@ export const useChatSessionRuntime = (
             : "MCP OAuth finished.",
       });
     } catch (error) {
-      setMcpConfigMessage({
-        tone: "error",
-        text:
-          error instanceof Error
-            ? error.message
-            : "MCP OAuth could not be finished.",
-      });
+      if (
+        mcpOAuthRequestIdRef.current === requestId &&
+        activeWorkspaceKeyRef.current === workspaceKey
+      ) {
+        setMcpConfigMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "MCP OAuth could not be finished.",
+        });
+      }
     } finally {
-      setMcpOAuthBusy(false);
+      if (mcpOAuthRequestIdRef.current === requestId) {
+        setMcpOAuthBusy(false);
+      }
     }
   }, [
     mcpOAuthCallback,
@@ -2037,6 +2637,7 @@ export const useChatSessionRuntime = (
     voiceSetupSaving,
     voiceSetupMessage,
     userSpeechToTextSettings,
+    userSpeechToTextSettingsLoaded,
     speechToTextSetupSaving,
     speechInputDeviceSaving,
     speechToTextSetupMessage,

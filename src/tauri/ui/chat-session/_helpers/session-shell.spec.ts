@@ -1,4 +1,5 @@
 import { createSession } from "../../chat-session.model.ts";
+import { createPreviewFixture } from "../../preview/fixtures";
 import type { RuntimeSnapshot } from "../../runtime";
 import {
   createConversationContextFromSession,
@@ -101,6 +102,10 @@ describe("session shell helpers", () => {
           role: "agent",
           content: "Preview",
           createdAt: 2,
+          source: {
+            kind: "preview",
+            preview: createPreviewFixture("First request"),
+          },
         },
         {
           id: "agent-1-final",

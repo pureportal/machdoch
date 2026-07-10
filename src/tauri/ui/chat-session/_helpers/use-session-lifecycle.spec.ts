@@ -202,7 +202,7 @@ describe("useSessionLifecycle", () => {
     });
   });
 
-  it("refreshes reusable empty sessions with remembered new-chat settings", () => {
+  it("replaces reusable empty sessions with fresh remembered new-chat settings", () => {
     const baseState = createInitialShellState();
     const activeSession = createSession({
       id: "active-existing-session",
@@ -256,10 +256,15 @@ describe("useSessionLifecycle", () => {
     });
 
     expect(state.shellState.sessions).toHaveLength(2);
-    expect(state.shellState.activeSessionId).toBe(reusableSession.id);
+    expect(state.shellState.activeSessionId).not.toBe(reusableSession.id);
+    expect(
+      state.shellState.sessions.some(
+        (session) => session.id === reusableSession.id,
+      ),
+    ).toBe(false);
     expect(
       state.shellState.sessions.find(
-        (session) => session.id === reusableSession.id,
+        (session) => session.id === state.shellState.activeSessionId,
       ),
     ).toMatchObject({
       workspace: "C:\\Remembered",

@@ -59,14 +59,26 @@ export const SCHEDULER_ACTIONS: ReadonlySet<SchedulerCliAction> = new Set([
   "events",
   "event",
   "run-due",
+  "run-all-due",
+  "poll-all",
+  "inspect-ralph",
   "trigger",
   "retry",
   "cancel",
   "sync-prompts",
   "service",
+  "service-all",
 ]);
 export const SCHEDULER_ACTIONS_REQUIRING_SUBJECT: ReadonlySet<SchedulerCliAction> =
-  new Set(["pause", "resume", "delete", "trigger", "retry", "cancel"]);
+  new Set([
+    "pause",
+    "resume",
+    "delete",
+    "trigger",
+    "retry",
+    "cancel",
+    "inspect-ralph",
+  ]);
 export const MCP_ACTIONS: ReadonlySet<McpCliAction> = new Set([
   "servers",
   "cache",

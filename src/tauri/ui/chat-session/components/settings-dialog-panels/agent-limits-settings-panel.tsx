@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import {
   AGENT_LIMIT_BOUNDS,
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
@@ -23,6 +23,7 @@ import {
   SettingsAutoSaveStatus,
   SettingsCard,
   SettingsStatus,
+  rebaseDirtySettingsDraft,
   useDebouncedAutoSave,
 } from "./shared";
 import type { AgentLimitsSettingsControls } from "./types";
@@ -108,6 +109,8 @@ export const AgentLimitsSettingsPanel = ({
   const [reviewDraft, setReviewDraft] = useState<UserReviewModelSettings>(
     setup.reviewModelSettings,
   );
+  const lastExternalSettingsRef = useRef(setup.settings);
+  const lastExternalReviewSettingsRef = useRef(setup.reviewModelSettings);
   const [providerModelCatalog, setProviderModelCatalog] =
     useState<ProviderModelCatalogSnapshot | null>(null);
   const normalizedDraft = normalizeAgentLimitsDraft(draft);
@@ -172,11 +175,27 @@ export const AgentLimitsSettingsPanel = ({
   });
 
   useEffect(() => {
-    setDraft(setup.settings);
+    const previousSettings = lastExternalSettingsRef.current;
+    lastExternalSettingsRef.current = setup.settings;
+    setDraft((currentDraft) =>
+      rebaseDirtySettingsDraft(
+        currentDraft,
+        previousSettings,
+        setup.settings,
+      ),
+    );
   }, [setup.settings]);
 
   useEffect(() => {
-    setReviewDraft(setup.reviewModelSettings);
+    const previousSettings = lastExternalReviewSettingsRef.current;
+    lastExternalReviewSettingsRef.current = setup.reviewModelSettings;
+    setReviewDraft((currentDraft) =>
+      rebaseDirtySettingsDraft(
+        currentDraft,
+        previousSettings,
+        setup.reviewModelSettings,
+      ),
+    );
   }, [setup.reviewModelSettings]);
 
   useEffect(() => {

@@ -101,6 +101,32 @@ describe("hasConfiguredValue", () => {
   });
 });
 
+describe("user config transactions", () => {
+  it("preserves independent fields across concurrent saves", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    await Promise.all([
+      saveUserApiKey("openai", "sk-concurrent-openai-key-123456"),
+      saveUserWebSearchActiveProvider("tavily"),
+      saveUserDesktopSettingsPatch({ quickVoiceEnabled: false }),
+    ]);
+
+    const raw = JSON.parse(
+      await readFile(getUserConfigPath(), "utf8"),
+    ) as {
+      apiKeys?: Record<string, string>;
+      webSearch?: { activeProvider?: string };
+      desktop?: { quickVoiceEnabled?: boolean };
+    };
+
+    expect(raw.apiKeys?.openai).toBe("sk-concurrent-openai-key-123456");
+    expect(raw.webSearch?.activeProvider).toBe("tavily");
+    expect(raw.desktop?.quickVoiceEnabled).toBe(false);
+    expect(getUserConfigPath()).toContain(workspaceRoot);
+  });
+});
+
 describe("loadProcessEnv", () => {
   it("returns runtime overrides from process env without mixing in provider keys", () => {
     isolateEnvironment();

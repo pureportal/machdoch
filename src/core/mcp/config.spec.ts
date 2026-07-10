@@ -266,6 +266,24 @@ describe("loadMcpConfig", () => {
     });
   });
 
+  it("merges concurrent OAuth patches instead of losing one", async () => {
+    const workspaceRoot = await createWorkspace();
+    const server = createMcpConfigFromPreset("github-remote");
+
+    await Promise.all([
+      saveUserMcpOAuthState(server, { accessToken: "access-token" }),
+      saveUserMcpOAuthState(server, { refreshToken: "refresh-token" }),
+    ]);
+
+    const config = await loadMcpConfig(workspaceRoot);
+    const github = config.servers.find((entry) => entry.id === "github");
+    expect(github?.auth).toMatchObject({
+      type: "oauth",
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+    });
+  });
+
   it("coerces child overrides with partial server patches", () => {
     expect(
       coerceMcpConfigOverride({

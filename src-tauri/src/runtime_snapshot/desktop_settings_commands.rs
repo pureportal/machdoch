@@ -10,7 +10,7 @@ use super::{
         normalize_user_desktop_settings_input, resolve_quick_voice_shortcut,
     },
     settings_types::{UserDesktopLaunchPreferences, UserDesktopSettings},
-    user_config::{load_user_config_file, write_user_config_file},
+    user_config::{load_user_config_file, update_user_config_file},
 };
 use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
@@ -127,29 +127,30 @@ pub(super) fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Mana
     settings: &UserDesktopSettings,
 ) -> Result<PathBuf, String> {
     let normalized_settings = normalize_user_desktop_settings_input(settings)?;
-    let (mut config, config_path) = load_user_config_file()?;
-
-    config.desktop.autostart_minimized = Some(normalized_settings.autostart_minimized);
-    config.desktop.autostart_to_tray = Some(normalized_settings.autostart_to_tray);
-    config.desktop.always_run_as_administrator =
-        Some(normalized_settings.always_run_as_administrator);
-    config.desktop.assistant_bubble_enabled = Some(normalized_settings.assistant_bubble_enabled);
-    config.desktop.assistant_bubble_hide_when_fullscreen =
-        Some(normalized_settings.assistant_bubble_hide_when_fullscreen);
-    config.desktop.assistant_bubble_temporarily_hide_seconds =
-        Some(normalized_settings.assistant_bubble_temporarily_hide_seconds);
-    config.desktop.ai_context_max_messages = Some(normalized_settings.ai_context_max_messages);
-    config.desktop.inactive_session_archive_days =
-        Some(normalized_settings.inactive_session_archive_days);
-    config.desktop.archived_session_retention_days =
-        Some(normalized_settings.archived_session_retention_days);
-    config.desktop.quick_voice_enabled = Some(normalized_settings.quick_voice_enabled);
-    config.desktop.quick_voice_shortcut = Some(normalized_settings.quick_voice_shortcut.clone());
-    config.desktop.quick_voice_silence_seconds =
-        Some(normalized_settings.quick_voice_silence_seconds);
-    config.desktop.quick_voice_max_messages = Some(normalized_settings.quick_voice_max_messages);
-
-    write_user_config_file(&config, &config_path)?;
+    let config_path = update_user_config_file(|config| {
+        config.desktop.autostart_minimized = Some(normalized_settings.autostart_minimized);
+        config.desktop.autostart_to_tray = Some(normalized_settings.autostart_to_tray);
+        config.desktop.always_run_as_administrator =
+            Some(normalized_settings.always_run_as_administrator);
+        config.desktop.assistant_bubble_enabled =
+            Some(normalized_settings.assistant_bubble_enabled);
+        config.desktop.assistant_bubble_hide_when_fullscreen =
+            Some(normalized_settings.assistant_bubble_hide_when_fullscreen);
+        config.desktop.assistant_bubble_temporarily_hide_seconds =
+            Some(normalized_settings.assistant_bubble_temporarily_hide_seconds);
+        config.desktop.ai_context_max_messages = Some(normalized_settings.ai_context_max_messages);
+        config.desktop.inactive_session_archive_days =
+            Some(normalized_settings.inactive_session_archive_days);
+        config.desktop.archived_session_retention_days =
+            Some(normalized_settings.archived_session_retention_days);
+        config.desktop.quick_voice_enabled = Some(normalized_settings.quick_voice_enabled);
+        config.desktop.quick_voice_shortcut =
+            Some(normalized_settings.quick_voice_shortcut.clone());
+        config.desktop.quick_voice_silence_seconds =
+            Some(normalized_settings.quick_voice_silence_seconds);
+        config.desktop.quick_voice_max_messages =
+            Some(normalized_settings.quick_voice_max_messages);
+    })?;
 
     let autolaunch = manager.autolaunch();
     let currently_enabled = autolaunch

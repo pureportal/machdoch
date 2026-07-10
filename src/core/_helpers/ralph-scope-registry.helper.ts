@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { writeJsonAtomically } from "./write-file-atomically.helper.js";
 
 export const RALPH_SCOPE_EVIDENCE_SCHEMA = "machdoch.ralph.scopeEvidence" as const;
 export const RALPH_SCOPE_REGISTRY_SCHEMA = "machdoch.ralph.scopeRegistry" as const;
@@ -65,6 +66,8 @@ export interface RalphScopeRegistryScope extends RalphScopeEvidenceScope {
   selectedCount: number;
   validatedCount: number;
   lastOutcome?: string | null;
+  lastOutcomeAt?: string | null;
+  eligibleAfter?: string | null;
 }
 
 export interface RalphScopeRegistrySelection {
@@ -82,6 +85,7 @@ export interface RalphScopeRegistryHistoryEntry {
   scopeId?: string;
   cycle?: number;
   outcome?: string;
+  eligibleAfter?: string;
   summary?: string;
   added?: string[];
   updated?: string[];
@@ -223,6 +227,74 @@ const ROOT_CONFIG_FILE_NAMES = new Set([
   "docker-compose.yml",
   "docker-compose.yaml",
 ]);
+
+const SOURCE_FILE_EXTENSIONS = new Set([
+  ".c",
+  ".cc",
+  ".cpp",
+  ".cs",
+  ".cjs",
+  ".go",
+  ".h",
+  ".hpp",
+  ".java",
+  ".js",
+  ".jsx",
+  ".kt",
+  ".kts",
+  ".mjs",
+  ".php",
+  ".py",
+  ".rb",
+  ".rs",
+  ".svelte",
+  ".swift",
+  ".ts",
+  ".tsx",
+  ".vue",
+]);
+
+const COMMON_ENTRYPOINT_FILE_NAMES = new Set([
+  "__init__.py",
+  "app.py",
+  "index.js",
+  "index.jsx",
+  "index.ts",
+  "index.tsx",
+  "lib.rs",
+  "main.go",
+  "main.js",
+  "main.py",
+  "main.rs",
+  "main.ts",
+  "main.tsx",
+  "mod.rs",
+  "program.cs",
+]);
+
+const getFileExtension = (fileName: string): string => {
+  const dotIndex = fileName.lastIndexOf(".");
+
+  return dotIndex >= 0 ? fileName.slice(dotIndex).toLowerCase() : "";
+};
+
+const isSourceFileName = (fileName: string): boolean => {
+  return SOURCE_FILE_EXTENSIONS.has(getFileExtension(fileName));
+};
+
+const isTestFileName = (fileName: string): boolean => {
+  const normalized = fileName.toLowerCase();
+
+  return (
+    /(?:^|[._-])(?:spec|test)(?:[._-]|$)/u.test(normalized) ||
+    normalized.startsWith("test_") ||
+    normalized.endsWith("_test.go")
+  );
+};
+
+const isEntrypointFileName = (fileName: string): boolean => {
+  return COMMON_ENTRYPOINT_FILE_NAMES.has(fileName.toLowerCase());
+};
 
 const HIGH_RISK_TOKENS = [
   "auth",
@@ -408,6 +480,10 @@ const getDirectoryKind = (
   const baseName = segments.at(-1) ?? "";
   const parentName = segments.at(-2) ?? "";
   const hasManifest = fileNames.some((fileName) => MANIFEST_FILE_NAMES.has(fileName));
+  const implementationFileNames = fileNames.filter(
+    (fileName) => isSourceFileName(fileName) && !isTestFileName(fileName),
+  );
+  const testFileNames = fileNames.filter(isTestFileName);
 
   if (COMMON_DOCS_DIR_NAMES.has(baseName)) {
     return "docs";
@@ -433,6 +509,17 @@ const getDirectoryKind = (
     return "source-root";
   }
 
+  if (testFileNames.length >= 2 && implementationFileNames.length === 0) {
+    return "test";
+  }
+
+  if (
+    implementationFileNames.length >= 2 ||
+    implementationFileNames.some(isEntrypointFileName)
+  ) {
+    return "module";
+  }
+
   return undefined;
 };
 
@@ -440,27 +527,57 @@ const createDirectoryEvidenceScope = (
   relPath: string,
   kind: RalphScopeRegistryKind,
   fileNames: readonly string[],
+  dirNames: readonly string[] = [],
 ): RalphScopeEvidenceScope => {
   const normalizedPath = normalizeRegistryPath(relPath);
-  const evidence = fileNames
+  const sourceFileNames = fileNames.filter(isSourceFileName);
+  const implementationFileNames = sourceFileNames.filter(
+    (fileName) => !isTestFileName(fileName),
+  );
+  const testFileNames = sourceFileNames.filter(isTestFileName);
+  const entrypointFileNames = implementationFileNames.filter(isEntrypointFileName);
+  const hasLocalTestDirectory = dirNames.some((dirName) =>
+    COMMON_TEST_DIR_NAMES.has(dirName.toLowerCase()),
+  );
+  const hasLocalTests = testFileNames.length > 0 || hasLocalTestDirectory;
+  const hasLocalTestGap = implementationFileNames.length >= 3 && !hasLocalTests;
+  const evidenceFileNames = fileNames
     .filter(
       (fileName) =>
         MANIFEST_FILE_NAMES.has(fileName) ||
+        isSourceFileName(fileName) ||
         fileName.endsWith(".config.ts") ||
         fileName.endsWith(".config.js") ||
         fileName.endsWith(".config.mjs"),
     )
-    .slice(0, 12)
+    .slice(0, 16)
     .map((fileName) =>
       normalizedPath === "." ? fileName : `${normalizedPath}/${fileName}`,
     );
+  const evidence = [
+    ...evidenceFileNames,
+    `semantic:source-files=${implementationFileNames.length}`,
+    `semantic:test-files=${testFileNames.length}`,
+    ...(entrypointFileNames.length > 0
+      ? [`semantic:entrypoints=${entrypointFileNames.join(",")}`]
+      : []),
+    ...(hasLocalTestDirectory ? ["semantic:local-test-directory=true"] : []),
+  ];
   const tags = normalizePathList([
     kind,
     ...getPathSegments(normalizedPath).filter((segment) => segment.length > 1),
+    ...(implementationFileNames.length > 0 ? ["source-bearing"] : []),
+    ...(entrypointFileNames.length > 0 ? ["entrypoint"] : []),
+    ...(hasLocalTests ? ["test-covered"] : []),
+    ...(hasLocalTestGap ? ["missing-local-tests"] : []),
   ]);
   const risk = determineRisk(normalizedPath, tags);
   const paths = [normalizedPath];
   const globs = [`${normalizedPath === "." ? "" : `${normalizedPath}/`}**/*`];
+  const semanticPriorityBoost =
+    (entrypointFileNames.length > 0 ? 4 : 0) +
+    (hasLocalTestGap ? 3 : 0) +
+    (implementationFileNames.length >= 8 ? 2 : 0);
 
   return {
     id: normalizeScopeId(normalizedPath),
@@ -469,7 +586,7 @@ const createDirectoryEvidenceScope = (
     paths,
     globs,
     tags,
-    priority: determinePriority(kind, risk),
+    priority: Math.min(100, determinePriority(kind, risk) + semanticPriorityBoost),
     risk,
     fingerprint: hashStableValue({ paths, globs, tags, evidence }),
     evidence,
@@ -607,7 +724,12 @@ export const discoverRalphScopeEvidence = async (
       if (kind) {
         addScopeEvidence(
           scopes,
-          createDirectoryEvidenceScope(current.relPath, kind, fileNames),
+          createDirectoryEvidenceScope(
+            current.relPath,
+            kind,
+            fileNames,
+            dirNames,
+          ),
         );
       }
     }
@@ -754,6 +876,10 @@ const normalizeRegistryScope = (
         ? Math.max(0, Math.trunc(value.validatedCount))
         : 0,
     lastOutcome: typeof value.lastOutcome === "string" ? value.lastOutcome : null,
+    lastOutcomeAt:
+      typeof value.lastOutcomeAt === "string" ? value.lastOutcomeAt : null,
+    eligibleAfter:
+      typeof value.eligibleAfter === "string" ? value.eligibleAfter : null,
   };
 };
 
@@ -838,6 +964,9 @@ export const parseRalphScopeRegistry = (
               ...(typeof entry.cycle === "number" ? { cycle: entry.cycle } : {}),
               ...(typeof entry.outcome === "string"
                 ? { outcome: entry.outcome }
+                : {}),
+              ...(typeof entry.eligibleAfter === "string"
+                ? { eligibleAfter: entry.eligibleAfter }
                 : {}),
               ...(typeof entry.summary === "string"
                 ? { summary: entry.summary }
@@ -954,6 +1083,8 @@ export const updateRalphScopeRegistryFromEvidence = (
         selectedCount: 0,
         validatedCount: 0,
         lastOutcome: null,
+        lastOutcomeAt: null,
+        eligibleAfter: null,
       });
       continue;
     }
@@ -979,6 +1110,8 @@ export const updateRalphScopeRegistryFromEvidence = (
       lastSelectedAt: existing.lastSelectedAt ?? null,
       lastValidatedAt: existing.lastValidatedAt ?? null,
       lastOutcome: existing.lastOutcome ?? null,
+      lastOutcomeAt: existing.lastOutcomeAt ?? null,
+      eligibleAfter: existing.eligibleAfter ?? null,
     });
   }
 
@@ -1043,6 +1176,72 @@ const getActiveScopes = (
   registry: RalphScopeRegistry,
 ): RalphScopeRegistryScope[] => {
   return registry.scopes.filter((scope) => scope.status === "active");
+};
+
+const COMPLETED_SCOPE_OUTCOMES = new Set([
+  "COMPLETED",
+  "DONE",
+  "SUCCESS",
+  "VALIDATED",
+]);
+const DEFAULT_SCOPE_OUTCOME_COOLDOWN_MS = 15 * 60_000;
+const INVALID_SCOPE_OUTCOME_COOLDOWN_MS = 5 * 60_000;
+const DEFERRED_SCOPE_OUTCOME_COOLDOWN_MS = 30 * 60_000;
+const EXTERNAL_STATE_SCOPE_OUTCOME_COOLDOWN_MS = 60 * 60_000;
+const NO_MEANINGFUL_WORK_SCOPE_OUTCOME_COOLDOWN_MS = 24 * 60 * 60_000;
+
+const normalizeScopeOutcome = (outcome: string): string => {
+  return outcome.trim().toUpperCase().replace(/[\s-]+/gu, "_");
+};
+
+export const isCompletedRalphScopeOutcome = (outcome: string): boolean => {
+  const normalized = normalizeScopeOutcome(outcome);
+
+  return (
+    COMPLETED_SCOPE_OUTCOMES.has(normalized) ||
+    normalized.startsWith("DONE_") ||
+    normalized.startsWith("COMPLETED_")
+  );
+};
+
+const getScopeOutcomeCooldownMs = (outcome: string): number => {
+  const normalized = normalizeScopeOutcome(outcome);
+
+  if (normalized.includes("NO_MEANINGFUL_WORK") || normalized.startsWith("STOP")) {
+    return NO_MEANINGFUL_WORK_SCOPE_OUTCOME_COOLDOWN_MS;
+  }
+
+  if (normalized.includes("EXTERNAL_STATE")) {
+    return EXTERNAL_STATE_SCOPE_OUTCOME_COOLDOWN_MS;
+  }
+
+  if (normalized.startsWith("DEFER")) {
+    return DEFERRED_SCOPE_OUTCOME_COOLDOWN_MS;
+  }
+
+  if (normalized.startsWith("INVALID")) {
+    return INVALID_SCOPE_OUTCOME_COOLDOWN_MS;
+  }
+
+  return DEFAULT_SCOPE_OUTCOME_COOLDOWN_MS;
+};
+
+const isScopeEligibleAt = (
+  scope: RalphScopeRegistryScope,
+  now: string,
+): boolean => {
+  if (!scope.eligibleAfter) {
+    return true;
+  }
+
+  const eligibleAt = Date.parse(scope.eligibleAfter);
+  const currentTime = Date.parse(now);
+
+  return (
+    !Number.isFinite(eligibleAt) ||
+    !Number.isFinite(currentTime) ||
+    eligibleAt <= currentTime
+  );
 };
 
 const riskRank: Record<RalphScopeRegistryRisk, number> = {
@@ -1443,7 +1642,9 @@ export const selectRalphScopeFromRegistry = (
   const strategy = options.strategy ?? registry.selection.strategy;
   const activeScopes = getActiveScopes(registry);
   const currentScope = activeScopes.find(
-    (scope) => scope.id === registry.selection.currentScopeId,
+    (scope) =>
+      scope.id === registry.selection.currentScopeId &&
+      isScopeEligibleAt(scope, now),
   );
 
   if (currentScope && !options.forceNew) {
@@ -1470,13 +1671,43 @@ export const selectRalphScopeFromRegistry = (
     };
   }
 
+  const eligibleScopes = activeScopes.filter((scope) =>
+    isScopeEligibleAt(scope, now),
+  );
+  if (eligibleScopes.length === 0) {
+    return {
+      registry: {
+        ...registry,
+        selection: { ...registry.selection, strategy, currentScopeId: null },
+      },
+      reusedCurrentScope: false,
+      cycleStarted: false,
+    };
+  }
+
   const completedIds = new Set(registry.selection.completedScopeIds);
-  let candidateScopes = activeScopes.filter((scope) => !completedIds.has(scope.id));
+  let candidateScopes = eligibleScopes.filter(
+    (scope) => !completedIds.has(scope.id),
+  );
   let cycle = registry.selection.cycle;
   let cycleStarted = false;
 
   if (candidateScopes.length === 0) {
-    candidateScopes = activeScopes;
+    const allActiveScopesCompleted = activeScopes.every((scope) =>
+      completedIds.has(scope.id),
+    );
+    if (!allActiveScopesCompleted) {
+      return {
+        registry: {
+          ...registry,
+          selection: { ...registry.selection, strategy, currentScopeId: null },
+        },
+        reusedCurrentScope: false,
+        cycleStarted: false,
+      };
+    }
+
+    candidateScopes = eligibleScopes;
     cycle += 1;
     cycleStarted = true;
   }
@@ -1488,6 +1719,7 @@ export const selectRalphScopeFromRegistry = (
           ...scope,
           lastSelectedAt: now,
           selectedCount: scope.selectedCount + 1,
+          eligibleAfter: null,
         }
       : scope,
   );
@@ -1550,22 +1782,34 @@ export const markRalphScopeRegistryResult = (
     return { registry, cycleCompleted: false };
   }
 
-  const completedScopeIds = [
-    ...new Set([...registry.selection.completedScopeIds, scopeId]),
-  ];
-  const activeScopeIds = activeScopes.map((candidate) => candidate.id);
-  const cycleCompleted = activeScopeIds.every((activeScopeId) =>
-    completedScopeIds.includes(activeScopeId),
-  );
-  const nextCompletedScopeIds = cycleCompleted ? [] : completedScopeIds;
   const outcome = options.outcome?.trim() || "completed";
+  const completed = isCompletedRalphScopeOutcome(outcome);
+  const completedScopeIds = completed
+    ? [...new Set([...registry.selection.completedScopeIds, scopeId])]
+    : registry.selection.completedScopeIds;
+  const activeScopeIds = activeScopes.map((candidate) => candidate.id);
+  const cycleCompleted =
+    completed &&
+    activeScopeIds.every((activeScopeId) =>
+      completedScopeIds.includes(activeScopeId),
+    );
+  const nextCompletedScopeIds = cycleCompleted ? [] : completedScopeIds;
+  const parsedNow = Date.parse(now);
+  const eligibleAfter = completed
+    ? null
+    : new Date(
+        (Number.isFinite(parsedNow) ? parsedNow : Date.now()) +
+          getScopeOutcomeCooldownMs(outcome),
+      ).toISOString();
   const scopes = registry.scopes.map((candidate) =>
     candidate.id === scopeId
       ? {
           ...candidate,
-          lastValidatedAt: now,
-          validatedCount: candidate.validatedCount + 1,
+          lastValidatedAt: completed ? now : (candidate.lastValidatedAt ?? null),
+          validatedCount: candidate.validatedCount + (completed ? 1 : 0),
           lastOutcome: outcome,
+          lastOutcomeAt: now,
+          eligibleAfter,
         }
       : candidate,
   );
@@ -1590,6 +1834,7 @@ export const markRalphScopeRegistryResult = (
       scopeId,
       cycle: registry.selection.cycle,
       outcome,
+      ...(eligibleAfter ? { eligibleAfter } : {}),
       ...(options.summary ? { summary: options.summary } : {}),
     },
   );
@@ -1627,7 +1872,7 @@ export const writeRalphScopeRegistryFile = async (
   registry: RalphScopeRegistry,
 ): Promise<void> => {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+  await writeJsonAtomically(path, registry);
 };
 
 export const formatRalphScopeRegistryMarkdown = (
@@ -1653,6 +1898,12 @@ export const formatRalphScopeRegistryMarkdown = (
         `- ${scope.id}: ${scope.title} (${scope.kind}, risk=${scope.risk}, priority=${scope.priority})`,
         `  - paths: ${scope.paths.join(", ")}`,
         `  - selected: ${scope.selectedCount}, validated: ${scope.validatedCount}`,
+        ...(scope.lastOutcome
+          ? [`  - last outcome: ${scope.lastOutcome}${scope.lastOutcomeAt ? ` at ${scope.lastOutcomeAt}` : ""}`]
+          : []),
+        ...(scope.eligibleAfter
+          ? [`  - eligible after: ${scope.eligibleAfter}`]
+          : []),
       );
     }
     lines.push("");

@@ -61,9 +61,11 @@ import {
 } from "../../../core/model-capabilities.js";
 import {
   createImportedRalphStarterFlow,
+  createUpgradedRalphStarterFlowWithReport,
   type RalphStarterFlowSummary,
 } from "../../../core/ralph-starter-flows.js";
 import type { RalphGenerationInterviewSession } from "../../../core/ralph-generation.js";
+import { createRalphFlowFingerprint } from "../../../core/_helpers/create-ralph-flow-fingerprint.helper.js";
 import { discoverRalphFlowVariables } from "../../../core/_helpers/ralph-placeholders.helper.js";
 import type {
   RalphAnnotationTone,
@@ -400,6 +402,7 @@ export interface RalphFlowEditorProps {
   workspaceRoot: string | null;
   initialPrompt?: string;
   isActive?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
   flowLibraryMode?: RalphFlowLibraryMode;
   onFlowLibraryModeChange?: (mode: RalphFlowLibraryMode) => void;
   runMode: RunMode;
@@ -446,6 +449,7 @@ interface RalphGenerationJob {
 }
 
 interface RalphAiGenerationStartContext {
+  workspaceRoot: string;
   userPrompt: string;
   generationPrompt: string;
   target: RalphAiTarget;
@@ -453,19 +457,72 @@ interface RalphAiGenerationStartContext {
   targetScope: RalphFlowScope;
   targetFlowName: string;
   existingFlow?: RalphFlow;
+  expectedFingerprintAtStart?: string;
   targetFlowId: string | null;
   selectedIdAtStart: string | null;
   selectedScopeAtStart: RalphFlowScope;
   draftSnapshotAtStart: string;
-  savedSnapshotAtStart: string;
-  draftWasDirtyAtStart: boolean;
   promptBlockLabel?: string;
 }
+
+interface RalphAttachmentMutationContext {
+  workspaceRoot: string | null;
+  scope: RalphFlowScope;
+  flowId: string;
+  blockId: string;
+  attachmentsSnapshot: string;
+}
+
+export const createRalphRunResultFromDetail = (
+  detail: RalphRunDetailResult,
+  variables: ReturnType<typeof discoverRalphFlowVariables> = [],
+): RalphRunResult => {
+  const { record } = detail;
+  const checkpoint = record.checkpoint;
+
+  return {
+    runId: record.id,
+    startedAt: checkpoint?.startedAt ?? record.createdAt,
+    ...(record.finishedAt ? { finishedAt: record.finishedAt } : {}),
+    flow: record.flowId,
+    status: record.status,
+    summary: record.summary,
+    events: record.events,
+    blockResults:
+      checkpoint?.blockResults ??
+      record.blockResults.map((block) => ({
+        blockId: block.blockId,
+        ...(block.operationId ? { operationId: block.operationId } : {}),
+        output: block.output,
+        status: block.status,
+        attempt: block.attempt,
+        ...(block.durationMs !== undefined ? { durationMs: block.durationMs } : {}),
+        ...(block.progress ? { progress: block.progress } : {}),
+        ...(block.data !== undefined ? { data: block.data } : {}),
+        summary: block.summary,
+        ...(block.markdown ? { markdown: block.markdown } : {}),
+        ...(block.error ? { error: block.error } : {}),
+      })),
+    missingVariables: [],
+    unknownVariables: [],
+    validation: {
+      ...record.validation,
+      errorIssues: [],
+      warningIssues: [],
+      variables,
+    },
+    ...(checkpoint?.pendingInput ? { pendingInput: checkpoint.pendingInput } : {}),
+    ...(checkpoint ? { checkpoint } : {}),
+    ...(checkpoint?.autonomy ? { autonomy: checkpoint.autonomy } : {}),
+    ...(record.durability ? { durability: record.durability } : {}),
+  };
+};
 
 export const RalphFlowEditor = ({
   workspaceRoot,
   initialPrompt = "",
   isActive = true,
+  onDirtyChange,
   flowLibraryMode = "workspace",
   onFlowLibraryModeChange,
   runMode,
@@ -588,13 +645,33 @@ export const RalphFlowEditor = ({
   const selectedIdRef = useRef(selectedId);
   const selectedScopeRef = useRef(selectedScope);
   const draftFlowRef = useRef<RalphFlow | null>(draftFlow);
+  const lastRunRef = useRef<RalphRunResult | null>(lastRun);
   const draftFlowScopeRef = useRef<RalphFlowScope>(draftFlowScope);
+  const draftFlowWorkspaceRootRef = useRef<string | null>(
+    draftFlow ? workspaceRoot : null,
+  );
   const savedSnapshotRef = useRef(savedSnapshot);
   const flowListRequestRef = useRef(0);
+  const flowDetailsRequestRef = useRef(0);
+  const revisionsRequestRef = useRef(0);
+  const runHistoryRequestRef = useRef(0);
+  const runViewRequestRef = useRef(0);
   const saveRequestRef = useRef(0);
   const restoreRequestRef = useRef(0);
+  const blockingOperationRef = useRef(0);
+  const reconcileRequestRef = useRef(0);
+  const reconcileInFlightRef = useRef(false);
   const generationRequestRef = useRef<string | null>(null);
+  const generationInterviewRequestRef = useRef<string | null>(null);
+  const workspaceRootRef = useRef(workspaceRoot);
+  const pendingInputIdRef = useRef<string | null>(null);
+  const pendingResumeRequestRef = useRef<string | null>(null);
+  const utilityJsonBlockIdRef = useRef<string | null>(null);
+  const utilityJsonBaselineRef = useRef("");
+  const utilityJsonDirtyRef = useRef(false);
   const initialPromptAppliedRef = useRef(false);
+  workspaceRootRef.current = workspaceRoot;
+  lastRunRef.current = lastRun;
   const activeProvider = runProvider;
   const activeModel = runModel;
   const showInspectorPanel = editorMode === "design" && inspectorOpen;
@@ -614,6 +691,7 @@ export const RalphFlowEditor = ({
   ): void => {
     draftFlowRef.current = nextDraftFlow;
     draftFlowScopeRef.current = nextDraftFlowScope;
+    draftFlowWorkspaceRootRef.current = nextDraftFlow ? workspaceRoot : null;
     setDraftFlow(nextDraftFlow);
     setDraftFlowScope(nextDraftFlowScope);
     setUndoStack([]);
@@ -627,6 +705,26 @@ export const RalphFlowEditor = ({
     savedSnapshotRef.current = nextSavedSnapshot;
     setSavedSnapshot(nextSavedSnapshot);
   };
+  const replaceLastRun = (nextLastRun: RalphRunResult | null): void => {
+    lastRunRef.current = nextLastRun;
+    setLastRun(nextLastRun);
+  };
+  const beginBlockingOperation = (): number => {
+    const operationId = blockingOperationRef.current + 1;
+    blockingOperationRef.current = operationId;
+    setLoading(true);
+    return operationId;
+  };
+  const finishBlockingOperation = (operationId: number): void => {
+    if (blockingOperationRef.current === operationId) {
+      setLoading(false);
+    }
+  };
+  const updateUtilityJsonDraft = (value: string): void => {
+    utilityJsonDirtyRef.current = value !== utilityJsonBaselineRef.current;
+    setUtilityJsonDraft(value);
+    setUtilityJsonError(null);
+  };
   const issues = useMemo(
     () =>
       draftFlow
@@ -634,7 +732,11 @@ export const RalphFlowEditor = ({
         : [],
     [draftFlow, flows, modelCatalog, selectedScope],
   );
-  const dirty = draftFlow ? savedSnapshot !== getFlowSnapshot(draftFlow) : false;
+  const draftSnapshot = useMemo(
+    () => getFlowSnapshot(draftFlow),
+    [draftFlow],
+  );
+  const dirty = draftFlow ? savedSnapshot !== draftSnapshot : false;
   const canUndo = undoStack.length > 0;
   const canRedo = redoStack.length > 0;
   const selectedBlock = useMemo(
@@ -679,20 +781,31 @@ export const RalphFlowEditor = ({
   const pendingInput = lastRun?.pendingInput ?? null;
 
   useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+
+  useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
 
   useEffect(() => {
     if (!pendingInput) {
+      pendingInputIdRef.current = null;
       setPendingInputValues({});
       return;
     }
 
-    setPendingInputValues(
+    const isSameRequest = pendingInputIdRef.current === pendingInput.id;
+    pendingInputIdRef.current = pendingInput.id;
+    setPendingInputValues((current) =>
       Object.fromEntries(
         pendingInput.fields.map((field) => [
           field.id,
-          field.defaultValue ?? (field.type === "boolean" ? false : null),
+          isSameRequest && Object.hasOwn(current, field.id)
+            ? current[field.id]
+            : field.defaultValue ?? (field.type === "boolean" ? false : null),
         ]),
       ),
     );
@@ -720,6 +833,22 @@ export const RalphFlowEditor = ({
   useEffect(() => {
     savedSnapshotRef.current = savedSnapshot;
   }, [savedSnapshot]);
+
+  useEffect(
+    () => () => {
+      flowListRequestRef.current += 1;
+      flowDetailsRequestRef.current += 1;
+      revisionsRequestRef.current += 1;
+      runHistoryRequestRef.current += 1;
+      runViewRequestRef.current += 1;
+      saveRequestRef.current += 1;
+      restoreRequestRef.current += 1;
+      blockingOperationRef.current += 1;
+      reconcileRequestRef.current += 1;
+      generationInterviewRequestRef.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (selectedEdgeId) {
@@ -988,14 +1117,33 @@ export const RalphFlowEditor = ({
     saveRalphInspectorWidth(nextWidth);
   };
 
+  const getExpandedEditorContextKey = (): string =>
+    [
+      workspaceRootRef.current ?? "",
+      draftFlowScopeRef.current,
+      draftFlowRef.current?.id ?? "",
+      selectedBlockId ?? "",
+    ].join("::");
+
   const openExpandedEditor = (editor: RalphExpandedEditorState): void => {
-    setExpandedEditor(editor);
+    setExpandedEditor({
+      ...editor,
+      contextKey: getExpandedEditorContextKey(),
+    });
     setExpandedEditorDraft(editor.value);
     setExpandedEditorWrap(editor.mode !== "code");
   };
 
   const applyExpandedEditor = (): void => {
     if (!expandedEditor) {
+      return;
+    }
+
+    if (expandedEditor.contextKey !== getExpandedEditorContextKey()) {
+      setExpandedEditor(null);
+      setMessage(
+        "The flow or block changed while the expanded editor was open. Reopen it before applying changes.",
+      );
       return;
     }
 
@@ -1403,14 +1551,34 @@ export const RalphFlowEditor = ({
       selectedBlockId,
     ],
   );
+  const canvasIdentityKey = [
+    workspaceRoot ?? "",
+    selectedScope,
+    draftFlow?.id ?? "",
+  ].join("::");
   const flowLayoutKey = useMemo(
-    () => getFlowLayoutKey(draftFlow),
-    [draftFlow],
+    () => `${canvasIdentityKey}::${getFlowLayoutKey(draftFlow)}`,
+    [canvasIdentityKey, draftFlow],
   );
   const setupVariables = useMemo(
     () => (draftFlow ? discoverRalphFlowVariables(draftFlow) : []),
     [draftFlow],
   );
+  useEffect(() => {
+    const defaults = createDefaultRalphVariableValues(setupVariables);
+    setVariableValues((current) => {
+      const next = Object.fromEntries(
+        setupVariables.map((variable) => [
+          variable.name,
+          Object.hasOwn(current, variable.name)
+            ? current[variable.name]
+            : defaults[variable.name],
+        ]),
+      );
+
+      return JSON.stringify(next) === JSON.stringify(current) ? current : next;
+    });
+  }, [setupVariables]);
   const edges = useMemo(
     () =>
       draftFlow ? flowToEdges(draftFlow, selectedEdgeId, selectedBlockId) : [],
@@ -1656,27 +1824,16 @@ export const RalphFlowEditor = ({
 
       if (generationActivity) {
         setGenerationJob((current) => {
-          const currentJob =
-            current?.id === event.taskId
-              ? current
-              : current === null
-                ? {
-                  id: event.taskId,
-                    target: "flow" as const,
-                    mode: "do-it" as const,
-                    scope: DEFAULT_RALPH_FLOW_SCOPE,
-                    targetFlowId: null,
-                    targetAlias: "ralph-flow",
-                    startedAt: event.timestamp,
-                    status: "running" as RalphGenerationStatus,
-                    summary: "Ralph flow generation is running.",
-                    activity: [],
-                  }
-                : current;
+          if (
+            current?.id !== event.taskId &&
+            generationRequestRef.current !== event.taskId
+          ) {
+            return current;
+          }
 
-          return currentJob.id === event.taskId
-            ? applyGenerationActivity(currentJob, generationActivity)
-            : currentJob;
+          return current?.id === event.taskId
+            ? applyGenerationActivity(current, generationActivity)
+            : current;
         });
       }
 
@@ -1790,12 +1947,11 @@ export const RalphFlowEditor = ({
         return;
       }
 
-      const loadedFlows = scopeResults
+      let loadedFlows = scopeResults
         .flatMap(({ scope, result }) =>
           result.flows.map((flow) => withFlowSummaryScope(flow, scope)),
         )
         .sort(compareFlowSummaries);
-      setFlows(loadedFlows);
 
       const currentId = selectedIdRef.current;
       const currentScope = selectedScopeRef.current;
@@ -1820,6 +1976,113 @@ export const RalphFlowEditor = ({
         (currentDraftUnsaved ||
           currentDraftDirty ||
           isFlowScopeVisibleInLibraryMode(currentDraftScope, flowLibraryMode));
+      let autoUpgradedSelectedFlow: {
+        flow: RalphFlow;
+        scope: RalphFlowScope;
+      } | undefined;
+
+      loadedFlows = await Promise.all(
+        loadedFlows.map(async (flowSummary) => {
+          const isSelected = hasFlowSelection(
+            flowSummary,
+            currentId,
+            currentScope,
+          );
+          if (
+            flowSummary.source?.kind !== "starter" ||
+            (isSelected && (currentDraftDirty || currentDraftUnsaved)) ||
+            getFlowActiveRuns(flowSummary).length > 0
+          ) {
+            return flowSummary;
+          }
+
+          const starterFlow = getStarterFlowById(flowSummary.source.id);
+          if (!starterFlow || starterFlow.version <= flowSummary.source.version) {
+            return flowSummary;
+          }
+
+          const flowScope = getFlowSummaryScope(flowSummary);
+
+          try {
+            const current = await showRalphFlow(
+              workspaceRoot,
+              flowSummary.id,
+              flowScope,
+            );
+            const upgrade = createUpgradedRalphStarterFlowWithReport(
+              current.flow,
+              starterFlow,
+              new Date().toISOString(),
+            );
+
+            if (
+              !upgrade.report.applied ||
+              (upgrade.report.strategy !== "replace-unmodified" &&
+                upgrade.report.conflicts.length > 0)
+            ) {
+              return flowSummary;
+            }
+
+            const saved = await saveRalphFlow(workspaceRoot, {
+              flow: upgrade.flow,
+              scope: flowScope,
+              expectedFingerprint: createRalphFlowFingerprint(current.flow),
+            });
+
+            if (isSelected) {
+              autoUpgradedSelectedFlow = {
+                flow: saved.flow,
+                scope: flowScope,
+              };
+            }
+
+            return flowToSummary(saved.flow, saved.path, flowScope);
+          } catch (error) {
+            // Concurrent edits and temporarily unavailable scopes remain visible
+            // and are retried on the next refresh without overwriting local work.
+            console.warn(
+              `Automatic starter upgrade deferred for ${flowSummary.id}.`,
+              error,
+            );
+            return flowSummary;
+          }
+        }),
+      );
+
+      if (requestId !== flowListRequestRef.current) {
+        return;
+      }
+
+      loadedFlows.sort(compareFlowSummaries);
+      setFlows(loadedFlows);
+      const currentDraftStillMatchesRefresh = Boolean(
+        currentDraft &&
+        workspaceRootRef.current === workspaceRoot &&
+        selectedIdRef.current === currentId &&
+        selectedScopeRef.current === currentScope &&
+        draftFlowRef.current?.id === currentDraft.id &&
+        draftFlowScopeRef.current === currentDraftScope &&
+        getFlowSnapshot(draftFlowRef.current) === getFlowSnapshot(currentDraft),
+      );
+      if (autoUpgradedSelectedFlow && currentDraftStillMatchesRefresh) {
+        replaceDraftFlow(
+          autoUpgradedSelectedFlow.flow,
+          autoUpgradedSelectedFlow.scope,
+        );
+        replaceSavedSnapshot(getFlowSnapshot(autoUpgradedSelectedFlow.flow));
+        setVariableValues(
+          createDefaultRalphVariableValues(
+            discoverRalphFlowVariables(autoUpgradedSelectedFlow.flow),
+          ),
+        );
+        setSelectedBlockId((currentBlockId) =>
+          autoUpgradedSelectedFlow?.flow.blocks.some(
+            (block) => block.id === currentBlockId,
+          )
+            ? currentBlockId
+            : autoUpgradedSelectedFlow?.flow.blocks[0]?.id ?? null,
+        );
+      }
       const nextEmptySelectionScope = getDefaultCreationScope(flowLibraryMode);
       const nextSelection = (() => {
         if (!currentId) {
@@ -1862,6 +2125,39 @@ export const RalphFlowEditor = ({
           : { id: "", scope: nextEmptySelectionScope };
       })();
 
+      if (
+        !autoUpgradedSelectedFlow &&
+        currentDraftMatchesSelection &&
+        !currentDraftDirty &&
+        !currentDraftUnsaved &&
+        nextSelection.id === currentId &&
+        nextSelection.scope === currentScope &&
+        currentDraft
+      ) {
+        const snapshotBeforeDetailRefresh = getFlowSnapshot(currentDraft);
+        const refreshed = await showRalphFlow(
+          workspaceRoot,
+          currentId,
+          currentScope,
+        );
+        if (
+          requestId === flowListRequestRef.current &&
+          workspaceRootRef.current === workspaceRoot &&
+          selectedIdRef.current === currentId &&
+          selectedScopeRef.current === currentScope &&
+          draftFlowRef.current?.id === currentId &&
+          getFlowSnapshot(draftFlowRef.current) === snapshotBeforeDetailRefresh
+        ) {
+          replaceDraftFlow(refreshed.flow, currentScope);
+          replaceSavedSnapshot(getFlowSnapshot(refreshed.flow));
+          setSelectedBlockId((currentBlockId) =>
+            refreshed.flow.blocks.some((block) => block.id === currentBlockId)
+              ? currentBlockId
+              : refreshed.flow.blocks[0]?.id ?? null,
+          );
+        }
+      }
+
       replaceSelectedId(nextSelection.id, nextSelection.scope);
     } catch (error) {
       if (requestId === flowListRequestRef.current) {
@@ -1878,6 +2174,9 @@ export const RalphFlowEditor = ({
     flowId: string,
     scope: RalphFlowScope = selectedScopeRef.current,
   ): Promise<void> => {
+    const requestId = revisionsRequestRef.current + 1;
+    revisionsRequestRef.current = requestId;
+
     if (!workspaceRoot || !flowId) {
       setRevisions([]);
       setRevisionsLoading(false);
@@ -1888,12 +2187,30 @@ export const RalphFlowEditor = ({
 
     try {
       const result = await listRalphFlowRevisions(workspaceRoot, flowId, scope);
+      if (
+        requestId !== revisionsRequestRef.current ||
+        selectedIdRef.current !== flowId ||
+        selectedScopeRef.current !== scope
+      ) {
+        return;
+      }
+
       setRevisions(result.revisions);
     } catch (error) {
+      if (
+        requestId !== revisionsRequestRef.current ||
+        selectedIdRef.current !== flowId ||
+        selectedScopeRef.current !== scope
+      ) {
+        return;
+      }
+
       setRevisions([]);
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
-      setRevisionsLoading(false);
+      if (requestId === revisionsRequestRef.current) {
+        setRevisionsLoading(false);
+      }
     }
   };
 
@@ -1901,6 +2218,9 @@ export const RalphFlowEditor = ({
     flowId: string | null = selectedIdRef.current,
     scope: RalphFlowScope = selectedScopeRef.current,
   ): Promise<void> => {
+    const requestId = runHistoryRequestRef.current + 1;
+    runHistoryRequestRef.current = requestId;
+
     if (!workspaceRoot) {
       setRunHistory([]);
       setRunHistoryLoading(false);
@@ -1911,12 +2231,30 @@ export const RalphFlowEditor = ({
 
     try {
       const result = await listRalphRuns(workspaceRoot, flowId || undefined, scope);
+      if (
+        requestId !== runHistoryRequestRef.current ||
+        (flowId !== null && selectedIdRef.current !== flowId) ||
+        selectedScopeRef.current !== scope
+      ) {
+        return;
+      }
+
       setRunHistory(result.runs);
     } catch (error) {
+      if (
+        requestId !== runHistoryRequestRef.current ||
+        (flowId !== null && selectedIdRef.current !== flowId) ||
+        selectedScopeRef.current !== scope
+      ) {
+        return;
+      }
+
       setRunHistory([]);
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
-      setRunHistoryLoading(false);
+      if (requestId === runHistoryRequestRef.current) {
+        setRunHistoryLoading(false);
+      }
     }
   };
 
@@ -1929,24 +2267,63 @@ export const RalphFlowEditor = ({
       return;
     }
 
+    const requestId = runViewRequestRef.current + 1;
+    runViewRequestRef.current = requestId;
+    const workspaceAtStart = workspaceRoot;
     setSelectedRunId(runId);
+    setSelectedRunDetail(null);
+    setSelectedRunLog(null);
+    setRunLogLoading(false);
     setRunDetailLoading(true);
     setRunDetailError(null);
 
     try {
       const result = await showRalphRunDetail(workspaceRoot, runId, scope);
+      if (
+        requestId !== runViewRequestRef.current ||
+        workspaceRootRef.current !== workspaceAtStart
+      ) {
+        return;
+      }
+
       setSelectedRunDetail(result);
+      if (
+        result.record.id === runId &&
+        result.record.flowId === selectedIdRef.current &&
+        scope === selectedScopeRef.current &&
+        (!lastRunRef.current || lastRunRef.current.runId !== result.record.id)
+      ) {
+        const currentFlow = draftFlowRef.current;
+        replaceLastRun(
+          createRalphRunResultFromDetail(
+            result,
+            currentFlow ? discoverRalphFlowVariables(currentFlow) : [],
+          ),
+        );
+        if (result.record.checkpoint?.pendingInput) {
+          setVariableValues({
+            ...result.record.variableValues,
+            ...result.record.checkpoint.variables,
+          });
+        }
+      }
       setEditorMode("run");
 
       if (options.selectTab ?? true) {
         setRunPanelTab("details");
       }
     } catch (error) {
+      if (requestId !== runViewRequestRef.current) {
+        return;
+      }
+
       const message = error instanceof Error ? error.message : String(error);
       setRunDetailError(message);
       setMessage(message);
     } finally {
-      setRunDetailLoading(false);
+      if (requestId === runViewRequestRef.current) {
+        setRunDetailLoading(false);
+      }
     }
   };
 
@@ -1959,10 +2336,24 @@ export const RalphFlowEditor = ({
       return;
     }
 
+    const requestId = runViewRequestRef.current + 1;
+    runViewRequestRef.current = requestId;
+    const workspaceAtStart = workspaceRoot;
+    setSelectedRunId(runId);
+    setSelectedRunDetail(null);
+    setSelectedRunLog(null);
+    setRunDetailLoading(false);
     setRunLogLoading(true);
 
     try {
       const result = await showRalphRunLog(workspaceRoot, runId, kind, scope);
+      if (
+        requestId !== runViewRequestRef.current ||
+        workspaceRootRef.current !== workspaceAtStart
+      ) {
+        return;
+      }
+
       setSelectedRunId(result.id);
       setSelectedRunLog({
         runId: result.id,
@@ -1973,16 +2364,22 @@ export const RalphFlowEditor = ({
       setEditorMode("run");
       setRunPanelTab("logs");
     } catch (error) {
+      if (requestId !== runViewRequestRef.current) {
+        return;
+      }
+
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
-      setRunLogLoading(false);
+      if (requestId === runViewRequestRef.current) {
+        setRunLogLoading(false);
+      }
     }
   };
 
-  const reconcileActiveRalphRuns = async (): Promise<void> => {
+  const reconcileActiveRalphRuns = async (requestId: number): Promise<void> => {
     const activeTasks = await loadActiveDesktopTasks();
 
-    if (!activeTasks) {
+    if (!activeTasks || requestId !== reconcileRequestRef.current) {
       return;
     }
 
@@ -2125,6 +2522,17 @@ export const RalphFlowEditor = ({
     }
 
     setGenerationJob((current) => {
+      const matchingActiveTask = current
+        ? activeRalphTasks.find((task) => task.id === current.id)
+        : undefined;
+      if (current && matchingActiveTask && current.status === "blocked") {
+        return {
+          ...current,
+          status: "running",
+          summary: `AI flow generation \`${current.targetAlias}\` is running in the background.`,
+        };
+      }
+
       if (current?.status === "running" || current?.status === "stopping") {
         if (!activeRalphTasks.some((task) => task.id === current.id)) {
           if (
@@ -2178,17 +2586,29 @@ export const RalphFlowEditor = ({
   }, [flowLibraryMode, isActive, workspaceRoot]);
 
   useEffect(() => {
+    const requestId = reconcileRequestRef.current + 1;
+    reconcileRequestRef.current = requestId;
+
     if (!isActive || !workspaceRoot) {
       return;
     }
 
     let cancelled = false;
     const reconcile = (): void => {
-      void reconcileActiveRalphRuns().catch((error) => {
-        if (!cancelled) {
-          setMessage(error instanceof Error ? error.message : String(error));
-        }
-      });
+      if (reconcileInFlightRef.current) {
+        return;
+      }
+
+      reconcileInFlightRef.current = true;
+      void reconcileActiveRalphRuns(requestId)
+        .catch((error) => {
+          if (!cancelled && requestId === reconcileRequestRef.current) {
+            setMessage(error instanceof Error ? error.message : String(error));
+          }
+        })
+        .finally(() => {
+          reconcileInFlightRef.current = false;
+        });
     };
     reconcile();
     const interval = window.setInterval(reconcile, 5_000);
@@ -2196,6 +2616,9 @@ export const RalphFlowEditor = ({
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      if (requestId === reconcileRequestRef.current) {
+        reconcileRequestRef.current += 1;
+      }
     };
   }, [
     draftFlow?.id,
@@ -2215,6 +2638,7 @@ export const RalphFlowEditor = ({
 
   useEffect(() => {
     if (!isActive || !workspaceRoot || !selectedId || selectedFlowUnsaved) {
+      revisionsRequestRef.current += 1;
       setRevisions([]);
       setRevisionsLoading(false);
       return;
@@ -2224,13 +2648,18 @@ export const RalphFlowEditor = ({
   }, [isActive, selectedFlowUnsaved, selectedId, selectedScope, workspaceRoot]);
 
   useEffect(() => {
+    runViewRequestRef.current += 1;
+
     if (!isActive || !workspaceRoot || !selectedId || selectedFlowUnsaved) {
+      runHistoryRequestRef.current += 1;
       setRunHistory([]);
       setRunHistoryLoading(false);
       setSelectedRunLog(null);
       setSelectedRunId(null);
       setSelectedRunDetail(null);
       setRunDetailError(null);
+      setRunDetailLoading(false);
+      setRunLogLoading(false);
       return;
     }
 
@@ -2238,6 +2667,8 @@ export const RalphFlowEditor = ({
     setSelectedRunDetail(null);
     setRunDetailError(null);
     setSelectedRunLog(null);
+    setRunDetailLoading(false);
+    setRunLogLoading(false);
     void refreshRunHistory(selectedId, selectedScope);
   }, [isActive, selectedFlowUnsaved, selectedId, selectedScope, workspaceRoot]);
 
@@ -2266,17 +2697,35 @@ export const RalphFlowEditor = ({
   }, [hasDraftFlow, isActive]);
 
   useEffect(() => {
-    if (!selectedUtility) {
+    const selectedUtilityBlockId = selectedUtility ? selectedBlock?.id ?? null : null;
+
+    if (!selectedUtility || !selectedUtilityBlockId) {
+      utilityJsonBlockIdRef.current = null;
+      utilityJsonBaselineRef.current = "";
+      utilityJsonDirtyRef.current = false;
       setUtilityJsonDraft("");
       setUtilityJsonError(null);
       return;
     }
 
-    setUtilityJsonDraft(formatJsonDraft(selectedUtility));
+    const formattedUtility = formatJsonDraft(selectedUtility);
+    if (utilityJsonBlockIdRef.current !== selectedUtilityBlockId) {
+      utilityJsonBlockIdRef.current = selectedUtilityBlockId;
+      utilityJsonBaselineRef.current = formattedUtility;
+      utilityJsonDirtyRef.current = false;
+      setUtilityJsonDraft(formattedUtility);
+    } else if (!utilityJsonDirtyRef.current) {
+      utilityJsonBaselineRef.current = formattedUtility;
+      setUtilityJsonDraft(formattedUtility);
+    }
+
     setUtilityJsonError(null);
   }, [selectedBlock?.id, selectedUtility]);
 
   useEffect(() => {
+    const requestId = flowDetailsRequestRef.current + 1;
+    flowDetailsRequestRef.current = requestId;
+
     if (!isActive || !workspaceRoot || !selectedId) {
       setDetailsLoading(false);
       replaceDraftFlow(null, selectedScope);
@@ -2287,17 +2736,32 @@ export const RalphFlowEditor = ({
       return;
     }
 
-    if (selectedFlowUnsaved && draftFlow?.id === selectedId) {
+    if (
+      draftFlowRef.current?.id === selectedId &&
+      draftFlowScopeRef.current === selectedScope &&
+      draftFlowWorkspaceRootRef.current === workspaceRoot
+    ) {
       setDetailsLoading(false);
       return;
     }
 
     let cancelled = false;
 
+    replaceDraftFlow(null, selectedScope);
+    replaceSavedSnapshot("");
+    setVariableValues({});
+    setSelectedBlockId(null);
+    setLastRun(null);
     setDetailsLoading(true);
     void showRalphFlow(workspaceRoot, selectedId, selectedScope)
       .then((result) => {
-        if (cancelled) {
+        if (
+          cancelled ||
+          requestId !== flowDetailsRequestRef.current ||
+          workspaceRootRef.current !== workspaceRoot ||
+          selectedIdRef.current !== selectedId ||
+          selectedScopeRef.current !== selectedScope
+        ) {
           return;
         }
 
@@ -2310,7 +2774,13 @@ export const RalphFlowEditor = ({
         setLastRun(null);
       })
       .catch((error) => {
-        if (!cancelled) {
+        if (
+          !cancelled &&
+          requestId === flowDetailsRequestRef.current &&
+          workspaceRootRef.current === workspaceRoot &&
+          selectedIdRef.current === selectedId &&
+          selectedScopeRef.current === selectedScope
+        ) {
           replaceDraftFlow(null, selectedScope);
           replaceSavedSnapshot("");
           setVariableValues({});
@@ -2320,7 +2790,7 @@ export const RalphFlowEditor = ({
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (!cancelled && requestId === flowDetailsRequestRef.current) {
           setDetailsLoading(false);
         }
       });
@@ -2329,9 +2799,7 @@ export const RalphFlowEditor = ({
       cancelled = true;
     };
   }, [
-    draftFlow?.id,
     isActive,
-    selectedFlowUnsaved,
     selectedId,
     selectedScope,
     workspaceRoot,
@@ -2399,26 +2867,25 @@ export const RalphFlowEditor = ({
   const updateDraftFlow = (
     updater: (flow: RalphFlow) => RalphFlow,
   ): void => {
-    setDraftFlow((current) => {
-      if (!current) {
-        draftFlowRef.current = current;
-        return current;
-      }
+    const current = draftFlowRef.current;
+    if (!current) {
+      return;
+    }
 
-      const next = updater(current);
-      const currentSnapshot = getFlowSnapshot(current);
-      const nextSnapshot = getFlowSnapshot(next);
+    const next = updater(current);
+    const currentSnapshot = getFlowSnapshot(current);
+    const nextSnapshot = getFlowSnapshot(next);
 
-      if (currentSnapshot !== nextSnapshot) {
-        setUndoStack((history) =>
-          [...history, currentSnapshot].slice(-MAX_RALPH_HISTORY_ENTRIES),
-        );
-        setRedoStack([]);
-      }
+    if (currentSnapshot === nextSnapshot) {
+      return;
+    }
 
-      draftFlowRef.current = next;
-      return next;
-    });
+    setUndoStack((history) =>
+      [...history, currentSnapshot].slice(-MAX_RALPH_HISTORY_ENTRIES),
+    );
+    setRedoStack([]);
+    draftFlowRef.current = next;
+    setDraftFlow(next);
   };
 
   const updateBlock = (
@@ -2591,6 +3058,17 @@ export const RalphFlowEditor = ({
   };
 
   const applyUtilityJsonDraft = (): void => {
+    if (
+      selectedUtility &&
+      utilityJsonDirtyRef.current &&
+      formatJsonDraft(selectedUtility) !== utilityJsonBaselineRef.current
+    ) {
+      setUtilityJsonError(
+        "Utility settings changed elsewhere while this JSON draft was open. Reopen the JSON editor to merge those changes.",
+      );
+      return;
+    }
+
     const parsed = parseJsonDraft(utilityJsonDraft);
 
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -2604,18 +3082,41 @@ export const RalphFlowEditor = ({
       return;
     }
 
-    replaceSelectedUtility(parsed as RalphUtilityConfig);
+    const nextUtility = parsed as RalphUtilityConfig;
+    const formattedUtility = formatJsonDraft(nextUtility);
+    utilityJsonBaselineRef.current = formattedUtility;
+    utilityJsonDirtyRef.current = false;
+    setUtilityJsonDraft(formattedUtility);
+    replaceSelectedUtility(nextUtility);
     setUtilityJsonError(null);
   };
 
   const attachPathsToBlock = async (
     blockId: string,
     paths: string[],
+    context: RalphAttachmentMutationContext,
   ): Promise<void> => {
     const resolution = await resolveDroppedPaths(paths);
     const incomingAttachments = resolution.entries.map(createRalphPathAttachment);
 
     if (incomingAttachments.length === 0) {
+      return;
+    }
+
+    const currentFlow = draftFlowRef.current;
+    const currentBlock = currentFlow?.blocks.find((block) => block.id === blockId);
+    if (
+      workspaceRootRef.current !== context.workspaceRoot ||
+      draftFlowScopeRef.current !== context.scope ||
+      currentFlow?.id !== context.flowId ||
+      context.blockId !== blockId ||
+      !currentBlock ||
+      JSON.stringify(currentBlock.settings?.attachments ?? []) !==
+        context.attachmentsSnapshot
+    ) {
+      setMessage(
+        "The target flow, block, or attachment list changed while paths were being resolved. Add the attachments again.",
+      );
       return;
     }
 
@@ -2644,6 +3145,13 @@ export const RalphFlowEditor = ({
     }
 
     const blockId = selectedBlock.id;
+    const attachmentContext: RalphAttachmentMutationContext = {
+      workspaceRoot: workspaceRootRef.current,
+      scope: draftFlowScopeRef.current,
+      flowId: draftFlowRef.current?.id ?? "",
+      blockId,
+      attachmentsSnapshot: JSON.stringify(selectedBlock.settings?.attachments ?? []),
+    };
 
     if (!isTauri()) {
       await attachPathsToBlock(blockId, [
@@ -2652,7 +3160,7 @@ export const RalphFlowEditor = ({
           : selectionKind === "images"
             ? "/mock/screenshot.png"
             : "/mock/document.txt",
-      ]);
+      ], attachmentContext);
       return;
     }
 
@@ -2688,7 +3196,7 @@ export const RalphFlowEditor = ({
           ? [selected]
           : [];
 
-      await attachPathsToBlock(blockId, paths);
+      await attachPathsToBlock(blockId, paths, attachmentContext);
     } catch (error) {
       console.error("Failed to select Ralph block attachments", error);
       setMessage("Failed to select Ralph block attachments.");
@@ -2885,9 +3393,15 @@ export const RalphFlowEditor = ({
     }
 
     const draftSnapshotAtStart = currentDraft ? getFlowSnapshot(currentDraft) : "";
-    const savedSnapshotAtStart = savedSnapshotRef.current;
+    const expectedFingerprintAtStart =
+      existingFlow && savedSnapshotRef.current
+        ? createRalphFlowFingerprint(
+            JSON.parse(savedSnapshotRef.current) as RalphFlow,
+          )
+        : undefined;
 
     return {
+      workspaceRoot,
       userPrompt: normalizedAiPrompt,
       generationPrompt,
       target: aiTarget,
@@ -2895,14 +3409,11 @@ export const RalphFlowEditor = ({
       targetScope,
       targetFlowName,
       ...(existingFlow ? { existingFlow } : {}),
+      ...(expectedFingerprintAtStart ? { expectedFingerprintAtStart } : {}),
       targetFlowId: existingFlow?.id ?? null,
       selectedIdAtStart: selectedIdRef.current,
       selectedScopeAtStart: selectedScopeRef.current,
       draftSnapshotAtStart,
-      savedSnapshotAtStart,
-      draftWasDirtyAtStart: Boolean(
-        currentDraft && draftSnapshotAtStart !== savedSnapshotAtStart,
-      ),
       ...(aiTarget === "prompt-block" && aiPromptBlock
         ? { promptBlockLabel: formatPromptBlockTargetLabel(aiPromptBlock) }
         : {}),
@@ -2914,7 +3425,7 @@ export const RalphFlowEditor = ({
     generationPrompt: string,
     generationMode: RalphAiGenerationMode,
   ): Promise<void> => {
-    if (!workspaceRoot) {
+    if (workspaceRootRef.current !== context.workspaceRoot) {
       return;
     }
 
@@ -2942,7 +3453,7 @@ export const RalphFlowEditor = ({
     setMessage(null);
 
     try {
-      const result = await createRalphFlow(workspaceRoot, {
+      const result = await createRalphFlow(context.workspaceRoot, {
         prompt: generationPrompt,
         scope: context.targetScope,
         mode: runMode,
@@ -2951,11 +3462,17 @@ export const RalphFlowEditor = ({
         ...(generationReasoning ? { reasoning: generationReasoning } : {}),
         name: context.targetFlowName,
         ...(context.existingFlow ? { existingFlow: context.existingFlow } : {}),
+        ...(context.expectedFingerprintAtStart
+          ? { expectedFingerprint: context.expectedFingerprintAtStart }
+          : {}),
         target: context.target,
         generationMode,
         taskId: jobId,
       });
-      if (generationRequestRef.current !== jobId) {
+      if (
+        generationRequestRef.current !== jobId ||
+        workspaceRootRef.current !== context.workspaceRoot
+      ) {
         return;
       }
 
@@ -3025,14 +3542,16 @@ export const RalphFlowEditor = ({
         const currentDraftSnapshot = currentDraft
           ? getFlowSnapshot(currentDraft)
           : "";
-        const canAdoptGeneratedFlow =
+        const selectionAndDraftAreUnchanged =
+          workspaceRootRef.current === context.workspaceRoot &&
           selectedIdRef.current === context.selectedIdAtStart &&
-          (context.target === "flow"
-            ? !context.draftWasDirtyAtStart
-            : selectedScopeRef.current === context.selectedScopeAtStart &&
-              selectedScopeRef.current === context.targetScope &&
-              currentDraft?.id === context.targetFlowId &&
-              currentDraftSnapshot === context.draftSnapshotAtStart);
+          selectedScopeRef.current === context.selectedScopeAtStart &&
+          currentDraftSnapshot === context.draftSnapshotAtStart;
+        const canAdoptGeneratedFlow =
+          selectionAndDraftAreUnchanged &&
+          (context.target === "flow" ||
+            (selectedScopeRef.current === context.targetScope &&
+              currentDraft?.id === context.targetFlowId));
 
         if (canAdoptGeneratedFlow) {
           replaceDraftFlow(generatedFlow, context.targetScope);
@@ -3081,6 +3600,13 @@ export const RalphFlowEditor = ({
     taskId: string,
     result: RalphGenerationInterviewResult,
   ): Promise<void> => {
+    if (
+      generationInterviewRequestRef.current !== taskId ||
+      workspaceRootRef.current !== context.workspaceRoot
+    ) {
+      return;
+    }
+
     const fields = result.fields ?? [];
     const nextValues = createDefaultRalphInputValues(fields);
     const findings = result.session.findings ?? [];
@@ -3167,7 +3693,13 @@ export const RalphFlowEditor = ({
           }
         : current,
     );
+    if (generationInterviewRequestRef.current !== taskId) {
+      return;
+    }
     await executeFlowGenerationWithAgent(context, finalPrompt, "do-it");
+    if (generationInterviewRequestRef.current === taskId) {
+      generationInterviewRequestRef.current = null;
+    }
     setGenerationInterview((current) =>
       current?.taskId === taskId ? null : current,
     );
@@ -3184,6 +3716,7 @@ export const RalphFlowEditor = ({
     }
 
     const taskId = `generation-interview-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    generationInterviewRequestRef.current = taskId;
 
     setGenerationInterview((current) => ({
       context,
@@ -3224,8 +3757,14 @@ export const RalphFlowEditor = ({
           : {}),
       });
 
+      if (generationInterviewRequestRef.current !== taskId) {
+        return;
+      }
       await applyGenerationInterviewResult(context, taskId, result);
     } catch (error) {
+      if (generationInterviewRequestRef.current !== taskId) {
+        return;
+      }
       const errorMessage = error instanceof Error ? error.message : String(error);
       setGenerationInterview((current) =>
         current?.taskId === taskId
@@ -3300,48 +3839,90 @@ export const RalphFlowEditor = ({
     const requestId = saveRequestRef.current + 1;
     saveRequestRef.current = requestId;
     const saveScope = selectedScope;
+    const selectedIdAtStart = selectedId;
+    const workspaceAtStart = workspaceRoot;
+    const draftSnapshotAtStart = getFlowSnapshot(draftFlow);
     const flowToSave = normalizeDerivedGroupMembership(draftFlow);
-    setLoading(true);
+    const expectedFingerprint = savedSnapshotRef.current
+      ? createRalphFlowFingerprint(
+          JSON.parse(savedSnapshotRef.current) as RalphFlow,
+        )
+      : undefined;
+    const operationId = beginBlockingOperation();
     setMessage(null);
 
     try {
       const result = await saveRalphFlow(workspaceRoot, {
         flow: flowToSave,
         scope: saveScope,
+        ...(expectedFingerprint ? { expectedFingerprint } : {}),
       });
-      if (requestId !== saveRequestRef.current) {
+      if (
+        requestId !== saveRequestRef.current ||
+        workspaceRootRef.current !== workspaceAtStart
+      ) {
         return false;
       }
 
-      replaceDraftFlow(result.flow, saveScope);
-      replaceSavedSnapshot(getFlowSnapshot(result.flow));
-      replaceSelectedId(result.flow.id, saveScope);
+      const currentDraft = draftFlowRef.current;
+      const currentDraftMatchesSave =
+        currentDraft?.id === flowToSave.id &&
+        draftFlowScopeRef.current === saveScope &&
+        selectedScopeRef.current === saveScope &&
+        selectedIdRef.current === selectedIdAtStart;
+      const draftChangedDuringSave =
+        !currentDraftMatchesSave ||
+        currentDraft === null ||
+        getFlowSnapshot(currentDraft) !== draftSnapshotAtStart;
+
+      if (currentDraftMatchesSave) {
+        replaceSavedSnapshot(getFlowSnapshot(result.flow));
+        replaceSelectedId(result.flow.id, saveScope);
+
+        if (!draftChangedDuringSave) {
+          replaceDraftFlow(result.flow, saveScope);
+          const resultVariables = discoverRalphFlowVariables(result.flow);
+          const defaults = createDefaultRalphVariableValues(resultVariables);
+          setVariableValues((current) =>
+            Object.fromEntries(
+              resultVariables.map((variable) => [
+                variable.name,
+                Object.hasOwn(current, variable.name)
+                  ? current[variable.name]
+                  : defaults[variable.name],
+              ]),
+            ),
+          );
+        }
+      }
+
       setUnsavedFlowId((current) =>
         current === result.flow.id && unsavedFlowScope === saveScope
           ? null
           : current,
       );
-      setVariableValues(
-        createDefaultRalphVariableValues(discoverRalphFlowVariables(result.flow)),
+      setMessage(
+        draftChangedDuringSave
+          ? `${formatMessage(result)} Newer editor changes remain unsaved.`
+          : formatMessage(result),
       );
-      setMessage(formatMessage(result));
       setFlows((current) =>
         upsertFlowSummary(
           current,
           flowToSummary(result.flow, result.path, saveScope),
         ),
       );
-      setRevisions([]);
-      return true;
+      if (currentDraftMatchesSave) {
+        void refreshRevisions(result.flow.id, saveScope);
+      }
+      return !draftChangedDuringSave;
     } catch (error) {
       if (requestId === saveRequestRef.current) {
         setMessage(error instanceof Error ? error.message : String(error));
       }
       return false;
     } finally {
-      if (requestId === saveRequestRef.current) {
-        setLoading(false);
-      }
+      finishBlockingOperation(operationId);
     }
   };
 
@@ -3411,7 +3992,7 @@ export const RalphFlowEditor = ({
     }
 
     const targetScopeLabel = RALPH_FLOW_SCOPE_LABELS[targetScope].toLowerCase();
-    setLoading(true);
+    const operationId = beginBlockingOperation();
     setMessage(null);
 
     try {
@@ -3434,6 +4015,10 @@ export const RalphFlowEditor = ({
         flow,
         scope: targetScope,
       });
+
+      if (workspaceRootRef.current !== workspaceRoot) {
+        return;
+      }
 
       replaceSelectedId(result.flow.id, targetScope);
       replaceDraftFlow(result.flow, targetScope);
@@ -3461,7 +4046,88 @@ export const RalphFlowEditor = ({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
-      setLoading(false);
+      finishBlockingOperation(operationId);
+    }
+  };
+
+  const upgradeStarterFlow = async (
+    flowSummary: RalphFlowSummary,
+  ): Promise<void> => {
+    if (!workspaceRoot || flowSummary.source?.kind !== "starter") {
+      return;
+    }
+
+    if (!(await saveDirtyDraftBeforeReplacement("upgrading a starter flow"))) {
+      return;
+    }
+
+    const starterFlow = getStarterFlowById(flowSummary.source.id);
+    if (!starterFlow || starterFlow.version <= flowSummary.source.version) {
+      setMessage(`Starter flow \`${flowSummary.name}\` is already current.`);
+      return;
+    }
+
+    const flowScope = getFlowSummaryScope(flowSummary);
+    if (getFlowActiveRuns(flowSummary).length > 0) {
+      setMessage(
+        `Wait for active runs of \`${flowSummary.name}\` before upgrading its starter graph.`,
+      );
+      return;
+    }
+
+    const operationId = beginBlockingOperation();
+    setMessage(null);
+
+    try {
+      const current = await showRalphFlow(workspaceRoot, flowSummary.id, flowScope);
+      const upgrade = createUpgradedRalphStarterFlowWithReport(
+        current.flow,
+        starterFlow,
+        new Date().toISOString(),
+      );
+      if (!upgrade.report.applied) {
+        setMessage(
+          `Could not upgrade \`${flowSummary.name}\`: ${upgrade.report.conflicts.join(" ")}`,
+        );
+        return;
+      }
+      const result = await saveRalphFlow(workspaceRoot, {
+        flow: upgrade.flow,
+        scope: flowScope,
+        expectedFingerprint: createRalphFlowFingerprint(current.flow),
+      });
+
+      if (workspaceRootRef.current !== workspaceRoot) {
+        return;
+      }
+
+      replaceSelectedId(result.flow.id, flowScope);
+      replaceDraftFlow(result.flow, flowScope);
+      replaceSavedSnapshot(getFlowSnapshot(result.flow));
+      setSelectedBlockId(result.flow.blocks[0]?.id ?? null);
+      setVariableValues(
+        createDefaultRalphVariableValues(discoverRalphFlowVariables(result.flow)),
+      );
+      setRevisions([]);
+      void refreshRevisions(result.flow.id, flowScope);
+      setLastRun(null);
+      setFlows((currentFlows) =>
+        upsertFlowSummary(
+          currentFlows,
+          flowToSummary(result.flow, result.path, flowScope),
+        ),
+      );
+
+      const conflictSuffix = upgrade.report.conflicts.length > 0
+        ? ` ${upgrade.report.conflicts.length} local/upstream conflict(s) were preserved for review.`
+        : "";
+      setMessage(
+        `Upgraded \`${result.flow.name}\` to starter v${starterFlow.version} using ${upgrade.report.strategy}.${conflictSuffix}`,
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      finishBlockingOperation(operationId);
     }
   };
 
@@ -3605,7 +4271,7 @@ export const RalphFlowEditor = ({
       return;
     }
 
-    setLoading(true);
+    const operationId = beginBlockingOperation();
     setMessage(null);
 
     try {
@@ -3623,9 +4289,15 @@ export const RalphFlowEditor = ({
       }
 
       const sourceResult = await showRalphFlow(workspaceRoot, flow.id, sourceScope);
+      const targetResult = targetExists
+        ? await showRalphFlow(workspaceRoot, flow.id, targetScope)
+        : null;
       const savedResult = await saveRalphFlow(workspaceRoot, {
         flow: sourceResult.flow,
         scope: targetScope,
+        ...(targetResult
+          ? { expectedFingerprint: createRalphFlowFingerprint(targetResult.flow) }
+          : {}),
       });
       const targetSummary = flowToSummary(
         savedResult.flow,
@@ -3636,8 +4308,17 @@ export const RalphFlowEditor = ({
       let deletedPath: string | null = null;
 
       if (operation === "move") {
-        const deleteResult = await deleteRalphFlow(workspaceRoot, flow.id, sourceScope);
+        const deleteResult = await deleteRalphFlow(
+          workspaceRoot,
+          flow.id,
+          sourceScope,
+          createRalphFlowFingerprint(sourceResult.flow),
+        );
         deletedPath = deleteResult.path;
+      }
+
+      if (workspaceRootRef.current !== workspaceRoot) {
+        return;
       }
 
       setFlows((current) => {
@@ -3676,7 +4357,7 @@ export const RalphFlowEditor = ({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
-      setLoading(false);
+      finishBlockingOperation(operationId);
     }
   };
 
@@ -3700,7 +4381,7 @@ export const RalphFlowEditor = ({
       return;
     }
 
-    setLoading(true);
+    const operationId = beginBlockingOperation();
     setMessage(null);
 
     try {
@@ -3712,7 +4393,7 @@ export const RalphFlowEditor = ({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
-      setLoading(false);
+      finishBlockingOperation(operationId);
     }
   };
 
@@ -3774,11 +4455,32 @@ export const RalphFlowEditor = ({
       return;
     }
 
-    setLoading(true);
+    const operationId = beginBlockingOperation();
     setMessage(null);
 
     try {
-      const result = await deleteRalphFlow(workspaceRoot, flow.id, flowScope);
+      let expectedFingerprint: string;
+      if (
+        selectedIdRef.current === flow.id &&
+        selectedScopeRef.current === flowScope &&
+        savedSnapshotRef.current
+      ) {
+        expectedFingerprint = createRalphFlowFingerprint(
+          JSON.parse(savedSnapshotRef.current) as RalphFlow,
+        );
+      } else {
+        const current = await showRalphFlow(workspaceRoot, flow.id, flowScope);
+        expectedFingerprint = createRalphFlowFingerprint(current.flow);
+      }
+      const result = await deleteRalphFlow(
+        workspaceRoot,
+        flow.id,
+        flowScope,
+        expectedFingerprint,
+      );
+      if (workspaceRootRef.current !== workspaceRoot) {
+        return;
+      }
       setFlows((current) =>
         current.filter(
           (candidate) =>
@@ -3811,7 +4513,7 @@ export const RalphFlowEditor = ({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
-      setLoading(false);
+      finishBlockingOperation(operationId);
     }
   };
 
@@ -3834,7 +4536,16 @@ export const RalphFlowEditor = ({
     restoreRequestRef.current = requestId;
     const selectedIdAtStart = selectedId;
     const selectedScopeAtStart = selectedScope;
-    setLoading(true);
+    const workspaceAtStart = workspaceRoot;
+    const draftSnapshotAtStart = draftFlowRef.current
+      ? getFlowSnapshot(draftFlowRef.current)
+      : "";
+    const expectedFingerprint = savedSnapshotRef.current
+      ? createRalphFlowFingerprint(
+          JSON.parse(savedSnapshotRef.current) as RalphFlow,
+        )
+      : undefined;
+    const operationId = beginBlockingOperation();
     setMessage(null);
 
     try {
@@ -3842,11 +4553,16 @@ export const RalphFlowEditor = ({
         name: selectedId,
         revision: revisionId,
         scope: selectedScopeAtStart,
+        ...(expectedFingerprint ? { expectedFingerprint } : {}),
       });
       if (
         requestId !== restoreRequestRef.current ||
+        workspaceRootRef.current !== workspaceAtStart ||
         selectedIdRef.current !== selectedIdAtStart ||
-        selectedScopeRef.current !== selectedScopeAtStart
+        selectedScopeRef.current !== selectedScopeAtStart ||
+        (draftFlowRef.current
+          ? getFlowSnapshot(draftFlowRef.current)
+          : "") !== draftSnapshotAtStart
       ) {
         return;
       }
@@ -3871,15 +4587,13 @@ export const RalphFlowEditor = ({
           flowToSummary(result.flow, result.path, selectedScopeAtStart),
         ),
       );
-      setRevisions([result.revision]);
+      void refreshRevisions(result.flow.id, selectedScopeAtStart);
     } catch (error) {
       if (requestId === restoreRequestRef.current) {
         setMessage(error instanceof Error ? error.message : String(error));
       }
     } finally {
-      if (requestId === restoreRequestRef.current) {
-        setLoading(false);
-      }
+      finishBlockingOperation(operationId);
     }
   };
 
@@ -3943,6 +4657,19 @@ export const RalphFlowEditor = ({
           : current,
       );
       setMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const closeGenerationInterview = (): void => {
+    const taskId = generationInterview?.taskId;
+    const shouldCancel =
+      generationInterview?.status === "loading" ||
+      generationInterview?.status === "generating";
+
+    generationInterviewRequestRef.current = null;
+    setGenerationInterview(null);
+    if (taskId && shouldCancel) {
+      void cancelDesktopTask(taskId).catch(() => undefined);
     }
   };
 
@@ -4081,6 +4808,7 @@ export const RalphFlowEditor = ({
     const taskId =
       generationInterview.taskId ??
       `generation-interview-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    generationInterviewRequestRef.current = taskId;
     const answerComments = getTrimmedGenerationInterviewAnswerComments(
       generationInterview.answerComments,
     );
@@ -4105,11 +4833,17 @@ export const RalphFlowEditor = ({
           }
         : current,
     );
+    if (generationInterviewRequestRef.current !== taskId) {
+      return;
+    }
     await executeFlowGenerationWithAgent(
       generationInterview.context,
       finalPrompt,
       "do-it",
     );
+    if (generationInterviewRequestRef.current === taskId) {
+      generationInterviewRequestRef.current = null;
+    }
     setGenerationInterview((current) =>
       current?.taskId === taskId || current?.context === generationInterview.context
         ? null
@@ -4124,10 +4858,16 @@ export const RalphFlowEditor = ({
       return;
     }
 
-    const resumeFlowId = draftFlowRef.current?.id ?? selectedId ?? lastRun.flow;
+    const workspaceAtStart = workspaceRoot;
+    const scopeAtStart = selectedScope;
+    const selectedIdAtStart = selectedId;
+    const runIdAtStart = lastRun.runId;
+    const pendingInputIdAtStart = pendingInput.id;
+    const resumeFlowId = lastRun.flow;
     const resumeFlowName =
       draftFlowRef.current?.name || selectedSummary?.name || resumeFlowId;
     const resumeTaskId = createRalphRunTaskId(resumeFlowId);
+    pendingResumeRequestRef.current = resumeTaskId;
     const resumeStartedAt = Date.now();
     const resumeVariableValues = Object.fromEntries(
       Object.entries({
@@ -4142,7 +4882,7 @@ export const RalphFlowEditor = ({
       {
         id: resumeTaskId,
         flowId: resumeFlowId,
-        scope: selectedScope,
+        scope: scopeAtStart,
         flowName: resumeFlowName,
         startedAt: resumeStartedAt,
         status: "running",
@@ -4170,8 +4910,8 @@ export const RalphFlowEditor = ({
 
     try {
       const result = await resumeRalphRun(workspaceRoot, {
-        runId: lastRun.runId,
-        scope: selectedScope,
+        runId: runIdAtStart,
+        scope: scopeAtStart,
         taskId: resumeTaskId,
         mode: runMode,
         provider: runProvider,
@@ -4181,31 +4921,45 @@ export const RalphFlowEditor = ({
           ? { maxTransitions: defaultMaxTransitions }
           : {}),
         inputResponse: {
-          requestId: pendingInput.id,
+          requestId: pendingInputIdAtStart,
           action,
           ...(action === "submit" ? { values: pendingInputValues } : {}),
         },
       });
 
-      setLastRun(result.run);
+      if (
+        pendingResumeRequestRef.current !== resumeTaskId ||
+        workspaceRootRef.current !== workspaceAtStart ||
+        selectedIdRef.current !== selectedIdAtStart ||
+        selectedScopeRef.current !== scopeAtStart
+      ) {
+        return;
+      }
+
+      replaceLastRun(result.run);
       setMessage(
         result.runLogPath
           ? `${formatRunMessage(result.run)} Run log: ${result.runLogPath}`
           : formatRunMessage(result.run),
       );
       if (result.run.runId) {
-        void openRunDetail(result.run.runId, selectedScope, { selectTab: false });
+        void openRunDetail(result.run.runId, scopeAtStart, { selectTab: false });
       }
-      if (selectedId) {
-        void refreshRunHistory(selectedId, selectedScope);
+      if (selectedIdAtStart) {
+        void refreshRunHistory(selectedIdAtStart, scopeAtStart);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      if (pendingResumeRequestRef.current === resumeTaskId) {
+        setMessage(error instanceof Error ? error.message : String(error));
+      }
     } finally {
       setActiveRuns((current) =>
         current.filter((run) => run.id !== resumeTaskId),
       );
-      setInputSubmitting(false);
+      if (pendingResumeRequestRef.current === resumeTaskId) {
+        pendingResumeRequestRef.current = null;
+        setInputSubmitting(false);
+      }
     }
   };
 
@@ -4220,10 +4974,15 @@ export const RalphFlowEditor = ({
       return;
     }
 
-    const resumeFlowId = draftFlowRef.current?.id ?? selectedId ?? lastRun.flow;
+    const workspaceAtStart = workspaceRoot;
+    const scopeAtStart = selectedScope;
+    const selectedIdAtStart = selectedId;
+    const runIdAtStart = lastRun.runId;
+    const resumeFlowId = lastRun.flow;
     const resumeFlowName =
       draftFlowRef.current?.name || selectedSummary?.name || resumeFlowId;
     const resumeTaskId = createRalphRunTaskId(resumeFlowId);
+    pendingResumeRequestRef.current = resumeTaskId;
     const resumeStartedAt = Date.now();
     const resumeVariableValues = Object.fromEntries(
       Object.entries({
@@ -4238,7 +4997,7 @@ export const RalphFlowEditor = ({
       {
         id: resumeTaskId,
         flowId: resumeFlowId,
-        scope: selectedScope,
+        scope: scopeAtStart,
         flowName: resumeFlowName,
         startedAt: resumeStartedAt,
         status: "running",
@@ -4262,8 +5021,8 @@ export const RalphFlowEditor = ({
 
     try {
       const result = await resumeRalphRun(workspaceRoot, {
-        runId: lastRun.runId,
-        scope: selectedScope,
+        runId: runIdAtStart,
+        scope: scopeAtStart,
         taskId: resumeTaskId,
         mode: runMode,
         provider: runProvider,
@@ -4275,25 +5034,39 @@ export const RalphFlowEditor = ({
         retryCurrent: true,
       });
 
-      setLastRun(result.run);
+      if (
+        pendingResumeRequestRef.current !== resumeTaskId ||
+        workspaceRootRef.current !== workspaceAtStart ||
+        selectedIdRef.current !== selectedIdAtStart ||
+        selectedScopeRef.current !== scopeAtStart
+      ) {
+        return;
+      }
+
+      replaceLastRun(result.run);
       setMessage(
         result.runLogPath
           ? `${formatRunMessage(result.run)} Run log: ${result.runLogPath}`
           : formatRunMessage(result.run),
       );
       if (result.run.runId) {
-        void openRunDetail(result.run.runId, selectedScope, { selectTab: false });
+        void openRunDetail(result.run.runId, scopeAtStart, { selectTab: false });
       }
-      if (selectedId) {
-        void refreshRunHistory(selectedId, selectedScope);
+      if (selectedIdAtStart) {
+        void refreshRunHistory(selectedIdAtStart, scopeAtStart);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      if (pendingResumeRequestRef.current === resumeTaskId) {
+        setMessage(error instanceof Error ? error.message : String(error));
+      }
     } finally {
       setActiveRuns((current) =>
         current.filter((run) => run.id !== resumeTaskId),
       );
-      setInputSubmitting(false);
+      if (pendingResumeRequestRef.current === resumeTaskId) {
+        pendingResumeRequestRef.current = null;
+        setInputSubmitting(false);
+      }
     }
   };
 
@@ -4360,6 +5133,7 @@ export const RalphFlowEditor = ({
 
     const flowToRun = draftFlow;
     const runScope = selectedScope;
+    const workspaceAtStart = workspaceRoot;
     const flowSnapshotAtStart = getFlowSnapshot(flowToRun);
     const taskId = createRalphRunTaskId(flowToRun.id);
     const flowName = flowToRun.name || flowToRun.id;
@@ -4389,7 +5163,7 @@ export const RalphFlowEditor = ({
       },
       ...current,
     ]);
-    setLastRun(null);
+    replaceLastRun(null);
     setEditorMode("run");
     setRunPanelTab("live");
     setMessage(`Ralph run \`${flowName}\` started in the background.`);
@@ -4411,13 +5185,14 @@ export const RalphFlowEditor = ({
         });
         const currentDraft = draftFlowRef.current;
         const stillViewingSameSnapshot =
+          workspaceRootRef.current === workspaceAtStart &&
           selectedIdRef.current === flowToRun.id &&
           selectedScopeRef.current === runScope &&
           currentDraft?.id === flowToRun.id &&
           getFlowSnapshot(currentDraft) === flowSnapshotAtStart;
 
         if (stillViewingSameSnapshot) {
-          setLastRun(result.run);
+          replaceLastRun(result.run);
           setSelectedBlockId(
             [...result.run.events]
               .reverse()
@@ -4433,6 +5208,7 @@ export const RalphFlowEditor = ({
           }
           void refreshRunHistory(flowToRun.id, runScope);
         } else if (
+          workspaceRootRef.current === workspaceAtStart &&
           selectedIdRef.current === flowToRun.id &&
           selectedScopeRef.current === runScope
         ) {
@@ -4448,6 +5224,7 @@ export const RalphFlowEditor = ({
         const currentDraft = draftFlowRef.current;
 
         if (
+          workspaceRootRef.current === workspaceAtStart &&
           selectedIdRef.current === flowToRun.id &&
           selectedScopeRef.current === runScope &&
           currentDraft?.id === flowToRun.id &&
@@ -6828,7 +7605,7 @@ export const RalphFlowEditor = ({
                   ariaLabel: "Expanded utility advanced JSON",
                   mode: "json",
                   value: utilityJsonDraft,
-                  onApply: setUtilityJsonDraft,
+                  onApply: updateUtilityJsonDraft,
                 }),
               )}
               <Button
@@ -6845,8 +7622,7 @@ export const RalphFlowEditor = ({
               value={utilityJsonDraft}
               aria-label="Utility advanced JSON"
               onChange={(event) => {
-                setUtilityJsonDraft(event.target.value);
-                setUtilityJsonError(null);
+                updateUtilityJsonDraft(event.target.value);
               }}
               className="min-h-32 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100"
             />
@@ -6939,6 +7715,7 @@ export const RalphFlowEditor = ({
               onRefreshFlows={() => void refreshFlows()}
               onSaveFlow={() => void saveFlow()}
               onSelectFlow={(flow) => void selectFlow(flow)}
+              onUpgradeStarterFlow={(flow) => void upgradeStarterFlow(flow)}
             />
 
             <main className="col-start-2 row-start-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-slate-950">
@@ -6960,7 +7737,7 @@ export const RalphFlowEditor = ({
               />
 
               <div ref={canvasViewportRef} className="relative min-h-0">
-                <ReactFlowProvider>
+                <ReactFlowProvider key={canvasIdentityKey}>
                   <ReactFlow<RalphCanvasNode, RalphCanvasEdge>
                     nodes={canvasNodes}
                     edges={edges}
@@ -11020,7 +11797,7 @@ export const RalphFlowEditor = ({
             state={generationInterview}
             renderInputControl={renderRalphInputControl}
             getDefaultInputValue={getDefaultRalphInputValue}
-            onClose={() => setGenerationInterview(null)}
+            onClose={closeGenerationInterview}
             onValueChange={updateGenerationInterviewValue}
             onToggleComment={toggleGenerationInterviewComment}
             onCommentChange={updateGenerationInterviewComment}

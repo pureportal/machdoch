@@ -7,6 +7,15 @@ const STORE_FILE = "machdoch-shell-state.json";
 const SHELL_STATE_CHANGED_EVENT = "machdoch://shell-state-changed";
 const APPEARANCE_SETTINGS_CHANGED_EVENT =
   "machdoch://appearance-settings-changed";
+const BROWSER_SHELL_STATE_CHANNEL = "machdoch:shell-state-changed";
+const BROWSER_APPEARANCE_CHANNEL = "machdoch:appearance-settings-changed";
+const BROWSER_SHELL_SNAPSHOT_STORAGE_KEY =
+  "machdoch.desktop.shell-state-snapshot";
+const APPEARANCE_STORAGE_KEY = "machdoch.desktop.appearance-state";
+const browserWindowOrigin =
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? `browser:${crypto.randomUUID()}`
+    : `browser:${Date.now()}:${Math.random()}`;
 
 let sharedStore: LazyStore | null = null;
 
@@ -62,7 +71,7 @@ export const canUseTauriStore = (): boolean => {
 
 export const getCurrentShellWindowLabel = (): string | null => {
   if (!canUseTauriStore()) {
-    return null;
+    return typeof window === "undefined" ? null : browserWindowOrigin;
   }
 
   try {
@@ -92,8 +101,10 @@ export const loadStoredValue = async <T>({
       if (value !== null && value !== undefined) {
         return normalize(value);
       }
+      return fallback;
     } catch (error) {
       console.error(tauriErrorMessage, error);
+      throw error instanceof Error ? error : new Error(tauriErrorMessage);
     }
   }
 
@@ -127,6 +138,7 @@ export const saveStoredValue = async ({
       return true;
     } catch (error) {
       console.error(tauriErrorMessage, error);
+      return false;
     }
   }
 
@@ -147,6 +159,14 @@ export const saveStoredValue = async ({
 
 export const broadcastShellStateChanged = async (): Promise<void> => {
   if (!canUseTauriStore()) {
+    if (typeof BroadcastChannel !== "undefined") {
+      const channel = new BroadcastChannel(BROWSER_SHELL_STATE_CHANNEL);
+      channel.postMessage({
+        originWindowLabel: browserWindowOrigin,
+        updatedAt: Date.now(),
+      } satisfies ShellStateChangedPayload);
+      channel.close();
+    }
     return;
   }
 
@@ -162,6 +182,14 @@ export const broadcastShellStateChanged = async (): Promise<void> => {
 
 export const broadcastAppearanceSettingsChanged = async (): Promise<void> => {
   if (!canUseTauriStore()) {
+    if (typeof BroadcastChannel !== "undefined") {
+      const channel = new BroadcastChannel(BROWSER_APPEARANCE_CHANNEL);
+      channel.postMessage({
+        originWindowLabel: browserWindowOrigin,
+        updatedAt: Date.now(),
+      } satisfies AppearanceSettingsChangedPayload);
+      channel.close();
+    }
     return;
   }
 
@@ -179,7 +207,34 @@ export const subscribeToShellStateChanged = async (
   onChange: (payload: ShellStateChangedPayload) => void,
 ): Promise<() => void> => {
   if (!canUseTauriStore()) {
-    return () => {};
+    if (typeof window === "undefined") {
+      return () => {};
+    }
+
+    if (typeof BroadcastChannel !== "undefined") {
+      const channel = new BroadcastChannel(BROWSER_SHELL_STATE_CHANNEL);
+      channel.onmessage = (event: MessageEvent<unknown>) => {
+        const payload = event.data as Partial<ShellStateChangedPayload>;
+        if (typeof payload.updatedAt === "number") {
+          onChange({
+            originWindowLabel:
+              typeof payload.originWindowLabel === "string"
+                ? payload.originWindowLabel
+                : null,
+            updatedAt: payload.updatedAt,
+          });
+        }
+      };
+      return () => channel.close();
+    }
+
+    const onStorage = (event: StorageEvent): void => {
+      if (event.key === BROWSER_SHELL_SNAPSHOT_STORAGE_KEY) {
+        onChange({ originWindowLabel: null, updatedAt: Date.now() });
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }
 
   try {
@@ -199,7 +254,34 @@ export const subscribeToAppearanceSettingsChanged = async (
   onChange: (payload: AppearanceSettingsChangedPayload) => void,
 ): Promise<() => void> => {
   if (!canUseTauriStore()) {
-    return () => {};
+    if (typeof window === "undefined") {
+      return () => {};
+    }
+
+    if (typeof BroadcastChannel !== "undefined") {
+      const channel = new BroadcastChannel(BROWSER_APPEARANCE_CHANNEL);
+      channel.onmessage = (event: MessageEvent<unknown>) => {
+        const payload = event.data as Partial<AppearanceSettingsChangedPayload>;
+        if (typeof payload.updatedAt === "number") {
+          onChange({
+            originWindowLabel:
+              typeof payload.originWindowLabel === "string"
+                ? payload.originWindowLabel
+                : null,
+            updatedAt: payload.updatedAt,
+          });
+        }
+      };
+      return () => channel.close();
+    }
+
+    const onStorage = (event: StorageEvent): void => {
+      if (event.key === APPEARANCE_STORAGE_KEY) {
+        onChange({ originWindowLabel: null, updatedAt: Date.now() });
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }
 
   try {

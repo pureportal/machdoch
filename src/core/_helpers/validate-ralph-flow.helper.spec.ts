@@ -92,7 +92,20 @@ describe("Ralph flow validation helpers", () => {
   });
 
   it("accepts a valid flow and reports discovered variables", () => {
-    const validation = validateRalphFlow(createFlow({ settings: { maxTransitions: 10 } }));
+    const validation = validateRalphFlow(createFlow({
+      settings: {
+        maxTransitions: 10,
+        autonomy: {
+          maxRecoveryAttempts: 3,
+          backoff: {
+            initialDelaySeconds: 0,
+            multiplier: 2,
+            maxDelaySeconds: 10,
+          },
+          deferToBlockId: "fix-tsc",
+        },
+      },
+    }));
 
     expect(validation.valid).toBe(true);
     expect(validation.errorIssues).toEqual([]);
@@ -104,6 +117,45 @@ describe("Ralph flow validation helpers", () => {
         required: false,
       },
     ]);
+  });
+
+  it("rejects invalid autonomy bounds and defer targets", () => {
+    const validation = validateRalphFlow(createFlow({
+      settings: {
+        maxTransitions: 10,
+        autonomy: {
+          maxRecoveryAttempts: -1,
+          backoff: {
+            initialDelaySeconds: 5,
+            multiplier: 0.5,
+            maxDelaySeconds: 2,
+          },
+          deferToBlockId: "missing-defer-target",
+        },
+      },
+    }));
+
+    expect(getCodes(validation.errorIssues)).toEqual(
+      expect.arrayContaining([
+        "flow-autonomy-max-recovery-attempts-invalid",
+        "flow-autonomy-backoff-multiplier-invalid",
+        "flow-autonomy-delay-range-invalid",
+        "flow-autonomy-defer-target-missing",
+      ]),
+    );
+  });
+
+  it("warns when defer exhaustion has no executable fallback target", () => {
+    const validation = validateRalphFlow(createFlow({
+      settings: {
+        maxTransitions: 10,
+        autonomy: { recoveryExhaustion: "defer" },
+      },
+    }));
+
+    expect(getCodes(validation.warningIssues)).toContain(
+      "flow-autonomy-defer-target-unset",
+    );
   });
 
   it("rejects empty and invalid flow structure", () => {

@@ -37,6 +37,14 @@ import {
   readAttachedFilePreview,
   readWorkspaceFilePreview,
   createRalphFlow,
+  createSchedulerJob,
+  pauseSchedulerJob,
+  resumeSchedulerJob,
+  deleteSchedulerJob,
+  triggerSchedulerJob,
+  retrySchedulerRun,
+  cancelSchedulerRun,
+  inspectSchedulerRalphFlow,
   deleteRalphFlow,
   listRalphFlowRevisions,
   restoreRalphFlowRevision,
@@ -582,6 +590,7 @@ describe("desktop runtime fullscreen detection", () => {
         blocks: [],
         edges: [],
       },
+      expectedFingerprint: "saved-flow-fingerprint",
       target: "refactor",
       generationMode: "do-it",
       mode: "machdoch",
@@ -614,6 +623,8 @@ describe("desktop runtime fullscreen detection", () => {
             blocks: [],
             edges: [],
           }),
+          "--expected-fingerprint",
+          "saved-flow-fingerprint",
           "--flow-target",
           "refactor",
           "--generation-mode",
@@ -751,6 +762,7 @@ describe("desktop runtime fullscreen detection", () => {
     await restoreRalphFlowRevision("C:\\Project", {
       name: "refactor",
       revision: "2026-06-13T10-00-00-000Z",
+      expectedFingerprint: "current-fingerprint",
     });
 
     expect(invokeMock).toHaveBeenCalledWith("run_ralph_command", {
@@ -759,6 +771,8 @@ describe("desktop runtime fullscreen detection", () => {
         arguments: [
           "restore",
           "refactor",
+          "--expected-fingerprint",
+          "current-fingerprint",
           "--revision",
           "2026-06-13T10-00-00-000Z",
         ],
@@ -1215,6 +1229,7 @@ describe("desktop runtime fullscreen detection", () => {
     await runDesktopTask(" C:\\Docs ", " Inspect notes ", {
       imagePaths: [" C:\\Docs\\screen.png "],
       mode: "ask",
+      sessionId: "session-456",
       taskId: "task-123",
     });
 
@@ -1224,6 +1239,7 @@ describe("desktop runtime fullscreen detection", () => {
         task: "Inspect notes",
         imagePaths: ["C:\\Docs\\screen.png"],
         mode: "ask",
+        sessionId: "session-456",
         taskId: "task-123",
       },
     });
@@ -1452,5 +1468,114 @@ describe("desktop runtime fullscreen detection", () => {
       mode: "base",
     });
     expect(invokeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("desktop scheduler RALPH arguments", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    enableInvokeMock();
+    isTauriMock.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    disableInvokeMock();
+  });
+
+  it("forwards the unattended profile and recoverable resume policy", async () => {
+    invokeMock.mockRejectedValueOnce(new Error("stop after argument capture"));
+
+    await expect(
+      createSchedulerJob("C:\\Project", {
+        requestId: "scheduler-create-request",
+        schedule: { type: "interval", intervalMs: 60_000 },
+        targetType: "ralph-flow",
+        ralphFlow: {
+          id: "autonomous-improvement",
+          scope: "workspace",
+          executionProfile: "unattended",
+          resumePolicy: "recoverable",
+          permissions: {
+            allowedRoots: ["C:\\Project"],
+            allowCommands: true,
+            allowWrites: true,
+            allowNetwork: true,
+            allowMcpTools: true,
+          },
+        },
+      }),
+    ).rejects.toThrow("stop after argument capture");
+
+    expect(invokeMock).toHaveBeenCalledWith("run_scheduler_command", {
+      request: expect.objectContaining({
+        workspaceRoot: "C:\\Project",
+        arguments: expect.arrayContaining([
+          "--request-id",
+          "scheduler-create-request",
+          "--scheduled-ralph-profile",
+          "unattended",
+          "--scheduled-ralph-resume-policy",
+          "recoverable",
+        ]),
+      }),
+    });
+  });
+
+  it("forwards scheduler mutation request ids for every desktop action", async () => {
+    invokeMock.mockRejectedValue(new Error("stop after argument capture"));
+
+    await Promise.allSettled([
+      pauseSchedulerJob("C:\\Project", "job-1", "pause-request"),
+      resumeSchedulerJob("C:\\Project", "job-1", "resume-request"),
+      deleteSchedulerJob("C:\\Project", "job-1", "delete-request"),
+      triggerSchedulerJob("C:\\Project", "job-1", "trigger-request"),
+      retrySchedulerRun("C:\\Project", "run-1", "retry-request"),
+      cancelSchedulerRun("C:\\Project", "run-1", "cancel-request"),
+    ]);
+
+    expect(
+      invokeMock.mock.calls.map(([, payload]) =>
+        (payload as { request: { arguments: string[] } }).request.arguments
+      ),
+    ).toEqual([
+      ["pause", "job-1", "--request-id", "pause-request"],
+      ["resume", "job-1", "--request-id", "resume-request"],
+      ["delete", "job-1", "--request-id", "delete-request"],
+      ["trigger", "job-1", "--request-id", "trigger-request"],
+      ["retry", "run-1", "--request-id", "retry-request"],
+      ["cancel", "run-1", "--request-id", "cancel-request"],
+    ]);
+  });
+
+  it("uses the authoritative scheduler readiness command with typed params", async () => {
+    invokeMock.mockRejectedValueOnce(new Error("stop after readiness capture"));
+
+    await expect(
+      inspectSchedulerRalphFlow("C:\\Project", {
+        id: "autonomous-improvement",
+        scope: "workspace",
+        params: { maxPasses: "4", enableInterview: "false" },
+        permissions: {
+          allowedRoots: ["C:\\Project"],
+          allowCommands: true,
+          allowWrites: true,
+          allowNetwork: true,
+          allowMcpTools: true,
+        },
+      }),
+    ).rejects.toThrow("stop after readiness capture");
+
+    expect(invokeMock).toHaveBeenCalledWith("run_scheduler_command", {
+      request: expect.objectContaining({
+        arguments: expect.arrayContaining([
+          "inspect-ralph",
+          "autonomous-improvement",
+          "--scheduled-ralph-param",
+          "maxPasses=4",
+          "--scheduled-ralph-param",
+          "enableInterview=false",
+        ]),
+      }),
+    });
   });
 });

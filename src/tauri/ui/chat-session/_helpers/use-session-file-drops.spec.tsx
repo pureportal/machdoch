@@ -1,6 +1,7 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  currentWindowMock,
   desktopEventListeners,
   windowDragDropListeners,
 } from "../../test/tauri-test-mocks";
@@ -34,6 +35,7 @@ describe("useSessionFileDrops", () => {
   beforeEach(() => {
     desktopEventListeners.clear();
     windowDragDropListeners.clear();
+    currentWindowMock.onDragDropEvent.mockClear();
   });
 
   afterEach(() => {
@@ -184,5 +186,111 @@ describe("useSessionFileDrops", () => {
         "quick-task",
       );
     });
+  });
+
+  it("keeps every part of one mixed drop on the callback snapshot that received it", async () => {
+    let resolvePaths: (() => void) | undefined;
+    const firstAttachPaths = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvePaths = resolve;
+        }),
+    );
+    const firstAttachReferences = vi.fn();
+    const firstAppendText = vi.fn();
+    const latestAttachPaths = vi.fn().mockResolvedValue(undefined);
+    const latestAttachReferences = vi.fn();
+    const latestAppendText = vi.fn();
+    const { rerender } = renderHook(
+      ({ onAttachPaths, onAttachReferences, onAppendText }) =>
+        useSessionFileDrops({
+          fileDropTarget: "active-session",
+          isDesktop: true,
+          onAttachPaths,
+          onAttachReferences,
+          onAppendText,
+          forwardedDropEventName: "machdoch://mixed-drop",
+        }),
+      {
+        initialProps: {
+          onAttachPaths: firstAttachPaths,
+          onAttachReferences: firstAttachReferences,
+          onAppendText: firstAppendText,
+        },
+      },
+    );
+
+    await waitFor(() => {
+      expect(desktopEventListeners.has("machdoch://mixed-drop")).toBe(true);
+    });
+
+    act(() => {
+      desktopEventListeners.get("machdoch://mixed-drop")?.({
+        payload: {
+          paths: ["C:\\Docs\\slow.md"],
+          references: ["https://example.com/original"],
+          text: "Original dropped text",
+        },
+      });
+    });
+
+    expect(firstAttachReferences).toHaveBeenCalledWith(
+      ["https://example.com/original"],
+      "active-session",
+    );
+    expect(firstAppendText).toHaveBeenCalledWith(
+      "Original dropped text",
+      "active-session",
+    );
+
+    rerender({
+      onAttachPaths: latestAttachPaths,
+      onAttachReferences: latestAttachReferences,
+      onAppendText: latestAppendText,
+    });
+    act(() => resolvePaths?.());
+
+    await waitFor(() => expect(firstAttachPaths).toHaveBeenCalledTimes(1));
+    expect(latestAttachPaths).not.toHaveBeenCalled();
+    expect(latestAttachReferences).not.toHaveBeenCalled();
+    expect(latestAppendText).not.toHaveBeenCalled();
+  });
+
+  it("keeps one native listener while using the latest attachment callback", async () => {
+    const firstAttachPaths = vi.fn().mockResolvedValue(undefined);
+    const latestAttachPaths = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = renderHook(
+      ({ onAttachPaths }) =>
+        useSessionFileDrops({
+          fileDropTarget: "active-session",
+          isDesktop: true,
+          onAttachPaths,
+        }),
+      { initialProps: { onAttachPaths: firstAttachPaths } },
+    );
+
+    await waitFor(() => expect(windowDragDropListeners.size).toBe(1));
+    rerender({ onAttachPaths: latestAttachPaths });
+
+    expect(currentWindowMock.onDragDropEvent).toHaveBeenCalledTimes(1);
+    const [listener] = windowDragDropListeners;
+
+    act(() => {
+      listener?.({
+        payload: {
+          type: "drop",
+          paths: ["C:\\workspace\\latest.md"],
+          position: { x: 0, y: 0 },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(latestAttachPaths).toHaveBeenCalledWith(
+        ["C:\\workspace\\latest.md"],
+        "active-session",
+      );
+    });
+    expect(firstAttachPaths).not.toHaveBeenCalled();
   });
 });

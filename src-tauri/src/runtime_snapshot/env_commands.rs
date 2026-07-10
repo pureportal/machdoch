@@ -317,6 +317,36 @@ mod tests {
     }
 
     #[test]
+    fn codex_cli_resolution_prefers_versioned_windows_app_binary() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+
+        let home_directory = temp_test_directory("codex-versioned-app-path");
+        let local_app_data = home_directory.join("AppData").join("Local");
+        let codex_bin = local_app_data.join("OpenAI").join("Codex").join("bin");
+        let legacy_binary_path = codex_bin.join("codex.exe");
+        let versioned_binary_path = codex_bin.join("current").join("codex.exe");
+
+        create_executable_file(&legacy_binary_path);
+        create_executable_file(&versioned_binary_path);
+
+        let env = cli_test_env(
+            String::new(),
+            ".CMD;.EXE",
+            Some(&home_directory),
+            Some(&local_app_data),
+        );
+
+        assert_eq!(
+            resolve_agent_cli_binary("codex-cli", &env),
+            Some(versioned_binary_path)
+        );
+
+        let _ = fs::remove_dir_all(home_directory);
+    }
+
+    #[test]
     fn codex_cli_resolution_skips_packaged_app_path_aliases() {
         if !cfg!(target_os = "windows") {
             return;

@@ -37,6 +37,8 @@ export interface RawSchedulerCliOptions {
   rawScheduledRalphParams?: string[] | undefined;
   rawScheduledRalphRunLogScope?: string | undefined;
   rawScheduledRalphMaxTransitions?: string | undefined;
+  rawScheduledRalphProfile?: string | undefined;
+  rawScheduledRalphResumePolicy?: string | undefined;
   rawScheduledRalphAllowedRoots?: string[] | undefined;
   rawScheduledRalphAllowCommands?: string | undefined;
   rawScheduledRalphAllowWrites?: string | undefined;
@@ -52,6 +54,7 @@ export interface RawSchedulerCliOptions {
   rawSchedulerRetryFactor?: string | undefined;
   rawSchedulerRetryRandomize?: string | undefined;
   rawSchedulerDedupeKey?: string | undefined;
+  rawSchedulerRequestId?: string | undefined;
   rawSchedulerTtlMs?: string | undefined;
   rawSchedulerMaxDurationMs?: string | undefined;
   rawSchedulerConcurrencyKey?: string | undefined;
@@ -114,6 +117,8 @@ export const createSchedulerCliOptions = ({
   rawScheduledRalphParams,
   rawScheduledRalphRunLogScope,
   rawScheduledRalphMaxTransitions,
+  rawScheduledRalphProfile,
+  rawScheduledRalphResumePolicy,
   rawScheduledRalphAllowedRoots,
   rawScheduledRalphAllowCommands,
   rawScheduledRalphAllowWrites,
@@ -129,6 +134,7 @@ export const createSchedulerCliOptions = ({
   rawSchedulerRetryFactor,
   rawSchedulerRetryRandomize,
   rawSchedulerDedupeKey,
+  rawSchedulerRequestId,
   rawSchedulerTtlMs,
   rawSchedulerMaxDurationMs,
   rawSchedulerConcurrencyKey,
@@ -323,6 +329,28 @@ export const createSchedulerCliOptions = ({
     "--scheduled-ralph-max-transitions",
   );
 
+  if (rawScheduledRalphProfile) {
+    if (rawScheduledRalphProfile !== "unattended") {
+      fail("Expected --scheduled-ralph-profile to be unattended.");
+    }
+
+    options.scheduledRalphProfile = "unattended";
+  }
+
+  if (rawScheduledRalphResumePolicy) {
+    if (
+      rawScheduledRalphResumePolicy !== "never" &&
+      rawScheduledRalphResumePolicy !== "recoverable"
+    ) {
+      fail(
+        "Expected --scheduled-ralph-resume-policy to be never or recoverable.",
+      );
+    }
+
+    options.scheduledRalphResumePolicy =
+      rawScheduledRalphResumePolicy === "never" ? "never" : "recoverable";
+  }
+
   if (rawScheduledRalphAllowedRoots && rawScheduledRalphAllowedRoots.length > 0) {
     options.scheduledRalphAllowedRoots = rawScheduledRalphAllowedRoots;
   }
@@ -361,6 +389,10 @@ export const createSchedulerCliOptions = ({
 
   if (rawSchedulerMacros && rawSchedulerMacros.length > 0) {
     options.macros = rawSchedulerMacros;
+  }
+
+  if (rawSchedulerRequestId) {
+    options.requestId = rawSchedulerRequestId;
   }
 
   if (rawSchedulerMissedRunPolicy) {

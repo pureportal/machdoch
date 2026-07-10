@@ -8,10 +8,9 @@ import { SessionComposer } from "./session-composer";
 
 vi.mock("../../runtime", () => ({
   listRalphFlows: vi.fn(),
-  loadProviderModelCatalog: vi.fn().mockResolvedValue({
-    generatedAt: 1,
-    providers: [],
-  }),
+  loadProviderModelCatalog: vi.fn(
+    () => new Promise<never>(() => undefined),
+  ),
   showRalphFlow: vi.fn(),
 }));
 
@@ -45,12 +44,16 @@ const renderSessionComposer = ({
   activeReasoning = activeSession.reasoning ?? "default",
   defaultReasoning = "default",
   isUsingWorkspaceDefaultReasoning = !activeSession.reasoning,
+  canSendMessage = false,
+  onSend = vi.fn(),
 }: {
   activeSession?: ChatSessionRecord;
   chooserProviders?: RuntimeProvider[];
   activeReasoning?: ReasoningMode;
   defaultReasoning?: ReasoningMode;
   isUsingWorkspaceDefaultReasoning?: boolean;
+  canSendMessage?: boolean;
+  onSend?: () => void;
 } = {}): void => {
   render(
     <TooltipProvider>
@@ -95,7 +98,7 @@ const renderSessionComposer = ({
           statusTone: null,
           onAction: vi.fn(),
         }}
-        canSendMessage={false}
+        canSendMessage={canSendMessage}
         sendDisabledReason={null}
         runningTaskMessageAction="queue"
         queuedMessages={[]}
@@ -132,7 +135,7 @@ const renderSessionComposer = ({
         onQueuedMessageSelectContextAttachments={vi.fn().mockResolvedValue(undefined)}
         onQueuedMessageRemoveContextAttachment={vi.fn()}
         onQueuedMessageClearContextAttachments={vi.fn()}
-        onSend={vi.fn()}
+        onSend={onSend}
         onCancel={vi.fn()}
         isExecuting={false}
       />
@@ -141,6 +144,23 @@ const renderSessionComposer = ({
 };
 
 describe("SessionComposer", () => {
+  it("does not submit an IME composition candidate on Enter", () => {
+    const onSend = vi.fn();
+    renderSessionComposer({
+      activeSession: createSession({ draft: "編集中" }),
+      canSendMessage: true,
+      onSend,
+    });
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Task composer" }), {
+      key: "Enter",
+      keyCode: 229,
+      isComposing: true,
+    });
+
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it("places the reasoning icon next to the selected session model", () => {
     renderSessionComposer();
 

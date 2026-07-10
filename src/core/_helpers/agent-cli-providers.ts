@@ -43,7 +43,13 @@ const listExistingChildCommandPathCandidates = (
     return readdirSync(directory, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => join(directory, entry.name, fileName))
-      .filter((candidate) => isExistingFile(candidate));
+      .filter((candidate) => isExistingFile(candidate))
+      .sort((left, right) => {
+        const modifiedTimeDifference =
+          statSync(right).mtimeMs - statSync(left).mtimeMs;
+
+        return modifiedTimeDifference || left.localeCompare(right);
+      });
   } catch {
     return [];
   }
@@ -90,11 +96,11 @@ const createDefaultCommandPathCandidates = (
       );
 
       candidates.push(
-        join(codexBinDirectory, "codex.exe"),
         ...listExistingChildCommandPathCandidates(
           codexBinDirectory,
           "codex.exe",
         ),
+        join(codexBinDirectory, "codex.exe"),
       );
     }
 

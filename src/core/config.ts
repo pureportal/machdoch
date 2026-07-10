@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
+import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
+import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
 import {
   getUserConfigPath,
   hasConfiguredValue,
@@ -92,23 +94,17 @@ const saveWorkspaceConfigFile = async (
 ): Promise<string> => {
   const configDirectory = join(workspaceRoot, WORKSPACE_CONFIG_DIRECTORY);
   const configPath = join(configDirectory, WORKSPACE_CONFIG_FILE_NAME);
-  const existingConfig = existsSync(configPath)
-    ? (JSON.parse(await readFile(configPath, "utf8")) as WorkspaceConfigFile)
-    : {};
 
-  await mkdir(configDirectory, { recursive: true });
-  await writeFile(
-    configPath,
-    `${JSON.stringify(
-      {
-        ...existingConfig,
-        ...update,
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
+  await withCooperativeFileLock(configPath, async () => {
+    const existingConfig = existsSync(configPath)
+      ? (JSON.parse(await readFile(configPath, "utf8")) as WorkspaceConfigFile)
+      : {};
+
+    await writeJsonAtomically(configPath, {
+      ...existingConfig,
+      ...update,
+    });
+  });
 
   return configPath;
 };

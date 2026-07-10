@@ -560,7 +560,6 @@ export const importSessionsIntoShellState = (
     throw new Error("Session import file does not contain importable sessions.");
   }
 
-  const existingIds = new Set(state.sessions.map((session) => session.id));
   const normalizedImportState = normalizeShellState({
     ...state,
     activeSessionId:
@@ -570,16 +569,15 @@ export const importSessionsIntoShellState = (
   const importedSessions = normalizedImportState.sessions
     .filter((session) => !isQuickVoiceSession(session))
     .map((session, index) => {
-      const shouldRemapId = existingIds.has(session.id);
       const nextSession = createSession({
         ...session,
-        id: shouldRemapId ? crypto.randomUUID() : session.id,
+        id: crypto.randomUUID(),
         createdAt: timestamp + index,
         updatedAt: timestamp + index,
+        messages: cloneSessionMessages(session.messages),
       });
 
       delete nextSession.pinnedAt;
-      existingIds.add(nextSession.id);
 
       return nextSession;
     });

@@ -175,6 +175,7 @@ export const createRalphRunRecordBlock = (
 
   return {
     blockId: blockResult.blockId,
+    ...(blockResult.operationId ? { operationId: blockResult.operationId } : {}),
     output: blockResult.output,
     status: blockResult.status,
     attempt: blockResult.attempt,
@@ -236,6 +237,7 @@ export const createRalphRunRecord = (
     events: result.events,
     blockResults: result.blockResults.map(createRalphRunRecordBlock),
     ...(result.checkpoint ? { checkpoint: result.checkpoint } : {}),
+    ...(result.durability ? { durability: { ...result.durability } } : {}),
     validation: {
       valid: result.validation.valid,
       errors: result.validation.errors,

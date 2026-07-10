@@ -4,6 +4,7 @@ import {
   createStarterImportId,
   formatStarterFlowSubtitle,
   getStarterFlowById,
+  getStarterFlowAutonomyReadiness,
   getStarterFlowEmoji,
   getStarterFlowUpdate,
 } from "./ralph-starter-flow-presentation.helper";
@@ -61,6 +62,31 @@ describe("ralph starter flow presentation helper", () => {
       `${summary.category} / ${summary.blockCount} blocks / ${summary.edgeCount} edges / ${summary.variableCount} vars`,
     );
     expect(getStarterFlowEmoji(summary)).toBeTruthy();
+  });
+
+  it("summarizes whether a starter can launch unattended", () => {
+    const autonomousSummary = STARTER_RALPH_FLOW_SUMMARIES.find(
+      (starterFlow) => starterFlow.id === "autonomous-code-improvement-loop",
+    );
+    const featureSummary = STARTER_RALPH_FLOW_SUMMARIES.find(
+      (starterFlow) => starterFlow.id === "full-feature-implementation",
+    );
+
+    expect(autonomousSummary).toBeDefined();
+    expect(featureSummary).toBeDefined();
+    expect(getStarterFlowAutonomyReadiness(autonomousSummary!)).toMatchObject({
+      ready: true,
+      label: "Unattended ready",
+      requiredVariables: [],
+    });
+    expect(
+      getStarterFlowAutonomyReadiness(autonomousSummary!).capabilities,
+    ).toEqual(expect.arrayContaining(["agent", "commands", "writes", "network"]));
+    expect(getStarterFlowAutonomyReadiness(featureSummary!)).toMatchObject({
+      ready: true,
+      label: "Unattended ready",
+      requiredVariables: [],
+    });
   });
 
   it("uses crypto UUIDs for import ids when available", () => {

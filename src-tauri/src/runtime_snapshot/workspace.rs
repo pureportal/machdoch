@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
+use crate::cooperative_file_lock::with_cooperative_file_lock;
 
 use super::settings_types::WorkspaceConfigFile;
 use super::{is_valid_mode, is_valid_reasoning_mode, normalize_optional_string};
@@ -177,13 +178,14 @@ pub(super) fn save_workspace_default_mode_value(
 
     let workspace_path = resolve_workspace_root_path(workspace_root)?;
     let config_path = workspace_path.join(".machdoch").join("config.json");
-    let mut config = load_workspace_config_json(&config_path)?;
-
-    config.insert(
-        "defaultMode".to_string(),
-        serde_json::Value::String(normalized_mode),
-    );
-    write_workspace_config_json(&config_path, &config)?;
+    with_cooperative_file_lock(&config_path, || {
+        let mut config = load_workspace_config_json(&config_path)?;
+        config.insert(
+            "defaultMode".to_string(),
+            serde_json::Value::String(normalized_mode),
+        );
+        write_workspace_config_json(&config_path, &config)
+    })?;
 
     Ok(config_path)
 }
@@ -205,13 +207,14 @@ pub(super) fn save_workspace_reasoning_mode_value(
 
     let workspace_path = resolve_workspace_root_path(workspace_root)?;
     let config_path = workspace_path.join(".machdoch").join("config.json");
-    let mut config = load_workspace_config_json(&config_path)?;
-
-    config.insert(
-        "reasoning".to_string(),
-        serde_json::Value::String(normalized_reasoning),
-    );
-    write_workspace_config_json(&config_path, &config)?;
+    with_cooperative_file_lock(&config_path, || {
+        let mut config = load_workspace_config_json(&config_path)?;
+        config.insert(
+            "reasoning".to_string(),
+            serde_json::Value::String(normalized_reasoning),
+        );
+        write_workspace_config_json(&config_path, &config)
+    })?;
 
     Ok(config_path)
 }

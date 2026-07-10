@@ -1,4 +1,5 @@
 mod atomic_file;
+mod cooperative_file_lock;
 mod desktop_shell;
 mod desktop_task;
 mod launcher;
@@ -6,9 +7,13 @@ mod remote_control;
 mod runtime_contract_generated;
 mod runtime_snapshot;
 mod shared_cli;
+mod shell_state;
 mod ui_control;
+mod ui_operation;
 mod voice;
 
+#[cfg(desktop)]
+use tauri::Manager as _;
 #[cfg(desktop)]
 use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags as WindowStateFlags};
 
@@ -54,6 +59,14 @@ pub fn run() {
 
     let builder = tauri::Builder::default();
 
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window(desktop_shell::MAIN_WINDOW_LABEL) {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+
     #[cfg(debug_assertions)]
     let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
 
@@ -78,6 +91,9 @@ pub fn run() {
         ))
         .manage(desktop_shell::QuickVoiceShortcutState::default())
         .manage(remote_control::RemoteControlState::default())
+        .manage(shell_state::ShellStateStoreLock::default())
+        .manage(ui_operation::CrossWindowOperationState::default())
+        .manage(runtime_snapshot::McpConfigWriteLock::default())
         .on_window_event(|window, event| {
             desktop_shell::handle_window_event(window, event);
         })
@@ -135,6 +151,7 @@ pub fn run() {
             desktop_task::run_mcp_command,
             desktop_task::run_ralph_command,
             desktop_task::run_scheduler_command,
+            desktop_task::start_scheduler_service,
             desktop_task::run_task_interview_command,
             desktop_task::run_desktop_task,
             desktop_task::save_clipboard_image_attachment,
@@ -142,9 +159,16 @@ pub fn run() {
             remote_control::enable_remote_control_server,
             remote_control::forget_remote_control_pairings,
             remote_control::get_remote_control_status,
+            remote_control::get_pending_remote_control_commands,
+            remote_control::acknowledge_remote_control_command,
             remote_control::open_remote_control_url,
             remote_control::set_remote_control_port,
             remote_control::update_remote_control_shell_snapshot,
+            shell_state::compare_and_swap_shell_state,
+            shell_state::load_shell_state_snapshot,
+            ui_operation::begin_cross_window_operation,
+            ui_operation::complete_cross_window_operation,
+            ui_operation::release_cross_window_operation,
             runtime_snapshot::get_user_desktop_settings,
             runtime_snapshot::get_user_agent_limits_settings,
             runtime_snapshot::get_global_provider_availability,

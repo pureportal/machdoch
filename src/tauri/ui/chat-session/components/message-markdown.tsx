@@ -1,6 +1,7 @@
-import type { JSX } from "react";
+import { memo, useMemo, type JSX } from "react";
 import ReactMarkdown, {
   defaultUrlTransform,
+  type Components,
   type UrlTransform,
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -30,6 +31,8 @@ const markdownInertLinkClassName = [
   "cursor-default opacity-80 hover:text-sky-300",
 ].join(" ");
 
+const messageMarkdownRemarkPlugins = [remarkGfm];
+
 const messageMarkdownUrlTransform: UrlTransform = (url, key) => {
   if (key === "href" && isLocalMarkdownLinkHref(url)) {
     return url;
@@ -38,12 +41,58 @@ const messageMarkdownUrlTransform: UrlTransform = (url, key) => {
   return defaultUrlTransform(url);
 };
 
-export const MessageMarkdown = ({
+export const MessageMarkdown = memo(function MessageMarkdown({
   content,
   className,
   workspaceRoot,
   onOpenWorkspaceFile,
-}: MessageMarkdownProps): JSX.Element => {
+}: MessageMarkdownProps): JSX.Element {
+  const components = useMemo<Components>(
+    () => ({
+      ...markdownComponents,
+      a: ({ children, href, ...props }): JSX.Element => {
+        const workspaceTarget = getWorkspaceMarkdownLinkTarget(
+          href,
+          workspaceRoot,
+        );
+
+        if (workspaceTarget && onOpenWorkspaceFile) {
+          return (
+            <button
+              type="button"
+              title={workspaceTarget.relativePath}
+              onClick={() => onOpenWorkspaceFile(workspaceTarget.relativePath)}
+              className={markdownWorkspaceLinkClassName}
+            >
+              {children}
+            </button>
+          );
+        }
+
+        if (!href?.trim() || isLocalMarkdownLinkHref(href)) {
+          return (
+            <span title={href} className={markdownInertLinkClassName}>
+              {children}
+            </span>
+          );
+        }
+
+        return (
+          <a
+            {...props}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className={markdownLinkClassName}
+          >
+            {children}
+          </a>
+        );
+      },
+    }),
+    [onOpenWorkspaceFile, workspaceRoot],
+  );
+
   return (
     <div
       className={[
@@ -54,53 +103,12 @@ export const MessageMarkdown = ({
         .join(" ")}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={messageMarkdownRemarkPlugins}
         urlTransform={messageMarkdownUrlTransform}
-        components={{
-          ...markdownComponents,
-          a: ({ children, href, ...props }): JSX.Element => {
-            const workspaceTarget = getWorkspaceMarkdownLinkTarget(
-              href,
-              workspaceRoot,
-            );
-
-            if (workspaceTarget && onOpenWorkspaceFile) {
-              return (
-                <button
-                  type="button"
-                  title={workspaceTarget.relativePath}
-                  onClick={() => onOpenWorkspaceFile(workspaceTarget.relativePath)}
-                  className={markdownWorkspaceLinkClassName}
-                >
-                  {children}
-                </button>
-              );
-            }
-
-            if (!href?.trim() || isLocalMarkdownLinkHref(href)) {
-              return (
-                <span title={href} className={markdownInertLinkClassName}>
-                  {children}
-                </span>
-              );
-            }
-
-            return (
-              <a
-                {...props}
-                href={href}
-                target="_blank"
-                rel="noreferrer"
-                className={markdownLinkClassName}
-              >
-                {children}
-              </a>
-            );
-          },
-        }}
+        components={components}
       >
         {content}
       </ReactMarkdown>
     </div>
   );
-};
+});

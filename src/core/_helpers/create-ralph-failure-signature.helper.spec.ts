@@ -142,4 +142,17 @@ describe("createRalphFailureSignature", () => {
       expected,
     );
   });
+
+  it("ignores timestamps, UUIDs, and duration jitter in repeated failures", () => {
+    const first = createResult({
+      summary: "Failed at 2026-01-01T00:00:00.000Z after 125ms id 9aa0be52-f28a-4ce5-9962-36802f0444bc",
+    });
+    const second = createResult({
+      summary: "Failed at 2026-02-02T03:04:05.999Z after 980ms id cdf82acd-677a-4d30-94f2-b692ee397cae",
+    });
+
+    expect(createRalphFailureSignature(first)).toBe(
+      createRalphFailureSignature(second),
+    );
+  });
 });

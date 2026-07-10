@@ -6,6 +6,23 @@ import { cn } from "../../../lib/utils";
 import type { SettingsStatusMessage } from "./types";
 
 export const SETTINGS_AUTO_SAVE_DEBOUNCE_MS = 650;
+const SETTINGS_AUTO_SAVE_MAX_ATTEMPTS = 3;
+
+export const rebaseDirtySettingsDraft = <TSettings extends object>(
+  currentDraft: TSettings,
+  previousSettings: TSettings,
+  nextSettings: TSettings,
+): TSettings => {
+  const rebasedDraft = { ...nextSettings };
+
+  for (const key of Object.keys(currentDraft) as Array<keyof TSettings>) {
+    if (currentDraft[key] !== previousSettings[key]) {
+      rebasedDraft[key] = currentDraft[key];
+    }
+  }
+
+  return rebasedDraft;
+};
 
 export interface UseDebouncedAutoSaveParams {
   dirty: boolean;
@@ -24,30 +41,87 @@ export const useDebouncedAutoSave = ({
 }: UseDebouncedAutoSaveParams): void => {
   const onSaveRef = useRef(onSave);
   const lastAttemptedSignatureRef = useRef<string | null>(null);
+  const attemptCountRef = useRef(0);
+  const activeSignatureRef = useRef(signature);
+  const latestStateRef = useRef({ dirty, saving, signature });
+  const previousSavingRef = useRef(saving);
+  const [retrySequence, setRetrySequence] = useState(0);
+
+  latestStateRef.current = { dirty, saving, signature };
 
   useEffect(() => {
     onSaveRef.current = onSave;
   }, [onSave]);
 
   useEffect(() => {
+    const saveFinished = previousSavingRef.current && !saving;
+    previousSavingRef.current = saving;
+
     if (!dirty) {
       lastAttemptedSignatureRef.current = null;
+      attemptCountRef.current = 0;
+      activeSignatureRef.current = signature;
       return;
     }
 
-    if (saving || lastAttemptedSignatureRef.current === signature) {
+    if (activeSignatureRef.current !== signature) {
+      activeSignatureRef.current = signature;
+      attemptCountRef.current = 0;
+      lastAttemptedSignatureRef.current = null;
+    }
+
+    if (
+      saveFinished &&
+      lastAttemptedSignatureRef.current === signature
+    ) {
+      // A completed save that left the same draft dirty failed or was
+      // superseded. Allow it to be retried instead of suppressing that
+      // signature forever.
+      lastAttemptedSignatureRef.current = null;
+    }
+
+    if (
+      saving ||
+      lastAttemptedSignatureRef.current === signature ||
+      attemptCountRef.current >= SETTINGS_AUTO_SAVE_MAX_ATTEMPTS
+    ) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
       lastAttemptedSignatureRef.current = signature;
-      void onSaveRef.current();
-    }, delayMs);
+      attemptCountRef.current += 1;
+      void Promise.resolve(onSaveRef.current()).catch((error: unknown) => {
+        console.error("Failed to auto-save settings", error);
+
+        if (lastAttemptedSignatureRef.current === signature) {
+          lastAttemptedSignatureRef.current = null;
+          setRetrySequence((current) => current + 1);
+        }
+      });
+    }, delayMs * 2 ** attemptCountRef.current);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [delayMs, dirty, saving, signature]);
+  }, [delayMs, dirty, retrySequence, saving, signature]);
+
+  useEffect(() => {
+    return () => {
+      const latest = latestStateRef.current;
+
+      if (
+        latest.dirty &&
+        !latest.saving &&
+        lastAttemptedSignatureRef.current !== latest.signature
+      ) {
+        lastAttemptedSignatureRef.current = latest.signature;
+        void Promise.resolve(onSaveRef.current()).catch((error: unknown) => {
+          console.error("Failed to flush settings during unmount", error);
+        });
+      }
+    };
+  }, []);
 };
 
 export interface SettingsCardProps {
@@ -296,6 +370,8 @@ export const SettingsCredentialForm = ({
   const [lastExternalKey, setLastExternalKey] = useState(keyValue);
   const [keyVisible, setKeyVisible] = useState(false);
   const lastResetKeyRef = useRef(resetKey);
+  const draftKeyRef = useRef(draftKey);
+  const editRevisionRef = useRef(0);
   const normalizedDraftKey = draftKey.trim();
   const keyDirty = normalizedDraftKey !== savedKey;
   const validationMessage = getApiKeyValidationMessage(
@@ -311,6 +387,8 @@ export const SettingsCredentialForm = ({
       setSavedKey(keyValue.trim());
       setLastExternalKey(keyValue);
       setKeyVisible(false);
+      draftKeyRef.current = keyValue;
+      editRevisionRef.current += 1;
       return;
     }
 
@@ -318,14 +396,18 @@ export const SettingsCredentialForm = ({
       return;
     }
 
-    setDraftKey((currentDraft) =>
-      currentDraft.trim() === savedKey ? keyValue : currentDraft,
-    );
+    setDraftKey((currentDraft) => {
+      const nextDraft = currentDraft.trim() === savedKey ? keyValue : currentDraft;
+      draftKeyRef.current = nextDraft;
+      return nextDraft;
+    });
     setSavedKey(keyValue.trim());
     setLastExternalKey(keyValue);
   }, [keyValue, lastExternalKey, resetKey, savedKey]);
 
   const updateDraftKey = (value: string): void => {
+    editRevisionRef.current += 1;
+    draftKeyRef.current = value;
     setDraftKey(value);
   };
 
@@ -334,12 +416,21 @@ export const SettingsCredentialForm = ({
       return;
     }
 
-    const saved = await onSave(normalizedDraftKey);
+    const submittedKey = normalizedDraftKey;
+    const submittedRevision = editRevisionRef.current;
+    const saved = await onSave(submittedKey);
 
     if (saved) {
-      setDraftKey(normalizedDraftKey);
-      setSavedKey(normalizedDraftKey);
-      setLastExternalKey(normalizedDraftKey);
+      setSavedKey(submittedKey);
+      setLastExternalKey(submittedKey);
+
+      if (
+        editRevisionRef.current === submittedRevision &&
+        draftKeyRef.current.trim() === submittedKey
+      ) {
+        draftKeyRef.current = submittedKey;
+        setDraftKey(submittedKey);
+      }
     }
   };
 

@@ -1,20 +1,36 @@
-import { readFile, realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import {
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { loadRuntimeConfig } from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import { executeTask } from "../../core/execution.js";
 import {
   createRalphRunLogger,
+  createRalphFlowFingerprint,
   readRalphFlow,
+  readRalphRunRecord,
   runRalphFlow,
-  writeRalphRunRecord,
   type RalphFlow,
   type RalphFlowScope,
+  type RalphRunCheckpoint,
+  type RalphRunLogPaths,
+  type RalphRunRecord,
   type RalphRunResult,
 } from "../../core/ralph.js";
 import {
   DurableSmartScheduler,
+  getUserSchedulerWorkspaceRegistryPath,
   getWorkspaceSchedulerStatePath,
+  inspectScheduledRalphTarget,
+  listRegisteredSchedulerWorkspaces,
+  registerSchedulerWorkspace,
   syncScheduledPromptJobs,
   type CreateScheduledJobInput,
   type ScheduledContextPackSnapshot,
@@ -41,7 +57,7 @@ import {
   applyContextPathsToTask,
   createImageInputsFromPaths,
 } from "./cli-task-run.js";
-import { writeStdoutLine } from "./cli-io.js";
+import { writeStderrLine, writeStdoutLine } from "./cli-io.js";
 import { createDiscoveryOptions } from "./cli-output.js";
 
 const fail = (message: string): never => {
@@ -396,14 +412,28 @@ const createJobInput = async (
             ...(options.scheduledRalphMaxTransitions !== undefined
               ? { maxTransitions: options.scheduledRalphMaxTransitions }
               : {}),
+            ...(options.scheduledRalphProfile
+              ? { executionProfile: options.scheduledRalphProfile }
+              : {}),
+            ...(options.scheduledRalphResumePolicy
+              ? { resumePolicy: options.scheduledRalphResumePolicy }
+              : {}),
             permissions: {
               allowedRoots: options.scheduledRalphAllowedRoots ?? [
                 args.workspaceRoot,
               ],
-              allowCommands: options.scheduledRalphAllowCommands ?? false,
-              allowWrites: options.scheduledRalphAllowWrites ?? false,
-              allowNetwork: options.scheduledRalphAllowNetwork ?? false,
-              allowMcpTools: options.scheduledRalphAllowMcpTools ?? false,
+              allowCommands:
+                options.scheduledRalphProfile === "unattended" ||
+                (options.scheduledRalphAllowCommands ?? false),
+              allowWrites:
+                options.scheduledRalphProfile === "unattended" ||
+                (options.scheduledRalphAllowWrites ?? false),
+              allowNetwork:
+                options.scheduledRalphProfile === "unattended" ||
+                (options.scheduledRalphAllowNetwork ?? false),
+              allowMcpTools:
+                options.scheduledRalphProfile === "unattended" ||
+                (options.scheduledRalphAllowMcpTools ?? false),
             },
           },
         }
@@ -745,6 +775,9 @@ const summarizeRalphAsTaskResult = (
     flowName: string;
     scope: RalphFlowScope;
     runLogScope: RalphFlowScope;
+    schedulerAttempt: number;
+    resumedFromRunId?: string;
+    reconciledFromRunId?: string;
   },
 ): TaskExecutionResult => {
   const status: TaskExecutionResult["status"] =
@@ -769,6 +802,15 @@ const summarizeRalphAsTaskResult = (
         runId: result.runId,
         status: result.status,
         runLogScope: metadata.runLogScope,
+        schedulerAttempt: metadata.schedulerAttempt,
+        resumedFromCheckpoint: Boolean(metadata.resumedFromRunId),
+        ...(metadata.resumedFromRunId
+          ? { resumedFromRunId: metadata.resumedFromRunId }
+          : {}),
+        reconciledDurableRun: Boolean(metadata.reconciledFromRunId),
+        ...(metadata.reconciledFromRunId
+          ? { reconciledFromRunId: metadata.reconciledFromRunId }
+          : {}),
       },
     },
     outputSections: [
@@ -784,6 +826,245 @@ const summarizeRalphAsTaskResult = (
   };
 };
 
+const SCHEDULER_FLEET_LOCK_STALE_MS = 2 * 60_000;
+
+export const isSchedulerFleetServiceHeartbeatFresh = async (
+  ownerPath: string,
+  now = Date.now(),
+): Promise<boolean> => {
+  try {
+    const metadata = await stat(ownerPath);
+    return now - metadata.mtimeMs <= SCHEDULER_FLEET_LOCK_STALE_MS;
+  } catch {
+    return false;
+  }
+};
+
+export const acquireSchedulerFleetServiceLock = async (): Promise<{
+  touch: () => Promise<void>;
+  release: () => Promise<void>;
+}> => {
+  const lockPath = `${getUserSchedulerWorkspaceRegistryPath()}.service-lock`;
+  const ownerPath = join(lockPath, "owner");
+  const token = `${process.pid}:${Date.now()}`;
+
+  try {
+    await mkdir(lockPath, { recursive: false });
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error
+      ? String(error.code)
+      : "";
+
+    if (code !== "EEXIST") {
+      throw error;
+    }
+
+    if (await isSchedulerFleetServiceHeartbeatFresh(ownerPath)) {
+      throw new Error("A scheduler fleet service is already running.", {
+        cause: error,
+      });
+    }
+
+    await rm(lockPath, { recursive: true, force: true });
+    await mkdir(lockPath, { recursive: false });
+  }
+
+  await writeFile(ownerPath, token, "utf8");
+
+  const assertOwnership = async (): Promise<void> => {
+    let currentToken: string;
+
+    try {
+      currentToken = await readFile(ownerPath, "utf8");
+    } catch (error) {
+      throw new Error("Scheduler fleet service lost its ownership lock.", {
+        cause: error,
+      });
+    }
+
+    if (currentToken !== token) {
+      throw new Error("Scheduler fleet service lost its ownership lock.");
+    }
+  };
+
+  return {
+    touch: async () => {
+      await assertOwnership();
+      const now = new Date();
+      await utimes(ownerPath, now, now);
+      await assertOwnership();
+    },
+    release: async () => {
+      try {
+        if ((await readFile(ownerPath, "utf8")) === token) {
+          await rm(lockPath, { recursive: true, force: true });
+        }
+      } catch {
+        // A stale or externally removed fleet lock needs no cleanup.
+      }
+    },
+  };
+};
+
+export const awaitSchedulerFleetWorkerSettlement = async (
+  workers: Iterable<Promise<void>>,
+  touchOwnership: () => Promise<void>,
+  heartbeatMs = Math.max(
+    1_000,
+    Math.floor(SCHEDULER_FLEET_LOCK_STALE_MS / 3),
+  ),
+): Promise<void> => {
+  let heartbeatFailure: unknown;
+  let heartbeatChain = Promise.resolve();
+  const queueHeartbeat = (): void => {
+    heartbeatChain = heartbeatChain
+      .then(touchOwnership)
+      .catch((error: unknown) => {
+        heartbeatFailure ??= error;
+      });
+  };
+
+  queueHeartbeat();
+  const timer = setInterval(queueHeartbeat, Math.max(1, heartbeatMs));
+
+  try {
+    await Promise.allSettled([...workers]);
+  } finally {
+    clearInterval(timer);
+    await heartbeatChain;
+  }
+
+  if (heartbeatFailure) {
+    throw heartbeatFailure;
+  }
+};
+
+interface ScheduledRalphRecovery {
+  checkpoint?: RalphRunCheckpoint;
+  paths: RalphRunLogPaths;
+  record: RalphRunRecord;
+  scheduledRunId: string;
+}
+
+const createScheduledRalphRunId = (
+  scheduledRunId: string,
+  flowId: string,
+): string => `scheduled-${scheduledRunId}-${flowId}`;
+
+const createScheduledRalphResumePaths = (
+  recordPath: string,
+  record: RalphRunRecord,
+): RalphRunLogPaths => {
+  const directory = dirname(recordPath);
+
+  return {
+    id: record.id,
+    directory,
+    recordPath,
+    simpleJsonlPath:
+      record.logPaths?.simpleJsonlPath ?? join(directory, "simple.jsonl"),
+    simpleMarkdownPath:
+      record.logPaths?.simpleMarkdownPath ?? join(directory, "simple.md"),
+    traceJsonlPath:
+      record.logPaths?.traceJsonlPath ?? join(directory, "trace.jsonl"),
+  };
+};
+
+const readScheduledRalphRecovery = async (
+  request: ScheduledTaskExecutionRequest,
+  flow: RalphFlow,
+  runLogScope: RalphFlowScope,
+): Promise<ScheduledRalphRecovery | undefined> => {
+  const target = request.ralphFlow;
+  const resumePolicy =
+    target?.resumePolicy ??
+    (target?.executionProfile === "unattended" ? "recoverable" : "never");
+
+  if (
+    resumePolicy !== "recoverable" ||
+    (request.run.attempt <= 1 && !request.run.parentRunId)
+  ) {
+    return undefined;
+  }
+
+  const scheduledRunIds = [
+    ...(request.run.attempt > 1 ? [request.run.id] : []),
+    ...(request.run.parentRunId ? [request.run.parentRunId] : []),
+  ];
+
+  for (const scheduledRunId of scheduledRunIds) {
+    const runId = createScheduledRalphRunId(scheduledRunId, flow.id);
+
+    try {
+      const { path, record } = await readRalphRunRecord(
+        request.workspaceRoot,
+        runId,
+        { scope: runLogScope },
+      );
+
+      if (record.id !== runId || record.flowId !== flow.id) {
+        throw new Error(
+          `Ralph recovery record identity mismatch: expected run \`${runId}\` for flow \`${flow.id}\`, found run \`${record.id}\` for flow \`${record.flowId}\`.`,
+        );
+      }
+
+      const isParentRecord = scheduledRunId !== request.run.id;
+      if (
+        isParentRecord &&
+        (record.status === "completed" || record.status === "stopped")
+      ) {
+        // A manual child retry of a terminal parent is an intentional rerun.
+        continue;
+      }
+
+      if (record.status === "stopped") {
+        const previousAttempt = [...request.run.attemptHistory]
+          .reverse()
+          .find((attempt) => attempt.attempt < request.run.attempt);
+        const followsRetryableSchedulerFailure =
+          !isParentRecord &&
+          (previousAttempt?.status === "failed" ||
+            previousAttempt?.status === "timed_out");
+
+        if (!followsRetryableSchedulerFailure) {
+          throw new Error(
+            `Ralph run \`${record.id}\` is stopped but is not the checkpoint of a retryable scheduler attempt.`,
+          );
+        }
+      }
+
+      if (
+        record.status !== "completed" && !record.checkpoint
+      ) {
+        throw new Error(
+          `Ralph run \`${record.id}\` is ${record.status} but has no durable checkpoint.`,
+        );
+      }
+
+      return {
+        ...(record.checkpoint ? { checkpoint: record.checkpoint } : {}),
+        paths: createScheduledRalphResumePaths(path, record),
+        record,
+        scheduledRunId,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (message === `Ralph run \`${runId}\` was not found.`) {
+        // A process can stop before its first durable side effect/record.
+        continue;
+      }
+
+      throw new Error(
+        `Refusing to restart scheduled Ralph run ${runId} because its durable recovery record could not be read: ${message}`,
+        { cause: error },
+      );
+    }
+  }
+
+  return undefined;
+};
+
 const executeScheduledRalphFlow = async (
   request: ScheduledTaskExecutionRequest,
   options: Parameters<ScheduledTaskExecutor["execute"]>[1],
@@ -796,6 +1077,72 @@ const executeScheduledRalphFlow = async (
 
   const flowScope = target.scope as RalphFlowScope;
   const runLogScope = (target.runLogScope ?? "workspace") as RalphFlowScope;
+  const flow = target.flowSnapshot ?? await readRalphFlow(
+    request.workspaceRoot,
+    target.id,
+    { scope: flowScope },
+  );
+  const actualFlowFingerprint = createRalphFlowFingerprint(flow);
+
+  if (
+    target.flowFingerprint &&
+    target.flowFingerprint !== actualFlowFingerprint
+  ) {
+    throw new Error(
+      `Scheduled Ralph snapshot fingerprint mismatch for ${flow.id}; expected ${target.flowFingerprint}, found ${actualFlowFingerprint}.`,
+    );
+  }
+  const recovery = await readScheduledRalphRecovery(
+    request,
+    flow,
+    runLogScope,
+  );
+  if (recovery?.record.status === "completed") {
+    return summarizeRalphAsTaskResult(
+      `Run Ralph flow ${flow.name} (${flowScope}:${flow.id}).`,
+      {
+        runId: recovery.record.id,
+        flow: flow.id,
+        status: recovery.record.status,
+        summary: recovery.record.summary,
+        events: recovery.record.events,
+        // Durable records intentionally store a compact block summary rather
+        // than the full in-memory execution results. The task summary only
+        // needs the terminal status and run identity.
+        blockResults: [],
+        missingVariables: [],
+        unknownVariables: [],
+        validation: {
+          ...recovery.record.validation,
+          errorIssues: [],
+          warningIssues: [],
+          variables: flow.variables ?? [],
+        },
+      },
+      {
+        flowId: flow.id,
+        flowName: flow.name,
+        scope: flowScope,
+        runLogScope,
+        schedulerAttempt: request.run.attempt,
+        reconciledFromRunId: recovery.record.id,
+      },
+    );
+  }
+  const renderedVariableValues = renderScheduledParams(target.params, request);
+  const variableValues = recovery?.record.variableValues ?? renderedVariableValues;
+  const readiness = await inspectScheduledRalphTarget(
+    request.workspaceRoot,
+    target,
+    { flow, params: variableValues },
+  );
+
+  if (!readiness.ready) {
+    throw new Error(
+      `Scheduled Ralph target is no longer unattended-ready: ${readiness.errors.join(" ")}`,
+    );
+  }
+  assertScheduledRalphPermissions(flow, request, variableValues);
   const config = await loadRuntimeConfig(
     request.workspaceRoot,
     "machdoch",
@@ -804,9 +1151,6 @@ const executeScheduledRalphFlow = async (
     undefined,
     request.reasoning,
   );
-  const flow = await readRalphFlow(request.workspaceRoot, target.id, {
-    scope: flowScope,
-  });
   const customizations = await discoverCustomizations(
     request.workspaceRoot,
     {
@@ -817,30 +1161,25 @@ const executeScheduledRalphFlow = async (
       },
     },
   );
-  const variableValues = renderScheduledParams(target.params, request);
-  assertScheduledRalphPermissions(flow, request, variableValues);
-  const runId = `scheduled-${request.run.id}-${flow.id}`;
+  const runId =
+    recovery?.record.id ?? createScheduledRalphRunId(request.run.id, flow.id);
   const logger = await createRalphRunLogger(request.workspaceRoot, flow, {
     runId,
     variableValues,
+    ...(recovery ? { paths: recovery.paths, append: true } : {}),
     scope: runLogScope,
   });
   const result = await runRalphFlow(flow, config, customizations, {
     variableValues,
     runId: logger.runId,
     logger,
+    ...(target.executionProfile === "unattended" ? { autonomy: true } : {}),
+    ...(recovery?.checkpoint ? { checkpoint: recovery.checkpoint } : {}),
     ...(target.maxTransitions !== undefined
       ? { maxTransitions: target.maxTransitions }
       : {}),
     ...(options.signal ? { signal: options.signal } : {}),
   });
-  await writeRalphRunRecord(request.workspaceRoot, flow, result, {
-    variableValues,
-    runId: logger.runId,
-    ...(logger.paths ? { paths: logger.paths } : {}),
-    scope: runLogScope,
-  });
-
   return summarizeRalphAsTaskResult(
     `Run Ralph flow ${flow.name} (${flowScope}:${flow.id}).`,
     result,
@@ -849,6 +1188,8 @@ const executeScheduledRalphFlow = async (
       flowName: flow.name,
       scope: flowScope,
       runLogScope,
+      schedulerAttempt: request.run.attempt,
+      ...(recovery ? { resumedFromRunId: recovery.record.id } : {}),
     },
   );
 };
@@ -896,7 +1237,121 @@ const createScheduler = (
 ): DurableSmartScheduler => {
   return new DurableSmartScheduler({
     statePath: getWorkspaceSchedulerStatePath(workspaceRoot),
+    workspaceRoot,
     ...(options?.executor ? { executor: createSchedulerExecutor() } : {}),
+  });
+};
+
+export interface SchedulerFleetIterationResult {
+  workspaces: Array<{
+    workspaceRoot: string;
+    recovered: number;
+    queued: number;
+    runs: number;
+    error?: string;
+  }>;
+  recovered: number;
+  queued: number;
+  runs: number;
+}
+
+export const runSchedulerFleetIteration = async (
+  options: {
+    schedulerFactory?: (workspaceRoot: string) => DurableSmartScheduler;
+  } = {},
+): Promise<SchedulerFleetIterationResult> => {
+  const workspaceRoots = await listRegisteredSchedulerWorkspaces();
+  const workspaces = await Promise.all(workspaceRoots.map(async (workspaceRoot) => {
+    try {
+      const workspaceScheduler = options.schedulerFactory?.(workspaceRoot) ??
+        createScheduler(workspaceRoot, { executor: true });
+      const recovered = await workspaceScheduler.recoverAbandonedRuns(
+        "Scheduler fleet service recovered an abandoned running run.",
+      );
+      const due = await workspaceScheduler.runDueJobs({ recoverAbandoned: false });
+      return {
+        workspaceRoot,
+        recovered: recovered.length,
+        queued: due.queued.length,
+        runs: due.runs.length,
+      };
+    } catch (error) {
+      return {
+        workspaceRoot,
+        recovered: 0,
+        queued: 0,
+        runs: 0,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }));
+
+  return {
+    workspaces,
+    recovered: workspaces.reduce((total, workspace) => total + workspace.recovered, 0),
+    queued: workspaces.reduce((total, workspace) => total + workspace.queued, 0),
+    runs: workspaces.reduce((total, workspace) => total + workspace.runs, 0),
+  };
+};
+
+export const pollSchedulerFleetWorkspaces = async (
+  options: {
+    schedulerFactory?: (workspaceRoot: string) => DurableSmartScheduler;
+  } = {},
+): Promise<SchedulerFleetIterationResult> => {
+  const workspaceRoots = await listRegisteredSchedulerWorkspaces();
+  const workspaces = await Promise.all(workspaceRoots.map(async (workspaceRoot) => {
+    try {
+      const workspaceScheduler = options.schedulerFactory?.(workspaceRoot) ??
+        createScheduler(workspaceRoot);
+      const recovered = await workspaceScheduler.recoverAbandonedRuns(
+        "Scheduler fleet poll recovered an abandoned running run.",
+      );
+      const queued = await workspaceScheduler.enqueueDueRuns();
+
+      return {
+        workspaceRoot,
+        recovered: recovered.length,
+        queued: queued.length,
+        runs: 0,
+      };
+    } catch (error) {
+      return {
+        workspaceRoot,
+        recovered: 0,
+        queued: 0,
+        runs: 0,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }));
+
+  return {
+    workspaces,
+    recovered: workspaces.reduce((total, workspace) => total + workspace.recovered, 0),
+    queued: workspaces.reduce((total, workspace) => total + workspace.queued, 0),
+    runs: 0,
+  };
+};
+
+const waitForSchedulerFleetPoll = async (
+  durationMs: number,
+  signal: AbortSignal,
+): Promise<void> => {
+  if (signal.aborted) {
+    return;
+  }
+
+  await new Promise<void>((resolveWait) => {
+    const timer = setTimeout(resolveWait, durationMs);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolveWait();
+      },
+      { once: true },
+    );
   });
 };
 
@@ -925,6 +1380,28 @@ const formatSchedulerTriggerLabel = (job: ScheduledJob): string => {
   return job.triggers.map(formatSchedulerTrigger).join(", ");
 };
 
+const summarizeScheduledRalphTarget = (
+  target: NonNullable<ScheduledJob["target"]["ralphFlow"]>,
+): Record<string, unknown> => {
+  const { flowSnapshot, ...publicTarget } = target;
+
+  return {
+    ...publicTarget,
+    readiness: {
+      ready: true,
+      variables: (flowSnapshot?.variables ?? []).map((variable) => ({
+        name: variable.name,
+        type: variable.type,
+        required: variable.required,
+        ...(variable.default !== undefined ? { default: variable.default } : {}),
+      })),
+      humanInputBlocks: (flowSnapshot?.blocks ?? [])
+        .filter((block) => block.type === "ASK_USER" || block.type === "INTERVIEW")
+        .map((block) => block.id),
+    },
+  };
+};
+
 const summarizeJob = (job: ScheduledJob): Record<string, unknown> => ({
   id: job.id,
   name: job.name,
@@ -935,7 +1412,9 @@ const summarizeJob = (job: ScheduledJob): Record<string, unknown> => ({
   targetType: job.target.type,
   workspaceRoot: job.target.workspaceRoot,
   prompt: job.target.prompt,
-  ralphFlow: job.target.ralphFlow ?? null,
+  ralphFlow: job.target.ralphFlow
+    ? summarizeScheduledRalphTarget(job.target.ralphFlow)
+    : null,
   nextRunAt: job.nextRunAt ?? null,
   lastStartedAt: job.lastStartedAt ?? null,
   lastFinishedAt: job.lastFinishedAt ?? null,
@@ -1069,8 +1548,49 @@ export const printSchedulerSummary = async (
       printJobLines(jobs);
       return;
     }
+    case "inspect-ralph": {
+      const flowId = options.subject ?? fail("No Ralph flow id was provided.");
+      const readiness = await inspectScheduledRalphTarget(
+        args.workspaceRoot,
+        {
+          id: flowId,
+          scope: options.scheduledRalphFlowScope ?? "workspace",
+          params: parseScheduledRalphParams(options.scheduledRalphParams),
+          ...(options.scheduledRalphProfile
+            ? { executionProfile: options.scheduledRalphProfile }
+            : {}),
+          ...(options.scheduledRalphResumePolicy
+            ? { resumePolicy: options.scheduledRalphResumePolicy }
+            : {}),
+          permissions: {
+            allowedRoots: options.scheduledRalphAllowedRoots ?? [args.workspaceRoot],
+            allowCommands: true,
+            allowWrites: true,
+            allowNetwork: true,
+            allowMcpTools: true,
+          },
+        },
+      );
+
+      if (args.json) {
+        printJson(readiness);
+        return;
+      }
+
+      writeStdoutLine(`Ralph readiness: ${readiness.ready ? "ready" : "blocked"}`);
+      for (const error of readiness.errors) {
+        writeStdoutLine(`error: ${error}`);
+      }
+      for (const warning of readiness.warnings) {
+        writeStdoutLine(`warning: ${warning}`);
+      }
+      return;
+    }
     case "create": {
-      const job = await scheduler.upsertJob(await createJobInput(args, options));
+      const job = await scheduler.upsertJob(
+        await createJobInput(args, options),
+        options.requestId,
+      );
 
       if (args.json) {
         printJson({ job: summarizeJob(job) });
@@ -1090,10 +1610,10 @@ export const printSchedulerSummary = async (
       const subject = options.subject ?? fail("No scheduled job id was provided.");
       const job =
         options.action === "pause"
-          ? await scheduler.pauseJob(subject)
+          ? await scheduler.pauseJob(subject, options.requestId)
           : options.action === "resume"
-            ? await scheduler.resumeJob(subject)
-            : await scheduler.deleteJob(subject);
+            ? await scheduler.resumeJob(subject, options.requestId)
+            : await scheduler.deleteJob(subject, options.requestId);
 
       if (args.json) {
         printJson({ job: summarizeJob(job) });
@@ -1167,6 +1687,34 @@ export const printSchedulerSummary = async (
 
       writeStdoutLine(`queued due runs: ${result.queued.length}`);
       printRunLines(result.runs);
+      return;
+    }
+    case "run-all-due": {
+      await registerSchedulerWorkspace(args.workspaceRoot);
+      const result = await runSchedulerFleetIteration();
+
+      if (args.json) {
+        printJson(result);
+        return;
+      }
+
+      writeStdoutLine(`scheduler workspaces: ${result.workspaces.length}`);
+      writeStdoutLine(`recovered runs: ${result.recovered}`);
+      writeStdoutLine(`queued due runs: ${result.queued}`);
+      writeStdoutLine(`finished runs: ${result.runs}`);
+      return;
+    }
+    case "poll-all": {
+      const result = await pollSchedulerFleetWorkspaces();
+
+      if (args.json) {
+        printJson(result);
+        return;
+      }
+
+      writeStdoutLine(`scheduler workspaces: ${result.workspaces.length}`);
+      writeStdoutLine(`recovered runs: ${result.recovered}`);
+      writeStdoutLine(`queued due runs: ${result.queued}`);
       return;
     }
     case "service": {
@@ -1253,10 +1801,151 @@ export const printSchedulerSummary = async (
         process.off("SIGTERM", stop);
       }
     }
+    case "service-all": {
+      const controller = new AbortController();
+      const stop = (): void => {
+        if (!controller.signal.aborted) {
+          controller.abort("Scheduler fleet service stopped.");
+        }
+      };
+      const serviceLock = await acquireSchedulerFleetServiceLock();
+      const pollIntervalMs = options.servicePollMs ?? 30_000;
+      const maxIterations = options.serviceMaxIterations;
+      let iterations = 0;
+      let recovered = 0;
+      let queued = 0;
+      let runs = 0;
+      const activeWorkspaceWorkers = new Map<string, Promise<void>>();
+
+      writeStderrLine(
+        `[${new Date().toISOString()}] scheduler fleet service started pid=${process.pid}.`,
+      );
+
+      process.once("SIGINT", stop);
+      process.once("SIGTERM", stop);
+
+      try {
+        while (!controller.signal.aborted) {
+          await serviceLock.touch();
+          const workspaceRoots = await listRegisteredSchedulerWorkspaces();
+          const pollResults = await Promise.all(
+            workspaceRoots.map(async (workspaceRoot) => {
+              try {
+                const workspaceScheduler = createScheduler(workspaceRoot, {
+                  executor: true,
+                });
+                const recoveredRuns = await workspaceScheduler.recoverAbandonedRuns(
+                  "Scheduler fleet service recovered an abandoned running run.",
+                );
+                const enqueued = await workspaceScheduler.enqueueDueRuns();
+
+                if (!activeWorkspaceWorkers.has(workspaceRoot)) {
+                  const worker = workspaceScheduler.runQueuedRuns(
+                    options.serviceMaxRunsPerTick !== undefined
+                      ? {
+                          maxRuns: options.serviceMaxRunsPerTick,
+                          signal: controller.signal,
+                        }
+                      : { signal: controller.signal },
+                  ).then((finishedRuns) => {
+                    runs += finishedRuns.length;
+                  }).catch((error) => {
+                    writeStderrLine(
+                      `[${new Date().toISOString()}] scheduler fleet worker ${workspaceRoot}: ${error instanceof Error ? error.message : String(error)}`,
+                    );
+                  }).finally(() => {
+                    activeWorkspaceWorkers.delete(workspaceRoot);
+                  });
+                  activeWorkspaceWorkers.set(workspaceRoot, worker);
+                }
+
+                return {
+                  workspaceRoot,
+                  recovered: recoveredRuns.length,
+                  queued: enqueued.length,
+                };
+              } catch (error) {
+                writeStderrLine(
+                  `[${new Date().toISOString()}] scheduler fleet poll ${workspaceRoot}: ${error instanceof Error ? error.message : String(error)}`,
+                );
+                return { workspaceRoot, recovered: 0, queued: 0 };
+              }
+            }),
+          );
+          iterations += 1;
+          const iterationRecovered = pollResults.reduce(
+            (total, workspace) => total + workspace.recovered,
+            0,
+          );
+          const iterationQueued = pollResults.reduce(
+            (total, workspace) => total + workspace.queued,
+            0,
+          );
+          recovered += iterationRecovered;
+          queued += iterationQueued;
+
+          if (!args.json && (iterationRecovered || iterationQueued)) {
+            writeStdoutLine(
+              `scheduler fleet: workspaces=${workspaceRoots.length} recovered=${iterationRecovered} queued=${iterationQueued} active=${activeWorkspaceWorkers.size}`,
+            );
+          }
+          if (args.json && (iterationRecovered || iterationQueued)) {
+            writeStderrLine(
+              `[${new Date().toISOString()}] scheduler fleet status workspaces=${workspaceRoots.length} recovered=${iterationRecovered} queued=${iterationQueued} active=${activeWorkspaceWorkers.size}.`,
+            );
+          }
+
+          if (maxIterations !== undefined && iterations >= maxIterations) {
+            break;
+          }
+
+          await waitForSchedulerFleetPoll(pollIntervalMs, controller.signal);
+        }
+
+        if (maxIterations !== undefined) {
+          await awaitSchedulerFleetWorkerSettlement(
+            activeWorkspaceWorkers.values(),
+            serviceLock.touch,
+          );
+        }
+
+        if (args.json) {
+          printJson({ iterations, recoveredRuns: recovered, queuedRuns: queued, finishedRuns: runs });
+        }
+        return;
+      } finally {
+        if (activeWorkspaceWorkers.size > 0) {
+          if (!controller.signal.aborted) {
+            controller.abort("Scheduler fleet service is stopping.");
+          }
+        }
+        try {
+          if (activeWorkspaceWorkers.size > 0) {
+            await awaitSchedulerFleetWorkerSettlement(
+              activeWorkspaceWorkers.values(),
+              serviceLock.touch,
+            );
+          }
+        } finally {
+          writeStderrLine(
+            `[${new Date().toISOString()}] scheduler fleet service stopped iterations=${iterations} recovered=${recovered} queued=${queued} finished=${runs}.`,
+          );
+          process.off("SIGINT", stop);
+          process.off("SIGTERM", stop);
+          await serviceLock.release();
+        }
+      }
+    }
     case "trigger": {
       const subject = options.subject ?? fail("No scheduled job id was provided.");
-      const queued = await scheduler.triggerJobNow(subject);
-      const runs = await scheduler.runQueuedRuns({ maxRuns: 1 });
+      const queued = await scheduler.triggerJobNow(
+        subject,
+        options.requestId ?? options.dedupeKey,
+      );
+      const runs =
+        queued.run.status === "queued"
+          ? await scheduler.runQueuedRuns({ maxRuns: 1 })
+          : [];
 
       if (args.json) {
         printJson({
@@ -1276,8 +1965,14 @@ export const printSchedulerSummary = async (
     }
     case "retry": {
       const subject = options.subject ?? fail("No scheduled run id was provided.");
-      const handle = await scheduler.retryRun(subject);
-      const runs = await scheduler.runQueuedRuns({ maxRuns: 1 });
+      const handle = await scheduler.retryRun(
+        subject,
+        options.requestId ?? options.dedupeKey,
+      );
+      const runs =
+        handle.status === "queued"
+          ? await scheduler.runQueuedRuns({ maxRuns: 1 })
+          : [];
 
       if (args.json) {
         printJson({ handle, runs: runs.map(summarizeRun) });
@@ -1290,7 +1985,11 @@ export const printSchedulerSummary = async (
     }
     case "cancel": {
       const subject = options.subject ?? fail("No scheduled run id was provided.");
-      const run = await scheduler.cancelRun(subject);
+      const run = await scheduler.cancelRun(
+        subject,
+        "Scheduled run cancelled.",
+        options.requestId,
+      );
 
       if (args.json) {
         printJson({ run: summarizeRun(run) });

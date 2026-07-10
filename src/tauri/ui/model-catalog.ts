@@ -127,15 +127,23 @@ const REVIEW_MODEL_PATTERNS: Record<RuntimeProvider, readonly RegExp[]> = {
 
 const normalizeModelId = (model: string): string => model.trim().toLowerCase();
 
+const TITLE_CASE_MODEL_PARTS = new Set(["sol", "terra", "luna"]);
+
 const formatModelLabel = (modelId: string): string => {
   return modelId
     .split("-")
     .filter(Boolean)
-    .map((part) =>
-      part.length <= 3
+    .map((part) => {
+      const normalizedPart = part.toLowerCase();
+
+      if (TITLE_CASE_MODEL_PARTS.has(normalizedPart)) {
+        return `${normalizedPart.charAt(0).toUpperCase()}${normalizedPart.slice(1)}`;
+      }
+
+      return part.length <= 3
         ? part.toUpperCase()
-        : `${part.charAt(0).toUpperCase()}${part.slice(1)}`,
-    )
+        : `${part.charAt(0).toUpperCase()}${part.slice(1)}`;
+    })
     .join(" ");
 };
 

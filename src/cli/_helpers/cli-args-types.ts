@@ -38,11 +38,15 @@ export type SchedulerCliAction =
   | "events"
   | "event"
   | "run-due"
+  | "run-all-due"
+  | "poll-all"
+  | "inspect-ralph"
   | "trigger"
   | "retry"
   | "cancel"
   | "sync-prompts"
-  | "service";
+  | "service"
+  | "service-all";
 
 export type RalphCliAction =
   | "list"
@@ -117,6 +121,8 @@ export interface SchedulerCliOptions {
   scheduledRalphParams?: string[];
   scheduledRalphRunLogScope?: "workspace" | "user";
   scheduledRalphMaxTransitions?: number;
+  scheduledRalphProfile?: "unattended";
+  scheduledRalphResumePolicy?: "never" | "recoverable";
   scheduledRalphAllowedRoots?: string[];
   scheduledRalphAllowCommands?: boolean;
   scheduledRalphAllowWrites?: boolean;
@@ -132,6 +138,7 @@ export interface SchedulerCliOptions {
   retryFactor?: number;
   retryRandomize?: boolean;
   dedupeKey?: string;
+  requestId?: string;
   ttlMs?: number;
   maxDurationMs?: number;
   concurrencyKey?: string;
@@ -163,6 +170,7 @@ export interface RalphCliOptions {
   promptFile?: string;
   flowJson?: string;
   flowJsonFile?: string;
+  expectedFingerprint?: string;
   existingFlowJson?: string;
   existingFlowJsonFile?: string;
   revision?: string;

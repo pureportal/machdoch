@@ -35,6 +35,8 @@ import {
   cancelSchedulerRun,
   createSchedulerJob,
   deleteSchedulerJob,
+  inspectSchedulerRalphFlow,
+  listRalphFlows,
   listSchedulerJobs,
   listSchedulerRuns,
   pauseSchedulerJob,
@@ -49,6 +51,8 @@ import {
   type SchedulerRunStatus,
   type SchedulerRunSummary,
   type SchedulerScheduleSummary,
+  type RalphListFlowsResult,
+  type SchedulerRalphVariableReadinessSummary,
   type ReasoningMode,
 } from "../../runtime";
 import {
@@ -76,6 +80,15 @@ type SchedulerTriggerKind =
   | "calendar"
   | "clipboard"
   | "integration";
+type SchedulerRalphVariable = SchedulerRalphVariableReadinessSummary;
+
+interface SchedulerRalphReadinessView {
+  ready: boolean;
+  loading: boolean;
+  errors: string[];
+  warnings: string[];
+}
+type SchedulerRalphFlowOption = RalphListFlowsResult["flows"][number];
 
 const SCHEDULER_PANEL_REFRESH_INTERVAL_MS = 10_000;
 
@@ -89,6 +102,7 @@ interface SchedulerFormState {
   ralphRunLogScope: "workspace" | "user";
   ralphMaxTransitions: string;
   ralphAllowedRoots: string;
+  ralphUnattended: boolean;
   ralphAllowCommands: boolean;
   ralphAllowWrites: boolean;
   ralphAllowNetwork: boolean;
@@ -141,12 +155,13 @@ const createDefaultFormState = (): SchedulerFormState => ({
   ralphFlowScope: "workspace",
   ralphParams: "",
   ralphRunLogScope: "workspace",
-  ralphMaxTransitions: "80",
+  ralphMaxTransitions: "",
   ralphAllowedRoots: "",
-  ralphAllowCommands: false,
-  ralphAllowWrites: false,
-  ralphAllowNetwork: false,
-  ralphAllowMcpTools: false,
+  ralphUnattended: true,
+  ralphAllowCommands: true,
+  ralphAllowWrites: true,
+  ralphAllowNetwork: true,
+  ralphAllowMcpTools: true,
   scheduleType: "cron",
   cron: "0 9 * * *",
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
@@ -306,6 +321,45 @@ const parseRalphParams = (value: string): Record<string, string> => {
   }
 
   return params;
+};
+
+const serializeRalphParams = (params: Record<string, string>): string => {
+  return Object.entries(params)
+    .map(([name, value]) => `${name}=${value}`)
+    .join("\n");
+};
+
+export const setSchedulerRalphParam = (
+  serializedParams: string,
+  name: string,
+  value: string,
+): string => {
+  let params: Record<string, string> = {};
+
+  try {
+    params = parseRalphParams(serializedParams);
+  } catch {
+    // A typed edit repairs malformed free-form input into canonical lines.
+  }
+
+  if (value === "") {
+    delete params[name];
+  } else {
+    params[name] = value;
+  }
+
+  return serializeRalphParams(params);
+};
+
+export const getSchedulerRalphParamEditorValue = (
+  serializedParams: string,
+  name: string,
+): string => {
+  try {
+    return parseRalphParams(serializedParams)[name] ?? "";
+  } catch {
+    return "";
+  }
 };
 
 const parseOptionalPositiveInteger = (
@@ -514,6 +568,14 @@ export const SchedulerPanel = ({
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ralphFlowOptions, setRalphFlowOptions] = useState<SchedulerRalphFlowOption[]>([]);
+  const [ralphVariables, setRalphVariables] = useState<SchedulerRalphVariable[]>([]);
+  const [ralphReadiness, setRalphReadiness] = useState<SchedulerRalphReadinessView>({
+    ready: false,
+    loading: false,
+    errors: [],
+    warnings: [],
+  });
   const refreshInFlightRef = useRef(false);
 
   const activeWorkspace = workspaceRoot?.trim() || null;
@@ -586,6 +648,135 @@ export const SchedulerPanel = ({
     return () => window.clearInterval(intervalId);
   }, [activeWorkspace, refresh]);
 
+  useEffect(() => {
+    if (!activeWorkspace || form.targetType !== "ralph-flow") {
+      setRalphFlowOptions([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    void listRalphFlows(activeWorkspace, form.ralphFlowScope)
+      .then((result) => {
+        if (!cancelled) {
+          setRalphFlowOptions(result.flows);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRalphFlowOptions([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspace, form.ralphFlowScope, form.targetType]);
+
+  useEffect(() => {
+    const flowId = form.ralphFlowId.trim();
+
+    if (!activeWorkspace || form.targetType !== "ralph-flow" || !flowId) {
+      setRalphVariables([]);
+      setRalphReadiness({
+        ready: false,
+        loading: false,
+        errors: flowId ? [] : ["Choose a Ralph flow."],
+        warnings: [],
+      });
+      return;
+    }
+
+    let cancelled = false;
+    setRalphReadiness((current) => ({ ...current, loading: true }));
+    const timer = window.setTimeout(() => {
+      let params: Record<string, string>;
+
+      try {
+        params = parseRalphParams(form.ralphParams);
+      } catch (caughtError) {
+        setRalphVariables([]);
+        setRalphReadiness({
+          ready: false,
+          loading: false,
+          errors: [
+            caughtError instanceof Error ? caughtError.message : String(caughtError),
+          ],
+          warnings: [],
+        });
+        return;
+      }
+
+      void inspectSchedulerRalphFlow(activeWorkspace, {
+        id: flowId,
+        scope: form.ralphFlowScope,
+        params,
+        runLogScope: form.ralphRunLogScope,
+        ...(form.ralphUnattended
+          ? {
+              executionProfile: "unattended" as const,
+              resumePolicy: "recoverable" as const,
+            }
+          : {}),
+        permissions: {
+          allowedRoots: splitLines(form.ralphAllowedRoots).length > 0
+            ? splitLines(form.ralphAllowedRoots)
+            : [activeWorkspace],
+          allowCommands: form.ralphAllowCommands,
+          allowWrites: form.ralphAllowWrites,
+          allowNetwork: form.ralphAllowNetwork,
+          allowMcpTools: form.ralphAllowMcpTools,
+        },
+      })
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+
+          setRalphVariables(result.variables);
+          setRalphReadiness({
+            ready: result.ready,
+            loading: false,
+            errors: result.errors,
+            warnings: result.warnings,
+          });
+        })
+        .catch((caughtError) => {
+          if (!cancelled) {
+            setRalphVariables([]);
+            setRalphReadiness({
+              ready: false,
+              loading: false,
+              errors: [
+                caughtError instanceof Error
+                  ? caughtError.message
+                  : String(caughtError),
+              ],
+              warnings: [],
+            });
+          }
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    activeWorkspace,
+    form.ralphFlowId,
+    form.ralphFlowScope,
+    form.ralphParams,
+    form.ralphRunLogScope,
+    form.ralphAllowedRoots,
+    form.ralphAllowCommands,
+    form.ralphAllowWrites,
+    form.ralphAllowNetwork,
+    form.ralphAllowMcpTools,
+    form.ralphUnattended,
+    form.targetType,
+  ]);
+
   const runAction = async (
     actionId: string,
     action: () => Promise<void>,
@@ -615,6 +806,12 @@ export const SchedulerPanel = ({
     patch: Partial<SchedulerFormState>,
   ): void => {
     setForm((current) => ({ ...current, ...patch }));
+  };
+
+  const updateRalphParam = (name: string, value: string): void => {
+    updateForm({
+      ralphParams: setSchedulerRalphParam(form.ralphParams, name, value),
+    });
   };
 
   const buildCreateInput = (): SchedulerCreateJobInput => {
@@ -794,6 +991,12 @@ export const SchedulerPanel = ({
           scope: form.ralphFlowScope,
           params: parseRalphParams(form.ralphParams),
           runLogScope: form.ralphRunLogScope,
+          ...(form.ralphUnattended
+            ? {
+                executionProfile: "unattended" as const,
+                resumePolicy: "recoverable" as const,
+              }
+            : {}),
           maxTransitions: parseOptionalPositiveInteger(
             form.ralphMaxTransitions,
             "Ralph max transitions",
@@ -1250,7 +1453,11 @@ export const SchedulerPanel = ({
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={Boolean(busyAction)}
+                  disabled={
+                    Boolean(busyAction) ||
+                    (form.targetType === "ralph-flow" &&
+                      (!ralphReadiness.ready || ralphReadiness.loading))
+                  }
                   className="h-8 rounded-lg bg-sky-500 px-3 text-xs text-white hover:bg-sky-400"
                 >
                   {actionButtonBusy("create") ? (
@@ -1284,7 +1491,19 @@ export const SchedulerPanel = ({
                       type="button"
                       variant={form.targetType === targetType ? "secondary" : "ghost"}
                       size="sm"
-                      onClick={() => updateForm({ targetType })}
+                      onClick={() =>
+                        updateForm({
+                          targetType,
+                            ...(targetType === "ralph-flow" && form.ralphUnattended
+                              ? {
+                                  ralphAllowCommands: true,
+                                  ralphAllowWrites: true,
+                                  ralphAllowNetwork: true,
+                                  ralphAllowMcpTools: true,
+                                }
+                              : {}),
+                        })
+                      }
                       className={cn(
                         "h-8 rounded-md text-xs capitalize",
                         form.targetType === targetType
@@ -1320,11 +1539,22 @@ export const SchedulerPanel = ({
                     </label>
                     <Input
                       id="scheduler-ralph-flow"
+                      list="scheduler-ralph-flow-options"
                       value={form.ralphFlowId}
                       onChange={(event) => updateForm({ ralphFlowId: event.target.value })}
                       className="h-9 rounded-lg border-slate-800 bg-slate-900/70 text-sm text-slate-100 placeholder:text-slate-600"
                       placeholder="security-analysis"
                     />
+                    <datalist id="scheduler-ralph-flow-options">
+                      {ralphFlowOptions.map((flowOption) => (
+                        <option
+                          key={flowOption.id}
+                          value={flowOption.alias ?? flowOption.id}
+                        >
+                          {flowOption.name}
+                        </option>
+                      ))}
+                    </datalist>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <div className="grid gap-2">
@@ -1365,8 +1595,96 @@ export const SchedulerPanel = ({
                     </div>
                   </div>
                   <div className="grid gap-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs font-medium text-slate-400">
+                        Flow readiness
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className={
+                          ralphReadiness.loading
+                            ? getStatusBadgeClassName("running")
+                            : ralphReadiness.ready
+                              ? getStatusBadgeClassName("succeeded")
+                              : getStatusBadgeClassName("failed")
+                        }
+                      >
+                        {ralphReadiness.loading
+                          ? "checking"
+                          : ralphReadiness.ready
+                            ? "unattended ready"
+                            : "not ready"}
+                      </Badge>
+                    </div>
+                    {ralphReadiness.errors.length > 0 ? (
+                      <div className="rounded-md border border-rose-500/25 bg-rose-500/10 px-2.5 py-2 text-[11px] leading-4 text-rose-100">
+                        {ralphReadiness.errors.join(" ")}
+                      </div>
+                    ) : null}
+                    {ralphReadiness.warnings.length > 0 ? (
+                      <div className="rounded-md border border-amber-500/25 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-4 text-amber-100">
+                        {ralphReadiness.warnings.join(" ")}
+                      </div>
+                    ) : null}
+                  </div>
+                  {ralphVariables.length > 0 ? (
+                    <div className="grid gap-3 rounded-md border border-slate-800 bg-slate-950/45 p-2.5">
+                      <div className="text-xs font-medium text-slate-300">
+                        Typed parameters
+                      </div>
+                      {ralphVariables.map((variable) => {
+                        const value = getSchedulerRalphParamEditorValue(
+                          form.ralphParams,
+                          variable.name,
+                        );
+
+                        return (
+                          <label key={variable.name} className="grid gap-1.5">
+                            <span className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                              <span>
+                                {variable.name}
+                                {variable.required ? " *" : ""}
+                              </span>
+                              <code className="text-[10px] text-slate-600">
+                                {variable.type}
+                              </code>
+                            </span>
+                            {variable.type === "boolean" ? (
+                              <select
+                                value={value}
+                                onChange={(event) =>
+                                  updateRalphParam(variable.name, event.target.value)
+                                }
+                                className="h-8 rounded-md border border-slate-800 bg-slate-900 px-2 text-xs text-slate-100"
+                              >
+                                <option value="">Use default</option>
+                                <option value="true">true</option>
+                                <option value="false">false</option>
+                              </select>
+                            ) : (
+                              <Input
+                                type={variable.type === "number" ? "number" : "text"}
+                                value={value}
+                                onChange={(event) =>
+                                  updateRalphParam(variable.name, event.target.value)
+                                }
+                                className="h-8 rounded-md border-slate-800 bg-slate-900 text-xs text-slate-100"
+                                placeholder={variable.default ?? variable.name}
+                              />
+                            )}
+                            {variable.default !== undefined ? (
+                              <span className="text-[10px] text-slate-600">
+                                Default: {variable.default || "(empty)"}
+                              </span>
+                            ) : null}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  <div className="grid gap-2">
                     <label className="text-xs font-medium text-slate-400" htmlFor="scheduler-ralph-params">
-                      Params
+                      Params (advanced name=value)
                     </label>
                     <Textarea
                       id="scheduler-ralph-params"
@@ -1406,7 +1724,36 @@ export const SchedulerPanel = ({
                     />
                   </div>
                   <div className="grid gap-2">
-                    <div className="text-xs font-medium text-slate-400">Permissions</div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-medium text-slate-300">
+                          Unattended execution
+                        </div>
+                        <div className="mt-0.5 text-[11px] leading-4 text-slate-500">
+                          Run agent blocks with every runtime capability and no approval pause.
+                        </div>
+                      </div>
+                      <label className="flex shrink-0 items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-2 text-xs font-medium text-emerald-100">
+                        <input
+                          type="checkbox"
+                          aria-label="Run RALPH unattended"
+                          checked={form.ralphUnattended}
+                          onChange={(event) => {
+                            const enabled = event.target.checked;
+                            updateForm({
+                              ralphUnattended: enabled,
+                              ralphAllowCommands: enabled,
+                              ralphAllowWrites: enabled,
+                              ralphAllowNetwork: enabled,
+                              ralphAllowMcpTools: enabled,
+                            });
+                          }}
+                          className="h-4 w-4 rounded border-slate-700 bg-slate-900"
+                        />
+                        Autonomous
+                      </label>
+                    </div>
+                    <div className="text-xs font-medium text-slate-400">Capabilities</div>
                     <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
                       {[
                         ["ralphAllowCommands", "Commands"],
@@ -1424,6 +1771,9 @@ export const SchedulerPanel = ({
                             onChange={(event) =>
                               updateForm({
                                 [key]: event.target.checked,
+                                ...(!event.target.checked
+                                  ? { ralphUnattended: false }
+                                  : {}),
                               } as Partial<SchedulerFormState>)
                             }
                             className="h-4 w-4 rounded border-slate-700 bg-slate-900"

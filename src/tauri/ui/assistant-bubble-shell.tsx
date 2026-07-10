@@ -44,7 +44,10 @@ const isNearWindowValue = (actual: number, expected: number): boolean => {
 };
 
 export const AssistantBubbleShell = () => {
-  const state = useChatSessionShellState();
+  const state = useChatSessionShellState({
+    persistActiveSession: false,
+    trackSessionReads: false,
+  });
   const desktopSettings = useUserDesktopSettings();
   const appearance = useAppearanceSettings();
   const [popupOpen, setPopupOpen] = useState(false);
@@ -54,8 +57,24 @@ export const AssistantBubbleShell = () => {
   const lastBubbleSizeRef = useRef<string | null>(null);
   const lastBubblePositionRef = useRef<string | null>(null);
   const lastMonitorTopologyKeyRef = useRef<string | null>(null);
-  const syncInFlightRef = useRef(false);
+  const syncGenerationRef = useRef(0);
   const togglePopupInFlightRef = useRef(false);
+  const popupStateRequestRef = useRef(0);
+  const popupMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const windowSyncQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  const enqueuePopupMutation = useCallback(<T,>(
+    mutation: () => Promise<T>,
+  ): Promise<T> => {
+    const operation = popupMutationQueueRef.current
+      .catch(() => undefined)
+      .then(mutation);
+    popupMutationQueueRef.current = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }, []);
 
   const emitQuickChatDrop = useCallback(
     async (payload: SessionDropPayload): Promise<void> => {
@@ -63,7 +82,13 @@ export const AssistantBubbleShell = () => {
         return;
       }
 
-      const shown = await showAssistantPopup();
+      const requestId = popupStateRequestRef.current + 1;
+      popupStateRequestRef.current = requestId;
+      const shown = await enqueuePopupMutation(showAssistantPopup);
+
+      if (popupStateRequestRef.current !== requestId) {
+        return;
+      }
 
       if (shown) {
         setPopupOpen(true);
@@ -75,7 +100,7 @@ export const AssistantBubbleShell = () => {
         payload,
       );
     },
-    [],
+    [enqueuePopupMutation],
   );
 
   const bubbleFileDrop = useSessionFileDrops({
@@ -115,17 +140,27 @@ export const AssistantBubbleShell = () => {
     }
 
     const currentWindow = getCurrentWindow();
+    const syncGeneration = syncGenerationRef.current + 1;
+    syncGenerationRef.current = syncGeneration;
     let disposed = false;
     let eventSyncTimeoutId: number | null = null;
     const eventUnlisteners: Array<() => void> = [];
+    const isCurrentSync = (): boolean =>
+      !disposed && syncGenerationRef.current === syncGeneration;
 
     const setBubbleVisibility = async (visible: boolean): Promise<void> => {
-      if (lastVisibilityRef.current === visible) {
+      if (!isCurrentSync() || lastVisibilityRef.current === visible) {
         return;
       }
 
       if (visible) {
-        if (!(await currentWindow.isVisible())) {
+        const isVisible = await currentWindow.isVisible();
+
+        if (!isCurrentSync()) {
+          return;
+        }
+
+        if (!isVisible) {
           try {
             await currentWindow.show();
           } catch {
@@ -134,13 +169,17 @@ export const AssistantBubbleShell = () => {
           }
         }
 
-        lastVisibilityRef.current = true;
+        if (isCurrentSync()) {
+          lastVisibilityRef.current = true;
+        }
         return;
       }
 
       try {
         await currentWindow.hide();
-        lastVisibilityRef.current = false;
+        if (isCurrentSync()) {
+          lastVisibilityRef.current = false;
+        }
       } catch {
         // ignore no-op hide failures while syncing
       }
@@ -179,11 +218,9 @@ export const AssistantBubbleShell = () => {
     };
 
     const syncBubbleWindow = async (): Promise<void> => {
-      if (disposed || syncInFlightRef.current) {
+      if (!isCurrentSync()) {
         return;
       }
-
-      syncInFlightRef.current = true;
 
       try {
         if (!desktopSettings.assistantBubbleEnabled) {
@@ -192,6 +229,9 @@ export const AssistantBubbleShell = () => {
         }
 
         const topologyKey = await resolveMonitorTopologyKey();
+        if (!isCurrentSync()) {
+          return;
+        }
         const topologyChanged =
           topologyKey !== null && topologyKey !== lastMonitorTopologyKeyRef.current;
 
@@ -201,7 +241,7 @@ export const AssistantBubbleShell = () => {
 
         const layout = await resolveAssistantSurfaceLayout();
 
-        if (!layout) {
+        if (!layout || !isCurrentSync()) {
           return;
         }
 
@@ -210,23 +250,36 @@ export const AssistantBubbleShell = () => {
         const shouldHideForFullscreen =
           desktopSettings.assistantBubbleHideWhenFullscreen &&
           (await detectFullscreenWindowOnMonitor(layout.monitorBounds));
+        if (!isCurrentSync()) {
+          return;
+        }
         const shouldShow = !shouldHideTemporarily && !shouldHideForFullscreen;
         const nextSizeKey = `${layout.bubbleSize.width}:${layout.bubbleSize.height}`;
         const nextPositionKey = `${layout.bubblePosition.x}:${layout.bubblePosition.y}`;
 
+        const sizeIsCurrent = await isBubbleSizeCurrent(layout.bubbleSize);
+        if (!isCurrentSync()) {
+          return;
+        }
         const shouldSyncSize =
           topologyChanged ||
           nextSizeKey !== lastBubbleSizeRef.current ||
-          !(await isBubbleSizeCurrent(layout.bubbleSize));
+          !sizeIsCurrent;
 
         if (shouldSyncSize && (await setWindowSize(currentWindow, layout.bubbleSize))) {
           lastBubbleSizeRef.current = nextSizeKey;
         }
 
+        const positionIsCurrent = await isBubblePositionCurrent(
+          layout.bubblePosition,
+        );
+        if (!isCurrentSync()) {
+          return;
+        }
         const shouldSyncPosition =
           topologyChanged ||
           nextPositionKey !== lastBubblePositionRef.current ||
-          !(await isBubblePositionCurrent(layout.bubblePosition));
+          !positionIsCurrent;
 
         if (
           shouldSyncPosition &&
@@ -238,12 +291,20 @@ export const AssistantBubbleShell = () => {
 
         await setBubbleVisibility(shouldShow);
       } finally {
-        syncInFlightRef.current = false;
+        // The shared queue starts the next geometry reconciliation only after
+        // this generation has either completed or observed that it is stale.
       }
     };
 
     const runSyncBubbleWindow = (): void => {
-      void syncBubbleWindow().catch((error) => {
+      const operation = windowSyncQueueRef.current
+        .catch(() => undefined)
+        .then(syncBubbleWindow);
+      windowSyncQueueRef.current = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      void operation.catch((error) => {
         console.error("Failed to sync assistant bubble window", error);
       });
     };
@@ -320,8 +381,9 @@ export const AssistantBubbleShell = () => {
     temporarilyHiddenUntilRef.current =
       Date.now() +
       desktopSettings.assistantBubbleTemporarilyHideSeconds * 1000;
+    popupStateRequestRef.current += 1;
     setPopupOpen(false);
-    void hideAssistantPopup().catch((error) => {
+    void enqueuePopupMutation(hideAssistantPopup).catch((error) => {
       console.error("Failed to hide assistant popup", error);
     });
 
@@ -350,13 +412,19 @@ export const AssistantBubbleShell = () => {
     }
 
     togglePopupInFlightRef.current = true;
-    void toggleAssistantPopup()
+    const requestId = popupStateRequestRef.current + 1;
+    popupStateRequestRef.current = requestId;
+    void enqueuePopupMutation(toggleAssistantPopup)
       .then((nextPopupOpen) => {
-        setPopupOpen(nextPopupOpen);
+        if (popupStateRequestRef.current === requestId) {
+          setPopupOpen(nextPopupOpen);
+        }
       })
       .catch((error) => {
         console.error("Failed to toggle assistant popup", error);
-        setPopupOpen(false);
+        if (popupStateRequestRef.current === requestId) {
+          setPopupOpen(false);
+        }
       })
       .finally(() => {
         togglePopupInFlightRef.current = false;
@@ -392,7 +460,17 @@ export const AssistantBubbleShell = () => {
           data-drop-active={bubbleFileDrop.isActive ? "true" : "false"}
           onClick={handleBubbleClick}
           onFocus={() => {
-            void isAssistantPopupVisible().then(setPopupOpen);
+            const requestId = popupStateRequestRef.current + 1;
+            popupStateRequestRef.current = requestId;
+            void isAssistantPopupVisible()
+              .then((visible) => {
+                if (popupStateRequestRef.current === requestId) {
+                  setPopupOpen(visible);
+                }
+              })
+              .catch((error) => {
+                console.error("Failed to inspect assistant popup visibility", error);
+              });
           }}
           onMouseDown={handleBubbleMouseDown}
           onContextMenu={(event) => {

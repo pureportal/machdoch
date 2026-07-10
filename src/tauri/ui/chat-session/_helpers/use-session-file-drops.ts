@@ -220,34 +220,40 @@ export const useSessionFileDrops = (options: {
   const [isNativeDropActive, setIsNativeDropActive] = useState(false);
   const [isBrowserDropActive, setIsBrowserDropActive] = useState(false);
   const browserDragDepthRef = useRef(0);
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   const attachDropPayload = useCallback(
     async (
       payload: BrowserSessionDropPayload | SessionDropPayload,
       target: FileDropTarget,
     ): Promise<void> => {
+      const handlers = optionsRef.current;
+      const operations: Promise<unknown>[] = [];
+
       if (payload.paths?.length) {
-        await options.onAttachPaths(payload.paths, target);
+        operations.push(Promise.resolve(handlers.onAttachPaths(payload.paths, target)));
       }
 
       if (payload.references?.length) {
-        await options.onAttachReferences?.(payload.references, target);
+        operations.push(
+          Promise.resolve(handlers.onAttachReferences?.(payload.references, target)),
+        );
       }
 
       if (payload.text) {
-        await options.onAppendText?.(payload.text, target);
+        operations.push(Promise.resolve(handlers.onAppendText?.(payload.text, target)));
       }
 
       if ("imageFiles" in payload && payload.imageFiles?.length) {
-        await options.onAttachImageFiles?.(payload.imageFiles, target);
+        operations.push(
+          Promise.resolve(handlers.onAttachImageFiles?.(payload.imageFiles, target)),
+        );
       }
+
+      await Promise.all(operations);
     },
-    [
-      options.onAppendText,
-      options.onAttachImageFiles,
-      options.onAttachPaths,
-      options.onAttachReferences,
-    ],
+    [],
   );
 
   useEffect(() => {
@@ -383,8 +389,8 @@ export const useSessionFileDrops = (options: {
       activateBrowserDrop(event);
     };
 
-    const handleDragLeave = (event: DragEvent): void => {
-      if (!event.dataTransfer || !hasSupportedBrowserDropData(event.dataTransfer)) {
+    const handleDragLeave = (): void => {
+      if (browserDragDepthRef.current === 0) {
         return;
       }
 

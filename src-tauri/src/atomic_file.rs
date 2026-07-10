@@ -8,6 +8,15 @@ use std::{
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
+#[cfg(windows)]
+use std::{ffi::OsStr, os::windows::ffi::OsStrExt};
+
+#[cfg(windows)]
+use windows::{
+    core::PCWSTR,
+    Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH},
+};
+
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct AtomicWriteOptions {
     #[cfg(unix)]
@@ -33,13 +42,40 @@ pub(crate) fn write_file_atomic(
 ) -> io::Result<()> {
     let temporary_path = create_temporary_sibling_file(destination, contents, options)?;
 
-    match fs::rename(&temporary_path, destination) {
+    match replace_file(&temporary_path, destination) {
         Ok(()) => Ok(()),
         Err(error) => {
             let _ = fs::remove_file(&temporary_path);
             Err(error)
         }
     }
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
+    fs::rename(source, destination)
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
+    fn to_wide(value: &OsStr) -> Vec<u16> {
+        value.encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    let source = to_wide(source.as_os_str());
+    let destination = to_wide(destination.as_os_str());
+
+    // `std::fs::rename` does not replace an existing destination on Windows.
+    // MoveFileEx keeps the atomic sibling-file replacement guarantee used by
+    // every persisted config while also flushing the rename before returning.
+    unsafe {
+        MoveFileExW(
+            PCWSTR(source.as_ptr()),
+            PCWSTR(destination.as_ptr()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    }
+    .map_err(|error| io::Error::other(format!("failed to replace destination: {error}")))
 }
 
 fn create_temporary_sibling_file(
@@ -164,6 +200,29 @@ mod tests {
         assert_eq!(
             fs::read_to_string(&destination).expect("destination should be readable"),
             "{\n  \"ok\": true\n}\n"
+        );
+
+        cleanup(&directory);
+    }
+
+    #[test]
+    fn atomic_write_replaces_existing_file_with_full_contents() {
+        let directory = temp_test_directory("replace");
+        let destination = directory.join("config.json");
+        fs::create_dir_all(&directory).expect("test directory should be created");
+        fs::write(&destination, "{\n  \"version\": 1\n}\n")
+            .expect("initial destination should be written");
+
+        write_file_atomic(
+            &destination,
+            b"{\n  \"version\": 2\n}\n",
+            AtomicWriteOptions::default(),
+        )
+        .expect("existing destination should be replaced");
+
+        assert_eq!(
+            fs::read_to_string(&destination).expect("destination should be readable"),
+            "{\n  \"version\": 2\n}\n"
         );
 
         cleanup(&directory);

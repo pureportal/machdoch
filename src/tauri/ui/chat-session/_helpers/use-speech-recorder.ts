@@ -25,7 +25,7 @@ export interface SpeechRecorderController {
   recording: boolean;
   level: number;
   levelTick: number;
-  startRecording: (options?: SpeechRecorderStartOptions) => Promise<void>;
+  startRecording: (options?: SpeechRecorderStartOptions) => Promise<boolean>;
   stopRecording: () => Promise<Blob | null>;
   cancelRecording: () => void;
 }
@@ -72,6 +72,10 @@ export const useSpeechRecorder = (): SpeechRecorderController => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const monitoringIntervalRef = useRef<number | null>(null);
+  const operationSequenceRef = useRef(0);
+  const pendingStopResolversRef = useRef(
+    new Map<MediaRecorder, () => void>(),
+  );
 
   const clearMonitoring = useCallback((): void => {
     if (monitoringIntervalRef.current !== null) {
@@ -143,27 +147,49 @@ export const useSpeechRecorder = (): SpeechRecorderController => {
   );
 
   const startRecording = useCallback(
-    async (options: SpeechRecorderStartOptions = {}): Promise<void> => {
+    async (options: SpeechRecorderStartOptions = {}): Promise<boolean> => {
       if (!browserSupported) {
         throw new Error(
           "This WebView does not expose microphone recording APIs.",
         );
       }
 
+      const operationSequence = operationSequenceRef.current + 1;
+      operationSequenceRef.current = operationSequence;
       cleanupRecording();
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: createSpeechInputAudioConstraints(options.inputDeviceId),
       });
+
+      if (operationSequenceRef.current !== operationSequence) {
+        stopMediaStream(stream);
+        return false;
+      }
+
       streamRef.current = stream;
 
       try {
         const recorder = createRecorder(stream);
+        const chunks: Blob[] = [];
 
-        chunksRef.current = [];
+        chunksRef.current = chunks;
         recorder.ondataavailable = (event: BlobEvent) => {
           if (event.data.size > 0) {
-            chunksRef.current.push(event.data);
+            chunks.push(event.data);
+          }
+        };
+        recorder.onstop = () => {
+          if (
+            recorderRef.current === recorder &&
+            !pendingStopResolversRef.current.has(recorder)
+          ) {
+            cleanupRecording();
+          }
+        };
+        recorder.onerror = () => {
+          if (recorderRef.current === recorder) {
+            cleanupRecording();
           }
         };
 
@@ -172,8 +198,13 @@ export const useSpeechRecorder = (): SpeechRecorderController => {
         startLevelMonitoring(stream);
         recorder.start();
         setRecording(true);
+        return true;
       } catch (error) {
-        cleanupRecording();
+        if (operationSequenceRef.current === operationSequence) {
+          cleanupRecording();
+        } else {
+          stopMediaStream(stream);
+        }
         throw error;
       }
     },
@@ -188,36 +219,72 @@ export const useSpeechRecorder = (): SpeechRecorderController => {
       return null;
     }
 
+    const operationSequence = operationSequenceRef.current + 1;
+    operationSequenceRef.current = operationSequence;
+    const chunks = chunksRef.current;
+
     clearMonitoring();
     setRecording(false);
 
     try {
-      const recordedBlob = await new Promise<Blob>((resolve, reject) => {
+      const recordedBlob = await new Promise<Blob | null>((resolve, reject) => {
+        pendingStopResolversRef.current.set(recorder, () => resolve(null));
         recorder.onstop = () => {
-          resolve(createBlobFromRecorder(recorder, chunksRef.current));
+          pendingStopResolversRef.current.delete(recorder);
+          resolve(createBlobFromRecorder(recorder, chunks));
         };
         recorder.onerror = (event) => {
+          pendingStopResolversRef.current.delete(recorder);
           reject(getRecorderEventError(event));
         };
 
         if (recorder.state === "inactive") {
-          resolve(createBlobFromRecorder(recorder, chunksRef.current));
+          pendingStopResolversRef.current.delete(recorder);
+          resolve(createBlobFromRecorder(recorder, chunks));
           return;
         }
 
-        recorder.stop();
+        try {
+          recorder.stop();
+        } catch (error) {
+          pendingStopResolversRef.current.delete(recorder);
+          reject(error);
+        }
       });
 
-      cleanupRecording();
+      if (
+        operationSequenceRef.current === operationSequence &&
+        recorderRef.current === recorder
+      ) {
+        cleanupRecording();
+      } else {
+        stopMediaStream(stream);
+      }
       return recordedBlob;
     } catch (error) {
-      cleanupRecording();
+      if (
+        operationSequenceRef.current === operationSequence &&
+        recorderRef.current === recorder
+      ) {
+        cleanupRecording();
+      } else {
+        stopMediaStream(stream);
+      }
       throw error;
     }
   }, [cleanupRecording, clearMonitoring]);
 
   const cancelRecording = useCallback((): void => {
+    operationSequenceRef.current += 1;
     const recorder = recorderRef.current;
+
+    for (const [pendingRecorder, resolvePendingStop] of
+      pendingStopResolversRef.current) {
+      pendingRecorder.onstop = null;
+      pendingRecorder.onerror = null;
+      resolvePendingStop();
+    }
+    pendingStopResolversRef.current.clear();
 
     if (recorder && recorder.state !== "inactive") {
       recorder.ondataavailable = null;

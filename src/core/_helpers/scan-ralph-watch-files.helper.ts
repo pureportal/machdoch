@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { RalphWatchRoot } from "../ralph-watches.js";
@@ -10,6 +11,14 @@ export interface RalphWatchFileSnapshot {
   size: number;
   mtimeMs: number;
   isDirectory: boolean;
+}
+
+const DIRECTORY_READ_CONCURRENCY = 16;
+const FILE_STAT_CONCURRENCY = 32;
+
+interface RalphWatchDirectoryEntries {
+  directory: string;
+  entries: Dirent[];
 }
 
 const getFileSnapshot = async (
@@ -25,6 +34,40 @@ const getFileSnapshot = async (
     };
   } catch {
     return undefined;
+  }
+};
+
+const readDirectoryEntries = async (
+  directory: string,
+): Promise<RalphWatchDirectoryEntries> => {
+  try {
+    return {
+      directory,
+      entries: await readdir(directory, { withFileTypes: true }),
+    };
+  } catch {
+    return { directory, entries: [] };
+  }
+};
+
+const collectFileSnapshots = async (
+  paths: readonly string[],
+  snapshots: Map<string, RalphWatchFileSnapshot>,
+): Promise<void> => {
+  for (let index = 0; index < paths.length; index += FILE_STAT_CONCURRENCY) {
+    const batch = paths.slice(index, index + FILE_STAT_CONCURRENCY);
+    const entries = await Promise.all(
+      batch.map(async (path) => ({
+        path,
+        snapshot: await getFileSnapshot(path),
+      })),
+    );
+
+    for (const entry of entries) {
+      if (entry.snapshot) {
+        snapshots.set(entry.path, entry.snapshot);
+      }
+    }
   }
 };
 
@@ -65,43 +108,45 @@ export const scanRalphWatchFiles = async (
   directory = root.path,
   snapshots = new Map<string, RalphWatchFileSnapshot>(),
 ): Promise<Map<string, RalphWatchFileSnapshot>> => {
-  let entries;
+  const pendingDirectories = [directory];
+  let cursor = 0;
 
-  try {
-    entries = await readdir(directory, { withFileTypes: true });
-  } catch {
-    return snapshots;
-  }
+  while (cursor < pendingDirectories.length) {
+    const directoryBatch = pendingDirectories.slice(
+      cursor,
+      cursor + DIRECTORY_READ_CONCURRENCY,
+    );
+    cursor += directoryBatch.length;
+    const directoryEntries = await Promise.all(
+      directoryBatch.map(readDirectoryEntries),
+    );
+    const pathsToSnapshot: string[] = [];
 
-  for (const entry of entries) {
-    const path = join(directory, entry.name);
+    for (const { directory: parentDirectory, entries } of directoryEntries) {
+      for (const entry of entries) {
+        const path = join(parentDirectory, entry.name);
 
-    if (!watchRootCanTraversePath(root, path)) {
-      continue;
-    }
+        if (
+          entry.isSymbolicLink() ||
+          !watchRootCanTraversePath(root, path)
+        ) {
+          continue;
+        }
 
-    if (entry.isSymbolicLink()) {
-      continue;
-    }
+        if (entry.isDirectory()) {
+          pendingDirectories.push(path);
+        }
 
-    if (entry.isDirectory()) {
-      const snapshot = await getFileSnapshot(path);
-
-      if (snapshot && watchRootMatchesPath(root, path)) {
-        snapshots.set(path, snapshot);
+        if (
+          (entry.isDirectory() || entry.isFile()) &&
+          watchRootMatchesPath(root, path)
+        ) {
+          pathsToSnapshot.push(path);
+        }
       }
-
-      await scanRalphWatchFiles(root, path, snapshots);
-      continue;
     }
 
-    if (entry.isFile()) {
-      const snapshot = await getFileSnapshot(path);
-
-      if (snapshot && watchRootMatchesPath(root, path)) {
-        snapshots.set(path, snapshot);
-      }
-    }
+    await collectFileSnapshots(pathsToSnapshot, snapshots);
   }
 
   return snapshots;

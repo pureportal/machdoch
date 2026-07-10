@@ -1,16 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { GoogleGenAI } from "@google/genai";
-import OpenAI from "openai";
 import { hasConfiguredValue, loadWorkspaceEnv } from "../env.js";
 import type {
   AgentModelAdapter,
   AgentModelToolSpec,
 } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
-import { AnthropicMessagesAdapter } from "./provider-adapters/anthropic-adapter.js";
-import { GeminiChatAdapter } from "./provider-adapters/gemini-adapter.js";
-import { LangdockChatCompletionsAdapter } from "./provider-adapters/langdock-adapter.js";
-import { OpenAIResponsesAdapter } from "./provider-adapters/openai-adapter.js";
 
 const LANGDOCK_DEFAULT_REGION = "eu";
 const LANGDOCK_SUPPORTED_REGIONS = new Set(["eu", "us"]);
@@ -209,6 +202,11 @@ export const createProviderAdapter = async (
         return undefined;
       }
 
+      const [{ default: OpenAI }, { OpenAIResponsesAdapter }] = await Promise.all([
+        import("openai"),
+        import("./provider-adapters/openai-adapter.js"),
+      ]);
+
       return new OpenAIResponsesAdapter(
         new OpenAI({
           apiKey: env.OPENAI_API_KEY,
@@ -221,6 +219,12 @@ export const createProviderAdapter = async (
       if (!hasConfiguredValue(env.ANTHROPIC_API_KEY)) {
         return undefined;
       }
+
+      const [{ default: Anthropic }, { AnthropicMessagesAdapter }] =
+        await Promise.all([
+          import("@anthropic-ai/sdk"),
+          import("./provider-adapters/anthropic-adapter.js"),
+        ]);
 
       return new AnthropicMessagesAdapter(
         new Anthropic({
@@ -236,6 +240,11 @@ export const createProviderAdapter = async (
       if (!apiKey || !hasConfiguredValue(apiKey)) {
         return undefined;
       }
+
+      const [{ GoogleGenAI }, { GeminiChatAdapter }] = await Promise.all([
+        import("@google/genai"),
+        import("./provider-adapters/gemini-adapter.js"),
+      ]);
 
       return new GeminiChatAdapter(
         new GoogleGenAI({ apiKey }),
@@ -254,6 +263,12 @@ export const createProviderAdapter = async (
       const langdockRoute = getLangdockModelRoute(config.model);
 
       if (langdockRoute === "anthropic-messages") {
+        const [{ default: Anthropic }, { AnthropicMessagesAdapter }] =
+          await Promise.all([
+            import("@anthropic-ai/sdk"),
+            import("./provider-adapters/anthropic-adapter.js"),
+          ]);
+
         return new AnthropicMessagesAdapter(
           new Anthropic({
             apiKey: null,
@@ -266,6 +281,11 @@ export const createProviderAdapter = async (
       }
 
       if (langdockRoute === "gemini-chat") {
+        const [{ GoogleGenAI }, { GeminiChatAdapter }] = await Promise.all([
+          import("@google/genai"),
+          import("./provider-adapters/gemini-adapter.js"),
+        ]);
+
         return new GeminiChatAdapter(
           new GoogleGenAI({
             apiKey,
@@ -279,6 +299,12 @@ export const createProviderAdapter = async (
           "langdock",
         );
       }
+
+      const [{ default: OpenAI }, { LangdockChatCompletionsAdapter }] =
+        await Promise.all([
+          import("openai"),
+          import("./provider-adapters/langdock-adapter.js"),
+        ]);
 
       return new LangdockChatCompletionsAdapter(
         new OpenAI({

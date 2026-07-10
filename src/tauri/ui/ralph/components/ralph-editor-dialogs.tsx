@@ -29,6 +29,7 @@ import {
 import {
   STARTER_RALPH_FLOW_SUMMARIES,
   formatStarterFlowSubtitle,
+  getStarterFlowAutonomyReadiness,
   getStarterFlowEmoji,
 } from "../_helpers/ralph-starter-flow-presentation.helper";
 
@@ -41,6 +42,7 @@ export interface RalphExpandedEditorState {
   mode: RalphExpandedEditorMode;
   value: string;
   supportsVariables?: boolean;
+  contextKey?: string;
   onApply: (value: string) => void;
 }
 
@@ -119,11 +121,14 @@ export const RalphStarterFlowDialog = ({
 
         <ScrollArea className="min-h-0 bg-slate-950" type="always">
           <div className="grid gap-3 p-4 md:grid-cols-2">
-            {STARTER_RALPH_FLOW_SUMMARIES.map((starterFlow) => (
-              <article
-                key={starterFlow.id}
-                className="grid content-between gap-4 rounded-lg border border-slate-800 bg-slate-950/70 p-4"
-              >
+            {STARTER_RALPH_FLOW_SUMMARIES.map((starterFlow) => {
+              const readiness = getStarterFlowAutonomyReadiness(starterFlow);
+
+              return (
+                <article
+                  key={starterFlow.id}
+                  className="grid content-between gap-4 rounded-lg border border-slate-800 bg-slate-950/70 p-4"
+                >
                 <div className="grid gap-3">
                   <div className="flex min-w-0 items-start gap-2">
                     <span
@@ -144,6 +149,26 @@ export const RalphStarterFlowDialog = ({
                   <p className="text-sm leading-5 text-slate-400">
                     {starterFlow.description}
                   </p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={cn(
+                        "rounded-md border px-2 py-1 text-[0.68rem] font-semibold",
+                        readiness.ready
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                          : "border-amber-500/30 bg-amber-500/10 text-amber-200",
+                      )}
+                    >
+                      {readiness.label}
+                    </span>
+                    {readiness.capabilities.map((capability) => (
+                      <span
+                        key={capability}
+                        className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[0.68rem] text-slate-400"
+                      >
+                        {capability}
+                      </span>
+                    ))}
+                  </div>
                 </div>
 
                 <Button
@@ -163,8 +188,9 @@ export const RalphStarterFlowDialog = ({
                   )}
                   Add
                 </Button>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         </ScrollArea>
 

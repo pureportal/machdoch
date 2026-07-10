@@ -97,53 +97,6 @@ const createNewSessionDefaults = (
   };
 };
 
-const sessionMatchesNewSessionDefaults = (
-  session: ChatSessionRecord,
-  defaults: NewSessionDefaults,
-): boolean => {
-  return (
-    session.workspace === defaults.workspace &&
-    session.provider === defaults.provider &&
-    session.model === defaults.model &&
-    session.mode === defaults.mode &&
-    session.reasoning === defaults.reasoning &&
-    session.sessionMemoryEnabled === defaults.sessionMemoryEnabled &&
-    session.useGlobalMemory === defaults.useGlobalMemory &&
-    session.uiControlEnabled === defaults.uiControlEnabled
-  );
-};
-
-const applyNewSessionDefaults = (
-  session: ChatSessionRecord,
-  defaults: NewSessionDefaults,
-  updatedAt: number,
-): ChatSessionRecord => {
-  const nextSession: ChatSessionRecord = {
-    ...session,
-    workspace: defaults.workspace,
-    provider: defaults.provider,
-    model: defaults.model,
-    sessionMemoryEnabled: defaults.sessionMemoryEnabled,
-    useGlobalMemory: defaults.useGlobalMemory,
-    uiControlEnabled: defaults.uiControlEnabled,
-    updatedAt,
-  };
-
-  if (defaults.mode) {
-    nextSession.mode = defaults.mode;
-  } else {
-    delete nextSession.mode;
-  }
-
-  if (defaults.reasoning) {
-    nextSession.reasoning = defaults.reasoning;
-  } else {
-    delete nextSession.reasoning;
-  }
-
-  return nextSession;
-};
-
 export const useSessionLifecycle = (options: {
   state: ChatSessionShellStateController;
   providerChooserState: ProviderChooserState;
@@ -177,35 +130,18 @@ export const useSessionLifecycle = (options: {
           );
 
           if (reusableSession) {
-            nextActiveSessionId = reusableSession.id;
-
-            const shouldRefreshReusableSession =
-              !sessionMatchesNewSessionDefaults(
-                reusableSession,
-                newSessionDefaults,
-              );
-
-            if (
-              prev.activeSessionId === reusableSession.id &&
-              !shouldRefreshReusableSession
-            ) {
-              return prev;
-            }
+            const replacement = createSession(newSessionDefaults);
+            nextActiveSessionId = replacement.id;
 
             return {
               ...prev,
-              activeSessionId: reusableSession.id,
-              sessions: shouldRefreshReusableSession
-                ? prev.sessions.map((session) =>
-                    session.id === reusableSession.id
-                      ? applyNewSessionDefaults(
-                          session,
-                          newSessionDefaults,
-                          Date.now(),
-                        )
-                      : session,
-                  )
-                : prev.sessions,
+              activeSessionId: replacement.id,
+              sessions: [
+                replacement,
+                ...prev.sessions.filter(
+                  (session) => session.id !== reusableSession.id,
+                ),
+              ],
             };
           }
 

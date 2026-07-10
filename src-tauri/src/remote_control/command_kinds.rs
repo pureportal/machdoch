@@ -203,11 +203,12 @@ mod tests {
     fn supported_reasoning_modes_match_remote_command_validation() {
         assert!(is_supported_reasoning(Some("default")));
         assert!(is_supported_reasoning(Some("xhigh")));
+        assert!(is_supported_reasoning(Some("ultra")));
         assert!(!is_supported_reasoning(None));
         assert!(!is_supported_reasoning(Some("maximum")));
         assert_eq!(
             supported_reasoning_modes_label(),
-            "default, none, minimal, low, medium, high, xhigh, max"
+            "default, none, minimal, low, medium, high, xhigh, max, ultra"
         );
     }
 }

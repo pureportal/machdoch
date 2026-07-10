@@ -10,6 +10,10 @@ import {
 import { type ReactElement, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RalphFlow, RalphFlowBlock } from "../../../core/ralph.js";
+import {
+  createImportedRalphStarterFlow,
+  getRalphStarterFlow,
+} from "../../../core/ralph-starter-flows.js";
 import { TooltipProvider } from "../components/ui/tooltip";
 import {
   cancelDesktopTask,
@@ -786,6 +790,116 @@ describe("RalphFlowEditor", () => {
     });
   });
 
+  it("automatically upgrades a selected clean starter with conflict-free changes", async () => {
+    const starter = getRalphStarterFlow("autonomous-code-improvement-loop")!;
+    const current = createImportedRalphStarterFlow(starter, {
+      id: "selected-starter",
+      alias: "selected-starter",
+      importedAt: "2026-07-10T00:00:00.000Z",
+    });
+    const summary = {
+      id: current.id,
+      alias: current.alias,
+      name: current.name,
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\selected-starter.json",
+      source: current.source,
+      blockCount: current.blocks.length,
+      edgeCount: current.edges.length,
+      variableCount: current.variables?.length ?? 0,
+    };
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [summary],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: summary.path,
+      flow: current,
+    });
+    renderRalphFlowEditor();
+
+    expect(await screen.findAllByText(current.name)).not.toHaveLength(0);
+    await waitFor(() => {
+      expect(showRalphFlow).toHaveBeenCalled();
+    });
+
+    const outdated = JSON.parse(JSON.stringify(current)) as RalphFlow;
+    if (outdated.source) {
+      outdated.source.version = Math.max(0, starter.version - 1);
+    }
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [{ ...summary, source: outdated.source }],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: summary.path,
+      flow: outdated,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Ralph flows" }));
+
+    await waitFor(() => {
+      expect(saveRalphFlow).toHaveBeenCalledWith(
+        expect.stringContaining("Project"),
+        expect.objectContaining({
+          expectedFingerprint: expect.any(String),
+          flow: expect.objectContaining({
+            id: "selected-starter",
+            source: expect.objectContaining({ version: starter.version }),
+          }),
+        }),
+      );
+    });
+  });
+
+  it("loads a selected flow once and does not overwrite edits with a duplicate detail request", async () => {
+    const flow = createRunnableFlow();
+    let resolveFlowDetails:
+      | ((result: Awaited<ReturnType<typeof showRalphFlow>>) => void)
+      | undefined;
+
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: flow.id,
+          name: flow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+          blockCount: flow.blocks.length,
+          edgeCount: flow.edges.length,
+          variableCount: 0,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFlowDetails = resolve;
+        }),
+    );
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    await waitFor(() => {
+      expect(showRalphFlow).toHaveBeenCalledTimes(1);
+    });
+    await act(async () => {
+      resolveFlowDetails?.({
+        path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+        flow,
+      });
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Show flow settings" }));
+    const nameInput = (await screen.findByLabelText("Flow name")) as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: "Edited after load" } });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(showRalphFlow).toHaveBeenCalledTimes(1);
+    expect(nameInput.value).toBe("Edited after load");
+  });
+
   it("creates an editable draft with condition route selectors", async () => {
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
@@ -897,6 +1011,31 @@ describe("RalphFlowEditor", () => {
         command: "npm run typecheck:ui",
       },
     });
+  });
+
+  it("preserves a dirty utility JSON draft while other utility fields change", async () => {
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    fireEvent.click(await screen.findByRole("button", { name: "New" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add Utility block" }));
+    fireEvent.change(await screen.findByLabelText("Utility type"), {
+      target: { value: "RUN_CHECK" },
+    });
+
+    const jsonDraft = (await screen.findByLabelText(
+      "Utility advanced JSON",
+    )) as HTMLTextAreaElement;
+    const dirtyJson = JSON.stringify(
+      { type: "RUN_CHECK", command: "dirty JSON command" },
+      null,
+      2,
+    );
+    fireEvent.change(jsonDraft, { target: { value: dirtyJson } });
+    fireEvent.change(await screen.findByLabelText("Utility command"), {
+      target: { value: "field editor command" },
+    });
+
+    expect(jsonDraft.value).toBe(dirtyJson);
   });
 
   it("adds fields to ASK_USER blocks from the inspector", async () => {
@@ -1537,6 +1676,71 @@ describe("RalphFlowEditor", () => {
     });
   });
 
+  it("keeps edits made while a save request is pending", async () => {
+    const flow = createRunnableFlow();
+    let resolveSave:
+      | ((result: Awaited<ReturnType<typeof saveRalphFlow>>) => void)
+      | undefined;
+
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: flow.id,
+          name: flow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+          blockCount: flow.blocks.length,
+          edgeCount: flow.edges.length,
+          variableCount: 0,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+      flow,
+    });
+    vi.mocked(saveRalphFlow).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Show flow settings" }));
+    const nameInput = (await screen.findByLabelText("Flow name")) as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: "First saved edit" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(saveRalphFlow).toHaveBeenCalledTimes(1);
+    });
+    const savedFlow = vi.mocked(saveRalphFlow).mock.calls[0]?.[1].flow;
+    if (!savedFlow) {
+      throw new Error("Expected the pending save to include a flow.");
+    }
+    fireEvent.change(nameInput, { target: { value: "Newer unsaved edit" } });
+
+    await act(async () => {
+      resolveSave?.({
+        path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+        flow: savedFlow,
+        validation: {
+          valid: true,
+          errors: [],
+          warnings: [],
+          errorIssues: [],
+          warningIssues: [],
+          variables: savedFlow.variables ?? [],
+        },
+      });
+    });
+
+    expect(nameInput.value).toBe("Newer unsaved edit");
+    expect(await screen.findByText("unsaved")).toBeTruthy();
+  });
+
   it("deletes saved Ralph flows from the flow list", async () => {
     const flowPath = "C:\\Project\\.machdoch\\ralph\\flows\\existing-flow.json";
     const confirmMock = vi.mocked(window.confirm);
@@ -1595,6 +1799,7 @@ describe("RalphFlowEditor", () => {
         expect.stringContaining("Project"),
         "existing-flow",
         "workspace",
+        expect.any(String),
       );
     });
     expect(confirmMock).toHaveBeenCalledWith(
@@ -1815,6 +2020,7 @@ describe("RalphFlowEditor", () => {
         expect.stringContaining("Project"),
         "existing-flow",
         "workspace",
+        expect.any(String),
       );
     });
     expect(confirmMock).toHaveBeenCalledWith(
@@ -2404,6 +2610,43 @@ describe("RalphFlowEditor", () => {
     expect(await screen.findByText("Inspecting the selected block internals.")).toBeTruthy();
   });
 
+  it("does not overlap active-run reconciliation polls", async () => {
+    let resolveActiveTasks:
+      | ((tasks: Awaited<ReturnType<typeof loadActiveDesktopTasks>>) => void)
+      | undefined;
+    vi.mocked(loadActiveDesktopTasks).mockImplementation(
+      () =>
+        new Promise<Awaited<ReturnType<typeof loadActiveDesktopTasks>>>((resolve) => {
+          resolveActiveTasks = resolve;
+        }),
+    );
+    vi.useFakeTimers();
+
+    try {
+      renderRalphFlowEditor("Refactor {{scope:path=src}}");
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(loadActiveDesktopTasks).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(15_000);
+      });
+      expect(loadActiveDesktopTasks).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        resolveActiveTasks?.([]);
+        await Promise.resolve();
+      });
+      act(() => {
+        vi.advanceTimersByTime(5_000);
+      });
+      expect(loadActiveDesktopTasks).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("recovers already running Ralph task ids into the flow list", async () => {
     const flow = createRunnableFlow();
     vi.mocked(loadActiveDesktopTasks).mockResolvedValue([
@@ -2603,6 +2846,121 @@ describe("RalphFlowEditor", () => {
       await screen.findByText("Input response submitted. Continuation is running."),
     ).toBeTruthy();
     expect(await screen.findByLabelText("Flow status: Running")).toBeTruthy();
+  });
+
+  it("preserves entered values when the same pending input request is refreshed", async () => {
+    const flow: RalphFlow = {
+      ...createRunnableFlow(),
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "configure",
+          type: "ASK_USER",
+          title: "Configure Template",
+          prompt: "Configure the run.",
+          submitLabel: "Continue run",
+          fields: [
+            {
+              id: "details",
+              label: "Details",
+              type: "text",
+              defaultValue: "Proceed",
+            },
+          ],
+        },
+        { id: "end", type: "END", title: "End", status: "success" },
+      ],
+      edges: [
+        {
+          id: "start-to-configure",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "configure",
+        },
+        {
+          id: "configure-to-end",
+          from: "configure",
+          fromOutput: "SUCCESS",
+          to: "end",
+        },
+      ],
+    };
+    const createPendingRun = (): Awaited<
+      ReturnType<typeof runRalphFlow>
+    >["run"] => ({
+      runId: "2026-06-26T12-00-00-000Z",
+      flow: flow.id,
+      status: "waiting-for-input",
+      summary: "Configure Template is waiting for input.",
+      missingVariables: [],
+      unknownVariables: [],
+      validation: {
+        valid: true,
+        errors: [],
+        warnings: [],
+        errorIssues: [],
+        warningIssues: [],
+        variables: [],
+      },
+      events: [],
+      blockResults: [],
+      pendingInput: {
+        id: "configure-request",
+        runId: "2026-06-26T12-00-00-000Z",
+        blockId: "configure",
+        blockType: "ASK_USER",
+        title: "Configure Template",
+        fields: [
+          {
+            id: "details",
+            label: "Details",
+            type: "text",
+            defaultValue: "Proceed",
+          },
+        ],
+        submitLabel: "Continue run",
+        createdAt: "2026-06-26T12:00:00.000Z",
+      },
+    });
+
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: flow.id,
+          name: flow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+          blockCount: flow.blocks.length,
+          edgeCount: flow.edges.length,
+          variableCount: 0,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+      flow,
+    });
+    vi.mocked(runRalphFlow).mockResolvedValue({ run: createPendingRun() });
+    vi.mocked(resumeRalphRun).mockResolvedValue({ run: createPendingRun() });
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    await screen.findByText(/Ready to run/u, undefined, { timeout: 5_000 });
+    const runButton = screen
+      .getAllByRole("button", { name: "Run Ralph flow" })
+      .find((button) => !button.hasAttribute("disabled"));
+    fireEvent.click(runButton as HTMLElement);
+
+    const detailsInput = (await screen.findByDisplayValue(
+      "Proceed",
+    )) as HTMLInputElement;
+    fireEvent.change(detailsInput, { target: { value: "Keep this response" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Continue run" }));
+
+    await waitFor(() => {
+      expect(resumeRalphRun).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByDisplayValue("Keep this response")).toBeTruthy();
   });
 
   it("keeps the run button label scoped to the selected flow", async () => {
@@ -2893,6 +3251,115 @@ describe("RalphFlowEditor", () => {
     expect(await screen.findByText("src/core")).toBeTruthy();
     expect(await screen.findByText("Model reasoning")).toBeTruthy();
     expect(await screen.findByText("Reviewing the start node context.")).toBeTruthy();
+  });
+
+  it("ignores a stale run detail response after another run is selected", async () => {
+    const flow = createRunnableFlow();
+    let resolveFirst:
+      | ((result: Awaited<ReturnType<typeof showRalphRunDetail>>) => void)
+      | undefined;
+    let resolveSecond:
+      | ((result: Awaited<ReturnType<typeof showRalphRunDetail>>) => void)
+      | undefined;
+    const createDetail = (
+      id: string,
+      summary: string,
+    ): Awaited<ReturnType<typeof showRalphRunDetail>> => ({
+      scope: "workspace",
+      path: `C:\\Project\\.machdoch\\ralph\\runs\\${id}\\run.json`,
+      record: {
+        schemaVersion: 1,
+        id,
+        createdAt: "2026-06-19T07:00:00.000Z",
+        flowId: flow.id,
+        flowName: flow.name,
+        status: "completed",
+        summary,
+        variableValues: {},
+        events: [],
+        blockResults: [],
+        validation: {
+          valid: true,
+          errors: [],
+          warnings: [],
+        },
+      },
+    });
+
+    vi.mocked(listRalphFlows).mockResolvedValue({
+      workspaceRoot: "C:\\Project",
+      flows: [
+        {
+          id: flow.id,
+          name: flow.name,
+          path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+          blockCount: flow.blocks.length,
+          edgeCount: flow.edges.length,
+          variableCount: 0,
+        },
+      ],
+    });
+    vi.mocked(showRalphFlow).mockResolvedValue({
+      path: "C:\\Project\\.machdoch\\ralph\\flows\\background-flow.json",
+      flow,
+    });
+    vi.mocked(listRalphRuns).mockResolvedValue({
+      runs: [
+        {
+          id: "run-first",
+          path: "C:\\Project\\.machdoch\\ralph\\runs\\run-first\\run.json",
+          createdAt: "2026-06-19T07:00:00.000Z",
+          flowId: flow.id,
+          flowName: flow.name,
+          status: "completed",
+          summary: "First history entry.",
+          blockCount: 1,
+          eventCount: 1,
+        },
+        {
+          id: "run-second",
+          path: "C:\\Project\\.machdoch\\ralph\\runs\\run-second\\run.json",
+          createdAt: "2026-06-19T07:01:00.000Z",
+          flowId: flow.id,
+          flowName: flow.name,
+          status: "completed",
+          summary: "Second history entry.",
+          blockCount: 1,
+          eventCount: 1,
+        },
+      ],
+    });
+    vi.mocked(showRalphRunDetail).mockImplementation((_workspaceRoot, runId) => {
+      return new Promise((resolve) => {
+        if (runId === "run-first") {
+          resolveFirst = resolve;
+        } else {
+          resolveSecond = resolve;
+        }
+      });
+    });
+
+    renderRalphFlowEditor("Refactor {{scope:path=src}}");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Run" })[0] as HTMLElement);
+    await screen.findByText("Ready to run.");
+    fireEvent.click(await screen.findByRole("button", { name: "History" }));
+    fireEvent.click(await screen.findByText("First history entry."));
+    fireEvent.click(await screen.findByText("Second history entry."));
+
+    await waitFor(() => {
+      expect(showRalphRunDetail).toHaveBeenCalledTimes(2);
+    });
+    await act(async () => {
+      resolveSecond?.(createDetail("run-second", "Second detail response."));
+    });
+    expect(await screen.findByText("Second detail response.")).toBeTruthy();
+
+    await act(async () => {
+      resolveFirst?.(createDetail("run-first", "First stale detail response."));
+    });
+    expect(screen.queryByText("First stale detail response.")).toBeNull();
+    expect(screen.getByText("Second detail response.")).toBeTruthy();
   });
 
   it("renders waiting-for-input run history entries", async () => {

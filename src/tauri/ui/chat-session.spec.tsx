@@ -185,6 +185,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
+
   try {
     act(() => {
       vi.runOnlyPendingTimers();
@@ -192,7 +194,6 @@ afterEach(() => {
   } catch {
     vi.useRealTimers();
   }
-  cleanup();
   window.localStorage.clear();
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -211,10 +212,28 @@ const selectWorkspace = async (): Promise<void> => {
 };
 
 const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
+const SHELL_STATE_SNAPSHOT_STORAGE_KEY =
+  "machdoch.desktop.shell-state-snapshot";
 const SESSION_RETENTION_DAY_MS = 24 * 60 * 60 * 1_000;
 
 const storeShellState = (state: ShellPersistedState): void => {
   window.localStorage.setItem(SHELL_STATE_STORAGE_KEY, JSON.stringify(state));
+};
+
+const readStoredShellStateJson = (): string | null => {
+  const raw =
+    window.localStorage.getItem(SHELL_STATE_SNAPSHOT_STORAGE_KEY) ??
+    window.localStorage.getItem(SHELL_STATE_STORAGE_KEY);
+
+  if (!raw) {
+    return null;
+  }
+
+  const parsed = JSON.parse(raw) as
+    | ShellPersistedState
+    | { state: ShellPersistedState };
+
+  return JSON.stringify("state" in parsed ? parsed.state : parsed);
 };
 
 const storeAutoReadVoiceShellState = (): void => {
@@ -241,8 +260,9 @@ const createMonitorSnapshot = (workAreaHeight: number, scaleFactor = 1) => ({
 
 const flushShellHydration = async (): Promise<void> => {
   await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let index = 0; index < 20; index += 1) {
+      await Promise.resolve();
+    }
   });
 };
 
@@ -598,7 +618,7 @@ describe("ChatSession component", () => {
 
     await waitFor(() => {
       const storedState = JSON.parse(
-        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "null",
+        readStoredShellStateJson() ?? "null",
       ) as ShellPersistedState | null;
 
       expect(storedState?.queuedSessionMessages[0]?.task).toBe(
@@ -618,6 +638,7 @@ describe("ChatSession component", () => {
       );
 
     render(<ChatSession />);
+    await flushShellHydration();
 
     const input = screen.getByPlaceholderText(
       /What should machdoch do next\?/i,
@@ -657,6 +678,7 @@ describe("ChatSession component", () => {
       );
 
     render(<ChatSession />);
+    await flushShellHydration();
 
     const input = screen.getByPlaceholderText(
       /What should machdoch do next\?/i,
@@ -706,6 +728,7 @@ describe("ChatSession component", () => {
         );
 
       const { container } = render(<ChatSession />);
+      await flushShellHydration();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -821,7 +844,7 @@ describe("ChatSession component", () => {
       });
       await waitFor(() => {
         const storedState = JSON.parse(
-          window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+          readStoredShellStateJson() ?? "{}",
         ) as ShellPersistedState;
 
         expect(storedState.activeSessionId).toBe(foregroundSession.id);
@@ -829,7 +852,7 @@ describe("ChatSession component", () => {
       await flushShellPersistence();
 
       const persistedBeforeExternalUpdate = JSON.parse(
-        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+        readStoredShellStateJson() ?? "{}",
       ) as ShellPersistedState;
 
       storeShellState({
@@ -861,7 +884,7 @@ describe("ChatSession component", () => {
 
       await waitFor(() => {
         const storedState = JSON.parse(
-          window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+          readStoredShellStateJson() ?? "{}",
         ) as ShellPersistedState;
         const updatedBackgroundSession = storedState.sessions.find(
           (session) => session.id === backgroundSession.id,
@@ -904,6 +927,7 @@ describe("ChatSession component", () => {
         );
 
       const { container } = render(<ChatSession />);
+      await flushShellHydration();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -973,6 +997,7 @@ describe("ChatSession component", () => {
         .mockRejectedValue(new Error("The task was cancelled."));
 
       const { container } = render(<ChatSession />);
+      await flushShellHydration();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -1239,6 +1264,7 @@ describe("ChatSession component", () => {
 
       const now = Date.now();
       const activeTaskId = "completed-recovered-task";
+      let taskIsActive = true;
       const recoveredSession = createSession({
         id: "completed-recovered-session",
         manualTitle: "Completed recovered session",
@@ -1280,8 +1306,7 @@ describe("ChatSession component", () => {
 
       const loadActiveDesktopTaskIdsSpy = vi
         .spyOn(runtime, "loadActiveDesktopTaskIds")
-        .mockResolvedValueOnce([activeTaskId])
-        .mockResolvedValue([]);
+        .mockImplementation(async () => (taskIsActive ? [activeTaskId] : []));
       const loadActiveDesktopTasksSpy = vi
         .spyOn(runtime, "loadActiveDesktopTasks")
         .mockResolvedValue([
@@ -1325,13 +1350,21 @@ describe("ChatSession component", () => {
 
       render(<ChatSession />);
       await flushShellHydration();
+      taskIsActive = false;
 
-      await act(async () => {
-        vi.advanceTimersByTime(15_000);
-        await Promise.resolve();
-        await Promise.resolve();
-        await Promise.resolve();
-      });
+      for (
+        let attempt = 0;
+        attempt < 8 && loadRecentDesktopTaskResultsSpy.mock.calls.length === 0;
+        attempt += 1
+      ) {
+        await act(async () => {
+          vi.advanceTimersByTime(15_000);
+
+          for (let index = 0; index < 20; index += 1) {
+            await Promise.resolve();
+          }
+        });
+      }
 
       expect(loadRecentDesktopTaskResultsSpy).toHaveBeenCalledWith([
         activeTaskId,
@@ -1462,7 +1495,7 @@ describe("ChatSession component", () => {
         );
 
       render(<ChatSession />);
-
+      await flushShellHydration();
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
       );
@@ -1578,6 +1611,7 @@ describe("ChatSession component", () => {
         );
 
       render(<ChatSession />);
+      await flushShellHydration();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -1676,6 +1710,7 @@ describe("ChatSession component", () => {
         );
 
       render(<ChatSession />);
+      await flushShellHydration();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -1769,6 +1804,7 @@ describe("ChatSession component", () => {
         );
 
       render(<ChatSession />);
+      await flushShellHydration();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -1862,6 +1898,7 @@ describe("ChatSession component", () => {
         );
 
       render(<ChatSession />);
+      await flushShellHydration();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -1933,7 +1970,7 @@ describe("ChatSession component", () => {
   );
 
   it(
-    "adds steering notes to the running task timeline without launching another task",
+    "queues steering as the next follow-up when live task steering is unavailable",
     async () => {
       const runDesktopTaskSpy = vi
         .spyOn(runtime, "runDesktopTask")
@@ -1943,7 +1980,7 @@ describe("ChatSession component", () => {
 
       const { container } = render(<ChatSession />);
 
-      const input = screen.getByPlaceholderText(
+      const input = await screen.findByPlaceholderText(
         /What should machdoch do next\?/i,
       );
 
@@ -1974,8 +2011,12 @@ describe("ChatSession component", () => {
       expect(userBubbles[0]?.textContent).not.toContain(
         "Use the new log file too",
       );
-      expect(screen.getByText("Steering note")).toBeDefined();
-      expect(screen.getByText("Use the new log file too")).toBeDefined();
+      expect(screen.getByText("Follow-up queued")).toBeDefined();
+      expect(
+        (screen.getByRole("textbox", {
+          name: "Queued message 1",
+        }) as HTMLTextAreaElement).value,
+      ).toBe("Use the new log file too");
 
       runDesktopTaskSpy.mockRestore();
     },
@@ -2008,6 +2049,7 @@ describe("ChatSession component", () => {
         .mockResolvedValue(undefined);
 
       render(<ChatSession />);
+      await flushShellHydration();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -2069,6 +2111,7 @@ describe("ChatSession component", () => {
         });
 
       render(<ChatSession />);
+      await flushShellHydration();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -2118,6 +2161,7 @@ describe("ChatSession component", () => {
       });
 
       render(<ChatSession />);
+      await flushShellHydration();
       await selectWorkspace();
 
       fireEvent.click(
@@ -2569,6 +2613,67 @@ describe("ChatSession component", () => {
       await waitFor(() => {
         expect(screen.queryByText("Enhancing prompt")).toBeNull();
         expect(input).toHaveProperty("value", originalPrompt);
+      });
+
+      cancelDesktopTaskSpy.mockRestore();
+      runDesktopTaskSpy.mockRestore();
+    },
+    SLOW_UI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "does not restore cancelled enhancement input over a newer composer draft",
+    async () => {
+      const originalPrompt = "scan setup before cancellation";
+      const replacementPrompt = "keep this newer composer input";
+      let rejectEnhancement: ((reason?: unknown) => void) | undefined;
+      const runDesktopTaskSpy = vi
+        .spyOn(runtime, "runDesktopTask")
+        .mockImplementation((_workspaceRoot, task) => {
+          if (String(task).includes("Enhance the user's Machdoch chat request")) {
+            return new Promise<DesktopTaskRunResponse>((_resolve, reject) => {
+              rejectEnhancement = reject;
+            });
+          }
+
+          return Promise.resolve({
+            execution: createMockExecutionFixture(
+              String(task),
+              "/mock/home/path",
+            ),
+          });
+        });
+      const cancelDesktopTaskSpy = vi
+        .spyOn(runtime, "cancelDesktopTask")
+        .mockResolvedValue(undefined);
+
+      render(<ChatSession />);
+      await flushShellHydration();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prompt enhancement: Off" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Choose Simple enhance" }),
+      );
+      const input = screen.getByPlaceholderText(
+        /What should machdoch do next\?/i,
+      ) as HTMLTextAreaElement;
+
+      fireEvent.change(input, { target: { value: originalPrompt } });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+      await waitFor(() => expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1));
+      expect(input.value).toBe("");
+
+      fireEvent.change(input, { target: { value: replacementPrompt } });
+      fireEvent.click(screen.getByRole("button", { name: "Cancel task" }));
+      await act(async () => {
+        rejectEnhancement?.(new Error("cancelled"));
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByText("Enhancing prompt")).toBeNull();
+        expect(input.value).toBe(replacementPrompt);
       });
 
       cancelDesktopTaskSpy.mockRestore();
@@ -3264,7 +3369,9 @@ describe("ChatSession component", () => {
       );
       expect(runDesktopTaskSpy.mock.calls[1]?.[1]).toBe(finalPrompt);
       expect(screen.getAllByText(enhancedPrompt).length).toBeGreaterThan(0);
-      expect(screen.queryByText(originalPrompt)).toBeNull();
+      await waitFor(() => {
+        expect(screen.queryByText(originalPrompt)).toBeNull();
+      });
 
       fireEvent.click(
         screen.getByRole("button", { name: "View original prompt" }),
@@ -3289,6 +3396,7 @@ describe("ChatSession component", () => {
     "selects a folder via Tauri dialog",
     async () => {
       render(<ChatSession />);
+      await flushShellHydration();
       await selectWorkspace();
 
       expect(
@@ -3302,6 +3410,7 @@ describe("ChatSession component", () => {
     "shows recent workspaces after a workspace has been selected",
     async () => {
       render(<ChatSession />);
+      await flushShellHydration();
       await selectWorkspace();
       await screen.findByRole("button", { name: "path" });
 
@@ -3364,7 +3473,7 @@ describe("ChatSession component", () => {
 
       await waitFor(() => {
         const storedState = JSON.parse(
-          window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+          readStoredShellStateJson() ?? "{}",
         ) as ShellPersistedState;
 
         expect(storedState.sessions[0]?.workspace).toBeNull();
@@ -3383,6 +3492,7 @@ describe("ChatSession component", () => {
         });
 
       render(<ChatSession />);
+      await flushShellHydration();
       await selectWorkspace();
       openMock.mockClear();
 
@@ -3456,7 +3566,7 @@ describe("ChatSession component", () => {
       });
       await waitFor(() => {
         const storedState = JSON.parse(
-          window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+          readStoredShellStateJson() ?? "{}",
         ) as ShellPersistedState;
 
         expect(storedState.recentWorkspaces).toEqual(["C:\\Docs\\Current"]);
@@ -3497,6 +3607,7 @@ describe("ChatSession component", () => {
     "shows preview-only execution state for unsupported tasks",
     async () => {
       render(<ChatSession />);
+      await flushShellHydration();
       await selectWorkspace();
 
       const input = screen.getByPlaceholderText(
@@ -3549,6 +3660,7 @@ describe("ChatSession component", () => {
         });
 
       render(<ChatSession />);
+      await flushShellHydration();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -3580,6 +3692,7 @@ describe("ChatSession component", () => {
     "shows executed task state for read-only inspection tasks",
     async () => {
       render(<ChatSession />);
+      await flushShellHydration();
       await selectWorkspace();
 
       const input = screen.getByPlaceholderText(
@@ -3668,6 +3781,7 @@ describe("ChatSession component", () => {
         .mockResolvedValue();
 
       render(<ChatSession />);
+      await flushShellHydration();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -3738,6 +3852,7 @@ describe("ChatSession component", () => {
         });
 
       render(<ChatSession />);
+      await flushShellHydration();
       runDesktopTaskSpy.mockClear();
 
       const input = screen.getByPlaceholderText(
@@ -4025,6 +4140,7 @@ describe("ChatSession component", () => {
         });
 
       render(<ChatSession />);
+      await flushShellHydration();
 
       fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
 
@@ -4071,6 +4187,7 @@ describe("ChatSession component", () => {
       .mockImplementation(async (settings) => settings);
 
     render(<ChatSession />);
+    await flushShellHydration();
 
     fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
     fireEvent.click(
@@ -4127,6 +4244,7 @@ describe("ChatSession component", () => {
       .mockImplementation(async (settings) => settings);
 
     render(<ChatSession />);
+    await flushShellHydration();
 
     fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
     fireEvent.click(
@@ -4171,6 +4289,7 @@ describe("ChatSession component", () => {
       .mockImplementation(async (settings) => settings);
 
     render(<ChatSession />);
+    await flushShellHydration();
 
     fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
     fireEvent.click(
@@ -4280,6 +4399,7 @@ describe("ChatSession component", () => {
         });
 
       render(<ChatSession />);
+      await flushShellHydration();
 
       fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
       fireEvent.click(await screen.findByRole("button", { name: /^Voice$/i }));
@@ -4828,6 +4948,7 @@ describe("ChatSession component", () => {
     "opens the selected provider API key portal from settings",
     async () => {
       render(<ChatSession />);
+      await flushShellHydration();
 
       fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
 
@@ -4968,6 +5089,7 @@ describe("ChatSession component", () => {
         });
 
       render(<ChatSession />);
+      await flushShellHydration();
 
       const input = screen.getByPlaceholderText(
         /What should machdoch do next\?/i,
@@ -4985,7 +5107,7 @@ describe("ChatSession component", () => {
       });
       await waitFor(() => {
         const storedState = JSON.parse(
-          window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+          readStoredShellStateJson() ?? "{}",
         ) as ShellPersistedState;
         const rememberedSession = storedState.sessions?.find((session) =>
           session.sessionMemory.some(
@@ -6039,6 +6161,7 @@ describe("ChatSession component", () => {
       });
 
     render(<ChatSession />);
+    await flushShellHydration();
 
     fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
 
@@ -6275,6 +6398,7 @@ describe("ChatSession component", () => {
       .mockResolvedValue();
 
     render(<ChatSession />);
+    await flushShellHydration();
 
     const input = screen.getByPlaceholderText(
       /What should machdoch do next\?/i,
@@ -6347,6 +6471,7 @@ describe("ChatSession component", () => {
       });
 
     render(<ChatSession />);
+    await flushShellHydration();
 
     fireEvent.pointerDown(screen.getByRole("button", { name: "Add context" }), {
       button: 0,
@@ -6423,6 +6548,65 @@ describe("ChatSession component", () => {
     runDesktopTaskSpy.mockRestore();
     openAttachedPathSpy.mockRestore();
     readAttachedFilePreviewSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
+  it("does not re-add a file selection that resolves after send", async () => {
+    let resolvePaths:
+      | ((value: Awaited<ReturnType<typeof runtime.resolveDroppedPaths>>) => void)
+      | undefined;
+    openMock.mockResolvedValue(["C:\\Docs\\late.md"]);
+    const resolveDroppedPathsSpy = vi
+      .spyOn(runtime, "resolveDroppedPaths")
+      .mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolvePaths = resolve;
+          }),
+      );
+    const runDesktopTaskSpy = vi
+      .spyOn(runtime, "runDesktopTask")
+      .mockImplementation(
+        () => new Promise<DesktopTaskRunResponse>(() => {}),
+      );
+
+    render(<ChatSession />);
+    await flushShellHydration();
+
+    const input = screen.getByPlaceholderText(
+      /What should machdoch do next\?/i,
+    ) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Send before file resolves" } });
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Add context" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Files/i }));
+
+    await waitFor(() => expect(resolvePaths).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(runDesktopTaskSpy).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      resolvePaths?.({
+        workspaceRoot: "C:\\Docs",
+        entries: [
+          {
+            path: "C:\\Docs\\late.md",
+            kind: "file",
+            name: "late.md",
+            parent: "C:\\Docs",
+          },
+        ],
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText("late.md")).toBeNull();
+    expect(input.value).toBe("");
+
+    resolveDroppedPathsSpy.mockRestore();
+    runDesktopTaskSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
   it("opens attached files directly from the main composer", async () => {
@@ -6553,6 +6737,7 @@ describe("ChatSession component", () => {
       });
 
     render(<ChatSession />);
+    await flushShellHydration();
 
     fireEvent.pointerDown(screen.getByRole("button", { name: "Add context" }), {
       button: 0,
@@ -6611,6 +6796,7 @@ describe("ChatSession component", () => {
       .mockResolvedValue("asset://screen.png");
 
     render(<ChatSession />);
+    await flushShellHydration();
 
     fireEvent.pointerDown(screen.getByRole("button", { name: "Add context" }), {
       button: 0,
@@ -6957,6 +7143,108 @@ describe("ChatSession component", () => {
     runDesktopTaskSpy.mockRestore();
   }, SLOW_UI_TEST_TIMEOUT_MS);
 
+  it("applies a context pack to the latest composer state after path resolution", async () => {
+    const baseState = createInitialShellState();
+    const existingAttachment = {
+      id: "existing-context",
+      path: "C:\\Project\\existing.md",
+      kind: "file" as const,
+      name: "existing.md",
+      parent: "C:\\Project",
+    };
+    const session = createSession({
+      id: "deferred-context-pack-session",
+      workspace: "C:\\Project",
+      draft: "Original composer text",
+      draftContextAttachments: [existingAttachment],
+    });
+    let resolvePaths:
+      | ((value: Awaited<ReturnType<typeof runtime.resolveDroppedPaths>>) => void)
+      | undefined;
+    const resolveDroppedPathsSpy = vi
+      .spyOn(runtime, "resolveDroppedPaths")
+      .mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolvePaths = resolve;
+          }),
+      );
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+      contextPacks: [
+        {
+          id: "deferred-review-pack",
+          workspace: "C:\\Project",
+          name: "Deferred Review",
+          instructions: "Use the resolved plan.",
+          prompt: "Review the latest composer request.",
+          contextAttachments: [
+            {
+              id: "pack-plan",
+              path: "C:\\Project\\plan.md",
+              kind: "file",
+              name: "plan.md",
+              parent: "C:\\Project",
+            },
+          ],
+          variables: [],
+          trigger: { phrases: [], pathPatterns: [], autoApply: false },
+          createdAt: 1,
+          updatedAt: 1,
+          useCount: 0,
+        },
+      ],
+    });
+
+    render(<ChatSession />);
+    await flushShellHydration();
+    fireEvent.click(screen.getByRole("button", { name: "Context packs" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Apply context pack Deferred Review",
+      }),
+    );
+
+    await waitFor(() => expect(resolveDroppedPathsSpy).toHaveBeenCalledTimes(1));
+    const input = screen.getByPlaceholderText(
+      /What should machdoch do next\?/i,
+    ) as HTMLTextAreaElement;
+
+    fireEvent.change(input, {
+      target: { value: "Composer text typed while paths resolve" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove existing.md" }));
+
+    await act(async () => {
+      resolvePaths?.({
+        workspaceRoot: "C:\\Project",
+        entries: [
+          {
+            path: "C:\\Project\\plan.md",
+            kind: "file",
+            name: "plan.md",
+            parent: "C:\\Project",
+          },
+        ],
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(input.value).toContain(
+        "## Current Task\nComposer text typed while paths resolve",
+      );
+      expect(screen.getByText("plan.md")).toBeDefined();
+    });
+    expect(input.value).not.toContain("Original composer text");
+    expect(screen.queryByText("existing.md")).toBeNull();
+
+    resolveDroppedPathsSpy.mockRestore();
+  }, SLOW_UI_TEST_TIMEOUT_MS);
+
   it("shows and applies global context packs in a workspace", async () => {
     const baseState = createInitialShellState();
     const session = createSession({
@@ -7102,7 +7390,7 @@ describe("ChatSession component", () => {
 
     await waitFor(() => {
       const storedState = JSON.parse(
-        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+        readStoredShellStateJson() ?? "{}",
       ) as ShellPersistedState;
       const savedPack = storedState.contextPacks.find(
         (pack) => pack.name === "Frontend QA",
@@ -7167,7 +7455,7 @@ describe("ChatSession component", () => {
 
     await waitFor(() => {
       const storedState = JSON.parse(
-        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+        readStoredShellStateJson() ?? "{}",
       ) as ShellPersistedState;
       const savedPack = storedState.contextPacks.find(
         (pack) => pack.name === "Global Release Audit",
@@ -7240,7 +7528,7 @@ describe("ChatSession component", () => {
 
     await waitFor(() => {
       const storedState = JSON.parse(
-        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+        readStoredShellStateJson() ?? "{}",
       ) as ShellPersistedState;
       const [editedPack] = storedState.contextPacks;
 
@@ -7382,7 +7670,7 @@ describe("ChatSession component", () => {
 
     await waitFor(() => {
       const storedState = JSON.parse(
-        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+        readStoredShellStateJson() ?? "{}",
       ) as ShellPersistedState;
       const savedPack = storedState.contextPacks.find(
         (pack) => pack.id === "frontend-qa-pack",
@@ -7450,7 +7738,7 @@ describe("ChatSession component", () => {
 
     await waitFor(() => {
       const storedState = JSON.parse(
-        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+        readStoredShellStateJson() ?? "{}",
       ) as ShellPersistedState;
       const savedPack = storedState.contextPacks.find(
         (pack) => pack.prompt === "Review {target_file} before release",
@@ -7534,7 +7822,7 @@ describe("ChatSession component", () => {
 
     await waitFor(() => {
       const storedState = JSON.parse(
-        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "{}",
+        readStoredShellStateJson() ?? "{}",
       ) as ShellPersistedState;
       const importedPack = storedState.contextPacks.find(
         (pack) => pack.name === "Imported Pack",
@@ -7632,6 +7920,7 @@ describe("ChatSession component", () => {
     });
 
     render(<ChatSession />);
+    await flushShellHydration();
 
     expect(screen.getByRole("button", { name: "Send message" })).toHaveProperty(
       "disabled",
@@ -7972,7 +8261,7 @@ describe("ChatSession component", () => {
 
     await waitFor(() => {
       const storedState = JSON.parse(
-        window.localStorage.getItem(SHELL_STATE_STORAGE_KEY) ?? "null",
+        readStoredShellStateJson() ?? "null",
       ) as ShellPersistedState | null;
       const storedQuickSession = storedState?.sessions.find(
         (session) => session.specialSession === QUICK_VOICE_SESSION_KIND,

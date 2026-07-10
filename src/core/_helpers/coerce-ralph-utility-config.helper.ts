@@ -337,6 +337,8 @@ export const coerceRalphUtilityConfig = (
   const maxAttempts =
     record.maxAttempts === null ? null : coerceFiniteNumber(record.maxAttempts);
   const maxTasks = coerceFiniteNumber(record.maxTasks);
+  const maxResults = coerceFiniteNumber(record.maxResults);
+  const maxDepth = coerceFiniteNumber(record.maxDepth);
   const encoding = coerceUtilityEncoding(record.encoding);
   const adapter = coerceUiAnalyzeAdapter(record.adapter);
   const server = coerceUiAnalyzeServer(record.server);
@@ -393,13 +395,12 @@ export const coerceRalphUtilityConfig = (
     ...(encoding ? { encoding } : {}),
     ...(pattern ? { pattern } : {}),
     ...(glob ? { glob } : {}),
-    ...(typeof record.maxResults === "number"
-      ? { maxResults: record.maxResults }
+    ...(maxResults !== undefined ? { maxResults } : {}),
+    ...(record.order === "oldest" || record.order === "newest"
+      ? { order: record.order }
       : {}),
     ...(maxTasks !== undefined ? { maxTasks } : {}),
-    ...(typeof record.maxDepth === "number"
-      ? { maxDepth: record.maxDepth }
-      : {}),
+    ...(maxDepth !== undefined ? { maxDepth } : {}),
     ...(typeof record.excludePaths === "string"
       ? { excludePaths: record.excludePaths }
       : {}),

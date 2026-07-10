@@ -252,7 +252,10 @@ const launchInstalledChromium = async (
     ? [requestedChannel]
     : getDefaultBrowserChannels();
   const errors: string[] = [];
-  const { chromium } = await import("playwright-core");
+  const playwrightModuleName: string = "playwright-core";
+  const { chromium } = (await import(
+    /* @vite-ignore */ playwrightModuleName
+  )) as typeof import("playwright-core");
 
   for (const channel of channels) {
     let browser: Browser | undefined;

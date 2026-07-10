@@ -85,6 +85,30 @@ describe("provider model catalog", () => {
     ]);
   });
 
+  it("title-cases named GPT-5.6 tiers from label-less live catalogs", () => {
+    const snapshot = {
+      generatedAt: 1,
+      providers: [
+        {
+          provider: "codex-cli",
+          source: "provider-probe",
+          available: true,
+          models: [
+            { id: "gpt-5.6-sol" },
+            { id: "gpt-5.6-terra" },
+            { id: "gpt-5.6-luna" },
+          ],
+        },
+      ],
+    } satisfies ProviderModelCatalogSnapshot;
+
+    expect(getCatalogModelsForProvider("codex-cli", snapshot)).toEqual([
+      { id: "gpt-5.6-sol", label: "GPT 5.6 Sol" },
+      { id: "gpt-5.6-terra", label: "GPT 5.6 Terra" },
+      { id: "gpt-5.6-luna", label: "GPT 5.6 Luna" },
+    ]);
+  });
+
   it("treats live provider catalogs as authoritative and filters OpenAI special-purpose models", () => {
     const snapshot = {
       generatedAt: 1,

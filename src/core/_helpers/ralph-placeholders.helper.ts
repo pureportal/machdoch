@@ -142,6 +142,8 @@ export const parseRalphPlaceholderContent = (
     "lastError",
     "lastData",
     "runLog",
+    "run:id",
+    "run:artifactRoot",
   ]);
 
   if (builtinNames.has(content)) {

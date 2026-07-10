@@ -1,7 +1,12 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadRuntimeConfig, saveWorkspaceDefaultModel } from "./config.ts";
+import {
+  loadRuntimeConfig,
+  saveWorkspaceDefaultMode,
+  saveWorkspaceDefaultModel,
+  saveWorkspaceRuntimeProvider,
+} from "./config.ts";
 
 const workspacesToClean: string[] = [];
 const originalEnvironment = new Map<string, string | undefined>();
@@ -361,5 +366,27 @@ describe("loadRuntimeConfig", () => {
 
     expect(configPath).toBe(join(workspaceRoot, ".machdoch", "config.json"));
     expect(config.model).toBe("gpt-5.4");
+  });
+});
+
+describe("workspace config transactions", () => {
+  it("preserves independent concurrent updates", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    await Promise.all([
+      saveWorkspaceDefaultModel(workspaceRoot, "gpt-5.5"),
+      saveWorkspaceRuntimeProvider(workspaceRoot, "openai"),
+      saveWorkspaceDefaultMode(workspaceRoot, "ask"),
+    ]);
+
+    const config = JSON.parse(
+      await readFile(join(workspaceRoot, ".machdoch", "config.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(config).toMatchObject({
+      model: "gpt-5.5",
+      provider: "openai",
+      defaultMode: "ask",
+    });
   });
 });

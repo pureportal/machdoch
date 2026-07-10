@@ -8,10 +8,10 @@ use std::{
 
 use serde_json::Value;
 
-use super::MAX_COMMAND_ENTRIES;
 use super::{
-    commands::create_command_record,
+    commands::{command_payload_hash, command_payloads_match, create_command_record},
     config::{ensure_remote_control_port_available, validate_remote_control_port},
+    now_millis,
     pairing::{create_secure_token, create_server_info},
     push_bounded,
     sanitize::sanitize_shell_snapshot,
@@ -20,9 +20,16 @@ use super::{
     state_store::persist_config_locked,
     status::create_status_locked,
     web::run_http_server,
-    RemoteControlCommandEvent, RemoteControlInner, RemoteControlShared, RemoteControlState,
-    RemoteControlStatus, RemoteShellSnapshot,
+    CompletedRemoteCommandReceipt, RemoteControlCommandEvent, RemoteControlInner,
+    RemoteControlShared, RemoteControlState, RemoteControlStatus, RemoteShellSnapshot,
 };
+use super::{MAX_COMMAND_ENTRIES, MAX_COMPLETED_COMMAND_ENTRIES, MAX_PENDING_COMMAND_ENTRIES};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RecordCommandOutcome {
+    Recorded,
+    Duplicate,
+}
 
 impl Default for RemoteControlState {
     fn default() -> Self {
@@ -146,11 +153,61 @@ impl RemoteControlState {
         record_progress_update(&self.shared, task_id, progress, timestamp);
     }
 
-    pub(super) fn record_command(&self, event: &RemoteControlCommandEvent) {
-        let Ok(mut inner) = self.shared.inner.lock() else {
-            return;
-        };
+    pub(super) fn record_command(
+        &self,
+        event: &RemoteControlCommandEvent,
+    ) -> Result<RecordCommandOutcome, String> {
+        self.ensure_config_loaded()?;
+        let mut inner = self
+            .shared
+            .inner
+            .lock()
+            .map_err(|_| "Unable to record the remote command.".to_string())?;
 
+        if let Some(existing) = inner
+            .pending_commands
+            .iter()
+            .find(|command| command.command_id == event.command_id)
+        {
+            return if command_payloads_match(existing, event) {
+                Ok(RecordCommandOutcome::Duplicate)
+            } else {
+                Err(
+                    "MACHDOCH_REMOTE_COMMAND_ID_CONFLICT:The command id was already used for a different command."
+                        .to_string(),
+                )
+            };
+        }
+
+        if let Some(existing) = inner
+            .completed_commands
+            .iter()
+            .find(|command| command.command_id == event.command_id)
+        {
+            return if existing.payload_hash == command_payload_hash(event) {
+                Ok(RecordCommandOutcome::Duplicate)
+            } else {
+                Err(
+                    "MACHDOCH_REMOTE_COMMAND_ID_CONFLICT:The command id was already used for a different command."
+                        .to_string(),
+                )
+            };
+        }
+
+        if inner.pending_commands.len() >= MAX_PENDING_COMMAND_ENTRIES {
+            return Err(
+                "Mission Control has too many unacknowledged commands; retry after they are processed."
+                    .to_string(),
+            );
+        }
+
+        inner.pending_commands.push_back(event.clone());
+        inner.config.pending_commands = inner.pending_commands.iter().cloned().collect();
+        if let Err(error) = persist_config_locked(&mut inner) {
+            inner.pending_commands.pop_back();
+            inner.config.pending_commands = inner.pending_commands.iter().cloned().collect();
+            return Err(error);
+        }
         push_bounded(
             &mut inner.commands,
             create_command_record(event),
@@ -158,6 +215,75 @@ impl RemoteControlState {
         );
         inner.event_id = inner.event_id.saturating_add(1);
         self.shared.updates.notify_all();
+        Ok(RecordCommandOutcome::Recorded)
+    }
+
+    pub(super) fn pending_commands(&self) -> Result<Vec<RemoteControlCommandEvent>, String> {
+        self.ensure_config_loaded()?;
+        let inner = self
+            .shared
+            .inner
+            .lock()
+            .map_err(|_| "Unable to inspect pending remote commands.".to_string())?;
+
+        Ok(inner.pending_commands.iter().cloned().collect())
+    }
+
+    pub(super) fn acknowledge_command(&self, command_id: &str) -> Result<bool, String> {
+        self.ensure_config_loaded()?;
+        let command_id = command_id.trim();
+
+        if command_id.is_empty() {
+            return Err("Expected a non-empty remote command id.".to_string());
+        }
+
+        let mut inner = self
+            .shared
+            .inner
+            .lock()
+            .map_err(|_| "Unable to acknowledge the remote command.".to_string())?;
+        let removed_index = inner
+            .pending_commands
+            .iter()
+            .position(|command| command.command_id == command_id);
+        let Some(removed_index) = removed_index else {
+            return Ok(false);
+        };
+        let Some(removed_command) = inner.pending_commands.remove(removed_index) else {
+            return Ok(false);
+        };
+        let previous_completed_commands = inner.completed_commands.clone();
+        inner
+            .completed_commands
+            .push_back(CompletedRemoteCommandReceipt {
+                command_id: removed_command.command_id.clone(),
+                payload_hash: command_payload_hash(&removed_command),
+                completed_at: now_millis(),
+            });
+        while inner.completed_commands.len() > MAX_COMPLETED_COMMAND_ENTRIES {
+            inner.completed_commands.pop_front();
+        }
+        inner.config.pending_commands = inner.pending_commands.iter().cloned().collect();
+        inner.config.completed_commands = inner.completed_commands.iter().cloned().collect();
+
+        if let Err(error) = persist_config_locked(&mut inner) {
+            inner
+                .pending_commands
+                .insert(removed_index, removed_command);
+            inner.completed_commands = previous_completed_commands;
+            inner.config.pending_commands = inner.pending_commands.iter().cloned().collect();
+            inner.config.completed_commands = inner.completed_commands.iter().cloned().collect();
+            return Err(error);
+        }
+
+        let removed = true;
+
+        if removed {
+            inner.event_id = inner.event_id.saturating_add(1);
+            self.shared.updates.notify_all();
+        }
+
+        Ok(removed)
     }
 
     pub(super) fn update_shell_snapshot(
@@ -172,6 +298,14 @@ impl RemoteControlState {
             .inner
             .lock()
             .map_err(|_| "Unable to update Mission Control shell snapshot.".to_string())?;
+
+        if inner
+            .shell
+            .as_ref()
+            .is_some_and(|current| current.captured_at > snapshot.captured_at)
+        {
+            return Ok(());
+        }
 
         inner.shell = Some(snapshot);
         inner.event_id = inner.event_id.saturating_add(1);

@@ -86,6 +86,7 @@ const renderPanel = (
     onRefreshFlows: vi.fn(),
     onSaveFlow: vi.fn(),
     onSelectFlow: vi.fn(),
+    onUpgradeStarterFlow: vi.fn(),
     selectedFlowKey: null,
     selectedScope: "workspace",
     warningCount: 0,
@@ -110,15 +111,41 @@ describe("RalphFlowLibraryPanel", () => {
   });
 
   it("reports starter updates before saved status", () => {
+    const onUpgradeStarterFlow = vi.fn();
     renderPanel({
       getStarterFlowUpdate: (flow) =>
         flow.id === userFlow.id
           ? { currentVersion: 1, latestVersion: 2, starterId: "starter" }
           : null,
+      onUpgradeStarterFlow,
     });
 
     expect(screen.getByLabelText("Flow status: Starter update")).toBeTruthy();
     expect(screen.getByText("Starter v2 available")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Upgrade User flow to starter version 2",
+      }),
+    );
+    expect(onUpgradeStarterFlow).toHaveBeenCalledWith(userFlow);
+  });
+
+  it("disables starter upgrades while another flow operation is running", () => {
+    renderPanel({
+      getStarterFlowUpdate: (flow) =>
+        flow.id === userFlow.id
+          ? { currentVersion: 1, latestVersion: 2, starterId: "starter" }
+          : null,
+      loading: true,
+    });
+
+    expect(
+      screen
+        .getByRole("button", {
+          name: "Upgrade User flow to starter version 2",
+        })
+        .hasAttribute("disabled"),
+    ).toBe(true);
   });
 
   it("uses draft validation state for the selected draft flow", () => {

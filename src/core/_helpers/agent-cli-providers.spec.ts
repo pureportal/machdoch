@@ -57,6 +57,44 @@ describe("resolveAgentCliProviderBinary", () => {
     });
   });
 
+  it("prefers the versioned Codex app binary over the legacy root binary", async () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+
+    const homeDirectory = await createTemporaryDirectory("codex-versioned-app");
+    const localAppData = join(homeDirectory, "AppData", "Local");
+    const codexBinDirectory = join(
+      localAppData,
+      "OpenAI",
+      "Codex",
+      "bin",
+    );
+    const legacyBinaryPath = join(codexBinDirectory, "codex.exe");
+    const versionedBinaryPath = join(
+      codexBinDirectory,
+      "current",
+      "codex.exe",
+    );
+
+    await createFile(legacyBinaryPath);
+    await createFile(versionedBinaryPath);
+
+    const resolution = resolveAgentCliProviderBinary("codex-cli", {
+      PATH: "",
+      PATHEXT: ".CMD;.EXE",
+      USERPROFILE: homeDirectory,
+      LOCALAPPDATA: localAppData,
+    });
+
+    expect(resolution).toMatchObject({
+      available: true,
+      executable: versionedBinaryPath,
+      provider: "codex-cli",
+      source: "path",
+    });
+  });
+
   it("checks the Windows app execution alias directory for Codex CLI", async () => {
     if (process.platform !== "win32") {
       return;

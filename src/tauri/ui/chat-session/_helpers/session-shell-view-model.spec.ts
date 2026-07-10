@@ -3,6 +3,7 @@ import {
   createInitialShellState,
   createSession,
 } from "../../chat-session.model.ts";
+import { createMockExecutionFixture } from "../../preview/fixtures";
 import { RUNNABLE_PROVIDER_ORDER } from "../../model-catalog";
 import type {
   RuntimeProviderAvailability,
@@ -283,6 +284,16 @@ describe("session shell view model helpers", () => {
               taskId: "task-1",
               role: "user" as const,
               content: "Write docs",
+            },
+            {
+              id: "message-2",
+              taskId: "task-1",
+              role: "agent" as const,
+              content: "Done",
+              source: {
+                kind: "execution" as const,
+                execution: createMockExecutionFixture("Write docs"),
+              },
             },
           ],
         }),

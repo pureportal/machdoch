@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   MAX_RALPH_RESULT_CHARS,
+  createRalphFlowFingerprint,
   createRalphRunLogger,
   deleteRalphFlow,
   getRalphFlowPath,
@@ -586,6 +587,38 @@ describe("Ralph flow storage", () => {
     });
   });
 
+  it("does not restore a revision over a concurrently changed flow", async () => {
+    const workspaceRoot = await createWorkspace();
+    const initial = createFlow({ name: "Initial flow" });
+    const edited = createFlow({ name: "Edited flow" });
+
+    await writeRalphFlow(workspaceRoot, initial);
+    await writeRalphFlow(workspaceRoot, edited, { createRevision: true });
+    const [revision] = await listRalphFlowRevisions(
+      workspaceRoot,
+      initial.id,
+    );
+    const editedFingerprint = createRalphFlowFingerprint(
+      await readRalphFlow(workspaceRoot, initial.id),
+    );
+    await writeRalphFlow(workspaceRoot, {
+      ...edited,
+      name: "Concurrent edit",
+    });
+
+    await expect(
+      restoreRalphFlowRevision(
+        workspaceRoot,
+        initial.id,
+        revision?.id ?? "",
+        { expectedFingerprint: editedFingerprint },
+      ),
+    ).rejects.toThrow("Ralph flow CAS conflict");
+    await expect(readRalphFlow(workspaceRoot, initial.id)).resolves.toMatchObject({
+      name: "Concurrent edit",
+    });
+  });
+
   it("lists partial run log directories and loads their logs without run records", async () => {
     const workspaceRoot = await createWorkspace();
     const flow = createFlow();
@@ -665,6 +698,100 @@ describe("Ralph flow storage", () => {
       path: paths.traceJsonlPath,
       content: expect.stringContaining("Detailed partial trace."),
     });
+  });
+
+  it("refuses logger setup over a live run without changing any artifacts", async () => {
+    const workspaceRoot = await createWorkspace();
+    const flow = createFlow();
+    const logger = await createRalphRunLogger(workspaceRoot, flow, {
+      runId: "live-run",
+    });
+    await logger.flush();
+    const paths = logger.paths;
+    if (!paths) {
+      throw new Error("Expected file-backed Ralph run logger paths.");
+    }
+    const now = new Date().toISOString();
+    await writeFile(paths.recordPath, `${JSON.stringify({
+      schemaVersion: 1,
+      id: paths.id,
+      createdAt: now,
+      flowId: flow.id,
+      flowName: flow.name,
+      status: "running",
+      summary: "Still running.",
+      variableValues: {},
+      events: [],
+      blockResults: [],
+      validation: { valid: true, errors: [], warnings: [] },
+      checkpoint: {
+        currentBlockId: "start",
+        transitions: 0,
+        variables: {},
+        resultsByBlock: {},
+        runLog: [],
+        blockResults: [],
+        events: [],
+        errorCounts: {},
+        repeatedFailures: {},
+        lease: {
+          ownerId: "foreign-owner",
+          generation: 1,
+          acquiredAt: now,
+          heartbeatAt: now,
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+      },
+    }, null, 2)}\n`, "utf8");
+    const artifactPaths = [
+      paths.recordPath,
+      paths.simpleJsonlPath,
+      paths.simpleMarkdownPath,
+      paths.traceJsonlPath,
+      join(paths.directory, "execution-history.jsonl"),
+    ];
+    const before = await Promise.all(artifactPaths.map((path) => readFile(path)));
+
+    await expect(createRalphRunLogger(workspaceRoot, flow, {
+      runId: "live-run",
+      paths,
+    })).rejects.toThrow("refused to overwrite active run");
+
+    const after = await Promise.all(artifactPaths.map((path) => readFile(path)));
+    expect(after).toEqual(before);
+  });
+
+  it("serializes alias creation and protects deletes with a flow fingerprint", async () => {
+    const workspaceRoot = await createWorkspace();
+    const base = createFlow({ alias: "shared-alias" });
+    const outcomes = await Promise.allSettled([
+      writeRalphFlow(workspaceRoot, { ...base, id: "flow-one", name: "Flow one" }),
+      writeRalphFlow(workspaceRoot, { ...base, id: "flow-two", name: "Flow two" }),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome.status === "rejected")).toHaveLength(1);
+    const [stored] = await listRalphFlows(workspaceRoot);
+    if (!stored) {
+      throw new Error("Expected one stored flow.");
+    }
+    const storedFlow = await readRalphFlow(workspaceRoot, stored.id);
+    const fingerprint = createRalphFlowFingerprint(storedFlow);
+    await writeRalphFlow(workspaceRoot, {
+      ...storedFlow,
+      description: "Changed after the delete view loaded.",
+    });
+
+    await expect(deleteRalphFlow(workspaceRoot, stored.id, {
+      expectedFingerprint: fingerprint,
+    })).rejects.toThrow("Ralph flow CAS conflict");
+    await expect(readRalphFlow(workspaceRoot, stored.id)).resolves.toMatchObject({
+      description: "Changed after the delete view loaded.",
+    });
+    const current = await readRalphFlow(workspaceRoot, stored.id);
+    await expect(deleteRalphFlow(workspaceRoot, stored.id, {
+      expectedFingerprint: createRalphFlowFingerprint(current),
+    })).resolves.toMatchObject({ id: stored.id });
   });
 });
 

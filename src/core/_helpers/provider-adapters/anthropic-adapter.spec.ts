@@ -53,6 +53,11 @@ describe("Anthropic Messages conformance", () => {
     ).toEqual({
       output_config: { effort: "max" },
     });
+    expect(
+      createAnthropicOutputConfig("claude-sonnet-5", "ultra"),
+    ).toEqual({
+      output_config: { effort: "max" },
+    });
     expect(createAnthropicOutputConfig("claude-haiku-4-5", "high")).toEqual(
       {},
     );

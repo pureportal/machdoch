@@ -12,13 +12,13 @@ import {
 } from "./get-ralph-block-outputs.helper.js";
 import { validateRalphFlowBlocks } from "./validate-ralph-flow-blocks.helper.js";
 import {
+  createRalphFlowGraphIndex,
   DEFAULT_RALPH_GROUP_MAX_DEPTH,
+  getRalphBlockIdsWithPathToEnd,
   getReachableRalphBlockIds,
-  getRalphBlockById,
   getRalphGroupDepthIssue,
   hasGraphCycle,
   hasOutgoingRalphEdge,
-  hasRalphPathToEnd,
 } from "./validate-ralph-flow-graph.helper.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type {
@@ -52,6 +52,7 @@ export const validateRalphFlow = (
   const errors: RalphValidationIssue[] = [];
   const warnings: RalphValidationIssue[] = [];
   const variables = discoverRalphFlowVariables(flow);
+  const graphIndex = createRalphFlowGraphIndex(flow);
 
   if (flow.schemaVersion !== RALPH_FLOW_SCHEMA_VERSION) {
     addRalphValidationIssue(
@@ -97,7 +98,82 @@ export const validateRalphFlow = (
     );
   }
 
-  if (flow.settings?.maxTransitions === undefined && hasGraphCycle(flow)) {
+  const autonomy = flow.settings?.autonomy;
+  if (typeof autonomy === "object" && autonomy !== null) {
+    if (
+      autonomy.maxRecoveryAttempts !== undefined &&
+      (!Number.isInteger(autonomy.maxRecoveryAttempts) ||
+        autonomy.maxRecoveryAttempts < 0)
+    ) {
+      addRalphValidationIssue(
+        errors,
+        "flow-autonomy-max-recovery-attempts-invalid",
+        "flow settings.autonomy.maxRecoveryAttempts must be an integer >= 0.",
+      );
+    }
+
+    const initialDelaySeconds = autonomy.backoff?.initialDelaySeconds;
+    const multiplier = autonomy.backoff?.multiplier;
+    const maxDelaySeconds = autonomy.backoff?.maxDelaySeconds;
+
+    if (
+      initialDelaySeconds !== undefined &&
+      (!Number.isFinite(initialDelaySeconds) || initialDelaySeconds < 0)
+    ) {
+      addRalphValidationIssue(
+        errors,
+        "flow-autonomy-initial-delay-invalid",
+        "flow settings.autonomy.backoff.initialDelaySeconds must be a finite number >= 0.",
+      );
+    }
+    if (
+      multiplier !== undefined &&
+      (!Number.isFinite(multiplier) || multiplier < 1)
+    ) {
+      addRalphValidationIssue(
+        errors,
+        "flow-autonomy-backoff-multiplier-invalid",
+        "flow settings.autonomy.backoff.multiplier must be a finite number >= 1.",
+      );
+    }
+    if (
+      maxDelaySeconds !== undefined &&
+      (!Number.isFinite(maxDelaySeconds) || maxDelaySeconds < 0)
+    ) {
+      addRalphValidationIssue(
+        errors,
+        "flow-autonomy-max-delay-invalid",
+        "flow settings.autonomy.backoff.maxDelaySeconds must be a finite number >= 0.",
+      );
+    }
+    if (
+      initialDelaySeconds !== undefined &&
+      maxDelaySeconds !== undefined &&
+      maxDelaySeconds < initialDelaySeconds
+    ) {
+      addRalphValidationIssue(
+        errors,
+        "flow-autonomy-delay-range-invalid",
+        "flow settings.autonomy.backoff.maxDelaySeconds must be >= initialDelaySeconds.",
+      );
+    }
+    if (
+      autonomy.enabled !== false &&
+      autonomy.recoveryExhaustion !== "block" &&
+      !autonomy.deferToBlockId?.trim()
+    ) {
+      addRalphValidationIssue(
+        warnings,
+        "flow-autonomy-defer-target-unset",
+        "flow settings.autonomy resolves recovery exhaustion to defer but has no executable deferToBlockId.",
+      );
+    }
+  }
+
+  if (
+    flow.settings?.maxTransitions === undefined &&
+    hasGraphCycle(flow, graphIndex)
+  ) {
     addRalphValidationIssue(
       warnings,
       "flow-cycle-without-cap",
@@ -129,7 +205,29 @@ export const validateRalphFlow = (
   };
   const { blockIds, startBlocks } = validateRalphFlowBlocks(blockValidationOptions);
 
-  const blocksById = getRalphBlockById(flow);
+  const blocksById = graphIndex.blocksById;
+
+  const deferToBlockId =
+    typeof autonomy === "object" && autonomy !== null
+      ? autonomy.deferToBlockId?.trim()
+      : undefined;
+  if (deferToBlockId) {
+    const deferTarget = blocksById.get(deferToBlockId);
+
+    if (!deferTarget) {
+      addRalphValidationIssue(
+        errors,
+        "flow-autonomy-defer-target-missing",
+        `flow settings.autonomy.deferToBlockId references missing block \`${deferToBlockId}\`.`,
+      );
+    } else if (!isExecutableRalphBlock(deferTarget)) {
+      addRalphValidationIssue(
+        errors,
+        "flow-autonomy-defer-target-not-executable",
+        `flow settings.autonomy.deferToBlockId must reference an executable block; \`${deferToBlockId}\` is ${deferTarget.type}.`,
+      );
+    }
+  }
 
   for (const block of flow.blocks) {
     if (block.parentGroupId) {
@@ -313,7 +411,7 @@ export const validateRalphFlow = (
         continue;
       }
 
-      if (!hasOutgoingRalphEdge(flow, block.id, output)) {
+      if (!hasOutgoingRalphEdge(flow, block.id, output, graphIndex)) {
         const code =
           block.type === "VALIDATOR" && output === "CONTINUE"
             ? "validator-continue-missing"
@@ -328,7 +426,8 @@ export const validateRalphFlow = (
     }
   }
 
-  const reachable = getReachableRalphBlockIds(flow);
+  const reachable = getReachableRalphBlockIds(flow, graphIndex);
+  const blockIdsWithPathToEnd = getRalphBlockIdsWithPathToEnd(flow, graphIndex);
   for (const block of flow.blocks) {
     if (isVisualRalphBlock(block)) {
       continue;
@@ -340,7 +439,10 @@ export const validateRalphFlow = (
       });
     }
 
-    if (isExecutableRalphBlock(block) && !hasRalphPathToEnd(flow, block.id)) {
+    if (
+      isExecutableRalphBlock(block) &&
+      !blockIdsWithPathToEnd.has(block.id)
+    ) {
       addRalphValidationIssue(
         warnings,
         "no-terminal-path",

@@ -118,6 +118,7 @@ export const QUICK_VOICE_WINDOW_LABEL = "quick-voice";
 export const TRAY_MENU_WINDOW_LABEL = "tray-menu";
 export const DESKTOP_SETTINGS_CHANGED_EVENT =
   "machdoch://desktop-settings-changed";
+export const USER_SETTINGS_CHANGED_EVENT = "machdoch://user-settings-changed";
 export const QUICK_VOICE_START_EVENT = "machdoch://quick-voice-start";
 export const QUICK_CHAT_DROP_EVENT = "machdoch://quick-chat-drop";
 
@@ -818,6 +819,8 @@ export interface SchedulerRalphFlowInput {
   params?: Record<string, string>;
   maxTransitions?: number;
   runLogScope?: "workspace" | "user";
+  executionProfile?: "unattended";
+  resumePolicy?: "never" | "recoverable";
   permissions: SchedulerRalphFlowPermissionsInput;
 }
 
@@ -827,6 +830,7 @@ export interface SchedulerRalphFlowSummary extends SchedulerRalphFlowInput {
 }
 
 export interface SchedulerCreateJobInput {
+  requestId?: string;
   name?: string;
   schedule?: SchedulerCreateScheduleInput;
   triggers?: SchedulerCreateTriggerInput[];
@@ -890,6 +894,40 @@ export interface SchedulerEnqueueSummary {
 export interface SchedulerRunDueResult {
   queued: SchedulerRunSummary[];
   runs: SchedulerRunSummary[];
+}
+
+export interface SchedulerRalphVariableReadinessSummary {
+  name: string;
+  type: string;
+  required: boolean;
+  default?: string;
+  value?: string;
+  source: "parameter" | "default" | "missing";
+}
+
+export interface SchedulerRalphReadinessResult {
+  ready: boolean;
+  flowId: string;
+  flowName?: string;
+  flowFingerprint?: string;
+  variables: SchedulerRalphVariableReadinessSummary[];
+  autoResolvedHumanBlockIds: string[];
+  blockingHumanBlockIds: string[];
+  errors: string[];
+  warnings: string[];
+}
+
+export interface SchedulerFleetRunResult {
+  recovered: number;
+  queued: number;
+  runs: number;
+  workspaces: Array<{
+    workspaceRoot: string;
+    recovered: number;
+    queued: number;
+    runs: number;
+    error?: string;
+  }>;
 }
 
 export interface SchedulerTriggerResult {
@@ -970,6 +1008,7 @@ export interface RalphCreateFlowInput {
   prompt: string;
   maxRounds?: number;
   existingFlow?: RalphFlow;
+  expectedFingerprint?: string;
   target?: "flow" | "prompt-block" | "refactor";
   generationMode?: "do-it" | "interview";
   mode?: RunMode;
@@ -1051,6 +1090,7 @@ export interface TaskInterviewResult {
 export interface RalphSaveFlowInput {
   flow: RalphFlow;
   scope?: RalphFlowScope;
+  expectedFingerprint?: string;
 }
 
 export interface RalphSaveFlowResult {
@@ -1065,6 +1105,7 @@ export interface RalphRestoreFlowRevisionInput {
   name: string;
   revision: string;
   scope?: RalphFlowScope;
+  expectedFingerprint?: string;
 }
 
 export interface RalphRestoreFlowRevisionResult {
@@ -1788,6 +1829,12 @@ const normalizeSchedulerRalphFlowSummary = (
     ...(value.runLogScope === "workspace" || value.runLogScope === "user"
       ? { runLogScope: value.runLogScope }
       : {}),
+    ...(value.executionProfile === "unattended"
+      ? { executionProfile: value.executionProfile }
+      : {}),
+    ...(value.resumePolicy === "never" || value.resumePolicy === "recoverable"
+      ? { resumePolicy: value.resumePolicy }
+      : {}),
     permissions,
   };
 };
@@ -2047,6 +2094,119 @@ const normalizeSchedulerRunDueResult = (
   return {
     queued,
     runs,
+  };
+};
+
+const normalizeSchedulerFleetRunResult = (
+  value: unknown,
+): SchedulerFleetRunResult | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.recovered !== "number" ||
+    typeof value.queued !== "number" ||
+    typeof value.runs !== "number" ||
+    !Array.isArray(value.workspaces)
+  ) {
+    return null;
+  }
+
+  const workspaces = value.workspaces.flatMap((entry) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.workspaceRoot !== "string" ||
+      typeof entry.recovered !== "number" ||
+      typeof entry.queued !== "number" ||
+      typeof entry.runs !== "number"
+    ) {
+      return [];
+    }
+
+    return [{
+      workspaceRoot: entry.workspaceRoot,
+      recovered: entry.recovered,
+      queued: entry.queued,
+      runs: entry.runs,
+      ...(typeof entry.error === "string" ? { error: entry.error } : {}),
+    }];
+  });
+
+  if (workspaces.length !== value.workspaces.length) {
+    return null;
+  }
+
+  return {
+    recovered: value.recovered,
+    queued: value.queued,
+    runs: value.runs,
+    workspaces,
+  };
+};
+
+const normalizeSchedulerRalphReadinessResult = (
+  value: unknown,
+): SchedulerRalphReadinessResult | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.ready !== "boolean" ||
+    typeof value.flowId !== "string" ||
+    !Array.isArray(value.variables) ||
+    !Array.isArray(value.autoResolvedHumanBlockIds) ||
+    !Array.isArray(value.blockingHumanBlockIds) ||
+    !Array.isArray(value.errors) ||
+    !Array.isArray(value.warnings)
+  ) {
+    return null;
+  }
+
+  const variables: SchedulerRalphVariableReadinessSummary[] =
+    value.variables.flatMap((entry): SchedulerRalphVariableReadinessSummary[] => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.name !== "string" ||
+      typeof entry.type !== "string" ||
+      typeof entry.required !== "boolean" ||
+      (entry.source !== "parameter" &&
+        entry.source !== "default" &&
+        entry.source !== "missing")
+    ) {
+      return [];
+    }
+
+    return [{
+      name: entry.name,
+      type: entry.type,
+      required: entry.required,
+      ...(typeof entry.default === "string" ? { default: entry.default } : {}),
+      ...(typeof entry.value === "string" ? { value: entry.value } : {}),
+      source: entry.source,
+    }];
+  });
+  const stringLists = [
+    value.autoResolvedHumanBlockIds,
+    value.blockingHumanBlockIds,
+    value.errors,
+    value.warnings,
+  ];
+
+  if (
+    variables.length !== value.variables.length ||
+    stringLists.some((entries) => entries.some((entry) => typeof entry !== "string"))
+  ) {
+    return null;
+  }
+
+  return {
+    ready: value.ready,
+    flowId: value.flowId,
+    ...(typeof value.flowName === "string" ? { flowName: value.flowName } : {}),
+    ...(typeof value.flowFingerprint === "string"
+      ? { flowFingerprint: value.flowFingerprint }
+      : {}),
+    variables,
+    autoResolvedHumanBlockIds: value.autoResolvedHumanBlockIds as string[],
+    blockingHumanBlockIds: value.blockingHumanBlockIds as string[],
+    errors: value.errors as string[],
+    warnings: value.warnings as string[],
   };
 };
 
@@ -2641,6 +2801,7 @@ const loadTauriValueOrFallback = async <T>(
   fallback: () => T,
   errorMessage: string,
   errorFallback: () => T = fallback,
+  throwOnTauriError = false,
 ): Promise<T> => {
   if (!canInvokeTauriCommands()) {
     return fallback();
@@ -2650,6 +2811,9 @@ const loadTauriValueOrFallback = async <T>(
     return await tauriCore.invoke<T>(command);
   } catch (error) {
     console.error(errorMessage, error);
+    if (throwOnTauriError) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
     return errorFallback();
   }
 };
@@ -2680,6 +2844,8 @@ export const loadUserProviderApiKeys =
       "get_user_provider_api_keys",
       () => ({}),
       "Failed to load user provider API keys",
+      () => ({}),
+      true,
     );
   };
 
@@ -2698,13 +2864,15 @@ export const saveUserProviderApiKey = async (
   }
 
   try {
-    return await tauriCore.invoke<RuntimeProviderAvailability[]>(
+    const result = await tauriCore.invoke<RuntimeProviderAvailability[]>(
       "save_user_provider_api_key",
       {
         provider,
         apiKey: normalizedApiKey,
       },
     );
+    await emitUserSettingsChanged("provider-keys");
+    return result;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -2738,6 +2906,8 @@ export const loadUserWebSearchSettings =
       "get_user_web_search_settings",
       createDefaultUserWebSearchSettings,
       "Failed to load user web-search settings",
+      createDefaultUserWebSearchSettings,
+      true,
     );
   };
 
@@ -2746,6 +2916,8 @@ export const loadUserVoiceSettings = async (): Promise<UserVoiceSettings> => {
     "get_user_voice_settings",
     createDefaultUserVoiceSettings,
     "Failed to load user voice settings",
+    createDefaultUserVoiceSettings,
+    true,
   );
 };
 
@@ -2755,6 +2927,8 @@ export const loadUserSpeechToTextSettings =
       "get_user_speech_to_text_settings",
       createDefaultUserSpeechToTextSettings,
       "Failed to load user speech-to-text settings",
+      createDefaultUserSpeechToTextSettings,
+      true,
     );
   };
 
@@ -2764,6 +2938,8 @@ export const loadUserDesktopSettings =
       "get_user_desktop_settings",
       createDefaultUserDesktopSettings,
       "Failed to load user desktop settings",
+      createDefaultUserDesktopSettings,
+      true,
     );
   };
 
@@ -2772,6 +2948,8 @@ export const loadUserMemorySettings = async (): Promise<UserMemorySettings> => {
     "get_user_memory_settings",
     createDefaultUserMemorySettings,
     "Failed to load user memory settings",
+    createDefaultUserMemorySettings,
+    true,
   );
 };
 
@@ -2797,7 +2975,7 @@ export const loadMcpConfigDocument = async (
       );
     } catch (error) {
       console.error("Failed to load workspace MCP config", error);
-      return createFallbackMcpConfigDocument("workspace", normalizedWorkspaceRoot);
+      throw error instanceof Error ? error : new Error(String(error));
     }
   }
 
@@ -2811,7 +2989,7 @@ export const loadMcpConfigDocument = async (
     );
   } catch (error) {
     console.error("Failed to load global MCP config", error);
-    return createFallbackMcpConfigDocument("user");
+    throw error instanceof Error ? error : new Error(String(error));
   }
 };
 
@@ -2821,6 +2999,8 @@ export const loadUserAgentLimitsSettings =
       "get_user_agent_limits_settings",
       createDefaultUserAgentLimitsSettings,
       "Failed to load user agent limit settings",
+      createDefaultUserAgentLimitsSettings,
+      true,
     );
   };
 
@@ -2830,6 +3010,8 @@ export const loadUserReviewModelSettings =
       "get_user_review_model_settings",
       createDefaultUserReviewModelSettings,
       "Failed to load user review-model settings",
+      createDefaultUserReviewModelSettings,
+      true,
     );
   };
 
@@ -2909,10 +3091,12 @@ export const saveUserGlobalMemoryEnabled = async (
   }
 
   try {
-    return await tauriCore.invoke<UserMemorySettings>(
+    const result = await tauriCore.invoke<UserMemorySettings>(
       "save_user_global_memory_enabled",
       { enabled },
     );
+    await emitUserSettingsChanged("memory");
+    return result;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -2922,6 +3106,7 @@ export const saveMcpConfigDocument = async (
   scope: McpConfigScope,
   raw: string,
   workspaceRoot?: string | null,
+  expectedRaw?: string,
 ): Promise<McpConfigDocument> => {
   const normalizedRaw = normalizeMcpConfigRaw(raw);
 
@@ -2941,13 +3126,16 @@ export const saveMcpConfigDocument = async (
     }
 
     try {
-      return await tauriCore.invoke<McpConfigDocument>(
+      const result = await tauriCore.invoke<McpConfigDocument>(
         "save_workspace_mcp_config_document",
         {
           workspaceRoot: normalizedWorkspaceRoot,
           raw: normalizedRaw,
+          ...(expectedRaw !== undefined ? { expectedRaw } : {}),
         },
       );
+      await emitUserSettingsChanged("mcp");
+      return result;
     } catch (error) {
       throw error instanceof Error ? error : new Error(String(error));
     }
@@ -2962,10 +3150,15 @@ export const saveMcpConfigDocument = async (
   }
 
   try {
-    return await tauriCore.invoke<McpConfigDocument>(
+    const result = await tauriCore.invoke<McpConfigDocument>(
       "save_user_mcp_config_document",
-      { raw: normalizedRaw },
+      {
+        raw: normalizedRaw,
+        ...(expectedRaw !== undefined ? { expectedRaw } : {}),
+      },
     );
+    await emitUserSettingsChanged("mcp");
+    return result;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -3009,10 +3202,12 @@ export const saveUserAgentLimitsSettings = async (
   }
 
   try {
-    return await tauriCore.invoke<UserAgentLimitsSettings>(
+    const result = await tauriCore.invoke<UserAgentLimitsSettings>(
       "save_user_agent_limits_settings",
       { settings: normalizedSettings },
     );
+    await emitUserSettingsChanged("agent-limits");
+    return result;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -3028,10 +3223,12 @@ export const saveUserReviewModelSettings = async (
   }
 
   try {
-    return await tauriCore.invoke<UserReviewModelSettings>(
+    const result = await tauriCore.invoke<UserReviewModelSettings>(
       "save_user_review_model_settings",
       { settings: normalizedSettings },
     );
+    await emitUserSettingsChanged("review-model");
+    return result;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -3168,13 +3365,15 @@ export const saveUserWebSearchApiKey = async (
   }
 
   try {
-    return await tauriCore.invoke<UserWebSearchSettings>(
+    const result = await tauriCore.invoke<UserWebSearchSettings>(
       "save_user_web_search_api_key",
       {
         provider,
         apiKey: normalizedApiKey,
       },
     );
+    await emitUserSettingsChanged("web-search");
+    return result;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -3191,12 +3390,14 @@ export const saveUserWebSearchActiveProvider = async (
   }
 
   try {
-    return await tauriCore.invoke<UserWebSearchSettings>(
+    const result = await tauriCore.invoke<UserWebSearchSettings>(
       "save_user_web_search_active_provider",
       {
         provider,
       },
     );
+    await emitUserSettingsChanged("web-search");
+    return result;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -3213,10 +3414,12 @@ export const saveUserVoiceActiveProvider = async (
   }
 
   try {
-    return await tauriCore.invoke<UserVoiceSettings>(
+    const result = await tauriCore.invoke<UserVoiceSettings>(
       "save_user_voice_active_provider",
       { provider },
     );
+    await emitUserSettingsChanged("voice");
+    return result;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -3233,10 +3436,12 @@ export const saveUserSpeechToTextActiveProvider = async (
   }
 
   try {
-    return await tauriCore.invoke<UserSpeechToTextSettings>(
+    const result = await tauriCore.invoke<UserSpeechToTextSettings>(
       "save_user_speech_to_text_active_provider",
       { provider },
     );
+    await emitUserSettingsChanged("speech-to-text");
+    return result;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -3255,10 +3460,12 @@ export const saveUserSpeechToTextInputDevice = async (
   }
 
   try {
-    return await tauriCore.invoke<UserSpeechToTextSettings>(
+    const result = await tauriCore.invoke<UserSpeechToTextSettings>(
       "save_user_speech_to_text_input_device",
       { inputDeviceId: normalizedInputDeviceId },
     );
+    await emitUserSettingsChanged("speech-to-text");
+    return result;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -4031,6 +4238,11 @@ const createRalphCreateArguments = (
   appendSchedulerOption(argumentsList, "--existing-flow-json", input.existingFlow
     ? JSON.stringify(input.existingFlow)
     : undefined);
+  appendSchedulerOption(
+    argumentsList,
+    "--expected-fingerprint",
+    input.expectedFingerprint,
+  );
   appendSchedulerOption(argumentsList, "--flow-target", input.target);
   appendSchedulerOption(argumentsList, "--generation-mode", input.generationMode);
   appendSchedulerOption(argumentsList, "--max-rounds", input.maxRounds);
@@ -4127,6 +4339,9 @@ const createRalphSaveArguments = (
     "save",
     flowId,
     ...(input.scope ? ["--scope", input.scope] : []),
+    ...(input.expectedFingerprint
+      ? ["--expected-fingerprint", input.expectedFingerprint]
+      : []),
     "--flow-json",
     JSON.stringify(input.flow),
   ];
@@ -4163,6 +4378,9 @@ const createRalphRestoreArguments = (
     "restore",
     flowId,
     ...(input.scope ? ["--scope", input.scope] : []),
+    ...(input.expectedFingerprint
+      ? ["--expected-fingerprint", input.expectedFingerprint]
+      : []),
     "--revision",
     revisionId,
   ];
@@ -4356,10 +4574,16 @@ export const deleteRalphFlow = async (
   workspaceRoot: string | null | undefined,
   name: string,
   scope?: RalphFlowScope,
+  expectedFingerprint?: string,
 ): Promise<RalphDeleteFlowResult> => {
   return runRalphCommand(
     workspaceRoot,
-    createRalphDeleteArguments(name, scope),
+    [
+      ...createRalphDeleteArguments(name, scope),
+      ...(expectedFingerprint
+        ? ["--expected-fingerprint", expectedFingerprint]
+        : []),
+    ],
     assertRalphDesktopAvailable,
   );
 };
@@ -4649,6 +4873,16 @@ const appendSchedulerRalphFlowTarget = (
     "--scheduled-ralph-max-transitions",
     ralphFlow.maxTransitions,
   );
+  appendSchedulerOption(
+    argumentsList,
+    "--scheduled-ralph-profile",
+    ralphFlow.executionProfile,
+  );
+  appendSchedulerOption(
+    argumentsList,
+    "--scheduled-ralph-resume-policy",
+    ralphFlow.resumePolicy,
+  );
 
   for (const [name, value] of Object.entries(ralphFlow.params ?? {})) {
     appendSchedulerOption(argumentsList, "--scheduled-ralph-param", `${name}=${value}`);
@@ -4697,6 +4931,11 @@ const createSchedulerCreateArguments = (
     throw new Error("Expected a Ralph flow target before creating a scheduled job.");
   }
 
+  appendSchedulerOption(
+    argumentsList,
+    "--request-id",
+    normalizeSchedulerCliString(input.requestId),
+  );
   appendSchedulerOption(argumentsList, "--name", normalizeSchedulerCliString(input.name));
   if (input.schedule) {
     appendSchedulerCreateSchedule(argumentsList, input.schedule);
@@ -4773,10 +5012,15 @@ export const createSchedulerJob = async (
 export const pauseSchedulerJob = async (
   workspaceRoot: string | null | undefined,
   jobId: string,
+  requestId?: string,
 ): Promise<SchedulerJobActionResult> => {
   return runSchedulerCommand(
     workspaceRoot,
-    ["pause", jobId],
+    [
+      "pause",
+      jobId,
+      ...(requestId ? ["--request-id", requestId] : []),
+    ],
     normalizeSchedulerJobActionResult,
     "The scheduler pause payload was invalid.",
     assertSchedulerDesktopAvailable,
@@ -4786,10 +5030,15 @@ export const pauseSchedulerJob = async (
 export const resumeSchedulerJob = async (
   workspaceRoot: string | null | undefined,
   jobId: string,
+  requestId?: string,
 ): Promise<SchedulerJobActionResult> => {
   return runSchedulerCommand(
     workspaceRoot,
-    ["resume", jobId],
+    [
+      "resume",
+      jobId,
+      ...(requestId ? ["--request-id", requestId] : []),
+    ],
     normalizeSchedulerJobActionResult,
     "The scheduler resume payload was invalid.",
     assertSchedulerDesktopAvailable,
@@ -4799,10 +5048,15 @@ export const resumeSchedulerJob = async (
 export const deleteSchedulerJob = async (
   workspaceRoot: string | null | undefined,
   jobId: string,
+  requestId?: string,
 ): Promise<SchedulerJobActionResult> => {
   return runSchedulerCommand(
     workspaceRoot,
-    ["delete", jobId],
+    [
+      "delete",
+      jobId,
+      ...(requestId ? ["--request-id", requestId] : []),
+    ],
     normalizeSchedulerJobActionResult,
     "The scheduler delete payload was invalid.",
     assertSchedulerDesktopAvailable,
@@ -4839,13 +5093,148 @@ export const runDueSchedulerJobs = async (
   );
 };
 
+export const subscribeToUserSettingsChanged = async (
+  onChange: (kind: UserSettingsChangeKind) => void,
+): Promise<() => void> => {
+  if (!canEmitTauriWindowEvents()) {
+    return () => {};
+  }
+
+  try {
+    return await listen<{ kind: UserSettingsChangeKind }>(
+      USER_SETTINGS_CHANGED_EVENT,
+      (event) => {
+        onChange(event.payload.kind);
+      },
+    );
+  } catch (error) {
+    console.error("Failed to subscribe to user settings updates", error);
+    return () => {};
+  }
+};
+
+export type UserSettingsChangeKind =
+  | "provider-keys"
+  | "web-search"
+  | "voice"
+  | "speech-to-text"
+  | "memory"
+  | "agent-limits"
+  | "review-model"
+  | "mcp";
+
+const emitUserSettingsChanged = async (
+  kind: UserSettingsChangeKind,
+): Promise<void> => {
+  if (!canEmitTauriWindowEvents()) {
+    return;
+  }
+
+  try {
+    await getCurrentWindow().emit(USER_SETTINGS_CHANGED_EVENT, {
+      kind,
+      updatedAt: Date.now(),
+    });
+  } catch (error) {
+    console.error("Failed to broadcast user settings update", error);
+  }
+};
+
+export const inspectSchedulerRalphFlow = async (
+  workspaceRoot: string | null | undefined,
+  ralphFlow: SchedulerRalphFlowInput,
+): Promise<SchedulerRalphReadinessResult> => {
+  const argumentsList = ["inspect-ralph", ralphFlow.id];
+  appendSchedulerRalphFlowTarget(argumentsList, ralphFlow);
+
+  return runSchedulerCommand(
+    workspaceRoot,
+    argumentsList,
+    normalizeSchedulerRalphReadinessResult,
+    "The scheduled Ralph readiness payload was invalid.",
+    () => ({
+      ready: false,
+      flowId: ralphFlow.id,
+      variables: [],
+      autoResolvedHumanBlockIds: [],
+      blockingHumanBlockIds: [],
+      errors: ["Scheduled Ralph readiness is only available in the desktop app."],
+      warnings: [],
+    }),
+  );
+};
+
+let schedulerServiceStartPromise: Promise<number | null> | null = null;
+
+export const ensurePersistentSchedulerService = async (
+  workspaceRoot: string | null | undefined,
+): Promise<number | null> => {
+  if (!canInvokeTauriCommands()) {
+    return null;
+  }
+
+  if (schedulerServiceStartPromise) {
+    return schedulerServiceStartPromise;
+  }
+
+  const startPromise = tauriCore.invoke<number>(
+    "start_scheduler_service",
+    {
+      request: {
+        workspaceRoot: normalizeSchedulerCommandWorkspace(workspaceRoot),
+        arguments: ["service-all", "--service-poll-ms", "30000"],
+      },
+    },
+  ).catch((error) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  });
+  schedulerServiceStartPromise = startPromise;
+
+  try {
+    return await startPromise;
+  } finally {
+    if (schedulerServiceStartPromise === startPromise) {
+      schedulerServiceStartPromise = null;
+    }
+  }
+};
+
+export const runAllDueSchedulerJobs = async (
+  workspaceRoot: string | null | undefined,
+): Promise<SchedulerFleetRunResult> => {
+  return runSchedulerCommand(
+    workspaceRoot,
+    ["run-all-due"],
+    normalizeSchedulerFleetRunResult,
+    "The scheduler fleet payload was invalid.",
+    () => ({ recovered: 0, queued: 0, runs: 0, workspaces: [] }),
+  );
+};
+
+export const pollAllSchedulerWorkspaces = async (
+  workspaceRoot: string | null | undefined,
+): Promise<SchedulerFleetRunResult> => {
+  return runSchedulerCommand(
+    workspaceRoot,
+    ["poll-all"],
+    normalizeSchedulerFleetRunResult,
+    "The scheduler fleet poll payload was invalid.",
+    () => ({ recovered: 0, queued: 0, runs: 0, workspaces: [] }),
+  );
+};
+
 export const triggerSchedulerJob = async (
   workspaceRoot: string | null | undefined,
   jobId: string,
+  idempotencyKey?: string,
 ): Promise<SchedulerTriggerResult> => {
   return runSchedulerCommand(
     workspaceRoot,
-    ["trigger", jobId],
+    [
+      "trigger",
+      jobId,
+      ...(idempotencyKey ? ["--request-id", idempotencyKey] : []),
+    ],
     normalizeSchedulerTriggerResult,
     "The scheduler trigger payload was invalid.",
     assertSchedulerDesktopAvailable,
@@ -4855,10 +5244,15 @@ export const triggerSchedulerJob = async (
 export const retrySchedulerRun = async (
   workspaceRoot: string | null | undefined,
   runId: string,
+  idempotencyKey?: string,
 ): Promise<SchedulerRetryResult> => {
   return runSchedulerCommand(
     workspaceRoot,
-    ["retry", runId],
+    [
+      "retry",
+      runId,
+      ...(idempotencyKey ? ["--request-id", idempotencyKey] : []),
+    ],
     normalizeSchedulerRetryResult,
     "The scheduler retry payload was invalid.",
     assertSchedulerDesktopAvailable,
@@ -4868,10 +5262,15 @@ export const retrySchedulerRun = async (
 export const cancelSchedulerRun = async (
   workspaceRoot: string | null | undefined,
   runId: string,
+  idempotencyKey?: string,
 ): Promise<SchedulerRunActionResult> => {
   return runSchedulerCommand(
     workspaceRoot,
-    ["cancel", runId],
+    [
+      "cancel",
+      runId,
+      ...(idempotencyKey ? ["--request-id", idempotencyKey] : []),
+    ],
     normalizeSchedulerRunActionResult,
     "The scheduler cancel payload was invalid.",
     assertSchedulerDesktopAvailable,
@@ -4924,6 +5323,7 @@ export const runDesktopTask = async (
     model?: string;
     provider?: RuntimeProvider;
     reasoning?: RuntimeSnapshot["reasoning"];
+    sessionId?: string;
     taskId?: string;
   } = {},
 ): Promise<DesktopTaskRunResponse> => {
@@ -4942,6 +5342,7 @@ export const runDesktopTask = async (
   const normalizedProvider = context.provider;
   const normalizedReasoning = context.reasoning;
   const normalizedTaskId = context.taskId?.trim();
+  const normalizedSessionId = context.sessionId?.trim();
 
   if (!canInvokeTauriCommands()) {
     return {
@@ -4961,6 +5362,7 @@ export const runDesktopTask = async (
         task: normalizedTask,
         ...(normalizedMode ? { mode: normalizedMode } : {}),
         ...(normalizedTaskId ? { taskId: normalizedTaskId } : {}),
+        ...(normalizedSessionId ? { sessionId: normalizedSessionId } : {}),
         ...(normalizedProvider ? { provider: normalizedProvider } : {}),
         ...(normalizedModel ? { model: normalizedModel } : {}),
         ...(normalizedReasoning ? { reasoning: normalizedReasoning } : {}),

@@ -9,7 +9,7 @@ import {
   Monitor,
   Sparkles,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { DEFAULT_USER_DESKTOP_SETTINGS } from "../../../../core/runtime-contract.generated.js";
 import type { RunMode } from "../../../../core/runtime-contract.generated.js";
 import type { ChatSessionRecord } from "../../chat-session.model";
@@ -39,6 +39,7 @@ import type {
   ProviderSetupControls,
   VoiceSettingsControls,
 } from "./settings-dialog-panels/types";
+import { rebaseDirtySettingsDraft } from "./settings-dialog-panels/shared";
 
 type OnboardingStepId = "connect" | "workspace" | "permissions" | "voice";
 
@@ -136,10 +137,19 @@ export const OnboardingWizard = ({
     useState<ProviderModelCatalogSnapshot | null>(null);
   const [desktopDraft, setDesktopDraft] =
     useState<UserDesktopSettings>(desktopSetup.settings);
+  const lastExternalDesktopSettingsRef = useRef(desktopSetup.settings);
   const [savingShortcut, setSavingShortcut] = useState(false);
 
   useEffect(() => {
-    setDesktopDraft(desktopSetup.settings);
+    const previousSettings = lastExternalDesktopSettingsRef.current;
+    lastExternalDesktopSettingsRef.current = desktopSetup.settings;
+    setDesktopDraft((currentDraft) =>
+      rebaseDirtySettingsDraft(
+        currentDraft,
+        previousSettings,
+        desktopSetup.settings,
+      ),
+    );
   }, [desktopSetup.settings]);
 
   useEffect(() => {

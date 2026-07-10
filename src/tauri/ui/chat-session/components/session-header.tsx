@@ -1,5 +1,5 @@
 import { GitBranch, PencilLine, Pin, Trash2 } from "lucide-react";
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import type { ChatSessionRecord } from "../../chat-session.model";
@@ -52,10 +52,25 @@ export const SessionHeader = ({
   onDeleteSession,
 }: SessionHeaderProps): JSX.Element => {
   const [tagDraft, setTagDraft] = useState("");
+  const tagSessionIdRef = useRef(activeSession.id);
+  const lastExternalTagsRef = useRef(activeSession.tags.join(", "));
   const isPinned = typeof activeSession.pinnedAt === "number";
 
   useEffect(() => {
-    setTagDraft(activeSession.tags.join(", "));
+    const nextExternalTags = activeSession.tags.join(", ");
+
+    if (tagSessionIdRef.current !== activeSession.id) {
+      tagSessionIdRef.current = activeSession.id;
+      lastExternalTagsRef.current = nextExternalTags;
+      setTagDraft(nextExternalTags);
+      return;
+    }
+
+    const previousExternalTags = lastExternalTagsRef.current;
+    lastExternalTagsRef.current = nextExternalTags;
+    setTagDraft((currentDraft) =>
+      currentDraft === previousExternalTags ? nextExternalTags : currentDraft,
+    );
   }, [activeSession.id, activeSession.tags]);
 
   const commitTags = (): void => {

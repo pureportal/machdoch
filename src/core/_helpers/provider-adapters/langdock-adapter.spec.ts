@@ -93,6 +93,12 @@ describe("Langdock Chat Completions conformance", () => {
     expect(createLangdockReasoningConfig("gemini-2.5-pro", "max")).toEqual({
       reasoning_effort: "high",
     });
+    expect(createLangdockReasoningConfig("gpt-5.6-sol", "max")).toEqual({
+      reasoning_effort: "max",
+    });
+    expect(createLangdockReasoningConfig("gpt-5.6-sol", "ultra")).toEqual({
+      reasoning_effort: "max",
+    });
   });
 
   it("sends start and continuation turns using Chat Completions messages", async () => {

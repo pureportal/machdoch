@@ -78,6 +78,27 @@ afterEach(() => {
 });
 
 describe("useNewestMessageScroll", () => {
+  it("unpins after a deliberate small upward scroll", async () => {
+    const metrics: ScrollMetrics = {
+      clientHeight: 500,
+      scrollHeight: 1_000,
+    };
+
+    render(<ScrollHarness contentKey="initial" metrics={metrics} />);
+    const viewport = screen.getByTestId("scroll-viewport");
+
+    await waitFor(() => expect(viewport.scrollTop).toBe(500));
+
+    act(() => {
+      viewport.scrollTop = 480;
+    });
+    fireEvent.scroll(viewport);
+
+    expect(
+      screen.getByRole("button", { name: "Scroll to newest message" }),
+    ).toBeDefined();
+  });
+
   it("shows a newest-message action after the user scrolls away and jumps back on click", async () => {
     const metrics: ScrollMetrics = {
       clientHeight: 500,

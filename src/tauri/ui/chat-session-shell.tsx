@@ -9,8 +9,8 @@ import { ConversationFeed } from "./chat-session/components/conversation-feed";
 import { AttachmentImagePreviewDialog } from "./chat-session/components/attachment-image-preview-dialog";
 import { ChatInterviewDialog } from "./chat-session/components/chat-interview-dialog";
 import { ChatInputNeededDialog } from "./chat-session/components/chat-input-needed-dialog";
-import { FilePreviewDialog } from "./chat-session/components/file-preview-dialog";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
+import { FilePreviewDialogFallback } from "./chat-session/components/file-preview-dialog-fallback";
 import { MissionControlPanel } from "./chat-session/components/mission-control-panel";
 import { OnboardingWizard } from "./chat-session/components/onboarding-wizard";
 import { ProviderEmptyState } from "./chat-session/components/provider-empty-state";
@@ -21,6 +21,7 @@ import { SessionHeader } from "./chat-session/components/session-header";
 import { SessionsSidebar } from "./chat-session/components/sessions-sidebar";
 import { ShellTitlebar } from "./chat-session/components/shell-titlebar";
 import { Dialog } from "./components/ui/dialog";
+import { Button } from "./components/ui/button";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { VoiceInputOverlay } from "./components/voice-input-overlay";
 import {
@@ -33,11 +34,11 @@ import {
   type MainAppId,
 } from "./lib/shell-store";
 import { cn } from "./lib/utils";
-import { McpMarketplace } from "./marketplace/mcp-marketplace";
-import { RalphApp } from "./ralph/ralph-app";
 import { useRalphActivity } from "./ralph/use-ralph-activity";
 import {
-  runDueSchedulerJobs,
+  ensurePersistentSchedulerService,
+  listSchedulerJobs,
+  pollAllSchedulerWorkspaces,
   syncScheduledPrompts,
 } from "./runtime";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -49,6 +50,54 @@ const SettingsDialog = lazy(async () => {
     default: module.SettingsDialog,
   };
 });
+
+const FilePreviewDialog = lazy(async () => {
+  const module = await import("./chat-session/components/file-preview-dialog");
+
+  return { default: module.FilePreviewDialog };
+});
+
+const McpMarketplace = lazy(async () => {
+  const module = await import("./marketplace/mcp-marketplace");
+
+  return { default: module.McpMarketplace };
+});
+
+const RalphApp = lazy(async () => {
+  const module = await import("./ralph/ralph-app");
+
+  return { default: module.RalphApp };
+});
+
+const appLoadingFallback = (
+  <div
+    role="status"
+    className="grid h-full min-h-0 flex-1 place-items-center bg-slate-950 text-sm text-slate-500"
+  >
+    Loading...
+  </div>
+);
+
+const retryAppShellStorageOperation = async <T,>(
+  operation: () => Promise<T>,
+): Promise<T> => {
+  const delays = [0, 100, 400] as const;
+  let lastError: unknown;
+
+  for (const delay of delays) {
+    if (delay > 0) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, delay));
+    }
+
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+};
 
 const isTestEnvironment = (): boolean => {
   return typeof process !== "undefined" && process.env.NODE_ENV === "test";
@@ -78,11 +127,17 @@ export const ChatSession = (): JSX.Element => {
     DEFAULT_APP_SHELL_STATE,
   );
   const [appShellLoaded, setAppShellLoaded] = useState(false);
+  const [appShellLoadError, setAppShellLoadError] = useState<string | null>(null);
+  const [appShellLoadAttempt, setAppShellLoadAttempt] = useState(0);
   const [chatCompletedSinceView, setChatCompletedSinceView] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
   const [ralphMounted, setRalphMounted] = useState(false);
   const previousChatRunningRef = useRef(false);
+  const appShellInteractionRevisionRef = useRef(0);
+  const appShellSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const appShellStateRef = useRef(appShellState);
+  appShellStateRef.current = appShellState;
   const activeApp = appShellState.activeApp;
   const ralphActivity = useRalphActivity(activeApp);
 
@@ -91,16 +146,26 @@ export const ChatSession = (): JSX.Element => {
 
   useEffect(() => {
     let cancelled = false;
+    const interactionRevision = appShellInteractionRevisionRef.current;
+    setAppShellLoadError(null);
 
-    void loadAppShellState()
+    void retryAppShellStorageOperation(loadAppShellState)
       .then((state) => {
-        if (!cancelled) {
+        if (
+          !cancelled &&
+          appShellInteractionRevisionRef.current === interactionRevision
+        ) {
+          appShellStateRef.current = state;
           setAppShellState(state);
+          setAppShellLoaded(true);
         }
       })
-      .finally(() => {
+      .catch((error: unknown) => {
         if (!cancelled) {
-          setAppShellLoaded(true);
+          console.error("Failed to load app shell state", error);
+          setAppShellLoadError(
+            "The saved app layout could not be loaded. Retry before continuing so it is not overwritten.",
+          );
         }
       });
 
@@ -114,10 +179,31 @@ export const ChatSession = (): JSX.Element => {
       return;
     }
 
-    void saveAppShellState(appShellState);
+    const save = appShellSaveQueueRef.current
+      .catch(() => undefined)
+      .then(() =>
+        retryAppShellStorageOperation(() => saveAppShellState(appShellState)),
+      )
+      .catch((error: unknown) => {
+        console.error("Failed to persist app shell state", error);
+      });
+    appShellSaveQueueRef.current = save;
   }, [appShellLoaded, appShellState]);
 
+  useEffect(() => {
+    return () => {
+      if (appShellLoaded) {
+        void retryAppShellStorageOperation(() =>
+          saveAppShellState(appShellStateRef.current),
+        ).catch((error: unknown) => {
+          console.error("Failed to flush app shell state", error);
+        });
+      }
+    };
+  }, [appShellLoaded]);
+
   const selectApp = (nextApp: MainAppId): void => {
+    appShellInteractionRevisionRef.current += 1;
     setAppShellState((current) => ({
       version: 1,
       activeApp: nextApp,
@@ -177,6 +263,37 @@ export const ChatSession = (): JSX.Element => {
       return;
     }
 
+    void ensurePersistentSchedulerService(null).catch((error) => {
+      console.error("Persistent Smart Scheduler service failed to start", error);
+    });
+  }, [appShellLoadAttempt]);
+
+  useEffect(() => {
+    if (isTestEnvironment()) {
+      return;
+    }
+
+    const workspaceRoots = controller.sidebar.sessionProjectFacets.flatMap(
+      (project) => project.path ? [project.path] : [],
+    );
+
+    void Promise.all(
+      workspaceRoots.map((workspaceRoot) =>
+        listSchedulerJobs(workspaceRoot).catch((error) => {
+          console.error(
+            `Failed to register Smart Scheduler workspace ${workspaceRoot}`,
+            error,
+          );
+        }),
+      ),
+    );
+  }, [controller.sidebar.sessionProjectFacets]);
+
+  useEffect(() => {
+    if (isTestEnvironment()) {
+      return;
+    }
+
     const activeWorkspace = controller.composer.activeSession.workspace?.trim();
 
     if (!activeWorkspace) {
@@ -194,8 +311,9 @@ export const ChatSession = (): JSX.Element => {
       running = true;
 
       try {
+        await ensurePersistentSchedulerService(activeWorkspace);
         await syncScheduledPrompts(activeWorkspace);
-        await runDueSchedulerJobs(activeWorkspace);
+        await pollAllSchedulerWorkspaces(activeWorkspace);
       } catch (error) {
         console.error("Smart Scheduler tick failed", error);
       } finally {
@@ -220,13 +338,42 @@ export const ChatSession = (): JSX.Element => {
   const closeOnboarding = async (skipped: boolean): Promise<void> => {
     const timestamp = Date.now();
 
-    setOnboardingOpen(false);
-    await saveOnboardingState({
-      version: 1,
-      completedAt: timestamp,
-      ...(skipped ? { skippedAt: timestamp } : {}),
-    });
+    try {
+      await retryAppShellStorageOperation(() =>
+        saveOnboardingState({
+          version: 1,
+          completedAt: timestamp,
+          ...(skipped ? { skippedAt: timestamp } : {}),
+        }),
+      );
+      setOnboardingOpen(false);
+    } catch (error) {
+      console.error("Failed to persist onboarding completion", error);
+    }
   };
+
+  if (!appShellLoaded || !controller.hasHydrated) {
+    return (
+      <TooltipProvider delayDuration={300}>
+        <div className="grid h-screen w-full place-items-center bg-slate-950 px-6 text-slate-100">
+          <div className="grid max-w-md gap-4 text-center">
+            <p className="text-sm text-slate-400">
+              {appShellLoadError ?? "Loading your workspace layout..."}
+            </p>
+            {appShellLoadError ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setAppShellLoadAttempt((attempt) => attempt + 1)}
+              >
+                Retry
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </TooltipProvider>
+    );
+  }
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -333,7 +480,10 @@ export const ChatSession = (): JSX.Element => {
 
                     <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-8 pb-5 pt-3 backdrop-blur-xl">
                       <div className="mx-auto w-full max-w-5xl min-w-0">
-                        <SessionComposer {...controller.composer} />
+                        <SessionComposer
+                          key={controller.composer.activeSession.id}
+                          {...controller.composer}
+                        />
                       </div>
                     </footer>
                   </main>
@@ -348,10 +498,12 @@ export const ChatSession = (): JSX.Element => {
               )}
             >
               {ralphMounted ? (
-                <RalphApp
-                  isActive={activeApp === "ralph"}
-                  providerStatuses={controller.titlebar.providerStatuses}
-                />
+                <Suspense fallback={appLoadingFallback}>
+                  <RalphApp
+                    isActive={activeApp === "ralph"}
+                    providerStatuses={controller.titlebar.providerStatuses}
+                  />
+                </Suspense>
               ) : null}
             </div>
 
@@ -363,13 +515,15 @@ export const ChatSession = (): JSX.Element => {
               )}
             >
               {activeApp === "marketplace" ? (
-                <McpMarketplace
-                  workspaceRoot={controller.composer.activeSession.workspace}
-                  onOpenSettings={() => {
-                    controller.settingsDialog.onSettingsSectionChange("mcp");
-                    controller.setCatalogOpen(true);
-                  }}
-                />
+                <Suspense fallback={appLoadingFallback}>
+                  <McpMarketplace
+                    workspaceRoot={controller.composer.activeSession.workspace}
+                    onOpenSettings={() => {
+                      controller.settingsDialog.onSettingsSectionChange("mcp");
+                      controller.setCatalogOpen(true);
+                    }}
+                  />
+                </Suspense>
               ) : null}
             </div>
           </div>
@@ -424,11 +578,23 @@ export const ChatSession = (): JSX.Element => {
         onOpenChange={controller.attachmentImagePreview.onOpenChange}
       />
 
-      <FilePreviewDialog
-        preview={controller.filePreview.preview}
-        onOpenChange={controller.filePreview.onOpenChange}
-        onOpenExternal={controller.filePreview.onOpenExternal}
-      />
+      {controller.filePreview.preview ? (
+        <Suspense
+          fallback={
+            <FilePreviewDialogFallback
+              preview={controller.filePreview.preview}
+              onOpenChange={controller.filePreview.onOpenChange}
+              onOpenExternal={controller.filePreview.onOpenExternal}
+            />
+          }
+        >
+          <FilePreviewDialog
+            preview={controller.filePreview.preview}
+            onOpenChange={controller.filePreview.onOpenChange}
+            onOpenExternal={controller.filePreview.onOpenExternal}
+          />
+        </Suspense>
+      ) : null}
 
       <ChatInputNeededDialog {...controller.inputNeeded} />
 

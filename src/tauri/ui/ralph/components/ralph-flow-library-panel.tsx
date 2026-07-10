@@ -83,6 +83,7 @@ interface RalphFlowLibraryPanelProps {
   onRefreshFlows: () => void;
   onSaveFlow: () => void;
   onSelectFlow: (flow: RalphFlowSummary) => void;
+  onUpgradeStarterFlow: (flow: RalphFlowSummary) => void;
 }
 
 const getFlowStatusLabel = ({
@@ -167,6 +168,7 @@ export const RalphFlowLibraryPanel = ({
   onRefreshFlows,
   onSaveFlow,
   onSelectFlow,
+  onUpgradeStarterFlow,
   selectedFlowKey,
   selectedScope,
   warningCount,
@@ -328,8 +330,10 @@ export const RalphFlowLibraryPanel = ({
                   flow={row.flow}
                   generationCreatedFlow={generationCreatedFlow}
                   getStarterFlowUpdate={getStarterFlowUpdate}
+                  loading={loading}
                   onContextMenu={onFlowContextMenu}
                   onSelectFlow={onSelectFlow}
+                  onUpgradeStarterFlow={onUpgradeStarterFlow}
                   selectedFlowKey={selectedFlowKey}
                   selectedScope={selectedScope}
                   warningCount={warningCount}
@@ -353,8 +357,10 @@ interface RalphFlowLibraryRowProps {
   getStarterFlowUpdate: (
     flow: RalphFlowSummary,
   ) => RalphStarterFlowUpdate | null;
+  loading: boolean;
   onContextMenu: (event: ReactMouseEvent, flow: RalphFlowSummary) => void;
   onSelectFlow: (flow: RalphFlowSummary) => void;
+  onUpgradeStarterFlow: (flow: RalphFlowSummary) => void;
   selectedFlowKey: string | null;
   selectedScope: RalphFlowScope;
   warningCount: number;
@@ -368,8 +374,10 @@ const RalphFlowLibraryRow = ({
   flow,
   generationCreatedFlow,
   getStarterFlowUpdate,
+  loading,
   onContextMenu,
   onSelectFlow,
+  onUpgradeStarterFlow,
   selectedFlowKey,
   selectedScope,
   warningCount,
@@ -443,6 +451,20 @@ const RalphFlowLibraryRow = ({
           </span>
         ) : null}
       </button>
+      {starterUpdate ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={loading}
+          aria-label={`Upgrade ${flow.name} to starter version ${starterUpdate.latestVersion}`}
+          title={`Upgrade to starter v${starterUpdate.latestVersion}`}
+          onClick={() => onUpgradeStarterFlow(flow)}
+          className="h-7 w-7 shrink-0 rounded-md text-amber-300 hover:bg-amber-500/10 hover:text-amber-100"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+        </Button>
+      ) : null}
     </div>
   );
 };

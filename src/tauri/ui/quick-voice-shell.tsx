@@ -31,7 +31,10 @@ const VOICE_ACTIVITY_FRAME_COUNT = 2;
 
 export const QuickVoiceShell = (): JSX.Element => {
   useAppearanceSettings();
-  const controller = useChatSessionController();
+  const controller = useChatSessionController({
+    persistActiveSession: false,
+    trackSessionReads: false,
+  });
   const submitQuickVoiceCommand = controller.submitQuickVoiceCommand;
   const speechToTextSettings = useMemo<UserSpeechToTextSettings>(() => {
     return {
@@ -66,6 +69,10 @@ export const QuickVoiceShell = (): JSX.Element => {
   const speechFrameCountRef = useRef(0);
   const detectedSpeechRef = useRef(false);
   const finalizingRef = useRef(false);
+  const operationSequenceRef = useRef(0);
+  const startInFlightRef = useRef<number | null>(null);
+  const recordingActiveRef = useRef(false);
+  const pendingStartRequestRef = useRef(false);
   const hideTimeoutRef = useRef<number | null>(null);
 
   const clearHideTimeout = useCallback((): void => {
@@ -80,7 +87,6 @@ export const QuickVoiceShell = (): JSX.Element => {
     lastSpeechTimestampRef.current = 0;
     speechFrameCountRef.current = 0;
     detectedSpeechRef.current = false;
-    finalizingRef.current = false;
   }, []);
 
   const hideWindowSoon = useCallback(
@@ -105,38 +111,61 @@ export const QuickVoiceShell = (): JSX.Element => {
 
   const cancelRecordingWithStatus = useCallback(
     (message: string): void => {
+      operationSequenceRef.current += 1;
+      startInFlightRef.current = null;
+      finalizingRef.current = false;
+      recordingActiveRef.current = false;
       cancelRecording();
       resetVoiceActivity();
+      setFinalizing(false);
       setStatusText(message);
     },
     [cancelRecording, resetVoiceActivity],
   );
 
   const finalizeRecording = useCallback(async (): Promise<void> => {
-    if (!recording || !configuredProvider || finalizingRef.current) {
+    if (
+      (!recording && !recordingActiveRef.current) ||
+      !configuredProvider ||
+      finalizingRef.current
+    ) {
       return;
     }
 
+    const operationSequence = operationSequenceRef.current + 1;
+    operationSequenceRef.current = operationSequence;
     finalizingRef.current = true;
+    recordingActiveRef.current = false;
+    const provider = configuredProvider;
     setFinalizing(true);
     setStatusText("Transcribing...");
 
     try {
       const recordedBlob = await stopRecording();
 
-      if (!recordedBlob) {
+      if (
+        !recordedBlob ||
+        operationSequenceRef.current !== operationSequence
+      ) {
         return;
       }
 
       const transcriptText = await transcribeRecording({
         blob: recordedBlob,
-        provider: configuredProvider,
+        provider,
       });
+
+      if (operationSequenceRef.current !== operationSequence) {
+        return;
+      }
 
       submitQuickVoiceCommand(transcriptText);
       setStatusText("Sent.");
       hideWindowSoon(500);
     } catch (error) {
+      if (operationSequenceRef.current !== operationSequence) {
+        return;
+      }
       cancelRecording();
       setStatusText(
         error instanceof Error
@@ -144,9 +173,11 @@ export const QuickVoiceShell = (): JSX.Element => {
           : "Quick voice transcription failed.",
       );
     } finally {
-      resetVoiceActivity();
-      finalizingRef.current = false;
-      setFinalizing(false);
+      if (operationSequenceRef.current === operationSequence) {
+        resetVoiceActivity();
+        finalizingRef.current = false;
+        setFinalizing(false);
+      }
     }
   }, [
     cancelRecording,
@@ -160,9 +191,23 @@ export const QuickVoiceShell = (): JSX.Element => {
   ]);
 
   const startRecording = useCallback(async (): Promise<void> => {
-    if (recording || finalizingRef.current || transcribing) {
+    if (
+      recording ||
+      recordingActiveRef.current ||
+      startInFlightRef.current !== null ||
+      finalizingRef.current ||
+      transcribing
+    ) {
       return;
     }
+
+    if (!controller.quickVoiceSettingsLoaded) {
+      pendingStartRequestRef.current = true;
+      setStatusText("Loading Quick Voice settings...");
+      return;
+    }
+
+    pendingStartRequestRef.current = false;
 
     if (!desktopSettings.quickVoiceEnabled) {
       setStatusText("Quick Voice is currently disabled in Desktop settings.");
@@ -183,23 +228,39 @@ export const QuickVoiceShell = (): JSX.Element => {
 
     cancelRecording();
     resetVoiceActivity();
+    const operationSequence = operationSequenceRef.current + 1;
+    operationSequenceRef.current = operationSequence;
+    startInFlightRef.current = operationSequence;
 
     try {
-      await startSpeechRecording({
+      const started = await startSpeechRecording({
         inputDeviceId: speechToTextSettings.inputDeviceId,
       });
+      if (!started || operationSequenceRef.current !== operationSequence) {
+        return;
+      }
       recordingStartedAtRef.current = Date.now();
       lastSpeechTimestampRef.current = recordingStartedAtRef.current;
+      recordingActiveRef.current = true;
       setStatusText("Listening...");
     } catch (error) {
+      if (operationSequenceRef.current !== operationSequence) {
+        return;
+      }
       cancelRecording();
       resetVoiceActivity();
+      recordingActiveRef.current = false;
       setStatusText(getRecordingErrorMessage(error));
+    } finally {
+      if (startInFlightRef.current === operationSequence) {
+        startInFlightRef.current = null;
+      }
     }
   }, [
     browserSupported,
     cancelRecording,
     configuredProvider,
+    controller.quickVoiceSettingsLoaded,
     desktopSettings.quickVoiceEnabled,
     recording,
     resetVoiceActivity,
@@ -207,6 +268,16 @@ export const QuickVoiceShell = (): JSX.Element => {
     startSpeechRecording,
     transcribing,
   ]);
+
+  useEffect(() => {
+    if (
+      controller.quickVoiceSettingsLoaded &&
+      pendingStartRequestRef.current
+    ) {
+      pendingStartRequestRef.current = false;
+      void startRecording();
+    }
+  }, [controller.quickVoiceSettingsLoaded, startRecording]);
 
   useEffect(() => {
     if (!recording || finalizingRef.current) {
@@ -259,6 +330,7 @@ export const QuickVoiceShell = (): JSX.Element => {
     let unsubscribe: (() => void) | undefined;
 
     const startQuickVoice = (): void => {
+      const requestSequence = operationSequenceRef.current;
       void (async () => {
         try {
           await syncQuickVoiceWindowPosition();
@@ -266,7 +338,15 @@ export const QuickVoiceShell = (): JSX.Element => {
           console.error("Failed to position Quick Voice window", error);
         }
 
-        await startRecording();
+        const isVisible = await getCurrentWindow().isVisible().catch(() => false);
+
+        if (
+          !disposed &&
+          isVisible &&
+          operationSequenceRef.current === requestSequence
+        ) {
+          await startRecording();
+        }
       })().catch((error) => {
         console.error("Failed to start Quick Voice recording", error);
       });
@@ -283,6 +363,14 @@ export const QuickVoiceShell = (): JSX.Element => {
         }
 
         unsubscribe = unlisten;
+        void getCurrentWindow()
+          .isVisible()
+          .then((isVisible) => {
+            if (!disposed && isVisible) {
+              startQuickVoice();
+            }
+          })
+          .catch(() => undefined);
       })
       .catch((error) => {
         console.error("Failed to subscribe to Quick Voice events", error);
@@ -296,10 +384,29 @@ export const QuickVoiceShell = (): JSX.Element => {
 
   useEffect(() => {
     return () => {
+      operationSequenceRef.current += 1;
+      pendingStartRequestRef.current = false;
+      startInFlightRef.current = null;
+      finalizingRef.current = false;
+      recordingActiveRef.current = false;
       cancelRecording();
       clearHideTimeout();
       resetVoiceActivity();
     };
+  }, [cancelRecording, clearHideTimeout, resetVoiceActivity]);
+
+  const hideQuickVoice = useCallback((): void => {
+    operationSequenceRef.current += 1;
+    pendingStartRequestRef.current = false;
+    startInFlightRef.current = null;
+    finalizingRef.current = false;
+    recordingActiveRef.current = false;
+    cancelRecording();
+    resetVoiceActivity();
+    clearHideTimeout();
+    setFinalizing(false);
+    setStatusText(null);
+    void getCurrentWindow().hide().catch(() => undefined);
   }, [cancelRecording, clearHideTimeout, resetVoiceActivity]);
 
   useEffect(() => {
@@ -360,9 +467,7 @@ export const QuickVoiceShell = (): JSX.Element => {
               variant="ghost"
               size="icon"
               aria-label="Hide quick voice"
-              onClick={() => {
-                void getCurrentWindow().hide().catch(() => undefined);
-              }}
+              onClick={hideQuickVoice}
               className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
             >
               <X className="h-4 w-4" />
