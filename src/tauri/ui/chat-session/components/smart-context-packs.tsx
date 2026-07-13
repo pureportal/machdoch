@@ -420,10 +420,10 @@ const ContextPackPromptEditor = ({
   const [scrollTop, setScrollTop] = useState(0);
 
   return (
-    <div className="relative min-h-64 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70">
+    <div className="group/prompt-editor relative min-h-64 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70">
       <pre
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words px-3 py-2 font-mono text-sm leading-6 text-slate-300"
+        className="pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words px-3 py-2 font-mono text-sm leading-6 text-slate-300 group-focus-within/prompt-editor:invisible"
       >
         <span
           className="block"
@@ -439,7 +439,7 @@ const ContextPackPromptEditor = ({
         placeholder="Review {target_file} and summarize release risk."
         onChange={(event) => onChange(event.target.value)}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-        className="absolute inset-0 min-h-64 w-full resize-none overflow-auto rounded-xl border-0 bg-transparent px-3 py-2 font-mono text-sm leading-6 text-transparent caret-slate-100 outline-none placeholder:font-sans placeholder:text-slate-600 selection:bg-sky-500/35 focus:ring-1 focus:ring-sky-500/30"
+        className="absolute inset-0 min-h-64 w-full resize-none overflow-auto rounded-xl border-0 bg-transparent px-3 py-2 font-mono text-sm leading-6 text-transparent caret-slate-100 outline-none placeholder:font-sans placeholder:text-slate-600 selection:bg-sky-500/35 selection:text-slate-100 focus:text-slate-300 focus:ring-1 focus:ring-sky-500/30"
       />
     </div>
   );
