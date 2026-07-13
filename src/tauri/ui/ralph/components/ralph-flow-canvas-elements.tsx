@@ -275,7 +275,7 @@ const RalphBlockNode = ({
   return (
     <div
       className={cn(
-        "relative rounded-lg border px-3 py-3 shadow-lg shadow-black/25",
+        "relative rounded-xl border px-3.5 py-3.5 shadow-xl shadow-black/30",
         data.block.type === "UTILITY" ? "w-72" : "w-64",
         visual.nodeClassName,
         data.active &&
@@ -296,18 +296,18 @@ const RalphBlockNode = ({
           <span className="truncate text-sm font-semibold">{data.block.title}</span>
         </div>
       </div>
-      <div className="mt-2 grid min-h-12 gap-1 text-xs">
-        <div className="truncate font-medium text-white/75">
+      <div className="mt-2.5 grid min-h-12 gap-1 text-xs leading-4">
+        <div className="truncate font-medium text-white/85">
           {preview.primary}
         </div>
         {preview.secondary ? (
-          <div className="truncate text-white/50">{preview.secondary}</div>
+          <div className="truncate text-white/65">{preview.secondary}</div>
         ) : null}
       </div>
       {data.issueCount > 0 ? (
-        <div className="mt-2 flex items-center gap-1 text-xs font-semibold text-amber-200">
+        <div className="mt-2 flex items-center gap-1.5 rounded-md border border-amber-400/20 bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-100">
           <AlertTriangle className="h-3.5 w-3.5" />
-          {data.issueCount}
+          {data.issueCount} issue{data.issueCount === 1 ? "" : "s"}
         </div>
       ) : null}
       {preview.chips.length > 0 ? (
@@ -315,7 +315,7 @@ const RalphBlockNode = ({
           {preview.chips.slice(0, 3).map((chip) => (
             <span
               key={chip}
-              className="max-w-full truncate rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[0.6rem] font-medium leading-3 text-white/60"
+              className="max-w-full truncate rounded border border-white/15 bg-black/25 px-1.5 py-0.5 text-[0.62rem] font-medium leading-3 text-white/75"
             >
               {chip}
             </span>
@@ -326,7 +326,7 @@ const RalphBlockNode = ({
         {data.outputs.map((output) => (
           <div
             key={output}
-            className="relative flex min-h-5 items-center justify-end pr-4 text-[0.65rem] font-bold leading-4 tracking-wide text-white/65"
+            className="relative flex min-h-5 items-center justify-end pr-4 text-[0.66rem] font-bold leading-4 tracking-wide text-white/80"
           >
             <span className="min-w-0 truncate">{output}</span>
             <Handle

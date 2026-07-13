@@ -57,7 +57,7 @@ describe("RalphInspectorSectionTabs", () => {
 
     fireEvent.click(routeButton);
 
-    expect(routeButton.textContent).toBe("Route map2");
+    expect(routeButton.textContent).toBe("Routes2");
     expect(onSelectSection).toHaveBeenCalledWith("routes");
   });
 });

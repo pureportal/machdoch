@@ -936,7 +936,7 @@ describe("RalphFlowEditor", () => {
     expect(screen.getByLabelText("Block title")).toBeTruthy();
     const startRouteTarget = screen.getByLabelText("SUCCESS route target");
     expect(startRouteTarget).toBeTruthy();
-    expect(screen.getByText("Routes")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Route map" })).toBeTruthy();
 
     fireEvent.pointerDown(startRouteTarget, { button: 0, ctrlKey: false });
 
@@ -1102,7 +1102,7 @@ describe("RalphFlowEditor", () => {
     });
   });
 
-  it("places toolbar-added blocks near the selected block as a visual stack", async () => {
+  it("places toolbar-added blocks beside the selection without overlap", async () => {
     renderRalphFlowEditor("Refactor {{scope:path=src}}");
 
     fireEvent.click(await screen.findByRole("button", { name: "New" }));
@@ -1121,8 +1121,8 @@ describe("RalphFlowEditor", () => {
       (block) => block.type === "VALIDATOR",
     );
 
-    expect(promptBlock?.position).toEqual({ x: 108, y: 148 });
-    expect(validatorBlock?.position).toEqual({ x: 136, y: 176 });
+    expect(promptBlock?.position).toEqual({ x: 500, y: 342 });
+    expect(validatorBlock?.position).toEqual({ x: 920, y: 342 });
   });
 
   it("adds and saves note and group node configuration", async () => {

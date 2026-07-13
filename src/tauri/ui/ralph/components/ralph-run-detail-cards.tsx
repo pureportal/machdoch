@@ -14,6 +14,7 @@ import {
   type ActiveRalphRunBlockDetail,
 } from "../_helpers/ralph-active-run-progress.helper";
 import { getOutputChipClassName } from "../_helpers/ralph-run-presentation.helper";
+import { RalphCopyButton } from "./ralph-copy-button";
 
 interface RalphBlockProgressListProps {
   progress: readonly RalphRunRecordBlockProgressEvent[] | undefined;
@@ -62,7 +63,19 @@ const RalphBlockProgressList = ({
                   complete
                 </span>
               ) : null}
-              <span className="ml-auto shrink-0 font-mono text-[0.62rem] text-slate-600">
+              {body ? (
+                <RalphCopyButton
+                  value={body}
+                  label={`${event.label} output`}
+                  className="ml-auto"
+                />
+              ) : null}
+              <span
+                className={cn(
+                  "shrink-0 font-mono text-[0.62rem] text-slate-600",
+                  !body && "ml-auto",
+                )}
+              >
                 {formatRalphProgressTimestamp(event.timestamp)}
               </span>
             </div>
@@ -111,7 +124,13 @@ const RalphOutputSectionsList = ({
               <ChevronDown className="h-3.5 w-3.5 text-slate-500 transition group-open:rotate-180" />
             </span>
           </summary>
-          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-900 bg-black/30 p-2 font-mono text-[0.7rem] leading-4 text-slate-300">
+          <div className="mt-2 flex justify-end">
+            <RalphCopyButton
+              value={section.lines.join("\n")}
+              label={`${section.title} output`}
+            />
+          </div>
+          <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-900 bg-black/30 p-2 font-mono text-[0.7rem] leading-4 text-slate-300">
             {section.lines.join("\n")}
           </pre>
         </details>
@@ -195,8 +214,12 @@ export const RalphRunRecordBlockCard = ({
         ) : null}
         {block.response?.markdown || block.markdown ? (
           <div className="grid gap-1">
-            <div className="text-xs font-semibold text-slate-300">
-              Final output
+            <div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-300">
+              <span>Final output</span>
+              <RalphCopyButton
+                value={block.response?.markdown ?? block.markdown ?? ""}
+                label={`${block.blockId} final output`}
+              />
             </div>
             <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-800 bg-black/30 p-2 font-mono text-[0.72rem] leading-5 text-slate-300">
               {block.response?.markdown ?? block.markdown}
@@ -205,7 +228,13 @@ export const RalphRunRecordBlockCard = ({
         ) : null}
         {block.data !== undefined ? (
           <div className="grid gap-1">
-            <div className="text-xs font-semibold text-slate-300">Data</div>
+            <div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-300">
+              <span>Data</span>
+              <RalphCopyButton
+                value={JSON.stringify(block.data, null, 2)}
+                label={`${block.blockId} data`}
+              />
+            </div>
             <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-800 bg-black/30 p-2 font-mono text-[0.7rem] leading-4 text-slate-300">
               {JSON.stringify(block.data, null, 2)}
             </pre>

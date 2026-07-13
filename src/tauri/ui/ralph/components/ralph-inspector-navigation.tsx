@@ -1,4 +1,10 @@
-import { Route } from "lucide-react";
+import {
+  Braces,
+  FileText,
+  Route,
+  Settings2,
+  SlidersHorizontal,
+} from "lucide-react";
 import type { JSX } from "react";
 
 import type {
@@ -30,33 +36,50 @@ export const RalphInspectorSectionTabs = ({
     return null;
   }
 
+  const sectionIcons = {
+    content: FileText,
+    behavior: Settings2,
+    execution: SlidersHorizontal,
+    advanced: Braces,
+    routes: Route,
+  } as const;
+
   return (
     <div className="border-b border-slate-800/70 bg-slate-950/95 px-3 py-2">
-      <div className="flex min-w-0 gap-1 overflow-x-auto rounded-lg bg-slate-900/45 p-1 [scrollbar-width:thin]">
+      <div
+        className="grid min-w-0 gap-1 rounded-lg border border-slate-800/70 bg-slate-900/55 p-1"
+        style={{
+          gridTemplateColumns: `repeat(${sections.length}, minmax(0, 1fr))`,
+        }}
+      >
         {sections.map((section) => {
           const isActive = activeSection === section.id;
+          const Icon = sectionIcons[section.id];
           const routeBadge =
             section.id === "routes" && missingRouteCount > 0
               ? missingRouteCount
               : null;
-          const sectionLabel =
-            section.id === "routes" ? "Route map" : section.label;
+          const sectionLabel = section.label;
 
           return (
             <button
               key={section.id}
               type="button"
+              aria-label={section.id === "routes" ? "Route map" : section.label}
+              aria-pressed={isActive}
+              title={section.id === "routes" ? "Route map" : section.label}
               onClick={() => onSelectSection(section.id)}
               className={cn(
-                "flex h-8 shrink-0 items-center gap-1 rounded-md px-2.5 text-xs font-semibold transition",
+                "relative flex h-8 min-w-0 items-center justify-center gap-0.5 rounded-md px-1 text-[0.68rem] font-semibold transition",
                 isActive
-                  ? "bg-slate-800 text-white shadow-sm ring-1 ring-cyan-400/25"
-                  : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-100",
+                  ? "bg-cyan-500/15 text-cyan-50 shadow-sm ring-1 ring-cyan-400/30"
+                  : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-100",
               )}
             >
-              {sectionLabel}
+              <Icon className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 truncate">{sectionLabel}</span>
               {routeBadge ? (
-                <span className="rounded-full bg-amber-500/20 px-1.5 text-[0.65rem] text-amber-100">
+                <span className="absolute -right-1 -top-1 min-w-4 rounded-full border border-slate-900 bg-amber-500/25 px-1 text-center text-[0.6rem] leading-4 text-amber-100">
                   {routeBadge}
                 </span>
               ) : null}

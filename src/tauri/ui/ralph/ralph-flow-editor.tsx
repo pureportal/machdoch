@@ -15,7 +15,9 @@ import "@xyflow/react/dist/style.css";
 import { isTauri } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
+  Activity,
   AlertTriangle,
+  ArrowLeft,
   Check,
   ChevronDown,
   CheckCircle2,
@@ -25,6 +27,7 @@ import {
   Globe2,
   GripVertical,
   History,
+  Keyboard,
   LayoutGrid,
   LoaderCircle,
   Maximize2,
@@ -35,6 +38,7 @@ import {
   RotateCcw,
   Route,
   Save,
+  Search,
   SlidersHorizontal,
   Sparkles,
   Terminal,
@@ -163,7 +167,6 @@ import {
 import {
   RALPH_BLOCK_FALLBACK_HEIGHT,
   RALPH_CANVAS_X_GAP,
-  RALPH_CANVAS_STACK_OFFSET,
   createDerivedGroupChildrenById,
   createLockedCanvasBlockIdSet,
   flowToEdges,
@@ -327,7 +330,6 @@ import {
   getStarterFlowUpdate,
 } from "./_helpers/ralph-starter-flow-presentation.helper";
 import {
-  ACTIVE_RUN_LIST_LIMIT,
   ACTIVE_TASK_REGISTRATION_GRACE_MS,
   ANNOTATION_TONES,
   ASK_USER_MODE_OPTIONS,
@@ -338,6 +340,8 @@ import {
   LIVE_EXPANDED_NODE_PREVIEW_LIMIT,
   LIVE_VARIABLE_PREVIEW_LIMIT,
   RALPH_INSPECTOR_SECTIONS,
+  RALPH_EDITOR_SHORTCUTS,
+  RALPH_LAYOUT_FIT_DURATION_MS,
   RALPH_NEW_BLOCK_CENTER_DURATION_MS,
   RALPH_REACT_FLOW_PRO_OPTIONS,
   RALPH_VALIDATION_JUMP_DURATION_MS,
@@ -387,6 +391,7 @@ import {
   type RalphFlowListMenu,
 } from "./components/ralph-flow-context-menus";
 import { RalphPromptHighlight } from "./components/ralph-prompt-highlight";
+import { RalphCopyButton } from "./components/ralph-copy-button";
 import {
   RalphInputControl,
   RalphSetupVariableControl,
@@ -602,6 +607,7 @@ export const RalphFlowEditor = ({
   const [inputSubmitting, setInputSubmitting] = useState(false);
   const [runHistory, setRunHistory] = useState<RalphRunSummary[]>([]);
   const [runHistoryLoading, setRunHistoryLoading] = useState(false);
+  const [runHistoryQuery, setRunHistoryQuery] = useState("");
   const [runPanelTab, setRunPanelTab] = useState<RalphRunPanelTab>("setup");
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [selectedRunDetail, setSelectedRunDetail] =
@@ -637,6 +643,7 @@ export const RalphFlowEditor = ({
     null,
   );
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [utilityJsonDraft, setUtilityJsonDraft] = useState("");
   const [utilityJsonError, setUtilityJsonError] = useState<string | null>(null);
   const previousFlowLayoutKeyRef = useRef("");
@@ -1017,6 +1024,28 @@ export const RalphFlowEditor = ({
         ? current
         : nextState,
     );
+
+    const sectionElements = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-ralph-inspector-section]"),
+    );
+    let visibleSection: RalphInspectorSectionId | null = null;
+
+    for (const sectionElement of sectionElements) {
+      if (sectionElement.offsetTop > container.scrollTop + 48) {
+        break;
+      }
+
+      visibleSection =
+        (sectionElement.dataset.ralphInspectorSection as
+          | RalphInspectorSectionId
+          | undefined) ?? visibleSection;
+    }
+
+    if (visibleSection) {
+      setActiveInspectorSection((current) =>
+        current === visibleSection ? current : visibleSection,
+      );
+    }
   }, []);
 
   useEffect(() => {
@@ -1268,19 +1297,18 @@ export const RalphFlowEditor = ({
 
     return routes;
   }, [draftFlow, selectedBlock]);
-  const selectedBlockIssueCounts = useMemo(() => {
+  const selectedBlockIssues = useMemo(() => {
     if (!selectedBlock) {
-      return { errors: 0, warnings: 0 };
+      return [];
     }
 
+    return issues.filter((issue) => issue.blockId === selectedBlock.id);
+  }, [issues, selectedBlock]);
+  const selectedBlockIssueCounts = useMemo(() => {
     let errors = 0;
     let warnings = 0;
 
-    for (const issue of issues) {
-      if (issue.blockId !== selectedBlock.id) {
-        continue;
-      }
-
+    for (const issue of selectedBlockIssues) {
       if (issue.level === "error") {
         errors += 1;
       } else {
@@ -1289,7 +1317,7 @@ export const RalphFlowEditor = ({
     }
 
     return { errors, warnings };
-  }, [issues, selectedBlock]);
+  }, [selectedBlockIssues]);
   const missingSelectedRouteCount = useMemo(() => {
     if (!selectedBlock) {
       return 0;
@@ -1451,6 +1479,20 @@ export const RalphFlowEditor = ({
     () => runHistory.find((run) => run.id === selectedRunId) ?? null,
     [runHistory, selectedRunId],
   );
+  const filteredRunHistory = useMemo(() => {
+    const query = runHistoryQuery.trim().toLocaleLowerCase();
+
+    if (!query) {
+      return runHistory;
+    }
+
+    return runHistory.filter((run) =>
+      [run.id, run.flowName, run.summary, run.status]
+        .join(" ")
+        .toLocaleLowerCase()
+        .includes(query),
+    );
+  }, [runHistory, runHistoryQuery]);
   const selectedRunRecord = selectedRunDetail?.record ?? null;
   const liveRunForPanel = selectedActiveRun ?? activeRuns[0] ?? null;
   const activeCanvasRun = useMemo(
@@ -1770,7 +1812,7 @@ export const RalphFlowEditor = ({
   const runActionMessage = selectedFlowPrimaryActiveRun
     ? "Active run is already running."
     : runBlockedReason ?? runReadyMessage;
-  const flowListColumnWidth = flowListOpen ? "15rem" : "2.75rem";
+  const flowListColumnWidth = flowListOpen ? "16rem" : "2.75rem";
   const editorGridTemplateColumns = showInspectorPanel
     ? `${flowListColumnWidth} minmax(0,1fr) ${inspectorWidth}px`
     : `${flowListColumnWidth} minmax(0,1fr)`;
@@ -1789,9 +1831,9 @@ export const RalphFlowEditor = ({
     inspectorWidth >= 500 ? "grid-cols-[0.55fr_1.45fr]" : "grid-cols-1";
   const editorRowsClass =
     editorMode === "design"
-      ? "grid-rows-[minmax(0,1fr)_4.25rem]"
+      ? "grid-rows-[minmax(0,1fr)_3.25rem]"
       : editorMode === "run"
-        ? "grid-rows-[minmax(12rem,1fr)_minmax(18rem,38vh)]"
+        ? "grid-rows-[minmax(0,1fr)]"
         : editorMode === "generate"
           ? "grid-rows-[minmax(12rem,1fr)_minmax(17rem,34vh)]"
           : issues.length > 0
@@ -2343,9 +2385,12 @@ export const RalphFlowEditor = ({
     runViewRequestRef.current = requestId;
     const workspaceAtStart = workspaceRoot;
     setSelectedRunId(runId);
-    setSelectedRunDetail(null);
+    setSelectedRunDetail((current) =>
+      current?.record.id === runId ? current : null,
+    );
     setSelectedRunLog(null);
     setRunDetailLoading(false);
+    setRunDetailError(null);
     setRunLogLoading(true);
 
     try {
@@ -2365,7 +2410,7 @@ export const RalphFlowEditor = ({
         path: result.path,
       });
       setEditorMode("run");
-      setRunPanelTab("logs");
+      setRunPanelTab("details");
     } catch (error) {
       if (requestId !== runViewRequestRef.current) {
         return;
@@ -5285,8 +5330,9 @@ export const RalphFlowEditor = ({
     };
   };
 
-  const getSelectedBlockStackPosition = (
+  const getSelectedBlockAdjacentPosition = (
     flow: RalphFlow,
+    nextBlock: RalphFlowBlock,
   ): RalphPosition | null => {
     if (!selectedBlockId) {
       return null;
@@ -5302,10 +5348,42 @@ export const RalphFlowEditor = ({
     const nodePosition = reactFlowInstanceRef.current?.getNode(block.id)?.position;
     const position = nodePosition ?? block.position ?? getDefaultCanvasPosition(blockIndex);
 
-    return {
-      x: Math.round(position.x + RALPH_CANVAS_STACK_OFFSET),
-      y: Math.round(position.y + RALPH_CANVAS_STACK_OFFSET),
+    const nextBlockSize = getCanvasBlockSize(nextBlock);
+    const verticalStep = nextBlockSize.height + 72;
+    const rowOffsets = [0, 1, -1, 2, -2];
+    let fallbackPosition = {
+      x: Math.round(position.x + RALPH_CANVAS_X_GAP),
+      y: Math.round(position.y),
     };
+
+    for (let column = 1; column <= flow.blocks.length + 1; column += 1) {
+      for (const rowOffset of rowOffsets) {
+        const candidate = {
+          x: Math.round(position.x + column * RALPH_CANVAS_X_GAP),
+          y: Math.round(position.y + rowOffset * verticalStep),
+        };
+        fallbackPosition = candidate;
+        const overlapsExistingBlock = flow.blocks.some((existingBlock, index) => {
+          const existingPosition =
+            existingBlock.position ?? getDefaultCanvasPosition(index);
+          const existingSize = getCanvasBlockSize(existingBlock);
+          const margin = 48;
+
+          return !(
+            candidate.x + nextBlockSize.width + margin <= existingPosition.x ||
+            existingPosition.x + existingSize.width + margin <= candidate.x ||
+            candidate.y + nextBlockSize.height + margin <= existingPosition.y ||
+            existingPosition.y + existingSize.height + margin <= candidate.y
+          );
+        });
+
+        if (!overlapsExistingBlock) {
+          return candidate;
+        }
+      }
+    }
+
+    return fallbackPosition;
   };
 
   const getAutomaticBlockPosition = (
@@ -5313,7 +5391,7 @@ export const RalphFlowEditor = ({
     block: RalphFlowBlock,
   ): RalphPosition => {
     return (
-      getSelectedBlockStackPosition(flow) ??
+      getSelectedBlockAdjacentPosition(flow, block) ??
       getViewportCenteredBlockPosition(block) ??
       block.position ??
       getDefaultCanvasPosition(flow.blocks.length)
@@ -5362,6 +5440,34 @@ export const RalphFlowEditor = ({
     }
 
     centerBlock();
+  };
+
+  const fitCanvasToFlow = (): void => {
+    const fitFlow = (): void => {
+      const instance = reactFlowInstanceRef.current;
+
+      if (!instance) {
+        return;
+      }
+
+      void instance.fitView({
+        duration: RALPH_LAYOUT_FIT_DURATION_MS,
+        maxZoom: 1,
+        padding: 0.16,
+      });
+    };
+
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(fitFlow);
+      });
+      return;
+    }
+
+    fitFlow();
   };
 
   const addBlock = (
@@ -5535,6 +5641,7 @@ export const RalphFlowEditor = ({
     }
 
     updateDraftFlow(forceRalphFlowLayout);
+    fitCanvasToFlow();
     setMessage("Flow layout cleaned.");
     closeCanvasMenu();
   };
@@ -7652,39 +7759,113 @@ export const RalphFlowEditor = ({
 
   return (
     <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 px-4 py-2 text-left">
-            <div className="flex min-w-0 items-center justify-between gap-4">
-              <h1 className="flex min-w-0 items-center gap-2 text-base font-semibold text-white">
-                <Workflow className="h-4 w-4 shrink-0 text-emerald-300" />
-                <span className="truncate">Ralph Flow Editor</span>
-                {dirty ? (
-                  <span className="shrink-0 text-xs font-medium text-amber-200">
-                    unsaved
-                  </span>
-                ) : null}
-              </h1>
-              <div className="grid shrink-0 grid-cols-4 gap-1 rounded-lg border border-slate-800 bg-slate-900/80 p-1">
-                {EDITOR_MODES.map((mode) => (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    onClick={() => setEditorMode(mode.id)}
-                    className={cn(
-                      "h-7 rounded-md px-3 text-xs font-semibold",
-                      editorMode === mode.id
-                        ? "bg-slate-700 text-white"
-                        : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
-                    )}
+      <header className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-3 py-2 text-left">
+        <h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-white">
+          <Workflow className="h-4 w-4 shrink-0 text-emerald-300" />
+          <span className="truncate">Ralph Flow Editor</span>
+          {dirty ? (
+            <span className="shrink-0 rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-100">
+              unsaved
+            </span>
+          ) : null}
+        </h1>
+        <div className="flex shrink-0 items-center gap-2">
+          <nav
+            aria-label="Ralph editor mode"
+            className="grid shrink-0 grid-cols-4 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1"
+          >
+            {EDITOR_MODES.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                aria-pressed={editorMode === mode.id}
+                onClick={() => setEditorMode(mode.id)}
+                className={cn(
+                  "h-7 rounded-md px-3 text-xs font-semibold transition",
+                  editorMode === mode.id
+                    ? "bg-slate-700 text-white shadow-sm"
+                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                )}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </nav>
+          <div className="h-6 w-px bg-slate-800" />
+          <div className="relative">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Ralph keyboard shortcuts"
+              aria-expanded={shortcutHelpOpen}
+              title="Keyboard shortcuts"
+              onClick={() => setShortcutHelpOpen((current) => !current)}
+              className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-white"
+            >
+              <Keyboard className="h-4 w-4" />
+            </Button>
+            {shortcutHelpOpen ? (
+              <div
+                role="dialog"
+                aria-label="Ralph editor shortcuts"
+                className="absolute right-0 top-full z-[100] mt-2 w-64 rounded-lg border border-slate-700 bg-slate-950 p-2 text-slate-100 shadow-2xl shadow-black/40"
+              >
+                <div className="px-2 pb-2 text-xs font-semibold text-white">
+                  Editor shortcuts
+                </div>
+                {RALPH_EDITOR_SHORTCUTS.map(([label, shortcut]) => (
+                  <div
+                    key={label}
+                    className="flex items-center justify-between gap-4 rounded px-2 py-1.5 text-xs text-slate-300"
                   >
-                    {mode.label}
-                  </button>
+                    <span>{label}</span>
+                    <kbd className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[0.65rem] text-slate-200">
+                      {shortcut}
+                    </kbd>
+                  </div>
                 ))}
               </div>
-            </div>
-            <p className="sr-only">
-              Edit and run saved Ralph prompt flow graphs.
-            </p>
-          </header>
+            ) : null}
+          </div>
+          {editorMode !== "run" ? (
+            <Button
+              type="button"
+              disabled={!canSaveFlow}
+              onClick={() => void saveFlow()}
+              className="h-8 rounded-lg bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500 disabled:border disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-500"
+            >
+              {loading ? (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+              Save
+            </Button>
+          ) : null}
+          {editorMode !== "run" ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!canRunAction}
+              aria-label="Run Ralph flow"
+              title={runActionMessage}
+              onClick={() => void runFlow()}
+              className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
+            >
+              {selectedFlowPrimaryActiveRun ? (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Play className="h-3.5 w-3.5" />
+              )}
+              {runButtonLabel}
+            </Button>
+          ) : null}
+        </div>
+        <p className="sr-only">
+          Edit and run saved Ralph prompt flow graphs.
+        </p>
+      </header>
 
           <div
             className={cn(
@@ -7695,7 +7876,6 @@ export const RalphFlowEditor = ({
           >
             <RalphFlowLibraryPanel
               activeRunsByFlowKey={activeRunsByFlowKey}
-              canSaveFlow={canSaveFlow}
               defaultFlowActionScope={defaultFlowActionScope}
               dirty={dirty}
               displayFlowRows={displayFlowRows}
@@ -7726,12 +7906,16 @@ export const RalphFlowEditor = ({
               onOpenFlowList={() => setFlowListOpen(true)}
               onOpenStarterFlowDialog={openStarterFlowDialog}
               onRefreshFlows={() => void refreshFlows()}
-              onSaveFlow={() => void saveFlow()}
               onSelectFlow={(flow) => void selectFlow(flow)}
               onUpgradeStarterFlow={(flow) => void upgradeStarterFlow(flow)}
             />
 
-            <main className="col-start-2 row-start-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-slate-950">
+            <main
+              className={cn(
+                "col-start-2 row-start-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-slate-950",
+                editorMode === "run" && "hidden",
+              )}
+            >
               <RalphFlowEditorToolbar
                 flowTitle={flowTitle}
                 selectedScope={selectedScope}
@@ -7879,7 +8063,7 @@ export const RalphFlowEditor = ({
                   <GripVertical className="h-5 w-5" />
                 </span>
               </button>
-              <div className="border-b border-slate-800 px-4 py-3">
+              <div className="border-b border-slate-800 bg-slate-950/95 px-3 py-2.5">
                 <div className="flex min-w-0 items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2">
                     {selectedBlock ? (
@@ -7908,17 +8092,6 @@ export const RalphFlowEditor = ({
                     ) : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Hide block settings"
-                      title="Hide block settings"
-                      onClick={() => setInspectorOpen(false)}
-                      className="h-8 w-8 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
                     {selectedBlock || selectedEdge ? (
                       <Button
                         type="button"
@@ -7957,6 +8130,17 @@ export const RalphFlowEditor = ({
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Hide block settings"
+                      title="Hide block settings"
+                      onClick={() => setInspectorOpen(false)}
+                      className="h-8 w-8 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -7983,7 +8167,7 @@ export const RalphFlowEditor = ({
                 {selectedBlock ? (
                   <div
                     data-ralph-inspector-section="content"
-                    className="grid gap-4 p-4 pr-5 pb-8"
+                    className="grid gap-3 p-3 pr-4 pb-8"
                   >
                     <label className="grid gap-1.5 text-sm text-slate-200">
                       <span className="font-medium">Title</span>
@@ -8000,6 +8184,28 @@ export const RalphFlowEditor = ({
                         className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
                       />
                     </label>
+
+                    {selectedBlockIssues.length > 0 ? (
+                      <div className="grid gap-1.5 rounded-lg border border-amber-400/20 bg-amber-500/10 p-3">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-amber-100">
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                          Fix before running
+                        </div>
+                        {selectedBlockIssues.slice(0, 3).map((issue, index) => (
+                          <div
+                            key={`${issue.message}-${index}`}
+                            className={cn(
+                              "text-xs leading-4",
+                              issue.level === "error"
+                                ? "text-rose-100"
+                                : "text-amber-100/80",
+                            )}
+                          >
+                            {issue.message}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
 
                     {selectedBlock.type === "NOTE" ? (
                       <div className="grid gap-3 rounded-lg bg-slate-900/25 p-3 text-sm text-slate-100 ring-1 ring-slate-800/60">
@@ -8252,7 +8458,7 @@ export const RalphFlowEditor = ({
                               updatePromptLikeText(block, prompt),
                             );
                           }}
-                          className="min-h-44 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100 placeholder:text-slate-600"
+                          className="min-h-32 border-slate-700 bg-slate-950 font-mono text-xs leading-5 text-slate-100 placeholder:text-slate-500"
                           placeholder="Use {{scope:path=ALL}}, {{lastResult}}, {{result:block-id}}, or typed variables."
                         />
                         {getPromptLikeText(selectedBlock).includes("{{") ? (
@@ -8911,7 +9117,7 @@ export const RalphFlowEditor = ({
                         data-ralph-inspector-section="execution"
                         className="grid gap-3 rounded-lg bg-slate-900/25 p-3 ring-1 ring-slate-800/60"
                       >
-                        <div className="grid gap-3 md:grid-cols-3">
+                        <div className={cn("grid gap-3", inspectorThreeColumnClass)}>
                           <label className="grid gap-1.5 text-sm text-slate-200">
                             <span className="font-medium">Provider</span>
                             <DropdownMenu>
@@ -9264,7 +9470,7 @@ export const RalphFlowEditor = ({
 
                         {showAdvancedSettings ? (
                           <div className="grid gap-3">
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className={cn("grid gap-2", inspectorThreeColumnClass)}>
                               <label className="grid gap-1.5 text-sm text-slate-200">
                                 <span className="font-medium">Iterations</span>
                                 <Input
@@ -9861,68 +10067,40 @@ export const RalphFlowEditor = ({
                   )}
                 />
               </div>
-              <div className="border-t border-slate-800 bg-slate-950/95 px-4 py-3">
-                <div className="flex min-w-0 items-center justify-between gap-3">
-                  <div className="min-w-0 text-xs">
-                    <div
-                      className={cn(
-                        "truncate font-medium",
-                        selectedFlowPrimaryActiveRun
-                          ? "text-sky-100"
-                          : dirty
+              <div className="border-t border-slate-800 bg-slate-950/95 px-3 py-2">
+                <div className="min-w-0 text-xs">
+                  <div
+                    className={cn(
+                      "truncate font-medium",
+                      selectedFlowPrimaryActiveRun
+                        ? "text-sky-100"
+                        : dirty
                           ? "text-amber-100"
                           : hasBlockingIssues
                             ? "text-rose-100"
                             : "text-slate-400",
-                      )}
-                    >
-                      {selectedFlowPrimaryActiveRun
-                        ? "Running"
-                        : dirty
+                    )}
+                  >
+                    {selectedFlowPrimaryActiveRun
+                      ? "Running"
+                      : dirty
                         ? "Unsaved changes"
                         : hasBlockingIssues
                           ? `${errorCount} validation error${errorCount === 1 ? "" : "s"}`
                           : runBlockedReason
                             ? "Run blocked"
                             : "Ready"}
-                    </div>
-                    <div className="truncate text-slate-600">
-                      {selectedBlock && selectedBlockOutputs.length > 0
-                        ? `${connectedSelectedRouteCount}/${selectedBlockOutputs.length} routes connected`
-                        : selectedBlock
-                          ? selectedBlock.type
-                          : selectedEdge
-                            ? "Route selected"
-                            : draftFlow
-                              ? `${draftFlow.blocks.length} blocks`
-                              : "No flow selected"}
-                    </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button
-                      type="button"
-                      disabled={!canSaveFlow}
-                      onClick={() => void saveFlow()}
-                      className="h-8 rounded-lg bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500 disabled:border disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-500"
-                    >
-                      <Save className="h-3.5 w-3.5" />
-                      Save
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={!canRunAction}
-                      aria-label="Run Ralph flow"
-                      onClick={() => void runFlow()}
-                      className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
-                    >
-                      {selectedFlowPrimaryActiveRun ? (
-                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Play className="h-3.5 w-3.5" />
-                      )}
-                      {runButtonLabel}
-                    </Button>
+                  <div className="truncate text-slate-600">
+                    {selectedBlock && selectedBlockOutputs.length > 0
+                      ? `${connectedSelectedRouteCount}/${selectedBlockOutputs.length} routes connected`
+                      : selectedBlock
+                        ? selectedBlock.type
+                        : selectedEdge
+                          ? "Route selected"
+                          : draftFlow
+                            ? `${draftFlow.blocks.length} blocks`
+                            : "No flow selected"}
                   </div>
                 </div>
               </div>
@@ -9932,112 +10110,94 @@ export const RalphFlowEditor = ({
             {editorMode === "design" ? (
               <section
                 className={cn(
-                  "row-start-2 grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] border-t border-slate-800 bg-slate-950",
+                  "row-start-2 grid min-h-0 grid-cols-[minmax(10rem,0.8fr)_minmax(10rem,0.8fr)_minmax(14rem,1.4fr)] border-t border-slate-800 bg-slate-950/95",
                   bottomPanelSpanClass,
                 )}
               >
                 <button
                   type="button"
                   onClick={() => setEditorMode("generate")}
-                  className="grid min-h-0 gap-1 border-r border-slate-800 px-4 py-2 text-left hover:bg-slate-900/60"
+                  className="flex min-w-0 items-center gap-2 border-r border-slate-800 px-4 text-left hover:bg-emerald-500/5"
                 >
-                  <span className="flex items-center gap-2 text-sm font-semibold text-white">
-                    <Sparkles className="h-4 w-4 text-emerald-300" />
-                    AI Flow Changes
-                  </span>
-                  <span className="truncate text-xs text-slate-500">
-                    Flow / Improve / Prompt
+                  <Sparkles className="h-4 w-4 shrink-0 text-emerald-300" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-semibold text-white">
+                      AI Flow Changes
+                    </span>
+                    <span className="block truncate text-[0.68rem] text-slate-400">
+                      Create or improve with AI
+                    </span>
                   </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setEditorMode("review")}
-                  className="grid min-h-0 gap-1 border-r border-slate-800 px-4 py-2 text-left hover:bg-slate-900/60"
+                  className="flex min-w-0 items-center gap-2 border-r border-slate-800 px-4 text-left hover:bg-amber-500/5"
                 >
-                  <span className="flex items-center gap-2 text-sm font-semibold text-white">
-                    <AlertTriangle className="h-4 w-4 text-amber-300" />
-                    Validation
-                  </span>
-                  <span
+                  <AlertTriangle
                     className={cn(
-                      "truncate text-xs",
-                      issues.length > 0 ? "text-amber-200" : "text-slate-500",
+                      "h-4 w-4 shrink-0",
+                      issues.length > 0 ? "text-amber-300" : "text-slate-500",
                     )}
-                  >
-                    {issues.length > 0
-                      ? `${errorCount} error${errorCount === 1 ? "" : "s"} / ${warningCount} warning${warningCount === 1 ? "" : "s"}`
-                      : "No local warnings."}
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-semibold text-white">
+                      Validation
+                    </span>
+                    <span
+                      className={cn(
+                        "block truncate text-[0.68rem]",
+                        issues.length > 0 ? "text-amber-200" : "text-slate-400",
+                      )}
+                    >
+                      {issues.length > 0
+                        ? `${errorCount} error${errorCount === 1 ? "" : "s"} · ${warningCount} warning${warningCount === 1 ? "" : "s"}`
+                        : "No local issues"}
+                    </span>
                   </span>
                 </button>
-                <div
-                  role="button"
-                  tabIndex={0}
+                <button
+                  type="button"
                   onClick={() => setEditorMode("run")}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setEditorMode("run");
-                    }
-                  }}
-                  className="grid min-h-0 cursor-pointer gap-1 px-4 py-2 hover:bg-slate-900/60"
+                  className="flex min-w-0 items-center justify-between gap-3 px-4 text-left hover:bg-lime-500/5"
                 >
-                  <div className="flex min-w-0 items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-2 text-left text-sm font-semibold text-white">
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-lime-300" />
-                      <span className="truncate">Run</span>
-                    </div>
-                    {runBlockedReason === "Save flow before running." && canSaveFlow ? (
-                      <Button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void saveFlow();
-                        }}
-                        className="h-7 rounded-lg bg-emerald-600 px-2 text-xs text-white hover:bg-emerald-500"
-                      >
-                        <Save className="h-3.5 w-3.5" />
-                        Save
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={!canRunAction}
-                        aria-label="Run Ralph flow"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void runFlow();
-                        }}
-                        className="h-7 rounded-lg border-slate-700 bg-slate-900 px-2 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
-                      >
-                        {selectedFlowPrimaryActiveRun ? (
-                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Play className="h-3.5 w-3.5" />
+                  <span className="flex min-w-0 items-center gap-2">
+                    <CheckCircle2
+                      className={cn(
+                        "h-4 w-4 shrink-0",
+                        runBlockedReason ? "text-amber-300" : "text-lime-300",
+                      )}
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-semibold text-white">
+                        Run & monitor
+                      </span>
+                      <span
+                        className={cn(
+                          "block truncate text-[0.68rem]",
+                          selectedFlowPrimaryActiveRun
+                            ? "text-sky-200"
+                            : runBlockedReason
+                              ? "text-amber-200"
+                              : "text-slate-400",
                         )}
-                        {runButtonLabel}
-                      </Button>
-                    )}
-                  </div>
-                  <span
-                    className={cn(
-                      "truncate text-xs",
-                      selectedFlowPrimaryActiveRun
-                        ? "text-sky-200"
-                        : runBlockedReason
-                          ? "text-amber-200"
-                          : "text-slate-500",
-                    )}
-                  >
-                    {runActionMessage}
+                      >
+                        {runActionMessage}
+                      </span>
+                    </span>
                   </span>
-                </div>
+                  <kbd className="hidden shrink-0 rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[0.62rem] text-slate-400 xl:inline">
+                    Ctrl+Enter
+                  </kbd>
+                </button>
               </section>
             ) : (
             <section
               className={cn(
-                "row-start-2 grid min-h-0 grid-cols-1 border-t border-slate-800 bg-slate-950",
-                bottomPanelSpanClass,
+                "grid min-h-0 grid-cols-1 bg-slate-950",
+                editorMode === "run"
+                  ? "col-start-2 row-start-1 border-l border-slate-800"
+                  : cn("row-start-2 border-t border-slate-800", bottomPanelSpanClass),
               )}
             >
               {editorMode === "generate" ? (
@@ -10431,24 +10591,19 @@ export const RalphFlowEditor = ({
 
               {editorMode === "run" ? (
               <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setEditorMode("run")}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setEditorMode("run");
-                    }
-                  }}
-                  className={cn(
-                    "flex cursor-pointer items-center justify-between gap-2 border-b border-slate-800 px-4 py-2",
-                    editorMode === "run" && "bg-slate-900/35",
-                  )}
-                >
-                  <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                    <CheckCircle2 className="h-4 w-4 text-lime-300" />
-                    Run
+                <div className="flex min-w-0 items-center justify-between gap-4 border-b border-slate-800 bg-slate-950/95 px-5 py-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-lime-400/20 bg-lime-500/10 text-lime-200">
+                      <Activity className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-white">
+                        Run workspace
+                      </span>
+                      <span className="block truncate text-xs text-slate-400">
+                        {draftFlow?.name ?? selectedSummary?.name ?? "Select a flow to configure and run"}
+                      </span>
+                    </span>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {activeRunCount > 0 ? (
@@ -10480,30 +10635,46 @@ export const RalphFlowEditor = ({
                   </div>
                 </div>
                 <ScrollArea className="min-h-0" type="always">
-                  <div className="grid gap-3 p-3">
-                    <div className="flex min-w-0 flex-wrap items-center gap-1 rounded-lg border border-slate-800 bg-slate-900/60 p-1">
+                  <div className="grid gap-4 p-4 xl:p-5">
+                    <nav
+                      aria-label="Ralph run workspace"
+                      className="grid min-w-0 max-w-2xl grid-cols-3 gap-1 rounded-xl border border-slate-800 bg-slate-900/60 p-1.5"
+                    >
                       {([
-                        ["setup", "Setup"],
-                        ["live", activeRuns.length > 0 ? `Live (${activeRuns.length})` : "Live"],
-                        ["history", "History"],
-                        ["details", "Details"],
-                        ["logs", selectedRunLog ? (selectedRunLog.kind === "trace" ? "Trace" : "Log") : "Logs"],
-                      ] as const).map(([tab, label]) => (
-                        <button
-                          key={tab}
-                          type="button"
-                          onClick={() => setRunPanelTab(tab)}
-                          className={cn(
-                            "h-7 rounded-md px-3 text-xs font-semibold",
-                            runPanelTab === tab
-                              ? "bg-lime-500/15 text-lime-100"
-                              : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
-                          )}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
+                        ["setup", "Setup", SlidersHorizontal],
+                        ["live", "Live", Activity],
+                        ["history", "History", History],
+                      ] as const).map(([tab, label, Icon]) => {
+                        const isActive =
+                          runPanelTab === tab ||
+                          (runPanelTab === "details" &&
+                            ((tab === "live" && Boolean(selectedActiveRun)) ||
+                              (tab === "history" && !selectedActiveRun)));
+
+                        return (
+                          <button
+                            key={tab}
+                            type="button"
+                            aria-pressed={isActive}
+                            onClick={() => setRunPanelTab(tab)}
+                            className={cn(
+                              "flex h-10 min-w-0 items-center justify-center gap-2 rounded-lg px-3 text-xs font-semibold transition",
+                              isActive
+                                ? "bg-lime-500/15 text-lime-50 shadow-sm ring-1 ring-lime-400/25"
+                                : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                            )}
+                          >
+                            <Icon className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{label}</span>
+                            {tab === "live" && activeRuns.length > 0 ? (
+                              <span className="min-w-5 rounded-full bg-sky-500/20 px-1.5 text-center text-[0.62rem] leading-5 text-sky-100">
+                                {activeRuns.length}
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </nav>
 
                     {pendingInputContinuationInProgress ? (
                       <div
@@ -10610,18 +10781,27 @@ export const RalphFlowEditor = ({
                     ) : null}
 
                     {runPanelTab === "setup" ? (
-                      <div className="grid gap-3">
-                        <div
+                      <div className="grid items-start gap-4 xl:grid-cols-[20rem_minmax(0,1fr)]">
+                        <aside className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/35 p-4 xl:sticky xl:top-0">
+                          <div className="grid gap-1">
+                            <div className="text-sm font-semibold text-white">
+                              Run readiness
+                            </div>
+                            <div className="text-xs leading-5 text-slate-400">
+                              Confirm the target, runtime, and required inputs before starting.
+                            </div>
+                          </div>
+                          <div
                           className={cn(
-                            "text-sm",
+                            "rounded-lg border px-3 py-2.5 text-sm",
                             selectedFlowPrimaryActiveRun
-                              ? "text-sky-100"
+                              ? "border-sky-400/25 bg-sky-500/10 text-sky-100"
                               : runBlockedReason
-                                ? "text-amber-100"
-                                : "text-lime-100",
+                                ? "border-amber-400/25 bg-amber-500/10 text-amber-100"
+                                : "border-lime-400/25 bg-lime-500/10 text-lime-100",
                           )}
                         >
-                          <div className="flex min-w-0 items-center justify-between gap-3">
+                          <div className="grid min-w-0 gap-2">
                             <span className="min-w-0 break-words">
                               {runActionMessage}
                             </span>
@@ -10630,7 +10810,7 @@ export const RalphFlowEditor = ({
                               <Button
                                 type="button"
                                 onClick={() => void saveFlow()}
-                                className="h-8 shrink-0 rounded-lg bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500"
+                                className="h-8 justify-self-start rounded-lg bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500"
                               >
                                 <Save className="h-3.5 w-3.5" />
                                 Save
@@ -10639,8 +10819,8 @@ export const RalphFlowEditor = ({
                           </div>
                         </div>
 
-                        <div className="grid gap-2 md:grid-cols-4">
-                          <div className="grid gap-1 rounded border border-slate-800 bg-slate-950/70 p-2">
+                        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                          <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
                             <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
                               Scope
                             </span>
@@ -10648,7 +10828,7 @@ export const RalphFlowEditor = ({
                               {selectedScopeLabel}
                             </span>
                           </div>
-                          <div className="grid gap-1 rounded border border-slate-800 bg-slate-950/70 p-2">
+                          <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
                             <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
                               Runtime
                             </span>
@@ -10656,7 +10836,7 @@ export const RalphFlowEditor = ({
                               {runProvider} / {runModel}
                             </span>
                           </div>
-                          <div className="grid gap-1 rounded border border-slate-800 bg-slate-950/70 p-2">
+                          <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
                             <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
                               Variables
                             </span>
@@ -10667,7 +10847,7 @@ export const RalphFlowEditor = ({
                                 : ""}
                             </span>
                           </div>
-                          <div className="grid gap-1 rounded border border-slate-800 bg-slate-950/70 p-2">
+                          <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
                             <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
                               Selected flow
                             </span>
@@ -10680,9 +10860,29 @@ export const RalphFlowEditor = ({
                             </span>
                           </div>
                         </div>
+                        </aside>
+
+                        <section className="grid min-w-0 gap-4 rounded-xl border border-slate-800 bg-slate-950/55 p-4">
+                          <div className="flex min-w-0 items-start justify-between gap-3 border-b border-slate-800 pb-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-white">
+                                Run inputs
+                              </div>
+                              <div className="mt-1 text-xs text-slate-400">
+                                {setupVariables.length > 0
+                                  ? `${setupVariables.length} variable${setupVariables.length === 1 ? "" : "s"} discovered from this flow.`
+                                  : "This flow can start without additional inputs."}
+                              </div>
+                            </div>
+                            {requiredMissingVariables.length > 0 ? (
+                              <span className="shrink-0 rounded-full border border-amber-400/25 bg-amber-500/10 px-2 py-1 text-[0.68rem] font-semibold text-amber-100">
+                                {requiredMissingVariables.length} required
+                              </span>
+                            ) : null}
+                          </div>
 
                         {draftFlow && setupVariables.length > 0 ? (
-                          <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
+                          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
                             {setupVariables.map((variable) => {
                               const variableError = setupVariableErrors[variable.name];
                               const variableErrorId = variableError
@@ -10692,7 +10892,7 @@ export const RalphFlowEditor = ({
                               return (
                                 <label
                                   key={variable.name}
-                                  className="grid gap-1.5 text-sm text-slate-200"
+                                  className="grid content-start gap-2 rounded-lg border border-slate-800 bg-slate-900/35 p-3 text-sm text-slate-200"
                                 >
                                   <span className="flex min-w-0 items-center justify-between gap-3">
                                     <span className="flex min-w-0 items-center gap-2">
@@ -10755,33 +10955,36 @@ export const RalphFlowEditor = ({
                             })}
                           </div>
                         ) : (
-                          <div className="text-xs text-slate-500">
-                            No variables required.
+                          <div className="grid min-h-40 place-items-center rounded-lg border border-dashed border-slate-800 bg-slate-900/20 p-6 text-center">
+                            <div className="grid max-w-sm gap-1">
+                              <CheckCircle2 className="mx-auto h-5 w-5 text-lime-300" />
+                              <div className="text-sm font-medium text-slate-200">
+                                No variables required
+                              </div>
+                              <div className="text-xs leading-5 text-slate-500">
+                                Start the run when the readiness panel shows no blockers.
+                              </div>
+                            </div>
                           </div>
                         )}
 
-                        {requiredMissingVariables.length > 0 ? (
-                          <div className="break-words text-sm text-amber-100">
-                            Missing required variable(s):{" "}
-                            {requiredMissingVariables.join(", ")}.
-                          </div>
-                        ) : null}
+                        </section>
                       </div>
                     ) : null}
 
                     {runPanelTab === "live" ? (
-                      <div className="grid gap-3">
+                      <div className="grid gap-4">
                         {activeRuns.length > 0 ? (
-                          <div className="grid gap-3 xl:grid-cols-[minmax(18rem,0.9fr)_minmax(0,1.1fr)]">
-                            <div className="grid gap-2">
+                          <div className="grid items-start gap-4 xl:grid-cols-[22rem_minmax(0,1fr)]">
+                            <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-900/30 p-3">
                               <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-slate-500">
                                 <span className="font-medium text-slate-400">
                                   Active runs
                                 </span>
                                 <span>{activeRuns.length}</span>
                               </div>
-                              <div className="grid gap-2">
-                                {activeRuns.slice(0, ACTIVE_RUN_LIST_LIMIT).map((activeRun) => {
+                              <div className="grid max-h-[calc(100vh-17rem)] content-start gap-2 overflow-y-auto pr-1">
+                                {activeRuns.map((activeRun) => {
                                   const status = getRunStatusPresentation(
                                     activeRun.status,
                                   );
@@ -10794,7 +10997,7 @@ export const RalphFlowEditor = ({
                                       type="button"
                                       onClick={() => focusActiveRun(activeRun)}
                                       className={cn(
-                                        "grid min-w-0 gap-2 rounded border p-2 text-left transition-colors",
+                                        "grid min-w-0 gap-2 rounded-lg border p-3 text-left transition-colors",
                                         isSelected
                                           ? "border-sky-400/40 bg-sky-500/10"
                                           : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-900/60",
@@ -10845,16 +11048,11 @@ export const RalphFlowEditor = ({
                                     </button>
                                   );
                                 })}
-                                {activeRuns.length > ACTIVE_RUN_LIST_LIMIT ? (
-                                  <div className="rounded border border-slate-800 bg-slate-950/70 px-2 py-1.5 text-xs text-slate-500">
-                                    {activeRuns.length - ACTIVE_RUN_LIST_LIMIT} more active run{activeRuns.length - ACTIVE_RUN_LIST_LIMIT === 1 ? "" : "s"} hidden. Open History after they finish.
-                                  </div>
-                                ) : null}
                               </div>
                             </div>
 
                             {liveRunForPanel ? (
-                              <div className="grid gap-3 rounded border border-slate-800 bg-slate-950/70 p-3">
+                              <div className="grid gap-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
                                 <div className="flex min-w-0 items-start justify-between gap-3">
                                   <div className="min-w-0">
                                     <div className="truncate text-sm font-semibold text-slate-100">
@@ -10955,7 +11153,7 @@ export const RalphFlowEditor = ({
                                       {visibleVariableEntries.map(([name, value]) => (
                                         <div
                                           key={name}
-                                          className="grid grid-cols-[10rem_minmax(0,1fr)] gap-2 rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs"
+                                          className="grid grid-cols-[10rem_minmax(0,1fr)_auto] items-center gap-2 rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs"
                                         >
                                           <span className="truncate font-medium text-slate-300">
                                             {name}
@@ -10963,6 +11161,10 @@ export const RalphFlowEditor = ({
                                           <span className="truncate text-slate-500" title={value}>
                                             {value || "(empty)"}
                                           </span>
+                                          <RalphCopyButton
+                                            value={value}
+                                            label={`${name} variable`}
+                                          />
                                         </div>
                                       ))}
                                       {hiddenVariableCount > 0 ? (
@@ -10974,7 +11176,7 @@ export const RalphFlowEditor = ({
                                           }}
                                           className="justify-self-start text-xs font-medium text-sky-200 hover:text-white"
                                         >
-                                          View {hiddenVariableCount} more variable{hiddenVariableCount === 1 ? "" : "s"} in Details
+                                          Inspect {hiddenVariableCount} more variable{hiddenVariableCount === 1 ? "" : "s"}
                                         </button>
                                       ) : null}
                                     </div>
@@ -11052,7 +11254,7 @@ export const RalphFlowEditor = ({
                                               }}
                                               className="justify-self-start text-xs font-medium text-sky-200 hover:text-white"
                                             >
-                                              View {hiddenBlockCount} more node{hiddenBlockCount === 1 ? "" : "s"} in Details
+                                              Inspect {hiddenBlockCount} more node{hiddenBlockCount === 1 ? "" : "s"}
                                             </button>
                                           ) : null}
                                         </div>
@@ -11068,8 +11270,29 @@ export const RalphFlowEditor = ({
                             ) : null}
                           </div>
                         ) : (
-                          <div className="text-sm text-slate-500">
-                            No active Ralph runs.
+                          <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 p-8 text-center">
+                            <div className="grid max-w-sm gap-3">
+                              <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-sky-400/20 bg-sky-500/10 text-sky-200">
+                                <Activity className="h-5 w-5" />
+                              </span>
+                              <div>
+                                <div className="text-sm font-semibold text-slate-200">
+                                  No active runs
+                                </div>
+                                <div className="mt-1 text-xs leading-5 text-slate-500">
+                                  Running flows appear here together, with their current node, elapsed time, and live output.
+                                </div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setRunPanelTab("setup")}
+                                className="mx-auto h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-200 hover:bg-slate-800 hover:text-white"
+                              >
+                                <SlidersHorizontal className="h-3.5 w-3.5" />
+                                Configure a run
+                              </Button>
+                            </div>
                           </div>
                         )}
 
@@ -11117,11 +11340,16 @@ export const RalphFlowEditor = ({
                     ) : null}
 
                     {runPanelTab === "history" ? (
-                      <div className="grid gap-2">
-                        <div className="flex min-w-0 items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
-                            <History className="h-3.5 w-3.5" />
-                            Run history
+                      <div className="grid gap-4">
+                        <div className="flex min-w-0 items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                              <History className="h-4 w-4 text-slate-400" />
+                              Run history
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              Search past executions, then inspect outputs and logs in one place.
+                            </div>
                           </div>
                           <Button
                             type="button"
@@ -11142,18 +11370,40 @@ export const RalphFlowEditor = ({
                           </Button>
                         </div>
 
+                        <label className="relative block max-w-xl">
+                          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                          <Input
+                            value={runHistoryQuery}
+                            aria-label="Search Ralph run history"
+                            placeholder="Search by status, summary, flow, or run ID"
+                            onChange={(event) => setRunHistoryQuery(event.target.value)}
+                            className="h-9 rounded-lg border-slate-700 bg-slate-950 pl-9 text-xs text-slate-100 placeholder:text-slate-600"
+                          />
+                        </label>
+
                         {runHistoryLoading ? (
                           <div className="flex items-center gap-2 text-xs text-slate-500">
                             <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                             Loading runs.
                           </div>
                         ) : runHistory.length === 0 ? (
-                          <div className="text-xs text-slate-500">
-                            No runs recorded for this flow.
+                          <div className="grid min-h-48 place-items-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 p-6 text-center">
+                            <div className="grid gap-1">
+                              <div className="text-sm font-medium text-slate-300">
+                                No runs recorded
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                Completed, failed, and waiting runs will appear here.
+                              </div>
+                            </div>
+                          </div>
+                        ) : filteredRunHistory.length === 0 ? (
+                          <div className="rounded-xl border border-slate-800 bg-slate-900/25 p-5 text-sm text-slate-400">
+                            No runs match “{runHistoryQuery}”.
                           </div>
                         ) : (
-                          <div className="grid gap-2">
-                            {runHistory.map((run) => {
+                          <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
+                            {filteredRunHistory.map((run) => {
                               const status = getRunStatusPresentation(run.status);
                               const StatusIcon = status.icon;
                               const isSelected = selectedRunId === run.id;
@@ -11170,13 +11420,12 @@ export const RalphFlowEditor = ({
                                 <div
                                   key={run.id}
                                   className={cn(
-                                    "grid gap-2 rounded border p-2",
+                                    "grid min-w-0 gap-3 rounded-xl border p-3 transition",
                                     isSelected
                                       ? "border-sky-400/40 bg-sky-500/10"
-                                      : "border-slate-800 bg-slate-950/70",
+                                      : "border-slate-800 bg-slate-950/70 hover:border-slate-700",
                                   )}
                                 >
-                                  <div className="flex min-w-0 items-start justify-between gap-3">
                                     <button
                                       type="button"
                                       onClick={() =>
@@ -11184,7 +11433,7 @@ export const RalphFlowEditor = ({
                                           ? openRunLog(run.id, "simple", selectedScope)
                                           : openRunDetail(run.id, selectedScope))
                                       }
-                                      className="min-w-0 flex-1 text-left"
+                                      className="min-w-0 text-left"
                                     >
                                       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                         <span
@@ -11211,14 +11460,18 @@ export const RalphFlowEditor = ({
                                           {run.eventCount} events
                                         </span>
                                       </div>
-                                      <div className="mt-1 truncate text-sm font-medium text-slate-200">
+                                      <div className="mt-2 line-clamp-2 text-sm font-medium leading-5 text-slate-200">
                                         {run.summary}
                                       </div>
                                       <div className="mt-0.5 truncate text-[0.68rem] text-slate-600">
                                         {run.id}
                                       </div>
                                     </button>
-                                    <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                                    <div className="flex min-w-0 flex-wrap items-center gap-1 border-t border-slate-800/80 pt-2">
+                                      <RalphCopyButton
+                                        value={run.id}
+                                        label="run ID"
+                                      />
                                       <Button
                                         type="button"
                                         variant="ghost"
@@ -11229,7 +11482,7 @@ export const RalphFlowEditor = ({
                                         className="h-7 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white"
                                       >
                                         <FileJson className="h-3.5 w-3.5" />
-                                        Details
+                                        Inspect
                                       </Button>
                                       <Button
                                         type="button"
@@ -11256,7 +11509,6 @@ export const RalphFlowEditor = ({
                                         Trace
                                       </Button>
                                     </div>
-                                  </div>
                                 </div>
                               );
                             })}
@@ -11266,7 +11518,108 @@ export const RalphFlowEditor = ({
                     ) : null}
 
                     {runPanelTab === "details" ? (
-                      <div className="grid gap-3">
+                      <div className="grid gap-4">
+                        <div className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={selectedActiveRun ? "Back to live runs" : "Back to run history"}
+                              title={selectedActiveRun ? "Back to live runs" : "Back to run history"}
+                              onClick={() => setRunPanelTab(selectedActiveRun ? "live" : "history")}
+                              className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-white"
+                            >
+                              <ArrowLeft className="h-4 w-4" />
+                            </Button>
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-white">
+                                Run inspector
+                              </div>
+                              <div className="truncate text-xs text-slate-500">
+                                {selectedRunId ?? "Select a run"}
+                              </div>
+                            </div>
+                          </div>
+                          {selectedRunId ? (
+                            <RalphCopyButton value={selectedRunId} label="run ID" />
+                          ) : null}
+                        </div>
+
+                        {runLogLoading ? (
+                          <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/25 p-4 text-sm text-slate-400">
+                            <LoaderCircle className="h-4 w-4 animate-spin" />
+                            Loading run output…
+                          </div>
+                        ) : selectedRunLog ? (
+                          <section className="grid gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+                            <div className="flex min-w-0 items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                                  {selectedRunLog.kind === "trace" ? (
+                                    <Terminal className="h-4 w-4 text-violet-300" />
+                                  ) : (
+                                    <FileText className="h-4 w-4 text-sky-300" />
+                                  )}
+                                  {selectedRunLog.kind === "trace" ? "Detailed trace" : "Readable log"}
+                                </div>
+                                <div className="mt-1 truncate text-[0.68rem] text-slate-600" title={selectedRunLog.path}>
+                                  {selectedRunLog.path}
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  disabled={runLogLoading}
+                                  onClick={() => void openRunLog(selectedRunLog.runId, "simple", selectedScope)}
+                                  className={cn(
+                                    "h-7 rounded-lg px-2 text-xs hover:bg-slate-900 hover:text-white",
+                                    selectedRunLog.kind === "simple" ? "bg-sky-500/10 text-sky-100" : "text-slate-500",
+                                  )}
+                                >
+                                  Log
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  disabled={runLogLoading}
+                                  onClick={() => void openRunLog(selectedRunLog.runId, "trace", selectedScope)}
+                                  className={cn(
+                                    "h-7 rounded-lg px-2 text-xs hover:bg-slate-900 hover:text-white",
+                                    selectedRunLog.kind === "trace" ? "bg-violet-500/10 text-violet-100" : "text-slate-500",
+                                  )}
+                                >
+                                  Trace
+                                </Button>
+                                <RalphCopyButton
+                                  value={selectedRunLog.content}
+                                  label={selectedRunLog.kind === "trace" ? "trace" : "log"}
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label="Close Ralph run log"
+                                  title="Close Ralph run log"
+                                  onClick={() => setSelectedRunLog(null)}
+                                  className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                            <pre
+                              className={cn(
+                                "max-h-[28rem] overflow-auto rounded-lg border border-slate-800 bg-black/30 p-3 font-mono text-[0.72rem] leading-5 text-slate-300",
+                                selectedRunLog.kind === "trace" ? "whitespace-pre" : "whitespace-pre-wrap",
+                              )}
+                            >
+                              {selectedRunLog.content}
+                            </pre>
+                          </section>
+                        ) : null}
+
                         {runDetailLoading && !selectedActiveRun ? (
                           <div className="flex items-center gap-2 text-sm text-slate-500">
                             <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
@@ -11361,14 +11714,17 @@ export const RalphFlowEditor = ({
                                     ([name, value]) => (
                                       <div
                                         key={name}
-                                        className="grid gap-1 rounded border border-slate-800 bg-slate-950/80 p-2"
+                                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded border border-slate-800 bg-slate-950/80 p-2"
                                       >
-                                        <span className="truncate text-xs font-medium text-slate-300">
-                                          {name}
+                                        <span className="grid min-w-0 gap-1">
+                                          <span className="truncate text-xs font-medium text-slate-300">
+                                            {name}
+                                          </span>
+                                          <span className="truncate text-xs text-slate-500" title={value}>
+                                            {value || "(empty)"}
+                                          </span>
                                         </span>
-                                        <span className="truncate text-xs text-slate-500" title={value}>
-                                          {value || "(empty)"}
-                                        </span>
+                                        <RalphCopyButton value={value} label={`${name} variable`} />
                                       </div>
                                     ),
                                   )}
@@ -11436,7 +11792,7 @@ export const RalphFlowEditor = ({
 
                             return (
                               <div className="grid gap-3">
-                                <div className="grid gap-3 rounded border border-slate-800 bg-slate-950/70 p-3">
+                                <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
                                   <div className="flex min-w-0 items-start justify-between gap-3">
                                     <div className="min-w-0">
                                       <div className="truncate text-sm font-semibold text-slate-100">
@@ -11466,6 +11822,10 @@ export const RalphFlowEditor = ({
                                       </div>
                                     </div>
                                     <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                                      <RalphCopyButton
+                                        value={JSON.stringify(selectedRunRecord, null, 2)}
+                                        label="run details"
+                                      />
                                       <Button
                                         type="button"
                                         variant="ghost"
@@ -11500,9 +11860,15 @@ export const RalphFlowEditor = ({
                                       </Button>
                                     </div>
                                   </div>
-                                  <p className="break-words text-sm text-slate-300">
-                                    {selectedRunRecord.summary}
-                                  </p>
+                                  <div className="flex min-w-0 items-start justify-between gap-2 rounded-lg border border-slate-800/80 bg-slate-900/25 p-3">
+                                    <p className="min-w-0 break-words text-sm leading-5 text-slate-300">
+                                      {selectedRunRecord.summary}
+                                    </p>
+                                    <RalphCopyButton
+                                      value={selectedRunRecord.summary}
+                                      label="run summary"
+                                    />
+                                  </div>
                                   <div className="grid gap-2 md:grid-cols-4">
                                     <div className="rounded border border-slate-800 bg-slate-950 p-2">
                                       <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -11553,7 +11919,7 @@ export const RalphFlowEditor = ({
                                           ([name, value]) => (
                                             <div
                                               key={name}
-                                              className="grid grid-cols-[9rem_minmax(0,1fr)] gap-2 rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs"
+                                              className="grid grid-cols-[9rem_minmax(0,1fr)_auto] items-center gap-2 rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs"
                                             >
                                               <span className="truncate font-medium text-slate-300">
                                                 {name}
@@ -11561,6 +11927,7 @@ export const RalphFlowEditor = ({
                                               <span className="truncate text-slate-500" title={value}>
                                                 {value || "(empty)"}
                                               </span>
+                                              <RalphCopyButton value={value} label={`${name} variable`} />
                                             </div>
                                           ),
                                         )}
@@ -11646,115 +12013,6 @@ export const RalphFlowEditor = ({
                         ) : (
                           <div className="text-sm text-slate-500">
                             Select a live run or history entry to inspect variables, block results, events, and logs.
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
-
-                    {runPanelTab === "logs" ? (
-                      <div className="grid gap-2">
-                        {runLogLoading ? (
-                          <div className="flex items-center gap-2 text-sm text-slate-500">
-                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                            Loading log.
-                          </div>
-                        ) : selectedRunLog ? (
-                          <>
-                            <div className="flex min-w-0 items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="truncate text-xs font-medium text-slate-300">
-                                  {selectedRunLog.kind === "trace" ? "Trace" : "Log"} /{" "}
-                                  {selectedRunLog.runId}
-                                </div>
-                                <div className="truncate text-[0.68rem] text-slate-600">
-                                  {selectedRunLog.path}
-                                </div>
-                              </div>
-                              <div className="flex shrink-0 flex-wrap justify-end gap-1">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  disabled={runLogLoading}
-                                  onClick={() =>
-                                    void openRunLog(
-                                      selectedRunLog.runId,
-                                      "simple",
-                                      selectedScope,
-                                    )
-                                  }
-                                  className={cn(
-                                    "h-7 rounded-lg px-2 text-xs hover:bg-slate-900 hover:text-white",
-                                    selectedRunLog.kind === "simple"
-                                      ? "text-slate-100"
-                                      : "text-slate-500",
-                                  )}
-                                >
-                                  <FileText className="h-3.5 w-3.5" />
-                                  Log
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  disabled={runLogLoading}
-                                  onClick={() =>
-                                    void openRunLog(
-                                      selectedRunLog.runId,
-                                      "trace",
-                                      selectedScope,
-                                    )
-                                  }
-                                  className={cn(
-                                    "h-7 rounded-lg px-2 text-xs hover:bg-slate-900 hover:text-white",
-                                    selectedRunLog.kind === "trace"
-                                      ? "text-slate-100"
-                                      : "text-slate-500",
-                                  )}
-                                >
-                                  <Terminal className="h-3.5 w-3.5" />
-                                  Trace
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  disabled={runDetailLoading}
-                                  onClick={() =>
-                                    void openRunDetail(
-                                      selectedRunLog.runId,
-                                      selectedScope,
-                                    )
-                                  }
-                                  className="h-7 rounded-lg px-2 text-xs text-slate-400 hover:bg-slate-900 hover:text-white"
-                                >
-                                  <FileJson className="h-3.5 w-3.5" />
-                                  Details
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label="Close Ralph run log"
-                                  title="Close Ralph run log"
-                                  onClick={() => setSelectedRunLog(null)}
-                                  className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </div>
-                            <pre
-                              className={cn(
-                                "max-h-[min(52vh,34rem)] overflow-auto rounded border border-slate-800 bg-slate-950 p-3 font-mono text-[0.72rem] leading-5 text-slate-300",
-                                selectedRunLog.kind === "trace"
-                                  ? "whitespace-pre"
-                                  : "whitespace-pre-wrap",
-                              )}
-                            >
-                              {selectedRunLog.content}
-                            </pre>
-                          </>
-                        ) : (
-                          <div className="text-sm text-slate-500">
-                            Open a run from History or Details to inspect its readable log or detailed trace.
                           </div>
                         )}
                       </div>

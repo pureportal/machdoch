@@ -17,7 +17,7 @@ import {
 export type RalphEditorMode = "design" | "generate" | "run" | "review";
 export type RalphAiTarget = "flow" | "prompt-block" | "refactor";
 export type RalphAiGenerationMode = "do-it" | "interview";
-export type RalphRunPanelTab = "setup" | "live" | "history" | "details" | "logs";
+export type RalphRunPanelTab = "setup" | "live" | "history" | "details";
 export type ClipboardCopyState = "idle" | "copied" | "failed";
 export type RalphInspectorSectionId =
   | "content"
@@ -27,7 +27,6 @@ export type RalphInspectorSectionId =
   | "advanced";
 export type RalphAttachmentSelectionKind = "files" | "folders" | "images";
 
-export const ACTIVE_RUN_LIST_LIMIT = 6;
 export const LIVE_VARIABLE_PREVIEW_LIMIT = 6;
 export const LIVE_EXPANDED_NODE_PREVIEW_LIMIT = 3;
 export const ACTIVE_TASK_REGISTRATION_GRACE_MS = 5_000;
@@ -169,6 +168,16 @@ export const RALPH_VARIABLE_SNIPPETS = [
   "{{verificationCommand:string=pnpm typecheck:ui}}",
 ] as const;
 
+export const RALPH_EDITOR_SHORTCUTS = [
+  ["Save flow", "Ctrl+S"],
+  ["Undo", "Ctrl+Z"],
+  ["Redo", "Ctrl+Shift+Z"],
+  ["Duplicate block", "Ctrl+D"],
+  ["Clean layout", "Ctrl+L"],
+  ["Run flow", "Ctrl+Enter"],
+  ["Remove selection", "Delete"],
+] as const;
+
 export const PROVIDER_OPTIONS: readonly RalphProviderOption[] = [
   "default",
   ...RUNNABLE_PROVIDER_ORDER,
@@ -223,6 +232,7 @@ export const RALPH_CONTEXT_MENU_HEIGHT = 300;
 export const RALPH_CONTEXT_MENU_MARGIN = 8;
 export const RALPH_VALIDATION_JUMP_DURATION_MS = 220;
 export const RALPH_NEW_BLOCK_CENTER_DURATION_MS = 180;
+export const RALPH_LAYOUT_FIT_DURATION_MS = 240;
 export const RALPH_REACT_FLOW_PRO_OPTIONS = {
   hideAttribution: true,
 } satisfies ProOptions;

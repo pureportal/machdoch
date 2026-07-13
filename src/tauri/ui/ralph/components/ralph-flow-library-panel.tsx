@@ -3,7 +3,6 @@ import {
   LoaderCircle,
   Plus,
   RefreshCw,
-  Save,
   Workflow,
   X,
 } from "lucide-react";
@@ -48,7 +47,6 @@ export type RalphFlowListRow =
 
 interface RalphFlowLibraryPanelProps {
   activeRunsByFlowKey: ReadonlyMap<string, readonly ActiveRalphRun[]>;
-  canSaveFlow: boolean;
   defaultFlowActionScope: RalphFlowScope;
   dirty: boolean;
   displayFlowRows: readonly RalphFlowListRow[];
@@ -81,7 +79,6 @@ interface RalphFlowLibraryPanelProps {
   onOpenFlowList: () => void;
   onOpenStarterFlowDialog: () => void;
   onRefreshFlows: () => void;
-  onSaveFlow: () => void;
   onSelectFlow: (flow: RalphFlowSummary) => void;
   onUpgradeStarterFlow: (flow: RalphFlowSummary) => void;
 }
@@ -147,7 +144,6 @@ const getFlowStatusLabel = ({
 
 export const RalphFlowLibraryPanel = ({
   activeRunsByFlowKey,
-  canSaveFlow,
   defaultFlowActionScope,
   dirty,
   displayFlowRows,
@@ -166,7 +162,6 @@ export const RalphFlowLibraryPanel = ({
   onOpenFlowList,
   onOpenStarterFlowDialog,
   onRefreshFlows,
-  onSaveFlow,
   onSelectFlow,
   onUpgradeStarterFlow,
   selectedFlowKey,
@@ -196,11 +191,11 @@ export const RalphFlowLibraryPanel = ({
   }
 
   return (
-    <aside className="col-start-1 row-start-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-slate-800 bg-slate-950/80">
-      <div className="grid gap-3 border-b border-slate-800 p-4">
+    <aside className="col-start-1 row-start-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-slate-800 bg-slate-950/85">
+      <div className="grid gap-2.5 border-b border-slate-800 p-3">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-            Flows
+          <span className="text-xs font-semibold tracking-[0.16em] text-slate-300 uppercase">
+            Flow library
           </span>
           <div className="flex items-center gap-1">
             <Button
@@ -276,24 +271,6 @@ export const RalphFlowLibraryPanel = ({
             <Workflow className="h-3.5 w-3.5" />
             Starters
           </Button>
-          <Button
-            type="button"
-            disabled={!canSaveFlow}
-            onClick={onSaveFlow}
-            className={cn(
-              "col-span-2 h-9 rounded-lg px-3 text-xs",
-              canSaveFlow
-                ? "bg-emerald-600 text-white hover:bg-emerald-500"
-                : "border border-slate-800 bg-slate-900 text-slate-500",
-            )}
-          >
-            {loading ? (
-              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Save className="h-3.5 w-3.5" />
-            )}
-            Save
-          </Button>
         </div>
       </div>
 
@@ -305,7 +282,7 @@ export const RalphFlowLibraryPanel = ({
               Loading Ralph flows...
             </div>
           ) : displayFlowRows.length === 0 ? (
-            <div className="px-2 py-3 text-sm leading-5 text-slate-500">
+            <div className="px-2 py-3 text-sm leading-5 text-slate-400">
               {workspaceRoot
                 ? `No ${RALPH_FLOW_LIBRARY_LABELS[flowLibraryMode].toLowerCase()} Ralph flows found.`
                 : "Choose a workspace before creating Ralph flows."}
@@ -439,7 +416,7 @@ const RalphFlowLibraryRow = ({
             />
           </span>
         </span>
-        <span className="truncate text-[0.68rem] leading-4 text-slate-500">
+        <span className="truncate text-[0.7rem] leading-4 text-slate-400">
           {formatFlowSubtitle(flow)}
         </span>
         {starterUpdate ? (

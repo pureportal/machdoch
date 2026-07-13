@@ -65,7 +65,6 @@ const renderPanel = (
 ) => {
   const defaultProps: ComponentProps<typeof RalphFlowLibraryPanel> = {
     activeRunsByFlowKey: new Map(),
-    canSaveFlow: true,
     defaultFlowActionScope: "workspace",
     dirty: false,
     displayFlowRows: displayRows,
@@ -84,7 +83,6 @@ const renderPanel = (
     onOpenFlowList: vi.fn(),
     onOpenStarterFlowDialog: vi.fn(),
     onRefreshFlows: vi.fn(),
-    onSaveFlow: vi.fn(),
     onSelectFlow: vi.fn(),
     onUpgradeStarterFlow: vi.fn(),
     selectedFlowKey: null,

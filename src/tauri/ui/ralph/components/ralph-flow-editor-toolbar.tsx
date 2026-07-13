@@ -62,16 +62,16 @@ export const RalphFlowEditorToolbar = ({
   onAddBlock,
 }: RalphFlowEditorToolbarProps): JSX.Element => {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+    <div className="flex min-w-0 items-center justify-between gap-2 border-b border-slate-800 bg-slate-950/80 px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">
         <Route className="h-4 w-4 shrink-0 text-sky-300" />
-        <span className="truncate text-sm font-semibold text-white">
+        <span className="hidden truncate text-sm font-semibold text-white min-[1450px]:inline">
           {flowTitle}
         </span>
         {hasSelectedFlow ? (
           <span
             className={cn(
-              "shrink-0 rounded border px-1.5 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.12em]",
+              "hidden shrink-0 rounded border px-1.5 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.12em] min-[1450px]:inline",
               selectedScope === "user"
                 ? "border-sky-400/30 bg-sky-500/10 text-sky-100"
                 : "border-slate-700 bg-slate-900 text-slate-400",
@@ -82,129 +82,135 @@ export const RalphFlowEditorToolbar = ({
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label="Undo Ralph edit"
-              title="Undo Ralph edit"
-              disabled={!canUndo}
-              onClick={onUndo}
-              className="h-8 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white disabled:text-slate-700"
-            >
-              <Undo2 className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Undo</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label="Redo Ralph edit"
-              title="Redo Ralph edit"
-              disabled={!canRedo}
-              onClick={onRedo}
-              className="h-8 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white disabled:text-slate-700"
-            >
-              <Redo2 className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Redo</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label="Clean Ralph layout"
-              title="Clean Ralph layout"
-              disabled={!canCleanLayout}
-              onClick={onCleanLayout}
-              className="h-8 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white disabled:text-slate-700"
-            >
-              <LayoutGrid className="h-4 w-4 text-slate-300" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Clean layout</TooltipContent>
-        </Tooltip>
-        {canShowInspector ? (
+        <div className="flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-900/45 p-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 type="button"
                 variant="ghost"
-                aria-label="Show block settings"
-                title="Show block settings"
-                onClick={onShowInspector}
-                className="h-8 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white"
+                aria-label="Undo Ralph edit"
+                title="Undo Ralph edit (Ctrl+Z)"
+                disabled={!canUndo}
+                onClick={onUndo}
+                className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
               >
-                <SlidersHorizontal className="h-4 w-4 text-slate-300" />
+                <Undo2 className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Show settings</TooltipContent>
+            <TooltipContent side="bottom">Undo · Ctrl+Z</TooltipContent>
           </Tooltip>
-        ) : null}
-        <div className="mx-1 h-5 w-px bg-slate-800" />
-        {BLOCK_ACTIONS.map((action) => {
-          const tone = getBlockTone(action.type);
-          const Icon = tone.icon;
-
-          return (
-            <Tooltip key={action.type}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label="Redo Ralph edit"
+                title="Redo Ralph edit (Ctrl+Shift+Z)"
+                disabled={!canRedo}
+                onClick={onRedo}
+                className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
+              >
+                <Redo2 className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Redo · Ctrl+Shift+Z</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label="Clean Ralph layout"
+                title="Clean Ralph layout (Ctrl+L)"
+                disabled={!canCleanLayout}
+                onClick={onCleanLayout}
+                className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
+              >
+                <LayoutGrid className="h-4 w-4 text-slate-300" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Clean layout · Ctrl+L</TooltipContent>
+          </Tooltip>
+          {canShowInspector ? (
+            <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   type="button"
                   variant="ghost"
-                  aria-label={`Add ${action.label} block`}
-                  title={`Add ${action.label} block`}
-                  disabled={action.type === "START" && flowHasStart}
-                  onClick={() => onAddBlock(action.type)}
-                  className="h-8 w-8 rounded-lg p-0 text-slate-300 hover:bg-slate-900 hover:text-white disabled:text-slate-700"
+                  aria-label="Show block settings"
+                  title="Show block settings"
+                  onClick={onShowInspector}
+                  className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
                 >
-                  <Icon className={cn("h-4 w-4", tone.badgeClassName)} />
+                  <SlidersHorizontal className="h-4 w-4 text-slate-300" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">{action.label}</TooltipContent>
+              <TooltipContent side="bottom">Show settings</TooltipContent>
             </Tooltip>
-          );
-        })}
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  aria-label="Add MCP block"
-                  title="Add MCP block"
-                  className="h-8 w-8 rounded-lg p-0 text-slate-300 hover:bg-slate-900 hover:text-white"
+          ) : null}
+        </div>
+        <div className="flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-900/45 p-1">
+          <span className="hidden px-1 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-slate-500 2xl:inline">
+            Add
+          </span>
+          {BLOCK_ACTIONS.map((action) => {
+            const tone = getBlockTone(action.type);
+            const Icon = tone.icon;
+
+            return (
+              <Tooltip key={action.type}>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    aria-label={`Add ${action.label} block`}
+                    title={`Add ${action.label} block`}
+                    disabled={action.type === "START" && flowHasStart}
+                    onClick={() => onAddBlock(action.type)}
+                    className="h-7 w-7 rounded-md p-0 text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
+                  >
+                    <Icon className={cn("h-4 w-4", tone.badgeClassName)} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{action.label}</TooltipContent>
+              </Tooltip>
+            );
+          })}
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    aria-label="Add MCP block"
+                    title="Add MCP block"
+                    className="h-7 w-7 rounded-md p-0 text-slate-300 hover:bg-slate-800 hover:text-white"
+                  >
+                    <Globe2 className="h-4 w-4 text-violet-300" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">MCP</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent
+              align="end"
+              sideOffset={5}
+              className="z-[90] min-w-36 rounded-md border border-slate-700 bg-slate-950 p-1 text-slate-100 shadow-xl shadow-black/30"
+            >
+              {MCP_BLOCK_ACTIONS.map((action) => (
+                <DropdownMenuItem
+                  key={action.type}
+                  onSelect={() => onAddBlock(action.type)}
+                  className="flex min-w-0 cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs font-medium text-slate-300 outline-none focus:bg-violet-500/15 focus:text-violet-100"
                 >
-                  <Globe2 className="h-4 w-4 text-violet-300" />
-                </Button>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">MCP</TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent
-            align="end"
-            sideOffset={5}
-            className="z-[90] min-w-36 rounded-md border border-slate-700 bg-slate-950 p-1 text-slate-100 shadow-xl shadow-black/30"
-          >
-            {MCP_BLOCK_ACTIONS.map((action) => (
-              <DropdownMenuItem
-                key={action.type}
-                onSelect={() => onAddBlock(action.type)}
-                className="flex min-w-0 cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs font-medium text-slate-300 outline-none focus:bg-violet-500/15 focus:text-violet-100"
-              >
-                <Globe2 className="h-3.5 w-3.5 shrink-0 text-violet-300" />
-                <span className="min-w-0 truncate">{action.label}</span>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+                  <Globe2 className="h-3.5 w-3.5 shrink-0 text-violet-300" />
+                  <span className="min-w-0 truncate">{action.label}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </div>
   );
