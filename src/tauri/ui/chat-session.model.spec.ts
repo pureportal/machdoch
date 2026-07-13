@@ -455,6 +455,7 @@ describe("normalizeShellState", () => {
                       {
                         path: "src/source.ts",
                         kind: "modified",
+                        repositoryPath: "api\\service",
                         additions: 3.4,
                         deletions: -2,
                         ranges: [
@@ -481,6 +482,7 @@ describe("normalizeShellState", () => {
                     lineCountsComplete: true,
                     coverage: "complete",
                     truncated: false,
+                    repositoryCount: 2,
                     warnings: ["A bounded warning."],
                   },
                 },
@@ -562,6 +564,7 @@ describe("normalizeShellState", () => {
             {
               path: "src/source.ts",
               kind: "modified",
+              repositoryPath: "api/service",
               additions: 3,
               deletions: 0,
               ranges: [
@@ -582,6 +585,7 @@ describe("normalizeShellState", () => {
           coverage: "complete",
           truncated: true,
           attribution: "workspace-observed",
+          repositoryCount: 2,
           warnings: ["A bounded warning."],
         },
       },

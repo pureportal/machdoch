@@ -1,4 +1,9 @@
-import { ChevronDown, FileDiff, TriangleAlert } from "lucide-react";
+import {
+  ChevronDown,
+  FileDiff,
+  GitBranch,
+  TriangleAlert,
+} from "lucide-react";
 import { type JSX, useState } from "react";
 import type {
   TaskExecutionFileChange,
@@ -78,6 +83,57 @@ const getFileKindClassName = (file: TaskExecutionFileChange): string => {
   return "border-sky-500/25 bg-sky-500/10 text-sky-300";
 };
 
+interface RepositoryFileChangeGroup {
+  repositoryPath: string;
+  files: TaskExecutionFileChange[];
+}
+
+const groupFilesByRepository = (
+  files: readonly TaskExecutionFileChange[],
+): RepositoryFileChangeGroup[] => {
+  const filesByRepository = new Map<string, TaskExecutionFileChange[]>();
+
+  for (const file of files) {
+    const repositoryPath = file.repositoryPath ?? ".";
+    const repositoryFiles = filesByRepository.get(repositoryPath) ?? [];
+    repositoryFiles.push(file);
+    filesByRepository.set(repositoryPath, repositoryFiles);
+  }
+
+  return Array.from(filesByRepository, ([repositoryPath, repositoryFiles]) => ({
+    repositoryPath,
+    files: repositoryFiles,
+  })).sort((left, right) => {
+    if (left.repositoryPath === ".") {
+      return -1;
+    }
+
+    if (right.repositoryPath === ".") {
+      return 1;
+    }
+
+    return left.repositoryPath.localeCompare(right.repositoryPath);
+  });
+};
+
+const getRepositoryLabel = (repositoryPath: string): string => {
+  return repositoryPath === "." ? "Workspace repository" : repositoryPath;
+};
+
+const getRepositoryRelativeFilePath = (
+  file: TaskExecutionFileChange,
+): string => {
+  if (
+    !file.repositoryPath ||
+    file.repositoryPath === "." ||
+    !file.path.startsWith(`${file.repositoryPath}/`)
+  ) {
+    return file.path;
+  }
+
+  return file.path.slice(file.repositoryPath.length + 1);
+};
+
 export interface ExecutionFileChangesProps {
   fileChanges: TaskExecutionFileChanges;
   onOpenWorkspaceFile: (relativePath: string) => void;
@@ -88,6 +144,15 @@ export const ExecutionFileChanges = ({
   onOpenWorkspaceFile,
 }: ExecutionFileChangesProps): JSX.Element => {
   const [open, setOpen] = useState(false);
+  const repositoryGroups = groupFilesByRepository(fileChanges.files);
+  const repositoryCount = Math.max(
+    repositoryGroups.length,
+    fileChanges.repositoryCount ?? 0,
+  );
+  const hasMultipleRepositories = repositoryCount > 1;
+  const showRepositoryHeaders =
+    hasMultipleRepositories ||
+    repositoryGroups.some((group) => group.repositoryPath !== ".");
   const warnings = Array.from(
     new Set([
       ...(fileChanges.warnings ?? []),
@@ -96,7 +161,11 @@ export const ExecutionFileChanges = ({
         : []),
     ]),
   );
-  const summaryLabel = `${fileChanges.totalFiles} file change${fileChanges.totalFiles === 1 ? "" : "s"}`;
+  const summaryLabel = `${fileChanges.totalFiles} file change${fileChanges.totalFiles === 1 ? "" : "s"}${
+    hasMultipleRepositories
+      ? ` across ${repositoryCount} repositories`
+      : ""
+  }`;
   const accessibilityLabel = [
     summaryLabel,
     `${fileChanges.additions} additions`,
@@ -147,7 +216,9 @@ export const ExecutionFileChanges = ({
                 File changes
               </p>
               <p className="mt-0.5 text-xs leading-5 text-slate-400">
-                Workspace changes observed while this task was running.
+                {hasMultipleRepositories
+                  ? `Workspace changes observed across ${repositoryCount} Git repositories.`
+                  : "Workspace changes observed while this task was running."}
               </p>
             </div>
             <span
@@ -184,46 +255,66 @@ export const ExecutionFileChanges = ({
           className="max-h-80 overflow-y-auto overscroll-contain p-2"
         >
           {fileChanges.files.length > 0 ? (
-            fileChanges.files.map((file) => (
-              <button
-                key={file.path}
-                type="button"
-                aria-label={`${getFileKindLabel(file)} ${file.path}, ${getFileRangeSummary(file)}`}
-                title={createFileChangeTitle(file)}
-                disabled={file.kind === "deleted"}
-                onClick={() => handleOpenFile(file.path)}
-                className="group flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left outline-none transition-colors hover:bg-slate-900 focus-visible:bg-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500/50 disabled:cursor-default disabled:opacity-75"
+            repositoryGroups.map((group) => (
+              <section
+                key={group.repositoryPath}
+                aria-label={`${getRepositoryLabel(group.repositoryPath)} changes`}
+                className="py-0.5"
               >
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-[10px] font-bold",
-                    getFileKindClassName(file),
-                  )}
-                >
-                  {file.kind === "added"
-                    ? "A"
-                    : file.kind === "deleted"
-                      ? "D"
-                      : "M"}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-medium text-slate-200 group-hover:text-white">
-                    {file.path}
-                  </span>
-                  <span className="mt-0.5 block truncate text-[11px] text-slate-500">
-                    {getFileRangeSummary(file)}
-                  </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-1 text-[11px] font-semibold">
-                  {file.additions !== undefined && file.additions > 0 ? (
-                    <span className="text-emerald-300">{`+${file.additions}`}</span>
-                  ) : null}
-                  {file.deletions !== undefined && file.deletions > 0 ? (
-                    <span className="text-rose-300">{`\u2212${file.deletions}`}</span>
-                  ) : null}
-                </span>
-              </button>
+                {showRepositoryHeaders ? (
+                  <div className="flex items-center gap-2 px-2.5 pb-1 pt-2 text-[11px] font-semibold text-slate-400">
+                    <GitBranch className="h-3.5 w-3.5 shrink-0 text-sky-400/80" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {getRepositoryLabel(group.repositoryPath)}
+                    </span>
+                    <span className="shrink-0 font-medium text-slate-600">
+                      {`${group.files.length} file${group.files.length === 1 ? "" : "s"}`}
+                    </span>
+                  </div>
+                ) : null}
+
+                {group.files.map((file) => (
+                  <button
+                    key={file.path}
+                    type="button"
+                    aria-label={`${getFileKindLabel(file)} ${file.path}, ${getFileRangeSummary(file)}`}
+                    title={createFileChangeTitle(file)}
+                    disabled={file.kind === "deleted"}
+                    onClick={() => handleOpenFile(file.path)}
+                    className="group flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left outline-none transition-colors hover:bg-slate-900 focus-visible:bg-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500/50 disabled:cursor-default disabled:opacity-75"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-[10px] font-bold",
+                        getFileKindClassName(file),
+                      )}
+                    >
+                      {file.kind === "added"
+                        ? "A"
+                        : file.kind === "deleted"
+                          ? "D"
+                          : "M"}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-medium text-slate-200 group-hover:text-white">
+                        {getRepositoryRelativeFilePath(file)}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[11px] text-slate-500">
+                        {getFileRangeSummary(file)}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1 text-[11px] font-semibold">
+                      {file.additions !== undefined && file.additions > 0 ? (
+                        <span className="text-emerald-300">{`+${file.additions}`}</span>
+                      ) : null}
+                      {file.deletions !== undefined && file.deletions > 0 ? (
+                        <span className="text-rose-300">{`\u2212${file.deletions}`}</span>
+                      ) : null}
+                    </span>
+                  </button>
+                ))}
+              </section>
             ))
           ) : (
             <p className="px-3 py-6 text-center text-xs text-slate-500">

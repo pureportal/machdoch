@@ -1377,6 +1377,10 @@ const normalizeTaskExecutionFileChanges = (
       }
 
       const path = normalizeString(entry.path).trim().slice(0, 4_000);
+      const repositoryPath = normalizeString(entry.repositoryPath)
+        .trim()
+        .replace(/\\/gu, "/")
+        .slice(0, 4_000);
 
       if (!path) {
         continue;
@@ -1398,6 +1402,7 @@ const normalizeTaskExecutionFileChanges = (
       normalizedFiles.set(path, {
         path,
         kind: entry.kind,
+        ...(repositoryPath ? { repositoryPath } : {}),
         ...(additions !== undefined ? { additions } : {}),
         ...(deletions !== undefined ? { deletions } : {}),
         ...(entry.binary === true ? { binary: true } : {}),
@@ -1429,6 +1434,21 @@ const normalizeTaskExecutionFileChanges = (
   const additions = normalizeNonNegativeInteger(value.additions) ?? fallbackAdditions;
   const deletions = normalizeNonNegativeInteger(value.deletions) ?? fallbackDeletions;
   const binaryFiles = normalizeNonNegativeInteger(value.binaryFiles) ?? fallbackBinaryFiles;
+  const fallbackRepositoryCount = new Set(
+    files
+      .map((file) => file.repositoryPath)
+      .filter((path): path is string => path !== undefined),
+  ).size;
+  const storedRepositoryCount = normalizeNonNegativeInteger(
+    value.repositoryCount,
+  );
+  const repositoryCount =
+    storedRepositoryCount === undefined && fallbackRepositoryCount === 0
+      ? undefined
+      : Math.min(
+          1_000,
+          Math.max(fallbackRepositoryCount, storedRepositoryCount ?? 0),
+        );
   const warnings = normalizeStringArray(value.warnings)
     .slice(0, EXECUTION_FILE_CHANGE_WARNING_LIMIT)
     .map((warning) => warning.slice(0, 500));
@@ -1443,6 +1463,7 @@ const normalizeTaskExecutionFileChanges = (
     coverage: value.coverage === "complete" ? "complete" : "partial",
     truncated: value.truncated === true || totalFiles > files.length,
     attribution: "workspace-observed",
+    ...(repositoryCount !== undefined ? { repositoryCount } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   };
 };

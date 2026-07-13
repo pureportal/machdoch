@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -25,11 +25,8 @@ const runGit = async (cwd: string, args: readonly string[]): Promise<void> => {
   });
 };
 
-const createGitWorkspace = async (): Promise<string> => {
-  const workspaceRoot = await mkdtemp(
-    join(tmpdir(), "machdoch-file-changes-"),
-  );
-  workspacesToClean.push(workspaceRoot);
+const initializeGitWorkspace = async (workspaceRoot: string): Promise<void> => {
+  await mkdir(workspaceRoot, { recursive: true });
   await runGit(workspaceRoot, ["init", "-q"]);
   await runGit(workspaceRoot, ["config", "user.name", "Machdoch Test"]);
   await runGit(workspaceRoot, [
@@ -39,6 +36,14 @@ const createGitWorkspace = async (): Promise<string> => {
   ]);
   await runGit(workspaceRoot, ["config", "commit.gpgSign", "false"]);
   await runGit(workspaceRoot, ["config", "core.autocrlf", "false"]);
+};
+
+const createGitWorkspace = async (): Promise<string> => {
+  const workspaceRoot = await mkdtemp(
+    join(tmpdir(), "machdoch-file-changes-"),
+  );
+  workspacesToClean.push(workspaceRoot);
+  await initializeGitWorkspace(workspaceRoot);
   return workspaceRoot;
 };
 
@@ -56,6 +61,76 @@ afterEach(async () => {
 });
 
 describe("task file change capture", () => {
+  it("aggregates file changes from sibling repositories", async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-file-changes-multi-"),
+    );
+    workspacesToClean.push(workspaceRoot);
+    const apiRoot = join(workspaceRoot, "api");
+    const uiRoot = join(workspaceRoot, "ui");
+    await Promise.all([
+      initializeGitWorkspace(apiRoot),
+      initializeGitWorkspace(uiRoot),
+    ]);
+    await Promise.all([
+      writeFile(join(apiRoot, "source.ts"), "one\n", "utf8"),
+      writeFile(join(uiRoot, "source.ts"), "one\n", "utf8"),
+    ]);
+    await Promise.all([commitWorkspace(apiRoot), commitWorkspace(uiRoot)]);
+    const capture = await startTaskFileChangeCapture(workspaceRoot);
+
+    await writeFile(join(apiRoot, "source.ts"), "one\ntwo\n", "utf8");
+    await writeFile(join(uiRoot, "created.ts"), "new\n", "utf8");
+
+    const result = await capture?.finish();
+
+    expect(result).toMatchObject({
+      totalFiles: 2,
+      additions: 2,
+      deletions: 0,
+      repositoryCount: 2,
+      coverage: "complete",
+    });
+    expect(result?.files).toEqual([
+      expect.objectContaining({
+        path: "api/source.ts",
+        repositoryPath: "api",
+        kind: "modified",
+      }),
+      expect.objectContaining({
+        path: "ui/created.ts",
+        repositoryPath: "ui",
+        kind: "added",
+      }),
+    ]);
+  });
+
+  it("preserves scoped capture when the workspace is inside a parent repository", async () => {
+    const repositoryRoot = await createGitWorkspace();
+    const workspaceRoot = join(repositoryRoot, "packages", "app");
+    const sourcePath = join(workspaceRoot, "source.ts");
+    await mkdir(workspaceRoot, { recursive: true });
+    await writeFile(sourcePath, "one\n", "utf8");
+    await commitWorkspace(repositoryRoot);
+    const capture = await startTaskFileChangeCapture(workspaceRoot);
+
+    await writeFile(sourcePath, "one\ntwo\n", "utf8");
+
+    const result = await capture?.finish();
+
+    expect(result).toMatchObject({
+      totalFiles: 1,
+      additions: 1,
+      repositoryCount: 1,
+    });
+    expect(result?.files).toEqual([
+      expect.objectContaining({
+        path: "source.ts",
+        kind: "modified",
+      }),
+    ]);
+  });
+
   it("captures new files in a repository without an initial commit", async () => {
     const workspaceRoot = await createGitWorkspace();
     await writeFile(

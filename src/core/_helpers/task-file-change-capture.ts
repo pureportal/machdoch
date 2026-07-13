@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import type {
   TaskExecutionChangedLineRange,
   TaskExecutionFileChange,
@@ -12,6 +11,11 @@ import {
   fingerprintUntrackedFiles,
   inspectNewUntrackedFiles,
 } from "./task-file-change-inspection.js";
+import { mapWithConcurrencyLimit } from "./task-file-change-concurrency.js";
+import {
+  discoverWorkspaceGitRepositories,
+  type DiscoveredGitRepository,
+} from "./task-file-change-repository-discovery.js";
 
 const GIT_COMMAND_TIMEOUT_MS = 10_000;
 const GIT_METADATA_MAX_BYTES = 2 * 1024 * 1024;
@@ -19,6 +23,8 @@ const GIT_PATCH_MAX_BYTES = 8 * 1024 * 1024;
 const MAX_RECORDED_FILES = 500;
 const MAX_RECORDED_RANGES = 2_000;
 const MAX_WARNINGS = 5;
+const REPOSITORY_START_CONCURRENCY = 4;
+const REPOSITORY_FINISH_CONCURRENCY = 2;
 
 interface TaskFileChangeCaptureState {
   baseline: string;
@@ -33,6 +39,16 @@ interface TaskFileChangeCaptureState {
 interface ParsedPatchRanges {
   ranges: Map<string, TaskExecutionChangedLineRange[]>;
   complete: boolean;
+}
+
+interface RepositoryCapture {
+  repository: DiscoveredGitRepository;
+  capture: TaskFileChangeCapture;
+}
+
+interface RepositoryCaptureResult {
+  repository: DiscoveredGitRepository;
+  result: TaskExecutionFileChanges;
 }
 
 export interface TaskFileChangeCapture {
@@ -70,37 +86,6 @@ const runGitCommand = async (
       child.stdin?.end(input);
     }
   });
-};
-
-const getGitCommandStdout = (error: unknown): string => {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "stdout" in error &&
-    typeof error.stdout === "string"
-  ) {
-    return error.stdout;
-  }
-
-  return "";
-};
-
-const hasGitMarker = (workspaceRoot: string): boolean => {
-  let current = resolve(workspaceRoot);
-
-  while (true) {
-    if (existsSync(join(current, ".git"))) {
-      return true;
-    }
-
-    const parent = dirname(current);
-
-    if (parent === current) {
-      return false;
-    }
-
-    current = parent;
-  }
 };
 
 const addWarning = (warnings: string[], warning: string): void => {
@@ -405,6 +390,47 @@ const mergeTrackedChanges = (
   };
 };
 
+const copyFileWithoutRanges = (
+  file: TaskExecutionFileChange,
+): TaskExecutionFileChange => {
+  return {
+    path: file.path,
+    kind: file.kind,
+    ...(file.repositoryPath ? { repositoryPath: file.repositoryPath } : {}),
+    ...(file.additions !== undefined ? { additions: file.additions } : {}),
+    ...(file.deletions !== undefined ? { deletions: file.deletions } : {}),
+    ...(file.binary ? { binary: true } : {}),
+  };
+};
+
+const limitRecordedFiles = (
+  allFiles: readonly TaskExecutionFileChange[],
+): { files: TaskExecutionFileChange[]; truncated: boolean } => {
+  let remainingRanges = MAX_RECORDED_RANGES;
+  let rangesTruncated = false;
+  const files = allFiles.slice(0, MAX_RECORDED_FILES).map((file) => {
+    if (!file.ranges || file.ranges.length === 0) {
+      return file;
+    }
+
+    const ranges = file.ranges.slice(0, remainingRanges);
+    remainingRanges -= ranges.length;
+
+    if (ranges.length < file.ranges.length) {
+      rangesTruncated = true;
+    }
+
+    return ranges.length > 0
+      ? { ...file, ranges }
+      : copyFileWithoutRanges(file);
+  });
+
+  return {
+    files,
+    truncated: allFiles.length > files.length || rangesTruncated,
+  };
+};
+
 const createFileChangeResult = (
   changes: Map<string, TaskExecutionFileChange>,
   warnings: string[],
@@ -426,39 +452,10 @@ const createFileChangeResult = (
     0,
   );
   const binaryFiles = allFiles.filter((file) => file.binary === true).length;
-  let remainingRanges = MAX_RECORDED_RANGES;
-  let rangesTruncated = false;
-  const files = allFiles.slice(0, MAX_RECORDED_FILES).map((file) => {
-    if (!file.ranges || file.ranges.length === 0) {
-      return file;
-    }
-
-    const ranges = file.ranges.slice(0, remainingRanges);
-    remainingRanges -= ranges.length;
-
-    if (ranges.length < file.ranges.length) {
-      rangesTruncated = true;
-    }
-
-    if (ranges.length === 0) {
-      return {
-        path: file.path,
-        kind: file.kind,
-        ...(file.additions !== undefined ? { additions: file.additions } : {}),
-        ...(file.deletions !== undefined ? { deletions: file.deletions } : {}),
-        ...(file.binary ? { binary: true as const } : {}),
-      };
-    }
-
-    return {
-      ...file,
-      ranges,
-    };
-  });
-  const filesTruncated = allFiles.length > files.length;
+  const limitedFiles = limitRecordedFiles(allFiles);
 
   return {
-    files,
+    files: limitedFiles.files,
     totalFiles: allFiles.length,
     additions,
     deletions,
@@ -467,7 +464,7 @@ const createFileChangeResult = (
       (file) => file.additions !== undefined && file.deletions !== undefined,
     ),
     coverage: warnings.length > 0 ? "partial" : "complete",
-    truncated: filesTruncated || rangesTruncated,
+    truncated: limitedFiles.truncated,
     attribution: "workspace-observed",
     ...(warnings.length > 0 ? { warnings: warnings.slice(0, MAX_WARNINGS) } : {}),
   };
@@ -569,50 +566,32 @@ const finishTaskFileChangeCapture = async (
   return createFileChangeResult(tracked.changes, warnings);
 };
 
-export const startTaskFileChangeCapture = async (
+const startGitRepositoryFileChangeCapture = async (
   workspaceRoot: string,
+  repository: DiscoveredGitRepository,
 ): Promise<TaskFileChangeCapture | undefined> => {
-  if (!hasGitMarker(workspaceRoot)) {
-    return undefined;
-  }
-
   try {
-    let repositoryInfoOutput: string;
     let hasHead = true;
+    let headBaseline = "";
 
     try {
-      repositoryInfoOutput = await runGitCommand(
-        ["rev-parse", "--show-toplevel", "--verify", "HEAD"],
-        workspaceRoot,
-      );
-    } catch (error) {
-      repositoryInfoOutput = getGitCommandStdout(error);
+      headBaseline = (
+        await runGitCommand(["rev-parse", "--verify", "HEAD"], repository.root)
+      ).trim();
+    } catch {
       hasHead = false;
     }
 
-    const repositoryInfo = repositoryInfoOutput.trimEnd().split(/\r?\n/u);
-    const headBaseline = hasHead ? (repositoryInfo.pop()?.trim() ?? "") : "";
-    const rawGitRoot = repositoryInfo.join("\n").trim();
-
-    if (!rawGitRoot) {
+    if (!isPathWithin(repository.root, repository.captureRoot)) {
       return undefined;
     }
 
-    const [gitRoot, normalizedWorkspaceRoot] = await Promise.all([
-      realpath(rawGitRoot).catch(() => resolve(rawGitRoot)),
-      realpath(workspaceRoot).catch(() => resolve(workspaceRoot)),
-    ]);
-    const workspaceFromRoot = relative(gitRoot, normalizedWorkspaceRoot);
-
-    if (!isPathWithin(gitRoot, normalizedWorkspaceRoot)) {
-      return undefined;
-    }
-
+    const workspaceFromRoot = relative(repository.root, repository.captureRoot);
     const pathspec = workspaceFromRoot
       ? `:(top,literal)${workspaceFromRoot.replace(/\\/gu, "/")}`
       : ".";
     const [stashResult, untrackedResult] = await Promise.allSettled([
-      runGitCommand(["stash", "create"], gitRoot),
+      runGitCommand(["stash", "create"], repository.root),
       runGitCommand(
         [
           "ls-files",
@@ -623,7 +602,7 @@ export const startTaskFileChangeCapture = async (
           "--",
           pathspec,
         ],
-        gitRoot,
+        repository.root,
       ),
     ]);
     const stashBaseline =
@@ -634,7 +613,7 @@ export const startTaskFileChangeCapture = async (
       (
         await runGitCommand(
           ["hash-object", "-t", "tree", "-w", "--stdin"],
-          gitRoot,
+          repository.root,
           GIT_METADATA_MAX_BYTES,
           "",
         )
@@ -645,8 +624,8 @@ export const startTaskFileChangeCapture = async (
       untrackedResult.status === "fulfilled"
         ? parseUntrackedPaths(
             untrackedResult.value,
-            gitRoot,
-            normalizedWorkspaceRoot,
+            repository.root,
+            workspaceRoot,
           )
         : undefined;
 
@@ -659,7 +638,7 @@ export const startTaskFileChangeCapture = async (
           Array.from(initialUntracked).sort((left, right) =>
             left.localeCompare(right),
           ),
-          normalizedWorkspaceRoot,
+          workspaceRoot,
         )
       : undefined;
 
@@ -675,8 +654,8 @@ export const startTaskFileChangeCapture = async (
 
     const state: TaskFileChangeCaptureState = {
       baseline,
-      gitRoot,
-      workspaceRoot: normalizedWorkspaceRoot,
+      gitRoot: repository.root,
+      workspaceRoot,
       pathspec,
       ...(initialUntracked ? { initialUntracked } : {}),
       ...(initialUntrackedFingerprintResult
@@ -692,7 +671,219 @@ export const startTaskFileChangeCapture = async (
 
     return {
       finish: () => {
-        finishPromise ??= finishTaskFileChangeCapture(state).catch(
+        finishPromise ??= finishTaskFileChangeCapture(state);
+        return finishPromise;
+      },
+    };
+  } catch {
+    return undefined;
+  }
+};
+
+const createAggregatedFileChangeResult = (
+  repositoryResults: readonly RepositoryCaptureResult[],
+  initialWarnings: readonly string[],
+): TaskExecutionFileChanges | undefined => {
+  if (repositoryResults.length === 0) {
+    return undefined;
+  }
+
+  const warnings: string[] = [];
+
+  for (const warning of initialWarnings) {
+    addWarning(warnings, warning);
+  }
+
+  const orderedResults = [...repositoryResults].sort(
+    (left, right) =>
+      left.repository.workspacePath.length -
+        right.repository.workspacePath.length ||
+      left.repository.workspacePath.localeCompare(
+        right.repository.workspacePath,
+      ),
+  );
+  const filesByPath = new Map<string, TaskExecutionFileChange>();
+  let duplicateFiles = 0;
+
+  for (const entry of orderedResults) {
+    for (const warning of entry.result.warnings ?? []) {
+      addWarning(
+        warnings,
+        repositoryResults.length > 1
+          ? `${entry.repository.workspacePath}: ${warning}`
+          : warning,
+      );
+    }
+
+    for (const file of entry.result.files) {
+      const shouldIncludeRepositoryPath =
+        repositoryResults.length > 1 ||
+        entry.repository.workspacePath !== ".";
+
+      if (filesByPath.has(file.path)) {
+        duplicateFiles += 1;
+      }
+
+      filesByPath.set(file.path, {
+        ...file,
+        ...(shouldIncludeRepositoryPath
+          ? { repositoryPath: entry.repository.workspacePath }
+          : {}),
+      });
+    }
+  }
+
+  const allFiles = Array.from(filesByPath.values()).sort((left, right) =>
+    left.path.localeCompare(right.path),
+  );
+
+  if (allFiles.length === 0) {
+    return undefined;
+  }
+
+  const hasUnstoredFiles = repositoryResults.some(
+    (entry) =>
+      entry.result.truncated ||
+      entry.result.totalFiles > entry.result.files.length,
+  );
+  const limitedFiles = limitRecordedFiles(allFiles);
+  const summedTotalFiles = repositoryResults.reduce(
+    (total, entry) => total + entry.result.totalFiles,
+    0,
+  );
+  const totalFiles = hasUnstoredFiles
+    ? Math.max(allFiles.length, summedTotalFiles - duplicateFiles)
+    : allFiles.length;
+  const additions = hasUnstoredFiles
+    ? repositoryResults.reduce(
+        (total, entry) => total + entry.result.additions,
+        0,
+      )
+    : allFiles.reduce((total, file) => total + (file.additions ?? 0), 0);
+  const deletions = hasUnstoredFiles
+    ? repositoryResults.reduce(
+        (total, entry) => total + entry.result.deletions,
+        0,
+      )
+    : allFiles.reduce((total, file) => total + (file.deletions ?? 0), 0);
+  const binaryFiles = hasUnstoredFiles
+    ? repositoryResults.reduce(
+        (total, entry) => total + entry.result.binaryFiles,
+        0,
+      )
+    : allFiles.filter((file) => file.binary === true).length;
+
+  return {
+    files: limitedFiles.files,
+    totalFiles,
+    additions,
+    deletions,
+    binaryFiles,
+    lineCountsComplete: repositoryResults.every(
+      (entry) => entry.result.lineCountsComplete,
+    ),
+    coverage:
+      warnings.length > 0 ||
+      repositoryResults.some((entry) => entry.result.coverage === "partial")
+        ? "partial"
+        : "complete",
+    truncated: hasUnstoredFiles || limitedFiles.truncated,
+    attribution: "workspace-observed",
+    repositoryCount: repositoryResults.length,
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
+};
+
+const finishRepositoryCaptures = async (
+  captures: readonly RepositoryCapture[],
+  initialWarnings: readonly string[],
+): Promise<TaskExecutionFileChanges | undefined> => {
+  const outcomes = await mapWithConcurrencyLimit(
+    captures,
+    REPOSITORY_FINISH_CONCURRENCY,
+    async (entry) => {
+      try {
+        return {
+          entry,
+          result: await entry.capture.finish(),
+          failed: false,
+        };
+      } catch {
+        return { entry, result: undefined, failed: true };
+      }
+    },
+  );
+  const warnings = [...initialWarnings];
+  const repositoryResults: RepositoryCaptureResult[] = [];
+
+  for (const outcome of outcomes) {
+    if (outcome.failed) {
+      addWarning(
+        warnings,
+        `${outcome.entry.repository.workspacePath}: File changes could not be finalized.`,
+      );
+      continue;
+    }
+
+    if (outcome.result) {
+      repositoryResults.push({
+        repository: outcome.entry.repository,
+        result: outcome.result,
+      });
+    }
+  }
+
+  return createAggregatedFileChangeResult(repositoryResults, warnings);
+};
+
+export const startTaskFileChangeCapture = async (
+  workspaceRoot: string,
+): Promise<TaskFileChangeCapture | undefined> => {
+  try {
+    const discovery = await discoverWorkspaceGitRepositories(workspaceRoot);
+
+    if (discovery.repositories.length === 0) {
+      return undefined;
+    }
+
+    const startedCaptures = await mapWithConcurrencyLimit(
+      discovery.repositories,
+      REPOSITORY_START_CONCURRENCY,
+      async (repository): Promise<RepositoryCapture | undefined> => {
+        const capture = await startGitRepositoryFileChangeCapture(
+          discovery.workspaceRoot,
+          repository,
+        );
+
+        return capture ? { repository, capture } : undefined;
+      },
+    );
+    const captures: RepositoryCapture[] = [];
+    const warnings = [...discovery.warnings];
+
+    for (let index = 0; index < startedCaptures.length; index += 1) {
+      const capture = startedCaptures[index];
+      const repository = discovery.repositories[index];
+
+      if (capture) {
+        captures.push(capture);
+      } else if (repository) {
+        addWarning(
+          warnings,
+          `${repository.workspacePath}: File changes could not be monitored.`,
+        );
+      }
+    }
+
+    if (captures.length === 0) {
+      return undefined;
+    }
+
+    let finishPromise: Promise<TaskExecutionFileChanges | undefined> | undefined;
+
+    return {
+      finish: () => {
+        finishPromise ??= finishRepositoryCaptures(captures, warnings).catch(
           () => undefined,
         );
         return finishPromise;

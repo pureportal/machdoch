@@ -4951,6 +4951,66 @@ describe("ChatSession component", () => {
     expect(onOpenWorkspaceFile).toHaveBeenCalledWith("src/source.ts");
   });
 
+  it("groups observed file changes by nested repository", () => {
+    const onOpenWorkspaceFile = vi.fn();
+    const execution = {
+      ...createMockExecutionFixture(
+        "update multiple repositories",
+        "/mocked/tauri/path",
+      ),
+      fileChanges: {
+        files: [
+          {
+            path: "api/src/source.ts",
+            repositoryPath: "api",
+            kind: "modified" as const,
+            additions: 2,
+            deletions: 1,
+          },
+          {
+            path: "ui/src/app.tsx",
+            repositoryPath: "ui",
+            kind: "added" as const,
+            additions: 4,
+            deletions: 0,
+          },
+        ],
+        totalFiles: 2,
+        additions: 6,
+        deletions: 1,
+        binaryFiles: 0,
+        lineCountsComplete: true,
+        coverage: "complete" as const,
+        truncated: false,
+        attribution: "workspace-observed" as const,
+        repositoryCount: 2,
+      },
+    };
+
+    render(
+      <ExecutionInsightRow
+        execution={execution}
+        onOpenWorkspaceFile={onOpenWorkspaceFile}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /2 file changes across 2 repositories, 6 additions, 1 deletions/i,
+      }),
+    );
+    const apiChanges = screen.getByRole("region", { name: "api changes" });
+    const uiChanges = screen.getByRole("region", { name: "ui changes" });
+
+    expect(within(apiChanges).getByText("src/source.ts")).toBeTruthy();
+    const appButton = within(uiChanges).getByRole("button", {
+      name: /ui\/src\/app\.tsx/i,
+    });
+    expect(within(uiChanges).getByText("src/app.tsx")).toBeTruthy();
+    fireEvent.click(appButton);
+    expect(onOpenWorkspaceFile).toHaveBeenCalledWith("ui/src/app.tsx");
+  });
+
   it("keeps the complete stored file-change list available on demand", () => {
     const onOpenWorkspaceFile = vi.fn();
     const files = Array.from({ length: 8 }, (_, index) => ({

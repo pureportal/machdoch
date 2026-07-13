@@ -526,6 +526,7 @@ export interface TaskExecutionChangedLineRange {
 export interface TaskExecutionFileChange {
   path: string;
   kind: TaskExecutionFileChangeKind;
+  repositoryPath?: string;
   additions?: number;
   deletions?: number;
   binary?: true;
@@ -542,6 +543,7 @@ export interface TaskExecutionFileChanges {
   coverage: "complete" | "partial";
   truncated: boolean;
   attribution: "workspace-observed";
+  repositoryCount?: number;
   warnings?: string[];
 }
 
