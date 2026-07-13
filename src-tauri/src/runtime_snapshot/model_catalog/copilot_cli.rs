@@ -1,28 +1,18 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, path::Path, time::Duration};
+
+use github_copilot_sdk::{CliProgram, Client, ClientOptions, Model};
 
 use super::super::normalize_optional_string;
-use super::{
-    command::run_agent_cli_command, resolve_agent_cli_binary, ProviderRuntimeModel,
-    ProviderRuntimeModelCapabilities,
-};
+use super::{resolve_agent_cli_binary, ProviderRuntimeModel, ProviderRuntimeModelCapabilities};
 
-fn is_copilot_cli_runtime_model(model_id: &str) -> bool {
-    let normalized = model_id.to_ascii_lowercase();
+const COPILOT_SDK_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
+const COPILOT_SDK_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 
-    if normalized == "auto" {
-        return true;
-    }
-
-    normalized.starts_with("gpt-")
-        || normalized.starts_with("claude-")
-        || normalized.starts_with("gemini-")
-}
-
-fn create_copilot_cli_runtime_model(model_id: &str) -> ProviderRuntimeModel {
+fn create_copilot_cli_runtime_model_base(model_id: &str) -> ProviderRuntimeModel {
     let normalized = model_id.to_ascii_lowercase();
     let mut recommended_for = vec!["coding".to_string()];
 
-    if normalized.contains("haiku") {
+    if normalized.contains("haiku") || normalized.contains("flash") || normalized.contains("mini") {
         recommended_for.push("fast".to_string());
         recommended_for.push("cheap".to_string());
     } else if normalized.contains("sonnet") || normalized.contains("gpt-5.2") {
@@ -49,66 +39,80 @@ fn create_copilot_cli_runtime_model(model_id: &str) -> ProviderRuntimeModel {
             "Model availability depends on GitHub Copilot plan and organization policy."
                 .to_string(),
         ],
-        source: "provider-probe".to_string(),
+        source: "provider-sdk".to_string(),
     }
 }
 
-fn collect_copilot_cli_help_model_ids(raw: &str) -> Vec<String> {
-    let mut by_id = HashMap::<String, ()>::new();
-    let mut token = String::new();
-    let flush_token = |token: &mut String, by_id: &mut HashMap<String, ()>| {
-        if token.is_empty() {
-            return;
-        }
-
-        let normalized = token
-            .trim_matches(|character: char| !character.is_ascii_alphanumeric())
-            .to_ascii_lowercase();
-
-        if is_copilot_cli_runtime_model(&normalized) {
-            by_id.entry(normalized).or_insert(());
-        }
-
-        token.clear();
-    };
-
-    for character in raw.chars() {
-        if character.is_ascii_alphanumeric() || character == '-' || character == '.' {
-            token.push(character);
-        } else {
-            flush_token(&mut token, &mut by_id);
-        }
-    }
-
-    flush_token(&mut token, &mut by_id);
-
-    let mut ids = by_id.into_keys().collect::<Vec<_>>();
-    ids.sort_by(|left, right| {
-        let left_rank = if left == "auto" { 0 } else { 1 };
-        let right_rank = if right == "auto" { 0 } else { 1 };
-
-        left_rank.cmp(&right_rank).then_with(|| left.cmp(right))
-    });
-
-    ids
+fn positive_i64_to_u64(value: Option<i64>) -> Option<u64> {
+    value.and_then(|number| u64::try_from(number).ok())
 }
 
-pub(super) fn parse_copilot_cli_model_catalog(
-    raw: &str,
+pub(super) fn create_copilot_cli_runtime_model(model: &Model) -> Option<ProviderRuntimeModel> {
+    let id = normalize_optional_string(Some(model.id.as_str()))?.to_ascii_lowercase();
+    let label = normalize_optional_string(Some(model.name.as_str()));
+    let supports = model.capabilities.supports.as_ref();
+    let limits = model.capabilities.limits.as_ref();
+    let mut runtime_model = create_copilot_cli_runtime_model_base(&id);
+
+    runtime_model.label = label;
+    runtime_model.capabilities.image_input = supports.and_then(|entry| entry.vision);
+    runtime_model.capabilities.context_window_tokens =
+        limits.and_then(|entry| positive_i64_to_u64(entry.max_context_window_tokens));
+    runtime_model.capabilities.max_output_tokens =
+        limits.and_then(|entry| positive_i64_to_u64(entry.max_output_tokens));
+    Some(runtime_model)
+}
+
+async fn stop_copilot_sdk_client(client: &Client) {
+    if !matches!(
+        tokio::time::timeout(COPILOT_SDK_SHUTDOWN_TIMEOUT, client.stop()).await,
+        Ok(Ok(()))
+    ) {
+        client.force_stop();
+    }
+}
+
+async fn fetch_copilot_cli_sdk_model_catalog(
+    binary: &Path,
+    env: &HashMap<String, String>,
 ) -> Result<Vec<ProviderRuntimeModel>, String> {
-    let ids = collect_copilot_cli_help_model_ids(raw);
+    let mut child_env = env
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect::<Vec<_>>();
+    child_env.push(("NO_COLOR".to_string(), "1".to_string()));
 
-    if ids.is_empty() {
-        return Err("Copilot CLI help output did not include any model IDs.".to_string());
+    let options = ClientOptions::new()
+        .with_program(CliProgram::Path(binary.to_path_buf()))
+        .with_env(child_env);
+    let discovery = async {
+        let client = Client::start(options)
+            .await
+            .map_err(|error| format!("failed to start the Copilot SDK runtime: {error}"))?;
+        let models = client
+            .list_models()
+            .await
+            .map_err(|error| format!("Copilot SDK models.list failed: {error}"));
+
+        stop_copilot_sdk_client(&client).await;
+        models
+    };
+    let models = tokio::time::timeout(COPILOT_SDK_DISCOVERY_TIMEOUT, discovery)
+        .await
+        .map_err(|_| "Copilot SDK models.list timed out.".to_string())??;
+    let runtime_models = models
+        .iter()
+        .filter_map(create_copilot_cli_runtime_model)
+        .collect::<Vec<_>>();
+
+    if runtime_models.is_empty() {
+        return Err("Copilot SDK models.list returned no available models.".to_string());
     }
 
-    Ok(ids
-        .into_iter()
-        .map(|id| create_copilot_cli_runtime_model(&id))
-        .collect())
+    Ok(runtime_models)
 }
 
-pub(super) fn fetch_copilot_cli_model_catalog(
+pub(super) async fn fetch_copilot_cli_model_catalog(
     env: &HashMap<String, String>,
 ) -> Result<Vec<ProviderRuntimeModel>, String> {
     let Some(binary) = resolve_agent_cli_binary("copilot-cli", env) else {
@@ -117,41 +121,6 @@ pub(super) fn fetch_copilot_cli_model_catalog(
                 .to_string(),
         );
     };
-    let attempts: [(&[&str], &str); 2] =
-        [(&["help"], "copilot help"), (&["--help"], "copilot --help")];
-    let mut failures = Vec::new();
 
-    for (args, label) in attempts {
-        match run_agent_cli_command(&binary, args, env, Duration::from_secs(8)) {
-            Ok(output) if output.exit_code == Some(0) => {
-                let combined_output = format!("{}\n{}", output.stdout, output.stderr);
-
-                match parse_copilot_cli_model_catalog(&combined_output) {
-                    Ok(models) => return Ok(models),
-                    Err(error) => failures.push(format!("{label}: {error}")),
-                }
-            }
-            Ok(output) => {
-                let detail = normalize_optional_string(Some(output.stderr.as_str()))
-                    .or_else(|| normalize_optional_string(Some(output.stdout.as_str())))
-                    .unwrap_or_else(|| {
-                        format!(
-                            "exited with code {}",
-                            output
-                                .exit_code
-                                .map(|code| code.to_string())
-                                .unwrap_or_else(|| "unknown".to_string())
-                        )
-                    });
-
-                failures.push(format!("{label}: {detail}"));
-            }
-            Err(error) => failures.push(format!("{label}: {error}")),
-        }
-    }
-
-    Err(format!(
-        "Copilot CLI model discovery failed. {}",
-        failures.join(" ")
-    ))
+    fetch_copilot_cli_sdk_model_catalog(&binary, env).await
 }

@@ -4,12 +4,10 @@ import { MessageSquareMore, Mic, Zap } from "lucide-react";
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type MouseEvent,
 } from "react";
-import { getSessionOverviewStatus } from "./chat-session.model";
 import {
   hideAssistantPopup,
   isAssistantPopupVisible,
@@ -24,18 +22,20 @@ import {
 } from "./assistant-surface";
 import { useUserDesktopSettings } from "./_helpers/use-user-desktop-settings";
 import { useAppearanceSettings } from "./chat-session/_helpers/use-appearance-settings";
-import { useChatSessionShellState } from "./chat-session/_helpers/use-chat-session-shell-state";
 import {
   ASSISTANT_POPUP_WINDOW_LABEL,
   QUICK_CHAT_DROP_EVENT,
   detectFullscreenWindowOnMonitor,
+  loadActiveDesktopTaskIds,
+  subscribeToDesktopTaskProgress,
 } from "./runtime";
 import {
   useSessionFileDrops,
   type SessionDropPayload,
 } from "./chat-session/_helpers/use-session-file-drops";
 
-const BUBBLE_SYNC_INTERVAL_MS = 2500;
+const BUBBLE_SYNC_INTERVAL_MS = 30_000;
+const ACTIVE_TASK_RECONCILIATION_INTERVAL_MS = 30_000;
 const BUBBLE_EVENT_SYNC_DEBOUNCE_MS = 100;
 const WINDOW_GEOMETRY_TOLERANCE_PX = 1;
 
@@ -44,13 +44,12 @@ const isNearWindowValue = (actual: number, expected: number): boolean => {
 };
 
 export const AssistantBubbleShell = () => {
-  const state = useChatSessionShellState({
-    persistActiveSession: false,
-    trackSessionReads: false,
-  });
   const desktopSettings = useUserDesktopSettings();
   const appearance = useAppearanceSettings();
   const [popupOpen, setPopupOpen] = useState(false);
+  const [activeTaskIds, setActiveTaskIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const temporarilyHiddenUntilRef = useRef<number>(0);
   const suppressPrimaryActionUntilRef = useRef<number>(0);
   const lastVisibilityRef = useRef<boolean | null>(null);
@@ -117,22 +116,62 @@ export const AssistantBubbleShell = () => {
     },
   });
 
-  const activeSessionSummary = useMemo(() => {
-    let runningCount = 0;
-
-    for (const session of state.shellState.sessions) {
-      const status = getSessionOverviewStatus(session);
-
-      if (status === "running") {
-        runningCount += 1;
-      }
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
     }
 
-    return {
-      runningCount,
-      pendingCount: runningCount,
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+    const reconcileActiveTasks = (): void => {
+      void loadActiveDesktopTaskIds()
+        .then((taskIds) => {
+          if (!disposed && taskIds) {
+            setActiveTaskIds(new Set(taskIds));
+          }
+        })
+        .catch((error) => {
+          console.error("Failed to refresh assistant task status", error);
+        });
     };
-  }, [state.shellState.sessions]);
+
+    reconcileActiveTasks();
+    void subscribeToDesktopTaskProgress((event) => {
+      if (disposed) {
+        return;
+      }
+
+      setActiveTaskIds((current) => {
+        const next = new Set(current);
+
+        if (event.progress.cancellable) {
+          next.add(event.taskId);
+        } else {
+          next.delete(event.taskId);
+        }
+
+        return next;
+      });
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        unsubscribe = unlisten;
+      }
+    });
+    const intervalId = window.setInterval(
+      reconcileActiveTasks,
+      ACTIVE_TASK_RECONCILIATION_INTERVAL_MS,
+    );
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  const runningTaskCount = activeTaskIds.size;
 
   useEffect(() => {
     if (!isTauri()) {
@@ -433,11 +472,9 @@ export const AssistantBubbleShell = () => {
 
   const bubbleVisualState = popupOpen
     ? "open"
-    : activeSessionSummary.runningCount > 0
+    : runningTaskCount > 0
       ? "running"
-      : activeSessionSummary.pendingCount > 0
-        ? "attention"
-        : "idle";
+      : "idle";
 
   return (
     <div className="quick-chat-bubble-shell fixed inset-0 flex items-center justify-center overflow-visible bg-transparent select-none">
@@ -450,9 +487,9 @@ export const AssistantBubbleShell = () => {
           title="Open Quick Chat"
           data-style={appearance.settings.quickChatBubbleStyle}
           data-state={bubbleVisualState}
-          data-running={activeSessionSummary.runningCount > 0 ? "true" : "false"}
+          data-running={runningTaskCount > 0 ? "true" : "false"}
           data-has-notification={
-            activeSessionSummary.pendingCount > 0 ? "true" : "false"
+            runningTaskCount > 0 ? "true" : "false"
           }
           data-voice-enabled={
             desktopSettings.quickVoiceEnabled ? "true" : "false"

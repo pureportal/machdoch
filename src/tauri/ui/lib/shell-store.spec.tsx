@@ -16,8 +16,9 @@ describe("browser shell-state CAS", () => {
     expect(committed).toMatchObject({
       committed: true,
       revision: 1,
-      state: { value: "first" },
     });
+    expect(committed).not.toHaveProperty("state");
+    await expect(firstModule.loadShellStateRevision()).resolves.toBe(1);
 
     const secondModule = await import("./shell-store");
     const reloaded = await secondModule.loadShellStateSnapshot({

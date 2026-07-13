@@ -177,7 +177,10 @@ export const useSessionComposerState = (
   );
 
   const handleComposerHistoryNavigation = useCallback(
-    (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    (
+      event: KeyboardEvent<HTMLTextAreaElement>,
+      currentDraft = state.activeSession.draft,
+    ): void => {
       if (
         event.nativeEvent?.isComposing ||
         event.keyCode === 229 ||
@@ -230,8 +233,13 @@ export const useSessionComposerState = (
         }
 
         if (!activePreview) {
-          state.setDraftBeforeHistory(state.activeSession.draft);
+          state.setDraftBeforeHistory(currentDraft);
         }
+
+        const baseComposerSession =
+          currentDraft === state.activeSession.draft
+            ? state.activeSession
+            : { ...state.activeSession, draft: currentDraft };
 
         state.setPromptHistoryIndex(nextIndex);
         setHistoryPreview({
@@ -241,8 +249,9 @@ export const useSessionComposerState = (
           contextAttachments: cloneAttachments(
             state.activeSession.promptContextHistory[nextIndex] ?? [],
           ),
-          baseComposerIdentity: activePreview?.baseComposerIdentity ??
-            createComposerIdentity(state.activeSession),
+          baseComposerIdentity:
+            activePreview?.baseComposerIdentity ??
+            createComposerIdentity(baseComposerSession),
           historyIdentity: promptHistoryIdentity,
         });
         return;

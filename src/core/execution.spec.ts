@@ -1559,7 +1559,7 @@ describe("executeTask", () => {
     expect(result.outputSections.at(-1)?.title).toBe("Execution limit");
   }, 10_000);
 
-  it("keeps model-driven execution alive when stream progress arrives before the safety timeout", async () => {
+  it("keeps model-driven execution alive when stream progress arrives before the idle timeout", async () => {
     const workspaceRoot = await createWorkspace();
     const streamingAdapter: AgentModelAdapter = {
       startTurn: ({ signal, onStreamEvent }: AgentModelStartParams) => {
@@ -1618,7 +1618,8 @@ describe("executeTask", () => {
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: streamingAdapter,
-        maxDurationMs: 250,
+        maxDurationMs: 1_000,
+        idleTimeoutMs: 250,
         onStateChange: () => undefined,
       },
     );

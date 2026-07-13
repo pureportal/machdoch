@@ -72,6 +72,22 @@ describe("task thinking model", () => {
     });
   });
 
+  it("bounds a long-running task trace to the latest eighty entries", () => {
+    let trace = createInitialThinkingTrace("machdoch", 0);
+
+    for (let index = 1; index <= 120; index += 1) {
+      trace = appendThinkingProgress(
+        trace,
+        createProgress({ message: `Progress ${index}` }),
+        index,
+      );
+    }
+
+    expect(trace.entries).toHaveLength(80);
+    expect(trace.entries[0]?.detail).toBe("Progress 41");
+    expect(trace.entries.at(-1)?.detail).toBe("Progress 120");
+  });
+
   it("records typed timeline telemetry with elapsed time and token usage", () => {
     const trace = appendThinkingProgress(
       createInitialThinkingTrace("ask", 10),

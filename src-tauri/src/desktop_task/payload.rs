@@ -4,6 +4,10 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+const STALE_CONTEXT_FILE_MAX_AGE: std::time::Duration =
+    std::time::Duration::from_secs(24 * 60 * 60);
+const ISOLATED_CODEX_HOME_PREFIX: &str = "machdoch-codex-home-";
+
 use serde_json::{Map, Value};
 
 use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
@@ -93,6 +97,39 @@ pub(super) fn write_conversation_context_file(
     })?;
 
     Ok(file_path)
+}
+
+pub(super) fn cleanup_stale_conversation_context_files() {
+    let temporary_directory = std::env::temp_dir();
+    let Ok(entries) = std::fs::read_dir(&temporary_directory) else {
+        return;
+    };
+
+    for entry in entries.filter_map(Result::ok) {
+        let file_name = entry.file_name();
+        let Some(file_name) = file_name.to_str() else {
+            continue;
+        };
+
+        let is_stale = entry
+            .metadata()
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age >= STALE_CONTEXT_FILE_MAX_AGE);
+
+        if !is_stale {
+            continue;
+        }
+
+        if file_name.starts_with("machdoch-desktop-context-") && file_name.ends_with(".json") {
+            let _ = std::fs::remove_file(entry.path());
+        } else if file_name.starts_with(ISOLATED_CODEX_HOME_PREFIX)
+            && entry.file_type().is_ok_and(|file_type| file_type.is_dir())
+        {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
 }
 
 pub(super) fn cleanup_temporary_file(path: Option<&PathBuf>) {

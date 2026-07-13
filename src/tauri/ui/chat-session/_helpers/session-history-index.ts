@@ -41,6 +41,7 @@ export interface SessionHistoryProjectFacet {
 
 export interface SessionHistoryIndexEntry {
   session: ChatSessionRecord;
+  contentIndexed: boolean;
   title: string;
   searchText: string;
   titleSearchText: string;
@@ -60,6 +61,10 @@ export interface SessionHistoryIndex {
   entries: SessionHistoryIndexEntry[];
   tags: SessionHistoryTagFacet[];
   projects: SessionHistoryProjectFacet[];
+}
+
+export interface SessionHistoryIndexOptions {
+  includeContent?: boolean;
 }
 
 export interface SessionHistoryFilterOptions {
@@ -127,46 +132,6 @@ const appendMessageSearchParts = (
   message: ChatSessionMessage,
 ): void => {
   parts.push(message.content);
-
-  if (message.source?.kind === "execution") {
-    const execution = message.source.execution;
-
-    parts.push(
-      execution.task,
-      execution.summary,
-      execution.reason ?? "",
-      execution.response?.markdown ?? "",
-      ...(execution.response?.highlights ?? []),
-      ...(execution.response?.verification ?? []),
-      ...(execution.response?.followUps ?? []),
-    );
-
-    for (const file of execution.response?.relatedFiles ?? []) {
-      parts.push(file.path, file.description);
-    }
-
-    for (const section of execution.outputSections) {
-      parts.push(section.title, ...section.lines);
-    }
-  }
-
-  if (message.source?.kind === "thinking") {
-    const thinking = message.source.thinking;
-
-    parts.push(
-      thinking.assistantText ?? "",
-      thinking.modelStream?.label ?? "",
-      thinking.modelStream?.content ?? "",
-    );
-
-    for (const line of thinking.actionOutputLines ?? []) {
-      parts.push(line.text);
-    }
-
-    for (const entry of thinking.entries) {
-      parts.push(entry.label, entry.detail);
-    }
-  }
 };
 
 const calculateSearchScore = (
@@ -259,7 +224,9 @@ const matchesSessionStatusFilters = (
 export const createSessionHistoryIndex = (
   sessions: ChatSessionRecord[],
   entryCache?: SessionHistoryIndexEntryCache,
+  options: SessionHistoryIndexOptions = {},
 ): SessionHistoryIndex => {
+  const includeContent = options.includeContent !== false;
   const tagsByLabel = new Map<string, SessionHistoryTagFacet>();
   const projectsById = new Map<string, SessionHistoryProjectFacet>();
   const nextEntryCache = entryCache
@@ -290,7 +257,10 @@ export const createSessionHistoryIndex = (
 
     const cachedEntry = entryCache?.get(session.id);
 
-    if (cachedEntry?.session === session) {
+    if (
+      cachedEntry?.session === session &&
+      cachedEntry.contentIndexed === includeContent
+    ) {
       nextEntryCache?.set(session.id, cachedEntry);
       return cachedEntry;
     }
@@ -301,22 +271,24 @@ export const createSessionHistoryIndex = (
       projectLabel,
       session.provider,
       session.model,
-      session.draft,
       ...session.tags,
-      ...session.promptHistory,
+      ...(includeContent ? session.promptHistory : []),
     ];
 
-    for (const message of session.messages) {
-      appendMessageSearchParts(searchParts, message);
-    }
+    if (includeContent) {
+      for (const message of session.messages) {
+        appendMessageSearchParts(searchParts, message);
+      }
 
-    for (const attachment of session.draftContextAttachments) {
-      searchParts.push(attachment.name, attachment.path, attachment.parent ?? "");
+      for (const attachment of session.draftContextAttachments) {
+        searchParts.push(attachment.name, attachment.path, attachment.parent ?? "");
+      }
     }
 
     const searchText = normalizeSearchText(searchParts.join(" "));
     const entry: SessionHistoryIndexEntry = {
       session,
+      contentIndexed: includeContent,
       title,
       searchText,
       titleSearchText: normalizeSearchText(title),

@@ -2,6 +2,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   stat,
   utimes,
@@ -103,7 +104,9 @@ describe.sequential("scheduler fleet", () => {
   });
 
   it("starts a second workspace while the first workspace executor is slow", async () => {
-    const testRoot = await mkdtemp(join(tmpdir(), "machdoch-scheduler-fleet-"));
+    const testRoot = await realpath(
+      await mkdtemp(join(tmpdir(), "machdoch-scheduler-fleet-")),
+    );
     const firstWorkspace = join(testRoot, "first");
     const secondWorkspace = join(testRoot, "second");
     const previousConfigRoot = process.env.MACHDOCH_USER_CONFIG_DIR;

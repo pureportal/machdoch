@@ -1,9 +1,11 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState, type JSX } from "react";
 import {
   DEFAULT_USER_DESKTOP_SETTINGS,
   DESKTOP_SETTING_BOUNDS,
 } from "../../../../../core/runtime-contract.generated.js";
 import { Input } from "../../../components/ui/input";
+import { Button } from "../../../components/ui/button";
 import type { UserDesktopSettings } from "../../../runtime";
 import {
   ChoiceButtons,
@@ -14,13 +16,46 @@ import {
   rebaseDirtySettingsDraft,
   useDebouncedAutoSave,
 } from "./shared";
-import type { DesktopSettingsControls } from "./types";
+import type {
+  DesktopSettingsControls,
+  SettingsStatusMessage,
+} from "./types";
 import {
   clampDecimalSetting,
   clampIntegerSetting,
   parseDecimalSettingInput,
   parseIntegerSettingInput,
 } from "./number-settings";
+
+interface MachdochCodexSessionUsage {
+  files: number;
+  bytes: number;
+}
+
+interface MachdochCodexSessionCleanupResult {
+  deletedFiles: number;
+  deletedBytes: number;
+  failedFiles: number;
+  remainingFiles: number;
+  remainingBytes: number;
+}
+
+const formatStorageBytes = (bytes: number): string => {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  const units = ["KB", "MB", "GB"] as const;
+  let value = bytes / 1024;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+};
 
 const getDesktopAutostartMode = (
   settings: UserDesktopSettings,
@@ -129,6 +164,15 @@ export const DesktopSettingsPanel = ({
   setup,
 }: DesktopSettingsPanelProps): JSX.Element => {
   const [draft, setDraft] = useState<UserDesktopSettings>(setup.settings);
+  const [clearingCache, setClearingCache] = useState(false);
+  const [cacheMessage, setCacheMessage] =
+    useState<SettingsStatusMessage | null>(null);
+  const [codexUsage, setCodexUsage] =
+    useState<MachdochCodexSessionUsage | null>(null);
+  const [checkingCodexUsage, setCheckingCodexUsage] = useState(false);
+  const [clearingCodexSessions, setClearingCodexSessions] = useState(false);
+  const [codexSessionMessage, setCodexSessionMessage] =
+    useState<SettingsStatusMessage | null>(null);
   const lastExternalSettingsRef = useRef(setup.settings);
   const normalizedDraft = normalizeDesktopSettingsDraft(draft);
   const dirty = hasDesktopSettingsDraftChanges(normalizedDraft, setup.settings);
@@ -412,6 +456,128 @@ export const DesktopSettingsPanel = ({
             className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
           />
         </SettingPanel>
+
+        {isTauri() ? (
+          <SettingPanel
+            label="Codex session data"
+            detail="Inspect or remove only Codex session files created by Machdoch. Other Codex tasks are not touched. New Machdoch Codex runs are ephemeral."
+          >
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {codexUsage ? (
+                <span className="text-xs text-slate-400">
+                  {codexUsage.files} file{codexUsage.files === 1 ? "" : "s"} ·{" "}
+                  {formatStorageBytes(codexUsage.bytes)}
+                </span>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                disabled={checkingCodexUsage || clearingCodexSessions}
+                onClick={() => {
+                  setCheckingCodexUsage(true);
+                  setCodexSessionMessage(null);
+                  void invoke<MachdochCodexSessionUsage>(
+                    "get_machdoch_codex_session_usage",
+                  )
+                    .then((usage) => {
+                      setCodexUsage(usage);
+                      setCodexSessionMessage({
+                        tone: "success",
+                        text:
+                          usage.files === 0
+                            ? "No persisted Machdoch Codex sessions found."
+                            : `Found ${usage.files} Machdoch Codex session file${usage.files === 1 ? "" : "s"}.`,
+                      });
+                    })
+                    .catch((error) => {
+                      console.error("Failed to inspect Codex session data", error);
+                      setCodexSessionMessage({
+                        tone: "error",
+                        text: "Could not inspect Codex session data.",
+                      });
+                    })
+                    .finally(() => {
+                      setCheckingCodexUsage(false);
+                    });
+                }}
+              >
+                {checkingCodexUsage ? "Checking..." : "Check usage"}
+              </Button>
+              {codexUsage && codexUsage.files > 0 ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={checkingCodexUsage || clearingCodexSessions}
+                  onClick={() => {
+                    setClearingCodexSessions(true);
+                    setCodexSessionMessage(null);
+                    void invoke<MachdochCodexSessionCleanupResult>(
+                      "clear_machdoch_codex_sessions",
+                    )
+                      .then((result) => {
+                        setCodexUsage({
+                          files: result.remainingFiles,
+                          bytes: result.remainingBytes,
+                        });
+                        setCodexSessionMessage({
+                          tone: result.failedFiles > 0 ? "error" : "success",
+                          text: `Removed ${result.deletedFiles} file${result.deletedFiles === 1 ? "" : "s"} (${formatStorageBytes(result.deletedBytes)})${result.failedFiles > 0 ? `; ${result.failedFiles} could not be removed.` : "."}`,
+                        });
+                      })
+                      .catch((error) => {
+                        console.error("Failed to clear Codex session data", error);
+                        setCodexSessionMessage({
+                          tone: "error",
+                          text: "Could not clear Codex session data.",
+                        });
+                      })
+                      .finally(() => {
+                        setClearingCodexSessions(false);
+                      });
+                  }}
+                >
+                  {clearingCodexSessions ? "Clearing..." : "Clear Machdoch data"}
+                </Button>
+              ) : null}
+            </div>
+          </SettingPanel>
+        ) : null}
+
+        {isTauri() ? (
+          <SettingPanel
+            label="WebView cache"
+            detail="Clear cached browser resources. Your machdoch sessions and settings are preserved."
+          >
+            <Button
+              type="button"
+              variant="outline"
+              disabled={clearingCache}
+              onClick={() => {
+                setClearingCache(true);
+                setCacheMessage(null);
+                void invoke("clear_webview_cache")
+                  .then(() => {
+                    setCacheMessage({
+                      tone: "success",
+                      text: "WebView cache cleared.",
+                    });
+                  })
+                  .catch((error) => {
+                    console.error("Failed to clear the WebView cache", error);
+                    setCacheMessage({
+                      tone: "error",
+                      text: "Could not clear the WebView cache.",
+                    });
+                  })
+                  .finally(() => {
+                    setClearingCache(false);
+                  });
+              }}
+            >
+              {clearingCache ? "Clearing..." : "Clear cache"}
+            </Button>
+          </SettingPanel>
+        ) : null}
       </div>
 
       <SettingsAutoSaveStatus
@@ -422,6 +588,8 @@ export const DesktopSettingsPanel = ({
       />
 
       <SettingsStatus message={setup.message} />
+      <SettingsStatus message={cacheMessage} />
+      <SettingsStatus message={codexSessionMessage} />
     </SettingsCard>
   );
 };

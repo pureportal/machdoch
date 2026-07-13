@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { extname } from "node:path";
+import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { extname, join } from "node:path";
 import { loadWorkspaceEnv } from "../env.js";
 import {
   createExecutionResult,
@@ -43,6 +45,19 @@ interface ExternalAgentExecutionParams extends ModelDrivenExecutionParams {
 
 const MAX_DIAGNOSTIC_CHARS = 12_000;
 const EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS = 5_000;
+const MAX_CAPTURED_STDOUT_CHARS = 512_000;
+const MAX_CAPTURED_STDERR_CHARS = 128_000;
+const MAX_ACTION_OUTPUT_BATCH_CHARS = 32_000;
+const ACTION_OUTPUT_BATCH_INTERVAL_MS = 150;
+const ISOLATED_CODEX_HOME_PREFIX = "machdoch-codex-home-";
+const MAX_EXTERNAL_AGENT_PROMPT_CHARS = 256_000;
+const MAX_EXTERNAL_AGENT_TASK_CHARS = 64_000;
+const MAX_EXTERNAL_AGENT_INSTRUCTION_CHARS = 64_000;
+const MAX_EXTERNAL_AGENT_CONVERSATION_CHARS = 32_000;
+const MAX_EXTERNAL_AGENT_CONTEXT_CHARS = 64_000;
+const MAX_EXTERNAL_AGENT_ATTACHMENT_CHARS = 16_000;
+const MAX_EXTERNAL_AGENT_CONTEXT_SECTION_CHARS = 24_000;
+const TRUNCATED_OUTPUT_MARKER = "\n[output truncated by machdoch]\n";
 const ANSI_ESCAPE_PATTERN =
   // eslint-disable-next-line no-control-regex
   /\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/gu;
@@ -216,10 +231,13 @@ const createExternalAgentLoopState = (
 });
 
 const formatSectionForPrompt = (section: TaskExecutionSection): string => {
-  return [
-    `### ${section.title}`,
-    ...section.lines.map((line) => `- ${line}`),
-  ].join("\n");
+  return limitText(
+    [
+      `### ${section.title}`,
+      ...section.lines.map((line) => `- ${line}`),
+    ].join("\n"),
+    MAX_EXTERNAL_AGENT_CONTEXT_SECTION_CHARS,
+  );
 };
 
 const getExternalAgentDelegationMode = (
@@ -281,31 +299,50 @@ const createExternalAgentPrompt = (
   attachmentPaths: readonly string[],
   delegationMode: ExternalAgentDelegationMode,
 ): string => {
-  return [
+  const attachmentBlock =
+    attachmentPaths.length > 0
+      ? limitText(
+          [
+            "Attached files/images available to the delegated agent:",
+            ...attachmentPaths.map((path) => `- ${path}`),
+          ].join("\n"),
+          MAX_EXTERNAL_AGENT_ATTACHMENT_CHARS,
+        )
+      : undefined;
+  const instructionBlock =
+    systemPromptSections.length > 0
+      ? limitText(
+          [
+            "Additional Machdoch system instructions:",
+            ...systemPromptSections,
+          ].join("\n\n"),
+          MAX_EXTERNAL_AGENT_INSTRUCTION_CHARS,
+        )
+      : undefined;
+  const resolvedContext = limitText(
+    [...contextSections, ...conversationContext.sections]
+      .map(formatSectionForPrompt)
+      .join("\n\n"),
+    MAX_EXTERNAL_AGENT_CONTEXT_CHARS,
+  );
+  const prompt = [
     `You are running as a delegated ${providerLabel} agent for Machdoch.`,
     `Workspace: ${config.workspaceRoot}`,
     `Machdoch mode: ${config.mode}`,
     `Reasoning mode: ${config.reasoning}`,
     ...createExternalAgentOperatingInstructions(delegationMode),
-    attachmentPaths.length > 0
-      ? [
-          "Attached files/images available to the delegated agent:",
-          ...attachmentPaths.map((path) => `- ${path}`),
-        ].join("\n")
-      : undefined,
-    systemPromptSections.length > 0
-      ? [
-          "Additional Machdoch system instructions:",
-          ...systemPromptSections,
-        ].join("\n\n")
-      : undefined,
+    attachmentBlock,
+    instructionBlock,
     "User task:",
-    task,
-    conversationContext.promptBlock,
+    limitText(task, MAX_EXTERNAL_AGENT_TASK_CHARS),
+    conversationContext.promptBlock
+      ? limitText(
+          conversationContext.promptBlock,
+          MAX_EXTERNAL_AGENT_CONVERSATION_CHARS,
+        )
+      : undefined,
     "Resolved Machdoch context:",
-    [...contextSections, ...conversationContext.sections]
-      .map(formatSectionForPrompt)
-      .join("\n\n"),
+    resolvedContext,
     "Completion contract:",
     ...createExternalAgentCompletionContract(delegationMode).map(
       (line) => `- ${line}`,
@@ -313,6 +350,8 @@ const createExternalAgentPrompt = (
   ]
     .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
     .join("\n\n");
+
+  return limitText(prompt, MAX_EXTERNAL_AGENT_PROMPT_CHARS);
 };
 
 const shouldUseShellForExecutable = (executable: string): boolean => {
@@ -363,7 +402,13 @@ const terminateExternalAgentProcessTree = async (
       }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS);
 
       unrefTimer(timeoutHandle);
-      killer.once("close", settle);
+      killer.once("close", (exitCode) => {
+        if (exitCode !== 0) {
+          child.kill();
+        }
+
+        settle();
+      });
       killer.once("error", () => {
         child.kill();
         settle();
@@ -465,12 +510,6 @@ const PROVIDER_CHILD_ENV_KEYS = {
   ],
 } as const satisfies Record<AgentCliProvider, readonly string[]>;
 
-const PROVIDER_CHILD_ENV_PREFIXES = {
-  "codex-cli": ["CODEX_"],
-  "claude-cli": ["ANTHROPIC_", "CLAUDE_CODE_"],
-  "copilot-cli": ["COPILOT_"],
-} as const satisfies Record<AgentCliProvider, readonly string[]>;
-
 const PROVIDER_CHILD_ENV_DENY_KEYS = {
   "codex-cli": ["OPENAI_API_KEY"],
   "claude-cli": ["ANTHROPIC_MODEL", "CLAUDE_CODE_EFFORT_LEVEL"],
@@ -502,16 +541,8 @@ const isProviderChildEnvKey = (
     return false;
   }
 
-  if (
-    (PROVIDER_CHILD_ENV_KEYS[provider] as readonly string[]).includes(
-      normalizedKey,
-    )
-  ) {
-    return true;
-  }
-
-  return PROVIDER_CHILD_ENV_PREFIXES[provider].some((prefix) =>
-    normalizedKey.startsWith(prefix),
+  return (PROVIDER_CHILD_ENV_KEYS[provider] as readonly string[]).includes(
+    normalizedKey,
   );
 };
 
@@ -530,6 +561,43 @@ const createChildEnv = (provider: AgentCliProvider): NodeJS.ProcessEnv => {
   }
 
   return childEnv;
+};
+
+const resolveCodexHome = (): string | undefined => {
+  const configuredHome = process.env.CODEX_HOME?.trim();
+
+  if (configuredHome) {
+    return configuredHome;
+  }
+
+  const userHome = process.env.USERPROFILE?.trim() || process.env.HOME?.trim();
+  return userHome ? join(userHome, ".codex") : undefined;
+};
+
+const createIsolatedCodexHome = async (): Promise<{
+  path: string;
+  dispose: () => Promise<void>;
+}> => {
+  const path = await mkdtemp(join(tmpdir(), ISOLATED_CODEX_HOME_PREFIX));
+  const sourceHome = resolveCodexHome();
+  await chmod(path, 0o700).catch(() => undefined);
+
+  if (sourceHome) {
+    try {
+      const authPath = join(path, "auth.json");
+      await copyFile(join(sourceHome, "auth.json"), authPath);
+      await chmod(authPath, 0o600).catch(() => undefined);
+    } catch {
+      // Token-based and OS credential-store authentication do not require auth.json.
+    }
+  }
+
+  return {
+    path,
+    dispose: async (): Promise<void> => {
+      await rm(path, { recursive: true, force: true }).catch(() => undefined);
+    },
+  };
 };
 
 const createAbortError = (signal: AbortSignal): Error => {
@@ -564,6 +632,95 @@ const emitActionOutput = (
   ).catch(() => undefined);
 };
 
+interface BoundedOutputBuffer {
+  text: string;
+  truncated: boolean;
+}
+
+const appendBoundedOutput = (
+  buffer: BoundedOutputBuffer,
+  chunk: string,
+  limit: number,
+): void => {
+  if (buffer.truncated || chunk.length === 0) {
+    return;
+  }
+
+  const remaining = Math.max(0, limit - buffer.text.length);
+
+  if (remaining > 0) {
+    buffer.text += chunk.slice(0, remaining);
+  }
+
+  if (chunk.length > remaining) {
+    buffer.truncated = true;
+  }
+};
+
+const finalizeBoundedOutput = (buffer: BoundedOutputBuffer): string => {
+  return buffer.truncated
+    ? `${buffer.text}${TRUNCATED_OUTPUT_MARKER}`
+    : buffer.text;
+};
+
+const createActionOutputBatcher = (
+  onActionOutput: TaskActionOutputHandler | undefined,
+): {
+  enqueue: (stream: "stdout" | "stderr", chunk: string) => void;
+  flush: () => void;
+  dispose: () => void;
+} => {
+  const pending: Record<"stdout" | "stderr", string> = {
+    stdout: "",
+    stderr: "",
+  };
+  let flushHandle: ReturnType<typeof setTimeout> | undefined;
+
+  const flush = (): void => {
+    if (flushHandle) {
+      clearTimeout(flushHandle);
+      flushHandle = undefined;
+    }
+
+    for (const stream of ["stdout", "stderr"] as const) {
+      const chunk = pending[stream];
+      pending[stream] = "";
+      emitActionOutput(onActionOutput, stream, chunk);
+    }
+  };
+
+  const scheduleFlush = (): void => {
+    if (flushHandle || !onActionOutput) {
+      return;
+    }
+
+    flushHandle = setTimeout(flush, ACTION_OUTPUT_BATCH_INTERVAL_MS);
+    unrefTimer(flushHandle);
+  };
+
+  return {
+    enqueue: (stream, chunk): void => {
+      if (!onActionOutput || chunk.length === 0) {
+        return;
+      }
+
+      pending[stream] = `${pending[stream]}${chunk}`.slice(
+        -MAX_ACTION_OUTPUT_BATCH_CHARS,
+      );
+
+      if (pending[stream].length >= MAX_ACTION_OUTPUT_BATCH_CHARS) {
+        flush();
+      } else {
+        scheduleFlush();
+      }
+    },
+    flush,
+    dispose: (): void => {
+      flush();
+    },
+  };
+};
+
 const runExternalAgentCommand = async (
   executable: string,
   args: string[],
@@ -577,111 +734,143 @@ const runExternalAgentCommand = async (
     throw createAbortError(signal);
   }
 
-  return await new Promise<SpawnedAgentResult>((resolve, reject) => {
-    const cwd = normalizeLocalCommandCwd(config.workspaceRoot);
-    const child = spawn(executable, args, {
-      cwd,
-      env: createChildEnv(provider),
-      detached: process.platform !== "win32",
-      shell: shouldUseShellForExecutable(executable),
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    let abortError: Error | undefined;
-    let abortSettlementHandle: ReturnType<typeof setTimeout> | undefined;
+  const isolatedCodexHome =
+    provider === "codex-cli" ? await createIsolatedCodexHome() : undefined;
 
-    const cleanup = (): void => {
-      signal?.removeEventListener("abort", handleAbort);
-      if (abortSettlementHandle) {
-        clearTimeout(abortSettlementHandle);
-        abortSettlementHandle = undefined;
-      }
-    };
+  try {
+    return await new Promise<SpawnedAgentResult>((resolve, reject) => {
+      const cwd = normalizeLocalCommandCwd(config.workspaceRoot);
+      const childEnv = createChildEnv(provider);
 
-    const rejectOnce = (error: Error): void => {
-      if (settled) {
-        return;
+      if (isolatedCodexHome) {
+        childEnv.CODEX_HOME = isolatedCodexHome.path;
       }
 
-      settled = true;
-      cleanup();
-      reject(error);
-    };
-
-    const resolveOnce = (
-      exitCode: number | null,
-      exitSignal: NodeJS.Signals | null,
-    ): void => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      cleanup();
-      resolve({
-        exitCode,
-        signal: exitSignal,
-        stdout,
-        stderr,
+      const child = spawn(executable, args, {
+        cwd,
+        env: childEnv,
+        detached: process.platform !== "win32",
+        shell: shouldUseShellForExecutable(executable),
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
       });
-    };
+      const stdout: BoundedOutputBuffer = { text: "", truncated: false };
+      const stderr: BoundedOutputBuffer = { text: "", truncated: false };
+      const actionOutputBatcher = createActionOutputBatcher(onActionOutput);
+      let settled = false;
+      let abortError: Error | undefined;
+      let abortSettlementHandle: ReturnType<typeof setTimeout> | undefined;
 
-    function handleAbort(): void {
-      if (settled || abortError) {
-        return;
+      const cleanup = (): void => {
+        signal?.removeEventListener("abort", handleAbort);
+        child.stdin?.removeListener("error", handleStdinError);
+        actionOutputBatcher.dispose();
+        if (abortSettlementHandle) {
+          clearTimeout(abortSettlementHandle);
+          abortSettlementHandle = undefined;
+        }
+      };
+
+      const rejectOnce = (error: Error): void => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+
+      const resolveOnce = (
+        exitCode: number | null,
+        exitSignal: NodeJS.Signals | null,
+      ): void => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cleanup();
+        resolve({
+          exitCode,
+          signal: exitSignal,
+          stdout: finalizeBoundedOutput(stdout),
+          stderr: finalizeBoundedOutput(stderr),
+        });
+      };
+
+      function handleAbort(): void {
+        if (settled || abortError) {
+          return;
+        }
+
+        abortError = signal
+          ? createAbortError(signal)
+          : new Error("Execution cancelled.");
+        void terminateExternalAgentProcessTree(child).catch(() => {
+          child.kill();
+        });
+
+        abortSettlementHandle = setTimeout(() => {
+          child.kill();
+          rejectOnce(abortError ?? new Error("Execution cancelled."));
+        }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS + 1_000);
+        unrefTimer(abortSettlementHandle);
       }
 
-      abortError = signal
-        ? createAbortError(signal)
-        : new Error("Execution cancelled.");
-      void terminateExternalAgentProcessTree(child).catch(() => {
-        child.kill();
+      function handleStdinError(error: Error): void {
+        if (settled || abortError) {
+          return;
+        }
+
+        void terminateExternalAgentProcessTree(child).finally(() => {
+          rejectOnce(error);
+        });
+      }
+
+      child.stdout?.setEncoding("utf8");
+      child.stderr?.setEncoding("utf8");
+      child.stdout?.on("data", (chunk: string) => {
+        appendBoundedOutput(stdout, chunk, MAX_CAPTURED_STDOUT_CHARS);
+        actionOutputBatcher.enqueue("stdout", chunk);
+      });
+      child.stderr?.on("data", (chunk: string) => {
+        appendBoundedOutput(stderr, chunk, MAX_CAPTURED_STDERR_CHARS);
+        actionOutputBatcher.enqueue("stderr", chunk);
+      });
+      child.on("error", (error) => {
+        rejectOnce(abortError ?? error);
+      });
+      child.on("close", (exitCode, exitSignal) => {
+        if (abortError) {
+          rejectOnce(abortError);
+          return;
+        }
+
+        resolveOnce(exitCode, exitSignal);
       });
 
-      abortSettlementHandle = setTimeout(() => {
-        child.kill();
-        rejectOnce(abortError ?? new Error("Execution cancelled."));
-      }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS + 1_000);
-      unrefTimer(abortSettlementHandle);
-    }
+      signal?.addEventListener("abort", handleAbort, { once: true });
+      child.stdin?.once("error", handleStdinError);
 
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
-    child.stdout?.on("data", (chunk: string) => {
-      stdout += chunk;
-      emitActionOutput(onActionOutput, "stdout", chunk);
-    });
-    child.stderr?.on("data", (chunk: string) => {
-      stderr += chunk;
-      emitActionOutput(onActionOutput, "stderr", chunk);
-    });
-    child.on("error", (error) => {
-      rejectOnce(abortError ?? error);
-    });
-    child.on("close", (exitCode, exitSignal) => {
-      if (abortError) {
-        rejectOnce(abortError);
-        return;
+      if (signal?.aborted) {
+        handleAbort();
       }
 
-      resolveOnce(exitCode, exitSignal);
+      if (input !== undefined && !abortError) {
+        const inputAccepted = child.stdin?.write(input) ?? true;
+
+        if (!inputAccepted) {
+          child.stdin?.once("drain", () => child.stdin?.end());
+          return;
+        }
+      }
+
+      child.stdin?.end();
     });
-
-    signal?.addEventListener("abort", handleAbort, { once: true });
-
-    if (signal?.aborted) {
-      handleAbort();
-    }
-
-    if (input !== undefined && !abortError) {
-      child.stdin?.write(input);
-    }
-
-    child.stdin?.end();
-  });
+  } finally {
+    await isolatedCodexHome?.dispose();
+  }
 };
 
 interface ExternalAgentCommand {
@@ -732,7 +921,11 @@ const createCodexArgs = (
   if (delegationMode === "read-only-artifact") {
     args.push("--sandbox", "read-only", "--ephemeral", "--ignore-user-config");
   } else {
-    args.push("--dangerously-bypass-approvals-and-sandbox");
+    args.push(
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--ephemeral",
+      "--ignore-user-config",
+    );
   }
 
   args.push(
@@ -743,6 +936,7 @@ const createCodexArgs = (
     "--model",
     config.model,
   );
+  args.push("--config", "skills.bundled.enabled=false");
 
   if (reasoningEffort) {
     args.push("--config", `model_reasoning_effort="${reasoningEffort}"`);
@@ -762,8 +956,8 @@ const createCodexArgs = (
     args,
     runDetail:
       delegationMode === "read-only-artifact"
-        ? "Running codex exec in a read-only artifact-generation sandbox with user config, git-repo guard, and execpolicy rules ignored."
-        : "Running codex exec with approvals, sandbox, git-repo guard, and execpolicy rules bypassed.",
+        ? "Running ephemeral codex exec with an isolated Codex home in a read-only artifact-generation sandbox, plus user config, bundled skills, git-repo guard, and execpolicy rules ignored."
+        : "Running ephemeral codex exec with an isolated Codex home, bundled skills and user config ignored, and approvals, sandbox, git-repo guard, and execpolicy rules bypassed.",
     startMessage:
       delegationMode === "read-only-artifact"
         ? "Starting Codex CLI in constrained read-only artifact mode."
@@ -773,9 +967,9 @@ const createCodexArgs = (
       delegationMode === "read-only-artifact"
         ? "access: read-only artifact generation"
         : "access: full local access",
-      ...(delegationMode === "read-only-artifact"
-        ? ["user config: ignored"]
-        : []),
+      "Codex home: isolated per run",
+      "user config: ignored",
+      "bundled skills: disabled",
       "git repo check: skipped",
       "execpolicy rules: ignored",
       ...(reasoningEffort ? [`reasoning effort: ${reasoningEffort}`] : []),
@@ -788,8 +982,10 @@ const createCodexArgs = (
         delegationMode === "read-only-artifact"
           ? "read-only-artifact"
           : "dangerously-bypass-approvals-and-sandbox",
-      userConfig:
-        delegationMode === "read-only-artifact" ? "ignored" : "loaded",
+      userConfig: "ignored",
+      codexHome: "isolated",
+      sessionPersistence: "ephemeral",
+      bundledSkills: false,
       gitRepoCheck: "skipped",
       execpolicyRules: "ignored",
       hookTrust: "not-bypassed",

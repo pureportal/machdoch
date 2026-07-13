@@ -1,12 +1,32 @@
 import {
+  ChevronDown,
+  ChevronUp,
   ExternalLink,
   FileText,
   Loader2,
+  Regex,
+  Search,
   TriangleAlert,
 } from "lucide-react";
-import { useMemo, type JSX } from "react";
-import type { FilePreviewLanguage } from "../_helpers/file-preview-language";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+import {
+  FILE_PREVIEW_SYNTAX_OPTIONS,
+  type FilePreviewLanguage,
+  type FilePreviewSyntax,
+} from "../_helpers/file-preview-language";
 import { highlightFilePreviewContent } from "../_helpers/file-preview-highlight";
+import {
+  addSearchMatchesToHighlightedHtml,
+  findFilePreviewMatches,
+} from "../_helpers/file-preview-search";
 import { Button } from "../../components/ui/button";
 import {
   Dialog,
@@ -15,6 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
+import { Input } from "../../components/ui/input";
 import { cn } from "../../lib/utils";
 
 export type FilePreviewMode = "image" | "pdf" | "text";
@@ -48,48 +69,264 @@ const FilePreviewStatus = ({
     return null;
   }
 
+  if (!preview.truncated && !preview.lossy) {
+    return null;
+  }
+
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-slate-500">
-      <span className="rounded-full border border-slate-800 bg-slate-900/80 px-2 py-0.5 text-slate-300">
-        {preview.languageLabel}
-      </span>
+    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-xs text-slate-500">
       {preview.truncated ? <span>Preview truncated</span> : null}
       {preview.lossy ? <span>Encoding normalized</span> : null}
     </div>
   );
 };
 
+const getFilePreviewSyntaxOption = (value: string): FilePreviewSyntax =>
+  FILE_PREVIEW_SYNTAX_OPTIONS.find(
+    (option) => (option.language ?? "plaintext") === value,
+  ) ?? FILE_PREVIEW_SYNTAX_OPTIONS[0];
+
 const TextPreviewContent = ({
   preview,
 }: {
   preview: FilePreview;
 }): JSX.Element => {
+  const [selectedLanguage, setSelectedLanguage] =
+    useState<FilePreviewLanguage | null>(preview.language);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isRegexSearch, setIsRegexSearch] = useState(false);
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const codeRef = useRef<HTMLElement>(null);
+  const searchStatusId = useId();
   const highlightedContent = useMemo(
     () =>
       preview.content === null
         ? null
-        : highlightFilePreviewContent(preview.content, preview.language),
-    [preview.content, preview.language],
+        : highlightFilePreviewContent(preview.content, selectedLanguage),
+    [preview.content, selectedLanguage],
+  );
+  const searchResult = useMemo(
+    () =>
+      findFilePreviewMatches(
+        preview.content ?? "",
+        searchQuery,
+        isRegexSearch,
+      ),
+    [isRegexSearch, preview.content, searchQuery],
+  );
+  const safeActiveMatchIndex =
+    searchResult.matches.length === 0
+      ? -1
+      : Math.min(activeMatchIndex, searchResult.matches.length - 1);
+  const renderedContent = useMemo(
+    () =>
+      addSearchMatchesToHighlightedHtml(
+        highlightedContent,
+        preview.content ?? "",
+        searchResult.matches,
+        safeActiveMatchIndex,
+      ),
+    [
+      highlightedContent,
+      preview.content,
+      safeActiveMatchIndex,
+      searchResult.matches,
+    ],
   );
 
+  useEffect(() => {
+    setSelectedLanguage(preview.language);
+    setSearchQuery("");
+    setIsRegexSearch(false);
+  }, [preview.language, preview.path]);
+
+  useEffect(() => {
+    setActiveMatchIndex(0);
+  }, [isRegexSearch, preview.content, searchQuery]);
+
+  useEffect(() => {
+    if (safeActiveMatchIndex < 0) {
+      return;
+    }
+
+    const activeMatch = codeRef.current?.querySelector<HTMLElement>(
+      '[data-file-preview-match="active"]',
+    );
+
+    if (activeMatch && typeof activeMatch.scrollIntoView === "function") {
+      activeMatch.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+  }, [renderedContent, safeActiveMatchIndex]);
+
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent): void => {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === "f"
+      ) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener("keydown", focusSearch);
+
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, []);
+
+  const moveActiveMatch = (offset: number): void => {
+    const matchCount = searchResult.matches.length;
+
+    if (matchCount === 0) {
+      return;
+    }
+
+    setActiveMatchIndex((current) => {
+      const normalizedCurrent =
+        current >= 0 && current < matchCount ? current : 0;
+
+      return (normalizedCurrent + offset + matchCount) % matchCount;
+    });
+  };
+
+  const handleSearchKeyDown = (
+    event: ReactKeyboardEvent<HTMLInputElement>,
+  ): void => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+    moveActiveMatch(event.shiftKey ? -1 : 1);
+  };
+
+  const searchStatus = searchQuery
+    ? searchResult.error
+      ? "Invalid regex"
+      : searchResult.matches.length === 0
+        ? "No matches"
+        : `${safeActiveMatchIndex + 1} of ${searchResult.matches.length}`
+    : "";
+  const regexSearchButtonLabel = isRegexSearch
+    ? "Use plain text search"
+    : "Use regular expression search";
+
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-slate-950">
-      <pre
-        aria-label={`Contents of ${preview.title}`}
-        className={cn(
-          "app-file-preview-code m-0 min-h-full w-max min-w-full select-text overflow-visible p-4 font-mono text-xs leading-5 text-slate-200",
-          "whitespace-pre [tab-size:2]",
-        )}
+    <div className="flex min-h-0 flex-1 flex-col bg-slate-950">
+      <div
+        role="toolbar"
+        aria-label="File preview controls"
+        className="flex flex-wrap items-center gap-2 border-b border-slate-800/80 bg-slate-950 px-4 py-2"
       >
-        {highlightedContent ? (
-          <code
-            className={`language-${preview.language ?? "plaintext"}`}
-            dangerouslySetInnerHTML={{ __html: highlightedContent }}
-          />
-        ) : (
-          <code>{preview.content ?? ""}</code>
-        )}
-      </pre>
+        <select
+          aria-label="Syntax highlighting"
+          value={selectedLanguage ?? "plaintext"}
+          onChange={(event) =>
+            setSelectedLanguage(
+              getFilePreviewSyntaxOption(event.currentTarget.value).language,
+            )
+          }
+          className="h-8 w-40 rounded-md border border-slate-800 bg-slate-900 px-2 text-xs text-slate-300 outline-none focus-visible:border-sky-500/70 focus-visible:ring-1 focus-visible:ring-sky-500/40"
+        >
+          {FILE_PREVIEW_SYNTAX_OPTIONS.map((option) => (
+            <option
+              key={option.language ?? "plaintext"}
+              value={option.language ?? "plaintext"}
+            >
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        <div className="ml-auto flex min-w-[min(100%,22rem)] flex-1 items-center justify-end gap-1">
+          <div className="relative w-full max-w-sm">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+            <Input
+              ref={searchInputRef}
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.currentTarget.value)}
+              onKeyDown={handleSearchKeyDown}
+              aria-label="Find in file"
+              aria-describedby={searchStatusId}
+              aria-invalid={Boolean(searchResult.error)}
+              placeholder="Find in file"
+              autoComplete="off"
+              spellCheck={false}
+              className="h-8 border-slate-800 bg-slate-900 pr-2 pl-8 text-xs text-slate-200 shadow-none placeholder:text-slate-500 focus-visible:border-sky-500/60 focus-visible:ring-sky-500/30"
+            />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={regexSearchButtonLabel}
+            aria-pressed={isRegexSearch}
+            title={regexSearchButtonLabel}
+            onClick={() => setIsRegexSearch((current) => !current)}
+            className={cn(
+              "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+              isRegexSearch && "bg-sky-500/15 text-sky-200",
+            )}
+          >
+            <Regex className="h-3.5 w-3.5" />
+          </Button>
+          <span
+            id={searchStatusId}
+            aria-live="polite"
+            title={searchResult.error ?? undefined}
+            className={cn(
+              "min-w-16 text-center text-[11px] tabular-nums text-slate-500",
+              searchResult.error && "text-rose-300",
+            )}
+          >
+            {searchStatus}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Previous match"
+            disabled={searchResult.matches.length === 0}
+            onClick={() => moveActiveMatch(-1)}
+            className="text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Next match"
+            disabled={searchResult.matches.length === 0}
+            onClick={() => moveActiveMatch(1)}
+            className="text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-auto">
+        <pre
+          aria-label={`Contents of ${preview.title}`}
+          className={cn(
+            "app-file-preview-code m-0 min-h-full w-max min-w-full select-text overflow-visible p-4 font-mono text-xs leading-5 text-slate-200",
+            "whitespace-pre [tab-size:2]",
+          )}
+        >
+          {renderedContent !== null ? (
+            <code
+              ref={codeRef}
+              className={`language-${selectedLanguage ?? "plaintext"}`}
+              dangerouslySetInnerHTML={{ __html: renderedContent }}
+            />
+          ) : (
+            <code ref={codeRef}>{preview.content ?? ""}</code>
+          )}
+        </pre>
+      </div>
     </div>
   );
 };

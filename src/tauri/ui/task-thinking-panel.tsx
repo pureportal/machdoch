@@ -254,12 +254,15 @@ export const TaskThinkingPanel = ({
       : thinking.completedAt ?? latestTimelineEvent?.timestamp ?? thinking.startedAt) -
       thinking.startedAt,
   );
-  const replayExport = useMemo(
-    () => createReplayExport(thinking, timelineEvents),
-    [thinking, timelineEvents],
-  );
   const [isCollapsed, setIsCollapsed] = useState<boolean>(!isRunning);
   const [activeView, setActiveView] = useState<PanelView>("timeline");
+  const replayExport = useMemo(
+    () =>
+      activeView === "replay"
+        ? createReplayExport(thinking, timelineEvents)
+        : "",
+    [activeView, thinking, timelineEvents],
+  );
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
   );

@@ -1,4 +1,9 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::OnceLock,
+    time::{Duration, Instant},
+};
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::runtime_contract_generated::{REASONING_MODES, VALID_MODEL_PROVIDERS};
 mod collect;
@@ -60,6 +65,24 @@ pub use types::{
 pub(crate) use workspace::{get_user_config_directory, resolve_workspace_root_path};
 use workspace::{save_workspace_default_mode_value, save_workspace_reasoning_mode_value};
 
+const PROVIDER_MODEL_CATALOG_CACHE_TTL: Duration = Duration::from_secs(60);
+
+struct CachedProviderModelCatalog {
+    cached_at: Instant,
+    snapshot: ProviderModelCatalogSnapshot,
+}
+
+static PROVIDER_MODEL_CATALOG_CACHE: OnceLock<AsyncMutex<Option<CachedProviderModelCatalog>>> =
+    OnceLock::new();
+
+fn provider_model_catalog_cache() -> &'static AsyncMutex<Option<CachedProviderModelCatalog>> {
+    PROVIDER_MODEL_CATALOG_CACHE.get_or_init(|| AsyncMutex::new(None))
+}
+
+async fn invalidate_provider_model_catalog_cache() {
+    *provider_model_catalog_cache().lock().await = None;
+}
+
 pub(crate) fn normalize_optional_string(value: Option<&str>) -> Option<String> {
     let trimmed = value?.trim();
 
@@ -109,6 +132,14 @@ pub async fn get_global_provider_availability() -> Result<Vec<ProviderAvailabili
 
 #[tauri::command]
 pub async fn get_provider_model_catalog() -> Result<ProviderModelCatalogSnapshot, String> {
+    let mut cache = provider_model_catalog_cache().lock().await;
+
+    if let Some(cached) = cache.as_ref() {
+        if cached.cached_at.elapsed() < PROVIDER_MODEL_CATALOG_CACHE_TTL {
+            return Ok(cached.snapshot.clone());
+        }
+    }
+
     let env = load_global_env()?;
     let client = create_provider_model_http_client()?;
     let mut providers = Vec::new();
@@ -117,10 +148,16 @@ pub async fn get_provider_model_catalog() -> Result<ProviderModelCatalogSnapshot
         providers.push(fetch_provider_model_catalog(&client, &env, provider).await);
     }
 
-    Ok(ProviderModelCatalogSnapshot {
+    let snapshot = ProviderModelCatalogSnapshot {
         generated_at: create_timestamp_millis(),
         providers,
-    })
+    };
+    *cache = Some(CachedProviderModelCatalog {
+        cached_at: Instant::now(),
+        snapshot: snapshot.clone(),
+    });
+
+    Ok(snapshot)
 }
 
 #[tauri::command]
@@ -141,6 +178,7 @@ pub async fn save_user_provider_api_key(
     api_key: String,
 ) -> Result<Vec<ProviderAvailability>, String> {
     save_user_api_key(&provider, &api_key)?;
+    invalidate_provider_model_catalog_cache().await;
 
     let env = load_global_env()?;
     Ok(get_provider_availability(&env))

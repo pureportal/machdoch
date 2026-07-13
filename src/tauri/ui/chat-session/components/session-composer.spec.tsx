@@ -46,6 +46,7 @@ const renderSessionComposer = ({
   isUsingWorkspaceDefaultReasoning = !activeSession.reasoning,
   canSendMessage = false,
   onSend = vi.fn(),
+  onDraftChange = vi.fn(),
 }: {
   activeSession?: ChatSessionRecord;
   chooserProviders?: RuntimeProvider[];
@@ -53,7 +54,8 @@ const renderSessionComposer = ({
   defaultReasoning?: ReasoningMode;
   isUsingWorkspaceDefaultReasoning?: boolean;
   canSendMessage?: boolean;
-  onSend?: () => void;
+  onSend?: (draft: string) => void;
+  onDraftChange?: (draft: string) => void;
 } = {}): void => {
   render(
     <TooltipProvider>
@@ -125,7 +127,7 @@ const renderSessionComposer = ({
         onDeleteContextPack={vi.fn()}
         onExportContextPacks={vi.fn()}
         onImportContextPacks={vi.fn()}
-        onDraftChange={vi.fn()}
+        onDraftChange={onDraftChange}
         onComposerHistoryNavigation={vi.fn()}
         onRunningTaskMessageActionChange={vi.fn()}
         onQueuedMessageChange={vi.fn()}
@@ -144,6 +146,34 @@ const renderSessionComposer = ({
 };
 
 describe("SessionComposer", () => {
+  it("updates the textarea immediately and publishes canonical state", () => {
+    const onDraftChange = vi.fn();
+    renderSessionComposer({ canSendMessage: true, onDraftChange });
+    const textarea = screen.getByRole("textbox", { name: "Task composer" });
+
+    fireEvent.change(textarea, { target: { value: "responsive draft" } });
+
+    expect((textarea as HTMLTextAreaElement).value).toBe("responsive draft");
+    expect(onDraftChange).toHaveBeenCalledWith("responsive draft");
+  });
+
+  it("flushes and submits the latest local draft on Enter", () => {
+    const onDraftChange = vi.fn();
+    const onSend = vi.fn();
+    renderSessionComposer({
+      canSendMessage: true,
+      onDraftChange,
+      onSend,
+    });
+    const textarea = screen.getByRole("textbox", { name: "Task composer" });
+
+    fireEvent.change(textarea, { target: { value: "send immediately" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    expect(onDraftChange).toHaveBeenCalledWith("send immediately");
+    expect(onSend).toHaveBeenCalledWith("send immediately");
+  });
+
   it("does not submit an IME composition candidate on Enter", () => {
     const onSend = vi.fn();
     renderSessionComposer({

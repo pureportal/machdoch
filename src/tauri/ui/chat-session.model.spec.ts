@@ -35,6 +35,119 @@ import { createInitialThinkingTrace } from "./task-thinking.model";
 const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
 
 describe("normalizeShellState", () => {
+  it("removes superseded thinking records that already have terminal output", () => {
+    const normalized = normalizeShellState({
+      activeSessionId: "terminal-session",
+      sessions: [
+        {
+          id: "terminal-session",
+          provider: "openai",
+          workspace: null,
+          createdAt: 1,
+          updatedAt: 3,
+          messages: [
+            {
+              id: "thinking",
+              taskId: "task-1",
+              role: "agent",
+              content: "working",
+              source: {
+                kind: "thinking",
+                thinking: createInitialThinkingTrace("ask", 1),
+              },
+            },
+            {
+              id: "execution",
+              taskId: "task-1",
+              role: "agent",
+              content: "done",
+              source: {
+                kind: "execution",
+                execution: createMockExecutionFixture("task"),
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(normalized.sessions[0]?.messages.map((message) => message.id)).toEqual([
+      "execution",
+    ]);
+  });
+
+  it("compacts completed thinking details while preserving running traces", () => {
+    const createTrace = (status: "running" | "complete") => ({
+      ...createInitialThinkingTrace("ask", 1),
+      status,
+      entries: Array.from({ length: 20 }, (_, index) => ({
+        id: `entry-${index}`,
+        label: "Progress",
+        detail: `Entry ${index}`,
+        tone: "info" as const,
+        timestamp: index,
+      })),
+      actionOutputLines: Array.from({ length: 30 }, (_, index) => ({
+        id: `line-${index}`,
+        toolName: "shell",
+        stream: "stdout" as const,
+        text: `Line ${index}`,
+        timestamp: index,
+      })),
+      timelineEvents: Array.from({ length: 50 }, (_, index) => ({
+        id: `event-${index}`,
+        kind: "state" as const,
+        phase: "started" as const,
+        label: "Progress",
+        detail: `Event ${index}`,
+        tone: "info" as const,
+        timestamp: index,
+        elapsedMs: index,
+      })),
+    });
+    const normalized = normalizeShellState({
+      activeSessionId: "trace-session",
+      sessions: [
+        {
+          id: "trace-session",
+          provider: "openai",
+          workspace: null,
+          createdAt: 1,
+          updatedAt: 2,
+          messages: [
+            {
+              id: "complete-trace",
+              role: "agent",
+              content: "complete",
+              source: { kind: "thinking", thinking: createTrace("complete") },
+            },
+            {
+              id: "running-trace",
+              role: "agent",
+              content: "running",
+              source: { kind: "thinking", thinking: createTrace("running") },
+            },
+          ],
+        },
+      ],
+    });
+    const completeTrace = normalized.sessions[0]?.messages[0]?.source;
+    const runningTrace = normalized.sessions[0]?.messages[1]?.source;
+
+    expect(completeTrace?.kind).toBe("thinking");
+    expect(runningTrace?.kind).toBe("thinking");
+    if (completeTrace?.kind !== "thinking" || runningTrace?.kind !== "thinking") {
+      throw new Error("Expected normalized thinking traces.");
+    }
+
+    expect(completeTrace.thinking.entries).toHaveLength(8);
+    expect(completeTrace.thinking.actionOutputLines).toHaveLength(20);
+    expect(completeTrace.thinking.timelineEvents).toHaveLength(40);
+    expect(runningTrace.thinking.entries).toHaveLength(20);
+    expect(runningTrace.thinking.actionOutputLines).toHaveLength(30);
+    expect(runningTrace.thinking.timelineEvents).toHaveLength(50);
+  });
+
   it("repairs duplicate persisted message ids without dropping either message", () => {
     const normalized = normalizeShellState({
       activeSessionId: "duplicate-message-session",
@@ -581,6 +694,41 @@ describe("normalizeShellState", () => {
     ]);
     expect(normalized.contextPacks[0]?.provider).toBeUndefined();
     expect(normalized.contextPacks[0]?.model).toBeUndefined();
+  });
+
+  it("bounds persisted message count, message text, and prompt history", () => {
+    const oversizedContent = "x".repeat(140_000);
+    const normalized = normalizeShellState({
+      activeSessionId: "bounded-session",
+      sessions: [
+        {
+          id: "bounded-session",
+          provider: "openai",
+          model: "gpt-5.5",
+          workspace: null,
+          createdAt: 1,
+          updatedAt: 2,
+          messages: Array.from({ length: 401 }, (_, index) => ({
+            id: `message-${index}`,
+            role: index % 2 === 0 ? "user" : "agent",
+            content: index === 400 ? oversizedContent : `Message ${index}`,
+          })),
+          promptHistory: Array.from(
+            { length: 120 },
+            (_, index) => `${index}:${"p".repeat(9_000)}`,
+          ),
+        },
+      ],
+    });
+    const session = normalized.sessions[0];
+    const finalMessage = session?.messages.at(-1);
+
+    expect(session?.messages).toHaveLength(400);
+    expect(session?.messages[0]?.id).toBe("message-1");
+    expect(finalMessage?.content).toHaveLength(128_000);
+    expect(finalMessage?.content).toContain("[content truncated by machdoch");
+    expect(session?.promptHistory).toHaveLength(100);
+    expect(session?.promptHistory[0]).toHaveLength(8_000);
   });
 });
 

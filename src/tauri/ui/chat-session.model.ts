@@ -239,7 +239,22 @@ const THINKING_TIMELINE_EVENT_PHASES: TaskThinkingTimelineEvent["phase"][] = [
   "requested-continuation",
   "rejected",
 ];
-const THINKING_TIMELINE_EVENT_LIMIT = 240;
+const THINKING_ENTRY_LIMIT = 80;
+const THINKING_ENTRY_DETAIL_LIMIT = 600;
+const THINKING_TIMELINE_EVENT_LIMIT = 120;
+const COMPLETED_THINKING_ENTRY_LIMIT = 8;
+const COMPLETED_THINKING_ACTION_OUTPUT_LINE_LIMIT = 20;
+const COMPLETED_THINKING_TIMELINE_EVENT_LIMIT = 40;
+const EXECUTION_SECTION_LIMIT = 40;
+const EXECUTION_SECTION_LINE_LIMIT = 80;
+const EXECUTION_SECTION_LINE_LENGTH_LIMIT = 1_000;
+const PERSISTED_MESSAGE_CONTENT_LIMIT = 128_000;
+const PERSISTED_TEXT_TRUNCATION_MARKER =
+  "\n\n[content truncated by machdoch to keep session storage bounded]";
+const PERSISTED_VISIBLE_MESSAGE_LIMIT = 400;
+const PROMPT_HISTORY_ENTRY_LIMIT = 100;
+const PROMPT_HISTORY_ENTRY_LENGTH_LIMIT = 8_000;
+const EXECUTION_RESPONSE_MARKDOWN_LIMIT = 32_000;
 const MAX_SESSION_TAGS = 12;
 const MAX_SESSION_TAG_LENGTH = 32;
 const MAX_CONTEXT_PACK_NAME_LENGTH = 72;
@@ -1034,11 +1049,22 @@ const normalizePromptHistoryEntries = (value: unknown): string[] => {
 
   for (const entry of value) {
     if (typeof entry === "string") {
-      normalizedEntries.push(entry);
+      normalizedEntries.push(entry.slice(0, PROMPT_HISTORY_ENTRY_LENGTH_LIMIT));
     }
   }
 
-  return normalizedEntries;
+  return normalizedEntries.slice(-PROMPT_HISTORY_ENTRY_LIMIT);
+};
+
+const truncatePersistedText = (value: string): string => {
+  if (value.length <= PERSISTED_MESSAGE_CONTENT_LIMIT) {
+    return value;
+  }
+
+  return `${value.slice(
+    0,
+    PERSISTED_MESSAGE_CONTENT_LIMIT - PERSISTED_TEXT_TRUNCATION_MARKER.length,
+  )}${PERSISTED_TEXT_TRUNCATION_MARKER}`;
 };
 
 const normalizeTaskCustomizationMatches = (
@@ -1218,8 +1244,10 @@ const normalizeTaskExecutionSection = (
   }
 
   const section: TaskExecutionSection = {
-    title: normalizeString(value.title, `Details ${index + 1}`),
-    lines: normalizeStringArray(value.lines),
+    title: normalizeString(value.title, `Details ${index + 1}`).slice(0, 160),
+    lines: normalizeStringArray(value.lines)
+      .slice(-EXECUTION_SECTION_LINE_LIMIT)
+      .map((line) => line.slice(0, EXECUTION_SECTION_LINE_LENGTH_LIMIT)),
   };
 
   if (value.audience === "user" || value.audience === "internal") {
@@ -1242,7 +1270,8 @@ const normalizeTaskExecutionSections = (
 
   return value
     .map(normalizeTaskExecutionSection)
-    .filter((section): section is TaskExecutionSection => section !== undefined);
+    .filter((section): section is TaskExecutionSection => section !== undefined)
+    .slice(-EXECUTION_SECTION_LIMIT);
 };
 
 const normalizeTaskExecutionResponse = (
@@ -1263,11 +1292,20 @@ const normalizeTaskExecutionResponse = (
     : [];
 
   return {
-    markdown: normalizeString(value.markdown),
-    highlights: normalizeStringArray(value.highlights),
-    relatedFiles,
-    verification: normalizeStringArray(value.verification),
-    followUps: normalizeStringArray(value.followUps),
+    markdown: normalizeString(value.markdown).slice(
+      0,
+      EXECUTION_RESPONSE_MARKDOWN_LIMIT,
+    ),
+    highlights: normalizeStringArray(value.highlights)
+      .slice(0, 20)
+      .map((entry) => entry.slice(0, 1_000)),
+    relatedFiles: relatedFiles.slice(0, 100),
+    verification: normalizeStringArray(value.verification)
+      .slice(0, 30)
+      .map((entry) => entry.slice(0, 1_000)),
+    followUps: normalizeStringArray(value.followUps)
+      .slice(0, 20)
+      .map((entry) => entry.slice(0, 1_000)),
   };
 };
 
@@ -1282,13 +1320,16 @@ const normalizeTaskExecutionResult = (
   const response = normalizeTaskExecutionResponse(value.response);
 
   return {
-    task: normalizeString(value.task, fallbackTask || "Untitled task"),
+    task: normalizeString(value.task, fallbackTask || "Untitled task").slice(
+      0,
+      8_000,
+    ),
     mode: normalizeStoredRunMode(value.mode),
     status: normalizeTaskExecutionStatus(value.status),
     summary: normalizeString(
       value.summary,
       "Task result restored from persisted session.",
-    ),
+    ).slice(0, 8_000),
     executedTools: normalizeToolNames(value.executedTools),
     ...(normalizeChatSessionOptionalString(value.reason)
       ? { reason: normalizeChatSessionOptionalString(value.reason) }
@@ -1309,7 +1350,10 @@ const normalizeThinkingEntry = (
   return {
     id: normalizeString(value.id, `thinking-entry-${index}`),
     label: normalizeString(value.label, "Progress"),
-    detail: normalizeString(value.detail),
+    detail: normalizeString(value.detail).slice(
+      0,
+      THINKING_ENTRY_DETAIL_LIMIT,
+    ),
     tone: isTaskPanelTone(value.tone) ? value.tone : "info",
     timestamp: normalizeFiniteNumber(value.timestamp, index),
   };
@@ -1329,7 +1373,7 @@ const normalizeThinkingModelStream = (
   return {
     kind: value.kind as TaskThinkingModelStream["kind"],
     label: normalizeString(value.label),
-    content: normalizeString(value.content),
+    content: normalizeString(value.content).slice(0, 4_000),
     ...(typeof value.complete === "boolean" ? { complete: value.complete } : {}),
   };
 };
@@ -1483,10 +1527,16 @@ const normalizeThinkingTrace = (
     return undefined;
   }
 
+  const status =
+    typeof value.status === "string" &&
+    THINKING_STATUSES.includes(value.status as TaskThinkingTrace["status"])
+      ? (value.status as TaskThinkingTrace["status"])
+      : "complete";
   const entries = Array.isArray(value.entries)
     ? value.entries
         .map(normalizeThinkingEntry)
         .filter((entry): entry is TaskThinkingEntry => entry !== undefined)
+        .slice(-THINKING_ENTRY_LIMIT)
     : [];
   const modelStream = normalizeThinkingModelStream(value.modelStream);
   const actionOutputLines = normalizeThinkingActionOutputLines(
@@ -1501,14 +1551,13 @@ const normalizeThinkingTrace = (
   const completedAt = normalizeFiniteNumber(value.completedAt, 0);
 
   return {
-    status:
-      typeof value.status === "string" &&
-      THINKING_STATUSES.includes(value.status as TaskThinkingTrace["status"])
-        ? (value.status as TaskThinkingTrace["status"])
-        : "complete",
+    status,
     mode: normalizeStoredRunMode(value.mode),
     startedAt,
-    entries,
+    entries:
+      status === "complete"
+        ? entries.slice(-COMPLETED_THINKING_ENTRY_LIMIT)
+        : entries,
     ...(normalizeChatSessionOptionalString(value.task)
       ? { task: normalizeChatSessionOptionalString(value.task) }
       : {}),
@@ -1517,8 +1566,26 @@ const normalizeThinkingTrace = (
       ? { assistantText: normalizeChatSessionOptionalString(value.assistantText) }
       : {}),
     ...(modelStream ? { modelStream } : {}),
-    ...(actionOutputLines.length > 0 ? { actionOutputLines } : {}),
-    ...(timelineEvents.length > 0 ? { timelineEvents } : {}),
+    ...(actionOutputLines.length > 0
+      ? {
+          actionOutputLines:
+            status === "complete"
+              ? actionOutputLines.slice(
+                  -COMPLETED_THINKING_ACTION_OUTPUT_LINE_LIMIT,
+                )
+              : actionOutputLines,
+        }
+      : {}),
+    ...(timelineEvents.length > 0
+      ? {
+          timelineEvents:
+            status === "complete"
+              ? timelineEvents.slice(
+                  -COMPLETED_THINKING_TIMELINE_EVENT_LIMIT,
+                )
+              : timelineEvents,
+        }
+      : {}),
     ...(tokenUsage ? { tokenUsage } : {}),
   };
 };
@@ -1570,7 +1637,9 @@ const normalizeMessagePromptEnhancement = (
     return undefined;
   }
 
-  const originalContent = normalizeString(value.originalContent).trim();
+  const originalContent = truncatePersistedText(
+    normalizeString(value.originalContent),
+  ).trim();
 
   if (!originalContent || originalContent === content.trim()) {
     return undefined;
@@ -1595,8 +1664,28 @@ const normalizeSessionMessages = (
       continue;
     }
 
-    const content = normalizeString(entry.content);
-    const source = normalizeMessageSource(entry.source, content);
+    const content = truncatePersistedText(normalizeString(entry.content));
+    let source = normalizeMessageSource(entry.source, content);
+
+    if (
+      content.trim().length > 0 &&
+      source?.kind === "execution" &&
+      source.execution.response?.markdown.trim() === content.trim()
+    ) {
+      source = {
+        kind: "execution",
+        execution: {
+          ...source.execution,
+          outputSections: source.execution.outputSections.filter(
+            (section) => section.lines.join("\n").trim() !== content.trim(),
+          ),
+          response: {
+            ...source.execution.response,
+            markdown: "",
+          },
+        },
+      };
+    }
     const createdAt = normalizeOptionalFiniteNumber(entry.createdAt);
     const intent = normalizeMessageIntent(entry.intent);
     const taskId = normalizeChatSessionOptionalString(entry.taskId);
@@ -1636,7 +1725,26 @@ const normalizeSessionMessages = (
     messages.push(message);
   }
 
-  return messages;
+  const tasksWithTerminalAgentMessages = new Set(
+    messages.flatMap((message) =>
+      message.role === "agent" &&
+      message.taskId &&
+      message.source?.kind !== "thinking" &&
+      message.source?.kind !== "preview"
+        ? [message.taskId]
+        : [],
+    ),
+  );
+
+  return messages.filter(
+    (message) =>
+      !(
+        message.role === "agent" &&
+        message.taskId &&
+        message.source?.kind === "thinking" &&
+        tasksWithTerminalAgentMessages.has(message.taskId)
+      ),
+  );
 };
 
 const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord => {
@@ -1667,7 +1775,10 @@ const normalizeSessionRecord = (session: ChatSessionRecord): ChatSessionRecord =
     workspace: typeof session.workspace === "string" ? session.workspace : null,
     manualTitle:
       typeof session.manualTitle === "string" ? session.manualTitle : undefined,
-    messages: normalizeSessionMessages(session.messages, session.id),
+    messages: trimSessionTaskGroupsToVisibleMessageLimit(
+      normalizeSessionMessages(session.messages, session.id),
+      PERSISTED_VISIBLE_MESSAGE_LIMIT,
+    ),
     promptHistory: normalizePromptHistoryEntries(session.promptHistory),
     promptContextHistory: normalizePromptContextHistory(
       session.promptContextHistory,
@@ -2860,10 +2971,10 @@ export const createVisibleConversationMessages = (
   return visibleMessages;
 };
 
-export const trimSessionTaskGroupsToVisibleMessageLimit = (
+export function trimSessionTaskGroupsToVisibleMessageLimit(
   messages: ChatSessionMessage[],
   maxVisibleMessages: number,
-): ChatSessionMessage[] => {
+): ChatSessionMessage[] {
   if (!Number.isFinite(maxVisibleMessages) || maxVisibleMessages <= 0) {
     return [];
   }
@@ -2907,4 +3018,4 @@ export const trimSessionTaskGroupsToVisibleMessageLimit = (
   }
 
   return keptGroups.flat();
-};
+}

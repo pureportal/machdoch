@@ -827,6 +827,7 @@ const summarizeRalphAsTaskResult = (
 };
 
 const SCHEDULER_FLEET_LOCK_STALE_MS = 2 * 60_000;
+const MAX_CONCURRENT_SCHEDULER_FLEET_WORKERS = 2;
 
 export const isSchedulerFleetServiceHeartbeatFresh = async (
   ownerPath: string,
@@ -1810,11 +1811,13 @@ export const printSchedulerSummary = async (
       };
       const serviceLock = await acquireSchedulerFleetServiceLock();
       const pollIntervalMs = options.servicePollMs ?? 30_000;
+      const idleShutdownMs = Math.max(0, options.serviceIdleShutdownMs ?? 0);
       const maxIterations = options.serviceMaxIterations;
       let iterations = 0;
       let recovered = 0;
       let queued = 0;
       let runs = 0;
+      let idleSince: number | undefined;
       const activeWorkspaceWorkers = new Map<string, Promise<void>>();
 
       writeStderrLine(
@@ -1828,18 +1831,39 @@ export const printSchedulerSummary = async (
         while (!controller.signal.aborted) {
           await serviceLock.touch();
           const workspaceRoots = await listRegisteredSchedulerWorkspaces();
+          const rotationOffset =
+            workspaceRoots.length > 0 ? iterations % workspaceRoots.length : 0;
+          const orderedWorkspaceRoots = [
+            ...workspaceRoots.slice(rotationOffset),
+            ...workspaceRoots.slice(0, rotationOffset),
+          ];
           const pollResults = await Promise.all(
-            workspaceRoots.map(async (workspaceRoot) => {
+            orderedWorkspaceRoots.map(async (workspaceRoot) => {
               try {
                 const workspaceScheduler = createScheduler(workspaceRoot, {
                   executor: true,
                 });
+                const jobs = await workspaceScheduler.listJobs();
+
+                if (jobs.length === 0) {
+                  return {
+                    workspaceRoot,
+                    recovered: 0,
+                    queued: 0,
+                    hasJobs: false,
+                  };
+                }
+
                 const recoveredRuns = await workspaceScheduler.recoverAbandonedRuns(
                   "Scheduler fleet service recovered an abandoned running run.",
                 );
                 const enqueued = await workspaceScheduler.enqueueDueRuns();
 
-                if (!activeWorkspaceWorkers.has(workspaceRoot)) {
+                if (
+                  !activeWorkspaceWorkers.has(workspaceRoot) &&
+                  activeWorkspaceWorkers.size <
+                    MAX_CONCURRENT_SCHEDULER_FLEET_WORKERS
+                ) {
                   const worker = workspaceScheduler.runQueuedRuns(
                     options.serviceMaxRunsPerTick !== undefined
                       ? {
@@ -1863,12 +1887,18 @@ export const printSchedulerSummary = async (
                   workspaceRoot,
                   recovered: recoveredRuns.length,
                   queued: enqueued.length,
+                  hasJobs: true,
                 };
               } catch (error) {
                 writeStderrLine(
                   `[${new Date().toISOString()}] scheduler fleet poll ${workspaceRoot}: ${error instanceof Error ? error.message : String(error)}`,
                 );
-                return { workspaceRoot, recovered: 0, queued: 0 };
+                return {
+                  workspaceRoot,
+                  recovered: 0,
+                  queued: 0,
+                  hasJobs: true,
+                };
               }
             }),
           );
@@ -1883,6 +1913,13 @@ export const printSchedulerSummary = async (
           );
           recovered += iterationRecovered;
           queued += iterationQueued;
+          const hasScheduledJobs = pollResults.some((workspace) => workspace.hasJobs);
+
+          if (!hasScheduledJobs && activeWorkspaceWorkers.size === 0) {
+            idleSince ??= Date.now();
+          } else {
+            idleSince = undefined;
+          }
 
           if (!args.json && (iterationRecovered || iterationQueued)) {
             writeStdoutLine(
@@ -1896,6 +1933,14 @@ export const printSchedulerSummary = async (
           }
 
           if (maxIterations !== undefined && iterations >= maxIterations) {
+            break;
+          }
+
+          if (
+            idleShutdownMs > 0 &&
+            idleSince !== undefined &&
+            Date.now() - idleSince >= idleShutdownMs
+          ) {
             break;
           }
 

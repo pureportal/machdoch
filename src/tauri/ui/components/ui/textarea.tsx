@@ -68,14 +68,14 @@ const Textarea = React.forwardRef<
   const handleChange = React.useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>): void => {
       onChange?.(event)
-      resizeToContent()
+      scheduleResizeToContent()
     },
-    [onChange, resizeToContent],
+    [onChange, scheduleResizeToContent],
   )
 
   React.useLayoutEffect(() => {
-    resizeToContent()
-  }, [props.value, resizeToContent])
+    scheduleResizeToContent()
+  }, [props.value, scheduleResizeToContent])
 
   React.useLayoutEffect(() => {
     const node = internalRef.current

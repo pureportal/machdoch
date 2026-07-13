@@ -403,17 +403,6 @@ const getModelLimitForProvider = (provider: RuntimeProvider): number => {
   return MAX_MODELS_PER_PROVIDER;
 };
 
-const getStaticCatalogModelsForProvider = (
-  provider: RuntimeProvider,
-): CatalogModel[] => {
-  return getProviderModelMetadata(provider)
-    .map((model) => ({
-      id: model.id,
-      label: model.label,
-    }))
-    .slice(0, getModelLimitForProvider(provider));
-};
-
 const getRuntimeCatalogModelsForProvider = (
   provider: RuntimeProvider,
   runtimeCatalog: RuntimeProviderModelCatalog,
@@ -436,6 +425,14 @@ const getRuntimeCatalogModelsForProvider = (
 
   return [...byId.values()]
     .sort((left, right) => {
+      if (left.id === "auto" || right.id === "auto") {
+        if (left.id === right.id) {
+          return 0;
+        }
+
+        return left.id === "auto" ? -1 : 1;
+      }
+
       const leftReleaseTime = getReleaseTime(left);
       const rightReleaseTime = getReleaseTime(right);
 
@@ -494,20 +491,32 @@ export const getCatalogModelsForProvider = (
   const runtimeCatalog = snapshot?.providers.find(
     (entry) => entry.provider === provider,
   );
-  const staticModels = getStaticCatalogModelsForProvider(provider);
 
-  if (runtimeCatalog?.available && runtimeCatalog.models.length > 0) {
-    const liveModels = getRuntimeCatalogModelsForProvider(
-      provider,
-      runtimeCatalog,
-    );
-
-    if (liveModels.length > 0) {
-      return liveModels;
-    }
+  if (!runtimeCatalog?.available) {
+    return [];
   }
 
-  return staticModels;
+  return getRuntimeCatalogModelsForProvider(provider, runtimeCatalog);
+};
+
+export const getModelLabelForProvider = (
+  provider: RuntimeProvider,
+  modelId: string,
+  snapshot?: ProviderModelCatalogSnapshot | null,
+): string => {
+  const normalizedModelId = normalizeModelId(modelId);
+  const liveModel = getCatalogModelsForProvider(provider, snapshot).find(
+    (model) => model.id === normalizedModelId,
+  );
+  const configuredModel = getProviderModelMetadata(provider).find(
+    (model) => model.id === normalizedModelId,
+  );
+
+  return (
+    liveModel?.label ??
+    configuredModel?.label ??
+    formatModelLabel(normalizedModelId)
+  );
 };
 
 export const getDefaultModelForProvider = (

@@ -17,10 +17,38 @@ import {
 import { createMockExecutionFixture } from "../../preview/fixtures";
 import { createInitialThinkingTrace } from "../../task-thinking.model";
 import {
+  createShellStatePatch,
   mergeShellStateForPersistence,
   mergeShellStateFromExternalUpdate,
   useChatSessionShellState,
 } from "./use-chat-session-shell-state";
+
+describe("createShellStatePatch", () => {
+  it("includes only changed sessions and top-level fields", () => {
+    const firstSession = createSession({ id: "first", updatedAt: 1 });
+    const secondSession = createSession({ id: "second", updatedAt: 1 });
+    const baseState = {
+      ...createInitialShellState(),
+      activeSessionId: firstSession.id,
+      sessions: [firstSession, secondSession],
+    };
+    const nextState = {
+      ...baseState,
+      activeSessionId: secondSession.id,
+      sessions: [
+        { ...firstSession, manualTitle: "Renamed", updatedAt: 2 },
+        secondSession,
+      ],
+    };
+
+    expect(createShellStatePatch(baseState, nextState)).toEqual({
+      topLevel: { activeSessionId: secondSession.id },
+      removedTopLevel: [],
+      sessions: [nextState.sessions[0]],
+      sessionOrder: [firstSession.id, secondSession.id],
+    });
+  });
+});
 
 const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
 const SHELL_STATE_SNAPSHOT_STORAGE_KEY =
@@ -187,6 +215,49 @@ describe("useChatSessionShellState", () => {
     await flushShellPersistence();
 
     expect(setItemSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps transient progress changes in memory without scheduling persistence", async () => {
+    const baseState = createInitialShellState();
+    const session = createSession({
+      id: "session-transient-progress",
+      manualTitle: "Durable title",
+      updatedAt: 1,
+    });
+
+    storeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
+    const { result } = renderHook(() => useChatSessionShellState());
+    await flushShellHydration();
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 650));
+    });
+    setItemSpy.mockClear();
+
+    act(() => {
+      result.current.updateSessionByIdTransient(session.id, (current) => ({
+        ...current,
+        manualTitle: "Live progress title",
+      }));
+    });
+
+    expect(result.current.activeSession.manualTitle).toBe(
+      "Live progress title",
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 650));
+    });
+
+    expect(setItemSpy).not.toHaveBeenCalled();
+    expect(loadStoredShellState().sessions[0]?.manualTitle).toBe(
+      "Durable title",
+    );
   });
 
   it("keeps live draft edits in canonical shell state and persists them after the debounce", async () => {

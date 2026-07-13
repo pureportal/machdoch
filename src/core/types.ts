@@ -529,6 +529,7 @@ export interface TaskExecutionOptions {
   conversationContext?: TaskConversationContext;
   imageInputs?: AgentModelImageInput[];
   maxDurationMs?: number | null;
+  idleTimeoutMs?: number | null;
 }
 
 export interface TaskExecutionResult {

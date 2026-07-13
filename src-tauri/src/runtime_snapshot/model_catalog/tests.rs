@@ -1,9 +1,8 @@
 #[cfg(test)]
 mod model_catalog_parser_tests {
     use super::super::{
-        claude_cli::parse_claude_cli_model_catalog,
         codex_cli::parse_codex_cli_model_catalog,
-        copilot_cli::parse_copilot_cli_model_catalog,
+        copilot_cli::create_copilot_cli_runtime_model,
         provider_api::parse_langdock_model_catalog,
         provider_api_types::{
             create_anthropic_runtime_model, create_google_runtime_model,
@@ -59,68 +58,34 @@ mod model_catalog_parser_tests {
     }
 
     #[test]
-    fn copilot_cli_help_parser_extracts_models_without_telemetry_keys() {
-        let help_output = r#"
-            --model=MODEL Set the AI model you want to use. Pass auto to let Copilot pick.
-            Examples: copilot -p "Explain" -s --model claude-haiku-4.5
-            copilot -p "Fix" --model gpt-5.3-codex --allow-tool write
-            copilot -p "Check" --model gemini-3.1-pro-preview --allow-all
-            COPILOT_MODEL can be set to gpt-5.2 or claude-sonnet-4.5.
-            Telemetry fields include github.copilot.token_limit and github.copilot.aiu.
-        "#;
-        let model_ids = parse_copilot_cli_model_catalog(help_output)
-            .expect("help output should include supported Copilot model IDs")
-            .into_iter()
-            .map(|model| model.id)
-            .collect::<Vec<_>>();
+    fn copilot_sdk_model_conversion_preserves_live_metadata() {
+        let model = serde_json::from_value(serde_json::json!({
+            "id": "mai-code-1-flash",
+            "name": "MAI-Code-1-Flash",
+            "capabilities": {
+                "supports": {
+                    "reasoningEffort": false,
+                    "vision": true
+                },
+                "limits": {
+                    "max_context_window_tokens": 200000,
+                    "max_output_tokens": 32000
+                }
+            }
+        }))
+        .expect("Copilot SDK model fixture should deserialize");
+        let runtime_model =
+            create_copilot_cli_runtime_model(&model).expect("Copilot SDK model should convert");
 
+        assert_eq!(runtime_model.id, "mai-code-1-flash");
+        assert_eq!(runtime_model.label.as_deref(), Some("MAI-Code-1-Flash"));
+        assert_eq!(runtime_model.source, "provider-sdk");
+        assert_eq!(runtime_model.capabilities.image_input, Some(true));
         assert_eq!(
-            model_ids,
-            vec![
-                "auto",
-                "claude-haiku-4.5",
-                "claude-sonnet-4.5",
-                "gemini-3.1-pro-preview",
-                "gpt-5.2",
-                "gpt-5.3-codex"
-            ]
+            runtime_model.capabilities.context_window_tokens,
+            Some(200000)
         );
-        assert!(!model_ids
-            .iter()
-            .any(|model_id| model_id.contains("github.copilot")));
-    }
-
-    #[test]
-    fn claude_cli_help_parser_extracts_documented_aliases_and_current_models() {
-        let help_output = r#"
-            --model Sets the model for the current session with an alias for the latest model
-            (sonnet, opus, haiku, or fable) or a model's full name.
-            Examples: claude --model claude-sonnet-5
-            /model supports sonnet[1m], opus[1m], and opusplan for long sessions.
-            Older examples may mention claude-3-7-sonnet-20250219.
-        "#;
-        let model_ids = parse_claude_cli_model_catalog(help_output)
-            .expect("help output should include supported Claude CLI model IDs")
-            .into_iter()
-            .map(|model| model.id)
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            model_ids,
-            vec![
-                "sonnet",
-                "opus",
-                "haiku",
-                "fable",
-                "sonnet[1m]",
-                "opus[1m]",
-                "opusplan",
-                "claude-sonnet-5"
-            ]
-        );
-        assert!(!model_ids
-            .iter()
-            .any(|model_id| model_id.starts_with("claude-3")));
+        assert_eq!(runtime_model.capabilities.max_output_tokens, Some(32000));
     }
 
     #[test]

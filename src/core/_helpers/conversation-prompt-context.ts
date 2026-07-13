@@ -115,7 +115,11 @@ const createRecentHistoryWindow = (
       continue;
     }
 
-    const nextChars = totalChars + entry.content.length;
+    const boundedEntry = {
+      ...entry,
+      content: entry.content.slice(0, MAX_RECENT_HISTORY_CHARS),
+    };
+    const nextChars = totalChars + boundedEntry.content.length;
 
     if (
       recentHistory.length >= MAX_RECENT_HISTORY_MESSAGES ||
@@ -124,7 +128,7 @@ const createRecentHistoryWindow = (
       break;
     }
 
-    recentHistory.unshift(entry);
+    recentHistory.unshift(boundedEntry);
     totalChars = nextChars;
   }
 

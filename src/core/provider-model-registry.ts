@@ -911,6 +911,22 @@ export const PROVIDER_MODEL_METADATA = [
     ],
     source: "curated-fallback",
   },
+  {
+    provider: "copilot-cli",
+    id: "mai-code-1-flash",
+    label: "MAI-Code-1-Flash",
+    lifecycle: "stable",
+    releaseDate: "2026-06-18",
+    recommendedFor: ["coding", "fast"],
+    capabilities: createCopilotCliCapabilities({
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    }),
+    warnings: [
+      "Runs through the locally installed Copilot CLI; model availability depends on GitHub Copilot plan and organization policy.",
+    ],
+    source: "curated-fallback",
+  },
 ] as const satisfies readonly ProviderModelMetadata[];
 
 export const getDefaultModelForProvider = (

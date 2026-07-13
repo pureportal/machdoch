@@ -5,8 +5,7 @@
     "main",
     "assistant-bubble",
     "assistant-popup",
-    "quick-voice",
-    "tray-menu"
+    "quick-voice"
   ],
   "permissions": [
     "core:default",

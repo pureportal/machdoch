@@ -68,6 +68,8 @@ export type {
 const STORAGE_KEY = "machdoch.desktop.shell-state";
 const BROWSER_SHELL_SNAPSHOT_STORAGE_KEY =
   "machdoch.desktop.shell-state-snapshot";
+const BROWSER_SHELL_REVISION_STORAGE_KEY =
+  "machdoch.desktop.shell-state-revision";
 const APP_SHELL_STORAGE_KEY = "machdoch.desktop.app-shell-state";
 const RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY =
   "machdoch.desktop.running-task-message-action";
@@ -82,8 +84,16 @@ export interface ShellStateSnapshot<T> {
 }
 
 export interface ShellStateCompareAndSwapResult<T>
-  extends ShellStateSnapshot<T> {
+  extends Pick<ShellStateSnapshot<T>, "revision"> {
   committed: boolean;
+  state?: T;
+}
+
+export interface ShellStatePatch {
+  topLevel: Record<string, unknown>;
+  removedTopLevel: string[];
+  sessions: unknown[];
+  sessionOrder: string[];
 }
 
 const MAX_SHELL_STATE_COMMIT_ATTEMPTS = 12;
@@ -222,6 +232,33 @@ export const loadShellStateSnapshot = async <T>(
   );
 };
 
+export const loadShellStateRevision = async (): Promise<number> => {
+  if (canUseTauriStore()) {
+    return invoke<number>("load_shell_state_revision");
+  }
+
+  const localStorage = getLocalStorage();
+  if (!localStorage) {
+    return 0;
+  }
+
+  const rawRevision = localStorage.getItem(BROWSER_SHELL_REVISION_STORAGE_KEY);
+  const revision = rawRevision === null ? Number.NaN : Number(rawRevision);
+
+  if (Number.isSafeInteger(revision) && revision >= 0) {
+    return revision;
+  }
+
+  const snapshot = await runBrowserShellStateCommit(() =>
+    loadBrowserShellStateSnapshot<unknown>(null),
+  );
+  localStorage.setItem(
+    BROWSER_SHELL_REVISION_STORAGE_KEY,
+    String(snapshot.revision),
+  );
+  return snapshot.revision;
+};
+
 export const compareAndSwapShellState = async <T>(
   expectedRevision: number,
   state: T,
@@ -259,13 +296,33 @@ export const compareAndSwapShellState = async <T>(
       BROWSER_SHELL_SNAPSHOT_STORAGE_KEY,
       JSON.stringify({ state, revision } satisfies ShellStateSnapshot<T>),
     );
+    localStorage.setItem(BROWSER_SHELL_REVISION_STORAGE_KEY, String(revision));
 
     return {
       committed: true,
-      state,
       revision,
     };
   });
+};
+
+export const compareAndSwapShellStatePatch = async <T>(
+  expectedRevision: number,
+  patch: ShellStatePatch,
+  browserState: T,
+): Promise<ShellStateCompareAndSwapResult<T>> => {
+  if (canUseTauriStore()) {
+    return invoke<ShellStateCompareAndSwapResult<T>>(
+      "compare_and_swap_shell_state_patch",
+      {
+        request: {
+          expectedRevision,
+          ...patch,
+        },
+      },
+    );
+  }
+
+  return compareAndSwapShellState(expectedRevision, browserState);
 };
 
 export const updateShellStateAtomically = async <T>(
@@ -287,9 +344,13 @@ export const updateShellStateAtomically = async <T>(
 
     if (result.committed) {
       return {
-        state: result.state,
+        state: nextState,
         revision: result.revision,
       };
+    }
+
+    if (result.state === undefined) {
+      throw new Error("Shell-state conflict response omitted the latest state.");
     }
 
     snapshot = {

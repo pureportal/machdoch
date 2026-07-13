@@ -14,6 +14,7 @@ use crate::cooperative_file_lock::with_cooperative_file_lock;
 
 const STORE_FILE: &str = "machdoch-shell-state.json";
 const SNAPSHOT_FILE: &str = "machdoch-shell-state.snapshot.json";
+const SNAPSHOT_REVISION_FILE: &str = "machdoch-shell-state.snapshot.revision";
 const SHELL_STATE_STORAGE_KEY: &str = "machdoch.desktop.shell-state";
 const SHELL_STATE_REVISION_KEY: &str = "machdoch.desktop.shell-state-revision";
 const TOMBSTONES_KEY: &str = "__machdochTombstones";
@@ -35,7 +36,7 @@ struct ShellStateTombstones {
 /// value behind this process-wide lock prevents one webview from silently
 /// overwriting a newer commit made by another webview.
 #[derive(Default)]
-pub struct ShellStateStoreLock(Mutex<()>);
+pub struct ShellStateStoreLock(Mutex<Option<ShellStateSnapshot>>);
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,12 +52,52 @@ pub struct ShellStateCompareAndSwapRequest {
     state: Value,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellStatePatchRequest {
+    expected_revision: u64,
+    top_level: BTreeMap<String, Value>,
+    removed_top_level: Vec<String>,
+    sessions: Vec<Value>,
+    session_order: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShellStateCompareAndSwapResponse {
     committed: bool,
-    state: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<Value>,
     revision: u64,
+}
+
+async fn run_snapshot_io<T, F>(operation: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tokio::task::spawn_blocking(operation)
+        .await
+        .map_err(|error| format!("Shell-state storage task failed: {error}"))?
+}
+
+async fn load_cached_snapshot(
+    app_handle: &AppHandle,
+    cache: &mut Option<ShellStateSnapshot>,
+    fallback: Value,
+) -> Result<ShellStateSnapshot, String> {
+    if let Some(snapshot) = cache.as_ref() {
+        return Ok(snapshot.clone());
+    }
+
+    let app_handle = app_handle.clone();
+    let snapshot = run_snapshot_io(move || {
+        let path = snapshot_path(&app_handle)?;
+        with_cooperative_file_lock(&path, || load_snapshot(&app_handle, fallback))
+    })
+    .await?;
+    *cache = Some(snapshot.clone());
+    Ok(snapshot)
 }
 
 fn read_revision(value: Option<Value>) -> u64 {
@@ -228,6 +269,115 @@ fn snapshot_path(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
         .map_err(|error| format!("Failed to resolve the shell-state snapshot path: {error}"))
 }
 
+fn apply_shell_state_patch(current: &Value, patch: ShellStatePatchRequest) -> Value {
+    let mut requested = current.clone();
+    let Some(requested_object) = requested.as_object_mut() else {
+        return requested;
+    };
+
+    for (key, value) in patch.top_level {
+        if key != "sessions" && key != TOMBSTONES_KEY {
+            requested_object.insert(key, value);
+        }
+    }
+
+    for key in patch.removed_top_level {
+        if key != "sessions" && key != TOMBSTONES_KEY {
+            requested_object.remove(&key);
+        }
+    }
+
+    let mut sessions_by_id = requested_object
+        .get("sessions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|session| {
+            let id = session.get("id")?.as_str()?.to_string();
+            Some((id, session.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for session in patch.sessions {
+        let Some(id) = session
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+        else {
+            continue;
+        };
+
+        sessions_by_id.insert(id, session);
+    }
+
+    requested_object.insert(
+        "sessions".to_string(),
+        Value::Array(
+            patch
+                .session_order
+                .into_iter()
+                .filter_map(|session_id| sessions_by_id.remove(&session_id))
+                .collect(),
+        ),
+    );
+
+    requested
+}
+
+fn snapshot_revision_path(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
+    app_handle
+        .path()
+        .resolve(SNAPSHOT_REVISION_FILE, BaseDirectory::AppData)
+        .map_err(|error| format!("Failed to resolve the shell-state revision path: {error}"))
+}
+
+fn persist_snapshot_revision(app_handle: &AppHandle, revision: u64) -> Result<(), String> {
+    let revision_path = snapshot_revision_path(app_handle)?;
+    write_file_atomic(
+        &revision_path,
+        revision.to_string().as_bytes(),
+        AtomicWriteOptions::with_unix_mode(0o600),
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to persist the shell-state revision {}: {error}",
+            revision_path.display()
+        )
+    })
+}
+
+fn load_snapshot_revision(app_handle: &AppHandle) -> Result<u64, String> {
+    let revision_path = snapshot_revision_path(app_handle)?;
+
+    if revision_path.exists() {
+        let raw = fs::read_to_string(&revision_path).map_err(|error| {
+            format!(
+                "Failed to read the shell-state revision {}: {error}",
+                revision_path.display()
+            )
+        })?;
+
+        return raw.trim().parse::<u64>().map_err(|error| {
+            format!(
+                "Failed to parse the shell-state revision {}: {error}",
+                revision_path.display()
+            )
+        });
+    }
+
+    let snapshot = load_snapshot(app_handle, Value::Null)?;
+    persist_snapshot_revision(app_handle, snapshot.revision)?;
+    Ok(snapshot.revision)
+}
+
+fn ensure_snapshot_revision(app_handle: &AppHandle, revision: u64) -> Result<(), String> {
+    if load_snapshot_revision(app_handle).ok() == Some(revision) {
+        return Ok(());
+    }
+
+    persist_snapshot_revision(app_handle, revision)
+}
+
 fn load_snapshot(app_handle: &AppHandle, fallback: Value) -> Result<ShellStateSnapshot, String> {
     let snapshot_path = snapshot_path(app_handle)?;
 
@@ -286,7 +436,27 @@ fn persist_snapshot(app_handle: &AppHandle, snapshot: &ShellStateSnapshot) -> Re
             "Failed to persist the shell-state snapshot {}: {error}",
             snapshot_path.display()
         )
-    })
+    })?;
+
+    persist_snapshot_revision(app_handle, snapshot.revision)?;
+    let _ = remove_migrated_legacy_shell_state(app_handle);
+    Ok(())
+}
+
+fn remove_migrated_legacy_shell_state(app_handle: &AppHandle) -> Result<(), String> {
+    let store = app_handle
+        .store(STORE_FILE)
+        .map_err(|error| format!("Failed to open the legacy shell-state store: {error}"))?;
+
+    if !store.has(SHELL_STATE_STORAGE_KEY) && !store.has(SHELL_STATE_REVISION_KEY) {
+        return Ok(());
+    }
+
+    store.delete(SHELL_STATE_STORAGE_KEY);
+    store.delete(SHELL_STATE_REVISION_KEY);
+    store
+        .save()
+        .map_err(|error| format!("Failed to compact the legacy shell-state store: {error}"))
 }
 
 #[tauri::command]
@@ -295,9 +465,27 @@ pub async fn load_shell_state_snapshot(
     lock: tauri::State<'_, ShellStateStoreLock>,
     fallback: Value,
 ) -> Result<ShellStateSnapshot, String> {
-    let _guard = lock.0.lock().await;
-    let path = snapshot_path(&app_handle)?;
-    with_cooperative_file_lock(&path, || load_snapshot(&app_handle, fallback))
+    let mut cache = lock.0.lock().await;
+    let snapshot = load_cached_snapshot(&app_handle, &mut cache, fallback).await?;
+    let revision = snapshot.revision;
+    let app_handle = app_handle.clone();
+    run_snapshot_io(move || ensure_snapshot_revision(&app_handle, revision)).await?;
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub async fn load_shell_state_revision(
+    app_handle: AppHandle,
+    lock: tauri::State<'_, ShellStateStoreLock>,
+) -> Result<u64, String> {
+    let cache = lock.0.lock().await;
+
+    if let Some(snapshot) = cache.as_ref() {
+        return Ok(snapshot.revision);
+    }
+
+    drop(cache);
+    run_snapshot_io(move || load_snapshot_revision(&app_handle)).await
 }
 
 #[tauri::command]
@@ -306,47 +494,124 @@ pub async fn compare_and_swap_shell_state(
     lock: tauri::State<'_, ShellStateStoreLock>,
     request: ShellStateCompareAndSwapRequest,
 ) -> Result<ShellStateCompareAndSwapResponse, String> {
-    let _guard = lock.0.lock().await;
-    let path = snapshot_path(&app_handle)?;
-    with_cooperative_file_lock(&path, || {
-        let current = load_snapshot(&app_handle, Value::Null)?;
-        let current_revision = current.revision;
-        let current_state = current.state;
+    let mut cache = lock.0.lock().await;
+    commit_requested_state(
+        &app_handle,
+        &mut cache,
+        request.expected_revision,
+        request.state,
+    )
+    .await
+}
 
-        if current_revision != request.expected_revision {
-            return Ok(ShellStateCompareAndSwapResponse {
-                committed: false,
-                state: current_state,
-                revision: current_revision,
-            });
-        }
+#[tauri::command]
+pub async fn compare_and_swap_shell_state_patch(
+    app_handle: AppHandle,
+    lock: tauri::State<'_, ShellStateStoreLock>,
+    request: ShellStatePatchRequest,
+) -> Result<ShellStateCompareAndSwapResponse, String> {
+    let mut cache = lock.0.lock().await;
+    let current = load_cached_snapshot(&app_handle, &mut cache, Value::Null).await?;
+    let expected_revision = request.expected_revision;
 
-        let next_revision = current_revision.saturating_add(1);
-        let next_state = prepare_next_state(&current_state, request.state, next_revision);
-        let snapshot = ShellStateSnapshot {
-            state: next_state.clone(),
-            revision: next_revision,
-        };
-        persist_snapshot(&app_handle, &snapshot)?;
+    if current.revision != expected_revision {
+        return Ok(ShellStateCompareAndSwapResponse {
+            committed: false,
+            state: Some(current.state),
+            revision: current.revision,
+        });
+    }
 
-        Ok(ShellStateCompareAndSwapResponse {
-            committed: true,
-            state: next_state,
-            revision: next_revision,
+    let requested = apply_shell_state_patch(&current.state, request);
+    commit_requested_state(&app_handle, &mut cache, expected_revision, requested).await
+}
+
+async fn commit_requested_state(
+    app_handle: &AppHandle,
+    cache: &mut Option<ShellStateSnapshot>,
+    expected_revision: u64,
+    requested: Value,
+) -> Result<ShellStateCompareAndSwapResponse, String> {
+    let current = load_cached_snapshot(app_handle, cache, Value::Null).await?;
+    let current_revision = current.revision;
+
+    if current_revision != expected_revision {
+        return Ok(ShellStateCompareAndSwapResponse {
+            committed: false,
+            state: Some(current.state),
+            revision: current_revision,
+        });
+    }
+
+    let next_revision = current_revision.saturating_add(1);
+    let next_state = prepare_next_state(&current.state, requested, next_revision);
+    let snapshot = ShellStateSnapshot {
+        state: next_state,
+        revision: next_revision,
+    };
+    let app_handle_for_io = app_handle.clone();
+    let snapshot = run_snapshot_io(move || {
+        let path = snapshot_path(&app_handle_for_io)?;
+        with_cooperative_file_lock(&path, || {
+            persist_snapshot(&app_handle_for_io, &snapshot)?;
+            Ok(snapshot)
         })
+    })
+    .await?;
+    *cache = Some(snapshot);
+
+    Ok(ShellStateCompareAndSwapResponse {
+        committed: true,
+        state: None,
+        revision: next_revision,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{prepare_next_state, read_revision, TOMBSTONES_KEY};
+    use super::{
+        apply_shell_state_patch, prepare_next_state, read_revision, ShellStatePatchRequest,
+        TOMBSTONES_KEY,
+    };
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     #[test]
     fn revisions_default_to_zero_and_accept_unsigned_numbers() {
         assert_eq!(read_revision(None), 0);
         assert_eq!(read_revision(Some(json!("invalid"))), 0);
         assert_eq!(read_revision(Some(json!(42))), 42);
+    }
+
+    #[test]
+    fn patches_replace_changed_sessions_and_preserve_requested_order() {
+        let current = json!({
+            "activeSessionId": "one",
+            "sessions": [
+                { "id": "one", "title": "Before" },
+                { "id": "two", "title": "Second" },
+                { "id": "deleted", "title": "Deleted" }
+            ]
+        });
+        let patched = apply_shell_state_patch(
+            &current,
+            ShellStatePatchRequest {
+                expected_revision: 1,
+                top_level: BTreeMap::from([("activeSessionId".to_string(), json!("two"))]),
+                removed_top_level: Vec::new(),
+                sessions: vec![json!({ "id": "one", "title": "After" })],
+                session_order: vec!["two".to_string(), "one".to_string()],
+            },
+        );
+
+        assert_eq!(patched["activeSessionId"], json!("two"));
+        assert_eq!(
+            patched["sessions"],
+            json!([
+                { "id": "two", "title": "Second" },
+                { "id": "one", "title": "After" }
+            ])
+        );
     }
 
     #[test]

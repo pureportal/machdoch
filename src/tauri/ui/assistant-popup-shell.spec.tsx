@@ -68,7 +68,7 @@ describe("AssistantPopupShell", () => {
     expect(screen.queryByText(/^settings$/i)).toBeNull();
   });
 
-  it("hides the Quick Chat window when it loses focus", async () => {
+  it("closes the Quick Chat window when it loses focus", async () => {
     render(<AssistantPopupShell />);
 
     await waitFor(() => {
@@ -82,7 +82,7 @@ describe("AssistantPopupShell", () => {
     });
 
     await waitFor(() => {
-      expect(currentWindowMock.hide).toHaveBeenCalledTimes(1);
+      expect(currentWindowMock.close).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -112,7 +112,7 @@ describe("AssistantPopupShell", () => {
         vi.advanceTimersByTime(150);
       });
 
-      expect(currentWindowMock.hide).not.toHaveBeenCalled();
+      expect(currentWindowMock.close).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

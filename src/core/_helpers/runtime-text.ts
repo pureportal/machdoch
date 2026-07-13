@@ -9,7 +9,11 @@ export const createLinesFromText = (
   maxLines = DEFAULT_PREVIEW_LINES,
   startLine = 1,
 ): string[] => {
-  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const truncatedByCharacterLimit = text.length > DEFAULT_OUTPUT_MAX_CHARS;
+  const normalized = text
+    .slice(0, DEFAULT_OUTPUT_MAX_CHARS)
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
   const lines = normalized.split("\n");
   const previewLines = lines
     .slice(0, maxLines)
@@ -17,6 +21,12 @@ export const createLinesFromText = (
 
   if (lines.length > maxLines) {
     previewLines.push(`… truncated after ${maxLines} of ${lines.length} lines`);
+  }
+
+  if (truncatedByCharacterLimit) {
+    previewLines.push(
+      `… truncated preview after ${DEFAULT_OUTPUT_MAX_CHARS} characters`,
+    );
   }
 
   return previewLines;

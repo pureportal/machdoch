@@ -62,6 +62,24 @@ const normalizeMaxDurationMs = (
   return Math.max(1, Math.round(value));
 };
 
+const DEFAULT_TASK_EXECUTION_IDLE_TIMEOUT_MS = 5 * 60 * 1_000;
+
+const normalizeIdleTimeoutMs = (
+  value: number | null | undefined,
+  maxDurationMs: number | undefined,
+): number | undefined => {
+  if (value === null || maxDurationMs === undefined) {
+    return undefined;
+  }
+
+  const normalizedValue =
+    value === undefined || !Number.isFinite(value) || value <= 0
+      ? DEFAULT_TASK_EXECUTION_IDLE_TIMEOUT_MS
+      : Math.max(1, Math.round(value));
+
+  return Math.min(normalizedValue, maxDurationMs);
+};
+
 const formatExecutionDuration = (maxDurationMs: number): string => {
   if (maxDurationMs % 60_000 === 0) {
     const minutes = maxDurationMs / 60_000;
@@ -78,6 +96,10 @@ const formatExecutionDuration = (maxDurationMs: number): string => {
 
 const createTaskExecutionTimeoutReason = (maxDurationMs: number): string => {
   return `${TASK_EXECUTION_TIMEOUT_REASON_PREFIX} of ${formatExecutionDuration(maxDurationMs)}.`;
+};
+
+const createTaskExecutionIdleTimeoutReason = (idleTimeoutMs: number): string => {
+  return `Task execution produced no meaningful progress for ${formatExecutionDuration(idleTimeoutMs)}.`;
 };
 
 const providerIsConfigured = (config: RuntimeConfig): boolean => {
@@ -151,13 +173,15 @@ const createLiveExecutionUnavailableMessage = (
 const createManagedExecutionSignal = (
   sourceSignal: AbortSignal | undefined,
   maxDurationMs: number | undefined,
+  idleTimeoutMs: number | undefined,
 ): {
   signal: AbortSignal;
-  resetTimeout: () => void;
+  markActivity: () => void;
   cleanup: () => void;
 } => {
   const abortController = new AbortController();
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  let absoluteTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  let idleTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const forwardAbort = (): void => {
     if (!abortController.signal.aborted) {
       abortController.abort(sourceSignal?.reason);
@@ -170,42 +194,58 @@ const createManagedExecutionSignal = (
     sourceSignal.addEventListener("abort", forwardAbort, { once: true });
   }
 
-  const scheduleTimeout = (): void => {
-    if (maxDurationMs === undefined) {
+  const scheduleIdleTimeout = (): void => {
+    if (idleTimeoutMs === undefined) {
       return;
     }
 
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
+    if (idleTimeoutHandle) {
+      clearTimeout(idleTimeoutHandle);
     }
 
-    timeoutHandle = setTimeout(() => {
-      timeoutHandle = undefined;
+    idleTimeoutHandle = setTimeout(() => {
+      idleTimeoutHandle = undefined;
+
+      if (!abortController.signal.aborted) {
+        abortController.abort(createTaskExecutionIdleTimeoutReason(idleTimeoutMs));
+      }
+    }, idleTimeoutMs);
+    unrefTimer(idleTimeoutHandle);
+  };
+
+  if (!abortController.signal.aborted && maxDurationMs !== undefined) {
+    absoluteTimeoutHandle = setTimeout(() => {
+      absoluteTimeoutHandle = undefined;
 
       if (!abortController.signal.aborted) {
         abortController.abort(createTaskExecutionTimeoutReason(maxDurationMs));
       }
     }, maxDurationMs);
-    unrefTimer(timeoutHandle);
-  };
-
-  if (!abortController.signal.aborted && maxDurationMs !== undefined) {
-    scheduleTimeout();
+    unrefTimer(absoluteTimeoutHandle);
   }
 
-  const resetTimeout = (): void => {
-    if (!abortController.signal.aborted && maxDurationMs !== undefined) {
-      scheduleTimeout();
+  if (!abortController.signal.aborted && idleTimeoutMs !== undefined) {
+    scheduleIdleTimeout();
+  }
+
+  const markActivity = (): void => {
+    if (!abortController.signal.aborted && idleTimeoutMs !== undefined) {
+      scheduleIdleTimeout();
     }
   };
 
   return {
     signal: abortController.signal,
-    resetTimeout,
+    markActivity,
     cleanup: (): void => {
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-        timeoutHandle = undefined;
+      if (absoluteTimeoutHandle) {
+        clearTimeout(absoluteTimeoutHandle);
+        absoluteTimeoutHandle = undefined;
+      }
+
+      if (idleTimeoutHandle) {
+        clearTimeout(idleTimeoutHandle);
+        idleTimeoutHandle = undefined;
       }
 
       if (sourceSignal) {
@@ -228,7 +268,7 @@ const createActivityAwareExecutionOptions = (
     ...(onStateChange
       ? {
           onStateChange: async (progress): Promise<void> => {
-            managedSignal.resetTimeout();
+            managedSignal.markActivity();
             await onStateChange(progress);
           },
         }
@@ -236,12 +276,12 @@ const createActivityAwareExecutionOptions = (
     ...(onActionOutput
       ? {
           onActionOutput: async (output): Promise<void> => {
-            managedSignal.resetTimeout();
+            managedSignal.markActivity();
             await onActionOutput(output);
           },
         }
       : {}),
-    onStreamActivity: managedSignal.resetTimeout,
+    onStreamActivity: managedSignal.markActivity,
   };
 };
 
@@ -637,9 +677,11 @@ export const createTaskExecutionController = (
       }
     },
     execute: async (): Promise<TaskExecutionResult> => {
+      const maxDurationMs = normalizeMaxDurationMs(options.maxDurationMs);
       const managedSignal = createManagedExecutionSignal(
         abortController.signal,
-        normalizeMaxDurationMs(options.maxDurationMs),
+        maxDurationMs,
+        normalizeIdleTimeoutMs(options.idleTimeoutMs, maxDurationMs),
       );
 
       try {
@@ -670,9 +712,11 @@ export const executeTask = async (
   customizations: CustomizationDiscoveryResult,
   options: TaskExecutionOptions = {},
 ): Promise<TaskExecutionResult> => {
+  const maxDurationMs = normalizeMaxDurationMs(options.maxDurationMs);
   const managedSignal = createManagedExecutionSignal(
     options.signal,
-    normalizeMaxDurationMs(options.maxDurationMs),
+    maxDurationMs,
+    normalizeIdleTimeoutMs(options.idleTimeoutMs, maxDurationMs),
   );
 
   try {

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "machdoch",
-  "version": "0.30.5",
+  "version": "0.31.0",
   "identifier": "com.machdoch.desktop",
   "build": {
     "beforeDevCommand": {
@@ -40,84 +40,6 @@
         "skipTaskbar": false,
         "decorations": false,
         "transparent": false
-      },
-      {
-        "label": "assistant-bubble",
-        "title": "machdoch Assistant Bubble",
-        "width": 128,
-        "height": 104,
-        "minWidth": 128,
-        "minHeight": 104,
-        "visible": false,
-        "focus": false,
-        "focusable": false,
-        "resizable": false,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "decorations": false,
-        "transparent": true,
-        "shadow": false,
-        "preventOverflow": {
-          "width": 24,
-          "height": 24
-        }
-      },
-      {
-        "label": "assistant-popup",
-        "title": "machdoch Assistant Popup",
-        "width": 448,
-        "height": 720,
-        "minWidth": 448,
-        "minHeight": 620,
-        "visible": false,
-        "resizable": false,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "decorations": false,
-        "transparent": true,
-        "shadow": false,
-        "preventOverflow": {
-          "width": 24,
-          "height": 24
-        }
-      },
-      {
-        "label": "quick-voice",
-        "title": "machdoch Quick Voice",
-        "width": 380,
-        "height": 220,
-        "minWidth": 380,
-        "minHeight": 220,
-        "visible": false,
-        "resizable": false,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "decorations": false,
-        "transparent": true,
-        "shadow": false,
-        "preventOverflow": {
-          "width": 24,
-          "height": 24
-        }
-      },
-      {
-        "label": "tray-menu",
-        "title": "machdoch",
-        "width": 324,
-        "height": 252,
-        "minWidth": 324,
-        "minHeight": 252,
-        "visible": false,
-        "resizable": false,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "decorations": false,
-        "transparent": true,
-        "shadow": false,
-        "preventOverflow": {
-          "width": 12,
-          "height": 12
-        }
       }
     ]
   },

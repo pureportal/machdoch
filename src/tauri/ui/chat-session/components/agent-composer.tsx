@@ -11,6 +11,13 @@ import type {
   ReactNode,
   Ref,
 } from "react";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { ChatSessionContextAttachment } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/textarea";
@@ -58,6 +65,7 @@ export type AgentComposerQueuedMessage = QueuedMessagePanelMessage;
 
 export interface AgentComposerProps {
   variant: AgentComposerVariant;
+  draftIdentity: string;
   draft: string;
   textareaLabel: string;
   placeholder: string;
@@ -92,6 +100,7 @@ export interface AgentComposerProps {
   onDraftChange: (value: string) => void;
   onAdditionalTextareaKeyDown?: (
     event: KeyboardEvent<HTMLTextAreaElement>,
+    currentDraft: string,
   ) => void;
   onRunningTaskMessageActionChange?: (
     action: RunningTaskMessageAction,
@@ -109,9 +118,89 @@ export interface AgentComposerProps {
     attachmentId: string,
   ) => void;
   onQueuedMessageClearContextAttachments?: (messageId: string) => void;
-  onSend: () => void;
+  onSend: (draft: string) => void;
   onCancel: () => void;
 }
+
+const useBufferedDraft = (
+  draftIdentity: string,
+  draft: string,
+  onDraftChange: (value: string) => void,
+): {
+  value: string;
+  setValue: (value: string) => void;
+  flush: () => void;
+} => {
+  const [value, setValueState] = useState(draft);
+  const valueRef = useRef(draft);
+  const identityRef = useRef(draftIdentity);
+  const publishedValueRef = useRef(draft);
+  const pendingValuesRef = useRef<string[]>([]);
+  const onDraftChangeRef = useRef(onDraftChange);
+
+  onDraftChangeRef.current = onDraftChange;
+
+  const flush = useCallback((): void => {
+    const currentValue = valueRef.current;
+    if (currentValue === publishedValueRef.current) {
+      return;
+    }
+
+    onDraftChangeRef.current(currentValue);
+  }, []);
+
+  const setValue = useCallback(
+    (nextValue: string): void => {
+      valueRef.current = nextValue;
+      setValueState(nextValue);
+      pendingValuesRef.current.push(nextValue);
+      if (pendingValuesRef.current.length > 32) {
+        pendingValuesRef.current.splice(
+          0,
+          pendingValuesRef.current.length - 32,
+        );
+      }
+      startTransition(() => onDraftChange(nextValue));
+    },
+    [onDraftChange],
+  );
+
+  useEffect(() => {
+    if (identityRef.current === draftIdentity) {
+      return;
+    }
+
+    identityRef.current = draftIdentity;
+    publishedValueRef.current = draft;
+    pendingValuesRef.current = [];
+    valueRef.current = draft;
+    setValueState(draft);
+  }, [draft, draftIdentity]);
+
+  useEffect(() => {
+    if (identityRef.current !== draftIdentity) {
+      return;
+    }
+
+    const pendingIndex = pendingValuesRef.current.lastIndexOf(draft);
+    if (pendingIndex >= 0) {
+      pendingValuesRef.current.splice(0, pendingIndex + 1);
+      publishedValueRef.current = draft;
+      return;
+    }
+
+    if (draft === publishedValueRef.current) {
+      return;
+    }
+
+    pendingValuesRef.current = [];
+    publishedValueRef.current = draft;
+    valueRef.current = draft;
+    setValueState(draft);
+  }, [draft, draftIdentity]);
+
+  return { value, setValue, flush };
+};
 
 const RUNNING_TASK_MESSAGE_ACTIONS = [
   {
@@ -261,6 +350,7 @@ const getClipboardImageFiles = (
 
 export const AgentComposer = ({
   variant,
+  draftIdentity,
   draft,
   textareaLabel,
   placeholder,
@@ -302,8 +392,15 @@ export const AgentComposer = ({
   onSend,
   onCancel,
 }: AgentComposerProps): JSX.Element => {
+  const bufferedDraft = useBufferedDraft(
+    draftIdentity,
+    draft,
+    onDraftChange,
+  );
   const styles = getVariantStyles(variant);
-  const showCancelButton = isExecuting && (variant === "quick" || !canSend);
+  const canSubmit = canSend && Boolean(bufferedDraft.value.trim());
+  const showCancelButton =
+    isExecuting && (variant === "quick" || !canSubmit);
   const selectedRunningAction =
     runningTaskMessageAction ?? RUNNING_TASK_MESSAGE_ACTIONS[2].id;
   const selectedRunningActionMeta =
@@ -317,8 +414,9 @@ export const AgentComposer = ({
   const queuePanelVisible = variant === "session" && queuedMessages.length > 0;
 
   const submit = (): void => {
-    if (!inputBlocked && canSend) {
-      onSend();
+    if (!inputBlocked && canSubmit) {
+      bufferedDraft.flush();
+      onSend(bufferedDraft.value);
     }
   };
 
@@ -335,7 +433,10 @@ export const AgentComposer = ({
       return;
     }
 
-    onAdditionalTextareaKeyDown?.(event);
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      bufferedDraft.flush();
+    }
+    onAdditionalTextareaKeyDown?.(event, bufferedDraft.value);
   };
 
   const handleTextareaPaste = (
@@ -376,8 +477,9 @@ export const AgentComposer = ({
     <Textarea
       ref={textareaRef}
       aria-label={textareaLabel}
-      value={draft}
-      onChange={(event) => onDraftChange(event.target.value)}
+      value={bufferedDraft.value}
+      onChange={(event) => bufferedDraft.setValue(event.target.value)}
+      onBlur={bufferedDraft.flush}
       onKeyDown={handleTextareaKeyDown}
       onPaste={handleTextareaPaste}
       placeholder={placeholder}
@@ -475,10 +577,10 @@ export const AgentComposer = ({
       size={variant === "session" ? "icon" : undefined}
       aria-label={sendLabel}
       title={sendDisabledReason ?? sendLabel}
-      disabled={inputBlocked || !canSend}
+      disabled={inputBlocked || !canSubmit}
       className={cn(
         styles.sendButton,
-        !inputBlocked && canSend && styles.sendButtonActive,
+        !inputBlocked && canSubmit && styles.sendButtonActive,
       )}
     >
       <SendHorizonal className={styles.iconClassName} />

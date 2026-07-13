@@ -41,6 +41,7 @@ interface SaveStoredValueOptions {
 
 export interface ShellStateChangedPayload {
   originWindowLabel: string | null;
+  revision?: number;
   updatedAt: number;
 }
 
@@ -157,12 +158,15 @@ export const saveStoredValue = async ({
   }
 };
 
-export const broadcastShellStateChanged = async (): Promise<void> => {
+export const broadcastShellStateChanged = async (
+  revision?: number,
+): Promise<void> => {
   if (!canUseTauriStore()) {
     if (typeof BroadcastChannel !== "undefined") {
       const channel = new BroadcastChannel(BROWSER_SHELL_STATE_CHANNEL);
       channel.postMessage({
         originWindowLabel: browserWindowOrigin,
+        ...(revision === undefined ? {} : { revision }),
         updatedAt: Date.now(),
       } satisfies ShellStateChangedPayload);
       channel.close();
@@ -173,6 +177,7 @@ export const broadcastShellStateChanged = async (): Promise<void> => {
   try {
     await getCurrentWindow().emit(SHELL_STATE_CHANGED_EVENT, {
       originWindowLabel: getCurrentWindow().label,
+      ...(revision === undefined ? {} : { revision }),
       updatedAt: Date.now(),
     } satisfies ShellStateChangedPayload);
   } catch (error) {
@@ -221,6 +226,9 @@ export const subscribeToShellStateChanged = async (
               typeof payload.originWindowLabel === "string"
                 ? payload.originWindowLabel
                 : null,
+            ...(typeof payload.revision === "number"
+              ? { revision: payload.revision }
+              : {}),
             updatedAt: payload.updatedAt,
           });
         }

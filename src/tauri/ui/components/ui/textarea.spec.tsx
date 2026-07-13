@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Textarea } from "./textarea";
 
 class ResizeObserverMock {
@@ -15,6 +15,14 @@ beforeAll(() => {
 });
 
 describe("Textarea", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("resizes as the user types more content", () => {
     let scrollHeight = 64;
 
@@ -32,6 +40,7 @@ describe("Textarea", () => {
     fireEvent.change(textarea, {
       target: { value: "Summarize the latest changes." },
     });
+    act(() => vi.runOnlyPendingTimers());
 
     expect(textarea.style.height).toBe("64px");
 
@@ -45,6 +54,7 @@ describe("Textarea", () => {
         ].join("\n"),
       },
     });
+    act(() => vi.runOnlyPendingTimers());
 
     expect(textarea.style.height).toBe("128px");
   });
@@ -73,6 +83,7 @@ describe("Textarea", () => {
         onChange={() => undefined}
       />,
     );
+    act(() => vi.runOnlyPendingTimers());
 
     expect(textarea.style.height).toBe("104px");
   });

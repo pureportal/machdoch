@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -42,7 +42,9 @@ const createSimpleFlow = (
 });
 
 const createWorkspace = async (): Promise<string> => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-scheduler-"));
+  const workspaceRoot = await realpath(
+    await mkdtemp(join(tmpdir(), "machdoch-scheduler-")),
+  );
   workspacesToClean.push(workspaceRoot);
 
   for (const id of [

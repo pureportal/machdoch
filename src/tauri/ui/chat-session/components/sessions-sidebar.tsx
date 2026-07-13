@@ -23,6 +23,9 @@ import {
   type ReactPortal,
 } from "react";
 import { createPortal } from "react-dom";
+
+const INITIAL_RENDERED_SESSION_LIMIT = 100;
+const RENDERED_SESSION_PAGE_SIZE = 100;
 import {
   canArchiveSession,
   canDuplicateSession,
@@ -339,15 +342,29 @@ export const SessionsSidebar = ({
   const [retentionNow, setRetentionNow] = useState(() => Date.now());
   const [sessionContextMenu, setSessionContextMenu] =
     useState<SessionContextMenuState | null>(null);
+  const [renderedSessionLimit, setRenderedSessionLimit] = useState(
+    INITIAL_RENDERED_SESSION_LIMIT,
+  );
+  const renderedSessions = filteredSessions.slice(0, renderedSessionLimit);
   const sessionListCountLabel =
     filteredSessions.length === totalSessions
       ? `${totalSessions} saved session${totalSessions === 1 ? "" : "s"}`
       : `${filteredSessions.length} of ${totalSessions} saved sessions`;
-  const pinnedSessionCount = filteredSessions.filter(isSessionPinnedInSidebar)
+  const pinnedSessionCount = renderedSessions.filter(isSessionPinnedInSidebar)
     .length;
   const showPinnedSeparator =
-    pinnedSessionCount > 0 && pinnedSessionCount < filteredSessions.length;
+    pinnedSessionCount > 0 && pinnedSessionCount < renderedSessions.length;
   const showSessionProjectFilter = sessionProjectFacets.length > 1;
+
+  useEffect(() => {
+    setRenderedSessionLimit(INITIAL_RENDERED_SESSION_LIMIT);
+  }, [
+    sessionProjectFilter,
+    sessionScopeFilter,
+    sessionSearchQuery,
+    sessionStatusFilters,
+    sessionTagFilters,
+  ]);
   const sessionProjectCount = sessionProjectFacets.reduce(
     (count, project) => count + project.count,
     0,
@@ -695,7 +712,8 @@ export const SessionsSidebar = ({
               No sessions match the current filters.
             </div>
           ) : (
-            filteredSessions.map((session, index) => {
+            <>
+            {renderedSessions.map((session, index) => {
               const isActive = session.id === activeSessionId;
               const archived = isSessionArchived(session);
               const sessionStatus = getSessionOverviewStatus(session);
@@ -906,7 +924,26 @@ export const SessionsSidebar = ({
                   </div>
                 </Fragment>
               );
-            })
+            })}
+            {renderedSessions.length < filteredSessions.length ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  setRenderedSessionLimit((current) =>
+                    Math.min(
+                      filteredSessions.length,
+                      current + RENDERED_SESSION_PAGE_SIZE,
+                    ),
+                  );
+                }}
+              >
+                Load more sessions ({filteredSessions.length - renderedSessions.length})
+              </Button>
+            ) : null}
+            </>
           )}
         </div>
       </ScrollArea>

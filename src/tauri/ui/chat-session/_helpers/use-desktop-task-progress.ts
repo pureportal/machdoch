@@ -43,7 +43,10 @@ export type HandleUnhandledDesktopTaskProgress = (
 
 export type ResolveDesktopTaskSessionId = (taskId: string) => string | null;
 
+const PROGRESS_RENDER_INTERVAL_MS = 100;
+
 export const useDesktopTaskProgress = (options: {
+  enabled?: boolean;
   activeDesktopTasksRef: MutableRefObject<Map<string, string>>;
   ignoredDesktopTaskIdsRef: MutableRefObject<Set<string>>;
   progressHandlersRef?: MutableRefObject<Map<string, HandleDesktopTaskProgress>>;
@@ -51,15 +54,19 @@ export const useDesktopTaskProgress = (options: {
   resolveSessionIdForTask?: ResolveDesktopTaskSessionId;
   updateThinkingTrace: UpdateThinkingTrace;
 }): void => {
+  const enabled = options.enabled !== false;
   const optionsRef = useRef(options);
 
   optionsRef.current = options;
 
   useEffect(() => {
+    if (!enabled) {
+      return undefined;
+    }
+
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
     let scheduledFlushId: number | null = null;
-    let scheduledFlushKind: "animation-frame" | "timeout" | null = null;
     const queuedProgressByTaskId = new Map<
       string,
       QueuedDesktopTaskProgressBatch
@@ -67,7 +74,6 @@ export const useDesktopTaskProgress = (options: {
 
     const flushQueuedProgress = (): void => {
       scheduledFlushId = null;
-      scheduledFlushKind = null;
 
       if (queuedProgressByTaskId.size === 0) {
         return;
@@ -103,17 +109,9 @@ export const useDesktopTaskProgress = (options: {
         return;
       }
 
-      if (
-        scheduledFlushKind === "animation-frame" &&
-        typeof window.cancelAnimationFrame === "function"
-      ) {
-        window.cancelAnimationFrame(scheduledFlushId);
-      } else {
-        window.clearTimeout(scheduledFlushId);
-      }
+      window.clearTimeout(scheduledFlushId);
 
       scheduledFlushId = null;
-      scheduledFlushKind = null;
     };
 
     const scheduleQueuedProgressFlush = (): void => {
@@ -121,14 +119,10 @@ export const useDesktopTaskProgress = (options: {
         return;
       }
 
-      if (typeof window.requestAnimationFrame === "function") {
-        scheduledFlushKind = "animation-frame";
-        scheduledFlushId = window.requestAnimationFrame(flushQueuedProgress);
-        return;
-      }
-
-      scheduledFlushKind = "timeout";
-      scheduledFlushId = window.setTimeout(flushQueuedProgress, 16);
+      scheduledFlushId = window.setTimeout(
+        flushQueuedProgress,
+        PROGRESS_RENDER_INTERVAL_MS,
+      );
     };
 
     const flushQueuedProgressForTask = (taskId: string): void => {
@@ -263,5 +257,5 @@ export const useDesktopTaskProgress = (options: {
       queuedProgressByTaskId.clear();
       unsubscribe?.();
     };
-  }, []);
+  }, [enabled]);
 };

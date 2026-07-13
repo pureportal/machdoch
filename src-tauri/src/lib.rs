@@ -86,6 +86,7 @@ pub fn run() {
     builder
         .manage(desktop_task::AttachmentPathGrantMap::default())
         .manage(desktop_task::DesktopTaskCancelMap::default())
+        .manage(desktop_task::DesktopTaskLimiter::default())
         .manage(desktop_shell::DesktopLaunchId(
             desktop_shell::create_desktop_launch_id(),
         ))
@@ -98,6 +99,8 @@ pub fn run() {
             desktop_shell::handle_window_event(window, event);
         })
         .setup(move |app| {
+            desktop_task::cleanup_stale_task_context_files();
+
             if let Err(error) = desktop_shell::create_tray(app.handle()) {
                 eprintln!("Failed to create tray icon: {error}");
             }
@@ -129,12 +132,17 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             desktop_shell::detect_fullscreen_window_on_monitor,
+            desktop_shell::clear_webview_cache,
+            desktop_shell::clear_machdoch_codex_sessions,
+            desktop_shell::ensure_assistant_window,
             desktop_shell::get_desktop_launch_id,
+            desktop_shell::get_machdoch_codex_session_usage,
             desktop_shell::hide_main_window_to_tray,
             desktop_shell::quit_machdoch,
             desktop_shell::reveal_main_window,
             desktop_shell::sync_chat_completion_indicator,
             desktop_task::cancel_desktop_task,
+            desktop_task::acknowledge_recent_desktop_task_results,
             desktop_task::get_active_desktop_task_ids,
             desktop_task::get_active_desktop_tasks,
             desktop_task::get_recent_desktop_task_results,
@@ -165,6 +173,8 @@ pub fn run() {
             remote_control::set_remote_control_port,
             remote_control::update_remote_control_shell_snapshot,
             shell_state::compare_and_swap_shell_state,
+            shell_state::compare_and_swap_shell_state_patch,
+            shell_state::load_shell_state_revision,
             shell_state::load_shell_state_snapshot,
             ui_operation::begin_cross_window_operation,
             ui_operation::complete_cross_window_operation,

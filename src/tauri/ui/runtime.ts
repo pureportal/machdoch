@@ -115,11 +115,12 @@ export const MAIN_WINDOW_LABEL = "main";
 export const ASSISTANT_BUBBLE_WINDOW_LABEL = "assistant-bubble";
 export const ASSISTANT_POPUP_WINDOW_LABEL = "assistant-popup";
 export const QUICK_VOICE_WINDOW_LABEL = "quick-voice";
-export const TRAY_MENU_WINDOW_LABEL = "tray-menu";
 export const DESKTOP_SETTINGS_CHANGED_EVENT =
   "machdoch://desktop-settings-changed";
 export const USER_SETTINGS_CHANGED_EVENT = "machdoch://user-settings-changed";
 export const QUICK_VOICE_START_EVENT = "machdoch://quick-voice-start";
+export const ASSISTANT_SURFACE_READY_EVENT =
+  "machdoch://assistant-surface-ready";
 export const QUICK_CHAT_DROP_EVENT = "machdoch://quick-chat-drop";
 
 export const USER_API_KEY_PROVIDER_ORDER: UserApiKeyProvider[] = [
@@ -3080,6 +3081,26 @@ export const loadRecentDesktopTaskResults = async (
   }
 };
 
+export const acknowledgeRecentDesktopTaskResults = async (
+  taskIds: readonly string[],
+): Promise<void> => {
+  if (!canInvokeTauriCommands()) {
+    return;
+  }
+
+  const normalizedTaskIds = taskIds
+    .map((taskId) => taskId.trim())
+    .filter(Boolean);
+
+  if (normalizedTaskIds.length === 0) {
+    return;
+  }
+
+  await tauriCore.invoke("acknowledge_recent_desktop_task_results", {
+    taskIds: normalizedTaskIds,
+  });
+};
+
 export const saveUserGlobalMemoryEnabled = async (
   enabled: boolean,
 ): Promise<UserMemorySettings> => {
@@ -5182,7 +5203,13 @@ export const ensurePersistentSchedulerService = async (
     {
       request: {
         workspaceRoot: normalizeSchedulerCommandWorkspace(workspaceRoot),
-        arguments: ["service-all", "--service-poll-ms", "30000"],
+        arguments: [
+          "service-all",
+          "--service-poll-ms",
+          "30000",
+          "--service-idle-shutdown-ms",
+          "300000",
+        ],
       },
     },
   ).catch((error) => {

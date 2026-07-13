@@ -1,3 +1,4 @@
+import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ArrowUpRight, X } from "lucide-react";
 import {
@@ -22,7 +23,11 @@ import {
 } from "./chat-session/_helpers/speech-audio";
 import { useSpeechRecorder } from "./chat-session/_helpers/use-speech-recorder";
 import { useSpeechTranscription } from "./chat-session/_helpers/use-speech-transcription";
-import { QUICK_VOICE_START_EVENT, type UserSpeechToTextSettings } from "./runtime";
+import {
+  ASSISTANT_SURFACE_READY_EVENT,
+  QUICK_VOICE_START_EVENT,
+  type UserSpeechToTextSettings,
+} from "./runtime";
 import { Button } from "./components/ui/button";
 import { VoiceInputOverlay } from "./components/voice-input-overlay";
 
@@ -32,9 +37,20 @@ const VOICE_ACTIVITY_FRAME_COUNT = 2;
 export const QuickVoiceShell = (): JSX.Element => {
   useAppearanceSettings();
   const controller = useChatSessionController({
+    enableBackgroundMaintenance: false,
+    enableTaskProgress: false,
+    includeHistoryContent: false,
     persistActiveSession: false,
     trackSessionReads: false,
   });
+
+  useEffect(() => {
+    if (isTauri()) {
+      void getCurrentWindow().emit(ASSISTANT_SURFACE_READY_EVENT, {
+        label: getCurrentWindow().label,
+      });
+    }
+  }, []);
   const submitQuickVoiceCommand = controller.submitQuickVoiceCommand;
   const speechToTextSettings = useMemo<UserSpeechToTextSettings>(() => {
     return {
@@ -93,10 +109,16 @@ export const QuickVoiceShell = (): JSX.Element => {
     (delay = 900): void => {
       clearHideTimeout();
       hideTimeoutRef.current = window.setTimeout(() => {
-        void getCurrentWindow().hide().catch(() => undefined);
+        void controller.flushPersistence()
+          .catch((error) => {
+            console.error("Failed to flush Quick Voice state", error);
+          })
+          .finally(() => {
+            void getCurrentWindow().close().catch(() => undefined);
+          });
       }, delay);
     },
-    [clearHideTimeout],
+    [clearHideTimeout, controller.flushPersistence],
   );
 
   const syncQuickVoiceWindowPosition = useCallback(async (): Promise<void> => {
@@ -406,8 +428,19 @@ export const QuickVoiceShell = (): JSX.Element => {
     clearHideTimeout();
     setFinalizing(false);
     setStatusText(null);
-    void getCurrentWindow().hide().catch(() => undefined);
-  }, [cancelRecording, clearHideTimeout, resetVoiceActivity]);
+    void controller.flushPersistence()
+      .catch((error) => {
+        console.error("Failed to flush Quick Voice state", error);
+      })
+      .finally(() => {
+        void getCurrentWindow().close().catch(() => undefined);
+      });
+  }, [
+    cancelRecording,
+    clearHideTimeout,
+    controller.flushPersistence,
+    resetVoiceActivity,
+  ]);
 
   useEffect(() => {
     void syncQuickVoiceWindowPosition().catch((error) => {

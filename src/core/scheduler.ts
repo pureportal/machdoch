@@ -2885,10 +2885,10 @@ const countRunningRunsByQueue = (
   return counts;
 };
 
-const normalizeTriggerEventInput = (
+const normalizeTriggerEventInput = async (
   input: ScheduledTriggerEventInput,
   timestamp: number,
-): ScheduledTriggerEvent => {
+): Promise<ScheduledTriggerEvent> => {
   const type = normalizeSchedulerText(input.type);
 
   if (!type) {
@@ -2896,7 +2896,12 @@ const normalizeTriggerEventInput = (
   }
 
   const source = normalizeSchedulerText(input.source) ?? "manual";
-  const workspaceRoot = normalizeSchedulerTrimmedText(input.workspaceRoot);
+  const configuredWorkspaceRoot = normalizeSchedulerTrimmedText(
+    input.workspaceRoot,
+  );
+  const workspaceRoot = configuredWorkspaceRoot
+    ? await canonicalizeWorkspaceRoot(configuredWorkspaceRoot)
+    : undefined;
   const dedupeKey = normalizeSchedulerText(input.dedupeKey);
   const parentRunId = normalizeSchedulerText(input.parentRunId);
   const occurredAt =
@@ -3584,7 +3589,7 @@ export class DurableSmartScheduler {
   ): Promise<ScheduledTriggerEventResult> {
     return this.mutateState(async (state) => {
       const now = this.now();
-      const event = normalizeTriggerEventInput(input, now);
+      const event = await normalizeTriggerEventInput(input, now);
       const enqueued: ScheduledRunEnqueueResult[] = [];
       const refreshedRalphJobIds = new Set<string>();
       const unusableRalphJobs = new Map<string, string>();

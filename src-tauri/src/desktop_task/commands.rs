@@ -6,7 +6,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[cfg(target_os = "windows")]
@@ -24,12 +24,13 @@ use super::{
         write_conversation_context_file, CliCommandOptions,
     },
     process::{
-        create_desktop_task_activity, desktop_task_activity_elapsed, join_cli_output_and_cleanup,
-        read_stderr, read_stdout, terminate_child_process_tree,
+        assign_child_process_to_kill_on_close_job, create_desktop_task_activity,
+        desktop_task_activity_elapsed, join_cli_output_and_cleanup, read_stderr, read_stdout,
+        terminate_child_process_tree,
     },
     progress::{create_bridge_progress, emit_progress_event},
-    DesktopTaskRunRequest, DesktopTaskRunResponse, DESKTOP_TASK_TIMEOUT_MS,
-    DESKTOP_TASK_WAIT_POLL_MS,
+    DesktopTaskRunRequest, DesktopTaskRunResponse, DESKTOP_TASK_ABSOLUTE_TIMEOUT_MS,
+    DESKTOP_TASK_TIMEOUT_MS, DESKTOP_TASK_WAIT_POLL_MS,
 };
 
 #[cfg(target_os = "windows")]
@@ -74,6 +75,7 @@ pub(super) fn execute_desktop_task(
     request: DesktopTaskRunRequest,
     cancel_flag: Arc<AtomicBool>,
 ) -> Result<DesktopTaskRunResponse, String> {
+    let execution_started_at = Instant::now();
     let DesktopTaskRunRequest {
         workspace_root,
         task,
@@ -149,6 +151,12 @@ pub(super) fn execute_desktop_task(
             "Failed to launch the shared CLI. {} {error}",
             crate::shared_cli::cli_runtime_error_hint()
         )
+    })?;
+    let _child_job = assign_child_process_to_kill_on_close_job(&child).map_err(|error| {
+        terminate_child_process_tree(&mut child);
+        let _ = child.wait();
+        cleanup_temporary_file(conversation_context_path.as_ref());
+        error
     })?;
 
     let stdout = match child.stdout.take() {
@@ -253,6 +261,39 @@ pub(super) fn execute_desktop_task(
                     return Err(format!(
                         "The shared CLI exceeded the desktop safety timeout of {} and was stopped. {}",
                         format_timeout_duration(DESKTOP_TASK_TIMEOUT_MS),
+                        failure_tail
+                    ));
+                }
+
+                if execution_started_at.elapsed()
+                    >= Duration::from_millis(DESKTOP_TASK_ABSOLUTE_TIMEOUT_MS)
+                {
+                    emit_progress_event(
+                        &progress_app_handle,
+                        &progress_window_label,
+                        progress_task_id.as_deref(),
+                        create_bridge_progress(
+                            normalized_task,
+                            normalized_mode.as_deref(),
+                            "cancelled",
+                            "Execution exceeded the absolute desktop deadline; stopping the task.",
+                            false,
+                        ),
+                    );
+
+                    terminate_child_process_tree(&mut child);
+                    let _ = child.wait();
+
+                    let (stdout_text, stderr_text) = join_cli_output_and_cleanup(
+                        stdout_worker,
+                        stderr_worker,
+                        conversation_context_path.as_ref(),
+                    )?;
+                    let failure_tail = format_command_failure(&stderr_text, &stdout_text);
+
+                    return Err(format!(
+                        "The shared CLI exceeded the absolute desktop deadline of {} and was stopped. {}",
+                        format_timeout_duration(DESKTOP_TASK_ABSOLUTE_TIMEOUT_MS),
                         failure_tail
                     ));
                 }

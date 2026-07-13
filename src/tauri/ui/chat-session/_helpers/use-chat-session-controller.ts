@@ -61,6 +61,7 @@ import {
 } from "../../model-catalog";
 import { normalizeReasoningModeForProvider } from "../../reasoning-options";
 import {
+  acknowledgeRecentDesktopTaskResults,
   cancelDesktopTask,
   createInstruction,
   generateInstruction,
@@ -526,6 +527,9 @@ interface FilePreviewState {
 }
 
 export interface UseChatSessionControllerOptions {
+  enableBackgroundMaintenance?: boolean;
+  enableTaskProgress?: boolean;
+  includeHistoryContent?: boolean;
   isolateActiveSession?: boolean;
   persistActiveSession?: boolean;
   trackSessionReads?: boolean;
@@ -601,7 +605,10 @@ const getClipboardImageMediaType = (
 export const useChatSessionController = (
   options: UseChatSessionControllerOptions = {},
 ) => {
+  const backgroundMaintenanceEnabled =
+    options.enableBackgroundMaintenance !== false;
   const state = useChatSessionShellState({
+    includeHistoryContent: options.includeHistoryContent,
     isolateActiveSession: options.isolateActiveSession,
     persistActiveSession: options.persistActiveSession,
     trackSessionReads: options.trackSessionReads,
@@ -1079,14 +1086,15 @@ export const useChatSessionController = (
     activeSessionPromptEnhancementBusy
       ? "Prompt enhancement is still running."
       : (promptEnhancementUnavailableReason ?? activeSessionImageInputError);
-  const canSendMessage =
-    Boolean(activeComposerSession.draft.trim()) &&
+  const canComposeMessage =
     !speechInput.recording &&
     !speechInput.transcribing &&
     !chatInterviewBusy &&
     !activeSessionPromptEnhancementBusy &&
     !promptEnhancementUnavailableReason &&
     !activeSessionImageInputError;
+  const canSendMessage =
+    Boolean(activeComposerSession.draft.trim()) && canComposeMessage;
   const uiControlAvailability = runtime.runtimeSnapshot?.uiControl;
   const isUiControlAvailable = uiControlAvailability?.available === true;
   const uiControlDescription = isUiControlAvailable
@@ -1123,7 +1131,6 @@ export const useChatSessionController = (
       ? createImageInputUnsupportedModelMessage(quickTaskProvider, quickTaskModel)
       : null;
   const quickTaskCanSend =
-    Boolean(quickTaskDraft.trim()) &&
     !quickTaskImageInputError &&
     !(
       quickTaskSession &&
@@ -1216,8 +1223,14 @@ export const useChatSessionController = (
       updater: (
         trace: ReturnType<typeof createInitialThinkingTrace>,
       ) => ReturnType<typeof createInitialThinkingTrace>,
+      persistence: "durable" | "transient" = "durable",
     ): void => {
-      state.updateSessionById(sessionId, (session) => {
+      const updateSession =
+        persistence === "transient"
+          ? state.updateSessionByIdTransient
+          : state.updateSessionById;
+
+      updateSession(sessionId, (session) => {
         let thinkingMessageIndex = -1;
 
         for (let index = session.messages.length - 1; index >= 0; index -= 1) {
@@ -1299,7 +1312,25 @@ export const useChatSessionController = (
         });
       });
     },
-    [applySessionMessageLimit, runtime.runtimeSnapshot, state.updateSessionById],
+    [
+      applySessionMessageLimit,
+      runtime.runtimeSnapshot,
+      state.updateSessionById,
+      state.updateSessionByIdTransient,
+    ],
+  );
+
+  const updateTransientThinkingTrace = useCallback(
+    (
+      sessionId: string,
+      taskId: string,
+      updater: (
+        trace: ReturnType<typeof createInitialThinkingTrace>,
+      ) => ReturnType<typeof createInitialThinkingTrace>,
+    ): void => {
+      updateThinkingTrace(sessionId, taskId, updater, "transient");
+    },
+    [updateThinkingTrace],
   );
 
   const applyCompletedDesktopTaskResult = useCallback(
@@ -1547,6 +1578,20 @@ export const useChatSessionController = (
           }
         }
 
+        if (completedResultTaskIds.size > 0) {
+          try {
+            await state.flushPersistence();
+            await acknowledgeRecentDesktopTaskResults([
+              ...completedResultTaskIds,
+            ]);
+          } catch (error) {
+            console.error(
+              "Failed to acknowledge recovered desktop task results",
+              error,
+            );
+          }
+        }
+
         const now = Date.now();
         const confirmedInactiveTaskIds: string[] = [];
 
@@ -1762,28 +1807,34 @@ export const useChatSessionController = (
   );
 
   useDesktopTaskProgress({
+    enabled: options.enableTaskProgress,
     activeDesktopTasksRef,
     ignoredDesktopTaskIdsRef,
     onUnhandledProgress: handleUnhandledDesktopTaskProgress,
     progressHandlersRef: desktopTaskProgressHandlersRef,
     resolveSessionIdForTask: resolveSessionIdForDesktopTask,
-    updateThinkingTrace,
+    updateThinkingTrace: updateTransientThinkingTrace,
   });
 
   useEffect(() => {
-    if (!state.hasHydrated || !runtime.userDesktopSettingsLoaded) {
+    if (
+      !backgroundMaintenanceEnabled ||
+      !state.hasHydrated ||
+      !runtime.userDesktopSettingsLoaded
+    ) {
       return;
     }
 
     const applyRetentionPolicy = (): void => {
-      const nextShellState = applySessionRetentionPolicy(state.shellState, {
+      const currentShellState = shellStateRef.current;
+      const nextShellState = applySessionRetentionPolicy(currentShellState, {
         inactiveSessionArchiveDays:
           runtime.userDesktopSettings.inactiveSessionArchiveDays,
         archivedSessionRetentionDays:
           runtime.userDesktopSettings.archivedSessionRetentionDays,
       });
 
-      if (nextShellState !== state.shellState) {
+      if (nextShellState !== currentShellState) {
         state.applyShellState(nextShellState);
       }
     };
@@ -1799,12 +1850,12 @@ export const useChatSessionController = (
       window.clearInterval(intervalId);
     };
   }, [
+    backgroundMaintenanceEnabled,
     runtime.userDesktopSettings.inactiveSessionArchiveDays,
     runtime.userDesktopSettings.archivedSessionRetentionDays,
     runtime.userDesktopSettingsLoaded,
     state.applyShellState,
     state.hasHydrated,
-    state.shellState,
   ]);
 
   const handleRenameCommit = (): void => {
@@ -5168,8 +5219,8 @@ export const useChatSessionController = (
     [buildQuickVoiceSessionSnapshot, taskSubmission],
   );
 
-  const handleQuickTaskDraftSend = useCallback((): void => {
-    const normalizedDraft = quickTaskDraft.trim();
+  const handleQuickTaskDraftSend = useCallback((draft = quickTaskDraft): void => {
+    const normalizedDraft = draft.trim();
 
     if (!normalizedDraft || quickTaskImageInputError) {
       return;
@@ -5971,8 +6022,8 @@ export const useChatSessionController = (
     [chatInputNeeded, submitResolvedChatInputNeededSubmission],
   );
 
-  const handleSend = (): void => {
-    const task = activeComposerSession.draft.trim();
+  const handleSend = (draft = activeComposerSession.draft): void => {
+    const task = draft.trim();
 
     if (
       !task ||
@@ -5991,7 +6042,12 @@ export const useChatSessionController = (
       return;
     }
 
-    const sessionSnapshot = committedHistorySession ?? activeComposerSession;
+    const baseSessionSnapshot =
+      committedHistorySession ?? activeComposerSession;
+    const sessionSnapshot =
+      draft === baseSessionSnapshot.draft
+        ? baseSessionSnapshot
+        : { ...baseSessionSnapshot, draft };
     const contextAttachments = sessionSnapshot.draftContextAttachments.map(
       (attachment) => ({ ...attachment }),
     );
@@ -6045,6 +6101,7 @@ export const useChatSessionController = (
   return {
     isDesktop,
     hasHydrated: state.hasHydrated,
+    flushPersistence: state.flushPersistence,
     quickVoiceSettingsLoaded:
       runtime.userDesktopSettingsLoaded &&
       runtime.userSpeechToTextSettingsLoaded,
@@ -6267,7 +6324,7 @@ export const useChatSessionController = (
         statusTone: speechInput.statusTone,
         onAction: handleSpeechInputAction,
       },
-      canSendMessage,
+      canSendMessage: canComposeMessage,
       sendDisabledReason: activeSessionSendDisabledReason,
       runningTaskMessageAction,
       queuedMessages: activeSessionQueuedMessages.map((message) => ({

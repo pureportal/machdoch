@@ -28,10 +28,13 @@ import {
 } from "../../chat-session.model";
 import {
   broadcastShellStateChanged,
-  compareAndSwapShellState,
+  compareAndSwapShellStatePatch,
   getCurrentShellWindowLabel,
+  loadShellStateRevision,
   loadShellStateSnapshot,
   subscribeToShellStateChanged,
+  type ShellStateCompareAndSwapResult,
+  type ShellStatePatch,
 } from "../../lib/shell-store";
 import {
   loadActiveDesktopTaskIds,
@@ -58,7 +61,46 @@ const serializeShellFragment = (value: unknown): string => {
   return JSON.stringify(value);
 };
 
-const SHELL_STATE_PERSIST_DELAY_MS = 120;
+const SHELL_STATE_PERSIST_DELAY_MS = 500;
+const SHELL_STATE_RECONCILIATION_INTERVAL_MS = 30_000;
+
+export const createShellStatePatch = (
+  baseState: ShellPersistedState,
+  nextState: ShellPersistedState,
+): ShellStatePatch => {
+  const { sessions: baseSessions, ...baseTopLevel } = baseState;
+  const { sessions: nextSessions, ...nextTopLevel } = nextState;
+  const topLevel: Record<string, unknown> = {};
+  const removedTopLevel = Object.keys(baseTopLevel).filter(
+    (key) => !(key in nextTopLevel),
+  );
+
+  for (const [key, value] of Object.entries(nextTopLevel)) {
+    const baseValue = baseTopLevel[key as keyof typeof baseTopLevel];
+
+    if (serializeShellFragment(value) !== serializeShellFragment(baseValue)) {
+      topLevel[key] = value;
+    }
+  }
+
+  const baseSessionsById = new Map(
+    baseSessions.map((session) => [session.id, session]),
+  );
+  const changedSessions = nextSessions.filter((session) => {
+    const baseSession = baseSessionsById.get(session.id);
+    return (
+      !baseSession ||
+      serializeShellFragment(session) !== serializeShellFragment(baseSession)
+    );
+  });
+
+  return {
+    topLevel,
+    removedTopLevel,
+    sessions: changedSessions,
+    sessionOrder: nextSessions.map((session) => session.id),
+  };
+};
 
 const getSessionPersistenceTimestamp = (
   session: ChatSessionRecord,
@@ -2328,10 +2370,15 @@ export interface ChatSessionShellStateController {
     sessionId: string,
     updater: (session: ChatSessionRecord) => ChatSessionRecord,
   ) => void;
+  updateSessionByIdTransient: (
+    sessionId: string,
+    updater: (session: ChatSessionRecord) => ChatSessionRecord,
+  ) => void;
   setDraftValue: Dispatch<SetStateAction<string>>;
 }
 
 export interface UseChatSessionShellStateOptions {
+  includeHistoryContent?: boolean;
   isolateActiveSession?: boolean;
   persistActiveSession?: boolean;
   trackSessionReads?: boolean;
@@ -2341,6 +2388,7 @@ export const useChatSessionShellState = (
   options: UseChatSessionShellStateOptions = {},
 ): ChatSessionShellStateController => {
   const isolateActiveSession = options.isolateActiveSession !== false;
+  const includeHistoryContent = options.includeHistoryContent !== false;
   const persistActiveSession = options.persistActiveSession !== false;
   const trackSessionReads = options.trackSessionReads !== false;
   const initialShellStateRef = useRef<ShellPersistedState>(
@@ -2377,9 +2425,11 @@ export const useChatSessionShellState = (
   const [readAttentionSequence, setReadAttentionSequence] = useState(0);
   const didMutateBeforeHydrationRef = useRef(false);
   const shellStateRef = useRef(shellState);
+  const durableShellStateRef = useRef(initialShellStateRef.current);
   const lastPersistedShellStateRef = useRef(initialShellStateRef.current);
   const lastPersistedStoreRevisionRef = useRef(0);
   const localMutationRevisionRef = useRef(0);
+  const transientMutationRevisionRef = useRef(0);
   const persistedMutationRevisionRef = useRef(0);
   const persistInFlightRef = useRef(false);
   const persistQueuedRef = useRef(false);
@@ -2452,8 +2502,12 @@ export const useChatSessionShellState = (
     return createSessionHistoryIndex(
       sortedSessions,
       sessionHistoryIndexEntryCacheRef.current,
+      {
+        includeContent:
+          includeHistoryContent && sessionSearchQuery.trim().length > 0,
+      },
     );
-  }, [sortedSessions]);
+  }, [includeHistoryContent, sessionSearchQuery, sortedSessions]);
 
   const filteredSessions = useMemo(() => {
     return filterSessionHistoryIndex(sessionHistoryIndex, {
@@ -2503,9 +2557,35 @@ export const useChatSessionShellState = (
 
       localMutationRevisionRef.current += 1;
       shellStateRef.current = nextState;
+      durableShellStateRef.current = nextState;
       setShellState(nextState);
     },
     [hasHydrated, persistActiveSession],
+  );
+
+  const applyTransientShellState = useCallback(
+    (updater: SetStateAction<ShellPersistedState>): void => {
+      const previousState = shellStateRef.current;
+      let nextState =
+        typeof updater === "function" ? updater(previousState) : updater;
+
+      if (nextState === previousState) {
+        return;
+      }
+
+      if (nextState.activeSessionId !== previousState.activeSessionId) {
+        nextState = {
+          ...nextState,
+          activeSessionId: previousState.activeSessionId,
+          activeSessionUpdatedAt: previousState.activeSessionUpdatedAt,
+        };
+      }
+
+      transientMutationRevisionRef.current += 1;
+      shellStateRef.current = nextState;
+      setShellState(nextState);
+    },
+    [],
   );
 
   const clearScheduledShellStatePersistence = useCallback((): void => {
@@ -2561,26 +2641,55 @@ export const useChatSessionShellState = (
         persistQueuedRef.current = false;
 
         const targetRevision = localMutationRevisionRef.current;
+        const targetTransientRevision = transientMutationRevisionRef.current;
 
         if (persistedMutationRevisionRef.current >= targetRevision) {
           continue;
         }
 
-        const latestSnapshot = await loadShellStateSnapshot(
-          lastPersistedShellStateRef.current,
-        );
-        const latestPersistedState = normalizeShellState(latestSnapshot.state);
-        const mergedShellState = mergeShellStateForPersistence(
-          shellStateRef.current,
-          lastPersistedShellStateRef.current,
-          latestPersistedState,
-        );
-        const commit = await compareAndSwapShellState(
-          latestSnapshot.revision,
-          mergedShellState,
-        );
+        let latestPersistedState = lastPersistedShellStateRef.current;
+        let latestStoreRevision = lastPersistedStoreRevisionRef.current;
 
-        if (!commit.committed) {
+        if (!canUseTauriStore()) {
+          const latestSnapshot = await loadShellStateSnapshot(
+            latestPersistedState,
+          );
+          latestPersistedState = normalizeShellState(latestSnapshot.state);
+          latestStoreRevision = latestSnapshot.revision;
+        }
+
+        let mergedShellState = durableShellStateRef.current;
+        let commit: ShellStateCompareAndSwapResult<ShellPersistedState>;
+
+        if (canUseTauriStore()) {
+          const observedRevision = await loadShellStateRevision();
+          if (observedRevision !== latestStoreRevision) {
+            const latestSnapshot = await loadShellStateSnapshot(
+              lastPersistedShellStateRef.current,
+            );
+            latestPersistedState = normalizeShellState(latestSnapshot.state);
+            latestStoreRevision = latestSnapshot.revision;
+          }
+        }
+
+        while (true) {
+          mergedShellState = normalizeShellState(
+            mergeShellStateForPersistence(
+              durableShellStateRef.current,
+              lastPersistedShellStateRef.current,
+              latestPersistedState,
+            ),
+          );
+          commit = await compareAndSwapShellStatePatch(
+            latestStoreRevision,
+            createShellStatePatch(latestPersistedState, mergedShellState),
+            mergedShellState,
+          );
+
+          if (commit.committed) {
+            break;
+          }
+
           conflictAttempts += 1;
 
           if (conflictAttempts >= MAX_SHELL_STATE_CONFLICT_RETRIES) {
@@ -2589,30 +2698,41 @@ export const useChatSessionShellState = (
             );
           }
 
-          persistQueuedRef.current = true;
+          if (commit.state === undefined) {
+            throw new Error(
+              "Shell-state conflict response omitted the latest state.",
+            );
+          }
+
+          latestPersistedState = normalizeShellState(commit.state);
+          latestStoreRevision = commit.revision;
           await waitForShellStateConflictRetry(conflictAttempts);
-          continue;
         }
 
         conflictAttempts = 0;
         persistRetryAttemptRef.current = 0;
 
-        const committedShellState = normalizeShellState(commit.state);
+        const committedShellState = mergedShellState;
         lastPersistedShellStateRef.current = committedShellState;
         lastPersistedStoreRevisionRef.current = commit.revision;
         persistedMutationRevisionRef.current = targetRevision;
         settlePersistenceWaiters();
 
+        if (localMutationRevisionRef.current === targetRevision) {
+          durableShellStateRef.current = committedShellState;
+        }
+
         if (
           mountedRef.current &&
           localMutationRevisionRef.current === targetRevision &&
-          !areShellFragmentsEqual(shellStateRef.current, committedShellState)
+          transientMutationRevisionRef.current === targetTransientRevision &&
+          shellStateRef.current !== committedShellState
         ) {
           shellStateRef.current = committedShellState;
           setShellState(committedShellState);
         }
 
-        void broadcastShellStateChanged();
+        void broadcastShellStateChanged(commit.revision);
       } while (
         persistQueuedRef.current ||
         persistedMutationRevisionRef.current < localMutationRevisionRef.current
@@ -2774,6 +2894,10 @@ export const useChatSessionShellState = (
         lastPersistedShellStateRef.current = normalizedShellState;
         lastPersistedStoreRevisionRef.current = snapshot.revision;
 
+        if (!areShellFragmentsEqual(value, normalizedShellState)) {
+          localMutationRevisionRef.current += 1;
+        }
+
         if (didMutateBeforeHydrationRef.current) {
           const preHydrationShellState = rebasePreHydrationComposerInput(
             shellStateRef.current,
@@ -2791,6 +2915,7 @@ export const useChatSessionShellState = (
           }
 
           shellStateRef.current = mergedShellState;
+          durableShellStateRef.current = mergedShellState;
           setShellState(mergedShellState);
           return;
         }
@@ -2810,6 +2935,7 @@ export const useChatSessionShellState = (
         }
 
         shellStateRef.current = recoveredShellState;
+        durableShellStateRef.current = recoveredShellState;
         setShellState(recoveredShellState);
       })
       .catch((error) => {
@@ -2839,6 +2965,13 @@ export const useChatSessionShellState = (
 
   useEffect(() => {
     if (!hasHydrated) {
+      return;
+    }
+
+    if (
+      localMutationRevisionRef.current <=
+      persistedMutationRevisionRef.current
+    ) {
       return;
     }
 
@@ -2891,11 +3024,27 @@ export const useChatSessionShellState = (
 
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
-    const reconcileLatestShellState = async (): Promise<void> => {
+    const reconcileLatestShellState = async (
+      revisionHint?: number,
+    ): Promise<void> => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+
       const loadSequence = externalLoadSequenceRef.current + 1;
       externalLoadSequenceRef.current = loadSequence;
 
       try {
+        const latestRevision =
+          revisionHint ?? (await loadShellStateRevision());
+        if (
+          disposed ||
+          loadSequence !== externalLoadSequenceRef.current ||
+          latestRevision <= lastPersistedStoreRevisionRef.current
+        ) {
+          return;
+        }
+
         const snapshot = await loadShellStateSnapshot(
           initialShellStateRef.current,
         );
@@ -2933,6 +3082,7 @@ export const useChatSessionShellState = (
 
         if (!areShellFragmentsEqual(shellStateRef.current, nextShellState)) {
           shellStateRef.current = nextShellState;
+          durableShellStateRef.current = nextShellState;
           setShellState(nextShellState);
         } else if (nextStateNeedsPersistence) {
           setPersistenceSignal((revision) => revision + 1);
@@ -2946,7 +3096,7 @@ export const useChatSessionShellState = (
 
     void subscribeToShellStateChanged((payload) => {
       if (payload.originWindowLabel !== getCurrentShellWindowLabel()) {
-        void reconcileLatestShellState();
+        void reconcileLatestShellState(payload.revision);
       }
     })
       .then((unlisten) => {
@@ -2956,7 +3106,6 @@ export const useChatSessionShellState = (
         }
 
         unsubscribe = unlisten;
-        void reconcileLatestShellState();
       })
       .catch((error) => {
         if (!disposed) {
@@ -2965,12 +3114,19 @@ export const useChatSessionShellState = (
       });
     const reconciliationInterval = window.setInterval(() => {
       void reconcileLatestShellState();
-    }, 2_000);
+    }, SHELL_STATE_RECONCILIATION_INTERVAL_MS);
+    const reconcileWhenVisible = (): void => {
+      if (document.visibilityState === "visible") {
+        void reconcileLatestShellState();
+      }
+    };
+    document.addEventListener("visibilitychange", reconcileWhenVisible);
 
     return () => {
       disposed = true;
       unsubscribe?.();
       window.clearInterval(reconciliationInterval);
+      document.removeEventListener("visibilitychange", reconcileWhenVisible);
     };
   }, [hasHydrated]);
 
@@ -3139,6 +3295,34 @@ export const useChatSessionShellState = (
     [applyShellState],
   );
 
+  const updateSessionByIdTransient = useCallback(
+    (
+      sessionId: string,
+      updater: (session: ChatSessionRecord) => ChatSessionRecord,
+    ): void => {
+      applyTransientShellState((prev) => {
+        let didUpdateSession = false;
+        const sessions = prev.sessions.map((session) => {
+          if (session.id !== sessionId) {
+            return session;
+          }
+
+          const nextSession = updater(session);
+          didUpdateSession ||= nextSession !== session;
+          return nextSession;
+        });
+
+        return didUpdateSession
+          ? {
+              ...prev,
+              sessions,
+            }
+          : prev;
+      });
+    },
+    [applyTransientShellState],
+  );
+
   const setDraftValue = useCallback(
     (value: SetStateAction<string>): void => {
       const sessionId = activeSession.id;
@@ -3267,6 +3451,7 @@ export const useChatSessionShellState = (
     flushPersistence: flushShellStatePersistence,
     updateActiveSession,
     updateSessionById,
+    updateSessionByIdTransient,
     setDraftValue,
   };
 };

@@ -418,6 +418,18 @@ body {
     font-weight: 700;
 }
 
+.app-file-preview-code .app-file-preview-match {
+    border-radius: 0.125rem;
+    background: color-mix(in srgb, var(--app-amber-400) 32%, transparent);
+    color: inherit;
+}
+
+.app-file-preview-code .app-file-preview-match-active {
+    background: var(--app-amber-300);
+    color: var(--app-slate-950);
+    box-shadow: 0 0 0 1px var(--app-amber-200);
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
     width: 12px;

@@ -122,6 +122,7 @@ export interface SessionComposerProps {
   onDraftChange: (value: string) => void;
   onComposerHistoryNavigation: (
     event: KeyboardEvent<HTMLTextAreaElement>,
+    currentDraft: string,
   ) => void;
   onRunningTaskMessageActionChange: (
     action: RunningTaskMessageAction,
@@ -139,7 +140,7 @@ export interface SessionComposerProps {
     attachmentId: string,
   ) => void;
   onQueuedMessageClearContextAttachments: (messageId: string) => void;
-  onSend: () => void;
+  onSend: (draft: string) => void;
   onCancel: () => void;
   isExecuting: boolean;
 }
@@ -386,6 +387,7 @@ export const SessionComposer = ({
       <div className="relative">
         <AgentComposer
           variant="session"
+          draftIdentity={activeSession.id}
           draft={activeSession.draft}
           textareaLabel="Task composer"
           placeholder="What should machdoch do next?"

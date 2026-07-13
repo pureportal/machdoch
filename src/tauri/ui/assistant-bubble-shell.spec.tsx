@@ -1,14 +1,12 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createInitialShellState,
-  createSession,
-  type ShellPersistedState,
-} from "./chat-session.model";
 import { AssistantBubbleShell } from "./assistant-bubble-shell";
 import {
   availableMonitors,
   currentWindowMock,
+  disableInvokeMock,
+  enableInvokeMock,
+  invokeMock,
   isTauriMock,
   type MonitorMock,
   monitorFromPoint,
@@ -25,7 +23,6 @@ import {
   QUICK_CHAT_DROP_EVENT,
 } from "./runtime";
 
-const SHELL_STATE_STORAGE_KEY = "machdoch.desktop.shell-state";
 const APPEARANCE_STORAGE_KEY = "machdoch.desktop.appearance-state";
 
 const createMonitorMock = (
@@ -40,10 +37,6 @@ const createMonitorMock = (
   scaleFactor: 1,
   ...overrides,
 });
-
-const storeShellState = (value: ShellPersistedState): void => {
-  window.localStorage.setItem(SHELL_STATE_STORAGE_KEY, JSON.stringify(value));
-};
 
 const storeAppearanceSettings = (
   partial: Partial<AppearanceSettings>,
@@ -83,6 +76,7 @@ describe("AssistantBubbleShell", () => {
     windowResizedListeners.clear();
     windowScaleChangedListeners.clear();
     window.localStorage.clear();
+    disableInvokeMock();
   });
 
   it("exposes idle launcher state and popup accessibility metadata", async () => {
@@ -139,23 +133,14 @@ describe("AssistantBubbleShell", () => {
   });
 
   it("marks running sessions for stateful attention styles", async () => {
-    const runningSession = createSession({
-      id: "session-running",
-      messages: [
-        {
-          id: "task-running",
-          role: "user",
-          content: "Run the task",
-          createdAt: 1,
-        },
-      ],
-      updatedAt: 1,
-    });
+    isTauriMock.mockReturnValue(true);
+    enableInvokeMock();
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "get_active_desktop_task_ids") {
+        return ["task-running"];
+      }
 
-    storeShellState({
-      ...createInitialShellState(),
-      activeSessionId: runningSession.id,
-      sessions: [runningSession],
+      return null;
     });
     storeAppearanceSettings({ quickChatBubbleStyle: "pulse" });
 

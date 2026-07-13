@@ -163,6 +163,13 @@ fn state_status_loads_stored_pairings_from_config_file() {
 #[test]
 fn recorded_progress_updates_remote_snapshot() {
     let state = RemoteControlState::default();
+    state
+        .shared
+        .inner
+        .lock()
+        .expect("state lock")
+        .config
+        .enabled = true;
 
     state.record_progress(
         "task-1",
@@ -194,6 +201,13 @@ fn recorded_progress_updates_remote_snapshot() {
 #[test]
 fn status_orders_sessions_by_most_recent_update() {
     let state = RemoteControlState::default();
+    state
+        .shared
+        .inner
+        .lock()
+        .expect("state lock")
+        .config
+        .enabled = true;
 
     state.record_progress("older-task", &json!({ "task": "Older task" }), 100);
     state.record_progress("newer-task", &json!({ "task": "Newer task" }), 200);

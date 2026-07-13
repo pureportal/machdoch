@@ -3816,7 +3816,11 @@ describe("ChatSession component", () => {
         );
       });
       expect(await screen.findByText("chat-session-shell.tsx")).toBeDefined();
-      expect(screen.getByText("TypeScript")).toBeDefined();
+      expect(
+        (await screen.findByLabelText(
+          "Syntax highlighting",
+        )) as HTMLSelectElement,
+      ).toHaveProperty("value", "typescript");
 
       fireEvent.click(screen.getByRole("button", { name: "Open externally" }));
 

@@ -141,6 +141,12 @@ impl RemoteControlState {
             changed = true;
         }
 
+        if !inner.sessions.is_empty() {
+            inner.sessions.clear();
+            inner.progress_log_bytes = 0;
+            changed = true;
+        }
+
         if changed {
             inner.event_id = inner.event_id.saturating_add(1);
             self.shared.updates.notify_all();

@@ -1,11 +1,16 @@
 use std::{
-    sync::Mutex,
-    time::{SystemTime, UNIX_EPOCH},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
+mod codex_storage;
 mod shortcut;
 mod startup;
 mod tray;
@@ -25,9 +30,11 @@ pub(crate) const MAIN_WINDOW_LABEL: &str = "main";
 pub(crate) const ASSISTANT_BUBBLE_WINDOW_LABEL: &str = "assistant-bubble";
 pub(crate) const ASSISTANT_POPUP_WINDOW_LABEL: &str = "assistant-popup";
 pub(crate) const QUICK_VOICE_WINDOW_LABEL: &str = "quick-voice";
-pub(crate) const TRAY_MENU_WINDOW_LABEL: &str = "tray-menu";
 pub(crate) const QUICK_VOICE_START_EVENT: &str = "machdoch://quick-voice-start";
 pub(crate) const ADMIN_RELAUNCH_ARG: &str = "--machdoch-admin-relaunch";
+const DESKTOP_TASK_EXIT_GRACE_PERIOD: Duration = Duration::from_millis(1_500);
+const DESKTOP_TASK_EXIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
+static EXIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Default)]
 pub(crate) struct QuickVoiceShortcutState(pub(crate) Mutex<Option<String>>);
@@ -85,11 +92,76 @@ pub fn hide_main_window_to_tray(app: AppHandle) {
 }
 
 #[tauri::command]
+pub fn clear_webview_cache(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .ok_or_else(|| "The main machdoch window is unavailable.".to_string())?;
+
+    window
+        .clear_all_browsing_data()
+        .map_err(|error| format!("Failed to clear WebView browsing data: {error}"))
+}
+
+#[tauri::command]
+pub fn get_machdoch_codex_session_usage() -> Result<codex_storage::MachdochCodexSessionUsage, String>
+{
+    codex_storage::get_usage()
+}
+
+#[tauri::command]
+pub fn clear_machdoch_codex_sessions(
+) -> Result<codex_storage::MachdochCodexSessionCleanupResult, String> {
+    codex_storage::clear()
+}
+
+#[tauri::command]
+pub fn ensure_assistant_window(app: AppHandle, label: String) -> Result<(), String> {
+    window::ensure_assistant_window(&app, &label)
+        .map(|_| ())
+        .map_err(|error| format!("Failed to create assistant window `{label}`: {error}"))
+}
+
+#[tauri::command]
 pub fn sync_chat_completion_indicator(app: AppHandle, completed: bool) -> Result<(), String> {
     tray::sync_chat_completion_indicator(&app, completed)
 }
 
 #[tauri::command]
 pub fn quit_machdoch(app: AppHandle) {
-    app.exit(0);
+    request_graceful_exit(&app);
+}
+
+pub(crate) fn request_graceful_exit<R: tauri::Runtime>(app: &AppHandle<R>) {
+    if EXIT_REQUESTED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let app = app.clone();
+    let state = app.state::<crate::desktop_task::DesktopTaskCancelMap>();
+    let active_task_count = crate::desktop_task::request_all_desktop_task_cancels(&state);
+    drop(state);
+
+    if active_task_count == 0 {
+        app.exit(0);
+        return;
+    }
+
+    thread::spawn(move || {
+        let deadline = Instant::now() + DESKTOP_TASK_EXIT_GRACE_PERIOD;
+
+        while Instant::now() < deadline {
+            let state = app.state::<crate::desktop_task::DesktopTaskCancelMap>();
+            let has_active_tasks =
+                crate::desktop_task::request_all_desktop_task_cancels(&state) > 0;
+            drop(state);
+
+            if !has_active_tasks {
+                break;
+            }
+
+            thread::sleep(DESKTOP_TASK_EXIT_POLL_INTERVAL);
+        }
+
+        app.exit(0);
+    });
 }

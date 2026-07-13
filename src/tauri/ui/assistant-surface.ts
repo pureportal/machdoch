@@ -12,6 +12,7 @@ import {
 } from "@tauri-apps/api/window";
 import {
   ASSISTANT_POPUP_WINDOW_LABEL,
+  ASSISTANT_SURFACE_READY_EVENT,
   MAIN_WINDOW_LABEL,
   QUICK_VOICE_START_EVENT,
   QUICK_VOICE_WINDOW_LABEL,
@@ -261,6 +262,49 @@ export const setWindowPosition = async (
   }
 };
 
+const getOrCreateAssistantWindow = async (
+  label: typeof ASSISTANT_POPUP_WINDOW_LABEL | typeof QUICK_VOICE_WINDOW_LABEL,
+): Promise<Window | null> => {
+  if (!isTauri()) {
+    return getWindowByLabel(label);
+  }
+
+  const existingWindow = await getWindowByLabel(label);
+
+  if (existingWindow) {
+    return existingWindow;
+  }
+
+  const currentWindow = getCurrentWindow();
+  let resolveReady: (() => void) | undefined;
+  const readyPromise = new Promise<void>((resolve) => {
+    resolveReady = resolve;
+  });
+  const unlisten = await currentWindow.listen<{ label?: string }>(
+    ASSISTANT_SURFACE_READY_EVENT,
+    (event) => {
+      if (event.payload.label === label) {
+        resolveReady?.();
+      }
+    },
+  );
+
+  try {
+    await invoke("ensure_assistant_window", { label });
+    await Promise.race([
+      readyPromise,
+      new Promise<void>((resolve) => window.setTimeout(resolve, 3_000)),
+    ]);
+  } catch (error) {
+    console.error(`Failed to create assistant window \`${label}\``, error);
+    return null;
+  } finally {
+    unlisten();
+  }
+
+  return getWindowByLabel(label);
+};
+
 export const setWindowSize = async (
   window: Window | null,
   size: { width: number; height: number },
@@ -303,7 +347,7 @@ const applyAssistantPopupLayout = async (
   );
 };
 
-const hideWindowByLabel = async (
+const closeWindowByLabel = async (
   label: string,
   description: string,
 ): Promise<void> => {
@@ -314,14 +358,14 @@ const hideWindowByLabel = async (
   }
 
   try {
-    await window.hide();
+    await window.close();
   } catch (error) {
-    console.error(`Failed to hide ${description}`, error);
+    console.error(`Failed to close ${description}`, error);
   }
 };
 
 export const hideAssistantPopup = async (): Promise<void> => {
-  await hideWindowByLabel(
+  await closeWindowByLabel(
     ASSISTANT_POPUP_WINDOW_LABEL,
     "the assistant popup",
   );
@@ -330,7 +374,7 @@ export const hideAssistantPopup = async (): Promise<void> => {
 export const hideTransientAssistantWindows = async (): Promise<void> => {
   await Promise.all([
     hideAssistantPopup(),
-    hideWindowByLabel(QUICK_VOICE_WINDOW_LABEL, "the Quick Voice window"),
+    closeWindowByLabel(QUICK_VOICE_WINDOW_LABEL, "the Quick Voice window"),
   ]);
 };
 
@@ -366,7 +410,9 @@ export const isAssistantPopupVisible = async (): Promise<boolean> => {
 export const showAssistantPopup = async (
   popupPositionOverride?: { x: number; y: number },
 ): Promise<boolean> => {
-  const popupWindow = await getWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL);
+  const popupWindow = await getOrCreateAssistantWindow(
+    ASSISTANT_POPUP_WINDOW_LABEL,
+  );
 
   if (!popupWindow) {
     return false;
@@ -390,12 +436,12 @@ export const toggleAssistantPopup = async (
   const popupWindow = await getWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL);
 
   if (!popupWindow) {
-    return false;
+    return showAssistantPopup(popupPositionOverride);
   }
 
   try {
     if (await popupWindow.isVisible()) {
-      await popupWindow.hide();
+      await popupWindow.close();
       return false;
     }
 
@@ -481,7 +527,9 @@ export const quitMachdoch = async (): Promise<void> => {
 };
 
 export const showQuickVoiceWindow = async (): Promise<void> => {
-  const quickVoiceWindow = await getWindowByLabel(QUICK_VOICE_WINDOW_LABEL);
+  const quickVoiceWindow = await getOrCreateAssistantWindow(
+    QUICK_VOICE_WINDOW_LABEL,
+  );
 
   if (!quickVoiceWindow) {
     return;

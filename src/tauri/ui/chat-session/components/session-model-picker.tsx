@@ -1,6 +1,14 @@
-import { Bot, Check, ChevronDown } from "lucide-react";
-import { useEffect, useState, type JSX } from "react";
+import { Bot, Check, ChevronDown, Search } from "lucide-react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type KeyboardEvent,
+} from "react";
 import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 import {
   Popover,
   PopoverContent,
@@ -9,6 +17,7 @@ import {
 import { cn } from "../../lib/utils";
 import {
   getCatalogModelsForProvider,
+  getModelLabelForProvider,
   getProviderLabel,
   type ProviderModelCatalogSnapshot,
   type RuntimeProvider,
@@ -22,6 +31,93 @@ export interface SessionModelPickerProps {
   onSessionModelSelection: (provider: RuntimeProvider, model: string) => void;
 }
 
+const normalizeModelSearchText = (value: string): string => {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/gu, " ");
+};
+
+const scoreModelSearchCandidate = (
+  candidate: string,
+  normalizedQuery: string,
+  tokens: readonly string[],
+  labelBonus: number,
+): number => {
+  const normalizedCandidate = normalizeModelSearchText(candidate);
+
+  if (!normalizedCandidate) {
+    return 0;
+  }
+
+  const words = normalizedCandidate.split(" ");
+  let score = 0;
+
+  for (const token of tokens) {
+    if (normalizedCandidate === token) {
+      score += 500;
+      continue;
+    }
+
+    if (normalizedCandidate.startsWith(token)) {
+      score += 420;
+      continue;
+    }
+
+    if (words.includes(token)) {
+      score += 360;
+      continue;
+    }
+
+    if (words.some((word) => word.startsWith(token))) {
+      score += 300;
+      continue;
+    }
+
+    const tokenIndex = normalizedCandidate.indexOf(token);
+
+    if (tokenIndex < 0) {
+      return 0;
+    }
+
+    score += 160 - Math.min(tokenIndex, 100);
+  }
+
+  if (normalizedCandidate === normalizedQuery) {
+    return score + 800 + labelBonus;
+  }
+
+  if (normalizedCandidate.startsWith(normalizedQuery)) {
+    return score + 620 + labelBonus;
+  }
+
+  const phraseIndex = normalizedCandidate.indexOf(normalizedQuery);
+
+  if (phraseIndex >= 0) {
+    return score + 420 - Math.min(phraseIndex, 100) + labelBonus;
+  }
+
+  return score + labelBonus;
+};
+
+const MAX_CATALOG_ERROR_LENGTH = 180;
+
+const formatCatalogError = (error: string | undefined): string => {
+  const normalizedError = error?.replace(/\s+/gu, " ").trim();
+
+  if (!normalizedError) {
+    return "The provider did not return a model-list status.";
+  }
+
+  if (normalizedError.length <= MAX_CATALOG_ERROR_LENGTH) {
+    return normalizedError;
+  }
+
+  return `${normalizedError.slice(0, MAX_CATALOG_ERROR_LENGTH - 1).trimEnd()}…`;
+};
+
 export const SessionModelPicker = ({
   chooserProviders,
   activeProvider,
@@ -30,42 +126,107 @@ export const SessionModelPicker = ({
 }: SessionModelPickerProps): JSX.Element => {
   const [open, setOpen] = useState(false);
   const [visibleProvider, setVisibleProvider] = useState(activeProvider);
+  const [modelSearchText, setModelSearchText] = useState("");
+  const [isCatalogLoading, setIsCatalogLoading] = useState(false);
   const [providerModelCatalog, setProviderModelCatalog] =
     useState<ProviderModelCatalogSnapshot | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setVisibleProvider(activeProvider);
   }, [activeProvider]);
 
   useEffect(() => {
-    let cancelled = false;
+    if (!open) {
+      return;
+    }
 
-    void loadProviderModelCatalog().then((catalog) => {
-      if (!cancelled) {
-        setProviderModelCatalog(catalog);
-      }
-    });
+    let cancelled = false;
+    setIsCatalogLoading(true);
+
+    void loadProviderModelCatalog()
+      .then((catalog) => {
+        if (!cancelled) {
+          setProviderModelCatalog(catalog);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsCatalogLoading(false);
+        }
+      });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [open]);
 
-  const activeProviderModels = getCatalogModelsForProvider(
+  const activeModelLabel = getModelLabelForProvider(
     activeProvider,
+    activeModel,
     providerModelCatalog,
   );
-  const activeModelMeta = activeProviderModels.find(
-    (model) => model.id === activeModel,
-  );
-  const activeModelLabel = activeModelMeta?.label ?? activeModel;
   const selectedProvider = chooserProviders.includes(visibleProvider)
     ? visibleProvider
     : (chooserProviders[0] ?? activeProvider);
-  const selectedProviderModels = getCatalogModelsForProvider(
-    selectedProvider,
-    providerModelCatalog,
+  const selectedRuntimeCatalog = providerModelCatalog?.providers.find(
+    (entry) => entry.provider === selectedProvider,
   );
+  const selectedProviderModels = isCatalogLoading
+    ? []
+    : getCatalogModelsForProvider(selectedProvider, providerModelCatalog);
+  const visibleSelectedProviderModels = useMemo(() => {
+    const normalizedQuery = normalizeModelSearchText(modelSearchText);
+
+    if (!normalizedQuery) {
+      return selectedProviderModels;
+    }
+
+    const tokens = normalizedQuery.split(" ");
+
+    return selectedProviderModels
+      .map((model, order) => ({
+        model,
+        order,
+        score: Math.max(
+          scoreModelSearchCandidate(model.label, normalizedQuery, tokens, 120),
+          scoreModelSearchCandidate(model.id, normalizedQuery, tokens, 0),
+        ),
+      }))
+      .filter((entry) => entry.score > 0)
+      .sort((firstEntry, secondEntry) => {
+        const scoreDifference = secondEntry.score - firstEntry.score;
+
+        if (scoreDifference !== 0) {
+          return scoreDifference;
+        }
+
+        return firstEntry.order - secondEntry.order;
+      })
+      .map((entry) => entry.model);
+  }, [modelSearchText, selectedProviderModels]);
+  const availabilityLabel = isCatalogLoading
+    ? "Checking availability"
+    : selectedRuntimeCatalog?.available
+      ? `${selectedProviderModels.length} available`
+      : "Unavailable";
+  const emptyStateDescription = isCatalogLoading
+    ? `Checking ${getProviderLabel(selectedProvider)} model list…`
+    : !selectedRuntimeCatalog?.available
+      ? formatCatalogError(selectedRuntimeCatalog?.error)
+      : selectedProviderModels.length === 0
+        ? "The provider returned no supported models."
+        : "No matching models.";
+
+  const handleOpenChange = (nextOpen: boolean): void => {
+    setOpen(nextOpen);
+
+    if (nextOpen) {
+      setModelSearchText("");
+      setProviderModelCatalog(null);
+      setIsCatalogLoading(true);
+    }
+  };
 
   const handleSessionModelSelection = (
     provider: RuntimeProvider,
@@ -73,10 +234,28 @@ export const SessionModelPicker = ({
   ): void => {
     onSessionModelSelection(provider, model);
     setOpen(false);
+    setModelSearchText("");
+  };
+
+  const handleSearchKeyDown = (
+    event: KeyboardEvent<HTMLInputElement>,
+  ): void => {
+    if (event.key !== "Enter" || !modelSearchText.trim()) {
+      return;
+    }
+
+    const bestMatch = visibleSelectedProviderModels[0];
+
+    if (!bestMatch) {
+      return;
+    }
+
+    event.preventDefault();
+    handleSessionModelSelection(selectedProvider, bestMatch.id);
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -96,6 +275,10 @@ export const SessionModelPicker = ({
         align="start"
         sideOffset={8}
         className="w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border-slate-800 bg-slate-950/98 p-0 shadow-2xl shadow-sky-950/30 backdrop-blur-xl"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          searchInputRef.current?.focus();
+        }}
       >
         <div className="border-b border-slate-800/80 px-4 py-3">
           <div className="flex items-center justify-between gap-3">
@@ -143,17 +326,45 @@ export const SessionModelPicker = ({
             </div>
 
             <div className="grid gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <Input
+                  ref={searchInputRef}
+                  type="search"
+                  value={modelSearchText}
+                  onChange={(event) => setModelSearchText(event.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  aria-label="Search models"
+                  placeholder="Search models"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="h-9 rounded-2xl border-slate-800 bg-slate-900/70 pr-3 pl-9 text-sm text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/30"
+                />
+              </div>
+
               <div className="flex items-center justify-between gap-3 px-1">
                 <p className="text-sm font-semibold text-slate-100">
                   {getProviderLabel(selectedProvider)} models
                 </p>
-                <span className="text-xs text-slate-500">
-                  {selectedProviderModels.length} available
+                <span
+                  aria-live="polite"
+                  className="text-xs text-slate-500"
+                >
+                  {availabilityLabel}
                 </span>
               </div>
 
               <div className="grid max-h-72 gap-1.5 overflow-y-auto pr-1">
-                {selectedProviderModels.map((model) => {
+                {visibleSelectedProviderModels.length === 0 ? (
+                  <div
+                    role="status"
+                    className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-sm leading-5 text-slate-400"
+                  >
+                    {emptyStateDescription}
+                  </div>
+                ) : null}
+
+                {visibleSelectedProviderModels.map((model) => {
                   const isSelected =
                     activeProvider === selectedProvider &&
                     activeModel === model.id;

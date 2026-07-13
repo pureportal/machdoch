@@ -5,7 +5,7 @@ use serde_json::Value;
 use super::{
     commands::truncate_chars, push_bounded, string_field, RemoteControlInner, RemoteControlShared,
     RemoteLogEntry, RemoteTaskSession, RemoteTimelineEntry, MAX_COMMAND_TEXT_CHARS,
-    MAX_LOG_ENTRIES, MAX_SESSIONS, MAX_TIMELINE_ENTRIES,
+    MAX_LOG_ENTRIES, MAX_PROGRESS_LOG_BYTES, MAX_SESSIONS, MAX_TIMELINE_ENTRIES,
 };
 
 pub(super) fn record_progress_update(
@@ -24,10 +24,22 @@ pub(super) fn record_progress_update(
         return;
     };
 
-    let session = progress_session(&mut inner, normalized_task_id, timestamp);
-    apply_progress_fields(session, progress, timestamp);
-    record_action_output(session, progress, timestamp);
-    record_timeline_event(session, progress, timestamp);
+    if !inner.config.enabled {
+        return;
+    }
+
+    let (added_log_bytes, removed_log_bytes) = {
+        let session = progress_session(&mut inner, normalized_task_id, timestamp);
+        apply_progress_fields(session, progress, timestamp);
+        let log_delta = record_action_output(session, progress, timestamp);
+        record_timeline_event(session, progress, timestamp);
+        log_delta
+    };
+    inner.progress_log_bytes = inner
+        .progress_log_bytes
+        .saturating_sub(removed_log_bytes)
+        .saturating_add(added_log_bytes);
+    trim_progress_logs_to_byte_budget(&mut inner);
     notify_state_changed(shared, &mut inner);
 }
 
@@ -67,7 +79,14 @@ fn remove_stale_session_if_needed(inner: &mut RemoteControlInner, task_id: &str)
         .min_by_key(|session| session.updated_at)
         .map(|session| session.task_id.clone())
     {
-        inner.sessions.remove(&stale_task_id);
+        if let Some(session) = inner.sessions.remove(&stale_task_id) {
+            let removed_bytes = session
+                .logs
+                .iter()
+                .map(|entry| entry.chunk.len())
+                .sum::<usize>();
+            inner.progress_log_bytes = inner.progress_log_bytes.saturating_sub(removed_bytes);
+        }
     }
 }
 
@@ -96,35 +115,75 @@ fn apply_progress_fields(session: &mut RemoteTaskSession, progress: &Value, time
     }
 }
 
-fn record_action_output(session: &mut RemoteTaskSession, progress: &Value, timestamp: u64) {
+fn record_action_output(
+    session: &mut RemoteTaskSession,
+    progress: &Value,
+    timestamp: u64,
+) -> (usize, usize) {
     let Some(action_output) = progress.get("actionOutput").and_then(Value::as_object) else {
-        return;
+        return (0, 0);
     };
     let Some(chunk) = action_output.get("chunk").and_then(Value::as_str) else {
-        return;
+        return (0, 0);
     };
 
     if chunk.is_empty() {
-        return;
+        return (0, 0);
     }
 
-    push_bounded(
-        &mut session.logs,
-        RemoteLogEntry {
-            created_at: timestamp,
-            stream: action_output
-                .get("stream")
-                .and_then(Value::as_str)
-                .unwrap_or("stdout")
-                .to_string(),
-            tool_name: action_output
-                .get("toolName")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            chunk: truncate_chars(chunk, MAX_COMMAND_TEXT_CHARS),
-        },
-        MAX_LOG_ENTRIES,
-    );
+    let chunk = truncate_chars(chunk, MAX_COMMAND_TEXT_CHARS);
+    let removed_bytes = if session.logs.len() >= MAX_LOG_ENTRIES {
+        session
+            .logs
+            .pop_front()
+            .map_or(0, |entry| entry.chunk.len())
+    } else {
+        0
+    };
+    let added_bytes = chunk.len();
+    session.logs.push_back(RemoteLogEntry {
+        created_at: timestamp,
+        stream: action_output
+            .get("stream")
+            .and_then(Value::as_str)
+            .unwrap_or("stdout")
+            .to_string(),
+        tool_name: action_output
+            .get("toolName")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        chunk,
+    });
+
+    (added_bytes, removed_bytes)
+}
+
+fn trim_progress_logs_to_byte_budget(inner: &mut RemoteControlInner) {
+    while inner.progress_log_bytes > MAX_PROGRESS_LOG_BYTES {
+        let oldest_task_id = inner
+            .sessions
+            .values()
+            .filter_map(|session| {
+                session
+                    .logs
+                    .front()
+                    .map(|entry| (entry.created_at, session.task_id.clone()))
+            })
+            .min_by_key(|(created_at, _)| *created_at)
+            .map(|(_, task_id)| task_id);
+        let Some(oldest_task_id) = oldest_task_id else {
+            inner.progress_log_bytes = 0;
+            break;
+        };
+        let Some(session) = inner.sessions.get_mut(&oldest_task_id) else {
+            continue;
+        };
+        let Some(entry) = session.logs.pop_front() else {
+            continue;
+        };
+
+        inner.progress_log_bytes = inner.progress_log_bytes.saturating_sub(entry.chunk.len());
+    }
 }
 
 fn record_timeline_event(session: &mut RemoteTaskSession, progress: &Value, timestamp: u64) {

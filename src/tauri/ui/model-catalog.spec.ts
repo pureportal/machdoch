@@ -5,38 +5,52 @@ import {
 } from "./model-catalog";
 
 describe("provider model catalog", () => {
-  it("shows curated Codex CLI fallback models without cross-provider choices", () => {
-    expect(
-      getCatalogModelsForProvider("codex-cli").map((model) => model.id),
-    ).toEqual([
-      "gpt-5.6",
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
-      "gpt-5.6-luna",
-      "gpt-5.5",
-      "gpt-5.4",
-      "gpt-5.4-mini",
-      "gpt-5.3-codex-spark",
-    ]);
+  it("returns no models without a successful provider model-list response", () => {
+    expect(getCatalogModelsForProvider("codex-cli")).toEqual([]);
+    expect(getCatalogModelsForProvider("claude-cli")).toEqual([]);
+    expect(getCatalogModelsForProvider("copilot-cli")).toEqual([]);
+
+    const unavailableSnapshot = {
+      generatedAt: 1,
+      providers: [
+        {
+          provider: "openai",
+          source: "provider-api",
+          available: false,
+          error: "OPENAI_API_KEY is not configured.",
+          models: [{ id: "gpt-5.5", label: "GPT-5.5" }],
+        },
+      ],
+    } satisfies ProviderModelCatalogSnapshot;
 
     expect(
-      getCatalogModelsForProvider("codex-cli").some(
-        (model) => model.id === "auto",
-      ),
-    ).toBe(false);
-    expect(
-      getCatalogModelsForProvider("claude-cli").map((model) => model.id),
-    ).toEqual(["sonnet", "opus", "haiku", "fable"]);
-    expect(
-      getCatalogModelsForProvider("copilot-cli").map((model) => model.id),
-    ).toEqual([
-      "auto",
-      "claude-sonnet-4.6",
-      "gpt-5.4",
-      "claude-haiku-4.5",
-      "gpt-5.3-codex",
-      "gemini-3.1-pro-preview",
-      "gemini-3.5-flash",
+      getCatalogModelsForProvider("openai", unavailableSnapshot),
+    ).toEqual([]);
+  });
+
+  it("keeps Auto first while treating the live Copilot catalog as authoritative", () => {
+    const snapshot = {
+      generatedAt: 1,
+      providers: [
+        {
+          provider: "copilot-cli",
+          source: "provider-sdk",
+          available: true,
+          models: [
+            { id: "gpt-5.5", label: "GPT-5.5" },
+            { id: "auto", label: "Auto" },
+            { id: "mai-code-1-flash", label: "MAI-Code-1-Flash" },
+            { id: "kimi-k2.7-code", label: "Kimi K2.7 Code" },
+          ],
+        },
+      ],
+    } satisfies ProviderModelCatalogSnapshot;
+
+    expect(getCatalogModelsForProvider("copilot-cli", snapshot)).toEqual([
+      { id: "auto", label: "Auto" },
+      { id: "gpt-5.5", label: "GPT-5.5" },
+      { id: "mai-code-1-flash", label: "MAI-Code-1-Flash" },
+      { id: "kimi-k2.7-code", label: "Kimi K2.7 Code" },
     ]);
   });
 

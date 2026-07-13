@@ -51,7 +51,13 @@ pub(crate) fn sync_quick_voice_shortcut<R: Runtime>(app: &AppHandle<R>) -> Resul
         app.global_shortcut()
             .on_shortcut(shortcut.as_str(), move |app, _shortcut, event| {
                 if event.state == ShortcutState::Pressed {
-                    let _ = window::show_quick_voice_window(app, Some(QUICK_VOICE_SHORTCUT_SOURCE));
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = window::show_quick_voice_window(
+                            &app,
+                            Some(QUICK_VOICE_SHORTCUT_SOURCE),
+                        );
+                    });
                 }
             })
             .map_err(|error| {

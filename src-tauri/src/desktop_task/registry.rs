@@ -10,6 +10,7 @@ use super::DesktopTaskRunResponse;
 
 const MAX_PENDING_CANCEL_IDS: usize = 256;
 const MAX_RECENT_COMPLETED_TASK_RESULTS: usize = 128;
+const MAX_RECENT_COMPLETED_TASK_RESULT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_CLAIMED_TASK_IDS: usize = 512;
 
 #[derive(Default)]
@@ -22,6 +23,8 @@ struct DesktopTaskCancelState {
     pending_order: VecDeque<String>,
     completed: HashMap<String, RecentDesktopTaskResult>,
     completed_order: VecDeque<String>,
+    completed_sizes: HashMap<String, usize>,
+    completed_bytes: usize,
 }
 
 pub struct DesktopTaskCancelMap(Mutex<DesktopTaskCancelState>);
@@ -175,6 +178,18 @@ pub fn request_desktop_task_cancel(state: &DesktopTaskCancelMap, task_id: &str) 
     }
 }
 
+pub fn request_all_desktop_task_cancels(state: &DesktopTaskCancelMap) -> usize {
+    let Ok(cancel_state) = state.0.lock() else {
+        return 0;
+    };
+
+    for task in cancel_state.active.values() {
+        task.cancel_flag.store(true, Ordering::SeqCst);
+    }
+
+    cancel_state.active.len()
+}
+
 pub(super) fn normalize_task_id(task_id: Option<&str>) -> Option<String> {
     task_id
         .map(str::trim)
@@ -244,6 +259,32 @@ pub(super) fn recent_completed_task_results(
     }
 
     Ok(results)
+}
+
+pub(super) fn acknowledge_completed_task_results(
+    state: &DesktopTaskCancelMap,
+    task_ids: &[String],
+) -> Result<(), String> {
+    let mut cancel_state = state.0.lock().map_err(|_| {
+        "Unable to acknowledge completed desktop tasks because the task registry lock is unavailable."
+            .to_string()
+    })?;
+
+    for task_id in task_ids {
+        let Some(task_id) = normalize_task_id(Some(task_id)) else {
+            continue;
+        };
+
+        cancel_state.completed.remove(&task_id);
+        cancel_state
+            .completed_order
+            .retain(|existing_task_id| existing_task_id != &task_id);
+        cancel_state.completed_bytes = cancel_state
+            .completed_bytes
+            .saturating_sub(cancel_state.completed_sizes.remove(&task_id).unwrap_or(0));
+    }
+
+    Ok(())
 }
 
 pub(super) fn completed_desktop_task_result(
@@ -327,18 +368,35 @@ pub(super) fn remember_completed_task_result(
     };
 
     if let Ok(mut cancel_state) = state.0.lock() {
+        let result_size = serde_json::to_vec(&result).map_or(0, |serialized| serialized.len());
+
         if cancel_state.completed.contains_key(&task_id) {
             cancel_state
                 .completed_order
                 .retain(|existing_task_id| existing_task_id != &task_id);
+            cancel_state.completed_bytes = cancel_state
+                .completed_bytes
+                .saturating_sub(cancel_state.completed_sizes.remove(&task_id).unwrap_or(0));
         }
 
         cancel_state.completed_order.push_back(task_id.clone());
+        cancel_state.completed_bytes = cancel_state.completed_bytes.saturating_add(result_size);
+        cancel_state
+            .completed_sizes
+            .insert(task_id.clone(), result_size);
         cancel_state.completed.insert(task_id, result);
 
-        while cancel_state.completed_order.len() > MAX_RECENT_COMPLETED_TASK_RESULTS {
+        while cancel_state.completed_order.len() > MAX_RECENT_COMPLETED_TASK_RESULTS
+            || cancel_state.completed_bytes > MAX_RECENT_COMPLETED_TASK_RESULT_BYTES
+        {
             if let Some(stale_task_id) = cancel_state.completed_order.pop_front() {
                 cancel_state.completed.remove(&stale_task_id);
+                cancel_state.completed_bytes = cancel_state.completed_bytes.saturating_sub(
+                    cancel_state
+                        .completed_sizes
+                        .remove(&stale_task_id)
+                        .unwrap_or(0),
+                );
             }
         }
     }
@@ -378,6 +436,7 @@ mod tests {
         ActiveDesktopTaskRegistration, DesktopTaskCancelMap, DesktopTaskCancelState,
         RecentDesktopTaskOutcome, RecentDesktopTaskResult, MAX_CLAIMED_TASK_IDS,
         MAX_PENDING_CANCEL_IDS, MAX_RECENT_COMPLETED_TASK_RESULTS,
+        MAX_RECENT_COMPLETED_TASK_RESULT_BYTES,
     };
     use crate::desktop_task::DesktopTaskRunResponse;
 
@@ -544,5 +603,36 @@ mod tests {
             results[0].outcome,
             RecentDesktopTaskOutcome::Succeeded { .. }
         ));
+    }
+
+    #[test]
+    fn recent_completed_task_results_are_bounded_by_serialized_bytes() {
+        let state = DesktopTaskCancelMap::default();
+        let payload = "x".repeat(MAX_RECENT_COMPLETED_TASK_RESULT_BYTES / 2 + 1_024);
+
+        for task_id in ["large-1", "large-2"] {
+            let result = Ok(DesktopTaskRunResponse {
+                execution: json!({ "output": payload.clone() }),
+                preview: None,
+            });
+            remember_completed_task_result(
+                &state,
+                RecentDesktopTaskResult::desktop(
+                    task_id.to_string(),
+                    "workspace".to_string(),
+                    Vec::new(),
+                    1,
+                    2,
+                    &result,
+                ),
+            );
+        }
+
+        let results =
+            recent_completed_task_results(&state, &["large-1".to_string(), "large-2".to_string()])
+                .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "large-2");
     }
 }

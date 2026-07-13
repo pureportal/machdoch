@@ -43,6 +43,14 @@ const createThinkingEntryId = (timestamp: number, index: number): string => {
   return `thinking-${timestamp}-${index}`;
 };
 
+const THINKING_ENTRY_LIMIT = 80;
+const THINKING_ENTRY_DETAIL_LIMIT = 600;
+const STREAM_TEXT_LIMIT = 4_000;
+const ACTION_OUTPUT_LINE_LIMIT = 50;
+const ACTION_OUTPUT_LINE_LENGTH_LIMIT = 240;
+const TIMELINE_EVENT_LIMIT = 120;
+const TIMELINE_DETAIL_LIMIT = 600;
+
 export interface TaskThinkingEntry {
   id: string;
   label: string;
@@ -133,7 +141,7 @@ const createThinkingEntry = (
   return {
     id: createThinkingEntryId(timestamp, index),
     label,
-    detail,
+    detail: detail.slice(0, THINKING_ENTRY_DETAIL_LIMIT),
     tone,
     timestamp,
   };
@@ -187,12 +195,6 @@ const createThinkingEntriesFromProgress = (
 
   return entries;
 };
-
-const STREAM_TEXT_LIMIT = 4_000;
-const ACTION_OUTPUT_LINE_LIMIT = 80;
-const ACTION_OUTPUT_LINE_LENGTH_LIMIT = 240;
-const TIMELINE_EVENT_LIMIT = 240;
-const TIMELINE_DETAIL_LIMIT = 900;
 
 const limitStreamText = (value: string): string => {
   if (value.length <= STREAM_TEXT_LIMIT) {
@@ -641,6 +643,11 @@ export const appendThinkingProgress = (
     entries.push(nextEntry);
   }
 
+  const limitedEntries = entries.slice(-THINKING_ENTRY_LIMIT);
+  const entriesChanged =
+    limitedEntries.length !== trace.entries.length ||
+    limitedEntries.some((entry, index) => entry !== trace.entries[index]);
+
   const nextAssistantText =
     progress.assistantText !== undefined
       ? limitStreamText(progress.assistantText)
@@ -662,7 +669,7 @@ export const appendThinkingProgress = (
   const completedAt =
     nextStatus === "complete" ? trace.completedAt ?? timestamp : trace.completedAt;
 
-  if (entries.length === trace.entries.length && nextStatus === trace.status) {
+  if (!entriesChanged && nextStatus === trace.status) {
     if (
       nextAssistantText === trace.assistantText &&
       nextModelStream === trace.modelStream &&
@@ -699,7 +706,7 @@ export const appendThinkingProgress = (
     startedAt,
     ...(task ? { task } : {}),
     ...(completedAt !== undefined ? { completedAt } : {}),
-    entries,
+    entries: limitedEntries,
     ...(nextAssistantText ? { assistantText: nextAssistantText } : {}),
     ...(nextModelStream ? { modelStream: nextModelStream } : {}),
     ...(nextActionOutputLines.length > 0

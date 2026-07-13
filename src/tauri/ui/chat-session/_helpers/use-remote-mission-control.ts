@@ -93,10 +93,10 @@ export interface RemoteMissionControlController {
   onForgetPairings: () => Promise<void>;
 }
 
-const STATUS_REFRESH_MS = 2_500;
-const SCHEDULER_REFRESH_MS = 10_000;
+const STATUS_REFRESH_MS = 15_000;
+const SCHEDULER_REFRESH_MS = 60_000;
 const SNAPSHOT_PUBLISH_DELAY_MS = 250;
-const PENDING_COMMAND_POLL_MS = 1_000;
+const PENDING_COMMAND_POLL_MS = 15_000;
 
 class NonRetryableRemoteCommandError extends Error {}
 
@@ -838,7 +838,46 @@ export const useRemoteMissionControl = (options: {
         attachmentCount: options.quickTaskAttachmentCount,
       },
     };
-  }, [options, schedulerState]);
+  }, [
+    options.activeDesktopTasksRef,
+    options.activeReasoning,
+    options.activeRunMode,
+    options.activeSession,
+    options.canSendMessage,
+    options.chooserProviders,
+    options.composerWorkspaceLabel,
+    options.defaultMode,
+    options.defaultReasoning,
+    options.hasAnyProvider,
+    options.isGlobalMemoryActive,
+    options.isGlobalMemoryAvailable,
+    options.isUiControlAvailable,
+    options.matchedContextPackIds,
+    options.quickTaskAttachmentCount,
+    options.quickTaskAutopilotEnabled,
+    options.quickTaskDraft,
+    options.quickTaskGlobalMemoryEnabled,
+    options.quickTaskIsExecuting,
+    options.quickTaskModel,
+    options.quickTaskProvider,
+    options.quickTaskStatus,
+    options.quickTaskUiControlEnabled,
+    options.runtimeError,
+    options.runtimeLoading,
+    options.runtimeSnapshot,
+    options.sendDisabledReason,
+    options.shellState.sessions,
+    options.shellState.voice.autoSpeakResponses,
+    options.speakingMessageId,
+    options.speechInputEnabled,
+    options.speechInputStatus,
+    options.speechInputSupported,
+    options.uiControlDescription,
+    options.visibleMessages,
+    options.voiceSupported,
+    options.workspaceContextPacks,
+    schedulerState,
+  ]);
 
   const runRemoteSchedulerAction = useCallback(
     async (action: () => Promise<unknown>): Promise<void> => {
@@ -1387,7 +1426,9 @@ export const useRemoteMissionControl = (options: {
     }
 
     const refreshInterval = window.setInterval(() => {
-      void refreshStatus();
+      if (document.visibilityState === "visible") {
+        void refreshStatus();
+      }
     }, STATUS_REFRESH_MS);
 
     return () => {
@@ -1402,7 +1443,9 @@ export const useRemoteMissionControl = (options: {
 
     void refreshScheduler();
     const refreshInterval = window.setInterval(() => {
-      void refreshScheduler();
+      if (document.visibilityState === "visible") {
+        void refreshScheduler();
+      }
     }, SCHEDULER_REFRESH_MS);
 
     return () => {
@@ -1674,9 +1717,11 @@ export const useRemoteMissionControl = (options: {
       console.error("Failed to load pending remote-control commands", error);
     });
     const pendingPoll = window.setInterval(() => {
-      void loadPendingCommands().catch((error) => {
-        console.error("Failed to refresh pending remote-control commands", error);
-      });
+      if (document.visibilityState === "visible") {
+        void loadPendingCommands().catch((error) => {
+          console.error("Failed to refresh pending remote-control commands", error);
+        });
+      }
     }, PENDING_COMMAND_POLL_MS);
 
     return () => {

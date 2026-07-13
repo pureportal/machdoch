@@ -78,6 +78,8 @@ const MESSAGE_CONTEXT_MENU_WIDTH = 196;
 const MESSAGE_CONTEXT_MENU_HEADER_HEIGHT = 44;
 const MESSAGE_CONTEXT_MENU_ITEM_HEIGHT = 32;
 const MESSAGE_CONTEXT_MENU_MARGIN = 8;
+const INITIAL_RENDERED_MESSAGE_LIMIT = 80;
+const RENDERED_MESSAGE_PAGE_SIZE = 80;
 
 interface MessageContextMenuState {
   role: ChatSessionMessage["role"];
@@ -283,7 +285,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
     message.role === "user" && Boolean(onSaveMessageAsContextPack);
 
   return (
-    <div className="contents">
+    <div className="app-message-container grid w-full gap-6 [contain-intrinsic-size:auto_180px] [content-visibility:auto]">
       {isAiContextStart ? (
         <div
           role="separator"
@@ -510,6 +512,9 @@ export const ConversationFeed = ({
   const [expandedOriginalPromptIds, setExpandedOriginalPromptIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
+  const [renderedMessageLimit, setRenderedMessageLimit] = useState(
+    INITIAL_RENDERED_MESSAGE_LIMIT,
+  );
 
   const toggleOriginalPrompt = useCallback((messageId: string): void => {
     setExpandedOriginalPromptIds((current) => {
@@ -671,10 +676,32 @@ export const ConversationFeed = ({
   const promptEnhancementPreviewPanelId = promptEnhancementPreview
     ? `original-prompt-${promptEnhancementPreview.id}`
     : "";
+  const renderedMessages = visibleMessages.slice(-renderedMessageLimit);
+  const hiddenMessageCount = visibleMessages.length - renderedMessages.length;
 
   return (
     <div className="app-conversation-feed mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-6 pb-2 px-4 pt-8 lg:px-6">
-      {visibleMessages.map((message) => (
+      {hiddenMessageCount > 0 ? (
+        <div className="flex justify-center">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setRenderedMessageLimit((current) =>
+                Math.min(
+                  visibleMessages.length,
+                  current + RENDERED_MESSAGE_PAGE_SIZE,
+                ),
+              );
+            }}
+          >
+            <History className="h-4 w-4" />
+            Load earlier messages ({hiddenMessageCount})
+          </Button>
+        </div>
+      ) : null}
+      {renderedMessages.map((message) => (
         <ConversationMessageRow
           key={message.id}
           message={message}

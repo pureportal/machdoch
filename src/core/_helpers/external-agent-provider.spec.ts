@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -190,6 +190,7 @@ const createParams = (
     >
   > & {
     instructionAudience?: InstructionTargetAudience;
+    onActionOutput?: ModelDrivenExecutionParams["onActionOutput"];
     task?: string;
   } = {},
 ): ModelDrivenExecutionParams & {
@@ -210,6 +211,9 @@ const createParams = (
     applicableInstructions: [],
   },
   contextSections,
+  ...(overrides.onActionOutput
+    ? { onActionOutput: overrides.onActionOutput }
+    : {}),
   preparedConversationContext,
 });
 
@@ -245,9 +249,11 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const call = spawnCalls[0];
 
     expect(call?.executable).toBe(process.execPath);
-    expect(call?.args.slice(0, 8)).toEqual([
+    expect(call?.args.slice(0, 10)).toEqual([
       "exec",
       "--dangerously-bypass-approvals-and-sandbox",
+      "--ephemeral",
+      "--ignore-user-config",
       "--skip-git-repo-check",
       "--ignore-rules",
       "--cd",
@@ -257,6 +263,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     ]);
     expect(call?.args).not.toContain("--ask-for-approval");
     expect(call?.args).not.toContain("--sandbox");
+    expect(call?.args).toContain("--ephemeral");
+    expect(call?.args).toContain("--ignore-user-config");
+    expect(call?.args).toContain("skills.bundled.enabled=false");
     expect(call?.args).toContain("--skip-git-repo-check");
     expect(call?.args).toContain("--ignore-rules");
     expect(call?.args).not.toContain("--dangerously-bypass-hook-trust");
@@ -272,6 +281,68 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.status).toBe("executed");
     expect(result?.executedTools).toEqual(["shell"]);
     expect(result?.response?.markdown).toBe("Codex delegated answer.");
+  });
+
+  it("bounds captured and streamed delegated output", async () => {
+    const workspaceRoot = await createWorkspace();
+    const streamedChunks: string[] = [];
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        onActionOutput: (event) => {
+          streamedChunks.push(event.chunk);
+        },
+      }),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+
+    call?.child.stdout.write("x".repeat(600_000));
+    call?.child.emit("close", 0, null);
+
+    const result = await resultPromise;
+    const markdown = result?.response?.markdown ?? "";
+
+    expect(markdown.length).toBeLessThan(513_000);
+    expect(markdown).toContain("[output truncated by machdoch]");
+    expect(
+      result?.outputSections
+        .find((section) => section.title === "Codex CLI answer")
+        ?.lines.join("\n").length,
+    ).toBeLessThan(13_000);
+    expect(streamedChunks.length).toBeGreaterThan(0);
+    expect(streamedChunks.every((chunk) => chunk.length <= 32_000)).toBe(true);
+  });
+
+  it("bounds delegated prompt input while retaining the completion contract", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        task: `Inspect this payload: ${"z".repeat(300_000)}`,
+      }),
+    );
+
+    await vi.waitFor(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+    await vi.waitFor(() => {
+      expect(call?.child.stdinText).toContain(
+        "Final response must summarize what changed",
+      );
+    });
+
+    expect(call?.child.stdinText.length).toBeLessThan(257_000);
+    expect(call?.child.stdinText).toContain("truncated after 64000 characters");
+
+    call?.child.stdout.write("Codex delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
   });
 
   it("passes GPT-5.6 Ultra through to Codex CLI", async () => {
@@ -567,7 +638,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
   });
 
-  it("passes explicitly configured Codex process auth variables", async () => {
+  it("passes explicit Codex auth through an isolated disposable Codex home", async () => {
     const workspaceRoot = await createWorkspace();
 
     process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
@@ -585,7 +656,8 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
     expect(childEnv?.CODEX_API_KEY).toBe("codex-explicit-key");
-    expect(childEnv?.CODEX_HOME).toBe(join(workspaceRoot, ".codex-home"));
+    expect(childEnv?.CODEX_HOME).toContain("machdoch-codex-home-");
+    expect(childEnv?.CODEX_HOME).not.toBe(join(workspaceRoot, ".codex-home"));
     expect(childEnv?.OPENAI_API_KEY).toBeUndefined();
     expect(childEnv?.GOOGLE_API_KEY).toBeUndefined();
 
@@ -593,6 +665,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     call?.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+    await expect(access(childEnv?.CODEX_HOME ?? "")).rejects.toBeDefined();
   });
 
   it("does not pass workspace environment values into delegated CLI processes", async () => {

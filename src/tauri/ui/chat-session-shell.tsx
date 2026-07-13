@@ -1,4 +1,12 @@
-import { Suspense, lazy, useEffect, useRef, useState, type JSX } from "react";
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
 import {
   AppRail,
   type AppActivityState,
@@ -132,7 +140,6 @@ export const ChatSession = (): JSX.Element => {
   const [chatCompletedSinceView, setChatCompletedSinceView] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
-  const [ralphMounted, setRalphMounted] = useState(false);
   const previousChatRunningRef = useRef(false);
   const appShellInteractionRevisionRef = useRef(0);
   const appShellSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -172,7 +179,7 @@ export const ChatSession = (): JSX.Element => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [appShellLoadAttempt]);
 
   useEffect(() => {
     if (!appShellLoaded) {
@@ -215,12 +222,6 @@ export const ChatSession = (): JSX.Element => {
   };
 
   useEffect(() => {
-    if (activeApp === "ralph") {
-      setRalphMounted(true);
-    }
-  }, [activeApp]);
-
-  useEffect(() => {
     if (activeApp === "chat") {
       setChatCompletedSinceView(false);
     }
@@ -258,27 +259,22 @@ export const ChatSession = (): JSX.Element => {
     };
   }, []);
 
+  const schedulerWorkspaceSignature = controller.sidebar.sessionProjectFacets
+    .flatMap((project) => project.path ? [project.path] : [])
+    .sort((left, right) => left.localeCompare(right))
+    .join("\u0000");
+  const schedulerWorkspaceRoots = useMemo(
+    () => schedulerWorkspaceSignature.split("\u0000").filter(Boolean),
+    [schedulerWorkspaceSignature],
+  );
+
   useEffect(() => {
     if (isTestEnvironment()) {
       return;
     }
-
-    void ensurePersistentSchedulerService(null).catch((error) => {
-      console.error("Persistent Smart Scheduler service failed to start", error);
-    });
-  }, [appShellLoadAttempt]);
-
-  useEffect(() => {
-    if (isTestEnvironment()) {
-      return;
-    }
-
-    const workspaceRoots = controller.sidebar.sessionProjectFacets.flatMap(
-      (project) => project.path ? [project.path] : [],
-    );
 
     void Promise.all(
-      workspaceRoots.map((workspaceRoot) =>
+      schedulerWorkspaceRoots.map((workspaceRoot) =>
         listSchedulerJobs(workspaceRoot).catch((error) => {
           console.error(
             `Failed to register Smart Scheduler workspace ${workspaceRoot}`,
@@ -286,8 +282,14 @@ export const ChatSession = (): JSX.Element => {
           );
         }),
       ),
-    );
-  }, [controller.sidebar.sessionProjectFacets]);
+    ).then((results) => {
+      if (results.some((result) => result?.jobs.length)) {
+        void ensurePersistentSchedulerService(null).catch((error) => {
+          console.error("Persistent Smart Scheduler service failed to start", error);
+        });
+      }
+    });
+  }, [schedulerWorkspaceRoots]);
 
   useEffect(() => {
     if (isTestEnvironment()) {
@@ -311,8 +313,14 @@ export const ChatSession = (): JSX.Element => {
       running = true;
 
       try {
-        await ensurePersistentSchedulerService(activeWorkspace);
         await syncScheduledPrompts(activeWorkspace);
+        const jobs = await listSchedulerJobs(activeWorkspace);
+
+        if (jobs.jobs.length === 0) {
+          return;
+        }
+
+        await ensurePersistentSchedulerService(activeWorkspace);
         await pollAllSchedulerWorkspaces(activeWorkspace);
       } catch (error) {
         console.error("Smart Scheduler tick failed", error);
@@ -448,13 +456,8 @@ export const ChatSession = (): JSX.Element => {
               onOpenSettings={controller.openProviderSettings}
             />
 
-            <div
-              hidden={activeApp !== "chat"}
-              className={cn(
-                "min-h-0 min-w-0 flex-1 overflow-hidden",
-                activeApp === "chat" ? "flex" : "hidden",
-              )}
-            >
+            {activeApp === "chat" ? (
+              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
                 <SessionsSidebar {...controller.sidebar} />
 
                 {controller.isDesktop && !controller.hasAnyProvider ? (
@@ -467,7 +470,10 @@ export const ChatSession = (): JSX.Element => {
 
                     <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
                       <ScrollArea className="h-full min-w-0" type="always">
-                        <ConversationFeed {...controller.conversation} />
+                        <ConversationFeed
+                          key={controller.composer.activeSession.id}
+                          {...controller.conversation}
+                        />
                       </ScrollArea>
                       <ScrollToNewestButton
                         visible={
@@ -488,24 +494,19 @@ export const ChatSession = (): JSX.Element => {
                     </footer>
                   </main>
                 )}
-            </div>
+              </div>
+            ) : null}
 
-            <div
-              hidden={activeApp !== "ralph"}
-              className={cn(
-                "min-h-0 min-w-0 flex-1 overflow-hidden",
-                activeApp === "ralph" ? "flex" : "hidden",
-              )}
-            >
-              {ralphMounted ? (
+            {activeApp === "ralph" ? (
+              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
                 <Suspense fallback={appLoadingFallback}>
                   <RalphApp
-                    isActive={activeApp === "ralph"}
+                    isActive
                     providerStatuses={controller.titlebar.providerStatuses}
                   />
                 </Suspense>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
 
             <div
               hidden={activeApp !== "marketplace"}
@@ -567,11 +568,13 @@ export const ChatSession = (): JSX.Element => {
         />
       </Dialog>
 
-      <Dialog open={schedulerOpen} onOpenChange={setSchedulerOpen}>
-        <SchedulerPanel
-          workspaceRoot={controller.composer.activeSession.workspace}
-        />
-      </Dialog>
+      {schedulerOpen ? (
+        <Dialog open onOpenChange={setSchedulerOpen}>
+          <SchedulerPanel
+            workspaceRoot={controller.composer.activeSession.workspace}
+          />
+        </Dialog>
+      ) : null}
 
       <AttachmentImagePreviewDialog
         preview={controller.attachmentImagePreview.preview}

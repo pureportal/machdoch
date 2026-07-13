@@ -11,18 +11,19 @@ use std::os::unix::fs::PermissionsExt;
 const EMBEDDED_CLI_BUNDLE: &str = include_str!(concat!(env!("OUT_DIR"), "/machdoch-cli.cjs"));
 const EMBEDDED_NODE_BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/machdoch-node.bin"));
 const BUILD_NODE_REQUIREMENT: &str = "Node.js >= 20.10";
+const RETAINED_PREVIOUS_RUNTIME_FILES_PER_FAMILY: usize = 1;
 
 pub(crate) struct SharedCliCommand {
     pub(crate) command: Command,
 }
 
 pub(crate) fn create_shared_cli_command(args: &[String]) -> Result<SharedCliCommand, String> {
-    if !cfg!(debug_assertions) {
-        if let Ok(command) = create_embedded_cli_command(args) {
-            return Ok(command);
-        }
+    if let Ok(command) = create_embedded_cli_command(args) {
+        return Ok(command);
     }
 
+    // Source execution remains a development fallback for builds that could not
+    // embed the CLI, but normal debug tasks avoid paying the tsx cold-start cost.
     if let Some(command) = create_source_cli_command(args) {
         return Ok(command);
     }
@@ -149,6 +150,7 @@ fn materialize_cached_runtime_file(
             make_executable(&runtime_path)?;
         }
 
+        cleanup_cached_runtime_files(&runtime_directory, &file_name);
         return Ok(runtime_path);
     }
 
@@ -192,7 +194,53 @@ fn materialize_cached_runtime_file(
         }
     }
 
+    cleanup_cached_runtime_files(&runtime_directory, &file_name);
     Ok(runtime_path)
+}
+
+fn cleanup_cached_runtime_files(runtime_directory: &Path, current_file_name: &str) {
+    let Some(family_prefix) = cached_runtime_file_family(current_file_name) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(runtime_directory) else {
+        return;
+    };
+    let mut previous_files = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let file_name = entry.file_name();
+            let file_name = file_name.to_str()?;
+
+            if file_name == current_file_name || !file_name.starts_with(family_prefix) {
+                return None;
+            }
+
+            let path = entry.path();
+            let modified = entry.metadata().ok()?.modified().ok()?;
+            Some((modified, path))
+        })
+        .collect::<Vec<_>>();
+
+    previous_files.sort_by(|left, right| right.0.cmp(&left.0));
+
+    for (_, stale_path) in previous_files
+        .into_iter()
+        .skip(RETAINED_PREVIOUS_RUNTIME_FILES_PER_FAMILY)
+    {
+        let _ = fs::remove_file(stale_path);
+    }
+}
+
+fn cached_runtime_file_family(file_name: &str) -> Option<&'static str> {
+    if file_name.starts_with("machdoch-node-") {
+        return Some("machdoch-node-");
+    }
+
+    if file_name.starts_with("machdoch-cli-") {
+        return Some("machdoch-cli-");
+    }
+
+    None
 }
 
 fn stable_content_hash(contents: &[u8]) -> u64 {
@@ -287,7 +335,7 @@ pub(crate) fn cli_runtime_error_hint() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::sanitize_node_options;
+    use super::{cached_runtime_file_family, sanitize_node_options};
 
     #[test]
     fn shared_cli_node_options_strip_debug_inspect_flags() {
@@ -296,5 +344,18 @@ mod tests {
             Some("--max-old-space-size=4096".to_string()),
         );
         assert_eq!(sanitize_node_options("--inspect-brk"), None);
+    }
+
+    #[test]
+    fn cached_runtime_files_are_grouped_without_matching_unrelated_files() {
+        assert_eq!(
+            cached_runtime_file_family("machdoch-node-0.30.5-hash.exe"),
+            Some("machdoch-node-")
+        );
+        assert_eq!(
+            cached_runtime_file_family("machdoch-cli-0.30.5-hash.cjs"),
+            Some("machdoch-cli-")
+        );
+        assert_eq!(cached_runtime_file_family("notes.txt"), None);
     }
 }

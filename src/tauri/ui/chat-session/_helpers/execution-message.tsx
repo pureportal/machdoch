@@ -93,7 +93,7 @@ export const getRenderedMessageContent = (
   }
 
   if (message.role === "agent" && message.source?.kind === "execution") {
-    return getExecutionMessageContent(message.source.execution);
+    return message.content.trim() || getExecutionMessageContent(message.source.execution);
   }
 
   if (message.role === "user") {

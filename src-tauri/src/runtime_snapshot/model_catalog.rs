@@ -109,7 +109,14 @@ pub(super) async fn fetch_provider_model_catalog(
                 }
             }
         }
-        "codex-cli" => match fetch_codex_cli_model_catalog(env) {
+        "codex-cli" => match tokio::task::spawn_blocking({
+            let env = env.clone();
+            move || fetch_codex_cli_model_catalog(&env)
+        })
+        .await
+        .map_err(|error| format!("Codex model probe worker failed: {error}"))
+        .and_then(|result| result)
+        {
             Ok(models) => {
                 return ProviderModelCatalogProvider {
                     provider: provider.to_string(),
@@ -123,11 +130,11 @@ pub(super) async fn fetch_provider_model_catalog(
                 return provider_model_catalog_unavailable(provider, &error);
             }
         },
-        "copilot-cli" => match fetch_copilot_cli_model_catalog(env) {
+        "copilot-cli" => match fetch_copilot_cli_model_catalog(env).await {
             Ok(models) => {
                 return ProviderModelCatalogProvider {
                     provider: provider.to_string(),
-                    source: "provider-probe".to_string(),
+                    source: "provider-sdk".to_string(),
                     available: true,
                     error: None,
                     models,
@@ -137,7 +144,14 @@ pub(super) async fn fetch_provider_model_catalog(
                 return provider_model_catalog_unavailable(provider, &error);
             }
         },
-        "claude-cli" => match fetch_claude_cli_model_catalog(env) {
+        "claude-cli" => match tokio::task::spawn_blocking({
+            let env = env.clone();
+            move || fetch_claude_cli_model_catalog(&env)
+        })
+        .await
+        .map_err(|error| format!("Claude model probe worker failed: {error}"))
+        .and_then(|result| result)
+        {
             Ok(models) => {
                 return ProviderModelCatalogProvider {
                     provider: provider.to_string(),

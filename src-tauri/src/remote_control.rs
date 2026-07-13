@@ -40,6 +40,7 @@ pub use status::RemoteControlStatus;
 const REMOTE_CONTROL_COMMAND_EVENT: &str = "remote-control-command";
 const MAX_SESSIONS: usize = 128;
 const MAX_LOG_ENTRIES: usize = 160;
+const MAX_PROGRESS_LOG_BYTES: usize = 4 * 1024 * 1024;
 const MAX_TIMELINE_ENTRIES: usize = 80;
 const MAX_COMMAND_ENTRIES: usize = 100;
 const MAX_PENDING_COMMAND_ENTRIES: usize = 256;
@@ -80,6 +81,7 @@ struct RemoteControlInner {
     config: RemoteControlConfigFile,
     server: Option<RemoteControlServerInfo>,
     sessions: HashMap<String, RemoteTaskSession>,
+    progress_log_bytes: usize,
     commands: VecDeque<RemoteCommandRecord>,
     pending_commands: VecDeque<RemoteControlCommandEvent>,
     completed_commands: VecDeque<CompletedRemoteCommandReceipt>,

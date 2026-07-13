@@ -324,6 +324,32 @@ interface McpWorkspaceEditorState {
   draftRevision: number;
 }
 
+const MCP_WORKSPACE_EDITOR_CACHE_LIMIT = 8;
+
+const rememberMcpWorkspaceEditor = (
+  editors: Map<string, McpWorkspaceEditorState>,
+  workspaceKey: string,
+  state: McpWorkspaceEditorState,
+): void => {
+  if (state.draft === state.document.raw) {
+    editors.delete(workspaceKey);
+    return;
+  }
+
+  editors.delete(workspaceKey);
+  editors.set(workspaceKey, state);
+
+  while (editors.size > MCP_WORKSPACE_EDITOR_CACHE_LIMIT) {
+    const oldestWorkspaceKey = editors.keys().next().value;
+
+    if (typeof oldestWorkspaceKey !== "string") {
+      break;
+    }
+
+    editors.delete(oldestWorkspaceKey);
+  }
+};
+
 const getFirstMcpServerIdFromRawConfig = (raw: string): string | null => {
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -520,7 +546,7 @@ export const useChatSessionRuntime = (
     }
 
     if (previousWorkspaceKey) {
-      mcpWorkspaceEditorsRef.current.set(previousWorkspaceKey, {
+      rememberMcpWorkspaceEditor(mcpWorkspaceEditorsRef.current, previousWorkspaceKey, {
         document: mcpConfigDocumentsRef.current.workspace,
         draft: mcpConfigDraftsRef.current.workspace,
         draftRevision: mcpConfigDraftRevisionRef.current.workspace,
@@ -536,6 +562,11 @@ export const useChatSessionRuntime = (
     const cached = activeWorkspaceKey
       ? mcpWorkspaceEditorsRef.current.get(activeWorkspaceKey)
       : undefined;
+
+    if (activeWorkspaceKey && cached) {
+      mcpWorkspaceEditorsRef.current.delete(activeWorkspaceKey);
+      mcpWorkspaceEditorsRef.current.set(activeWorkspaceKey, cached);
+    }
     const document =
       cached?.document ??
       createFallbackMcpConfigDocument(
@@ -2148,7 +2179,7 @@ export const useChatSessionRuntime = (
       setMcpConfigDrafts((prev) => ({ ...prev, [scope]: nextDraft }));
 
       if (scope === "workspace" && workspaceKey) {
-        mcpWorkspaceEditorsRef.current.set(workspaceKey, {
+        rememberMcpWorkspaceEditor(mcpWorkspaceEditorsRef.current, workspaceKey, {
           document,
           draft: nextDraft,
           draftRevision: mcpConfigDraftRevisionRef.current.workspace,

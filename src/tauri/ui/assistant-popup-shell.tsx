@@ -38,7 +38,10 @@ import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest
 import { Button } from "./components/ui/button";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { cn } from "./lib/utils";
-import { QUICK_CHAT_DROP_EVENT } from "./runtime";
+import {
+  ASSISTANT_SURFACE_READY_EVENT,
+  QUICK_CHAT_DROP_EVENT,
+} from "./runtime";
 
 const QUICK_TASK_HISTORY_LIMIT = 6;
 const QUICK_WINDOW_BLUR_HIDE_DELAY_MS = 100;
@@ -177,12 +180,12 @@ const QuickTaskComposer = ({
   const quickTaskComposer = controller.quickTaskComposer;
   const quickVoiceEnabled =
     controller.settingsDialog.desktopSetup.settings.quickVoiceEnabled;
-  const sendQuickTask = useCallback((): void => {
+  const sendQuickTask = useCallback((draft: string): void => {
     if (!quickTaskComposer.canSend) {
       return;
     }
 
-    quickTaskComposer.onSend();
+    quickTaskComposer.onSend(draft);
     inputRef.current?.focus();
   }, [quickTaskComposer]);
 
@@ -193,6 +196,7 @@ const QuickTaskComposer = ({
   return (
     <AgentComposer
       variant="quick"
+      draftIdentity="quick-task"
       textareaRef={inputRef}
       draft={quickTaskComposer.draft}
       textareaLabel="Quick chat composer"
@@ -275,11 +279,22 @@ export const AssistantPopupShell = (): JSX.Element => {
   const [quickChatPinned, setQuickChatPinned] = useState(false);
   const quickChatPinnedRef = useRef(false);
   const controller = useChatSessionController({
+    enableBackgroundMaintenance: false,
+    enableTaskProgress: false,
+    includeHistoryContent: false,
     fileDropTarget: "quick-task",
     forwardedDropEventName: QUICK_CHAT_DROP_EVENT,
     persistActiveSession: false,
     trackSessionReads: false,
   });
+
+  useEffect(() => {
+    if (isTauri()) {
+      void getCurrentWindow().emit(ASSISTANT_SURFACE_READY_EVENT, {
+        label: getCurrentWindow().label,
+      });
+    }
+  }, []);
 
   useEffect(() => {
     quickChatPinnedRef.current = quickChatPinned;
@@ -323,7 +338,13 @@ export const AssistantPopupShell = (): JSX.Element => {
             return;
           }
 
-          void currentWindow.hide().catch(() => undefined);
+          void controller.flushPersistence()
+            .catch((error) => {
+              console.error("Failed to flush Quick Chat state", error);
+            })
+            .finally(() => {
+              void currentWindow.close().catch(() => undefined);
+            });
         }, QUICK_WINDOW_BLUR_HIDE_DELAY_MS);
       })
       .then((unlisten) => {
@@ -343,7 +364,7 @@ export const AssistantPopupShell = (): JSX.Element => {
       clearPendingHide();
       unsubscribe?.();
     };
-  }, []);
+  }, [controller.flushPersistence]);
 
   return (
     <>
@@ -405,9 +426,13 @@ export const AssistantPopupShell = (): JSX.Element => {
               size="icon"
               aria-label="Hide quick chat"
               onClick={() => {
-                void getCurrentWindow()
-                  .hide()
-                  .catch(() => undefined);
+                void controller.flushPersistence()
+                  .catch((error) => {
+                    console.error("Failed to flush Quick Chat state", error);
+                  })
+                  .finally(() => {
+                    void getCurrentWindow().close().catch(() => undefined);
+                  });
               }}
               className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
             >

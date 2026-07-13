@@ -40,7 +40,6 @@ const createProgress = (
 
 describe("useDesktopTaskProgress", () => {
   let progressListener: ((event: DesktopTaskProgressEvent) => void) | null = null;
-  let restoreAnimationFrame: (() => void) | null = null;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -49,26 +48,14 @@ describe("useDesktopTaskProgress", () => {
       progressListener = listener;
       return () => undefined;
     });
-
-    const originalRequestAnimationFrame = window.requestAnimationFrame;
-    const originalCancelAnimationFrame = window.cancelAnimationFrame;
-
-    window.requestAnimationFrame = (callback): number =>
-      window.setTimeout(() => callback(Date.now()), 16);
-    window.cancelAnimationFrame = (id): void => window.clearTimeout(id);
-    restoreAnimationFrame = () => {
-      window.requestAnimationFrame = originalRequestAnimationFrame;
-      window.cancelAnimationFrame = originalCancelAnimationFrame;
-    };
   });
 
   afterEach(() => {
-    restoreAnimationFrame?.();
     mockedSubscribeToDesktopTaskProgress.mockReset();
     vi.useRealTimers();
   });
 
-  it("batches cancellable progress until the next animation frame", async () => {
+  it("batches cancellable progress to a ten-hertz render cadence", async () => {
     let trace = createInitialThinkingTrace("machdoch", 0);
     const updateThinkingTrace = vi.fn((_sessionId, _taskId, updater) => {
       trace = updater(trace);
@@ -103,7 +90,13 @@ describe("useDesktopTaskProgress", () => {
     expect(updateThinkingTrace).not.toHaveBeenCalled();
 
     act(() => {
-      vi.advanceTimersByTime(16);
+      vi.advanceTimersByTime(99);
+    });
+
+    expect(updateThinkingTrace).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
     });
 
     expect(updateThinkingTrace).toHaveBeenCalledTimes(1);
