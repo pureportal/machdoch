@@ -19,7 +19,7 @@ use crate::runtime_snapshot;
 use super::{
     MonitorBoundsInput, QuickVoiceStartPayload, ASSISTANT_BUBBLE_WINDOW_LABEL,
     ASSISTANT_POPUP_WINDOW_LABEL, MAIN_WINDOW_LABEL, QUICK_VOICE_START_EVENT,
-    QUICK_VOICE_WINDOW_LABEL,
+    QUICK_VOICE_WINDOW_LABEL, TRAY_MENU_WINDOW_LABEL,
 };
 
 const FULLSCREEN_TOLERANCE_PX: i32 = 12;
@@ -102,6 +102,32 @@ pub(crate) fn ensure_assistant_window<R: Runtime>(
             .map_err(|error| error.to_string()),
         _ => Err(format!("Unsupported assistant window label `{label}`.")),
     }
+}
+
+pub(super) fn ensure_tray_menu_window<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<WebviewWindow<R>, String> {
+    if let Some(window) = app.get_webview_window(TRAY_MENU_WINDOW_LABEL) {
+        return Ok(window);
+    }
+
+    WebviewWindowBuilder::new(
+        app,
+        TRAY_MENU_WINDOW_LABEL,
+        WebviewUrl::App("index.html".into()),
+    )
+    .title("machdoch")
+    .inner_size(324.0, 252.0)
+    .min_inner_size(324.0, 252.0)
+    .visible(false)
+    .resizable(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .build()
+    .map_err(|error| error.to_string())
 }
 
 #[cfg(not(target_os = "windows"))]

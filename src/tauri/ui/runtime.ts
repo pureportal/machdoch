@@ -115,6 +115,7 @@ export const MAIN_WINDOW_LABEL = "main";
 export const ASSISTANT_BUBBLE_WINDOW_LABEL = "assistant-bubble";
 export const ASSISTANT_POPUP_WINDOW_LABEL = "assistant-popup";
 export const QUICK_VOICE_WINDOW_LABEL = "quick-voice";
+export const TRAY_MENU_WINDOW_LABEL = "tray-menu";
 export const DESKTOP_SETTINGS_CHANGED_EVENT =
   "machdoch://desktop-settings-changed";
 export const USER_SETTINGS_CHANGED_EVENT = "machdoch://user-settings-changed";
