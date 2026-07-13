@@ -1,7 +1,7 @@
 # Media Studio And Media Flow System Specification
 
-Status: Draft
-Date: 2026-06-16
+Status: Implementation plan
+Date: 2026-07-13
 Scope: A first-class machdoch app for local-first media generation, editing, automation, asset lineage, and flow-based media workflows. This is separate from normal chat and Ralph.
 
 ## Source Baseline
@@ -108,6 +108,36 @@ Primary product and runtime references:
 - Diffusers GGUF quantization: https://github.com/huggingface/diffusers/blob/main/docs/source/en/quantization/gguf.md
 - Diffusers xDiT optimization: https://huggingface.co/docs/diffusers/en/optimization/xdit
 - Diffusers ParaAttention optimization: https://github.com/huggingface/diffusers/blob/main/docs/source/en/optimization/para_attn.md
+- Diffusers Apple Metal/MPS guidance: https://huggingface.co/docs/diffusers/optimization/mps
+- PyTorch MPS backend: https://docs.pytorch.org/docs/stable/notes/mps
+- Apple MLX framework: https://github.com/ml-explore/mlx
+- Hugging Face secure model downloads: https://huggingface.co/docs/huggingface_hub/guides/download
+- Hugging Face pickle security guidance: https://huggingface.co/docs/hub/security-pickle
+- PyTorch serialization safety: https://docs.pytorch.org/docs/stable/notes/serialization.html
+- Replicate prediction lifecycle: https://replicate.com/docs/topics/predictions/lifecycle/
+- Replicate webhook delivery: https://replicate.com/docs/topics/webhooks/receive-webhook
+- Replicate output retention: https://replicate.com/docs/topics/predictions/data-retention/
+- C2PA Rust SDK: https://github.com/contentauth/c2pa-rs
+- Runway API usage and task lifecycle: https://docs.dev.runwayml.com/guides/using-the-api/
+- Runway SDK task polling guidance: https://docs.dev.runwayml.com/api-details/sdks/
+- Runway output URL retention: https://docs.dev.runwayml.com/assets/outputs/
+- Black Forest Labs FLUX.2 image editing API: https://docs.bfl.ai/flux_2/flux2_image_editing
+- fal queue API: https://fal.ai/docs/documentation/model-apis/inference/queue
+- fal webhook behavior: https://fal.ai/docs/documentation/model-apis/inference/webhooks
+- fal media expiration and request retention: https://fal.ai/docs/documentation/model-apis/media-expiration
+- fal CDN visibility and upload behavior: https://fal.ai/docs/documentation/model-apis/fal-cdn
+- JSON Canonicalization Scheme, RFC 8785: https://datatracker.ietf.org/doc/html/rfc8785
+- OpenTimelineIO overview: https://opentimelineio.readthedocs.io/en/latest/index.html
+- OpenTimelineIO source and format scope: https://github.com/AcademySoftwareFoundation/OpenTimelineIO
+- OpenColorIO configuration concepts: https://opencolorio.readthedocs.io/en/latest/guides/authoring/overview.html
+- OpenColorIO configuration authoring: https://opencolorio.readthedocs.io/en/latest/guides/authoring/authoring.html
+- FFmpeg machine-readable progress protocol: https://www.ffmpeg.org/ffmpeg.html
+- FFmpeg `loudnorm`/EBU R128 filter: https://ffmpeg.org/ffmpeg-filters.html#loudnorm
+- Windows Job Objects: https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects
+- Linux Landlock userspace API: https://docs.kernel.org/userspace-api/landlock.html
+- Apple App Sandbox: https://developer.apple.com/documentation/security/app-sandbox
+- Wasmtime security model: https://docs.wasmtime.dev/security.html
+- Wasmtime precompiled-module safety warning: https://docs.wasmtime.dev/examples-pre-compiling-wasm.html
 
 Primary NPM implementation references:
 
@@ -165,6 +195,11 @@ Primary research references:
 - Cache-DiT docs: https://cache-dit.readthedocs.io/en/latest/
 - Video motion transfer with DiTs project: https://ditflow.github.io/
 - Awesome multi-image generation references: https://github.com/AIDC-AI/Awesome-Multi-Image-Generation
+- VBench video generation benchmark: https://github.com/Vchitect/VBench
+- VBench paper: https://arxiv.org/abs/2311.17982
+- DOVER video quality assessment: https://github.com/VQAssessment/DOVER
+- DreamSim perceptual similarity: https://arxiv.org/abs/2306.09344
+- ImageReward human preference model: https://github.com/zai-org/ImageReward
 
 Important research conclusions:
 
@@ -184,11 +219,18 @@ Important research conclusions:
 - Multi-image and subject-consistent generation should be treated as a first-class workflow family, not just an image-list input. Reference roles, identity locks, negative reference constraints, and consistency evaluation must be typed.
 - Motion transfer and efficient local editing papers show that motion, identity, region masks, attention-derived motion fields, and protected regions should be inspectable graph values.
 - API aggregators are useful for model breadth, but provider abstraction must avoid locking the product to any single aggregator.
-- AMD support is now realistic but cannot be treated exactly like NVIDIA. Use ROCm/PyTorch where supported and ONNX Runtime DirectML as a Windows fallback path.
+- AMD support is realistic on a documented subset of hardware, but cannot be treated exactly like NVIDIA. Use ROCm/PyTorch only where the official OS/GPU matrix supports the exact device, and use ONNX Runtime DirectML or Windows ML only for models that have validated compatible graphs.
 - Windows ML is becoming a vendor execution-provider surface for NVIDIA, AMD, Intel, and CPU inference. Treat it as a capability path for ONNX/optimized models, not as a substitute for PyTorch model runners.
 - NVIDIA support should start with CUDA/PyTorch and expose TensorRT/TensorRT for RTX as an optimized path where models and hardware support it.
 - Provenance is becoming part of the generation stack. C2PA Content Credentials and SynthID-style watermark checks should be first-class output/export concerns, while the UI must avoid claiming that provenance metadata alone proves authenticity.
 - Video utility models are becoming important graph primitives. Video Depth Anything-style depth maps can support stable camera moves, relighting, video-to-video controls, and consistency checks across long clips.
+- Async provider APIs have materially different durability contracts. Current official documentation ranges from BFL signed result URLs that may last only ten minutes, through Runway's documented 24-48 hour output window, to Replicate's one-hour API prediction retention. A generic `poll()` wrapper is insufficient; every adapter needs explicit acceptance, reconciliation, retention, visibility, cancellation, retry, and download semantics.
+- Provider lineage can constrain later operations. Luma currently represents first/last frames as `frame0`/`frame1`, while extend, reverse, and interpolate operations require provider-generated video. The capability model therefore needs source-lineage predicates, not only input MIME types.
+- Aggregator transport is part of privacy behavior. fal currently documents public CDN media URLs, configurable media/request expiration, webhook retry behavior, and queue cancellation that may race with completion. Preflight must disclose public-link and retention behavior and the scheduler must treat cancellation as a request until reconciled.
+- Editorial time must use rational frame/sample time, not floating-point seconds. OpenTimelineIO is a useful interchange boundary for cuts, clips, tracks, markers, and external media references, but it is not a media container or machdoch's render engine.
+- Color management must be explicit and reproducible. Preserve embedded ICC/container/bitstream metadata first; later OCIO support should pin the configuration digest, source/destination roles or spaces, display/view, and transform intent for every pixel-changing conversion.
+- Quality is multi-dimensional. Technical validity, reference similarity, temporal stability, prompt preference, safety, and human acceptance cannot be collapsed into one provider-independent truth score. Benchmarks such as VBench, DOVER, DreamSim, and ImageReward are useful evaluator families only when their model version, sampling policy, calibration domain, and limitations are stored.
+- Extension safety needs execution tiers. Declarative recipes require no code; small deterministic third-party utilities can eventually target a capability-limited Wasm/WASI host; GPU model runners and provider adapters remain trusted, release-signed packs. OS process controls improve containment but do not turn arbitrary Python/model repositories into safe plugins.
 
 Design lessons from current tools:
 
@@ -202,6 +244,26 @@ Design lessons from current tools:
 - Google and OpenAI provenance moves show that generated assets need local lineage plus exportable standard metadata. These should be separate because platform metadata may be stripped while local run records remain durable.
 - Current endpoint deprecations show that provider adapters need automated freshness checks, test fixtures per active endpoint, and a visible "will stop working on date X" warning before users build flows around unstable models.
 - Official provider docs increasingly expose model-specific parameter shapes rather than one universal video API. The adapter layer must normalize provider-specific knobs into typed capability fields while preserving advanced provider options in explicit override objects.
+
+## Executive Recommendation
+
+Build Media Studio as a fourth lazy-loaded machdoch app backed by one media runtime, not as media blocks embedded directly in Ralph and not as a collection of provider-specific screens. The runtime should have four deliberately separate representations:
+
+1. A versioned semantic flow containing user intent and typed media ports.
+2. A separate layout document containing XYFlow positions and presentation state.
+3. An immutable compiled execution plan containing concrete models, adapters, hidden preparation steps, resource reservations, privacy decisions, and provider request shapes.
+4. Durable run, event, job, asset, and lineage records that survive desktop restart.
+
+The first production slice should be image-first: import or prompt, local FLUX.2 klein and OpenAI GPT Image 2 routing, image-to-image/multi-reference edit, crop/resize/format conversion, background removal, quality analysis, compare/select, and export. This vertical slice exercises the hard architecture without making local video installation a prerequisite. Local Wan video and Google video adapters should follow only after durable jobs, model installation, VRAM scheduling, remote reconciliation, and asset lineage have proved reliable.
+
+The product should expose complexity in four layers:
+
+- Task recipes in Simple Mode for the common outcome, such as "create an image", "remove a background", or "animate between two frames".
+- Semantic task nodes in Flow Mode for users who want composition without model plumbing.
+- Advanced operation and orchestration nodes for masks, controls, loops, gates, routing, and batching.
+- Runtime primitives generated only in the compiled plan for tokenization, model loading, VAE encode/decode, offload, preview decode, upload, polling, and artifact ingestion.
+
+This is the key usability boundary. A user chooses a goal, references, quality, speed, privacy, and budget. The compiler chooses compatible pre-processing and execution primitives. Nothing with cost, upload, model download, lossy conversion, or behavior-changing fallback may be hidden: these decisions appear in the preflight and compiled-plan inspector even when Simple Mode generated them.
 
 ## Product Positioning
 
@@ -304,33 +366,54 @@ flowchart TD
   Timeline --> UI
 ```
 
-Core modules to add:
+Repository-aligned modules to add:
 
-- `src/core/media/types.ts`: shared flow, node, port, asset, run, provider, model, and hardware types.
-- `src/core/media/schema.ts`: validators and normalization for media JSON artifacts.
-- `src/core/media/asset-store.ts`: content addressed media storage, metadata, thumbnails, lineage, and garbage collection.
-- `src/core/media/flow-store.ts`: flow, revision, template, and preset storage.
-- `src/core/media/compiler.ts`: typed graph validation and execution plan generation.
-- `src/core/media/capabilities.ts`: provider and model capability matching.
-- `src/core/media/job-queue.ts`: durable queued runs with cancellation and resume metadata.
-- `src/core/media/scheduler.ts`: GPU, CPU, cloud, cost, and concurrency scheduling.
-- `src/core/media/provider-registry.ts`: local and remote provider adapter registration.
-- `src/core/media/provider-lifecycle.ts`: provider model freshness, deprecation dates, endpoint migrations, and active capability checks.
-- `src/core/media/providers/*`: OpenAI, Google, BFL, fal, Replicate, Luma, Runway, local Diffusers, local native model adapters.
-- `src/core/media/hardware.ts`: device discovery, runtime probes, driver/runtime versions, VRAM estimates.
-- `src/core/media/model-catalog.ts`: local/remote model catalog, install plans, checksums, licenses, and compatibility.
-- `src/core/media/provenance.ts`: local lineage, C2PA manifest handling, watermark detection hooks, export metadata policy, and verification reports.
-- `src/core/media/training.ts`: dataset curation, LoRA/adapter training jobs, evaluation runs, and trained adapter packaging.
-- `src/core/media/edit-intents.ts`: structured edit commands for conversational media editing, retakes, scene changes, region edits, motion edits, and storyboard revisions.
-- `src/core/media/optimization.ts`: runtime optimization policies, quantization metadata, cache/tiling/offload settings, engine build plans, and quality validation.
-- `src/core/media/storyboard.ts`: scripts, beats, scenes, shots, continuity rules, retakes, audio cues, and timeline assembly contracts.
-- `src/core/media/export.ts`: export profiles, format conversion, metadata stripping, and package generation.
-- `src/tauri/media_commands.rs`: Tauri commands for queue, assets, models, previews, file picking, and hardware probes.
-- `src/ui/media/*`: Media Studio UI, flow builder, asset library, model manager, canvas, timeline, and run inspector.
-- `src-python/media_worker/*`: Python worker package for PyTorch/Diffusers/native model execution.
-- `src/shared/media-runtime.schema.json`: generated shared contract for UI, Tauri, CLI, and worker IPC.
+- `src/shared/media-runtime.schema.json`: canonical strict contract for flow, node, port, asset reference, run, provider, model, hardware, and IPC records.
+- `src/core/media/contracts.generated.ts`: generated browser-safe TypeScript constants and types, following the repository's existing runtime-contract pattern.
+- `src/core/media/schemas.ts`: Ajv validators, normalization, and migration dispatch for media documents.
+- `src/core/media/compiler.ts`: semantic graph validation, subflow expansion, capability constraints, cardinality analysis, and execution-plan generation.
+- `src/core/media/node-registry.ts`: versioned built-in node definitions and schema-derived UI hints.
+- `src/core/media/capabilities.ts`: provider/model capability matching with explainable rejection reasons.
+- `src/core/media/edit-intents.ts`, `storyboard.ts`, and `optimization.ts`: provider-neutral contracts for structured edits, shots, and runtime policies.
+- `src/tauri/ui/media/*`: lazy-loaded Media Studio shell, Simple Mode, Flow Mode, Library, Runs, Models, inspector, canvas, and timeline UI. This is the actual UI root in the current repository; do not create a parallel `src/ui` tree.
+- `src/tauri/ui/media/lib/*`: wrappers around XYFlow and any accepted canvas/timeline packages so UI library state never becomes the saved flow format.
+- `src-tauri/src/media/mod.rs`: Tauri media command registration and managed `MediaRuntimeState`.
+- `src-tauri/src/media/storage.rs`: SQLite metadata/index/queue transactions plus content-addressed file operations.
+- `src-tauri/src/media/scheduler.rs`: CPU, GPU, encoder, download, and remote-provider resource reservations.
+- `src-tauri/src/media/workers.rs`: authenticated worker lifecycle, health, cancellation, and event ingestion.
+- `src-tauri/src/media/providers/*`: remote HTTP adapters, credential resolution, polling/reconciliation, output download, and redaction. The privileged backend revalidates every compiled plan before performing network or file operations.
+- `src-tauri/src/media/models.rs`: signed catalog verification, model install plans, license acknowledgement, pinned downloads, checksums, quarantine, and atomic promotion.
+- `src-tauri/src/media/provenance.rs`: local lineage and an internal C2PA adapter boundary. Keep the pre-1.0 `c2pa-rs` API behind this module.
+- `media-worker/pyproject.toml` and `media-worker/src/machdoch_media_worker/*`: isolated Python package for PyTorch, Diffusers, native model runners, and CPU tools that are materially better in Python.
+- `src-tauri/src/media_contract_generated.rs` and `media-worker/src/machdoch_media_worker/contracts_generated.py`: generated Rust and Python contract types/constants where practical.
+- `scripts/generate-media-contract.mjs`: contract generation/check command following the existing JSON-Schema-first runtime-contract pattern.
 
 The Python worker should be an internal managed worker, not an app-facing web server. Communicate through stdio JSON-RPC, named pipes, or a localhost port bound to loopback with a random per-session token. The parent app owns lifecycle, health checks, and shutdown.
+
+### Current Repository Integration Points
+
+The current app shell recognizes only `chat`, `ralph`, and `marketplace`. Add `media` to `MainAppId` and migrate the versioned shell state in `src/tauri/ui/lib/_helpers/shell-store-normalizers.helper.ts`. Add a Media Studio item and activity badge in `src/tauri/ui/app-shell/app-rail.tsx`, then lazy-load the media shell from `src/tauri/ui/chat-session-shell.tsx` using the same isolation pattern as Ralph and Marketplace. A broken or slow media bundle must not delay Chat startup.
+
+Do not extend `src/tauri/ui/ralph/ralph-flow-editor.tsx` into a second domain. It is already a large control-flow editor and Ralph edges represent execution outcomes, while media edges carry typed values. Extract only small presentation primitives that are genuinely reusable, such as node chrome, selection styling, minimap conventions, keyboard helpers, and viewport persistence. Media graph state, validation, undo history, ports, and execution remain independent.
+
+Register `MediaRuntimeState` beside the existing desktop task state in `src-tauri/src/lib.rs`, but do not reuse `DesktopTaskLimiter` as the media scheduler. Agent commands and media inference have different resource semantics. Media needs reservations for VRAM, system RAM, CPU threads, encoders, downloads, and remote concurrency, plus a single-writer durable queue. The existing attachment-grant, path-validation, cancellation, atomic-write, and cooperative-lock patterns in `src-tauri/src/desktop_task.rs` are useful precedents and should be factored or mirrored without broadening existing permissions.
+
+The first Tauri IPC surface should be narrow and typed:
+
+```text
+media_get_status
+media_list_flows / media_get_flow / media_save_flow_revision
+media_compile_flow
+media_enqueue_run / media_cancel_run / media_retry_run
+media_list_runs / media_get_run / media_subscribe_run_events
+media_list_assets / media_get_asset / media_import_assets / media_export_asset
+media_get_preview
+media_list_models / media_plan_model_install / media_install_model / media_remove_model
+media_probe_hardware
+media_list_providers / media_refresh_provider_capabilities
+```
+
+Commands return ids, metadata, and preview URLs or granted paths, never large base64 payloads. Every mutation includes a schema version and an idempotency key. The backend checks workspace scope, grants, current catalog state, and policy even when the frontend has already validated them.
 
 ## Storage Model
 
@@ -340,10 +423,12 @@ Workspace storage:
 
 ```text
 .machdoch/media/
-  assets/
+  index.sqlite
+  blobs/
     sha256/<prefix>/<sha256>/original
-    sha256/<prefix>/<sha256>/metadata.json
-    sha256/<prefix>/<sha256>/thumb.webp
+  renditions/
+    <asset-id>/thumb.webp
+    <asset-id>/preview.webp
   flows/
     <flow-id>.json
   flow-revisions/
@@ -392,7 +477,18 @@ User/global storage:
 
 Workspace flows should reference assets by content hash and relative asset ids, not absolute paths. User model paths may be absolute but must be normalized and validated before worker execution.
 
-Asset bytes are content addressed. Metadata may be revised without duplicating bytes. If the same image appears in multiple runs, it should have one binary object and multiple lineage records.
+Use a hybrid store, not JSON-only indexing:
+
+- SQLite is the source of truth for mutable/queryable metadata: logical assets, blob references, tags, collections, lineage edges, flow heads, runs, node executions, jobs, provider jobs, resource leases, model installs, and migrations.
+- Content-addressed filesystem blobs are the source of truth for media bytes. Store a blob by SHA-256 only after streaming it into a temporary file, checking size and MIME, computing the digest, and atomically promoting it.
+- Immutable flow revisions, compiled plans, run summaries, and JSONL event/audit exports remain human-inspectable files. They are recovery/export artifacts, not a second mutable queue database.
+- SQLite uses WAL mode, foreign keys, short transactions, and one backend writer task. Queue claims, state transitions, lease renewals, retries, and asset publication are transactional.
+- On startup, run versioned migrations, mark expired worker leases for reconciliation, resume remote polling where safe, and move locally interrupted non-checkpointable jobs to a typed `interrupted` state.
+- Backup and repair tooling can rebuild thumbnails and search indexes from SQLite plus blobs, but must never invent missing lineage or pretend a partial file is complete.
+
+Suggested tables are `blobs`, `assets`, `asset_inputs`, `asset_renditions`, `tags`, `asset_tags`, `collections`, `collection_assets`, `flows`, `flow_revisions`, `runs`, `node_executions`, `jobs`, `job_dependencies`, `provider_jobs`, `run_events`, `resource_leases`, `models`, `model_installs`, and `schema_migrations`. Add indexes for workspace, kind, created time, run, flow, provider/model, status, blob hash, and normalized tag.
+
+Asset bytes are content addressed, while assets are logical records. The same bytes can therefore back several assets with different origins or policy metadata without conflating their lineage. Metadata edits create a new revision or update permitted catalog fields; they never rewrite the blob.
 
 ## Asset Model
 
@@ -403,6 +499,7 @@ type MediaAssetKind =
   | "text"
   | "prompt"
   | "image"
+  | "svg"
   | "mask"
   | "alpha-matte"
   | "segmentation"
@@ -420,6 +517,7 @@ type MediaAssetKind =
   | "mesh"
   | "material-set"
   | "camera-path"
+  | "timeline"
   | "keyframe-set"
   | "edit-region"
   | "edit-intent"
@@ -436,8 +534,8 @@ type MediaAssetKind =
 interface MediaAsset {
   id: string;
   kind: MediaAssetKind;
-  uri: string;
-  sha256?: string;
+  blobId?: string;
+  externalSource?: MediaExternalSource;
   mimeType?: string;
   displayName?: string;
   createdAt: string;
@@ -448,6 +546,8 @@ interface MediaAsset {
   privacy: MediaAssetPrivacy;
 }
 ```
+
+`blobId` refers to an immutable `MediaBlob { sha256, byteLength, detectedMimeType, storageKey }`. `externalSource` is allowed only for imported references that have not yet been ingested and must include the normalized path grant and last-observed file identity. A runnable node that needs stable bytes forces ingestion first. Preview and export URLs are short-lived derived views, not persisted asset identity.
 
 Common metadata:
 
@@ -490,6 +590,51 @@ Privacy:
 - `retentionPolicy`
 - `providerRetentionAcknowledged`
 
+### Media Time, Color, And Audio Metadata
+
+Do not use binary floating-point seconds as the authoritative representation for frames, cuts, keyframes, captions, or audio samples. Use an exact tick/rate pair across TypeScript, Rust, Python, SQLite, worker messages, and saved flows:
+
+```ts
+interface MediaRate {
+  numerator: string;
+  denominator: string;
+}
+
+interface MediaTime {
+  ticks: string;
+  rate: MediaRate;
+}
+
+interface MediaTimeRange {
+  start: MediaTime;
+  duration: MediaTime;
+}
+```
+
+`ticks`, `numerator`, and `denominator` are base-10 integer strings so long timelines and rates such as 30000/1001 round-trip without JavaScript safe-integer or JSON-number loss. Seconds are derived as `ticks * denominator / numerator`. The denominator and rate numerator must be positive and reduced during normalization. Frame and sample math uses checked rational arithmetic; display decimals are never written back as source values.
+
+Time rules:
+
+- An encoded asset records probed duration, stream time bases, start time, decoded frame count where known, average and real frame rates, and whether it is constant or variable frame rate.
+- A frame sequence has an explicit rate and per-frame identity. Variable-frame-rate sources retain decoded presentation timestamps in a sidecar metadata blob; conforming to constant frame rate is an explicit `VIDEO_CONFORM` operation that records duplication/drop/interpolation decisions.
+- Timeline clips reference immutable asset ids plus source and timeline `MediaTimeRange` values. Timecode, including drop-frame notation, is display/interchange metadata derived from exact time and never the arithmetic source of truth.
+- Audio timing uses integer sample positions at the source sample rate. Resampling, channel-layout changes, delay compensation, and loudness normalization are explicit transformations.
+- Provider duration/fps fields compile from exact time into the provider's accepted units, and the ingested output is probed again. The run report records requested versus actual frames, rate, duration, and audio timing.
+
+Every decoded image/video asset also carries an explicit color descriptor when it can be established:
+
+- pixel format, bit depth, alpha presence, and straight versus premultiplied alpha.
+- range, RGB primaries, transfer characteristic, matrix coefficients, chroma location, and mastering/HDR metadata where applicable.
+- embedded ICC profile blob digest for still images and container/bitstream color tags for video.
+- `declared`, `inferred`, `conflicting`, or `unknown` confidence plus the probe/tool version that made the observation.
+- pixel aspect ratio, clean aperture/crop, rotation/orientation, and display dimensions separately from stored dimensions.
+
+Phase 2 operates in an explicit sRGB-oriented image baseline while preserving original profiles and metadata. It must not label unknown data as sRGB merely because the UI displayed it that way. Phase 5 adds video color-tag validation and explicit conform/export profiles. Phase 6 may add OpenColorIO transforms; an OCIO operation stores the config as a pinned blob/digest, config version, source/destination spaces or roles, context values, display/view/look when relevant, implementation version, and output metadata. Viewer display transforms never mutate source pixels.
+
+Audio metadata includes codec/sample format, sample rate, exact sample count, channel count/layout, language and delay, plus optional measured integrated loudness, loudness range, and true peak. `AUDIO_LOUDNESS_NORMALIZE` uses an explicit target profile and two-pass file analysis when deterministic file normalization is required; it never applies an unexplained gain during export.
+
+machdoch owns a small semantic timeline model for shots, clips, gaps, transitions, markers, tracks, asset references, and reversible accepted/rejected retakes. OpenTimelineIO is an import/export adapter because it represents editorial ordering/timing and externally referenced media, not embedded media or final rendering. OTIO round-trips must report unsupported effects/metadata and never silently flatten them into a rendered clip.
+
 ## Flow Graph Model
 
 A media flow is a typed directed graph.
@@ -506,6 +651,12 @@ interface MediaFlow {
   variables: MediaFlowVariable[];
   nodes: MediaNode[];
   edges: MediaEdge[];
+}
+
+interface MediaFlowLayoutDocument {
+  schemaVersion: 1;
+  flowId: string;
+  flowRevisionId: string;
   layout: MediaFlowLayout;
 }
 ```
@@ -528,6 +679,31 @@ Flow revision requirements:
 - Migrations must be explicit code transforms with before/after schema tests. The app must never mutate a user's saved flow without creating a new revision.
 - Provider endpoint ids are not stored as generic strings. They are `modelRef` records with provider id, model id, lifecycle state, observed capabilities, and checked-at timestamp.
 - A flow can pin exact model versions for reproducibility or use a policy such as `best-local-image-edit` or `fastest-remote-video`. Policy selection is resolved into concrete versions only in the compiled execution plan.
+
+### Canonicalization, Identity, And Schema Evolution
+
+Reproducible caching and restart reconciliation require one canonical byte representation. The contract layer implements an RFC 8785-compatible JSON Canonicalization Scheme profile after schema validation and machdoch normalization:
+
+1. Parse strict I-JSON and reject duplicate object keys, lone Unicode surrogates, non-finite numbers, and values that cannot round-trip across TypeScript, Rust, and Python.
+2. Apply schema defaults and normalize enums, Unicode, rational values, relative asset references, and provider/model references. Potentially large integers, seeds, frame/sample indices, and digests are strings rather than JSON numbers.
+3. Sort graph collections that are semantically sets: nodes by stable node id, edges by `(fromNodeId, fromPortId, toNodeId, toPortId, edgeId)`, variables by id, and permission/capability sets lexically. Preserve arrays whose order affects behavior, including reference priority, layer order, prompts, keyframes, timeline tracks, batches, and provider fallback order.
+4. Canonicalize object keys/numbers with the JCS profile, encode UTF-8, and hash with SHA-256.
+
+Store three different identities instead of overloading one hash:
+
+- `documentDigest`: the complete normalized semantic flow document, excluding only its own digest. It changes for meaningful saved metadata such as name or description; layout has its own document/digest.
+- `executionDigest`: the compiler's execution-affecting projection, excluding timestamps, display labels, descriptions, layout, transient UI state, and comments.
+- `compiledPlanDigest`: the resolved immutable plan including compiler behavior version, pack/adapter digests, concrete models, capability/lifecycle snapshots, policies, runtime/optimization choices, and output contracts.
+
+Node cache keys are built from a canonical `NodeExecutionIdentity`, not by concatenating ad hoc strings. The identity includes the compiled node behavior version, ordered input port names, asset byte digests plus only declared output-affecting metadata, normalized settings, model/adapter/runtime digests, policy versions, random/seed mode, and every output-affecting environment field. User tags, stars, display names, and collection membership do not invalidate pixel work unless the node explicitly consumes them. Secrets, signed URLs, access tokens, local absolute paths, queue ids, timestamps, and progress settings never enter the key. Media bytes continue to use streaming SHA-256 over their raw bytes; JCS applies only to structured metadata.
+
+Schema evolution rules:
+
+- Every top-level document, node payload, event, RPC message, pack manifest, and capability snapshot has an independently versioned schema. Compatibility ranges do not replace exact versions stored in a run.
+- Core schemas use `additionalProperties: false`. Extension data is allowed only below namespaced `extensions.<publisher>.<contract>` objects with declared size limits; it cannot affect execution unless a trusted pack schema and compiler explicitly consume it.
+- A newer or missing node/pack version opens as an immutable unknown-node tombstone that preserves the original JSON and edges for inspection/export. It cannot execute, validate as a known node, or be silently discarded.
+- A migration reads one immutable revision and produces a new revision plus a machine-readable report. Migration fixtures assert semantic and compiled-plan differences; downgrade is export-only unless an explicit reverse migration exists.
+- Canonicalization conformance vectors are shared across TypeScript, Rust, and Python CI, including Unicode, `-0`, decimal/exponent forms, rational rates, reordered graph collections, ordered references, and unsafe integer boundaries.
 
 Subflows and macros:
 
@@ -575,7 +751,8 @@ Port constraints:
 - image dimensions: exact, min, max, aspect ratio, multiple-of, square only.
 - mask dimensions must match a target image unless a resize/align node is explicit.
 - video frame rate, duration, codec, frame count, and resolution.
-- audio sample rate, channels, duration.
+- video time base, constant/variable frame-rate policy, color space/range, and alpha mode.
+- audio sample rate, exact sample range, channel layout, loudness target, and sync tolerance.
 - mesh format and texture requirements.
 - prompt max length, allowed variables, language, banned unresolved placeholders.
 - model family, runtime family, provider capability.
@@ -596,8 +773,11 @@ Primitive values:
 | `json` | Structured payload |
 | `seed` | Reproducibility seed, including random and fixed modes |
 | `resolution` | Width, height, aspect ratio, multiple constraints |
-| `duration` | Seconds or frames |
-| `fps` | Frames per second |
+| `rationalTime` | Exact tick/rate media position |
+| `timeRange` | Exact start and duration pair |
+| `duration` | Duration expressed as exact media time plus a display unit |
+| `fps` | Rational frame rate, never an unqualified float |
+| `colorTransform` | Pinned source/destination color transform contract |
 | `scheduler` | Sampler/scheduler id |
 | `providerRef` | Provider selection |
 | `modelRef` | Model selection |
@@ -609,6 +789,8 @@ Primitive values:
 | `contentPolicy` | Safety/provider/workspace policy reference |
 | `optimizationPolicy` | Local runtime acceleration and memory policy |
 | `qualityThreshold` | Metric threshold for validation, ranking, or acceptance |
+| `assetRef` | Stable logical media asset reference |
+| `tagSet` | Normalized user, taxonomy, or analyzer tags with confidence/source metadata |
 
 Media values:
 
@@ -616,6 +798,7 @@ Media values:
 | --- | --- |
 | `image` | RGB/RGBA still image |
 | `imageList` | Ordered image batch |
+| `svg` | Sanitized SVG document retained as source data until explicit rasterization |
 | `mask` | Single-channel mask aligned to an image |
 | `maskList` | Ordered mask batch |
 | `alphaMatte` | Matte with soft edges and foreground confidence |
@@ -635,6 +818,7 @@ Media values:
 | `mesh` | 3D mesh, Gaussian, radiance field, or converted asset |
 | `materialSet` | PBR textures and material metadata |
 | `cameraPath` | Camera motion path for video or 3D |
+| `timeline` | Editorial tracks, clips, ranges, transitions, markers, and external asset references |
 | `layerStack` | Ordered canvas layers with blend modes and masks |
 | `editRegion` | Spatial or temporal region, mask, and tracking hints |
 | `editIntent` | Structured creative edit instruction with target, scope, constraints, and acceptance checks |
@@ -730,6 +914,34 @@ Every node declares:
 - provenance behavior
 - preview behavior
 
+### Node Layers And Progressive Disclosure
+
+A full-feature system does not require every user to manipulate sampler, text encoder, VAE, latent, or tensor nodes. Classify every node definition into one of four layers:
+
+| Layer | Visible by default | Examples | Contract |
+| --- | --- | --- | --- |
+| Recipe | Simple Mode | Create image, product cutout, animate first/last frame, make variants | Versioned parameterized flow template |
+| Task | Flow Mode default | Generate image, edit with references, remove background, generate video, analyze quality | Semantic capability request independent of provider plumbing |
+| Operation/orchestration | Advanced node browser | Crop, composite SVG, extract mask, map, iterate, rank, quality gate, provider route | Explicit typed transformation or bounded control behavior |
+| Runtime primitive | Compiled-plan inspector only | Tokenize, encode/decode latent, load VAE, quantize/offload, upload, poll, download, create preview | Adapter-generated execution step, never a saved-flow dependency |
+
+Node definitions are schema-driven, following the useful part of InvokeAI's invocation model: stable type id, semantic version, strongly typed inputs/outputs, constraints, defaults, conditional field visibility, examples, cost/privacy effects, and migration functions. The same definition renders the inspector, validates a flow, feeds node search, documents the node, and supplies compiler metadata. Avoid hand-building a separate form for each provider.
+
+Task nodes expose `Basic`, `Creative`, and `Expert` inspector groups. Basic contains intent, input assets, aspect/duration, and output count. Creative contains seed policy, negative prompt, reference roles, edit strength, and quality/speed preference. Expert contains an explicit model pin, scheduler/steps when meaningful, optimization profile, and a namespaced provider override. Changing model or provider hides unsupported fields and explains the capability difference; it never silently drops a value.
+
+Compound nodes and subflows solve recurring setup:
+
+- `GENERATE_IMAGE` can compile to prompt normalization, reference preprocessing, model/runtime selection, text encoding, generation, safety metadata capture, preview creation, and asset ingestion.
+- `GENERATE_START_END_VIDEO` validates matching aspect/color constraints, generates or adapts intermediate conditioning, chooses a provider with genuine first/last-frame capability, polls the job, verifies duration/frames, and ingests the result.
+- `REMOVE_BACKGROUND` chooses a local segmentation/matting implementation, produces both cutout and alpha matte, and optionally runs edge-fringe quality analysis.
+- `SVG_TO_IMAGE` parses and sanitizes SVG in a restricted renderer, exposes background and target dimensions, and outputs a raster asset without ever executing embedded scripts or external references.
+
+The node card shows intent, essential inputs, provider/model badge, estimated resources, cache state, and latest result. Expanded internals are available through `Explain plan`, not by flooding the main canvas. Users can promote a compound node into an editable subflow; the new revision pins the expansion contract and exposes only supported override points.
+
+Connection assistance may suggest or insert a safe explicit conversion, such as image-to-mask extraction or frame selection, but must show the inserted node before saving. It may not auto-upload, spend money, download a model, change dimensions lossily, flatten alpha, or choose a fallback provider without preflight disclosure.
+
+Node packs are built-in and signed first. A pack manifest declares id, publisher, version, compatible flow/compiler versions, node schemas, migrations, runtime requirements, permissions, and content digest. Third-party packs remain disabled until the worker sandbox and signing/update/revocation model are implemented. Importing ComfyUI workflow JSON can be a later conversion tool; arbitrary Comfy custom nodes or Python repositories are not an execution surface.
+
 ### Source Nodes
 
 | Node | Inputs | Outputs | Purpose |
@@ -737,6 +949,7 @@ Every node declares:
 | `TEXT_PROMPT` | text, optional style vars | prompt | Prompt source with variables |
 | `NEGATIVE_PROMPT` | text | negativePrompt | Negative prompt source |
 | `IMAGE_INPUT` | file picker, asset id, clipboard | image | User image source |
+| `SVG_INPUT` | file picker, asset id | svg | Sanitized vector source |
 | `IMAGE_FOLDER_INPUT` | folder, filters | imageList | Batch image source |
 | `VIDEO_INPUT` | file picker, asset id | video | User video source |
 | `AUDIO_INPUT` | file picker, asset id | audio | User audio source |
@@ -753,6 +966,7 @@ Every node declares:
 | `KEYFRAME_INPUT` | images, timing, labels | keyframeSet | Start/end/intermediate keyframes |
 | `EDIT_REGION_INPUT` | masks, boxes, tracks, frame ranges | editRegion/list | Spatial and temporal edit regions |
 | `TRAINING_DATASET_INPUT` | folder/assets, captions, license notes | trainingDataset | Dataset for LoRA/adapter training |
+| `TIMELINE_IMPORT` | OTIO/EDL file, asset relink policy | timeline, runReport | Import editorial structure without embedding or rendering media |
 
 ### Prompt And Planning Nodes
 
@@ -814,12 +1028,16 @@ Every node declares:
 | `UPSCALE` | image/video, scale/model | image/video | Super-resolution |
 | `RESTORE_IMAGE` | image, model/settings | image | Denoise/deblur/restore |
 | `COLOR_MATCH` | source image, reference image | image | Match colors |
+| `COLOR_SPACE_CONVERT` | image, colorTransform | image, runReport | Apply a pinned ICC/OCIO transform and record output color metadata |
 | `STYLE_AND_LAYOUT_MATCH` | source image, reference image, strength | image, runReport | Match composition/style constraints |
 | `BACKGROUND_REPLACE` | foreground, alpha/mask, background prompt/image | image | Replace background |
 | `RELIGHT` | image, mask/depth, lighting prompt | image | Change lighting while preserving subject |
 | `COMPOSE_LAYERS` | layerStack | image | Render canvas layers |
 | `ALPHA_COMPOSITE` | foreground, alpha/mask, background | image | Product/composite output |
 | `CROP_RESIZE_PAD` | image/video, target resolution | image/video | Format conversion |
+| `SVG_TO_IMAGE` | svg, target resolution, background policy | image, runReport | Sanitize and rasterize SVG without scripts or external resources |
+| `AUTO_TAG` | image/video, taxonomy/analyzer | tagSet, runReport | Suggest content/technical tags with source and confidence |
+| `TAG_ASSET` | assetRef, tagSet, merge policy | assetRef, runReport | Create a metadata revision with normalized tags; never rewrite media bytes |
 | `SPRITE_SHEET` | imageList/frameSequence | image | Sprite sheet output |
 | `TILE_SEAMLESS` | image | image | Tileable texture correction |
 
@@ -850,6 +1068,7 @@ Every node declares:
 | `SHOT_ASSEMBLE` | storyboard, shot videos, transitions, audio | video | Timeline assembly |
 | `CAMERA_MOTION` | image/depth/camera path | video | Parallax or camera movement |
 | `VIDEO_RETIME` | video, speed curve, interpolation policy | video | Speed ramp or retime |
+| `VIDEO_CONFORM` | video, target rational rate/time range, frame policy | video/frameSequence, runReport | Explicitly conform VFR/rate/duration with a drop/duplicate/interpolation report |
 | `LOOPABLE_VIDEO` | video, transition policy | video, runReport | Create seamless loop |
 | `VIDEO_STABILIZE` | video, crop policy | video, runReport | Stabilize camera motion |
 | `VIDEO_SCENE_CUT_DETECT` | video | storyboard, frameSequence, runReport | Detect cuts and scene boundaries |
@@ -880,6 +1099,8 @@ Every node declares:
 | `SOUNDTRACK_GENERATE` | storyboard/video, music prompt | audio, runReport | Generate music bed |
 | `AUDIO_STEM_SPLIT` | audio | audio/list, runReport | Separate dialogue/music/effects when supported |
 | `AUDIO_TRIM_MIX` | audio/list, timing | audio | Mix audio |
+| `AUDIO_LOUDNESS_ANALYZE` | audio/video, measurement profile | runReport | Measure integrated loudness, range, and true peak without changing samples |
+| `AUDIO_LOUDNESS_NORMALIZE` | audio/video, target profile | audio/video, runReport | Explicit two-pass file loudness normalization and true-peak limiting |
 | `AUDIO_TO_VIDEO_SYNC` | video, audio, markers | video | Sync generated audio |
 | `TRANSCRIPT_ALIGN` | transcript, audio/video | transcript, runReport | Align text to timecodes |
 
@@ -924,12 +1145,16 @@ Every node declares:
 | Node | Inputs | Outputs | Purpose |
 | --- | --- | --- | --- |
 | `IMAGE_QUALITY_SCORE` | image/list | runReport, ranked imageList | Rank images |
+| `IMAGE_TECHNICAL_ANALYZE` | image/list, metric profile | runReport | Deterministic decode, dimensions, alpha, clipping, blur, noise, and compression checks |
+| `REFERENCE_SIMILARITY_SCORE` | asset/list, references, metric profile | runReport | Versioned perceptual, identity, or product similarity metrics |
 | `PROMPT_ALIGNMENT_SCORE` | image/video, prompt | runReport | Check prompt alignment |
 | `OCR_CHECK` | image/video frame, expected text | runReport, pass/fail | Validate rendered text |
 | `IDENTITY_CONSISTENCY_CHECK` | image/list, characterProfile | runReport, pass/fail | Character consistency |
 | `PRODUCT_CONSISTENCY_CHECK` | image/list, productProfile | runReport, pass/fail | Product consistency |
 | `KEYFRAME_MATCH_CHECK` | video/frameSequence, keyframeSet | runReport, pass/fail | Validate start/end/intermediate keyframes |
 | `VIDEO_CONTINUITY_CHECK` | video/frameSequence | runReport | Detect flicker, scene breaks |
+| `VIDEO_TECHNICAL_ANALYZE` | video, metric/sampling profile | runReport | Decode, timing, color, frame, audio, black/freeze, clipping, and transport checks |
+| `VIDEO_PERCEPTUAL_EVALUATE` | video/list, references, evaluator profile | runReport | Versioned temporal, aesthetic, and motion evaluation without a universal score |
 | `DEPTH_CONSISTENCY_CHECK` | videoDepthMap, video | runReport | Detect unstable depth or geometry drift |
 | `TEMPORAL_IDENTITY_CHECK` | video, characterProfile/reference | runReport, pass/fail | Check identity consistency across frames |
 | `SAFETY_CHECK` | asset/list, policy | runReport, pass/fail | Safety policy gate |
@@ -946,6 +1171,7 @@ Every node declares:
 | `ASSET_OUTPUT` | any media asset | asset id | Save to asset library |
 | `CANVAS_OUTPUT` | image/layerStack | canvas state | Stage on canvas |
 | `TIMELINE_OUTPUT` | video/storyboard/audio | timeline state | Stage on timeline |
+| `TIMELINE_EXPORT_OTIO` | timeline, adapter/options | file/report | Export editorial references/timing and disclose unsupported semantics |
 | `EXPORT_FILE` | asset/list, export profile | file/report | Write export files |
 | `EXPORT_PACKAGE` | assets, manifest | folder/zip/report | Package outputs |
 | `EXPORT_WITH_CREDENTIALS` | asset/list, credential policy, export profile | file/report | Export with local lineage and optional content credentials |
@@ -1445,6 +1671,54 @@ Capability fields:
 - lifecycle state and deprecation/shutdown date.
 - data retention and remote upload requirements.
 - supported provenance, watermark, or credential outputs.
+- accepted input transport: inline bytes, multipart upload, provider CDN, user-hosted URL, or prior provider asset id.
+- output delivery: inline bytes, signed URL, public URL, provider asset id, stream, or callback reference.
+- input/output visibility, payload retention, result URL lifetime, deletion controls, and whether provider-side no-store is available.
+- minimum polling interval, `Retry-After` behavior, provider-side automatic retry, webhook delivery semantics, and callback authentication.
+- cancellation semantics: guaranteed-before-acceptance, best effort, asynchronous, unsupported, or completion-may-race.
+- lineage predicates such as "must have been generated by this provider/model" for extend, reverse, interpolate, or edit operations.
+
+### Provider Adapter Contract And Transaction Boundary
+
+Saved task nodes never construct provider HTTP payloads. A versioned adapter translates a compiled capability request into the exact endpoint contract:
+
+```ts
+interface RemoteProviderAdapter {
+  describe(): ProviderAdapterDescriptor;
+  validate(request: CompiledCapabilityRequest): AdapterValidation;
+  estimate(request: CompiledCapabilityRequest): Promise<AdapterEstimate>;
+  prepare(request: CompiledCapabilityRequest): Promise<PreparedProviderRequest>;
+  submit(request: PreparedProviderRequest): Promise<ProviderSubmission>;
+  reconcile(job: DurableProviderJob): Promise<ProviderObservation>;
+  requestCancel(job: DurableProviderJob): Promise<ProviderCancelObservation>;
+  download(job: DurableProviderJob, output: ProviderOutputReference): Promise<DownloadedOutput>;
+}
+```
+
+`PreparedProviderRequest` contains an adapter-owned endpoint/version, redacted request summary, full request digest, idempotency mode, expected charge range, upload manifest, and provider policy snapshot. Store the provider-specific body only when recovery requires it and then encrypt it at rest; otherwise keep it transient. It is never copied into a flow, UI event, Chat record, or normal diagnostic export.
+
+Normalized durable states are `prepared`, `submitting`, `acceptance-unknown`, `accepted`, `queued`, `running`, `succeeded-download-pending`, `downloading`, `cancel-requested`, `cancelled`, `failed`, `expired`, and `completed`. Provider raw state and response metadata remain alongside the normalized state for debugging.
+
+Submission transaction:
+
+1. Insert one `provider_jobs` row for `(runId, nodeExecutionId, attempt)` with a unique local submission nonce, request digest, intended endpoint, and `prepared` state before network I/O.
+2. Transition to `submitting` in a compare-and-set transaction, then send exactly once for that attempt. Pass a stable provider idempotency key only where its semantics are documented.
+3. Persist provider job/request ids, acceptance time, estimated charge, and raw state immediately after the provider response. A crash after remote acceptance but before this commit becomes `acceptance-unknown`; without a documented lookup/idempotency mechanism it must reconcile or ask the user, never automatically resubmit.
+4. A provider success becomes `succeeded-download-pending`, not `completed`. Download every output through bounded temporary storage, validate bytes, hash/ingest into CAS, create logical assets and lineage in a transaction, then mark the provider job and node complete.
+5. Cancellation moves to `cancel-requested` until a later provider observation proves cancellation or completion. A late success is ingested and reported as a late output; it is not discarded or mislabeled as cancelled.
+
+Polling is a scheduled queue job, not an in-memory timer. Persist `nextPollAt`, attempt count, last provider state, ETag/cursor where supported, and deadline. Honor provider `Retry-After`, documented minimum intervals, exponential backoff with jitter, and a maximum reconciliation horizon. A webhook/callback is an authenticated idempotent hint that wakes reconciliation; it never bypasses state-transition validation, and duplicated, delayed, or reordered callbacks are expected.
+
+Each adapter descriptor must declare rather than imply:
+
+- exact API/SDK/adapter version and endpoint or dated provider API version.
+- idempotency scope and the crash windows it can and cannot close.
+- request retry ownership: machdoch, provider gateway, both, or neither.
+- poll interval/backoff, callback authentication/retry, terminal states, and cancellation race behavior.
+- input upload visibility/retention/deletion and output URL visibility/expiry.
+- output-count/partial-success rules and whether a completed job can later lose downloadable bytes.
+- lineage restrictions and provider asset ids required by follow-up operations.
+- pricing unit, estimate confidence, quota/rate-limit headers, region, and policy snapshot freshness.
 
 ### Provider Lifecycle And Deprecation
 
@@ -1486,11 +1760,11 @@ Lifecycle requirements:
 
 | Provider/runtime | Strong fit | Important constraints |
 | --- | --- | --- |
-| OpenAI image APIs | high-quality image generation/editing, provenance signals | no generic local execution path; video capabilities must not be assumed from image support |
-| Google Gemini Image/Nano Banana | instruction image editing and fast iteration | Imagen ids are currently being deprecated in Google docs; use lifecycle checks before offering them |
+| OpenAI GPT Image 2 | text-to-image, image-to-image, multi-reference editing, iterative edits, optional partial-image streaming | GPT Image 2 does not output transparent backgrounds; mask edits are guidance rather than pixel-exact masks, and generated bytes must be decoded/ingested rather than retained as base64 |
+| Google Gemini image generation | instruction image editing, multiple references, and fast iteration | exact reference limits and supported sizes vary by model; deprecated Imagen models are scheduled to shut down on 2026-08-17 |
 | Google Veo | video generation, first/last-frame transition, audio where supported | long-running jobs, model-specific keyframe support, provider upload policy |
 | Google Gemini Omni/Flow | conversational multimodal video creation/editing, reference-to-video | product/API availability may differ from consumer Flow UI; adapter must expose only callable capabilities |
-| OpenAI Sora APIs | video generation where still configured | official docs indicate Sora API deprecation/shutdown, so it should be lifecycle-blocked or hidden by default when removed |
+| OpenAI Sora APIs | legacy saved-flow diagnostics only | do not build a new adapter: the official shutdown date for the API is 2026-09-24 |
 | BFL/FLUX APIs | FLUX image generation/editing | local FLUX.2 and remote BFL capabilities may differ |
 | fal/Replicate | broad model routing and fast access to new models | adapter must normalize async jobs, expiry, model-specific inputs, and cost visibility |
 | Runway/Luma | commercial video quality, image-to-video, extension/interpolation/video editing where exposed | provider-specific output constraints and nondeterministic reruns |
@@ -1507,11 +1781,11 @@ Lifecycle requirements:
 
 Remote provider adapters should support:
 
-- OpenAI image generation/editing through GPT Image models.
-- OpenAI video endpoints only while an active, supported endpoint exists; deprecated Sora endpoints are not defaults.
-- Google Gemini image generation/editing through Nano Banana models.
+- OpenAI image generation/editing through GPT Image 2, using the Image API for one-shot operations and the Responses API only when the flow explicitly needs multi-turn editing context. Store the concrete model snapshot when a pinned snapshot is available.
+- No new OpenAI Sora video execution adapter. Preserve only a tombstone adapter that opens legacy flows, explains the 2026-09-24 shutdown, and offers an explicit capability-based migration comparison.
+- Google Gemini image generation/editing through currently active image models discovered by the catalog. Do not create new flows pinned to Imagen models scheduled to shut down on 2026-08-17.
 - Google Veo video generation where configured, including first/last-frame capability when the selected model exposes it.
-- Google Gemini Omni/Flow-related capabilities only when exposed through a callable API or approved provider adapter.
+- Google Gemini Omni Flash video only behind a preview feature flag while the API/model remains preview. Its current short 3-10 second 720p text/image-to-video and conversational editing surface is a distinct capability profile, not a generic replacement for Veo.
 - Black Forest Labs FLUX APIs.
 - fal for broad production media models.
 - Replicate for model breadth and open model hosting.
@@ -1531,6 +1805,10 @@ Remote provider requirements:
 - Treat retry after provider acceptance as a cost-risking action unless the provider exposes idempotency keys.
 - Preserve provider-supplied provenance, watermark, safety, and usage metadata as report assets.
 - Refresh provider capabilities before running flows that were compiled from a stale catalog snapshot.
+- Treat provider-specific image alpha honestly. For example, a request for transparent output cannot compile directly to GPT Image 2; route it through a visible background-removal/matting step or select a provider with native alpha support.
+- Stream remote responses directly to bounded temporary files and ingest them into the blob store. Do not pass full-resolution base64 or video bytes through React state or Tauri event payloads.
+- Prefer polling as the desktop baseline for asynchronous providers. Webhooks are optional only when a configured bridge has a stable public callback. Webhook events are idempotent hints because providers may duplicate or reorder them.
+- For providers with short result retention, download successful outputs immediately and persist the retention deadline. Replicate API prediction outputs and logs are currently removed after one hour, so delayed manual import is not safe.
 
 Remote provider request mapping must be covered by adapter tests. Each adapter needs:
 
@@ -1540,15 +1818,29 @@ Remote provider request mapping must be covered by adapter tests. Each adapter n
 - redaction tests for API keys, signed URLs, uploaded filenames, and provider request bodies that contain private prompts.
 - golden capability snapshots from official docs or provider discovery APIs where available.
 
+Current adapter-specific contract notes, to be captured as dated capability fixtures rather than permanent assumptions:
+
+| Adapter | Current official behavior that affects the contract | Required machdoch handling |
+| --- | --- | --- |
+| BFL FLUX.2 | Editing returns a request id/polling URL; current FLUX.2 editing documentation exposes up to ten references and up to 4 MP for the documented endpoints; signed result URLs may last only ten minutes | Model-specific limits, immediate download, expired-result recovery, and no generic "FLUX supports ten references" claim |
+| Runway | Uses asynchronous tasks and a dated API version header; official SDK guidance recommends polling no faster than five seconds with jitter/backoff; output URLs are documented as ephemeral, generally 24-48 hours | Pin API version, persist poll schedule, ingest on success, and never expose provider output URLs directly to the UI |
+| Luma Ray | Uses `frame0`/`frame1` image references for first/last frames; extend/reverse/interpolate operations currently require a video generated by Luma; callbacks are retried but are not a durable local queue | Compile lineage predicates, retain provider generation id, use polling as baseline, and treat callbacks as hints |
+| fal | Queue states include in-queue/in-progress/completed; cancellation can be accepted while work still completes; current CDN URLs are publicly accessible; retention/no-store and provider-side retry behavior are configurable | Disclose public-link/retention policy, choose retry/no-store headers explicitly, distinguish request and gateway attempt ids, reconcile cancellation races, and ingest immediately |
+| Replicate | API prediction inputs, outputs, files, and logs currently expire after one hour by default; webhooks can be duplicated or reordered | Persist prediction id before waiting, poll/reconcile after restart, download immediately, and deduplicate webhook observations |
+
+For Phase 5, use Luma Ray as the provisional second commercial video adapter after Google Veo because its documented first/last-frame and provider-lineage constraints exercise the abstraction directly. This is a release candidate decision, not a permanent default: it must still pass region, terms/data-use, price, quota, deletion, cancellation, output-quality, and endpoint-stability review at implementation time. Runway is the next candidate when multi-reference/commercial video breadth is more important than first/last-frame contract coverage.
+
 ### Local Providers
 
 Local runtime families:
 
 - `local-diffusers`: Python, PyTorch, Diffusers pipelines.
 - `local-native-python`: model-specific Python runners for Wan, HunyuanVideo, LTX, FramePack, 3D, audio, or new models before Diffusers support lands.
-- `local-onnx-directml`: ONNX Runtime DirectML for broad Windows GPU support.
+- `local-onnx-directml`: ONNX Runtime DirectML for explicitly validated Windows inference graphs.
 - `local-windows-ml`: Windows ML execution providers for compatible ONNX/optimized models.
 - `local-tensorrt`: NVIDIA TensorRT/TensorRT for RTX optimized engines.
+- `local-pytorch-mps`: PyTorch/Diffusers MPS for catalog-validated Apple Silicon models.
+- `local-mlx`: later Apple Silicon-native model packs where MLX has a maintained, validated implementation.
 - `local-optimization`: runtime acceleration wrappers such as xDiT, TeaCache, ParaAttention, Cache-DiT-style caches, VAE tiling, and offload plans.
 - `local-cpu-utility`: CPU image/video utilities and lightweight models.
 
@@ -1557,7 +1849,7 @@ Local execution requirements:
 - Runtime workers must be versioned and health checked.
 - Each worker must declare exact installed packages, CUDA/ROCm/DirectML/TensorRT versions, and supported models.
 - Worker environment creation must be explicit and logged.
-- Model downloads require user confirmation, disk estimate, license display, and checksum verification.
+- Model downloads require user confirmation, disk estimate, license display, a pinned repository commit or immutable release, an exact file allowlist, and checksum verification.
 - The app must not assume all Diffusers pipelines support all models or all hardware.
 - Runtime-specific failures must be converted to typed errors.
 - Local workers must report whether they can load adapters, train adapters, execute video pipelines, export alpha, and run mixed precision.
@@ -1567,6 +1859,9 @@ Local execution requirements:
 - The app must keep a per-runtime cache of working model/device/precision combinations and invalidate it after driver, package, model, or adapter changes.
 - Optimization libraries must report supported model families, supported devices, expected quality drift, determinism impact, and whether a baseline validation run is required.
 - For video jobs, local workers must report separate memory estimates for text encoders, transformer/UNet, VAE encode/decode, temporal cache, frame buffers, preview generation, and final encode.
+- Prefer safetensors or another data-only format. Treat pickle-based checkpoints as untrusted executable input even when scanners report no finding; never enable `trust_remote_code` or execute repository setup/model scripts in the normal install flow.
+- Download into quarantine, reject symlinks/path traversal/unlisted files, verify expected sizes and digests, scan file headers, then atomically promote. A catalog update cannot replace the files behind an already accepted immutable model version.
+- Isolate incompatible model families in locked worker environments. VACE-style runners and fast-moving native video repositories often require conflicting package/runtime versions; do not mutate one global Python environment on demand.
 
 ## Hardware Support
 
@@ -1578,6 +1873,7 @@ Collect:
 - GPU vendor, device name, VRAM, driver version.
 - CUDA availability and version.
 - ROCm/HIP availability and version.
+- Apple Silicon model, unified memory, macOS version, and MPS availability.
 - DirectML availability on Windows.
 - TensorRT/TensorRT for RTX availability.
 - PyTorch device visibility.
@@ -1593,8 +1889,9 @@ Hardware discovery must be read-only.
 | NVIDIA RTX on Windows | PyTorch CUDA workers | TensorRT/TensorRT for RTX or Windows ML NvTensorRtRtx for compatible ONNX models | Prefer CUDA for model breadth, TensorRT for stable production dimensions |
 | NVIDIA RTX on Linux | PyTorch CUDA workers | TensorRT engines for supported models | Best path for most open image/video models |
 | AMD on Linux | PyTorch ROCm workers | MIGraphX/ONNX where compatible | Use official support matrix; do not assume every Radeon works |
-| AMD on Windows | AMD PyTorch where officially supported; ONNX Runtime DirectML/Windows ML where compatible | Windows ML/DirectML execution providers | Treat DirectML as inference-only unless a model path proves training support |
+| AMD on Windows | AMD PyTorch only on the exact officially supported Windows/GPU/driver matrix; otherwise validated ONNX Runtime DirectML/Windows ML models | Vendor execution provider where it supports the model | Do not advertise generic Radeon support; treat DirectML as inference-only unless a model path proves training support |
 | Intel/other Windows GPUs | ONNX Runtime DirectML/Windows ML | OpenVINO where integrated later | Useful for utility models and compatible ONNX inference |
+| Apple Silicon on macOS | PyTorch/Diffusers MPS for validated models | MLX or Core ML model-specific pack after benchmarking | Unified memory pressure can cause severe swapping; some MPS models cannot batch reliably |
 | CPU only | CPU utility workers and tiny models | none | Offer only tasks with realistic runtime estimates |
 
 Runtime selection rules:
@@ -1660,13 +1957,22 @@ AMD edge cases:
 - Some model-specific runners may assume CUDA APIs. The adapter must report unsupported rather than fail late.
 - Shared-memory APUs may appear to have high available memory but still fail at practical video resolutions.
 
+### Apple Silicon Strategy
+
+- Start with PyTorch/Diffusers MPS for model variants whose official pipeline and machdoch probe pass on the installed macOS/PyTorch versions.
+- Treat unified memory as a shared system budget, not dedicated VRAM. Reserve headroom for the WebView, encoder, and OS; warn before a job is likely to force swap.
+- Prefer sequential execution when Diffusers documents unreliable MPS batching for a pipeline. Attention slicing can reduce memory pressure but is a measured profile, not a universal speed switch.
+- Record MPS allocated/driver memory and the recommended working-set limit where available. Do not disable allocator safeguards to force a model to run.
+- Evaluate MLX or Core ML only as variant-specific optimized packs. A framework being available on Apple Silicon does not imply that FLUX, Wan, adapters, or training features have an equivalent implementation.
+
 ### Windows ML And DirectML Strategy
 
 Windows ML/DirectML support should be capability-driven:
 
-- Use ONNX Runtime DirectML for broad Windows GPU inference when the model graph is validated.
+- Use ONNX Runtime DirectML for compatible Windows GPU inference only when the exact model graph is validated.
 - Use Windows ML execution providers when packaging, install, and provider selection can be handled through supported Windows APIs.
 - Represent AMD MIGraphX, NVIDIA NvTensorRtRtx, Intel OpenVINO, CPU, and DirectML as execution providers with different capabilities, not as a single "Windows GPU" target.
+- Require Windows 11 24H2 or later for dynamic execution-provider paths that depend on that Windows ML surface. Current MIGraphX Windows ML documentation does not establish general generative-AI support, so it cannot be an AMD diffusion default.
 - Prefer vendor-specific optimized paths only when they expose enough error reporting and version metadata to debug user machines.
 - Store the exact execution provider name, version, adapter id, driver version, and model package hash in run records.
 - Never offer a DirectML/Windows ML run for a node requiring unsupported dynamic shapes, training, custom CUDA kernels, or unsupported media pre/post-processing.
@@ -1813,6 +2119,14 @@ Initial model families to represent:
 - Audio: Stable Audio Open and later text-to-audio/music/foley/voiceover models.
 - Optimization: TensorRT/TensorRT for RTX engines, Windows ML packages, ONNX variants, GGUF/prequantized components, xDiT/TeaCache/ParaAttention/Cache-DiT-compatible variants.
 
+Initial local catalog recommendations must be conservative and variant-specific:
+
+- FLUX.2 klein 4B is the best first local image-generation/editing candidate currently researched: its official model card describes a unified text-to-image/image-to-image model at roughly 13 GB VRAM and an Apache 2.0 license. The larger 9B variant has different license terms, so `FLUX.2 klein` is not one interchangeable catalog entry.
+- Stable Diffusion and utility models remain useful for lower-memory and specialized control workflows, but each checkpoint, VAE, ControlNet, LoRA, and conversion needs explicit compatibility rather than filename guessing.
+- Wan 2.2 video should be a later opt-in pack. The official project positions the 5B TI2V path around 24 GB VRAM for 720p and the default 14B path around 80 GB. Diffusers offload examples may lower a particular pipeline's peak memory, but are model/configuration-specific and must not become a blanket promise.
+- VACE condition-based video editing belongs in its own locked runner environment until its exact model and preprocessing dependencies are stable in the chosen Diffusers version.
+- Catalog VRAM figures are starting estimates. The install wizard runs a small probe and records a per-device envelope by model digest, runtime, precision, optimization, dimensions, frame count, and adapter set.
+
 The catalog must be updateable without app releases, but updates must be signed or fetched from trusted sources.
 
 Catalog policies:
@@ -1875,12 +2189,15 @@ Run states:
 - `draft`
 - `queued`
 - `preparing`
+- `waiting-for-resource`
+- `waiting-for-review`
 - `running`
 - `paused`
 - `cancelling`
 - `cancelled`
 - `failed`
 - `partial`
+- `interrupted`
 - `completed`
 
 Node execution states:
@@ -1908,6 +2225,33 @@ Queue requirements:
 - Event logs are append-only JSONL.
 - Training jobs can checkpoint only when the trainer supports it; otherwise pause means "pause before next training node".
 - Video jobs may emit partial clips, preview frames, and reports before final encode.
+- State transitions use compare-and-set transactions. A job lease has owner, acquired time, heartbeat, and expiry; stale leases are reconciled rather than blindly rerun.
+- `HUMAN_REVIEW` and `QUALITY_GATE` release scarce worker/GPU leases while waiting. A flow may pin immutable input assets, but it cannot keep a loaded model or open provider request alive indefinitely.
+
+### Worker Protocol, Progress, And Backpressure
+
+The worker protocol may use JSON-RPC method semantics, but its production transport must be framed and schema-versioned. Newline-delimited JSON is acceptable only if stdout is exclusively protocol data and framing limits are enforced; a length-prefixed pipe/socket protocol is preferred because model libraries sometimes write unsolicited output. Stderr is a redacted diagnostic stream, never a second control channel.
+
+Every envelope contains `protocolVersion`, `sessionId`, `messageId`, `kind`, `method`, `jobId`, `attemptId`, optional `replyTo`, monotonic `workerSequence`, and a typed payload. The initial authenticated handshake negotiates a compatible version and returns worker/runtime/model-pack capabilities, environment fingerprint, maximum message sizes, heartbeat interval, and feature flags. Unknown versions, methods, fields outside the schema, duplicate message ids with different payloads, and oversized frames terminate the session safely.
+
+Message classes have different delivery rules:
+
+- Commands and terminal state events are lossless and acknowledged. `start`, `cancel`, `shutdown`, `result-manifest`, `failed`, and `cancel-ack` cannot be coalesced.
+- Progress is advisory and monotonic within a named phase. The parent may grant a bounded event window and coalesce unacknowledged progress by `(job, attempt, phase)`; a worker must never block GPU cleanup because the UI is slow.
+- Preview events carry a bounded temporary-file/asset reference plus dimensions/MIME/digest, never media bytes. The parent may drop old transient previews while retaining the newest one and every explicitly persisted preview.
+- Logs are severity- and size-bounded, redacted at source and parent, and sampled after repeated identical messages. A truncated-log event records the count so silence is not mistaken for absence.
+- Heartbeats report liveness and coarse resource use. They do not renew a job lease unless session id, attempt id, and lease owner still match.
+
+The parent assigns a durable `runEventId` when it validates and commits an event; worker sequence numbers are diagnostic and may restart with a new attempt. Replayed messages are idempotent by `(sessionId, messageId)`. The UI subscribes from a durable event cursor, gets a finite snapshot plus live events, and must resync if its cursor predates compaction. JSONL is an audit/export mirror; SQLite remains the live ordered event index.
+
+Cancellation is cooperative first and forceful second. The parent sends `cancel`, records the deadline, stops granting new work, and expects `cancel-ack`; after the pack-specific grace period it terminates the complete worker process tree. A killed attempt is `interrupted` or `cancelled` according to recorded user intent, never `failed-successfully`. Temporary outputs remain non-final until validated.
+
+Worker completion is a two-phase publish:
+
+1. The worker flushes output files in its granted staging directory and returns a manifest containing relative file names, expected kinds, byte lengths, hashes when available, and probed metadata.
+2. The parent rejects escapes/symlinks/unexpected files, streams and hashes bytes independently, decodes/probes within limits, moves them into CAS, commits assets/lineage, and only then acknowledges terminal success. Worker-declared metadata is a hint, not authority.
+
+FFmpeg processes use its machine-readable `-progress` channel with a controlled update period; stderr remains diagnostic. The wrapper passes structured argument arrays, closes stdin unless explicitly used, validates input/output grants, records the pinned build/configuration, and owns the entire process tree for cancellation. Do not scrape localized human-readable status lines as the execution protocol.
 
 ### Caching
 
@@ -1930,6 +2274,39 @@ Cache policy:
 - Remote provider nodes cache only completed downloaded outputs.
 - Non-deterministic nodes can cache run outputs but must not claim reproducibility.
 - Safety/filter nodes cache by input hash and policy version.
+
+Cache namespaces are intentionally separate:
+
+- **Pure-result cache:** deterministic decode, probe, transform, analysis, and validated local generation outputs keyed by `NodeExecutionIdentity`.
+- **Completed-run reuse:** an immutable prior output of a nondeterministic or remote node. Reuse is a visible run policy (`reuse`, `regenerate`, or `ask`), not proof that the provider can reproduce it.
+- **Prepared-artifact cache:** downloads, tokenizers, model components, compiled engines, VAE tiles, and optimization artifacts, each with its own integrity and invalidation contract. These are never returned as semantic node outputs.
+- **Rendition cache:** thumbnails, proxies, waveforms, and contact sheets derived from an immutable blob plus rendition profile.
+
+Additional cache rules:
+
+- Include compiler behavior version, node-pack digest, analyzer/policy version, canonical settings, ordered port identities, and all output-affecting model/runtime fields. A seed is one field, not a determinism guarantee.
+- Cache entries point to immutable CAS blobs and an output manifest. Never cache signed URLs, provider credentials, transient upload ids as reusable outputs, partial files, or a worker environment merely because its directory name matches.
+- A remote generation is not automatically skipped on cache hit. The node/run declares whether the user wants the same previously downloaded bytes or a newly paid/nondeterministic attempt.
+- Validate existence and digests before returning a hit. A dangling metadata row becomes a cache miss plus repair event, not a phantom successful asset.
+- Use single-flight locking per cache identity for safe pure/prepared work. Do not single-flight independently requested paid generations unless the UI explicitly grouped them as the same submission.
+- Record hit source, age, identity digest, producing run/attempt, and why the compiler considered it reusable. `Explain plan` exposes cache decisions.
+
+### Performance Design
+
+Optimize the system at the data plane, scheduler, model runtime, and UI separately:
+
+1. **Keep bytes out of the control plane.** IPC and database rows carry ids, paths granted to the backend, hashes, progress, and metadata. Workers read/write files or bounded streams. Rust hashes and ingests incrementally. React never stores full media bytes or repeated base64 strings.
+2. **Use staged scheduling.** The DAG scheduler makes ready jobs; admission control reserves resources; a worker pool executes them. Maintain separate bounded lanes for GPU inference/training, CPU utilities, media encode/decode, downloads, and each remote provider. This lets a thumbnail or API poll proceed while a GPU job runs without oversubscribing VRAM.
+3. **Reuse expensive residency safely.** Keep a small LRU of healthy worker processes and optionally loaded model components keyed by model digest, runtime environment, device, precision, adapters, and optimization profile. Prefer scheduling adjacent compatible jobs on the resident model. Evict on memory pressure or version change; never reuse a mutated adapter state under another key.
+4. **Batch only compatible work.** Micro-batch ready image jobs when model/runtime, dimensions, steps, scheduler, adapter set, and output contract match. Do not delay an interactive job beyond a short configurable batching window, and do not batch remote requests unless the provider supports it and pricing/partial-failure semantics remain visible.
+5. **Choose one measured memory plan.** Diffusers device mapping, component/model/sequential CPU offload, disk offload, quantization, VAE slicing/tiling, and compilation have different performance and stateful-hook tradeoffs. Benchmark named profiles per exact model/device and apply one validated combination; do not stack every optimization heuristically.
+6. **Separate previews from final outputs.** Throttle progress events and partial previews, generate small WebP/JPEG renditions asynchronously, and keep originals untouched. For OpenAI partial-image streaming, label previews as transient and ingest only requested partials/final results. Prefer JPEG when alpha/lossless output is not required and the provider documents a speed benefit.
+7. **Use native media tooling for heavy work.** Bundle or manage a pinned FFmpeg/ffprobe path per platform for video probing, frame extraction, transcode, muxing, and thumbnails. Browser/WASM media tools are optional small-preview fallbacks, never the final export path.
+8. **Make the UI proportional to what is visible.** Lazy-load Media Studio and heavier canvas/timeline modules, virtualize asset grids and event logs, use thumbnails in graph nodes, revoke object URLs, debounce graph persistence, and move metadata parsing/layout work off the render thread where profiling justifies it.
+9. **Cache at clear boundaries.** Cache pure transforms and deterministic local generations by canonical inputs; cache downloads and compiled engines separately; never infer determinism from a seed alone. Garbage collection is mark-and-sweep from assets, pinned runs, flow references, exports, and active leases with a preview-only dry run.
+10. **Measure rather than advertise theoretical speed.** Record queue delay, cold/warm model load, peak VRAM/RAM, first preview, inference, encode, upload/download, throughput, and failure. Keep metrics local by default and display confidence/sample count. Gate TensorRT, xDiT, cache accelerators, and quantized variants behind model-specific quality and stability baselines.
+
+Performance acceptance budgets should be set per release and reference machine. The first release should at minimum enforce that Chat startup is unchanged when Media Studio is never opened, asset grids remain responsive with thousands of metadata rows through virtualization, cancellation is acknowledged promptly even if a worker needs longer to exit, large imports remain streaming/bounded-memory, and a worker crash cannot publish a partial blob as a valid asset.
 
 ### Error Model
 
@@ -2203,6 +2580,119 @@ Provenance UI requirements:
 - Export dialog lets the user choose preserve metadata, strip metadata, attach credentials, or write sidecar manifest when supported.
 - The UI must state that provenance records are trust signals and editing history, not proof that the media depicts a real event.
 
+## Integration With Chat, Ralph, And Agent Features
+
+### Shared Reference Contract
+
+The integration currency is a stable media reference, not copied base64, a provider URL, or an unvalidated arbitrary path:
+
+```ts
+interface MediaAssetReference {
+  source: "media-asset";
+  workspaceRoot: string;
+  assetId: string;
+  kind: MediaAssetKind;
+  displayName?: string;
+  rendition?: "thumbnail" | "preview" | "original";
+}
+
+interface MediaRunReference {
+  source: "media-run";
+  workspaceRoot: string;
+  runId: string;
+  outputAssetIds: string[];
+}
+```
+
+References resolve through privileged Tauri commands, check workspace access on every use, and produce a short-lived preview/grant. They do not persist signed provider URLs. Deleting an asset leaves an intelligible tombstone in Chat/Ralph history; deleting bytes warns about every live reference first.
+
+### Chat Integration
+
+`ChatSessionContextAttachment` in `src/tauri/ui/chat-session.model.ts` is currently path-only. Evolve it through a backward-compatible discriminated union: old records normalize to `{ source: "path" }`, while media cards use `MediaAssetReference`. Bump and migrate the persisted session schema rather than overloading `path` with a pseudo-URI.
+
+Chat actions:
+
+- `Create in Media Studio` turns selected prompt text plus compatible chat attachments into a draft recipe/flow and switches to Media Studio. It does not run until preflight is accepted.
+- `Edit in Media Studio` ingests or references an image attachment, creates the appropriate edit recipe, and retains the source chat session/message id as optional local lineage.
+- `Attach media asset` opens the asset picker and adds a durable media card to the composer.
+- `Send to Chat` from an asset, comparison, or run attaches selected outputs plus an optional concise run report. The original bytes remain in the asset store.
+- Agent-created image outputs can be ingested through an explicit `Save to Media Library` action. Do not silently turn every transient chat image into a durable media asset.
+
+At execution time, image assets are materialized as backend-granted local paths and then mapped to the existing `imageInputs` model boundary. Video, audio, mesh, and report references are passed only when the chosen chat model/tool contract actually supports them; otherwise Chat offers explicit derivative actions such as extract representative frames, transcribe, or summarize run metadata. Remote chat models must show the same upload disclosure as media providers.
+
+Chat may expose a small, typed internal tool surface such as `media_create_draft`, `media_get_asset`, `media_compile_flow`, and `media_enqueue_run`. Tool calls cannot supply provider payloads, shell commands, or arbitrary node code. Any plan that downloads a model, uploads an asset, incurs remote cost, or crosses a workspace budget becomes a visible confirmation card instead of an automatically approved tool call.
+
+### Ralph Integration
+
+Do not add the entire media node catalog to `RalphBlockType`. Add one dedicated `MEDIA_FLOW` bridge block after the media runtime is stable:
+
+```ts
+interface RalphMediaFlowBlock {
+  type: "MEDIA_FLOW";
+  flowId: string;
+  revisionId: string;
+  inputBindings: Record<string, RalphMediaInputBinding>;
+  outputBindings: Record<string, RalphMediaOutputBinding>;
+  runPolicy: "wait" | "submit-and-continue";
+  approvalPolicy: "inherit-workspace" | "always-review-preflight";
+}
+```
+
+The block compiles a pinned media flow revision, binds Ralph variables/path attachments/asset references to declared flow inputs, enqueues it, and emits control outcomes such as `SUCCESS`, `PARTIAL`, `ERROR`, `CANCELLED`, or `REVIEW_REQUIRED`. Media assets do not become Ralph graph edges. Outputs bind asset ids, exported paths, selected metadata, or quality reports to typed Ralph variables.
+
+Ralph checkpointing stores only media run ids and bindings. On resume it reconciles the durable media run rather than submitting a duplicate paid job. A media `HUMAN_REVIEW` or approval gate suspends the Ralph block and deep-links to the relevant Media Studio review; it does not keep a GPU lease. `submit-and-continue` is allowed only when downstream Ralph blocks do not consume outputs and workspace policy permits detached jobs.
+
+Ralph cannot broaden media authority. Autonomous execution may use already-installed/licensed local models and already-approved provider policies within configured budgets. New license acceptance, model downloads, remote uploads, scheduled-shutdown models, cost threshold crossings, safety exceptions, or provenance signing always require their normal approval path. This preserves Ralph's control-flow role while allowing workflows such as research -> generate storyboard -> human select -> publish package.
+
+### Analysis, Quality Gates, And Cross-App Activity
+
+Quality evaluation is a versioned measurement system, not one `qualityScore`. Use four layers:
+
+1. **Deterministic technical validation:** decode success, exact dimensions/frame/sample counts, alpha/color metadata, clipping, blank/frozen/duplicate frames, black borders, corruption, duration/fps/time-base drift, audio presence/sync/loudness, mask alignment, OCR exactness, file/container constraints, and protected-region pixel/metric tolerances.
+2. **Reference-based measurement:** keyframe distance, DreamSim/embedding/perceptual similarity, identity/product/reference consistency, optical-flow/motion adherence, depth/pose alignment, and before/after protected-region comparison. Each metric states what it measures; perceptual similarity does not prove identity or factual correctness.
+3. **Learned no-reference/preference evaluation:** prompt adherence, aesthetic or technical preference, temporal flicker/motion consistency, artifacts, and pairwise ranking. VBench-style dimensions, DOVER-style aesthetic/technical views, and ImageReward are evaluator candidates, not universal truth or mandatory dependencies. Their scores are model-, dataset-, preprocessing-, and domain-relative.
+4. **Policy and human judgment:** safety/licensing/provenance rules, brand constraints, manual accept/reject/star/rank, and reviewer notes. Human override is an explicit observation with actor/time/reason, never a mutation of the machine score.
+
+```ts
+interface QualityObservation {
+  metricId: string;
+  metricVersion: string;
+  family: "technical" | "reference" | "learned" | "policy" | "human";
+  scope: "asset" | "frame" | "frame-range" | "region" | "audio" | "pair" | "collection";
+  status: "observed" | "unknown" | "error";
+  value?: number | boolean | string | Record<string, number>;
+  unit?: string;
+  direction?: "higher-is-better" | "lower-is-better" | "target-range" | "categorical";
+  inputAssetIds: string[];
+  referenceAssetIds: string[];
+  evaluator?: { id: string; version: string; digest?: string; license?: string };
+  preprocessingProfileId: string;
+  samplingProfileId?: string;
+  calibrationProfileId?: string;
+  confidence?: number;
+  limitations: string[];
+}
+```
+
+A `QualityProfile` names exact metrics, evaluator artifacts, preprocessing, video frame/timestamp sampling, aggregation, calibration set/version, threshold expressions, missing-metric behavior, and action. Profiles are immutable assets. Thresholds are calibrated on representative machdoch fixtures for the target use case, such as product cutouts, character sheets, sprites, or short first/last-frame clips; a threshold copied from a benchmark paper is not a production acceptance limit.
+
+Quality gate rules:
+
+- Gate expressions address named observations, for example `decode.valid && alpha.edgeFringeP95 < x && ocr.editDistance == 0`. Do not compare an unexplained weighted scalar to a magic number.
+- An evaluator crash, unsupported content, missing reference, truncated clip, or unavailable model yields `unknown`, not automatic pass or fail. The profile chooses fail, warn, alternate route, or human review for unknown values.
+- Learned metrics may rank candidates within the same run/profile more reliably than compare unrelated historical assets. The report marks whether a score is absolute, relative-to-batch, pairwise, or calibrated.
+- If a profile intentionally aggregates metrics, it stores dimension names, normalization, weights, calibration range, and version and retains every component score. Changing weights creates a new profile.
+- Video sampling is reproducible: store exact rational timestamps/frame ids, scene-cut inclusion, beginning/end coverage, stride/adaptive rule, resized resolution, color transform, and whether audio/full decode checks covered the entire file. Temporal metrics that require all frames cannot run on a sparse sample while claiming full-clip coverage.
+- Safety/policy classifiers are separate gates from creative quality. A high aesthetic score cannot offset a policy failure, and a safety refusal is not reported as low quality.
+- Pairwise AI ranking presents the rubric and allows human review. Ties and low-confidence outcomes remain ties; do not force a winner.
+- Analyzer outputs and reports are immutable assets with lineage. Re-evaluating under a new model/profile creates a new report and never rewrites old scores.
+
+AI analysis nodes may reuse machdoch's configured model/provider resolution where compatible, but run as media jobs with strict JSON output, immutable asset inputs, bounded derived previews, and no shell, browser, arbitrary filesystem, conversation, or provider credentials by default. Remote analysis has the same upload/retention disclosure as generation.
+
+The app rail shows active/failed/review-needed media counts independently from Chat and Ralph. Global cancellation and shutdown code can discover media activity, but the media scheduler owns job cancellation. A Chat or Ralph deep link opens `runId`, `nodeId`, or `assetId` in Media Studio without duplicating editor state.
+
+Avoid live circular orchestration: a Media Flow may call a bounded analysis model but not start a Ralph run from inside a media node in the first implementation. Ralph may orchestrate Media Flows. This single direction prevents deadlocks, nested approval ambiguity, and unbounded agent/media recursion.
+
 ## NPM Package Strategy
 
 The current app already uses React 19, Vite, Tailwind CSS, Radix UI, lucide-react, and `@xyflow/react`. Keep that stack. The media feature should add focused packages around graph UX, canvas editing, asset browsing, timelines, validation, and worker ergonomics. Heavy AI inference remains in Rust/Python/local workers or remote providers, not in frontend NPM packages.
@@ -2331,8 +2821,44 @@ Before adding a package:
 - Measure bundle impact and enforce lazy loading for heavy creative/media packages.
 - Verify accessibility for UI interaction packages.
 - Verify keyboard and pointer behavior for pen/touch/mouse where relevant.
-- Add a wrapper module under `src/ui/media/lib/*` or `src/core/media/*` so package replacement does not affect flow semantics.
+- Add a wrapper module under `src/tauri/ui/media/lib/*` or `src/core/media/*` so package replacement does not affect flow semantics.
 - Add targeted tests for the wrapper, not only component snapshots.
+
+## Implementation Requirements
+
+### Product And Platform Requirements
+
+- Media Studio must remain optional. The base desktop app, Chat, Ralph, and Marketplace start and operate without Python, a GPU, FFmpeg, installed models, or provider keys.
+- Remote-only usage works on supported desktop hardware with sufficient disk for uploads/downloads. Local generation is advertised only for model/runtime/device combinations that pass the catalog probe.
+- Initial production support should target Windows with NVIDIA CUDA for local image generation, CPU utilities on all supported desktop platforms, and OpenAI GPT Image 2 remotely. Add Linux NVIDIA and Apple MPS from tested packs, then AMD Linux and the limited official AMD Windows matrix. Capability detection may show experimental packs earlier, but marketing/support status must match CI hardware coverage.
+- Local image planning baseline: 32 GB system RAM, a fast SSD, and roughly 16 GB GPU/unified memory for the first recommended FLUX.2 klein 4B profile. Lower-memory Stable Diffusion or offloaded variants may be offered when measured. These are catalog estimates, not application minimums.
+- Local video planning baseline: 64 GB system RAM, at least 24 GB GPU/unified memory for the selected entry model/profile, and hundreds of gigabytes of potential model/cache/output storage. Larger Wan variants may require datacenter-class memory. Users must see the exact install and run estimate before opting in.
+- CPU-only installs include deterministic utilities such as metadata inspection, SVG sanitization/rasterization, crop/resize, format conversion, packaging, hashing, and selected lightweight analysis. They do not imply practical CPU diffusion video generation.
+- Support NTFS/APFS/ext4 semantics and long paths through normalized platform APIs. Workspace storage may reside on removable/network media only after atomicity, free-space, locking, and throughput probes; otherwise warn or refuse long-running cache placement.
+
+### Runtime And Packaging Requirements
+
+- Add `rusqlite` with the `bundled` feature (or an equivalently reviewed embedded SQLite crate) to the Tauri backend for a consistent cross-platform queue/index. Keep migrations in source control and test upgrade plus rollback-by-backup behavior.
+- The Python worker has a pinned CPython and lockfile per released runtime pack. Build/install packs in staging, verify hashes, run a known-good probe, then atomically activate; keep the last working pack for rollback. Never `pip install` ad hoc packages into an active environment during a run.
+- Use PyTorch/Diffusers for the first local image pack and separate native runner packs only when Diffusers lacks the required capability. CUDA, ROCm, MPS, ONNX, TensorRT, and model-specific dependencies are distinct pack compatibility dimensions.
+- Ship or download a pinned FFmpeg/ffprobe build only after platform distribution, codec, patent, and LGPL/GPL obligations are reviewed. Record its digest/version in each media operation and expose a clear unavailable-codec error.
+- Integrate FFmpeg through structured arguments and its machine-readable progress channel. The backend owns process-tree cancellation and independently probes every output before CAS publication.
+- Treat OpenTimelineIO and OpenColorIO as optional later-phase native/Python runtime capabilities, not frontend dependencies. Pin exact versions/configuration artifacts and keep machdoch's semantic timeline/color contracts stable if either library is absent.
+- Expand the Rust `image` codecs only for formats the product tests. Detect MIME from bytes and enforce pixel/decompression limits before decoding; filename extensions are advisory.
+- Reuse current React 19, Vite, Tailwind, Radix, and XYFlow. Add UI packages phase-by-phase only when the owning surface lands. No first milestone needs tldraw, Pixi, Three.js, Remotion, browser FFmpeg, collaborative state, training charts, or a full timeline.
+- CI needs schema generation drift checks, Rust unit/integration tests, TypeScript compiler tests, Python protocol tests, fixture-based provider adapters, and UI tests with deterministic mock workers. Hardware smoke tests run in separate labeled jobs and never make ordinary CI depend on a GPU.
+- CI runs shared canonicalization/rational-time conformance vectors in TypeScript, Rust, and Python and fails when document, execution, compiled-plan, or node-cache digests diverge.
+- Packaged-platform tests verify worker process-tree cleanup, resource limits, path grants, missing sandbox features, and truthful diagnostics. Containment support is a capability with an observed result, not an assumed build flag.
+
+### Provider And Operational Requirements
+
+- Reuse the existing machdoch provider-settings/credential resolution for OpenAI and Google where possible. Add only provider metadata and credential references to media storage; do not duplicate API-key values in `providers.json`, flows, compiled plans, SQLite, events, or diagnostics.
+- Each remote adapter has explicit API-version/model capability fixtures, timeouts, retry categories, rate/concurrency limits, upload limits, output retention, region/policy notes, and a lifecycle source. Network availability never changes a local-only flow into a remote flow.
+- Each remote adapter also declares provider-side retry, idempotency/crash-window behavior, public versus private upload/output transport, callback semantics, cancellation races, lineage predicates, deletion/no-store controls, and exact output expiry handling.
+- Model/provider catalog updates are signed, versioned, cached, and reviewable. The app ships a known-good built-in catalog and can continue offline. An online catalog can deprecate/block unsafe endpoints but cannot silently install code or rewrite saved flows.
+- Disk quotas cover blobs, renditions, models, worker environments, compiled engines, temporary downloads, run records, and exports separately. Preflight reserves working space and cleanup never removes referenced originals.
+- Observability is local-first: structured redacted events, per-stage timings, resource peaks, adapter request ids, and a user-exported diagnostic bundle. Telemetry is opt-in and must exclude media, prompts, paths, secrets, and signed URLs unless a separate explicit consent says otherwise.
+- Crash recovery, offline behavior, provider outage, expired signed URLs, disk-full, OOM, driver reset, worker upgrade failure, and app update during a queued run have named tests and user-facing recovery actions before the corresponding provider/runtime is marked stable.
 
 ## Configuration
 
@@ -2490,12 +3016,16 @@ CLI requirements:
 - Prevent path traversal in exports and model downloads.
 - Treat input media as untrusted.
 - Never execute scripts embedded in downloaded model repos.
-- Download model weights and known config files only from approved sources.
-- Verify checksums where available.
+- Download only the exact weight/config/tokenizer files allowed by a signed catalog entry at a pinned immutable revision. Verify mandatory expected digests before activation.
+- Prefer safetensors/data-only formats; reject pickled objects by default. `weights_only` loading and model-hub scanners reduce risk but do not make an untrusted pickle safe.
+- Reject symlinks, hard-link escapes, device files, archive traversal, unexpected executables, and files that exceed declared sizes. Never use `trust_remote_code` in a normal model pack.
+- Apply encoded-byte, decoded-pixel/frame, nesting, duration, and decompression limits before allocating for images, SVG, archives, video, audio, and model packages.
+- Sanitize SVG in a no-script/no-network renderer. Reject external resources, event handlers, foreign objects, unsafe data URLs, and recursive references before rasterization.
 - Store provider secrets outside flow files.
 - Keep generated exports inside workspace/user-approved directories unless the user explicitly chooses another path.
 - Treat model files, training datasets, captions, metadata, sidecars, and content credentials as untrusted input.
 - Validate sidecar manifests and do not follow external references without user approval.
+- Use safe temporary creation in the target filesystem where possible, fsync as required by the durability contract, and atomic rename only after validation and hashing. Never expose a partial download at its final asset path.
 
 ### Workers
 
@@ -2507,6 +3037,39 @@ CLI requirements:
 - Worker commands must be structured methods, not arbitrary shell command strings.
 - Worker environments must be per-runtime or per-model-family enough to avoid dependency conflicts and hidden package upgrades.
 - Worker crash reports must redact prompts, filenames, EXIF, API keys, signed URLs, and provider payloads unless the user opts into a full diagnostic bundle.
+- Model workers should run without provider secrets and without default network access. A separate privileged download/provider path supplies only validated local input/output grants.
+- Limit worker child processes, open files, IPC message size, output size, CPU/RAM where the OS allows, and GPU allocation through scheduler policy. A worker cannot declare its own job successful; the parent validates and ingests outputs.
+
+OS containment is explicit and tested per packaged platform:
+
+| Platform | Baseline containment | Important limitation |
+| --- | --- | --- |
+| Windows | Put each worker process tree in a Job Object with kill-on-close, active-process, memory/CPU/time limits where supported, and no intentional breakaway; pass only granted staging paths and a minimal environment | Job Objects provide lifecycle/resource containment, not a complete security sandbox. A restricted-token/AppContainer design needs a separate compatibility spike for Python, GPU drivers, model caches, and Tauri packaging |
+| Linux | Dedicated low-authority process identity where packaging permits; private staging/cache grants; no inherited secrets/network sockets; Landlock restrict-only filesystem rules when the running kernel ABI supports the required access controls | Landlock availability and covered access types vary by kernel ABI and it is defense in depth. Namespace/seccomp/container hardening must be validated against GPU/device/driver access rather than advertised generically |
+| macOS | Inherit the signed app's App Sandbox/entitlement boundary when distributed that way; restrict helper locations, temporary grants, environment, and child processes | Entitlements and helper signing are packaging-wide constraints, not an ad hoc per-node sandbox. Non-App-Store packaging needs an explicit hardened-runtime/helper design and cannot claim App Sandbox isolation automatically |
+
+Process-tree termination, path grants, and resource limits are release gates on each platform. No OS mechanism makes an untrusted model pickle, Python repository, native library, GPU kernel, or driver safe. Those artifacts remain outside the allowed extension surface.
+
+### Extension Execution Tiers
+
+Signatures establish publisher/integrity; they do not establish safety. The extension system uses distinct trust tiers:
+
+| Tier | Allowed extension | Execution and permissions |
+| --- | --- | --- |
+| 0: declarative | Recipes, subflows, presets, node UI metadata, schemas, templates, capability mappings | No code. Compiler validates known node ids and bubbles side effects. This is the default third-party ecosystem surface |
+| 1: constrained utility | Future small deterministic CPU transforms/validators compiled to WebAssembly | Wasmtime/WASI host with no network, no environment/secrets, no process spawn, no host filesystem except explicit per-call preopened staging directories, typed asset streams, memory/output limits, fuel/epoch deadline, and host-side output validation |
+| 2: trusted runtime pack | Built-in or machdoch-release-signed Python/native/GPU model runner, FFmpeg wrapper, credential/provenance integration, or provider adapter | Separate locked environment/process, reviewed dependencies, exact permission manifest/host allowlist, platform containment, revocation, compatibility and malicious-fixture tests. Not installable merely because a marketplace publisher signed it |
+| 3: developer integration | User-specified external executable/service for local development | Disabled by default, unmistakable full-trust warning, separate settings scope, never used by Ralph unattended, and excluded from normal shareable-flow guarantees |
+
+Wasm is suitable for bounded metadata/image utilities, not PyTorch/GPU inference or a way to conceal native code. The host exposes task-specific functions rather than general WASI capabilities. Never accept and deserialize an untrusted precompiled Wasmtime artifact; accept a hashed module in the supported source format, validate/compile it locally, and treat the local compiled cache as invalidatable implementation data. Validate all guest offsets, lengths, handles, paths, and output manifests because a sandboxed guest can still attempt denial of service or exploit host API mistakes.
+
+Pack install/update/revocation rules:
+
+- Manifest signature covers publisher id, pack id/version, content hashes, schemas, compiler/runtime compatibility, permissions, allowed provider hosts, licenses, and migrations. Trust roots and revocation state are versioned and visible.
+- Installation stages and verifies the entire pack, runs static/schema checks and an isolated probe, then activates atomically. Existing runs pin the exact digest; updates never replace bytes underneath them.
+- Removing or revoking a pack leaves saved flows inspectable with tombstones. Revocation blocks new execution and explains whether already-produced assets remain usable.
+- A pack cannot request permissions dynamically from a node payload. Permission increases require a new signed version and explicit review.
+- The host revalidates every file/network/provider operation; a signed manifest is not an authorization token by itself.
 
 ### Remote Providers
 
@@ -2519,6 +3082,7 @@ CLI requirements:
 - Signed URLs are secrets. Store them only in transient job records, redact them from logs, and download outputs quickly.
 - If a provider has accepted a paid job, retries must respect idempotency keys or require user approval.
 - Remote provider SDK updates must not change request semantics without adapter tests and capability snapshot updates.
+- Provider adapters may fetch only configured provider hosts plus validated signed output URLs for an accepted job. Apply redirect limits, DNS/private-address defenses where relevant, TLS validation, response size limits, and content sniffing to reduce SSRF and malicious-download risk.
 
 ### Generated Content
 
@@ -2557,6 +3121,10 @@ Graph and schema:
 - subflow hides a remote upload or paid provider call.
 - retired node version in a saved flow.
 - provider lifecycle snapshot is stale at run time.
+- semantically reordered nodes/edges change the execution digest.
+- ordered references/keyframes are accidentally sorted during canonicalization.
+- seed, frame index, sample count, or rational rate exceeds JavaScript's safe integer range.
+- imported flow contains a duplicate JSON key, unknown extension namespace, newer schema, or missing pack.
 - cartesian batch exceeds cost or item-count policy.
 - condition pack has duplicate or missing condition roles.
 - edit intent references a deleted asset, missing shot, or ambiguous target.
@@ -2580,6 +3148,9 @@ Assets:
 - sidecar credential exists but original media bytes changed.
 - asset metadata exists but binary bytes are missing.
 - imported asset has embedded provenance that conflicts with local lineage.
+- embedded ICC profile conflicts with EXIF/container/bitstream color tags.
+- color profile is missing but a transform node assumes sRGB.
+- orientation, clean aperture, pixel aspect, or alpha association is applied twice.
 
 Masks and segmentation:
 
@@ -2612,6 +3183,9 @@ Video:
 - shot retake changes accepted timing and breaks audio sync.
 - output codec cannot preserve alpha channel.
 - generated audio is present when the flow requested silent video.
+- VFR presentation timestamps do not round-trip through trim/retake/export.
+- 30000/1001 or drop-frame display time is rounded through floating-point seconds.
+- timeline export contains an unsupported effect or an unresolved external media reference.
 
 Hardware and runtime:
 
@@ -2653,6 +3227,13 @@ Providers:
 - provider output includes C2PA/SynthID metadata that export settings might strip.
 - provider returns signed URLs that expire before a paused run resumes.
 - provider region does not support a requested model.
+- process crashes after paid acceptance but before provider job id commit.
+- provider-side gateway retry creates a different request/gateway attempt id.
+- cancellation is accepted but a successful output arrives later.
+- duplicate or out-of-order callback reports an older state after completion.
+- provider CDN URL is public although workspace policy requires private transport.
+- provider success is observed after its output URL has already expired.
+- follow-up extend/interpolate request uses a clip not generated by the required provider.
 
 Batch and queue:
 
@@ -2664,6 +3245,10 @@ Batch and queue:
 - idempotency key expired before retry.
 - batch output list contains holes after per-item failure.
 - user changes provider settings while a run is queued.
+- progress producer outruns a suspended UI subscriber.
+- worker replays an acknowledged terminal message after reconnect.
+- cancellation grace expires while a worker child process remains alive.
+- worker claims success with an escaped symlink or an extra unmanifested file.
 
 Exports:
 
@@ -2709,6 +3294,16 @@ Optimization:
 - baseline preview is too short to catch long-video flicker.
 - acceleration setting is nondeterministic or changes seed behavior.
 
+Quality evaluation:
+
+- evaluator is unavailable, crashes, or returns an unsupported-content result.
+- a relative-to-batch score is compared to an unrelated historical run.
+- evaluator/preprocessing version changes without invalidating the report identity.
+- sparse video sampling misses a short artifact or scene cut.
+- learned metric passes while deterministic decode/timing validation fails.
+- aggregate score hides a failed safety, OCR, identity, or protected-region requirement.
+- threshold calibrated for portraits is reused for product cutouts or animation.
+
 Provenance:
 
 - C2PA sidecar exists but cannot be cryptographically verified.
@@ -2718,11 +3313,23 @@ Provenance:
 - local lineage says generated, but embedded external metadata says captured.
 - user requests metadata stripping while workspace policy requires provenance on export.
 
+Extensions and containment:
+
+- signed pack requests permissions absent from its manifest.
+- revoked or missing pack is referenced by a queued or saved flow.
+- Wasm guest exhausts fuel/memory, floods logs, returns invalid offsets, or writes unexpected files.
+- pack supplies an untrusted precompiled Wasmtime artifact.
+- Windows child breaks away from the worker process tree or Linux/macOS sandbox capability is unavailable.
+- developer full-trust integration is invoked from unattended Ralph execution.
+
 ## Testing And Verification
 
 Unit tests:
 
 - media flow schema parsing and normalization.
+- RFC 8785 profile/canonical graph conformance and cross-language digest vectors.
+- rational time arithmetic, rate reduction, long frame/sample indices, and VFR timestamp validation.
+- color/alpha/orientation metadata normalization and conflicting-tag handling.
 - port type compatibility.
 - graph cycle and batch validation.
 - capability matching.
@@ -2741,6 +3348,8 @@ Unit tests:
 - provider secret redaction.
 - path validation.
 - export profile validation.
+- quality profile parsing, tri-state gate expressions, aggregation disclosure, and calibration identity.
+- provider state-machine transition and acceptance-unknown reconciliation rules.
 
 Integration tests:
 
@@ -2759,6 +3368,9 @@ Integration tests:
 - run a conversational retake against a mock storyboard/timeline.
 - compile an audio-led storyboard flow and verify shot durations follow transcript timecodes.
 - build a mock optimization profile and verify fallback behavior is explicit.
+- exercise worker framing, authentication, replay deduplication, progress coalescing, backpressure, cancellation deadline, forced process-tree cleanup, and two-phase output publication.
+- crash at every provider submission transaction boundary and prove that no automatic duplicate paid request occurs.
+- import/export an OTIO fixture with rational timing, external asset relinking, and an unsupported effect report.
 
 Visual/media tests:
 
@@ -2773,6 +3385,10 @@ Visual/media tests:
 - verify retake replacement preserves timeline duration and audio sync.
 - verify VAE tiling or cache acceleration does not exceed quality drift thresholds in deterministic fixtures.
 - verify credential sidecar and embedded metadata behavior per export format.
+- round-trip 24, 25, 30000/1001, and VFR media without floating-point cut drift.
+- verify source/display color transforms, ICC preservation, alpha association, pixel aspect, rotation, and export color tags.
+- verify loudness analysis/normalization report includes target, measured values, true peak, pass count, and pinned FFmpeg build.
+- verify video quality reports store exact sampling frames/timestamps and never label sparse coverage as full-clip coverage.
 
 Hardware tests:
 
@@ -2788,6 +3404,8 @@ Hardware tests:
 - simulate optimization library unavailable after compile.
 - simulate quantized variant adapter mismatch.
 - simulate xDiT/parallel shape constraints.
+- verify Windows Job Object process-tree termination and resource limits on packaged Windows CI.
+- report Landlock/App Sandbox availability and enforce the corresponding packaged-platform path-grant tests without pretending unsupported isolation exists.
 
 Provider adapter tests:
 
@@ -2805,6 +3423,11 @@ Provider adapter tests:
 - provider UI-only feature is not exposed as runnable API capability.
 - conversational edit capability mapping for providers that support it.
 - generated-audio versus input-audio-preservation capability mapping.
+- BFL ten-minute signed result expiry and exact model-specific reference/resolution limits.
+- Runway dated API header, minimum poll interval/backoff, and 24-48 hour ephemeral output handling.
+- Luma `frame0`/`frame1`, generated-source lineage predicates, callback duplication, and extend/interpolate rejection.
+- fal public CDN disclosure, retention/no-store modes, request versus gateway ids, provider retry ownership, and cancel/completion race.
+- Replicate one-hour expiry plus duplicate/out-of-order webhook reconciliation.
 
 End-to-end flows to keep as fixtures:
 
@@ -2836,7 +3459,7 @@ Recommended internal flow object boundaries:
 - `MediaExecutionPlan`: compiled run plan with resolved models, providers, batch expansion, and capability decisions.
 - `MediaRunRecord`: user-visible run summary.
 - `MediaRunEvent`: append-only event log entry.
-- `MediaAsset`: content-addressed artifact metadata.
+- `MediaAsset`: logical artifact metadata and lineage pointing to an immutable `MediaBlob` when bytes exist.
 
 Use JSON schemas for flow/config/run records, generated TypeScript types, and worker protocol types. The Python worker should validate input payloads at the boundary.
 
@@ -2918,11 +3541,184 @@ Template requirements:
 - optimization templates include quality validation gates and fallback reporting.
 - provenance/export templates clearly separate local lineage from embedded or sidecar credentials.
 
+## Delivery Roadmap
+
+This roadmap is ordered by architectural risk and user value, not by the size of the node wish list. A phase may start experimental work early, but it cannot be declared complete until its gate passes. Keep the whole feature behind a media feature flag until Phase 2.
+
+### Phase 0: Contracts And Risk Spikes
+
+Implement no polished editor yet. Prove the boundaries that would be expensive to reverse.
+
+Deliverables:
+
+- Write schema version 1 for semantic flow, separate layout, node definition, compiled plan, run/event/job, logical asset/blob, provider capability, model descriptor, and worker RPC.
+- Define the RFC 8785-compatible canonicalization profile, document/execution/plan/cache identities, rational media time, color metadata, quality observation, and unknown-node migration contracts before implementing cache or timeline logic.
+- Build deterministic mock provider and mock worker adapters that generate fixture images/reports and exercise progress, cancellation, crash, partial output, retry, and remote reconciliation.
+- Spike SQLite WAL/migrations/resource leases and content-addressed streaming ingest in `src-tauri/src/media`.
+- Spike an authenticated framed managed-Python-worker protocol, replay-safe ids, bounded/backpressured event classes, two-phase output publication, environment fingerprint, cooperative/forced cancellation, and process-tree shutdown without starting an app-facing server.
+- Build a fault-injection remote adapter harness that crashes before submit, during submit, after paid acceptance, during polling, after provider success, and during download/CAS commit. Prove the `acceptance-unknown` path never blindly resubmits.
+- Probe NVIDIA CUDA, CPU, disk, and FFmpeg on the initial platform. Record unsupported AMD/MPS paths honestly rather than stubbing success.
+- Implement compiler diagnostics for type mismatch, missing output, unbounded loop/batch, unsupported capability, remote upload, cost, lifecycle, model install, and resource failure.
+- Confirm OpenAI GPT Image 2 request/response/edit behavior with mocked fixtures plus one manually gated integration test. Confirm that transparent output requires a separate matting path.
+- Produce a package/license review for SQLite, Python distribution, PyTorch/Diffusers, FLUX.2 klein 4B, background-removal model, FFmpeg build, and optional C2PA SDK.
+
+Gate:
+
+- A headless fixture flow can compile, enqueue, survive a simulated restart, execute through the mock worker/provider, ingest immutable outputs, reconstruct lineage, cancel safely, and explain every compiler decision. Schema generation and canonical digest vectors are identical across TypeScript, Rust, and Python. Flooded progress remains bounded, forced cancellation removes the worker tree, and every injected provider crash produces at most one submitted attempt.
+
+### Phase 1: Durable Media Foundation And App Shell
+
+Deliver the smallest usable backend and an intentionally plain UI.
+
+Deliverables:
+
+- Add the lazy-loaded fourth app, rail activity states, media status/diagnostics, feature flag, empty Library, Runs view, and basic Settings/Models surfaces.
+- Implement SQLite metadata/index/queue, CAS blobs, thumbnails, imports, grants, exports, deletion dependency checks, run events, job leases, and crash recovery.
+- Implement provider/model registries, lifecycle snapshots, policy preflight, cost/privacy/upload manifests, capability matching, and typed errors.
+- Implement the durable provider state machine, scheduled polling, callback-to-reconcile hook, immediate bounded output ingestion, retention/public-link disclosure, and acceptance-unknown review path against mock providers.
+- Implement local CPU utility worker functions for inspect, validate, EXIF strip, crop, resize, format conversion, alpha inspection, SVG sanitization/rasterization, thumbnail, and FFmpeg probe.
+- Implement model catalog/install/remove with pinned revisions, file allowlists, license acknowledgement, download resume, checksums, quarantine, atomic activation, and rollback.
+- Add a run inspector that shows semantic node -> expanded steps -> resource/provider decisions -> outputs/events without requiring a graph editor.
+- Implement and test Windows Job Object worker-tree containment for the initial packaged platform; expose honest diagnostics for unavailable Linux/macOS containment paths until those packages are supported.
+
+Gate:
+
+- Importing a hostile/oversized fixture is rejected safely; importing a valid large file is bounded-memory. Queue and asset invariants survive forced process termination. Media Studio contributes no eager heavy bundle or runtime requirement to Chat startup.
+
+### Phase 2: Image MVP Vertical Slice
+
+This is the first user-facing release candidate.
+
+Built-in nodes:
+
+- Sources: `TEXT`, `PROMPT`, `IMPORT_IMAGE`, `IMPORT_MASK`, `REFERENCE_SET`, `SEED`, and `MODEL_POLICY`.
+- Tasks: `GENERATE_IMAGE`, `EDIT_IMAGE`, `REMOVE_BACKGROUND`, and `ANALYZE_IMAGE`.
+- Operations: `CROP`, `RESIZE`, `FORMAT_CONVERT`, `SVG_TO_IMAGE`, `COMPOSITE`, `ALPHA_MATTE`, `AUTO_TAG`, `TAG_ASSET`, `METADATA_STRIP`, and `MAKE_CONTACT_SHEET`.
+- Control/output: `BATCH_MAP`, `RANK`, `QUALITY_GATE`, `HUMAN_REVIEW`, `SAVE_ASSET`, `DISPLAY`, and `EXPORT_IMAGE`.
+
+Providers/runtimes:
+
+- OpenAI GPT Image 2 generation and edit adapter, including multiple references, partial preview handling where requested, current size/format constraints, refusal metadata, and immediate asset ingestion.
+- Local PyTorch/Diffusers FLUX.2 klein 4B pack for text-to-image and supported image-to-image/reference behavior, with exact license/variant metadata and balanced/low-memory profiles.
+- One local background-removal/matting pack selected after license and quality evaluation; return both cutout and matte so downstream compositing is reproducible.
+- Mock adapters remain user-selectable in developer/test builds.
+
+UX:
+
+- Simple recipes for Create Image, Edit With References, Remove Background, Product Cutout, and Create Variants.
+- Prompt/reference panel, provider policy (`local`, `remote`, or `ask`), aspect/quality/count controls, preflight, live progress/partial previews, comparison grid, select/reject, save, and export.
+- Every recipe has `Open as Flow` even though the initial Flow view may be read-mostly. The plan inspector shows generated preparation steps.
+
+Gate:
+
+- The five recipes work end-to-end through deterministic fixtures and the supported real adapters. Local-only mode produces no network call. A remote edit lists every uploaded asset. Cancellation, OOM recovery, refusal, partial output, alpha verification, disk-full, expired result, and model-not-installed paths have UI tests. An exported result links back to exact inputs, flow revision, node, provider/model/runtime, settings, and blob digest.
+
+### Phase 3: Full Flow Authoring And Orchestration
+
+Deliver the ComfyUI/n8n-style power without exposing runtime plumbing.
+
+Deliverables:
+
+- Editable XYFlow canvas backed by the semantic graph, independent layout, undo/redo command log, multiselect, copy/paste with id remap, keyboard access, node search, port validation, auto-layout, groups, comments, subflows, variables, presets, and inspectable run overlays.
+- Schema-generated inspectors with Basic/Creative/Expert groups, conditional fields, capability explanations, validation at edit time, and provider/model comparison.
+- Bounded `BATCH_ZIP`, `BATCH_CARTESIAN`, `ITERATE`, `BRANCH`, `FAILOVER_BRANCH`, `CACHE`, `REDUCE_COLLECTION`, `QUALITY_GATE`, and `HUMAN_REVIEW` semantics.
+- Compound-node expansion, `Explain plan`, promote-to-subflow, explicit converter insertion, side-effect bubbling, cardinality analysis, and budget gates.
+- Quality analyzers for dimensions/format/alpha, blur/noise/compression, OCR text comparison, prompt/reference adherence, and pairwise ranking. AI metrics always expose model/rubric and allow human override.
+- Versioned quality profiles/observations with deterministic, reference, learned, policy, and human layers; tri-state gates, calibration fixtures, explicit video sampling, component-score retention, and no universal aggregate by default.
+- Flow revision history, import/export, migrations, templates, fixture runner, dry-run, and reproducibility diff.
+
+Gate:
+
+- Users can build and rerun `prompt x seed variants -> local/remote route -> background remove -> quality gate -> human select -> export` without seeing VAE/text-encoder/model-loader nodes. Invalid cycles and explosive cartesian batches are blocked before enqueue. Promoting a compound node to a subflow produces the same compiled fixture plan and outputs.
+
+### Phase 4: Chat And Ralph Bridges
+
+Deliver cross-app workflows only after Media run/asset identity is stable.
+
+Deliverables:
+
+- Migrate Chat attachments to the path/media discriminated union, render media cards/tombstones, and implement Create/Edit in Media Studio, asset picker, Send to Chat, and explicit Save to Media Library.
+- Add typed Chat tools for draft, inspect, compile, and enqueue with confirmation cards for downloads, upload, cost, and policy decisions.
+- Add the dedicated Ralph `MEDIA_FLOW` block, pinned revisions, input/output bindings, durable run reconciliation, review deep links, and terminal/control outcomes.
+- Extend shell activity, deep-link routing, shutdown warnings, and diagnostics so ownership of cancellation and state is unambiguous.
+- Add example Ralph templates: research product -> generate variants -> review -> export, and script -> image storyboard assets -> review. Do not add video until Phase 5.
+
+Gate:
+
+- Restarting during a Ralph-waited remote media job resumes by the original media run id and cannot submit a duplicate charge. Chat never persists provider URLs/base64. Neither Chat tools nor autonomous Ralph can bypass an approval required by the same flow in Media Studio.
+
+### Phase 5: Video Foundation, First/Last Frames, And Timeline
+
+Add video after image scheduling and durability are production-proven.
+
+Deliverables:
+
+- Asset/probe/preview/export support for video, frame sequences, audio tracks, rational time, VFR presentation timestamps, timecode display, color/alpha metadata, codecs, thumbnails, loudness reports, and proxy renditions through pinned native FFmpeg tooling.
+- Semantic tasks for `TEXT_TO_VIDEO`, `IMAGE_TO_VIDEO`, `START_END_TO_VIDEO`, `REFERENCE_TO_VIDEO`, `EXTEND_VIDEO`, `INTERPOLATE_VIDEO`, `EXTRACT_FRAMES`, `ASSEMBLE_VIDEO`, and `QUALITY_ANALYZE_VIDEO`.
+- Google Veo adapter for the exact active model capabilities; Gemini Omni Flash remains preview-flagged and uses its own short-video/conversational profile. Evaluate Luma Ray as the provisional second adapter and ship it only after `frame0`/`frame1`, lineage predicates, retention, polling/callback, cancellation race, pricing, region, and data-use behavior are fixture-tested.
+- Local Wan pack starting with the smallest catalog-validated variant/profile on supported high-memory NVIDIA hardware. Installation remains opt-in; lower-memory claims require a successful machdoch benchmark on that exact pipeline.
+- Proxy-first viewer and simple machdoch semantic shot timeline with start/end frame selection, exact duration/rate, replace shot, audio preservation policy, render queue, review markers, and OTIO import/export with unsupported-semantics reports.
+- Video-specific admission control, frame/duration budget, checkpoint/restart semantics where the runner supports them, prompt/result drift reports, and first/last-frame similarity gates.
+
+Gate:
+
+- `text -> start image -> edited end image -> first/last-frame video -> quality gate -> export` works through one supported remote and one supported local path on labeled hardware. App restart reconciles accepted remote jobs, local interruption is reported without corrupt output, and all frame/rate/duration/audio/color claims are verified from the produced file rather than trusted from provider metadata. OTIO/rational-time fixtures round-trip 30000/1001 and VFR sources without silent conform or cut drift.
+
+### Phase 6: Advanced Editing, Canvas, Storyboard, And Optimization
+
+Deliverables:
+
+- Layer/mask canvas with regions, brush, protected masks, depth/pose/edge/motion controls, undoable edit intents, and asset-backed layers.
+- VACE-style `conditionSet`, masked video edit, object swap, expand, reference motion transfer, and retake loops in an isolated runner pack.
+- Storyboard/script/beat/scene/shot model, continuity profiles, character/reference collections, retakes, audio cues, multi-shot assembly, and timeline-local replacements.
+- Explicit color-management transforms with pinned ICC/OCIO configuration artifacts, viewer-only display transforms, and round-trip export tests; source pixels are never silently relabeled or converted.
+- Validated local optimization profiles: quantization, offload, tiling, cache acceleration, and compiled engines where a concrete model/device gate passes. TensorRT for RTX is a later model-specific optimization, not a universal executor.
+- C2PA read/verify and optional attach/export through an internal Rust adapter, with local lineage remaining authoritative and clear warnings that credentials do not prove depicted truth.
+
+Gate:
+
+- Mask/region coordinates remain aligned across preprocess/generation/export; video edit fixtures preserve protected regions within declared tolerance; retakes preserve shot duration/audio policy; every optimization can be compared to a baseline and is invalidated when any key model/runtime/driver/shape/adapter input changes.
+
+### Phase 7: Additional Modalities And Extension Ecosystem
+
+Deliverables, each as an independently gated pack:
+
+- LoRA dataset curation, training, checkpoints, evaluation, license/consent review, and adapter reuse.
+- Audio generation, voice/foley/soundtrack, transcription, waveform/timeline integration, and audio-led storyboards.
+- Image-to-3D/text-to-3D, mesh/material/turntable previews, optimization, and GLB/OBJ export.
+- Tier-0 declarative third-party recipes/subflows first. Evaluate Tier-1 Wasm/WASI utilities only after typed host APIs, fuel/memory/deadline/output limits, locally compiled cache rules, malicious guest tests, signing, updates, and revocation work.
+- Keep Python/native/GPU runners and provider adapters at Tier 2: built-in or machdoch-release-signed, reviewed, permission-pinned runtime packs. Do not generalize marketplace publisher signatures into arbitrary code trust.
+- Optional ComfyUI workflow importer that maps known semantic patterns, reports unsupported custom nodes, and never downloads or executes their code.
+- CLI/MCP/remote-control surfaces after desktop semantics are stable, with the same approval, reference, and dry-run contracts.
+
+Gate:
+
+- Each pack can be absent, disabled, upgraded, revoked, or removed without breaking the base runtime. A saved flow with a missing pack opens with an immutable unknown-node tombstone. Malicious Wasm fixtures cannot escape grants or exhaust unbounded resources, no pack can add filesystem/network/process permission outside its signed manifest and backend policy, and unattended Ralph cannot invoke Tier-3 full-trust integrations.
+
+### Release Risk Register
+
+| Risk | Mitigation and release gate |
+| --- | --- |
+| Model files execute code or compromise a worker | Pinned commit/file allowlist/checksums, prefer safetensors, quarantine, no remote code/repo scripts, isolated low-authority worker, malicious-fixture tests |
+| Local hardware support is overstated | Exact device/runtime catalog, tiny real probe, per-machine envelope, labeled hardware CI, unsupported rather than best-effort late failure |
+| Video scope delays all value | Image-first vertical slice; video pack depends on proven queue/CAS/provider reconciliation |
+| Provider API/model disappears | Live signed lifecycle catalog, pre-run refresh, tombstone adapters, explicit migration diff, no silent model substitution |
+| Duplicate remote charge after retry/restart | Transactional provider job record before/after acceptance, idempotency keys where supported, reconcile before resubmit, user approval for cost-risking retry |
+| Provider callback/cancel race corrupts state | Callbacks are idempotent reconciliation hints, compare-and-set transitions, raw state retention, late-success ingestion, terminal-state replay fixtures |
+| Public or expired provider media leaks/vanishes | Preflight visibility/retention disclosure, no-store controls where documented, signed/public URL redaction, immediate bounded download, expiry fixtures |
+| Disk/VRAM exhaustion corrupts outputs | Preflight reservations, streaming temp files, worker resource leases, atomic promotion, partial artifacts marked non-final, cleanup dry run |
+| Flow power overwhelms normal users | Recipe/task/advanced/runtime layers, schema-driven progressive disclosure, compound nodes, explainable compiled plans |
+| Ralph or Chat bypasses media policy | Stable references plus one bridge API; backend preflight is authoritative; approval requirements survive calling surface |
+| AI quality scores mislead users | Versioned rubric/model, calibration fixtures, multiple metrics, human review, no universal score claim |
+| Timeline, VFR, audio, or color silently drifts | Rational time/sample positions, explicit conform/color nodes, source-versus-display separation, probe-after-output, OTIO/color round-trip fixtures |
+| Signed extension compromises host | Tiered surface, declarative default, capability-limited Wasm utilities, release-signed trusted native packs only, OS containment and malicious-fixture gates |
+| Provenance is mistaken for authenticity | Separate local lineage/credentials/watermarks, preserve limitations, C2PA adapter isolation, no truth claim |
+| New dependencies bloat or destabilize Chat | Lazy-loaded app/packs, phase-specific dependencies, bundle budgets, worker/runtime isolation, cold-start regression gate |
+
 ## Open Questions
 
-- Whether the asset index should remain JSON-only or use SQLite for fast search and filtering.
 - Whether model catalog updates should be served from the project repository, a signed release endpoint, or both.
-- Which remote providers should be first-class in settings by default.
+- Whether Luma passes the Phase 5 go/no-go scorecard for region, terms/data use, price/quota, deletion, cancellation, output retention, first/last-frame quality, and endpoint stability; otherwise evaluate Runway against the same contract.
 - How strict the default safety policy should be for local-only generation.
 - Which signing model should be used for C2PA-style credentials: workspace key, user key, OS keystore, or external service.
 - Whether flow templates should be shareable as single files with embedded thumbnails and no binary assets.
@@ -2933,17 +3729,20 @@ Template requirements:
 - Whether conversational edit history should be stored as part of flow revisions, run records, or both.
 - How to represent UI-only provider features in settings without making users think they are runnable from machdoch.
 
-## Definition Of Done
+## Long-Term Definition Of Done
 
-The feature is complete when:
+Each roadmap phase has its own release gate. The full Media Studio program is complete when:
 
 - Media Studio has Simple Mode, Flow Mode, Library, Runs, Models, and Settings surfaces.
 - All Simple Mode tasks compile to inspectable media flows.
 - Media flows have typed nodes, typed ports, validation, compiled execution plans, and durable run records.
-- Local runtime supports NVIDIA and AMD through declared capability paths.
+- Local runtime supports NVIDIA, the official AMD matrices, and Apple Silicon through declared and hardware-tested capability paths.
 - Remote providers execute through the same provider abstraction as local providers.
+- Provider submission, polling, callback, cancellation, retention, public-link, download, and crash-window behavior is explicit and fault-injection tested without duplicate paid attempts.
+- Timeline edits use rational time/sample positions, VFR and color conversion are explicit, and OTIO/ICC/OCIO interoperability never silently drops or relabels semantics.
+- Quality gates preserve named component observations, calibration/sampling profiles, unknown states, policy separation, and human review rather than relying on a universal score.
 - Provider lifecycle, capability, pricing, privacy, and region constraints are visible before remote execution.
-- Local runtime selection covers PyTorch CUDA, PyTorch ROCm where supported, ONNX/DirectML, Windows ML, TensorRT/TensorRT for RTX, native runners, and CPU utility nodes through typed capabilities.
+- Local runtime selection covers PyTorch CUDA, PyTorch ROCm where supported, PyTorch MPS for validated models, ONNX/DirectML, Windows ML, TensorRT/TensorRT for RTX, optional MLX/model-specific packs, native runners, and CPU utility nodes through typed capabilities.
 - Local optimization supports explicit profiles for quantization, tiling, offload, cache acceleration, parallelism, and compiled engines with quality validation and lineage.
 - Asset lineage is preserved for generated, edited, imported, and exported artifacts.
 - Provenance, watermark reports, and content credential export are supported as explicit nodes and export policies.
