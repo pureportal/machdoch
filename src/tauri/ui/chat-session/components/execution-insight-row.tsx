@@ -4,6 +4,7 @@ import { StatusBadge } from "../../../../common/_components/status-badge";
 import type { TaskExecutionResult } from "../../../../core/types.js";
 import { Button } from "../../components/ui/button";
 import { getRelatedFileButtonLabel } from "../_helpers/execution-message.tsx";
+import { ExecutionFileChanges } from "./execution-file-changes";
 
 const insightMetadataBadgeClassName =
   "app-execution-metadata h-6 cursor-default select-none rounded-md border-transparent bg-transparent px-1.5 py-0 text-[11px] font-medium text-slate-400 shadow-none";
@@ -24,7 +25,12 @@ export const ExecutionInsightRow = ({
   onRetryTask,
   onContinueTask,
 }: ExecutionInsightRowProps): JSX.Element | null => {
-  const relatedFiles = execution.response?.relatedFiles ?? [];
+  const fileChanges = execution.fileChanges;
+  const changedFiles = fileChanges?.files ?? [];
+  const changedFilePaths = new Set(changedFiles.map((file) => file.path));
+  const relatedFiles = (execution.response?.relatedFiles ?? []).filter(
+    (file) => !changedFilePaths.has(file.path),
+  );
   const verification = execution.response?.verification ?? [];
   const continuationCount = execution.autopilot?.continuationCount ?? 0;
   const canRetryTask =
@@ -41,6 +47,7 @@ export const ExecutionInsightRow = ({
   if (
     !canRetryTask &&
     !canContinueTask &&
+    !fileChanges &&
     relatedFiles.length === 0 &&
     verification.length === 0 &&
     continuationCount === 0
@@ -77,6 +84,13 @@ export const ExecutionInsightRow = ({
           />
           {`${verification.length} check${verification.length === 1 ? "" : "s"}`}
         </StatusBadge>
+      ) : null}
+
+      {fileChanges ? (
+        <ExecutionFileChanges
+          fileChanges={fileChanges}
+          onOpenWorkspaceFile={onOpenWorkspaceFile}
+        />
       ) : null}
 
       {canRetryTask ? (

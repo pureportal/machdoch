@@ -16,6 +16,7 @@ import {
   verifyExecutedResult,
 } from "./_helpers/execution-state.js";
 import { TASK_EXECUTION_STATUS_TO_TERMINAL_STATE } from "./_helpers/execution-progress.js";
+import { startTaskFileChangeCapture } from "./_helpers/task-file-change-capture.js";
 import {
   getAgentCliProviderLabel,
   isAgentCliProvider,
@@ -685,6 +686,10 @@ export const createTaskExecutionController = (
       );
 
       try {
+        const fileChangeCapture =
+          config.mode === "machdoch"
+            ? await startTaskFileChangeCapture(config.workspaceRoot)
+            : undefined;
         const result = await runTaskExecutionStateMachine(
           task,
           config,
@@ -692,13 +697,18 @@ export const createTaskExecutionController = (
           createActivityAwareExecutionOptions(options, managedSignal),
         );
 
-        return await consolidateTaskExecutionMemory(
+        const consolidatedResult = await consolidateTaskExecutionMemory(
           task,
           config,
           result,
           options.conversationContext,
           { signal: managedSignal.signal },
         );
+        const fileChanges = await fileChangeCapture?.finish();
+
+        return fileChanges
+          ? { ...consolidatedResult, fileChanges }
+          : consolidatedResult;
       } finally {
         managedSignal.cleanup();
       }

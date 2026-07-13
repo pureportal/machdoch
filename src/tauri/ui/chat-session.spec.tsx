@@ -4890,6 +4890,116 @@ describe("ChatSession component", () => {
     expect(continueButton.className).toContain("shadow-sm");
   });
 
+  it("shows observed file changes with line counts and opens changed files", () => {
+    const onOpenWorkspaceFile = vi.fn();
+    const execution = {
+      ...createMockExecutionFixture(
+        "update the chat session",
+        "/mocked/tauri/path",
+      ),
+      fileChanges: {
+        files: [
+          {
+            path: "src/source.ts",
+            kind: "modified" as const,
+            additions: 3,
+            deletions: 1,
+            ranges: [
+              {
+                oldStart: 4,
+                oldLines: 1,
+                newStart: 4,
+                newLines: 3,
+              },
+            ],
+          },
+          {
+            path: "src/removed.ts",
+            kind: "deleted" as const,
+            additions: 0,
+            deletions: 2,
+          },
+        ],
+        totalFiles: 2,
+        additions: 3,
+        deletions: 3,
+        binaryFiles: 0,
+        lineCountsComplete: true,
+        coverage: "complete" as const,
+        truncated: false,
+        attribution: "workspace-observed" as const,
+      },
+    };
+
+    render(
+      <ExecutionInsightRow
+        execution={execution}
+        onOpenWorkspaceFile={onOpenWorkspaceFile}
+      />,
+    );
+
+    const fileChangesButton = screen.getByRole("button", {
+      name: /2 file changes, 3 additions, 3 deletions/i,
+    });
+    fireEvent.click(fileChangesButton);
+    const sourceButton = screen.getByRole("button", { name: /source\.ts/i });
+    const removedButton = screen.getByRole("button", { name: /removed\.ts/i });
+
+    expect(sourceButton.title).toContain("lines 4-6");
+    expect((removedButton as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(sourceButton);
+    expect(onOpenWorkspaceFile).toHaveBeenCalledWith("src/source.ts");
+  });
+
+  it("keeps the complete stored file-change list available on demand", () => {
+    const onOpenWorkspaceFile = vi.fn();
+    const files = Array.from({ length: 8 }, (_, index) => ({
+      path: `src/change-${index + 1}.ts`,
+      kind: "modified" as const,
+      additions: 1,
+      deletions: 0,
+      ranges: [
+        {
+          oldStart: index + 1,
+          oldLines: 1,
+          newStart: index + 1,
+          newLines: 1,
+        },
+      ],
+    }));
+    const execution = {
+      ...createMockExecutionFixture("update many files", "/mocked/tauri/path"),
+      fileChanges: {
+        files,
+        totalFiles: files.length,
+        additions: files.length,
+        deletions: 0,
+        binaryFiles: 0,
+        lineCountsComplete: true,
+        coverage: "complete" as const,
+        truncated: false,
+        attribution: "workspace-observed" as const,
+      },
+    };
+
+    render(
+      <ExecutionInsightRow
+        execution={execution}
+        onOpenWorkspaceFile={onOpenWorkspaceFile}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /8 file changes, 8 additions/i }),
+    );
+    const lastFileButton = screen.getByRole("button", {
+      name: /change-8\.ts/i,
+    });
+    fireEvent.click(lastFileButton);
+
+    expect(onOpenWorkspaceFile).toHaveBeenCalledWith("src/change-8.ts");
+  });
+
   it("shows the AI context cutoff before the first included message", () => {
     render(
       <ConversationFeed

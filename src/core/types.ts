@@ -514,6 +514,37 @@ export interface TaskExecutionNarrative {
   followUps: string[];
 }
 
+export type TaskExecutionFileChangeKind = "added" | "modified" | "deleted";
+
+export interface TaskExecutionChangedLineRange {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+}
+
+export interface TaskExecutionFileChange {
+  path: string;
+  kind: TaskExecutionFileChangeKind;
+  additions?: number;
+  deletions?: number;
+  binary?: true;
+  ranges?: TaskExecutionChangedLineRange[];
+}
+
+export interface TaskExecutionFileChanges {
+  files: TaskExecutionFileChange[];
+  totalFiles: number;
+  additions: number;
+  deletions: number;
+  binaryFiles: number;
+  lineCountsComplete: boolean;
+  coverage: "complete" | "partial";
+  truncated: boolean;
+  attribution: "workspace-observed";
+  warnings?: string[];
+}
+
 export interface TaskExecutionOptions {
   signal?: AbortSignal;
   runId?: string;
@@ -542,6 +573,7 @@ export interface TaskExecutionResult {
   metadata?: Record<string, unknown>;
   outputSections: TaskExecutionSection[];
   response?: TaskExecutionNarrative;
+  fileChanges?: TaskExecutionFileChanges;
   autopilot?: TaskAutopilotReport;
   memoryUpdates?: TaskExecutionMemoryUpdate[];
 }

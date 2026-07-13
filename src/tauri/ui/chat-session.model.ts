@@ -6,6 +6,10 @@ import {
 } from "../../core/runtime-contract.generated.js";
 import type {
   ConversationMemoryEntry,
+  TaskExecutionChangedLineRange,
+  TaskExecutionFileChange,
+  TaskExecutionFileChangeKind,
+  TaskExecutionFileChanges,
   TaskExecutionTokenUsage,
   TaskExecutionNarrative,
   TaskExecutionResult,
@@ -255,6 +259,9 @@ const PERSISTED_VISIBLE_MESSAGE_LIMIT = 400;
 const PROMPT_HISTORY_ENTRY_LIMIT = 100;
 const PROMPT_HISTORY_ENTRY_LENGTH_LIMIT = 8_000;
 const EXECUTION_RESPONSE_MARKDOWN_LIMIT = 32_000;
+const EXECUTION_FILE_CHANGE_LIMIT = 500;
+const EXECUTION_FILE_CHANGE_RANGE_LIMIT = 2_000;
+const EXECUTION_FILE_CHANGE_WARNING_LIMIT = 5;
 const MAX_SESSION_TAGS = 12;
 const MAX_SESSION_TAG_LENGTH = 32;
 const MAX_CONTEXT_PACK_NAME_LENGTH = 72;
@@ -1309,6 +1316,137 @@ const normalizeTaskExecutionResponse = (
   };
 };
 
+const normalizeNonNegativeInteger = (
+  value: unknown,
+): number | undefined => {
+  const normalized = normalizeOptionalFiniteNumber(value);
+
+  return normalized === undefined
+    ? undefined
+    : Math.max(0, Math.round(normalized));
+};
+
+const isTaskExecutionFileChangeKind = (
+  value: unknown,
+): value is TaskExecutionFileChangeKind => {
+  return value === "added" || value === "modified" || value === "deleted";
+};
+
+const normalizeTaskExecutionChangedLineRange = (
+  value: unknown,
+): TaskExecutionChangedLineRange | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const oldStart = normalizeNonNegativeInteger(value.oldStart);
+  const oldLines = normalizeNonNegativeInteger(value.oldLines);
+  const newStart = normalizeNonNegativeInteger(value.newStart);
+  const newLines = normalizeNonNegativeInteger(value.newLines);
+
+  if (
+    oldStart === undefined ||
+    oldLines === undefined ||
+    newStart === undefined ||
+    newLines === undefined
+  ) {
+    return undefined;
+  }
+
+  return { oldStart, oldLines, newStart, newLines };
+};
+
+const normalizeTaskExecutionFileChanges = (
+  value: unknown,
+): TaskExecutionFileChanges | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const normalizedFiles = new Map<string, TaskExecutionFileChange>();
+  let remainingRanges = EXECUTION_FILE_CHANGE_RANGE_LIMIT;
+
+  if (Array.isArray(value.files)) {
+    for (const entry of value.files) {
+      if (
+        normalizedFiles.size >= EXECUTION_FILE_CHANGE_LIMIT ||
+        !isRecord(entry) ||
+        !isTaskExecutionFileChangeKind(entry.kind)
+      ) {
+        continue;
+      }
+
+      const path = normalizeString(entry.path).trim().slice(0, 4_000);
+
+      if (!path) {
+        continue;
+      }
+
+      const additions = normalizeNonNegativeInteger(entry.additions);
+      const deletions = normalizeNonNegativeInteger(entry.deletions);
+      const ranges = Array.isArray(entry.ranges)
+        ? entry.ranges
+            .map(normalizeTaskExecutionChangedLineRange)
+            .filter(
+              (range): range is TaskExecutionChangedLineRange =>
+                range !== undefined,
+            )
+            .slice(0, remainingRanges)
+        : [];
+      remainingRanges -= ranges.length;
+
+      normalizedFiles.set(path, {
+        path,
+        kind: entry.kind,
+        ...(additions !== undefined ? { additions } : {}),
+        ...(deletions !== undefined ? { deletions } : {}),
+        ...(entry.binary === true ? { binary: true } : {}),
+        ...(ranges.length > 0 ? { ranges } : {}),
+      });
+    }
+  }
+
+  const files = Array.from(normalizedFiles.values());
+  const storedTotalFiles = normalizeNonNegativeInteger(value.totalFiles) ?? 0;
+  const totalFiles = Math.min(
+    1_000_000,
+    Math.max(files.length, storedTotalFiles),
+  );
+
+  if (totalFiles === 0) {
+    return undefined;
+  }
+
+  const fallbackAdditions = files.reduce(
+    (total, file) => total + (file.additions ?? 0),
+    0,
+  );
+  const fallbackDeletions = files.reduce(
+    (total, file) => total + (file.deletions ?? 0),
+    0,
+  );
+  const fallbackBinaryFiles = files.filter((file) => file.binary === true).length;
+  const additions = normalizeNonNegativeInteger(value.additions) ?? fallbackAdditions;
+  const deletions = normalizeNonNegativeInteger(value.deletions) ?? fallbackDeletions;
+  const binaryFiles = normalizeNonNegativeInteger(value.binaryFiles) ?? fallbackBinaryFiles;
+  const warnings = normalizeStringArray(value.warnings)
+    .slice(0, EXECUTION_FILE_CHANGE_WARNING_LIMIT)
+    .map((warning) => warning.slice(0, 500));
+
+  return {
+    files,
+    totalFiles,
+    additions,
+    deletions,
+    binaryFiles,
+    lineCountsComplete: value.lineCountsComplete === true,
+    coverage: value.coverage === "complete" ? "complete" : "partial",
+    truncated: value.truncated === true || totalFiles > files.length,
+    attribution: "workspace-observed",
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
+};
+
 const normalizeTaskExecutionResult = (
   value: unknown,
   fallbackTask: string,
@@ -1318,6 +1456,7 @@ const normalizeTaskExecutionResult = (
   }
 
   const response = normalizeTaskExecutionResponse(value.response);
+  const fileChanges = normalizeTaskExecutionFileChanges(value.fileChanges);
 
   return {
     task: normalizeString(value.task, fallbackTask || "Untitled task").slice(
@@ -1336,6 +1475,7 @@ const normalizeTaskExecutionResult = (
       : {}),
     outputSections: normalizeTaskExecutionSections(value.outputSections),
     ...(response ? { response } : {}),
+    ...(fileChanges ? { fileChanges } : {}),
   };
 };
 

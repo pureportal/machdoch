@@ -450,6 +450,39 @@ describe("normalizeShellState", () => {
                       },
                     ],
                   },
+                  fileChanges: {
+                    files: [
+                      {
+                        path: "src/source.ts",
+                        kind: "modified",
+                        additions: 3.4,
+                        deletions: -2,
+                        ranges: [
+                          {
+                            oldStart: 4,
+                            oldLines: 1,
+                            newStart: 4,
+                            newLines: 3,
+                          },
+                          {
+                            oldStart: "invalid",
+                          },
+                        ],
+                      },
+                      {
+                        path: "src/invalid.ts",
+                        kind: "unknown",
+                      },
+                    ],
+                    totalFiles: 2,
+                    additions: 3,
+                    deletions: 0,
+                    binaryFiles: 0,
+                    lineCountsComplete: true,
+                    coverage: "complete",
+                    truncated: false,
+                    warnings: ["A bounded warning."],
+                  },
                 },
               },
             },
@@ -523,6 +556,33 @@ describe("normalizeShellState", () => {
               description: "",
             },
           ],
+        },
+        fileChanges: {
+          files: [
+            {
+              path: "src/source.ts",
+              kind: "modified",
+              additions: 3,
+              deletions: 0,
+              ranges: [
+                {
+                  oldStart: 4,
+                  oldLines: 1,
+                  newStart: 4,
+                  newLines: 3,
+                },
+              ],
+            },
+          ],
+          totalFiles: 2,
+          additions: 3,
+          deletions: 0,
+          binaryFiles: 0,
+          lineCountsComplete: true,
+          coverage: "complete",
+          truncated: true,
+          attribution: "workspace-observed",
+          warnings: ["A bounded warning."],
         },
       },
     });
